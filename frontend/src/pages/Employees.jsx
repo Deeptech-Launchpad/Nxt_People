@@ -337,36 +337,21 @@ export default function Employees() {
             </select>
           </div>
           {isAdmin && (
-            <>
-              <button
-                onClick={handleZohoSync}
-                disabled={zohoSyncing}
-                title="Pull every employee from Zoho People into Nxt-People"
-                className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
-              >
-                <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />
-                {zohoSyncing ? 'Syncing…' : 'Sync from Zoho'}
-              </button>
-              <button
-                onClick={handlePayrollSync}
-                disabled={zohoSyncing}
-                title="Pull bank account / IFSC / CTC from the Zoho People Payroll module — requires a Zoho subscription tier that includes Payroll. Returns 0 silently otherwise."
-                className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
-              >
-                <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />
-                Sync Payroll
-              </button>
-              <button
-                onClick={handleDocumentsSync}
-                disabled={zohoSyncing}
-                title="Download Zoho file attachments — requires the People Files API on your subscription. Returns 0 silently if your tenant doesn't expose it."
-                className="flex items-center gap-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
-              >
-                <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />
-                Import Documents
-              </button>
-            </>
+            <button
+              onClick={handleZohoSync}
+              disabled={zohoSyncing}
+              title="Pull every employee from Zoho People into Nxt-People"
+              className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />
+              {zohoSyncing ? 'Syncing…' : 'Sync from Zoho'}
+            </button>
           )}
+          {/* Payroll + Documents sync buttons removed — Zoho tenant doesn't
+              expose Payroll module or the Files API. Backend endpoints
+              (/api/admin/zoho-sync-payroll, /api/admin/zoho-sync-documents)
+              are still wired and can be re-enabled with a button if you
+              ever subscribe to Zoho Payroll or get File API access. */}
           <button onClick={() => setOnboardingModal(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 text-brand-600 border border-brand-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors">
             <Mail size={16}/> Send Preboarding
           </button>
