@@ -156,27 +156,30 @@ function parseTabularSections(rec) {
   const empHistoryRows = findSection('emp_history', 'employment', 'experience', 'previous');
 
   const education = educationRows.map(row => ({
-    qualification:    pick(row, 'Highest_Qualification', 'Qualification', 'Degree', 'Level'),
-    degree:           pick(row, 'Degree', 'Course', 'Specialization'),
-    institute:        pick(row, 'Institute_Name', 'Institution', 'University', 'School', 'College'),
-    yearOfPassing:    pick(row, 'Year_Of_Passing', 'Year_of_passing', 'YearOfPassing', 'Passing_Year'),
+    qualification:    pick(row, 'Highest_Qualification', 'Qualification', 'Level'),
+    degree:           pick(row, 'Degree', 'Course'),
+    course:           pick(row, 'Specialization', 'Field_Of_Study', 'Stream', 'Major'),
+    institute:        pick(row, 'College', 'Institute_Name', 'Institution', 'University', 'School'),
+    yearOfPassing:    pick(row, 'Yearofgraduation', 'Year_Of_Passing', 'Year_of_passing', 'YearOfPassing', 'Passing_Year'),
     percentageOrCgpa: pick(row, 'Marks_Or_CGPA', 'Percentage', 'CGPA', 'Marks', 'Grade'),
-  })).filter(r => r.institute || r.qualification || r.degree);
+  })).filter(r => r.institute || r.qualification || r.degree || r.course);
 
   const prevEmployment = empHistoryRows.map(row => ({
-    company:      pick(row, 'Previous_Company', 'Company_Name', 'Company', 'Employer'),
+    company:      pick(row, 'Previous_Company', 'Company_Name', 'Company', 'Employer', 'PreviousCompany'),
     designation:  pick(row, 'Designation', 'Job_Title', 'Role', 'Position'),
-    fromDate:     toIsoDate(pick(row, 'From_Date', 'From', 'Start_Date', 'Joining_Date')),
-    toDate:       toIsoDate(pick(row, 'To_Date', 'To', 'End_Date', 'Relieving_Date')),
+    fromDate:     toIsoDate(pick(row, 'From_Date', 'From', 'Start_Date', 'Joining_Date', 'FromDate')),
+    toDate:       toIsoDate(pick(row, 'To_Date', 'To', 'End_Date', 'Relieving_Date', 'ToDate')),
     description:  pick(row, 'Job_Description', 'Description', 'Responsibilities'),
   })).filter(r => r.company || r.designation);
 
-  // Emergency contact: first row of family-type section, if any.
+  // Emergency / family contact: first row of the dependent / family section.
+  // Your tenant uses "Dependent Details" with fields Name + DependentRelationship.
+  // Phone isn't always present — leave blank if Zoho doesn't have it.
   const first = familyRows[0];
   const emergency = first ? {
-    name:     pick(first, 'Name', 'First_Name', 'Contact_Name', 'Full_Name'),
-    phone:    pick(first, 'Mobile_no', 'Mobile', 'Phone', 'Contact_Number', 'Mobile_Number'),
-    relation: pick(first, 'Relationship', 'Relation', 'Type'),
+    name:     pick(first, 'Name', 'First_Name', 'Contact_Name', 'Full_Name', 'DependentName'),
+    phone:    pick(first, 'Mobile_no', 'Mobile', 'Phone', 'Contact_Number', 'Mobile_Number', 'DependentMobile', 'DependentContact'),
+    relation: pick(first, 'DependentRelationship', 'Relationship', 'Relation', 'Type'),
   } : null;
 
   return { education, prevEmployment, emergency };
@@ -298,16 +301,16 @@ router.post('/zoho-sync', async (req, res) => {
           for (const ed of tabular.education) {
             await client.query(
               `INSERT INTO employee_education
-                 (employee_id, highest_qualification, degree,
+                 (employee_id, highest_qualification, degree, course,
                   university_or_institution, year_of_passing, percentage_or_cgpa)
-               SELECT $1::uuid, $2::text, $3::text, $4::text, $5::int, $6::text
+               SELECT $1::uuid, $2::text, $3::text, $4::text, $5::text, $6::int, $7::text
                 WHERE NOT EXISTS (
                   SELECT 1 FROM employee_education
                    WHERE employee_id = $1::uuid
-                     AND COALESCE(university_or_institution, '') = COALESCE($4::text, '')
-                     AND COALESCE(year_of_passing, 0) = COALESCE($5::int, 0)
+                     AND COALESCE(university_or_institution, '') = COALESCE($5::text, '')
+                     AND COALESCE(year_of_passing, 0) = COALESCE($6::int, 0)
                 )`,
-              [empId, ed.qualification, ed.degree, ed.institute,
+              [empId, ed.qualification, ed.degree, ed.course, ed.institute,
                ed.yearOfPassing ? parseInt(ed.yearOfPassing, 10) || null : null,
                ed.percentageOrCgpa]
             );

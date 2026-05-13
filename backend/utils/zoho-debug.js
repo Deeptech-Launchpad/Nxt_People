@@ -45,21 +45,53 @@ const argLower = arg.toLowerCase();
 
   console.log(`\nRaw Zoho record (scanned ${scanned} record(s) to find this one):\n`);
 
-  // Sort keys alphabetically so similarly-named fields cluster together.
-  const sorted = Object.keys(found).sort();
+  // Top-level fields first — sort alphabetically so similar names cluster.
+  console.log('── TOP-LEVEL FIELDS ──');
+  const sorted = Object.keys(found).filter(k => k !== 'tabularSections').sort();
   const rows = sorted.map(k => {
     const v = found[k];
     let display;
     if (v === null || v === undefined || v === '') display = '<empty>';
-    else if (typeof v === 'object') display = JSON.stringify(v).slice(0, 80);
-    else display = String(v).slice(0, 80);
+    else if (typeof v === 'object') display = JSON.stringify(v).slice(0, 100);
+    else display = String(v).slice(0, 100);
     return { field: k, value: display };
   });
   console.table(rows);
 
-  console.log(`\nTotal fields: ${sorted.length}`);
-  console.log('Look for fields like "MaritalStatus", "BloodGroup", "Nationality" — note the exact spelling/casing.');
-  console.log('Then add the new alias to routes/admin-zoho.js mapEmployee() and re-run Zoho sync.\n');
+  // tabularSections has the nested data — bank, identity, family, etc.
+  // Dump every section in full so we can see what's in there.
+  if (found.tabularSections && typeof found.tabularSections === 'object') {
+    console.log('\n── TABULAR SECTIONS (nested) ──');
+    for (const [sectionName, sectionData] of Object.entries(found.tabularSections)) {
+      console.log(`\n  Section: ${sectionName}`);
+      if (Array.isArray(sectionData)) {
+        if (sectionData.length === 0) {
+          console.log('    (empty)');
+        } else {
+          sectionData.forEach((row, i) => {
+            console.log(`    Row ${i + 1}:`);
+            for (const [k, v] of Object.entries(row)) {
+              const display = v === null || v === undefined || v === '' ? '<empty>'
+                : typeof v === 'object' ? JSON.stringify(v).slice(0, 80)
+                : String(v).slice(0, 80);
+              console.log(`      ${k}: ${display}`);
+            }
+          });
+        }
+      } else {
+        console.log(`    ${JSON.stringify(sectionData).slice(0, 200)}`);
+      }
+    }
+  } else {
+    console.log('\n── TABULAR SECTIONS ──\n  (none in this response)');
+  }
+
+  console.log(`\nTotal top-level fields: ${sorted.length}`);
+  console.log('\nNow look for the missing data:');
+  console.log('  • Blood Group, Nationality, Passport — check section names like SS_PERSONAL or any "extra info" tab');
+  console.log('  • Bank Name, Account, IFSC — check SS_BANK_DETAILS or SS_FINANCE');
+  console.log('  • Documents — check SS_DOCUMENTS / SS_FILES (file IDs we can fetch separately)');
+  console.log('\nPaste the section names + the field names INSIDE them to extend the parser.\n');
 
   process.exit(0);
 })().catch(err => {
