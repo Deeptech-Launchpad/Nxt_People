@@ -4,8 +4,20 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 
-const DOC_TYPES = ['offer_letter', 'id_proof', 'address_proof', 'educational', 'experience', 'payslip', 'contract', 'nda', 'other'];
-const DOC_TYPE_LABELS = { offer_letter: 'Offer Letter', id_proof: 'ID Proof', address_proof: 'Address Proof', educational: 'Educational', experience: 'Experience Cert', payslip: 'Pay Slip', contract: 'Contract', nda: 'NDA', other: 'Other' };
+const DOC_TYPES = ['resume', 'photo', 'offer_letter', 'id_proof', 'address_proof', 'educational', 'experience', 'payslip', 'contract', 'nda', 'other'];
+const DOC_TYPE_LABELS = {
+  resume:         'Resume / CV',
+  photo:          'Photo',
+  offer_letter:   'Offer Letter',
+  id_proof:       'ID Proof (Aadhar / PAN)',
+  address_proof:  'Address Proof',
+  educational:    'Educational Certificates',
+  experience:     'Experience Certificates',
+  payslip:        'Pay Slip',
+  contract:       'Contract',
+  nda:            'NDA',
+  other:          'Other',
+};
 
 const getFileIcon = (url) => {
   if (!url) return File;
@@ -65,9 +77,12 @@ export default function Documents({ employeeId: propEmpId }) {
 
   const canUpload = user?.role !== 'employee' || user?._id === empId;
 
-  const grouped = DOC_TYPES.reduce((acc, t) => {
-    const typeDocs = docs.filter(d => d.type === t);
-    if (typeDocs.length > 0) acc[t] = typeDocs;
+  // Group by canonical type. Anything with a type not in DOC_TYPES (legacy
+  // onboarding rows that escaped the migration backfill, or admin-supplied
+  // custom types) falls into "other" so it's still visible.
+  const grouped = docs.reduce((acc, d) => {
+    const bucket = DOC_TYPES.includes(d.type) ? d.type : 'other';
+    (acc[bucket] = acc[bucket] || []).push(d);
     return acc;
   }, {});
 
@@ -95,7 +110,9 @@ export default function Documents({ employeeId: propEmpId }) {
         </div>
       ) : (
         <div className="space-y-6">
-          {Object.entries(grouped).map(([type, typeDocs]) => (
+          {DOC_TYPES.filter(t => grouped[t]?.length).map((type) => {
+            const typeDocs = grouped[type];
+            return (
             <div key={type}>
               <div className="flex items-center gap-3 mb-3">
                 <h3 className="font-display font-semibold text-slate-700 text-sm">{DOC_TYPE_LABELS[type] || type}</h3>
@@ -131,7 +148,8 @@ export default function Documents({ employeeId: propEmpId }) {
                 })}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

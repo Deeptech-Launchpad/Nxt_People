@@ -297,6 +297,33 @@ const steps = [
        WHERE uploaded_by IS NULL;
    END $$`,
 
+  // ── Backfill document type mapping ────────────────────────────────────────
+  // Onboarding form uploads were originally stored with the raw form
+  // fieldname (aadhaarCard, tenthCertificate, ...) in the `type` column.
+  // The self-service Documents page groups by a canonical taxonomy
+  // (id_proof / educational / experience / resume / photo / ...).
+  // Remap existing rows so historical onboarding uploads show up grouped
+  // under the right category. Idempotent — the WHERE clause only matches
+  // the legacy field names, not the canonical values, so re-running is safe.
+  `UPDATE employee_documents
+      SET type = CASE type
+            WHEN 'aadhaarCard'        THEN 'id_proof'
+            WHEN 'panCard'            THEN 'id_proof'
+            WHEN 'tenthCertificate'   THEN 'educational'
+            WHEN 'twelfthCertificate' THEN 'educational'
+            WHEN 'ugCertificate'      THEN 'educational'
+            WHEN 'pgCertificate'      THEN 'educational'
+            WHEN 'experienceLetters'  THEN 'experience'
+            WHEN 'resume'             THEN 'resume'
+            WHEN 'passportPhoto'      THEN 'photo'
+            WHEN 'addressProof'       THEN 'address_proof'
+            WHEN 'offerLetter'        THEN 'offer_letter'
+            ELSE type
+          END
+    WHERE type IN ('aadhaarCard', 'panCard', 'tenthCertificate', 'twelfthCertificate',
+                   'ugCertificate', 'pgCertificate', 'experienceLetters',
+                   'resume', 'passportPhoto', 'addressProof', 'offerLetter')`,
+
   // ── Travel: add transport mode + rejection_reason ─────────────────────────
   `ALTER TABLE travel_requests ADD COLUMN IF NOT EXISTS transport VARCHAR(50)`,
   `ALTER TABLE travel_requests ADD COLUMN IF NOT EXISTS rejection_reason TEXT`,

@@ -138,23 +138,45 @@ router.post('/submit/:token', upload.any(), async (req, res) => {
     // to the admin Employees view (reads legacy) AND the self-service /documents
     // page (reads modern). Without this, candidates' onboarding uploads only
     // appeared in the admin view.
+    //
+    // The onboarding form posts files under fieldnames like "aadhaarCard",
+    // "tenthCertificate", etc. The self-service page groups by a canonical
+    // type taxonomy (id_proof / educational / experience / ...), so we map
+    // the raw fieldname → canonical type for the `type` column. The legacy
+    // `document_type` column keeps the raw fieldname so existing admin views
+    // (which display "aadhaarCard" verbatim) don't change.
+    const FIELD_TO_TYPE = {
+      aadhaarCard:        'id_proof',
+      panCard:            'id_proof',
+      tenthCertificate:   'educational',
+      twelfthCertificate: 'educational',
+      ugCertificate:      'educational',
+      pgCertificate:      'educational',
+      experienceLetters:  'experience',
+      resume:             'resume',
+      passportPhoto:      'photo',
+      addressProof:       'address_proof',
+      offerLetter:        'offer_letter',
+    };
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const fileUrl = `/uploads/${file.filename}`;
+        const fileUrl  = `/uploads/${file.filename}`;
+        const docType  = FIELD_TO_TYPE[file.fieldname] || 'other';
         await pool.query(`
           INSERT INTO employee_documents (
             employee_id,
             document_type, file_path, original_name, mime_type, size,
             name, type, file_url, file_size, uploaded_by
-          ) VALUES ($1, $2, $3, $4, $5, $6, $4, $2, $7, $6, $1)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $4, $7, $8, $6, $1)
         `, [
           employeeId,
-          file.fieldname,            // $2 → document_type AND type
-          fileUrl,                   // $3 → file_path (full /uploads/... URL, so downloads work)
+          file.fieldname,            // $2 → document_type (legacy, raw form fieldname)
+          fileUrl,                   // $3 → file_path (full /uploads/... URL)
           file.originalname,         // $4 → original_name AND name
           file.mimetype,             // $5 → mime_type
           file.size,                 // $6 → size AND file_size
-          fileUrl,                   // $7 → file_url
+          docType,                   // $7 → type (canonical taxonomy)
+          fileUrl,                   // $8 → file_url
         ]);
       }
     }
