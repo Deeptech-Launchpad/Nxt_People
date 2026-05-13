@@ -33,6 +33,17 @@ const initForm = {
 // backend/utils/employeeId.js — keeps the per-company ID sequence working.
 const COMPANIES = ['AltiusNxt', 'Altius Technology', 'DTLP'];
 
+// Employment status options + their display metadata. Notice Period keeps
+// login access; everything else (other than Active) revokes it.
+const STATUS_OPTIONS = [
+  { value: 'active',         label: 'Active (Current Employee)', color: 'bg-emerald-100 text-emerald-700',  loginAccess: true  },
+  { value: 'notice_period',  label: 'Notice Period',             color: 'bg-amber-100 text-amber-700',      loginAccess: true  },
+  { value: 'resigned',       label: 'Resigned',                  color: 'bg-slate-100 text-slate-600',      loginAccess: false },
+  { value: 'terminated',     label: 'Terminated',                color: 'bg-red-100 text-red-700',          loginAccess: false },
+  { value: 'inactive',       label: 'Inactive',                  color: 'bg-slate-100 text-slate-500',      loginAccess: false },
+];
+const statusMeta = (s) => STATUS_OPTIONS.find(o => o.value === s) || STATUS_OPTIONS[0];
+
 
 export default function Employees() {
   const { user } = useAuth();
@@ -57,6 +68,55 @@ export default function Employees() {
   const [loadingView, setLoadingView] = useState(false);
   const [form, setForm] = useState(initForm);
   const [saving, setSaving] = useState(false);
+  // Employment status update modal (separate from Edit Employee — focused on
+  // the exit/notice-period workflow with applied date, end date, reason,
+  // rehire eligibility, blacklist).
+  const [statusModal, setStatusModal] = useState(null);
+  const [statusForm, setStatusForm]   = useState({
+    status: 'active', statusAppliedAt: '', noticePeriodEndDate: '',
+    statusReason: '', rehireEligibility: '', isBlacklisted: false,
+  });
+  const [statusSaving, setStatusSaving] = useState(false);
+
+  const openStatus = (emp) => {
+    setStatusModal(emp);
+    setStatusForm({
+      status:              emp.status || 'active',
+      statusAppliedAt:     (emp.statusAppliedAt || '').split?.('T')[0] || new Date().toISOString().slice(0, 10),
+      noticePeriodEndDate: (emp.noticePeriodEndDate || '').split?.('T')[0] || '',
+      statusReason:        emp.statusReason || '',
+      rehireEligibility:   emp.rehireEligibility || '',
+      isBlacklisted:       !!emp.isBlacklisted,
+    });
+  };
+
+  const handleStatusSave = async () => {
+    setStatusSaving(true);
+    try {
+      const payload = {
+        status:              statusForm.status,
+        statusAppliedAt:     statusForm.statusAppliedAt || null,
+        noticePeriodEndDate: statusForm.status === 'notice_period' ? (statusForm.noticePeriodEndDate || null) : null,
+        statusReason:        statusForm.statusReason || null,
+        rehireEligibility:   ['resigned','terminated','inactive'].includes(statusForm.status) ? (statusForm.rehireEligibility || null) : null,
+        isBlacklisted:       !!statusForm.isBlacklisted,
+        // Mirror the exit_date when moving to a terminal status.
+        exitDate:            statusForm.status === 'resigned' || statusForm.status === 'terminated'
+                                ? (statusForm.statusAppliedAt || new Date().toISOString().slice(0, 10))
+                                : null,
+      };
+      await api.put(`/employees/${statusModal._id}`, payload);
+      const meta = statusMeta(statusForm.status);
+      toast.success(`Status updated → ${meta.label}${meta.loginAccess ? '' : '. Login access revoked.'}`);
+      setStatusModal(null);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Status update failed');
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
   const [onboardingModal, setOnboardingModal] = useState(false);
   const [onboardingForm, setOnboardingForm] = useState({ email: '', candidateName: '', dueDate: '' });
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -385,7 +445,18 @@ export default function Employees() {
                                 className="absolute inset-0 w-full h-full object-cover"/>
                             )}
                           </div>
-                          <div><p className="text-sm font-medium text-slate-700">{emp.firstName} {emp.lastName}</p><p className="text-xs text-slate-400">{emp.email}</p></div>
+                          <div>
+                            <p className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                              {emp.firstName} {emp.lastName}
+                              {emp.isBlacklisted && (
+                                <span title="Blacklisted — flag during future onboarding" className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">🚫 BLACKLIST</span>
+                              )}
+                              {emp.status === 'notice_period' && (
+                                <span title={`Notice period ends ${emp.noticePeriodEndDate || ''}`} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">NOTICE</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-slate-400">{emp.email}</p>
+                          </div>
                         </div>
                       </td>
                       <td className="px-5 py-3.5 text-sm text-slate-500 font-mono">{emp.employeeId}</td>
@@ -399,9 +470,10 @@ export default function Employees() {
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
-                          <button onClick={()=>openView(emp._id)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"><Eye size={14}/></button>
-                          <button onClick={()=>openEdit(emp)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-brand-50 text-brand-600 hover:bg-brand-100 transition-colors"><Edit2 size={14}/></button>
-                          <button onClick={()=>handleDelete(emp._id)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"><Trash2 size={14}/></button>
+                          <button onClick={()=>openView(emp._id)} title="View" className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"><Eye size={14}/></button>
+                          <button onClick={()=>openEdit(emp)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg bg-brand-50 text-brand-600 hover:bg-brand-100 transition-colors"><Edit2 size={14}/></button>
+                          <button onClick={()=>openStatus(emp)} title="Update employment status (notice period / exit / blacklist)" className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors text-[15px] font-bold">⚑</button>
+                          <button onClick={()=>handleDelete(emp._id)} title="Delete" className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"><Trash2 size={14}/></button>
                         </div>
                       </td>
                     </tr>
@@ -767,6 +839,91 @@ export default function Employees() {
                 <button type="button" onClick={()=>setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors">Cancel</button>
                 <button type="submit" disabled={saving} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60">
                   {saving ? 'Saving...' : editEmp ? 'Update' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Update Employment Status modal — focused workflow for notice period
+          and exit. Captures applied date, end date, reason, rehire flag,
+          blacklist. Auto-revoke cron handles login access on the end date. */}
+      {statusModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <div>
+                <h3 className="font-display font-semibold text-slate-800 text-lg">Update Employment Status</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{statusModal.firstName} {statusModal.lastName} · {statusModal.employeeId || statusModal.email}</p>
+              </div>
+              <button onClick={()=>setStatusModal(null)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"><X size={16}/></button>
+            </div>
+
+            <form onSubmit={(e)=>{e.preventDefault();handleStatusSave();}} className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">New Status</label>
+                <select value={statusForm.status} onChange={e=>setStatusForm({...statusForm,status:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
+                  {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {statusMeta(statusForm.status).loginAccess
+                    ? '✓ Employee keeps login access at this status.'
+                    : '⚠️ Setting this status revokes login access immediately.'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Status Applied Date</label>
+                  <input type="date" value={statusForm.statusAppliedAt} onChange={e=>setStatusForm({...statusForm,statusAppliedAt:e.target.value})} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                </div>
+                {statusForm.status === 'notice_period' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Notice Period End Date <span className="text-red-500">*</span></label>
+                    <input type="date" value={statusForm.noticePeriodEndDate} onChange={e=>setStatusForm({...statusForm,noticePeriodEndDate:e.target.value})} required min={statusForm.statusAppliedAt || undefined} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                    <p className="text-[10.5px] text-slate-400 mt-1">Login access auto-revoked the day after this date.</p>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Reason</label>
+                <textarea rows={3} value={statusForm.statusReason} onChange={e=>setStatusForm({...statusForm,statusReason:e.target.value})} placeholder="Why this status change?" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none"/>
+              </div>
+
+              {['notice_period','resigned','terminated','inactive'].includes(statusForm.status) && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Will you rehire?</label>
+                  <div className="flex gap-3">
+                    {[
+                      { v: 'yes',   label: 'Yes',   cls: 'bg-emerald-50 border-emerald-300 text-emerald-700' },
+                      { v: 'maybe', label: 'Maybe', cls: 'bg-amber-50 border-amber-300 text-amber-700' },
+                      { v: 'no',    label: 'No',    cls: 'bg-red-50 border-red-300 text-red-700' },
+                    ].map(o => (
+                      <label key={o.v} className={`flex-1 px-3 py-2 rounded-xl border text-sm font-medium text-center cursor-pointer ${statusForm.rehireEligibility === o.v ? o.cls : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                        <input type="radio" name="rehire" className="hidden" checked={statusForm.rehireEligibility === o.v} onChange={() => setStatusForm({...statusForm, rehireEligibility: o.v})}/>
+                        {o.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={statusForm.isBlacklisted} onChange={e=>setStatusForm({...statusForm,isBlacklisted:e.target.checked})} className="w-4 h-4 accent-red-600"/>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">Blacklist this person</p>
+                    <p className="text-[11px] text-slate-400">If checked, future onboarding for the same email shows a warning. Use sparingly — this is a permanent mark on the record.</p>
+                  </div>
+                </label>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={()=>setStatusModal(null)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors">Cancel</button>
+                <button type="submit" disabled={statusSaving} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60">
+                  {statusSaving ? 'Saving…' : 'Update Status'}
                 </button>
               </div>
             </form>

@@ -77,32 +77,77 @@ router.post('/import', authorize('admin'), audit('IMPORT', 'holiday'), upload.si
   }
 });
 
+const SELECT_COLS = `
+  h.id as "_id", h.name, h.date, h.type, h.year, h.description,
+  h.category, h.is_compensatory AS "isCompensatory", h.mail_body AS "mailBody",
+  h.compensation_type AS "compensationType",
+  h.compensated_holiday_id AS "compensatedHolidayId",
+  h.notified_at AS "notifiedAt"
+`;
+
 router.get('/', async (req, res) => {
   try {
     const { year } = req.query;
     const params = [];
-    let query = '';
+    let where = '';
     if (year) {
-      query = 'WHERE year = $1';
+      where = 'WHERE h.year = $1';
       params.push(parseInt(year));
     }
-    const result = await pool.query(`SELECT id as "_id", name, date, type, year, description FROM holidays ${query} ORDER BY date ASC`, params);
+    const result = await pool.query(
+      `SELECT ${SELECT_COLS} FROM holidays h ${where} ORDER BY h.date ASC`,
+      params
+    );
     res.json({ success: true, data: result.rows });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 router.post('/', authorize('admin'), audit('CREATE', 'holiday'), async (req, res) => {
   try {
-    const { name, date, type, description, year } = req.body;
-    const result = await pool.query(`INSERT INTO holidays (name, date, type, description, year) VALUES ($1, $2, $3, $4, $5) RETURNING id as "_id", name, date, type, year, description`, [name, date, type || 'company', description, year]);
+    const {
+      name, date, type, description, year,
+      category, isCompensatory, mailBody,
+      compensationType, compensatedHolidayId,
+    } = req.body;
+    const result = await pool.query(
+      `INSERT INTO holidays
+         (name, date, type, description, year,
+          category, is_compensatory, mail_body,
+          compensation_type, compensated_holiday_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING ${SELECT_COLS.replace(/h\./g, '')}`,
+      [
+        name, date, type || 'company', description, year,
+        category || null, !!isCompensatory, mailBody || null,
+        compensationType || null, compensatedHolidayId || null,
+      ]
+    );
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 router.put('/:id', authorize('admin'), audit('UPDATE', 'holiday'), async (req, res) => {
   try {
-    const { name, date, type, description, year } = req.body;
-    const result = await pool.query(`UPDATE holidays SET name = $1, date = $2, type = $3, description = $4, year = $5, updated_at = NOW() WHERE id = $6 RETURNING id as "_id", name, date, type, year, description`, [name, date, type, description, year, req.params.id]);
+    const {
+      name, date, type, description, year,
+      category, isCompensatory, mailBody,
+      compensationType, compensatedHolidayId,
+    } = req.body;
+    const result = await pool.query(
+      `UPDATE holidays
+          SET name = $1, date = $2, type = $3, description = $4, year = $5,
+              category = $6, is_compensatory = $7, mail_body = $8,
+              compensation_type = $9, compensated_holiday_id = $10,
+              updated_at = NOW()
+        WHERE id = $11
+        RETURNING ${SELECT_COLS.replace(/h\./g, '')}`,
+      [
+        name, date, type, description, year,
+        category || null, !!isCompensatory, mailBody || null,
+        compensationType || null, compensatedHolidayId || null,
+        req.params.id,
+      ]
+    );
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -111,6 +156,46 @@ router.delete('/:id', authorize('admin'), audit('DELETE', 'holiday'), async (req
   try {
     await pool.query('DELETE FROM holidays WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Holiday deleted' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// Send the holiday's mail_body to every active employee. Idempotent — admin
+// can re-trigger if they edit the message. Marks notified_at so the UI can
+// show "Sent on …".
+router.post('/:id/notify', authorize('admin'), audit('NOTIFY', 'holiday'), async (req, res) => {
+  try {
+    const h = await pool.query(
+      `SELECT name, date, type, mail_body FROM holidays WHERE id = $1`,
+      [req.params.id]
+    );
+    if (h.rows.length === 0) return res.status(404).json({ success: false, message: 'Holiday not found' });
+    const holiday = h.rows[0];
+    if (!holiday.mail_body || !holiday.mail_body.trim()) {
+      return res.status(400).json({ success: false, message: 'mail_body is empty — nothing to send' });
+    }
+
+    const emps = await pool.query(
+      `SELECT first_name, last_name, email FROM employees
+        WHERE status = 'active' AND email IS NOT NULL AND email <> ''`
+    );
+
+    const { sendMail } = require('../utils/mailer');
+    const subject = `${process.env.COMPANY_NAME || 'Company'} — ${holiday.name}`;
+    let sent = 0, failed = 0;
+
+    for (const emp of emps.rows) {
+      try {
+        await sendMail({
+          to: emp.email,
+          subject,
+          text: `Hi ${emp.first_name},\n\n${holiday.mail_body}\n\nDate: ${holiday.date}\n\nRegards,\nHR Team`,
+        });
+        sent++;
+      } catch { failed++; }
+    }
+
+    await pool.query('UPDATE holidays SET notified_at = NOW() WHERE id = $1', [req.params.id]);
+    res.json({ success: true, sent, failed, total: emps.rows.length });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

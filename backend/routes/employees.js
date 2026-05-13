@@ -89,6 +89,7 @@ router.get('/', async (req, res) => {
        e.monthly_ctc AS "monthlyCTC", e.basic_salary AS "basicSalary",
        e.casual_leave AS "casualLeave", e.sick_leave AS "sickLeave", e.earned_leave AS "earnedLeave",
        e.photo_url AS "photoUrl", e.exit_date AS "exitDate", e.total_experience AS "totalExperience", e.expertise,
+       e.is_blacklisted AS "isBlacklisted", e.notice_period_end_date AS "noticePeriodEndDate", e.rehire_eligibility AS "rehireEligibility",
        (a.check_in IS NOT NULL AND a.check_out IS NULL) as "isCheckedIn",
        CASE
          WHEN a.check_in IS NULL  THEN 'yetToCheckIn'
@@ -163,6 +164,13 @@ router.get('/:id', async (req, res) => {
               e.monthly_ctc   AS "monthlyCTC",
               e.basic_salary  AS "basicSalary",
               e.photo_url     AS "photoUrl",
+              e.notice_period_end_date AS "noticePeriodEndDate",
+              e.status_reason          AS "statusReason",
+              e.rehire_eligibility     AS "rehireEligibility",
+              e.is_blacklisted         AS "isBlacklisted",
+              e.status_applied_at      AS "statusAppliedAt",
+              e.exit_date              AS "exitDate",
+              e.total_experience       AS "totalExperience",
               json_build_object('name', s.name, 'startTime', s.start_time, 'endTime', s.end_time) AS shift,
               json_build_object('firstName', m.first_name, 'lastName', m.last_name, 'email', m.email, 'id', m.id) AS manager,
               json_build_object('firstName', aa.first_name, 'lastName', aa.last_name, 'email', aa.email, 'id', aa.id, 'designation', aa.designation) AS "approvingAuthority"
@@ -248,6 +256,8 @@ router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
       workLocation, employmentType, status,
       // Zoho-synced extras
       exitDate, totalExperience, expertise,
+      // Employment status workflow (post-meeting feature)
+      noticePeriodEndDate, statusReason, rehireEligibility, isBlacklisted, statusAppliedAt,
     } = req.body;
 
     // Uniqueness guard if admin is changing employee_id. Unique index would
@@ -307,6 +317,12 @@ router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
     if (exitDate !== undefined)                 { updates.push(`exit_date = $${i++}`);                 params.push(exitDate || null); }
     if (totalExperience !== undefined)          { updates.push(`total_experience = $${i++}`);          params.push(totalExperience || null); }
     if (expertise !== undefined)                { updates.push(`expertise = $${i++}`);                 params.push(expertise || null); }
+    // Employment status workflow fields
+    if (noticePeriodEndDate !== undefined)      { updates.push(`notice_period_end_date = $${i++}`);    params.push(noticePeriodEndDate || null); }
+    if (statusReason !== undefined)             { updates.push(`status_reason = $${i++}`);             params.push(statusReason || null); }
+    if (rehireEligibility !== undefined)        { updates.push(`rehire_eligibility = $${i++}`);        params.push(rehireEligibility || null); }
+    if (isBlacklisted !== undefined)            { updates.push(`is_blacklisted = $${i++}`);            params.push(!!isBlacklisted); }
+    if (statusAppliedAt !== undefined)          { updates.push(`status_applied_at = $${i++}`);         params.push(statusAppliedAt || null); }
 
     if (updates.length === 0) return res.json({ success: true, message: 'Nothing to update' });
 

@@ -170,7 +170,31 @@ cron.schedule('0 18 * * 1-6', async () => {
   }
 });
 
-// 5. Auto-unpin expired announcements (Runs daily at 00:15).
+// 5. Auto-flip Notice Period employees past their end date → Resigned.
+//    Runs daily at 00:30. This is the access-revocation trigger: once an
+//    employee's status is no longer 'active', the login route rejects them.
+cron.schedule('30 0 * * *', async () => {
+  try {
+    const r = await pool.query(
+      `UPDATE employees
+          SET status            = 'resigned',
+              exit_date         = COALESCE(exit_date, notice_period_end_date),
+              status_applied_at = NOW(),
+              updated_at        = NOW()
+        WHERE status = 'notice_period'
+          AND notice_period_end_date IS NOT NULL
+          AND notice_period_end_date < CURRENT_DATE
+        RETURNING email`
+    );
+    if (r.rowCount > 0) {
+      logger.info({ resigned: r.rowCount, emails: r.rows.map(x => x.email) }, 'Auto-flipped Notice Period → Resigned');
+    }
+  } catch (err) {
+    logger.error({ err }, 'Notice Period auto-flip cron failed');
+  }
+});
+
+// 6. Auto-unpin expired announcements (Runs daily at 00:15).
 //    HR sets pinned_until when posting; this flips is_pinned to FALSE once
 //    that date passes. The announcement stays visible (is_active stays TRUE) —
 //    it just loses the pin badge, matching Slack/Zoho behaviour.

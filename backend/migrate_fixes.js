@@ -297,6 +297,33 @@ const steps = [
        WHERE uploaded_by IS NULL;
    END $$`,
 
+  // ── Employment status workflow (post-meeting feature) ────────────────────
+  // Adds the fields needed by the new "Update Employment Status" popup:
+  //   • notice_period_end_date — last working day for status='notice_period'
+  //   • status_reason          — why the status change happened
+  //   • rehire_eligibility     — 'yes' | 'no' | 'maybe' (for ex-employees)
+  //   • is_blacklisted         — never rehire / flag during onboarding
+  //   • status_applied_at      — when the current status took effect
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS notice_period_end_date DATE`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS status_reason         TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS rehire_eligibility    VARCHAR(20)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_blacklisted        BOOLEAN DEFAULT FALSE`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS status_applied_at     TIMESTAMPTZ`,
+
+  // ── Holiday metadata (post-meeting feature) ───────────────────────────────
+  // Adds the fields needed by the enhanced Holiday popup:
+  //   • category         — Election / No Workload / General Maintenance / etc.
+  //   • is_compensatory  — true = employees must work another day to compensate
+  //   • mail_body        — text used by /api/holidays/:id/notify to email everyone
+  //   • compensation_type        — 'future' | 'past' (for working-day exceptions)
+  //   • compensated_holiday_id   — link from a working day to the holiday it makes up for
+  `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS category                VARCHAR(50)`,
+  `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS is_compensatory         BOOLEAN DEFAULT FALSE`,
+  `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS mail_body               TEXT`,
+  `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS compensation_type       VARCHAR(30)`,
+  `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS compensated_holiday_id  UUID REFERENCES holidays(id) ON DELETE SET NULL`,
+  `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS notified_at             TIMESTAMPTZ`,
+
   // ── Previous employment history from Zoho tabularSections.SS_EMP_HISTORY ─
   `CREATE TABLE IF NOT EXISTS employee_previous_employment (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

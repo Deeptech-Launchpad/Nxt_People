@@ -139,4 +139,19 @@ const sendOnboardingEmail = async ({ to, candidateName, dueDate, registrationLin
   });
 };
 
-module.exports = { sendOnboardingEmail };
+/**
+ * Generic transactional sender. Used by holiday notifications and other
+ * one-off broadcasts. `to` may be a single email or an array.
+ */
+const sendMail = async ({ to, subject, text, html }) => {
+  const transporter = createTransporter();
+  await transporter.sendMail({
+    from: `"${process.env.COMPANY_NAME || 'HR Team'}" <${process.env.EMAIL_USER}>`,
+    to: Array.isArray(to) ? to.join(', ') : to,
+    subject,
+    text,
+    html: html || `<pre style="font-family:sans-serif;font-size:14px;">${(text || '').replace(/</g, '&lt;')}</pre>`,
+  });
+};
+
+module.exports = { sendOnboardingEmail, sendMail };
