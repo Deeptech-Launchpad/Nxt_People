@@ -297,6 +297,19 @@ const steps = [
        WHERE uploaded_by IS NULL;
    END $$`,
 
+  // ── Previous employment history from Zoho tabularSections.SS_EMP_HISTORY ─
+  `CREATE TABLE IF NOT EXISTS employee_previous_employment (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    company        VARCHAR(255),
+    designation    VARCHAR(255),
+    from_date      DATE,
+    to_date        DATE,
+    job_description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_prev_emp_employee ON employee_previous_employment(employee_id)`,
+
   // ── Zoho-synced extras: exit date, experience, expertise ──────────────────
   // Sourced from Zoho People fields: Dateofexit, total_experience.displayValue,
   // Expertise. exit_date powers the "Left on" column in the Ex Employees tab.

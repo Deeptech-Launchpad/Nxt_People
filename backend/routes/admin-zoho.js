@@ -121,6 +121,66 @@ function mapEmployee(rec) {
 }
 
 /**
+ * Parse Zoho's tabularSections — nested child records inside the main
+ * employee response. Returns { education, prevEmployment, emergency } where:
+ *   • education      = array of education rows
+ *   • prevEmployment = array of past-job rows
+ *   • emergency      = first emergency-contact row (we store one flat)
+ *
+ * Zoho section names vary per org (SS_FAMILY / Family / familyMembers / etc.).
+ * We do case-insensitive substring matching on the section key, then a
+ * flexible pick() on row fields so different field-name variants all work.
+ */
+function parseTabularSections(rec) {
+  const sections = rec && rec.tabularSections;
+  if (!sections || typeof sections !== 'object') {
+    return { education: [], prevEmployment: [], emergency: null };
+  }
+
+  // Find a section by keyword(s) — case-insensitive, matches any of the names.
+  const findSection = (...keywords) => {
+    for (const key of Object.keys(sections)) {
+      const kLower = key.toLowerCase();
+      if (keywords.some(k => kLower.includes(k))) {
+        const arr = sections[key];
+        return Array.isArray(arr) ? arr : [];
+      }
+    }
+    return [];
+  };
+
+  const familyRows    = findSection('family', 'dependent', 'emergency');
+  const educationRows = findSection('education', 'qualification');
+  const empHistoryRows = findSection('emp_history', 'employment', 'experience', 'previous');
+
+  const education = educationRows.map(row => ({
+    qualification:    pick(row, 'Highest_Qualification', 'Qualification', 'Degree', 'Level'),
+    degree:           pick(row, 'Degree', 'Course', 'Specialization'),
+    institute:        pick(row, 'Institute_Name', 'Institution', 'University', 'School', 'College'),
+    yearOfPassing:    pick(row, 'Year_Of_Passing', 'Year_of_passing', 'YearOfPassing', 'Passing_Year'),
+    percentageOrCgpa: pick(row, 'Marks_Or_CGPA', 'Percentage', 'CGPA', 'Marks', 'Grade'),
+  })).filter(r => r.institute || r.qualification || r.degree);
+
+  const prevEmployment = empHistoryRows.map(row => ({
+    company:      pick(row, 'Previous_Company', 'Company_Name', 'Company', 'Employer'),
+    designation:  pick(row, 'Designation', 'Job_Title', 'Role', 'Position'),
+    fromDate:     toIsoDate(pick(row, 'From_Date', 'From', 'Start_Date', 'Joining_Date')),
+    toDate:       toIsoDate(pick(row, 'To_Date', 'To', 'End_Date', 'Relieving_Date')),
+    description:  pick(row, 'Job_Description', 'Description', 'Responsibilities'),
+  })).filter(r => r.company || r.designation);
+
+  // Emergency contact: first row of family-type section, if any.
+  const first = familyRows[0];
+  const emergency = first ? {
+    name:     pick(first, 'Name', 'First_Name', 'Contact_Name', 'Full_Name'),
+    phone:    pick(first, 'Mobile_no', 'Mobile', 'Phone', 'Contact_Number', 'Mobile_Number'),
+    relation: pick(first, 'Relationship', 'Relation', 'Type'),
+  } : null;
+
+  return { education, prevEmployment, emergency };
+}
+
+/**
  * Upsert one mapped employee. Returns `'inserted'`, `'updated'`, or throws.
  * Never overwrites: role, password, MFA, leave balances.
  */
@@ -202,13 +262,73 @@ router.post('/zoho-sync', async (req, res) => {
   try {
     logger.info({ initiatedBy: req.user._id }, 'Zoho sync started');
 
-    // ── Pass 1 — upsert every employee ────────────────────────────────────
+    // ── Pass 1 — upsert every employee + their tabularSections children ─
     for await (const rec of iterateEmployees()) {
       const mapped = mapEmployee(rec);
       if (!mapped) { stats.skipped++; continue; }
+
+      // Pull tabularSections data BEFORE upsert so we can fill emergency
+      // contact fields from family rows when Zoho doesn't provide them at
+      // the top level.
+      const tabular = parseTabularSections(rec);
+      if (tabular.emergency) {
+        mapped.emergencyContactName     = mapped.emergencyContactName     || tabular.emergency.name;
+        mapped.emergencyContactPhone    = mapped.emergencyContactPhone    || tabular.emergency.phone;
+        mapped.emergencyContactRelation = mapped.emergencyContactRelation || tabular.emergency.relation;
+      }
+
       try {
         const op = await upsertEmployee(client, mapped);
         stats[op]++;
+
+        // Resolve the new employee id so we can attach education / history rows.
+        const idRow = await client.query(
+          `SELECT id FROM employees WHERE LOWER(email) = $1`,
+          [mapped.email]
+        );
+        const empId = idRow.rows[0]?.id;
+
+        // Replace-on-sync: delete existing Zoho-sourced rows then re-insert.
+        // Education rows go to employee_education.
+        if (empId && tabular.education.length > 0) {
+          for (const ed of tabular.education) {
+            // Don't duplicate — only insert if no row with the same institute
+            // and year exists for this employee.
+            await client.query(
+              `INSERT INTO employee_education
+                 (employee_id, highest_qualification, degree,
+                  university_or_institution, year_of_passing, percentage_or_cgpa)
+               SELECT $1, $2, $3, $4, $5, $6
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM employee_education
+                   WHERE employee_id = $1
+                     AND COALESCE(university_or_institution, '') = COALESCE($4, '')
+                     AND COALESCE(year_of_passing, 0) = COALESCE($5, 0)
+                )`,
+              [empId, ed.qualification, ed.degree, ed.institute,
+               ed.yearOfPassing ? parseInt(ed.yearOfPassing, 10) || null : null,
+               ed.percentageOrCgpa]
+            );
+          }
+        }
+        // Previous employment rows.
+        if (empId && tabular.prevEmployment.length > 0) {
+          for (const pe of tabular.prevEmployment) {
+            await client.query(
+              `INSERT INTO employee_previous_employment
+                 (employee_id, company, designation, from_date, to_date, job_description)
+               SELECT $1, $2, $3, $4::date, $5::date, $6
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM employee_previous_employment
+                   WHERE employee_id = $1
+                     AND COALESCE(company, '') = COALESCE($2, '')
+                     AND COALESCE(designation, '') = COALESCE($3, '')
+                )`,
+              [empId, pe.company, pe.designation, pe.fromDate, pe.toDate, pe.description]
+            );
+          }
+        }
+
         if (mapped.reportsToEmail) {
           managerLinks.push({
             employeeEmail: mapped.email,
