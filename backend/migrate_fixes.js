@@ -297,6 +297,92 @@ const steps = [
        WHERE uploaded_by IS NULL;
    END $$`,
 
+  // ── Zoho-synced extras: exit date, experience, expertise ──────────────────
+  // Sourced from Zoho People fields: Dateofexit, total_experience.displayValue,
+  // Expertise. exit_date powers the "Left on" column in the Ex Employees tab.
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS exit_date DATE`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS total_experience VARCHAR(100)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS expertise TEXT`,
+
+  // ── Backfill legacy duplicate columns ─────────────────────────────────────
+  // The schema accumulated overlapping column pairs over its migration history
+  // (birth_date / date_of_birth, manager_id / reporting_manager_id, etc.).
+  // The codebase uses the right-hand "new" name everywhere; the left-hand
+  // "legacy" columns stay as NULL after Zoho sync. Mirror data both ways so
+  // any code path that still references the old name keeps working, and the
+  // Edit modal shows the same data regardless of which side was filled.
+  // Each guarded by EXISTS so the migration is safe on DBs missing either col.
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employees' AND column_name='birth_date')
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name='employees' AND column_name='date_of_birth')
+     THEN
+       UPDATE employees SET birth_date    = date_of_birth WHERE birth_date    IS NULL AND date_of_birth IS NOT NULL;
+       UPDATE employees SET date_of_birth = birth_date    WHERE date_of_birth IS NULL AND birth_date    IS NOT NULL;
+     END IF;
+   END $$`,
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employees' AND column_name='date_of_joining')
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name='employees' AND column_name='joining_date')
+     THEN
+       UPDATE employees SET date_of_joining = joining_date    WHERE date_of_joining IS NULL AND joining_date    IS NOT NULL;
+       UPDATE employees SET joining_date    = date_of_joining WHERE joining_date    IS NULL AND date_of_joining IS NOT NULL;
+     END IF;
+   END $$`,
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employees' AND column_name='manager_id')
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name='employees' AND column_name='reporting_manager_id')
+     THEN
+       UPDATE employees SET manager_id           = reporting_manager_id WHERE manager_id           IS NULL AND reporting_manager_id IS NOT NULL;
+       UPDATE employees SET reporting_manager_id = manager_id           WHERE reporting_manager_id IS NULL AND manager_id           IS NOT NULL;
+     END IF;
+   END $$`,
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employees' AND column_name='current_address')
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name='employees' AND column_name='address')
+     THEN
+       UPDATE employees SET current_address = address         WHERE current_address IS NULL AND address         IS NOT NULL;
+       UPDATE employees SET address         = current_address WHERE address         IS NULL AND current_address IS NOT NULL;
+     END IF;
+   END $$`,
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employees' AND column_name='emergency_contact_number')
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name='employees' AND column_name='emergency_contact_phone')
+     THEN
+       UPDATE employees SET emergency_contact_number = emergency_contact_phone  WHERE emergency_contact_number IS NULL AND emergency_contact_phone  IS NOT NULL;
+       UPDATE employees SET emergency_contact_phone  = emergency_contact_number WHERE emergency_contact_phone  IS NULL AND emergency_contact_number IS NOT NULL;
+     END IF;
+   END $$`,
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employees' AND column_name='emergency_contact_relationship')
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name='employees' AND column_name='emergency_contact_relation')
+     THEN
+       UPDATE employees SET emergency_contact_relationship = emergency_contact_relation     WHERE emergency_contact_relationship IS NULL AND emergency_contact_relation     IS NOT NULL;
+       UPDATE employees SET emergency_contact_relation     = emergency_contact_relationship WHERE emergency_contact_relation     IS NULL AND emergency_contact_relationship IS NOT NULL;
+     END IF;
+   END $$`,
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employees' AND column_name='avatar')
+        AND EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name='employees' AND column_name='photo_url')
+     THEN
+       UPDATE employees SET avatar    = photo_url WHERE avatar    IS NULL AND photo_url IS NOT NULL;
+       UPDATE employees SET photo_url = avatar    WHERE photo_url IS NULL AND avatar    IS NOT NULL;
+     END IF;
+   END $$`,
+
   // ── Backfill company for legacy Zoho-synced rows ──────────────────────────
   // Earlier Zoho imports stored company as NULL when Zoho didn't return it.
   // Default any NULL company to 'AltiusNxt' so the per-company Employee ID

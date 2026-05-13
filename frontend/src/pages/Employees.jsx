@@ -25,6 +25,8 @@ const initForm = {
   emergencyContactName:'', emergencyContactPhone:'', emergencyContactRelation:'',
   // Work
   workLocation:'', employmentType:'', status:'active',
+  // Zoho extras
+  exitDate:'', totalExperience:'', expertise:'',
 };
 
 // Company list must match the backend COMPANY_PREFIXES in
@@ -164,6 +166,10 @@ export default function Employees() {
       workLocation:   get('workLocation',   'work_location'),
       employmentType: get('employmentType', 'employment_type'),
       status:         get('status', 'status') || 'active',
+      // Zoho extras
+      exitDate:        (get('exitDate',        'exit_date') || '').split?.('T')[0] || '',
+      totalExperience: get('totalExperience', 'total_experience'),
+      expertise:       get('expertise', 'expertise'),
     });
     setLastSuggestedId(get('employeeId', 'employee_id') || '');
     setModal(true);
@@ -315,14 +321,27 @@ export default function Employees() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead><tr className="bg-slate-50">{['Employee','ID','Department','Role','Designation','Joining Date','Actions'].map(h=><th key={h} className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
+                <thead><tr className="bg-slate-50">{['Employee','ID','Department','Role','Designation', statusFilter === 'inactive' ? 'Left On' : 'Joining Date','Actions'].map(h=><th key={h} className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {employees.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-slate-400">No employees found</td></tr> :
                   employees.map(emp => (
                     <tr key={emp._id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{emp.firstName[0]}{emp.lastName[0]}</div>
+                          {/* Initials gradient is always rendered. If a photo URL
+                              exists AND loads, the image overlays on top. If it
+                              fails (broken URL, Zoho auth, etc.), the image
+                              hides itself and the initials show through —
+                              giving every row a consistent avatar circle. */}
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 relative overflow-hidden">
+                            <span>{emp.firstName?.[0]}{emp.lastName?.[0]}</span>
+                            {emp.photoUrl && (
+                              <img src={emp.photoUrl} alt=""
+                                referrerPolicy="no-referrer"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                className="absolute inset-0 w-full h-full object-cover"/>
+                            )}
+                          </div>
                           <div><p className="text-sm font-medium text-slate-700">{emp.firstName} {emp.lastName}</p><p className="text-xs text-slate-400">{emp.email}</p></div>
                         </div>
                       </td>
@@ -330,7 +349,11 @@ export default function Employees() {
                       <td className="px-5 py-3.5 text-sm text-slate-600">{emp.department}</td>
                       <td className="px-5 py-3.5"><span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${roleColors[emp.role]}`}>{emp.role}</span></td>
                       <td className="px-5 py-3.5 text-sm text-slate-600">{emp.designation}</td>
-                      <td className="px-5 py-3.5 text-sm text-slate-500">{emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString('en-US',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
+                      <td className="px-5 py-3.5 text-sm text-slate-500">
+                        {statusFilter === 'inactive'
+                          ? (emp.exitDate ? new Date(emp.exitDate).toLocaleDateString('en-US',{day:'2-digit',month:'short',year:'numeric'}) : '—')
+                          : (emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString('en-US',{day:'2-digit',month:'short',year:'numeric'}) : '—')}
+                      </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
                           <button onClick={()=>openView(emp._id)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"><Eye size={14}/></button>
@@ -633,6 +656,25 @@ export default function Employees() {
                 </div>
               </div>
 
+              {/* Experience + Expertise */}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Experience & Expertise</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Total Experience</label>
+                    <input value={form.totalExperience} onChange={e=>setForm({...form,totalExperience:e.target.value})} placeholder="e.g. 5 years 3 months" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Work Location</label>
+                    <input value={form.workLocation} onChange={e=>setForm({...form,workLocation:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Expertise / Skills</label>
+                    <textarea rows={2} value={form.expertise} onChange={e=>setForm({...form,expertise:e.target.value})} placeholder="e.g. React, Node.js, Python (comma separated)" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none"/>
+                  </div>
+                </div>
+              </div>
+
               {/* Status (Current / Ex Employee) — admin can toggle here */}
               {editEmp && (
                 <div className="border-t border-slate-100 pt-4">
@@ -654,6 +696,13 @@ export default function Employees() {
                         {['Full Time','Part Time','Contract','Intern','Consultant'].map(o=><option key={o}>{o}</option>)}
                       </select>
                     </div>
+                    {/* Exit Date — only meaningful when status != active. */}
+                    {form.status !== 'active' && (
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium text-slate-600 mb-1.5">Exit Date <span className="text-slate-400 font-normal">(when they left)</span></label>
+                        <input type="date" value={form.exitDate} onChange={e=>setForm({...form,exitDate:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

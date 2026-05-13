@@ -88,6 +88,7 @@ router.get('/', async (req, res) => {
       `SELECT e.id as "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.email, e.role, e.department, e.designation, e.company, e.division, e.employee_id AS "employeeId", e.status, e.joining_date AS "joiningDate", e.phone, e.reporting_manager_id AS "reportingManagerId", e.approving_authority_id AS "approvingAuthorityId",
        e.monthly_ctc AS "monthlyCTC", e.basic_salary AS "basicSalary",
        e.casual_leave AS "casualLeave", e.sick_leave AS "sickLeave", e.earned_leave AS "earnedLeave",
+       e.photo_url AS "photoUrl", e.exit_date AS "exitDate", e.total_experience AS "totalExperience", e.expertise,
        (a.check_in IS NOT NULL AND a.check_out IS NULL) as "isCheckedIn",
        CASE
          WHEN a.check_in IS NULL  THEN 'yetToCheckIn'
@@ -245,6 +246,8 @@ router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
       bankName, bankAccount, bankIfsc,
       emergencyContactName, emergencyContactPhone, emergencyContactRelation,
       workLocation, employmentType, status,
+      // Zoho-synced extras
+      exitDate, totalExperience, expertise,
     } = req.body;
 
     // Uniqueness guard if admin is changing employee_id. Unique index would
@@ -301,6 +304,9 @@ router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
     if (workLocation !== undefined)             { updates.push(`work_location = $${i++}`);             params.push(workLocation || null); }
     if (employmentType !== undefined)           { updates.push(`employment_type = $${i++}`);           params.push(employmentType || null); }
     if (status !== undefined)                   { updates.push(`status = $${i++}`);                    params.push(status || 'active'); }
+    if (exitDate !== undefined)                 { updates.push(`exit_date = $${i++}`);                 params.push(exitDate || null); }
+    if (totalExperience !== undefined)          { updates.push(`total_experience = $${i++}`);          params.push(totalExperience || null); }
+    if (expertise !== undefined)                { updates.push(`expertise = $${i++}`);                 params.push(expertise || null); }
 
     if (updates.length === 0) return res.json({ success: true, message: 'Nothing to update' });
 

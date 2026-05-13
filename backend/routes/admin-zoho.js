@@ -70,31 +70,35 @@ function mapEmployee(rec) {
                        process.env.ZOHO_DEFAULT_COMPANY ||
                        'AltiusNxt',
     division:          pick(rec, 'Division', 'BusinessUnit'),
-    workLocation:      pick(rec, 'Location', 'WorkLocation', 'Work_Location', 'Office'),
-    employmentType:    pick(rec, 'EmploymentType', 'Employment_Type', 'EmployeeType'),
-    sourceOfHire:      pick(rec, 'SourceOfHire', 'Source_Of_Hire'),
-    joiningDate:       toIsoDate(pick(rec, 'Dateofjoining', 'DateOfJoining', 'JoiningDate')),
+    // Zoho People is case-sensitive on JSON keys, and the AltiusNxt form
+    // uses keys like "Work_location" (lowercase l) and "Employee_type"
+    // (lowercase t) instead of the CamelCase variants. Try all common forms.
+    workLocation:      pick(rec, 'Work_location', 'WorkLocation', 'Work_Location', 'Location', 'LocationName', 'Office'),
+    employmentType:    pick(rec, 'Employee_type', 'EmploymentType', 'Employment_Type', 'EmployeeType'),
+    sourceOfHire:      pick(rec, 'Source_of_hire', 'SourceOfHire', 'Source_Of_Hire'),
+    joiningDate:       toIsoDate(pick(rec, 'Dateofjoining', 'Date_of_joining', 'DateOfJoining', 'JoiningDate')),
     status:            ourStatus,
-    reportsToEmail:    (pick(rec, 'ReportingTo', 'Reporting_To', 'ManagerEmail') || '').toLowerCase() || null,
-    secondaryReportsToEmail: (pick(rec, 'SecondaryReportingTo', 'Secondary_Reporting_To') || '').toLowerCase() || null,
+    reportsToEmail:    (pick(rec, 'Reporting_To.MailID', 'Reporting_To', 'ReportingTo', 'ManagerEmail') || '').toLowerCase() || null,
+    secondaryReportsToEmail: (pick(rec, 'Second_Reporting_To.MailID', 'Second_Reporting_To', 'SecondaryReportingTo', 'Secondary_Reporting_To') || '').toLowerCase() || null,
     // ── Personal ──────────────────────────────────────────────────────
-    dateOfBirth:    toIsoDate(pick(rec, 'Dateofbirth', 'DateOfBirth', 'DOB')),
+    dateOfBirth:    toIsoDate(pick(rec, 'Date_of_birth', 'Dateofbirth', 'DateOfBirth', 'DOB')),
     gender:         pick(rec, 'Gender'),
-    maritalStatus:  pick(rec, 'MaritalStatus', 'Marital_Status'),
-    bloodGroup:     pick(rec, 'BloodGroup', 'Blood_Group'),
+    maritalStatus:  pick(rec, 'Marital_status', 'MaritalStatus', 'Marital_Status'),
+    bloodGroup:     pick(rec, 'Blood_group', 'BloodGroup', 'Blood_Group'),
     nationality:    pick(rec, 'Nationality'),
     aboutMe:        pick(rec, 'AboutMe', 'About_Me'),
     // ── Contact ───────────────────────────────────────────────────────
     phone:          pick(rec, 'Mobile', 'MobileNumber', 'PersonalMobile', 'Phone'),
-    workPhone:      pick(rec, 'WorkPhone', 'Work_Phone', 'OfficePhone'),
+    workPhone:      pick(rec, 'Work_phone', 'WorkPhone', 'Work_Phone', 'OfficePhone'),
     extension:      pick(rec, 'Extension', 'Ext'),
-    personalEmail:  (pick(rec, 'PersonalEmail', 'Personal_Email') || '').toLowerCase() || null,
-    address:           pick(rec, 'Presentaddress', 'PresentAddress', 'CurrentAddress', 'Address'),
-    permanentAddress:  pick(rec, 'Permanentaddress', 'PermanentAddress'),
+    // Zoho's AltiusNxt form names the personal-email field "Other_Email".
+    personalEmail:  (pick(rec, 'Other_Email', 'PersonalEmail', 'Personal_Email') || '').toLowerCase() || null,
+    address:           pick(rec, 'Present_Address', 'Presentaddress', 'PresentAddress', 'CurrentAddress', 'Address'),
+    permanentAddress:  pick(rec, 'Permanent_Address', 'Permanentaddress', 'PermanentAddress'),
     // ── Identity documents (PII) ──────────────────────────────────────
-    panNumber:     pick(rec, 'PAN', 'PAN_Number', 'PANNumber'),
-    aadhaarNumber: pick(rec, 'Aadhaar', 'AadhaarNumber', 'Aadhar_Number', 'AadharNumber'),
-    uanNumber:     pick(rec, 'UAN', 'UANNumber', 'UAN_Number'),
+    panNumber:     pick(rec, 'Pan_Number', 'PAN_Number', 'PAN', 'PANNumber'),
+    aadhaarNumber: pick(rec, 'Aadhaar_Number', 'AadhaarNumber', 'Aadhar_Number', 'AadharNumber', 'Aadhaar'),
+    uanNumber:     pick(rec, 'UAN_Number', 'UANNumber', 'UAN'),
     // ── Bank ──────────────────────────────────────────────────────────
     bankName:    pick(rec, 'BankName', 'Bank_Name'),
     bankAccount: pick(rec, 'BankAccountNumber', 'AccountNumber', 'Bank_Account_Number'),
@@ -104,7 +108,15 @@ function mapEmployee(rec) {
     emergencyContactPhone:    pick(rec, 'EmergencyContactNumber', 'EmergencyContactPhone', 'Emergency_Contact_Number'),
     emergencyContactRelation: pick(rec, 'EmergencyContactRelationship', 'EmergencyContactRelation'),
     // ── Photo ─────────────────────────────────────────────────────────
-    photoUrl: pick(rec, 'Photo', 'PhotoURL', 'PhotoUrl', 'EmployeePhoto'),
+    // Photo_downloadUrl is Zoho's CDN URL; preferred over the raw Photo field
+    // (which is sometimes just an id or base64 blob).
+    photoUrl: pick(rec, 'Photo_downloadUrl', 'PhotoURL', 'PhotoUrl', 'Photo', 'EmployeePhoto'),
+    // ── Exit / experience / expertise ─────────────────────────────────
+    exitDate:        toIsoDate(pick(rec, 'Dateofexit', 'Date_of_exit', 'DateOfExit', 'ExitDate')),
+    // Zoho exposes both a numeric (months?) and a formatted "5 years 3 months"
+    // string via the .displayValue suffix. The formatted version is friendlier.
+    totalExperience: pick(rec, 'total_experience.displayValue', 'Experience.displayValue', 'total_experience', 'Experience', 'TotalExperience'),
+    expertise:       pick(rec, 'Expertise', 'Skills', 'expertise'),
   };
 }
 
@@ -132,6 +144,7 @@ async function upsertEmployee(client, mapped) {
     'photo_url',
     'joining_date',
     'employee_id',
+    'exit_date', 'total_experience', 'expertise',
   ];
   const values = [
     mapped.firstName || null, mapped.lastName || null, mapped.nickName || null,
@@ -145,9 +158,10 @@ async function upsertEmployee(client, mapped) {
     mapped.photoUrl || null,
     mapped.joiningDate,
     mapped.employeeId || null,
+    mapped.exitDate, mapped.totalExperience || null, mapped.expertise || null,
   ];
-  // joining_date and date_of_birth need a ::date cast in the SQL — track their positions.
-  const DATE_CAST_COLS = new Set(['date_of_birth', 'joining_date']);
+  // joining_date, date_of_birth, exit_date need a ::date cast in the SQL.
+  const DATE_CAST_COLS = new Set(['date_of_birth', 'joining_date', 'exit_date']);
 
   if (existing.rows.length > 0) {
     // UPDATE — never touches role / password / MFA / leave balances.
