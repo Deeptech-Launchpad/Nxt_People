@@ -59,6 +59,12 @@ jobs:
       - name: Seed sample data
         run: npm run seed || echo "seed step skipped"
 
+      # Creates admin@nxtpeople.com / sarah@nxtpeople.com / michael@nxtpeople.com
+      # with bcrypt('password123'). Tests log in as these users, so this MUST
+      # succeed before Jest runs (no silent fallback).
+      - name: Ensure test users exist
+        run: npm run test:setup
+
       - name: Run Jest
         run: npm test -- --runInBand --forceExit
 
