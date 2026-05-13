@@ -153,12 +153,24 @@ function ConfirmModal({ employee, onClose, onConfirmed }) {
       })
       .catch(console.error);
 
-    // Prefill the Employee ID field with the next NXT#### in the sequence.
-    // Admin can keep the suggestion or replace it with a custom ID before saving.
-    api.get('/employees/next-id')
-      .then(r => setForm(f => ({ ...f, employeeId: r.data.data?.suggested || '' })))
-      .catch(console.error);
   }, [employee._id]);
+
+  // Refetch the suggested Employee ID whenever the Company changes. The
+  // backend uses a per-company prefix (NXT for AltiusNxt, ATL for Altius
+  // Technology, …) so each company has its own sequence. The suggestion
+  // only updates the field if it's empty or still matches an older suggestion
+  // — once the admin types a custom value, we leave it alone.
+  const [lastSuggested, setLastSuggested] = useState('');
+  useEffect(() => {
+    api.get(`/employees/next-id?company=${encodeURIComponent(form.companyName || '')}`)
+      .then(r => {
+        const next = r.data.data?.suggested || '';
+        setForm(f => (!f.employeeId || f.employeeId === lastSuggested) ? { ...f, employeeId: next } : f);
+        setLastSuggested(next);
+      })
+      .catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.companyName]);
 
   const handleConfirm = async () => {
     setSaving(true);

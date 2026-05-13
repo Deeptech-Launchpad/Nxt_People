@@ -8,6 +8,7 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 const { protect, authorize } = require('../middleware/auth');
+const { nextIdForCompany } = require('../utils/employeeId');
 
 // Nodemailer setup
 const transporter = nodemailer.createTransport({
@@ -294,13 +295,11 @@ router.put('/:id/confirm', async (req, res) => {
     // Resolve final employee_id. Priority:
     //   1. Admin-typed value from the form (if any)
     //   2. Existing employee_id on the row (if Zoho or earlier set it)
-    //   3. Next NXT#### in the sequence
+    //   3. Next per-company sequence (e.g. ANXT2600150 for AltiusNxt joining
+    //      in 2026, dtlp-015 for DTLP). Format rules: utils/employeeId.js.
     let assignedEmployeeId = (employeeId || '').trim() || empRes.rows[0].employee_id;
     if (!assignedEmployeeId) {
-      const seqRes = await pool.query(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
-      );
-      assignedEmployeeId = `NXT${String(seqRes.rows[0].next).padStart(4, '0')}`;
+      assignedEmployeeId = await nextIdForCompany(pool, companyName);
     }
 
     // Uniqueness guard if admin typed a custom ID. The unique index on the

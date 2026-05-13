@@ -6,7 +6,11 @@ import { useAuth } from '../context/AuthContext';
 
 // Options will be fetched dynamically from the database
 
-const initForm = { firstName:'', lastName:'', email:'', employeeId:'', password:'', phone:'', role:'employee', department:'', designation:'', joiningDate: new Date().toISOString().split('T')[0], monthlyCTC:'', basicSalary:'', casualLeave:'', sickLeave:'', earnedLeave:'', reportingManagerId:'', approvingAuthorityId:'' };
+const initForm = { firstName:'', lastName:'', email:'', employeeId:'', password:'', phone:'', role:'employee', department:'', designation:'', company:'', joiningDate: new Date().toISOString().split('T')[0], monthlyCTC:'', basicSalary:'', casualLeave:'', sickLeave:'', earnedLeave:'', reportingManagerId:'', approvingAuthorityId:'' };
+
+// Company list must match the backend COMPANY_PREFIXES in
+// backend/utils/employeeId.js — keeps the per-company ID sequence working.
+const COMPANIES = ['AltiusNxt', 'Altius Technology', 'DTLP'];
 
 
 export default function Employees() {
@@ -71,10 +75,7 @@ export default function Employees() {
   const openCreate = () => {
     setEditEmp(null);
     setForm(initForm);
-    // Suggest the next NXT#### for the new employee. Admin can edit it.
-    api.get('/employees/next-id')
-      .then(r => setForm(f => ({ ...f, employeeId: r.data.data?.suggested || '' })))
-      .catch(console.error);
+    setLastSuggestedId('');
     setModal(true);
   };
   const openEdit = (emp) => {
@@ -84,14 +85,32 @@ export default function Employees() {
       employeeId: emp.employeeId || '',
       password:'', phone:emp.phone||'', role:emp.role,
       department:emp.department, designation:emp.designation||'',
+      company: emp.company || '',
       joiningDate: emp.joiningDate?.split('T')[0]||'',
       reportingManagerId: emp.reportingManagerId||'',
       approvingAuthorityId: emp.approvingAuthorityId||'',
       monthlyCTC: emp.monthlyCTC||'', basicSalary: emp.basicSalary||'',
       casualLeave: emp.casualLeave??'', sickLeave: emp.sickLeave??'', earnedLeave: emp.earnedLeave??''
     });
+    setLastSuggestedId(emp.employeeId || '');
     setModal(true);
   };
+
+  // Per-company Employee ID suggestion (only when creating a new employee).
+  // Refetches whenever Company changes; respects admin-typed custom IDs.
+  const [lastSuggestedId, setLastSuggestedId] = useState('');
+  useEffect(() => {
+    if (editEmp) return; // don't override existing IDs when editing
+    if (!modal) return;
+    api.get(`/employees/next-id?company=${encodeURIComponent(form.company || '')}`)
+      .then(r => {
+        const next = r.data.data?.suggested || '';
+        setForm(f => (!f.employeeId || f.employeeId === lastSuggestedId) ? { ...f, employeeId: next } : f);
+        setLastSuggestedId(next);
+      })
+      .catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.company, modal, editEmp]);
 
   const openView = async (id) => {
     setViewEmpId(id);
@@ -324,10 +343,19 @@ export default function Employees() {
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Email</label>
                 <input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"/>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Employee ID</label>
-                <input value={form.employeeId} onChange={e=>setForm({...form,employeeId:e.target.value})} placeholder="e.g. NXT0001" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"/>
-                <p className="text-[11px] text-slate-400 mt-1">{editEmp ? 'Change if needed — must be unique.' : 'Auto-suggested. Edit if you need a custom format.'}</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Company</label>
+                  <select value={form.company} onChange={e=>setForm({...form,company:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
+                    <option value="">Select...</option>
+                    {COMPANIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Employee ID</label>
+                  <input value={form.employeeId} onChange={e=>setForm({...form,employeeId:e.target.value})} placeholder="e.g. NXT0001" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"/>
+                  <p className="text-[11px] text-slate-400 mt-1">{editEmp ? 'Change if needed — must be unique.' : 'Auto-suggested based on Company.'}</p>
+                </div>
               </div>
               {!editEmp && <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Password</label>

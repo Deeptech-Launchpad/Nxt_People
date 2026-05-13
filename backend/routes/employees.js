@@ -9,15 +9,14 @@ const { logAudit } = require('../utils/audit');
 
 router.use(protect);
 
-// GET next suggested employee_id — used by the Confirm Registration modal
-// and Add Employee form to prefill the field. Admin can accept the suggestion
-// or type a custom ID (e.g. matching a Zoho or HRMS prefix).
-router.get('/next-id', async (_req, res) => {
+const { nextIdForCompany } = require('../utils/employeeId');
+
+// GET next suggested employee_id — used by Confirm Registration + Add Employee
+// modals to prefill. Pass ?company=AltiusNxt for the per-company format
+// (e.g. ANXT2600150). See utils/employeeId.js for the format rules.
+router.get('/next-id', async (req, res) => {
   try {
-    const r = await pool.query(
-      "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
-    );
-    const suggested = `NXT${String(r.rows[0].next).padStart(4, '0')}`;
+    const suggested = await nextIdForCompany(pool, req.query.company);
     res.json({ success: true, data: { suggested } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -162,13 +161,11 @@ router.post('/', authorize('admin', 'manager'), async (req, res) => {
     if (password) hashedPassword = await bcrypt.hash(password, 12);
 
     // Use admin-supplied ID when provided; otherwise auto-generate the next
-    // NXT#### in the sequence. Uniqueness is enforced below.
+    // per-company sequence (e.g. ANXT2600150 for AltiusNxt, dtlp-015 for DTLP).
+    // Uniqueness is enforced by the partial unique index + the clash check below.
     let employeeId = (providedId || '').trim();
     if (!employeeId) {
-      const seqRes = await pool.query(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
-      );
-      employeeId = `NXT${String(seqRes.rows[0].next).padStart(4, '0')}`;
+      employeeId = await nextIdForCompany(pool, company);
     } else {
       const clash = await pool.query('SELECT id FROM employees WHERE employee_id = $1', [employeeId]);
       if (clash.rows.length > 0) {

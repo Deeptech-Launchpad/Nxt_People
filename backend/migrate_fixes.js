@@ -297,6 +297,13 @@ const steps = [
        WHERE uploaded_by IS NULL;
    END $$`,
 
+  // ── Employee ID uniqueness ────────────────────────────────────────────────
+  // Belt-and-suspenders for the application-level uniqueness check in
+  // routes/employees.js + routes/registrations.js. Partial index so multiple
+  // pre-confirmation rows with NULL employee_id don't collide.
+  `CREATE UNIQUE INDEX IF NOT EXISTS uniq_employees_employee_id
+     ON employees (employee_id) WHERE employee_id IS NOT NULL`,
+
   // ── Education: add degree + course/specialization ─────────────────────────
   // The onboarding form collects "Degree" (e.g. B.Tech) and we're adding
   // "Course / Specialization" (e.g. Artificial Intelligence & Data Science).
