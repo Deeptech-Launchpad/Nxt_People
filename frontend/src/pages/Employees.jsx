@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 
 // Options will be fetched dynamically from the database
 
-const initForm = { firstName:'', lastName:'', email:'', password:'', phone:'', role:'employee', department:'', designation:'', joiningDate: new Date().toISOString().split('T')[0], monthlyCTC:'', basicSalary:'', casualLeave:'', sickLeave:'', earnedLeave:'', reportingManagerId:'', approvingAuthorityId:'' };
+const initForm = { firstName:'', lastName:'', email:'', employeeId:'', password:'', phone:'', role:'employee', department:'', designation:'', joiningDate: new Date().toISOString().split('T')[0], monthlyCTC:'', basicSalary:'', casualLeave:'', sickLeave:'', earnedLeave:'', reportingManagerId:'', approvingAuthorityId:'' };
 
 
 export default function Employees() {
@@ -68,11 +68,20 @@ export default function Employees() {
 
   useEffect(load, [page, search, deptFilter, roleFilter, desigFilter]);
 
-  const openCreate = () => { setEditEmp(null); setForm(initForm); setModal(true); };
+  const openCreate = () => {
+    setEditEmp(null);
+    setForm(initForm);
+    // Suggest the next NXT#### for the new employee. Admin can edit it.
+    api.get('/employees/next-id')
+      .then(r => setForm(f => ({ ...f, employeeId: r.data.data?.suggested || '' })))
+      .catch(console.error);
+    setModal(true);
+  };
   const openEdit = (emp) => {
     setEditEmp(emp);
     setForm({
       firstName:emp.firstName, lastName:emp.lastName, email:emp.email,
+      employeeId: emp.employeeId || '',
       password:'', phone:emp.phone||'', role:emp.role,
       department:emp.department, designation:emp.designation||'',
       joiningDate: emp.joiningDate?.split('T')[0]||'',
@@ -314,6 +323,11 @@ export default function Employees() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Email</label>
                 <input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"/>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Employee ID</label>
+                <input value={form.employeeId} onChange={e=>setForm({...form,employeeId:e.target.value})} placeholder="e.g. NXT0001" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"/>
+                <p className="text-[11px] text-slate-400 mt-1">{editEmp ? 'Change if needed — must be unique.' : 'Auto-suggested. Edit if you need a custom format.'}</p>
               </div>
               {!editEmp && <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Password</label>

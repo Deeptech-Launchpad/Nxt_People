@@ -284,21 +284,32 @@ router.put('/:id/confirm', async (req, res) => {
     const {
       dateOfJoining, companyName, division, employeeType,
       workingMode, designation, department, officialEmail, allowAccess,
-      password, reportingManagerId
+      password, reportingManagerId, employeeId
     } = req.body;
 
     const empRes = await pool.query('SELECT registration_status, employee_id FROM employees WHERE id = $1', [id]);
     if (empRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Candidate not found' });
     if (empRes.rows[0].registration_status !== 'pending') return res.status(400).json({ success: false, message: 'Only pending registrations can be confirmed' });
 
-    // Auto-generate employee_id if the candidate doesn't have one yet. Same
-    // NXT#### sequence the manual POST /employees uses, so IDs are continuous.
-    let assignedEmployeeId = empRes.rows[0].employee_id;
+    // Resolve final employee_id. Priority:
+    //   1. Admin-typed value from the form (if any)
+    //   2. Existing employee_id on the row (if Zoho or earlier set it)
+    //   3. Next NXT#### in the sequence
+    let assignedEmployeeId = (employeeId || '').trim() || empRes.rows[0].employee_id;
     if (!assignedEmployeeId) {
       const seqRes = await pool.query(
         "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
       );
       assignedEmployeeId = `NXT${String(seqRes.rows[0].next).padStart(4, '0')}`;
+    }
+
+    // Uniqueness guard if admin typed a custom ID. The unique index on the
+    // column would catch it anyway, but a clean error message is friendlier.
+    if (employeeId && assignedEmployeeId !== empRes.rows[0].employee_id) {
+      const clash = await pool.query('SELECT id FROM employees WHERE employee_id = $1 AND id <> $2', [assignedEmployeeId, id]);
+      if (clash.rows.length > 0) {
+        return res.status(400).json({ success: false, message: `Employee ID "${assignedEmployeeId}" is already in use` });
+      }
     }
 
     let passUpdate = '';
@@ -341,7 +352,7 @@ router.put('/:id/confirm', async (req, res) => {
         registration_status = 'active',
         has_accepted = true,
         approved_by = $10,
-        employee_id = COALESCE(employee_id, $11),
+        employee_id = $11,
         approved_at = NOW()
       WHERE id = $12
     `, queryParams);

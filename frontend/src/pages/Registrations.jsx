@@ -128,7 +128,8 @@ function ConfirmModal({ employee, onClose, onConfirmed }) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     dateOfJoining: '', companyName: '', division: '', employeeType: '',
-    workingMode: '', designation: '', department: '', officialEmail: '', allowAccess: '', password: '', reportingManagerId: ''
+    workingMode: '', designation: '', department: '', officialEmail: '', allowAccess: '',
+    password: '', reportingManagerId: '', employeeId: ''
   });
   // Dropdown options — all sourced from the DB so HR doesn't have to maintain
   // a hardcoded list in the frontend. `managers` is already filtered server-side
@@ -150,6 +151,12 @@ function ConfirmModal({ employee, onClose, onConfirmed }) {
           managers:     d.managers     || [],
         });
       })
+      .catch(console.error);
+
+    // Prefill the Employee ID field with the next NXT#### in the sequence.
+    // Admin can keep the suggestion or replace it with a custom ID before saving.
+    api.get('/employees/next-id')
+      .then(r => setForm(f => ({ ...f, employeeId: r.data.data?.suggested || '' })))
       .catch(console.error);
   }, [employee._id]);
 
@@ -294,6 +301,11 @@ function ConfirmModal({ employee, onClose, onConfirmed }) {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1.5">Employee ID</label>
+                <input type="text" value={form.employeeId} onChange={e => setForm({...form, employeeId: e.target.value})} placeholder="e.g. NXT0001" className="w-full bg-white border border-slate-300 text-slate-900 px-3 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
+                <p className="text-[11px] text-slate-400 mt-1">Auto-suggested. Edit if you need a custom format.</p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1.5">Official Email ID</label>

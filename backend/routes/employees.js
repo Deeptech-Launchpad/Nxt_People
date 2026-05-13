@@ -9,6 +9,21 @@ const { logAudit } = require('../utils/audit');
 
 router.use(protect);
 
+// GET next suggested employee_id — used by the Confirm Registration modal
+// and Add Employee form to prefill the field. Admin can accept the suggestion
+// or type a custom ID (e.g. matching a Zoho or HRMS prefix).
+router.get('/next-id', async (_req, res) => {
+  try {
+    const r = await pool.query(
+      "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
+    );
+    const suggested = `NXT${String(r.rows[0].next).padStart(4, '0')}`;
+    res.json({ success: true, data: { suggested } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // GET metadata (departments, designations, roles, managers)
 router.get('/metadata', async (req, res) => {
   try {
@@ -142,14 +157,24 @@ router.get('/:id', async (req, res) => {
 // POST create employee
 router.post('/', authorize('admin', 'manager'), async (req, res) => {
   try {
-    let { firstName, lastName, email, password, phone, role, department, designation, company, division, joiningDate, monthlyCTC, basicSalary, casualLeave, sickLeave, earnedLeave, reportingManagerId, approvingAuthorityId } = req.body;
+    let { firstName, lastName, email, password, phone, role, department, designation, company, division, joiningDate, monthlyCTC, basicSalary, casualLeave, sickLeave, earnedLeave, reportingManagerId, approvingAuthorityId, employeeId: providedId } = req.body;
     let hashedPassword = null;
     if (password) hashedPassword = await bcrypt.hash(password, 12);
 
-    const seqRes = await pool.query(
-      "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
-    );
-    const employeeId = `NXT${String(seqRes.rows[0].next).padStart(4, '0')}`;
+    // Use admin-supplied ID when provided; otherwise auto-generate the next
+    // NXT#### in the sequence. Uniqueness is enforced below.
+    let employeeId = (providedId || '').trim();
+    if (!employeeId) {
+      const seqRes = await pool.query(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
+      );
+      employeeId = `NXT${String(seqRes.rows[0].next).padStart(4, '0')}`;
+    } else {
+      const clash = await pool.query('SELECT id FROM employees WHERE employee_id = $1', [employeeId]);
+      if (clash.rows.length > 0) {
+        return res.status(400).json({ success: false, message: `Employee ID "${employeeId}" is already in use` });
+      }
+    }
 
     const result = await pool.query(
       `INSERT INTO employees (first_name, last_name, email, password, phone, role, department, designation, company, division, joining_date, employee_id, registration_status, has_accepted, monthly_ctc, basic_salary, casual_leave, sick_leave, earned_leave, reporting_manager_id, approving_authority_id)
@@ -177,7 +202,16 @@ router.post('/', authorize('admin', 'manager'), async (req, res) => {
 // PUT update employee
 router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, role, department, designation, company, division, joiningDate, monthlyCTC, basicSalary, casualLeave, sickLeave, earnedLeave, reportingManagerId, approvingAuthorityId } = req.body;
+    const { firstName, lastName, email, phone, role, department, designation, company, division, joiningDate, employeeId, monthlyCTC, basicSalary, casualLeave, sickLeave, earnedLeave, reportingManagerId, approvingAuthorityId } = req.body;
+
+    // Uniqueness guard if admin is changing employee_id. Unique index would
+    // also catch it, but a friendly message is better.
+    if (employeeId !== undefined && employeeId !== '' && employeeId !== null) {
+      const clash = await pool.query('SELECT id FROM employees WHERE employee_id = $1 AND id <> $2', [employeeId, req.params.id]);
+      if (clash.rows.length > 0) {
+        return res.status(400).json({ success: false, message: `Employee ID "${employeeId}" is already in use` });
+      }
+    }
 
     let updates = [];
     let params = [];
@@ -192,6 +226,7 @@ router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
     if (company !== undefined) { updates.push(`company = $${i++}`); params.push(company); }
     if (division !== undefined) { updates.push(`division = $${i++}`); params.push(division); }
     if (joiningDate !== undefined) { updates.push(`joining_date = $${i++}`); params.push(joiningDate); }
+    if (employeeId !== undefined) { updates.push(`employee_id = $${i++}`); params.push(employeeId || null); }
     if (monthlyCTC !== undefined && monthlyCTC !== '') { updates.push(`monthly_ctc = $${i++}`); params.push(parseFloat(monthlyCTC) || null); }
     if (basicSalary !== undefined && basicSalary !== '') { updates.push(`basic_salary = $${i++}`); params.push(parseFloat(basicSalary) || null); }
     if (casualLeave !== undefined && casualLeave !== '') { updates.push(`casual_leave = $${i++}`); params.push(parseFloat(casualLeave)); }
