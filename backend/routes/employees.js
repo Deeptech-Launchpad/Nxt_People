@@ -199,7 +199,18 @@ router.post('/', authorize('admin', 'manager'), async (req, res) => {
 // PUT update employee
 router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, role, department, designation, company, division, joiningDate, employeeId, monthlyCTC, basicSalary, casualLeave, sickLeave, earnedLeave, reportingManagerId, approvingAuthorityId } = req.body;
+    const {
+      firstName, lastName, email, phone, role, department, designation, company, division,
+      joiningDate, employeeId, monthlyCTC, basicSalary, casualLeave, sickLeave, earnedLeave,
+      reportingManagerId, approvingAuthorityId,
+      // Personal / identity (added so admin can edit everything Zoho-imported)
+      nickName, dateOfBirth, gender, maritalStatus, bloodGroup, nationality,
+      personalEmail, workPhone, address, permanentAddress,
+      panNumber, aadhaarNumber, uanNumber,
+      bankName, bankAccount, bankIfsc,
+      emergencyContactName, emergencyContactPhone, emergencyContactRelation,
+      workLocation, employmentType, status,
+    } = req.body;
 
     // Uniqueness guard if admin is changing employee_id. Unique index would
     // also catch it, but a friendly message is better.
@@ -231,6 +242,30 @@ router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
     if (earnedLeave !== undefined && earnedLeave !== '') { updates.push(`earned_leave = $${i++}`); params.push(parseFloat(earnedLeave)); }
     if (reportingManagerId !== undefined) { updates.push(`reporting_manager_id = $${i++}`); params.push(reportingManagerId || null); }
     if (approvingAuthorityId !== undefined) { updates.push(`approving_authority_id = $${i++}`); params.push(approvingAuthorityId || null); }
+
+    // Personal / identity / contact / bank / emergency contact fields.
+    if (nickName !== undefined)                 { updates.push(`nick_name = $${i++}`);                 params.push(nickName || null); }
+    if (dateOfBirth !== undefined)              { updates.push(`date_of_birth = $${i++}`);             params.push(dateOfBirth || null); }
+    if (gender !== undefined)                   { updates.push(`gender = $${i++}`);                    params.push(gender || null); }
+    if (maritalStatus !== undefined)            { updates.push(`marital_status = $${i++}`);            params.push(maritalStatus || null); }
+    if (bloodGroup !== undefined)               { updates.push(`blood_group = $${i++}`);               params.push(bloodGroup || null); }
+    if (nationality !== undefined)              { updates.push(`nationality = $${i++}`);               params.push(nationality || null); }
+    if (personalEmail !== undefined)            { updates.push(`personal_email = $${i++}`);            params.push(personalEmail ? personalEmail.toLowerCase() : null); }
+    if (workPhone !== undefined)                { updates.push(`work_phone = $${i++}`);                params.push(workPhone || null); }
+    if (address !== undefined)                  { updates.push(`address = $${i++}`);                   params.push(address || null); }
+    if (permanentAddress !== undefined)         { updates.push(`permanent_address = $${i++}`);         params.push(permanentAddress || null); }
+    if (panNumber !== undefined)                { updates.push(`pan_number = $${i++}`);                params.push(panNumber || null); }
+    if (aadhaarNumber !== undefined)            { updates.push(`aadhaar_number = $${i++}`);            params.push(aadhaarNumber || null); }
+    if (uanNumber !== undefined)                { updates.push(`uan_number = $${i++}`);                params.push(uanNumber || null); }
+    if (bankName !== undefined)                 { updates.push(`bank_name = $${i++}`);                 params.push(bankName || null); }
+    if (bankAccount !== undefined)              { updates.push(`bank_account = $${i++}`);              params.push(bankAccount || null); }
+    if (bankIfsc !== undefined)                 { updates.push(`bank_ifsc = $${i++}`);                 params.push(bankIfsc || null); }
+    if (emergencyContactName !== undefined)     { updates.push(`emergency_contact_name = $${i++}`);    params.push(emergencyContactName || null); }
+    if (emergencyContactPhone !== undefined)    { updates.push(`emergency_contact_phone = $${i++}`);   params.push(emergencyContactPhone || null); }
+    if (emergencyContactRelation !== undefined) { updates.push(`emergency_contact_relation = $${i++}`); params.push(emergencyContactRelation || null); }
+    if (workLocation !== undefined)             { updates.push(`work_location = $${i++}`);             params.push(workLocation || null); }
+    if (employmentType !== undefined)           { updates.push(`employment_type = $${i++}`);           params.push(employmentType || null); }
+    if (status !== undefined)                   { updates.push(`status = $${i++}`);                    params.push(status || 'active'); }
 
     if (updates.length === 0) return res.json({ success: true, message: 'Nothing to update' });
 

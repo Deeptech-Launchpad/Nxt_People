@@ -9,6 +9,7 @@
     "seed": "node utils/seed.js",
     "test:setup": "node utils/ensure-test-users.js",
     "reset:demo": "node utils/reset-demo.js",
+    "promote:admin": "node utils/promote-admin.js",
     "migrate": "node migrate.js",
     "migrate:legacy-all": "node migrate_all.js",
     "migrate:indexes": "node migrate_indexes.js",

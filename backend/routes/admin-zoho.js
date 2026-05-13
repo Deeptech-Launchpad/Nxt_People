@@ -62,7 +62,13 @@ function mapEmployee(rec) {
     // ── Work ──────────────────────────────────────────────────────────
     department:        pick(rec, 'Department'),
     designation:       pick(rec, 'Designation', 'JobTitle'),
-    company:           pick(rec, 'Company', 'LegalEntity', 'OrganizationName'),
+    // Zoho often omits Company when there's only one in the workspace.
+    // Fall back to ZOHO_DEFAULT_COMPANY (set in .env) so the Employee ID
+    // sequence + company-based reports work out of the box. Default to
+    // 'AltiusNxt' if that env var is also unset.
+    company:           pick(rec, 'Company', 'LegalEntity', 'OrganizationName') ||
+                       process.env.ZOHO_DEFAULT_COMPANY ||
+                       'AltiusNxt',
     division:          pick(rec, 'Division', 'BusinessUnit'),
     workLocation:      pick(rec, 'Location', 'WorkLocation', 'Work_Location', 'Office'),
     employmentType:    pick(rec, 'EmploymentType', 'Employment_Type', 'EmployeeType'),

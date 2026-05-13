@@ -45,6 +45,18 @@ if (adminEmails.length === 0) {
 //
 // Wrapped in try/catch in case a migration hasn't created the table on this
 // DB — we don't want a missing-table error to halt the wipe.
+// Tables that REFERENCE employees(id) but should NEVER be wiped — master
+// data / org config that survives demo resets.
+const PRESERVE = new Set([
+  'weekend_rules',     // "Sundays" / "1st & 3rd Saturdays" recurrence rules
+  'holidays',          // company holiday calendar
+  'shifts',            // shift definitions
+  'leave_types',       // leave type catalogue
+  'settings',          // org-wide settings
+  'companies',
+  'departments',
+]);
+
 const TABLES_TO_TRUNCATE = [
   'audit_log',
   'refresh_tokens',
@@ -109,8 +121,27 @@ async function ask(question) {
     process.exit(0);
   }
 
-  console.log('\nClearing transactional tables…');
-  for (const t of TABLES_TO_TRUNCATE) {
+  // Discover EVERY table that has a foreign key referencing employees(id).
+  // This way we don't have to maintain a hardcoded list — any future
+  // migration that adds a new employee-dependent table is handled automatically.
+  const fkTablesRes = await pool.query(`
+    SELECT DISTINCT tc.table_name
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.referential_constraints rc
+        ON tc.constraint_name = rc.constraint_name
+      JOIN information_schema.constraint_column_usage ccu
+        ON ccu.constraint_name = rc.unique_constraint_name
+     WHERE tc.constraint_type = 'FOREIGN KEY'
+       AND ccu.table_name     = 'employees'
+       AND tc.table_name     <> 'employees'
+     ORDER BY tc.table_name
+  `);
+  const discovered = fkTablesRes.rows.map(r => r.table_name);
+  const allTables  = Array.from(new Set([...TABLES_TO_TRUNCATE, ...discovered]))
+                          .filter(t => !PRESERVE.has(t));
+
+  console.log(`\nClearing ${allTables.length} employee-dependent tables (hardcoded ${TABLES_TO_TRUNCATE.length} + discovered ${discovered.length} − preserved ${PRESERVE.size})…`);
+  for (const t of allTables) {
     try {
       await pool.query(`TRUNCATE TABLE ${t} RESTART IDENTITY CASCADE`);
       console.log(`  ✅ ${t}`);
@@ -121,6 +152,20 @@ async function ask(question) {
     }
   }
 
+  // Break self-referencing FKs (reporting_manager_id, approving_authority_id,
+  // approved_by) BEFORE the delete. Without this, deleting employee A whose
+  // reporting_manager_id points to employee B (also being deleted) errors out
+  // because the FK has no ON DELETE action — Postgres doesn't know which one
+  // to delete first.
+  console.log('\nBreaking self-referential FKs on employees…');
+  await pool.query(`
+    UPDATE employees
+       SET reporting_manager_id     = NULL,
+           approving_authority_id   = NULL,
+           approved_by              = NULL
+  `);
+  console.log('  ✅ Cleared reporting / approving / approved_by links');
+
   console.log('\nDeleting non-admin employees…');
   const r = await pool.query(
     `DELETE FROM employees
@@ -129,6 +174,25 @@ async function ask(question) {
     [adminEmails]
   );
   console.log(`  ✅ Removed ${r.rowCount} employee row(s)`);
+
+  // Make sure every surviving admin actually has role='admin'. The bootstrap
+  // in server.js deliberately refuses to elevate an existing non-admin row,
+  // but during a demo reset we WANT the ADMIN_EMAIL users to be admins so
+  // you can immediately log in and trigger Zoho sync.
+  console.log('\nEnsuring admin role for ADMIN_EMAIL accounts…');
+  const promote = await pool.query(
+    `UPDATE employees
+        SET role = 'admin'
+      WHERE LOWER(email) = ANY($1::text[])
+        AND role <> 'admin'
+      RETURNING email`,
+    [adminEmails]
+  );
+  if (promote.rowCount > 0) {
+    console.log(`  ✅ Promoted ${promote.rowCount} row(s) to admin: ${promote.rows.map(r => r.email).join(', ')}`);
+  } else {
+    console.log('  ✅ Already admin — nothing to change');
+  }
 
   // Sanity check — admin rows survived?
   const remaining = await pool.query('SELECT email, role FROM employees ORDER BY email');

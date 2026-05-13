@@ -297,6 +297,13 @@ const steps = [
        WHERE uploaded_by IS NULL;
    END $$`,
 
+  // ── Backfill company for legacy Zoho-synced rows ──────────────────────────
+  // Earlier Zoho imports stored company as NULL when Zoho didn't return it.
+  // Default any NULL company to 'AltiusNxt' so the per-company Employee ID
+  // suggestion and company-aware reports work for the historical data.
+  // Idempotent: only fills NULLs, never overwrites an admin-set company.
+  `UPDATE employees SET company = 'AltiusNxt' WHERE company IS NULL OR company = ''`,
+
   // ── Employee ID uniqueness ────────────────────────────────────────────────
   // Belt-and-suspenders for the application-level uniqueness check in
   // routes/employees.js + routes/registrations.js. Partial index so multiple

@@ -6,7 +6,26 @@ import { useAuth } from '../context/AuthContext';
 
 // Options will be fetched dynamically from the database
 
-const initForm = { firstName:'', lastName:'', email:'', employeeId:'', password:'', phone:'', role:'employee', department:'', designation:'', company:'', joiningDate: new Date().toISOString().split('T')[0], monthlyCTC:'', basicSalary:'', casualLeave:'', sickLeave:'', earnedLeave:'', reportingManagerId:'', approvingAuthorityId:'' };
+const initForm = {
+  firstName:'', lastName:'', email:'', employeeId:'', password:'', phone:'',
+  role:'employee', department:'', designation:'', company:'',
+  joiningDate: new Date().toISOString().split('T')[0],
+  monthlyCTC:'', basicSalary:'',
+  casualLeave:'', sickLeave:'', earnedLeave:'',
+  reportingManagerId:'', approvingAuthorityId:'',
+  // Personal
+  nickName:'', dateOfBirth:'', gender:'', maritalStatus:'', bloodGroup:'', nationality:'',
+  // Contact
+  personalEmail:'', workPhone:'', address:'', permanentAddress:'',
+  // Identity (PII)
+  panNumber:'', aadhaarNumber:'', uanNumber:'',
+  // Bank
+  bankName:'', bankAccount:'', bankIfsc:'',
+  // Emergency contact
+  emergencyContactName:'', emergencyContactPhone:'', emergencyContactRelation:'',
+  // Work
+  workLocation:'', employmentType:'', status:'active',
+};
 
 // Company list must match the backend COMPANY_PREFIXES in
 // backend/utils/employeeId.js — keeps the per-company ID sequence working.
@@ -23,6 +42,8 @@ export default function Employees() {
   const [deptFilter, setDeptFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [desigFilter, setDesigFilter] = useState('');
+  // 'active' (default) | 'inactive' (terminated/resigned/etc.)
+  const [statusFilter, setStatusFilter] = useState('active');
   const [loading, setLoading] = useState(true);
   // Zoho sync state — only used by admins
   const [zohoSyncing, setZohoSyncing] = useState(false);
@@ -39,7 +60,10 @@ export default function Employees() {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [departments, setDepartments] = useState(['Engineering', 'HR', 'Sales', 'Marketing']);
   const [designations, setDesignations] = useState(['Software Engineer', 'Manager']);
-  const [roles, setRoles] = useState(['admin', 'manager', 'employee']);
+  // Role is a fixed enum — admin needs to be able to assign these three even
+  // when no current employee has the role (e.g. after a fresh Zoho sync where
+  // everyone defaults to "employee"). Don't override from metadata.
+  const roles = ['admin', 'manager', 'employee'];
   // `managers` is the leadership-filtered list (Heads / Leads / Managers) used
   // for the Reporting Person dropdown. Replaces the old `allEmployees` list
   // which let admin pick any employee as a manager.
@@ -51,10 +75,11 @@ export default function Employees() {
     setLoading(true);
     const params = new URLSearchParams({
       page, limit,
-      ...(search      && { search }),
-      ...(deptFilter  && { department:  deptFilter }),
-      ...(roleFilter  && { role:        roleFilter }),
-      ...(desigFilter && { designation: desigFilter }),
+      ...(search       && { search }),
+      ...(deptFilter   && { department:  deptFilter }),
+      ...(roleFilter   && { role:        roleFilter }),
+      ...(desigFilter  && { designation: desigFilter }),
+      ...(statusFilter && { status:      statusFilter }),
     });
     api.get(`/employees?${params}`).then(r => { setEmployees(r.data.data); setTotal(r.data.total); }).catch(console.error).finally(()=>setLoading(false));
   };
@@ -64,13 +89,13 @@ export default function Employees() {
       const d = r.data.data || {};
       if (d.departments?.length)          setDepartments(d.departments);
       if (d.designations?.length)         setDesignations(d.designations);
-      if (d.roles?.length)                setRoles(d.roles);
+      // roles is intentionally hardcoded above — no metadata override
       if (d.managers?.length)             setManagers(d.managers);
       if (d.approvingAuthorities?.length) setApprovingAuthorities(d.approvingAuthorities);
     }).catch(console.error);
   }, []);
 
-  useEffect(load, [page, search, deptFilter, roleFilter, desigFilter]);
+  useEffect(load, [page, search, deptFilter, roleFilter, desigFilter, statusFilter]);
 
   const openCreate = () => {
     setEditEmp(null);
@@ -78,21 +103,69 @@ export default function Employees() {
     setLastSuggestedId('');
     setModal(true);
   };
-  const openEdit = (emp) => {
+  const openEdit = async (emp) => {
     setEditEmp(emp);
+    // Fetch full employee record — list endpoint doesn't include PII fields
+    // (PAN, Aadhaar, bank, etc.). The GET /employees/:id returns everything.
+    let full = emp;
+    try {
+      const r = await api.get(`/employees/${emp._id}`);
+      full = r.data.data || emp;
+    } catch (_) { /* fall back to the row from the list */ }
+
+    // pg returns snake_case; the route may return either format depending
+    // on the SELECT. Coalesce both forms so we don't lose fields.
+    const get = (a, b) => full[a] ?? full[b] ?? '';
+
     setForm({
-      firstName:emp.firstName, lastName:emp.lastName, email:emp.email,
-      employeeId: emp.employeeId || '',
-      password:'', phone:emp.phone||'', role:emp.role,
-      department:emp.department, designation:emp.designation||'',
-      company: emp.company || '',
-      joiningDate: emp.joiningDate?.split('T')[0]||'',
-      reportingManagerId: emp.reportingManagerId||'',
-      approvingAuthorityId: emp.approvingAuthorityId||'',
-      monthlyCTC: emp.monthlyCTC||'', basicSalary: emp.basicSalary||'',
-      casualLeave: emp.casualLeave??'', sickLeave: emp.sickLeave??'', earnedLeave: emp.earnedLeave??''
+      firstName: get('firstName', 'first_name'),
+      lastName:  get('lastName',  'last_name'),
+      email:     get('email',     'email'),
+      employeeId: get('employeeId', 'employee_id') || '',
+      password:'',
+      phone:     get('phone', 'phone'),
+      role:      get('role', 'role'),
+      department: get('department', 'department'),
+      designation: get('designation', 'designation'),
+      company:    get('company', 'company'),
+      joiningDate: (get('joiningDate', 'joining_date') || '').split?.('T')[0] || '',
+      reportingManagerId:    get('reportingManagerId',   'reporting_manager_id') || '',
+      approvingAuthorityId:  get('approvingAuthorityId', 'approving_authority_id') || '',
+      monthlyCTC:  get('monthlyCTC',  'monthly_ctc'),
+      basicSalary: get('basicSalary', 'basic_salary'),
+      casualLeave: full.casualLeave ?? full.casual_leave ?? '',
+      sickLeave:   full.sickLeave   ?? full.sick_leave   ?? '',
+      earnedLeave: full.earnedLeave ?? full.earned_leave ?? '',
+      // Personal
+      nickName:      get('nickName',      'nick_name'),
+      dateOfBirth:  (get('dateOfBirth',   'date_of_birth') || '').split?.('T')[0] || '',
+      gender:        get('gender',        'gender'),
+      maritalStatus: get('maritalStatus', 'marital_status'),
+      bloodGroup:    get('bloodGroup',    'blood_group'),
+      nationality:   get('nationality',   'nationality'),
+      // Contact
+      personalEmail:    get('personalEmail',    'personal_email'),
+      workPhone:        get('workPhone',        'work_phone'),
+      address:          get('address',          'address'),
+      permanentAddress: get('permanentAddress', 'permanent_address'),
+      // Identity
+      panNumber:     get('panNumber',     'pan_number'),
+      aadhaarNumber: get('aadhaarNumber', 'aadhaar_number'),
+      uanNumber:     get('uanNumber',     'uan_number'),
+      // Bank
+      bankName:    get('bankName',    'bank_name'),
+      bankAccount: get('bankAccount', 'bank_account'),
+      bankIfsc:    get('bankIfsc',    'bank_ifsc'),
+      // Emergency
+      emergencyContactName:     get('emergencyContactName',     'emergency_contact_name'),
+      emergencyContactPhone:    get('emergencyContactPhone',    'emergency_contact_phone'),
+      emergencyContactRelation: get('emergencyContactRelation', 'emergency_contact_relation'),
+      // Work
+      workLocation:   get('workLocation',   'work_location'),
+      employmentType: get('employmentType', 'employment_type'),
+      status:         get('status', 'status') || 'active',
     });
-    setLastSuggestedId(emp.employeeId || '');
+    setLastSuggestedId(get('employeeId', 'employee_id') || '');
     setModal(true);
   };
 
@@ -188,6 +261,20 @@ export default function Employees() {
 
   return (
     <div className="space-y-5">
+      {/* Current vs Ex Employees tabs */}
+      <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
+        {[
+          { key: 'active',   label: 'Current Employees' },
+          { key: 'inactive', label: 'Ex Employees'      },
+        ].map(t => (
+          <button key={t.key}
+            onClick={() => { setStatusFilter(t.key); setPage(1); }}
+            className={`px-4 py-1.5 rounded-md text-[12.5px] font-medium transition-all ${statusFilter === t.key ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="p-5 border-b border-slate-100 flex flex-wrap gap-3 items-center justify-between">
           <div className="flex flex-wrap gap-3 flex-1">
@@ -384,7 +471,7 @@ export default function Employees() {
                    </select>
                  </div>
                  <div>
-                   <label className="block text-xs font-medium text-slate-600 mb-1.5">Reporting Person <span className="text-slate-400 font-normal">(Heads / Leads / Managers)</span></label>
+                   <label className="block text-xs font-medium text-slate-600 mb-1.5">Reporting Person</label>
                    <select value={form.reportingManagerId} onChange={e=>setForm({...form,reportingManagerId:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
                      <option value="">None</option>
                      {managers.map(m => <option key={m._id} value={m._id}>{m.firstName} {m.lastName}{m.designation ? ` — ${m.designation}` : ''}</option>)}
@@ -396,7 +483,9 @@ export default function Employees() {
                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Approving Authority</label>
                    <select value={form.approvingAuthorityId} onChange={e=>setForm({...form,approvingAuthorityId:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
                      <option value="">None</option>
-                     {approvingAuthorities.map(aa => <option key={aa._id || aa.id} value={aa._id || aa.id}>{aa.firstName} {aa.lastName} ({aa.designation || aa.role})</option>)}
+                     {/* Use the same leadership list as Reporting Person — admin
+                         shouldn't be able to pick a trainee as an approver. */}
+                     {managers.map(m => <option key={m._id} value={m._id}>{m.firstName} {m.lastName}{m.designation ? ` — ${m.designation}` : ''}</option>)}
                    </select>
                  </div>
                </div>
@@ -424,6 +513,151 @@ export default function Employees() {
                   </div>
                 </div>
               </div>
+              {/* Personal */}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Personal</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Nickname</label>
+                    <input value={form.nickName} onChange={e=>setForm({...form,nickName:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Date of Birth</label>
+                    <input type="date" value={form.dateOfBirth} onChange={e=>setForm({...form,dateOfBirth:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Gender</label>
+                    <select value={form.gender} onChange={e=>setForm({...form,gender:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
+                      <option value="">Select...</option>
+                      {['Male','Female','Other'].map(o=><option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Marital Status</label>
+                    <select value={form.maritalStatus} onChange={e=>setForm({...form,maritalStatus:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
+                      <option value="">Select...</option>
+                      {['Single','Married','Divorced','Widowed'].map(o=><option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Blood Group</label>
+                    <select value={form.bloodGroup} onChange={e=>setForm({...form,bloodGroup:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
+                      <option value="">Select...</option>
+                      {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(o=><option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Nationality</label>
+                    <input value={form.nationality} onChange={e=>setForm({...form,nationality:e.target.value})} placeholder="e.g. Indian" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact */}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Contact</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Personal Email</label>
+                    <input type="email" value={form.personalEmail} onChange={e=>setForm({...form,personalEmail:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Work Phone</label>
+                    <input value={form.workPhone} onChange={e=>setForm({...form,workPhone:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Current Address</label>
+                    <textarea rows={2} value={form.address} onChange={e=>setForm({...form,address:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none"/>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Permanent Address</label>
+                    <textarea rows={2} value={form.permanentAddress} onChange={e=>setForm({...form,permanentAddress:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none"/>
+                  </div>
+                </div>
+              </div>
+
+              {/* Identity (PII) */}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Identity (PII)</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">PAN Number</label>
+                    <input value={form.panNumber} onChange={e=>setForm({...form,panNumber:e.target.value.toUpperCase()})} placeholder="ABCDE1234F" maxLength={10} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Aadhaar Number</label>
+                    <input value={form.aadhaarNumber} onChange={e=>setForm({...form,aadhaarNumber:e.target.value})} placeholder="1234 5678 9012" maxLength={14} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">UAN Number</label>
+                    <input value={form.uanNumber} onChange={e=>setForm({...form,uanNumber:e.target.value})} maxLength={12} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400"/>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bank */}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Bank</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Bank Name</label>
+                    <input value={form.bankName} onChange={e=>setForm({...form,bankName:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">IFSC Code</label>
+                    <input value={form.bankIfsc} onChange={e=>setForm({...form,bankIfsc:e.target.value.toUpperCase()})} placeholder="HDFC0001234" maxLength={11} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Account Number</label>
+                    <input value={form.bankAccount} onChange={e=>setForm({...form,bankAccount:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400"/>
+                  </div>
+                </div>
+              </div>
+
+              {/* Emergency Contact */}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Emergency Contact</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Name</label>
+                    <input value={form.emergencyContactName} onChange={e=>setForm({...form,emergencyContactName:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Phone</label>
+                    <input value={form.emergencyContactPhone} onChange={e=>setForm({...form,emergencyContactPhone:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Relationship</label>
+                    <input value={form.emergencyContactRelation} onChange={e=>setForm({...form,emergencyContactRelation:e.target.value})} placeholder="e.g. Father" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status (Current / Ex Employee) — admin can toggle here */}
+              {editEmp && (
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Employment Status</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1.5">Status</label>
+                      <select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
+                        <option value="active">Active (Current Employee)</option>
+                        <option value="resigned">Resigned</option>
+                        <option value="terminated">Terminated</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1.5">Employment Type</label>
+                      <select value={form.employmentType} onChange={e=>setForm({...form,employmentType:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
+                        <option value="">Select...</option>
+                        {['Full Time','Part Time','Contract','Intern','Consultant'].map(o=><option key={o}>{o}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Leave Balance */}
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Leave Balance (days)</p>
