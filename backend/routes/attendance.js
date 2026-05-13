@@ -275,8 +275,13 @@ router.get('/my', async (req, res) => {
   try {
     const { month, year } = req.query;
     const now = new Date();
-    const m = parseInt(month) ?? now.getMonth();
-    const y = parseInt(year) || now.getFullYear();
+    // parseInt(undefined) returns NaN, and `??` doesn't catch NaN — only
+    // null/undefined. Without this guard, callers that omit ?month=... get
+    // a 500 because `new Date(y, NaN, 1)` produces an invalid date and the
+    // SQL ::date cast throws.
+    const parsedM = parseInt(month, 10);
+    const m = Number.isFinite(parsedM) ? parsedM : now.getMonth();
+    const y = parseInt(year, 10) || now.getFullYear();
 
     const start = toDateStr(new Date(y, m, 1));
     const end   = toDateStr(new Date(y, m + 1, 0));
