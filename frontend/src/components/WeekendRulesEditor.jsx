@@ -31,6 +31,11 @@ const blankRule = () => ({
   endCount: 13,
   isActive: true,
   description: '',
+  // Working Day Exception extras (only used when mode === 'working_day').
+  // Stored in the holidays table by the same POST /holidays endpoint.
+  category: '',
+  compensationType: '',
+  compensatedHolidayId: '',
 });
 
 /** Human-readable summary of a rule — shown in the list view. */
@@ -49,7 +54,7 @@ function summarise(rule) {
 
 const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
   const { user } = useAuth();
-  const { rules: contextRules, reload } = useWeekendRules();
+  const { rules: contextRules, holidays: contextHolidays, reload } = useWeekendRules();
   const isAdmin = user?.role === 'admin';
 
   const [rules, setRules] = useState([]);
@@ -85,6 +90,11 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
           type: 'working_day',
           year: new Date(editing.startDate).getFullYear(),
           description: editing.description || '',
+          // Meeting feedback: capture why this working day was declared and
+          // (if it's making up for a past holiday) link to that holiday.
+          category:               editing.category || null,
+          compensationType:       editing.compensationType || null,
+          compensatedHolidayId:   editing.compensatedHolidayId || null,
         });
         toast.success('Working day exception added');
         closeEditor();
@@ -267,6 +277,69 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                       Even if this date would normally be a weekend, it'll be treated as a working day.
                     </p>
                   </div>
+                  <div>
+                    <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Working Day Due to</label>
+                    <select
+                      value={editing.category || ''}
+                      onChange={(e) => setEditing({ ...editing, category: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"
+                    >
+                      <option value="">Select…</option>
+                      <option value="additional_workload">Additional Workload</option>
+                      <option value="project_deadline">Project Deadline</option>
+                      <option value="compensate_holiday">Compensate Previous Holiday</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Compensation Type</label>
+                    <div className="flex gap-2">
+                      {[
+                        { v: 'future', label: 'Future Compensation', desc: 'Employees get a future day off' },
+                        { v: 'past',   label: 'For a Past Holiday',  desc: 'Makes up for an already-given holiday' },
+                      ].map(o => (
+                        <label
+                          key={o.v}
+                          className={`flex-1 px-3 py-2 rounded-lg border text-[11.5px] cursor-pointer ${editing.compensationType === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                        >
+                          <input
+                            type="radio"
+                            name="comp_type"
+                            className="hidden"
+                            checked={editing.compensationType === o.v}
+                            onChange={() => setEditing({ ...editing, compensationType: o.v })}
+                          />
+                          <p className="font-semibold">{o.label}</p>
+                          <p className="text-[10.5px] mt-0.5 opacity-70">{o.desc}</p>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  {editing.compensationType === 'past' && (
+                    <div>
+                      <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">
+                        Select Compensated Holiday
+                        <span className="text-slate-400 font-normal ml-1">(which past holiday is this making up for?)</span>
+                      </label>
+                      <select
+                        value={editing.compensatedHolidayId || ''}
+                        onChange={(e) => setEditing({ ...editing, compensatedHolidayId: e.target.value })}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"
+                      >
+                        <option value="">Select a holiday…</option>
+                        {(contextHolidays || [])
+                          .filter(h => h.type !== 'working_day')
+                          .map(h => (
+                            <option key={h._id || h.id} value={h._id || h.id}>
+                              {new Date(h.date).toLocaleDateString('en-IN')} — {h.name}
+                            </option>
+                          ))}
+                      </select>
+                      <p className="text-[10.5px] text-slate-400 mt-1">
+                        Lists every recorded holiday so HR can pick which one this working day replaces.
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Description (optional)</label>
                     <input
