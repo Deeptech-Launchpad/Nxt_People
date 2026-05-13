@@ -350,7 +350,7 @@ export default function Employees() {
               <button
                 onClick={handlePayrollSync}
                 disabled={zohoSyncing}
-                title="Pull bank account / IFSC / CTC from the Zoho People Payroll module"
+                title="Pull bank account / IFSC / CTC from the Zoho People Payroll module — requires a Zoho subscription tier that includes Payroll. Returns 0 silently otherwise."
                 className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
               >
                 <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />
@@ -359,7 +359,7 @@ export default function Employees() {
               <button
                 onClick={handleDocumentsSync}
                 disabled={zohoSyncing}
-                title="Download every employee's file attachments from Zoho — slow"
+                title="Download Zoho file attachments — requires the People Files API on your subscription. Returns 0 silently if your tenant doesn't expose it."
                 className="flex items-center gap-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
               >
                 <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />

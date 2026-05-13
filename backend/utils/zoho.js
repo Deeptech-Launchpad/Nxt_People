@@ -145,6 +145,9 @@ async function* iteratePayroll({ pageSize = 200 } = {}) {
  * an array of { fileName, fileId, fileSize, fileType } objects.
  * Empty array if the employee has no files, or if the API call fails.
  */
+// Silent on per-employee failures — the caller aggregates a count and reports
+// it in the sync stats. Logging every failure floods the console without
+// adding information.
 async function listEmployeeFiles(recordId) {
   try {
     const body = await zohoApi(`forms/employee/getRecordAttachments?recordId=${encodeURIComponent(recordId)}`);
@@ -157,8 +160,7 @@ async function listEmployeeFiles(recordId) {
           fileType: f.fileType || f.mimeType,
         })).filter(f => f.fileId)
       : [];
-  } catch (err) {
-    logger.warn({ recordId, msg: err.message }, 'Zoho file list failed');
+  } catch {
     return [];
   }
 }
