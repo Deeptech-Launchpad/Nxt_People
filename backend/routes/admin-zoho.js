@@ -290,22 +290,22 @@ router.post('/zoho-sync', async (req, res) => {
         );
         const empId = idRow.rows[0]?.id;
 
-        // Replace-on-sync: delete existing Zoho-sourced rows then re-insert.
-        // Education rows go to employee_education.
+        // Replace-on-sync: insert missing rows only (never overwrites manual edits).
+        // Education rows go to employee_education. Explicit ::type casts on
+        // every param so Postgres doesn't trip when a row has NULL values
+        // ("inconsistent types deduced for parameter $N").
         if (empId && tabular.education.length > 0) {
           for (const ed of tabular.education) {
-            // Don't duplicate — only insert if no row with the same institute
-            // and year exists for this employee.
             await client.query(
               `INSERT INTO employee_education
                  (employee_id, highest_qualification, degree,
                   university_or_institution, year_of_passing, percentage_or_cgpa)
-               SELECT $1, $2, $3, $4, $5, $6
+               SELECT $1::uuid, $2::text, $3::text, $4::text, $5::int, $6::text
                 WHERE NOT EXISTS (
                   SELECT 1 FROM employee_education
-                   WHERE employee_id = $1
-                     AND COALESCE(university_or_institution, '') = COALESCE($4, '')
-                     AND COALESCE(year_of_passing, 0) = COALESCE($5, 0)
+                   WHERE employee_id = $1::uuid
+                     AND COALESCE(university_or_institution, '') = COALESCE($4::text, '')
+                     AND COALESCE(year_of_passing, 0) = COALESCE($5::int, 0)
                 )`,
               [empId, ed.qualification, ed.degree, ed.institute,
                ed.yearOfPassing ? parseInt(ed.yearOfPassing, 10) || null : null,
@@ -319,12 +319,12 @@ router.post('/zoho-sync', async (req, res) => {
             await client.query(
               `INSERT INTO employee_previous_employment
                  (employee_id, company, designation, from_date, to_date, job_description)
-               SELECT $1, $2, $3, $4::date, $5::date, $6
+               SELECT $1::uuid, $2::text, $3::text, $4::date, $5::date, $6::text
                 WHERE NOT EXISTS (
                   SELECT 1 FROM employee_previous_employment
-                   WHERE employee_id = $1
-                     AND COALESCE(company, '') = COALESCE($2, '')
-                     AND COALESCE(designation, '') = COALESCE($3, '')
+                   WHERE employee_id = $1::uuid
+                     AND COALESCE(company, '') = COALESCE($2::text, '')
+                     AND COALESCE(designation, '') = COALESCE($3::text, '')
                 )`,
               [empId, pe.company, pe.designation, pe.fromDate, pe.toDate, pe.description]
             );
