@@ -13,6 +13,7 @@
     "inspect:employee": "node utils/inspect-employee.js",
     "zoho:debug": "node utils/zoho-debug.js",
     "zoho:forms": "node utils/zoho-forms.js",
+    "seed:demo-fields": "node utils/seed-demo-fields.js",
     "migrate": "node migrate.js",
     "migrate:legacy-all": "node migrate_all.js",
     "migrate:indexes": "node migrate_indexes.js",
