@@ -122,19 +122,54 @@ router.get('/', async (req, res) => {
 // GET single employee — Bug #9 fix: include leave balance columns
 router.get('/:id', async (req, res) => {
   try {
+    // SELECT every column on employees so the Edit modal can populate fields
+    // like nickName, personalEmail, workPhone, PAN, Aadhaar, bank, emergency
+    // contact, etc. The aliased columns below are kept for backward compat
+    // with existing consumers that read camelCase keys; `e.*` adds the
+    // snake_case originals so my get(camel, snake) helper in the frontend
+    // resolves either form.
     const result = await pool.query(
-      `SELECT e.id as "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.email, e.role, e.department, e.designation, e.company, e.division, e.employee_id AS "employeeId", e.status, e.joining_date AS "joiningDate", e.phone, e.reporting_manager_id AS "reportingManagerId",
-       e.gender, e.date_of_birth, e.marital_status, e.blood_group, e.aadhaar_number, e.pan_number, e.uan_number, e.current_address, e.pin_code, e.city, e.state, e.country,
-       e.casual_leave AS "casualLeave", e.sick_leave AS "sickLeave", e.earned_leave AS "earnedLeave", e.unpaid_leave AS "unpaidLeave",
-       e.approving_authority_id AS "approvingAuthorityId",
-       json_build_object('name', s.name, 'startTime', s.start_time, 'endTime', s.end_time) as shift,
-       json_build_object('firstName', m.first_name, 'lastName', m.last_name, 'email', m.email, 'id', m.id) as manager,
-       json_build_object('firstName', aa.first_name, 'lastName', aa.last_name, 'email', aa.email, 'id', aa.id, 'designation', aa.designation) as approvingAuthority
-       FROM employees e
-       LEFT JOIN shifts s ON e.shift_id = s.id
-       LEFT JOIN employees m ON e.reporting_manager_id = m.id
-       LEFT JOIN employees aa ON e.approving_authority_id = aa.id
-       WHERE e.id = $1`,
+      `SELECT e.*,
+              e.id            AS "_id",
+              e.first_name    AS "firstName",
+              e.last_name     AS "lastName",
+              e.nick_name     AS "nickName",
+              e.employee_id   AS "employeeId",
+              e.joining_date  AS "joiningDate",
+              e.date_of_birth AS "dateOfBirth",
+              e.marital_status AS "maritalStatus",
+              e.blood_group   AS "bloodGroup",
+              e.personal_email AS "personalEmail",
+              e.work_phone    AS "workPhone",
+              e.permanent_address AS "permanentAddress",
+              e.pan_number    AS "panNumber",
+              e.aadhaar_number AS "aadhaarNumber",
+              e.uan_number    AS "uanNumber",
+              e.bank_name     AS "bankName",
+              e.bank_account  AS "bankAccount",
+              e.bank_ifsc     AS "bankIfsc",
+              e.emergency_contact_name     AS "emergencyContactName",
+              e.emergency_contact_phone    AS "emergencyContactPhone",
+              e.emergency_contact_relation AS "emergencyContactRelation",
+              e.work_location AS "workLocation",
+              e.employment_type AS "employmentType",
+              e.reporting_manager_id   AS "reportingManagerId",
+              e.approving_authority_id AS "approvingAuthorityId",
+              e.casual_leave  AS "casualLeave",
+              e.sick_leave    AS "sickLeave",
+              e.earned_leave  AS "earnedLeave",
+              e.unpaid_leave  AS "unpaidLeave",
+              e.monthly_ctc   AS "monthlyCTC",
+              e.basic_salary  AS "basicSalary",
+              e.photo_url     AS "photoUrl",
+              json_build_object('name', s.name, 'startTime', s.start_time, 'endTime', s.end_time) AS shift,
+              json_build_object('firstName', m.first_name, 'lastName', m.last_name, 'email', m.email, 'id', m.id) AS manager,
+              json_build_object('firstName', aa.first_name, 'lastName', aa.last_name, 'email', aa.email, 'id', aa.id, 'designation', aa.designation) AS "approvingAuthority"
+         FROM employees e
+         LEFT JOIN shifts s ON e.shift_id = s.id
+         LEFT JOIN employees m ON e.reporting_manager_id = m.id
+         LEFT JOIN employees aa ON e.approving_authority_id = aa.id
+        WHERE e.id = $1`,
       [req.params.id]
     );
 
