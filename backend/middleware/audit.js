@@ -3,7 +3,12 @@
  * Wraps res.json() to silently log every successful mutation to audit_log.
  * Usage: router.post('/', protect, authorize('admin'), audit('CREATE', 'employee'), handler)
  */
-const { query } = require('../db');
+// IMPORTANT: import the pool, then call `pool.query(...)`. Destructuring
+// `const { query } = require('../db')` unbinds the method from the pool
+// instance, which makes pg throw "Cannot read properties of undefined
+// (reading '_Promise')" — a confusing error that bubbled up as a generic
+// 500 on every DELETE.
+const pool = require('../db');
 
 const audit = (action, resource) => (req, res, next) => {
   const originalJson = res.json.bind(res);
@@ -16,7 +21,7 @@ const audit = (action, resource) => (req, res, next) => {
         (Array.isArray(data?.data) ? null : data?.data?.id) ||
         null;
 
-      query(
+      pool.query(
         `INSERT INTO audit_log
          (actor_id, actor_email, actor_role, action, resource, resource_id, changes, ip_address, user_agent)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
