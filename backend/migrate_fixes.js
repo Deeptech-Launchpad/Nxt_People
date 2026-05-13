@@ -233,6 +233,114 @@ const steps = [
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`,
 
+  // ── Document schema reconciliation ────────────────────────────────────────
+  // The table was originally created by migrate_docs.js with old column names
+  // (document_type, file_path, original_name, mime_type, size, uploaded_at).
+  // The newer routes/documents.js uses (name, type, file_url, file_size,
+  // uploaded_by, created_at). The CREATE TABLE IF NOT EXISTS above is a no-op
+  // when the old table exists, so we have to ADD the new columns explicitly
+  // here, drop NOT NULL on the legacy columns (so new INSERTs don't violate
+  // the old constraints), and backfill old → new for existing rows.
+  `ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS name          VARCHAR(255)`,
+  `ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS type          VARCHAR(50)  DEFAULT 'other'`,
+  `ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS file_url      VARCHAR(1000)`,
+  `ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS file_size     INTEGER`,
+  `ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS uploaded_by   UUID REFERENCES employees(id) ON DELETE SET NULL`,
+  `ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS created_at    TIMESTAMPTZ DEFAULT NOW()`,
+  // Drop NOT NULL on the legacy columns (only meaningful if they exist).
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employee_documents' AND column_name='document_type')
+     THEN ALTER TABLE employee_documents ALTER COLUMN document_type DROP NOT NULL;
+     END IF;
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employee_documents' AND column_name='file_path')
+     THEN ALTER TABLE employee_documents ALTER COLUMN file_path DROP NOT NULL;
+     END IF;
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employee_documents' AND column_name='original_name')
+     THEN ALTER TABLE employee_documents ALTER COLUMN original_name DROP NOT NULL;
+     END IF;
+   END $$`,
+  // Backfill: copy data from legacy columns into new columns where missing.
+  // Each UPDATE is guarded so it only runs when the legacy column exists.
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employee_documents' AND column_name='original_name')
+     THEN UPDATE employee_documents SET name = original_name
+            WHERE name IS NULL AND original_name IS NOT NULL;
+     END IF;
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employee_documents' AND column_name='document_type')
+     THEN UPDATE employee_documents SET type = document_type
+            WHERE type IS NULL AND document_type IS NOT NULL;
+     END IF;
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employee_documents' AND column_name='size')
+     THEN UPDATE employee_documents SET file_size = size
+            WHERE file_size IS NULL AND size IS NOT NULL;
+     END IF;
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employee_documents' AND column_name='file_path')
+     THEN UPDATE employee_documents SET file_url = CASE
+              WHEN file_path LIKE '/uploads/%' THEN file_path
+              ELSE '/uploads/' || file_path
+            END
+            WHERE file_url IS NULL AND file_path IS NOT NULL;
+     END IF;
+     IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='employee_documents' AND column_name='uploaded_at')
+     THEN UPDATE employee_documents SET created_at = uploaded_at
+            WHERE created_at IS NULL AND uploaded_at IS NOT NULL;
+     END IF;
+     UPDATE employee_documents SET uploaded_by = employee_id
+       WHERE uploaded_by IS NULL;
+   END $$`,
+
+  // ── Travel: add transport mode + rejection_reason ─────────────────────────
+  `ALTER TABLE travel_requests ADD COLUMN IF NOT EXISTS transport VARCHAR(50)`,
+  `ALTER TABLE travel_requests ADD COLUMN IF NOT EXISTS rejection_reason TEXT`,
+
+  // ── Compensation claims ───────────────────────────────────────────────────
+  // Employee submits, manager approves. receipt_url is /uploads/<file>.
+  `CREATE TABLE IF NOT EXISTS compensation_claims (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    claim_type VARCHAR(50) NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    claim_date DATE NOT NULL,
+    description TEXT,
+    receipt_url VARCHAR(1000),
+    status VARCHAR(30) DEFAULT 'pending',
+    approved_by UUID REFERENCES employees(id),
+    approved_at TIMESTAMPTZ,
+    rejection_reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_comp_claims_emp ON compensation_claims(employee_id, status)`,
+
+  // ── HR letter requests ────────────────────────────────────────────────────
+  // Employee requests a letter type; HR sets status. letter_url is the
+  // (optional) PDF the HR team uploads as the final issued letter.
+  `CREATE TABLE IF NOT EXISTS hr_letter_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    letter_type VARCHAR(50) NOT NULL,
+    purpose TEXT,
+    status VARCHAR(30) DEFAULT 'requested',
+    processed_by UUID REFERENCES employees(id),
+    processed_at TIMESTAMPTZ,
+    letter_url VARCHAR(1000),
+    rejection_reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_letters_emp ON hr_letter_requests(employee_id, status)`,
+
+  // ── Performance goals: allow standalone (employee-set) goals ──────────────
+  // The original schema required review_id. To support employees adding their
+  // own personal goals from /performance/goals, relax the constraint.
+  `ALTER TABLE performance_goals ALTER COLUMN review_id DROP NOT NULL`,
+
   // ── Ensure exit_requests table exists ─────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS exit_requests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

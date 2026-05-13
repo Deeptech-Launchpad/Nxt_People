@@ -102,6 +102,9 @@ app.use('/api/departments',      require('./routes/departments'));
 app.use('/api/org',              require('./routes/org'));
 app.use('/api/audit',            require('./routes/audit'));
 app.use('/api/admin',            require('./routes/admin-zoho'));
+app.use('/api/travel',           require('./routes/travel'));
+app.use('/api/compensation',     require('./routes/compensation'));
+app.use('/api/hr-letters',       require('./routes/hr-letters'));
 
 // ── Health check ───────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => res.json({ status: 'OK', timestamp: new Date() }));

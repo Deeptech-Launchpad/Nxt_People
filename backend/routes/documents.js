@@ -28,12 +28,19 @@ router.get('/:employeeId', async (req, res) => {
   try {
     const canView = req.user.role !== 'employee' || req.user._id === req.params.employeeId;
     if (!canView) return res.status(403).json({ success: false, message: 'Forbidden' });
+    // LEFT JOIN on uploaded_by so legacy onboarding rows (which were inserted
+    // without an uploaded_by) still appear. uploadedBy will be {firstName:null}
+    // for those rows — the UI already handles that case gracefully.
     const r = await pool.query(
-      `SELECT d.id as "_id", d.name, d.type, d.file_url as "fileUrl", d.file_size as "fileSize",
-       d.created_at as "createdAt",
-       json_build_object('firstName', e.first_name, 'lastName', e.last_name) as "uploadedBy"
-       FROM employee_documents d JOIN employees e ON d.uploaded_by = e.id
-       WHERE d.employee_id = $1 ORDER BY d.created_at DESC`,
+      `SELECT d.id AS "_id", d.name, d.type, d.file_url AS "fileUrl",
+              d.file_size AS "fileSize", d.created_at AS "createdAt",
+              CASE WHEN e.id IS NULL THEN NULL
+                ELSE json_build_object('firstName', e.first_name, 'lastName', e.last_name)
+              END AS "uploadedBy"
+         FROM employee_documents d
+         LEFT JOIN employees e ON d.uploaded_by = e.id
+        WHERE d.employee_id = $1
+        ORDER BY d.created_at DESC NULLS LAST`,
       [req.params.employeeId]
     );
     res.json({ success: true, data: r.rows });

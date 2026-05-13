@@ -108,4 +108,89 @@ router.delete('/:id', authorize('admin'), async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// ── Standalone (employee-set) goals ──────────────────────────────────────────
+// These live in the same performance_goals table but with review_id = NULL.
+// Employees use /performance/goals to track personal OKRs; managers can rate
+// any goal they have visibility on.
+
+// GET own standalone goals
+router.get('/goals/my', async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id AS "_id", title, target, description,
+              status, rating, achievement, due_date AS "dueDate",
+              created_at AS "createdAt"
+         FROM performance_goals
+        WHERE employee_id = $1 AND review_id IS NULL
+        ORDER BY
+          CASE status WHEN 'completed' THEN 2 ELSE 1 END,
+          created_at DESC`,
+      [req.user._id]
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST a new standalone goal
+router.post('/goals', async (req, res) => {
+  try {
+    const { title, target, description, dueDate } = req.body;
+    if (!title) return res.status(400).json({ success: false, message: 'title is required' });
+    const r = await pool.query(
+      `INSERT INTO performance_goals
+         (employee_id, title, target, description, due_date, status)
+       VALUES ($1, $2, $3, $4, $5, 'not_started')
+       RETURNING id AS "_id"`,
+      [req.user._id, title, target || null, description || null, dueDate || null]
+    );
+    res.status(201).json({ success: true, data: { _id: r.rows[0]._id } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// PUT update a standalone goal (own only — admin/manager can rate via a separate flow)
+router.put('/goals/:id', async (req, res) => {
+  try {
+    const { title, target, description, dueDate, status, rating, achievement } = req.body;
+    // Verify ownership before update.
+    const own = await pool.query(
+      'SELECT employee_id FROM performance_goals WHERE id = $1 AND review_id IS NULL',
+      [req.params.id]
+    );
+    if (own.rows.length === 0) return res.status(404).json({ success: false, message: 'Goal not found' });
+    const isOwner = own.rows[0].employee_id === req.user._id;
+    const isPrivileged = ['admin', 'manager'].includes(req.user.role);
+    if (!isOwner && !isPrivileged) return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    const r = await pool.query(
+      `UPDATE performance_goals
+          SET title       = COALESCE($1, title),
+              target      = COALESCE($2, target),
+              description = COALESCE($3, description),
+              due_date    = COALESCE($4, due_date),
+              status      = COALESCE($5, status),
+              rating      = COALESCE($6, rating),
+              achievement = COALESCE($7, achievement)
+        WHERE id = $8 AND review_id IS NULL
+        RETURNING id`,
+      [title || null, target || null, description || null, dueDate || null,
+       status || null, rating ?? null, achievement || null, req.params.id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Goal not found' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.delete('/goals/:id', async (req, res) => {
+  try {
+    const r = await pool.query(
+      `DELETE FROM performance_goals
+        WHERE id = $1 AND employee_id = $2 AND review_id IS NULL
+        RETURNING id`,
+      [req.params.id, req.user._id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Goal not found' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 module.exports = router;

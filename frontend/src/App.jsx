@@ -76,7 +76,6 @@ const SkillMatrix      = lazy(() => import('./pages/performance/SkillMatrix'));
 /* ── New pages — Phase 8: More Services ────────────────────────────── */
 const Travel       = lazy(() => import('./pages/moreservices/Travel'));
 const Compensation = lazy(() => import('./pages/moreservices/Compensation'));
-const Surveys      = lazy(() => import('./pages/moreservices/Surveys'));
 const HRLetters    = lazy(() => import('./pages/moreservices/HRLetters'));
 
 /* ── Loaders & Guards ──────────────────────────────────────────────── */
@@ -164,7 +163,6 @@ const AppRoutes = () => {
           <Route path="more-services/files"        element={<Documents/>}/>
           <Route path="more-services/travel"       element={<Travel/>}/>
           <Route path="more-services/compensation" element={<Compensation/>}/>
-          <Route path="more-services/surveys"      element={<Surveys/>}/>
           <Route path="more-services/hr-letters"   element={<HRLetters/>}/>
 
           {/* ── Reports / Admin ──────────────────────────────────────── */}

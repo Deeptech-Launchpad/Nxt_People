@@ -132,15 +132,29 @@ router.post('/submit/:token', upload.any(), async (req, res) => {
       }
     }
 
-    // Process files
+    // Process files. Write to BOTH the legacy columns (document_type / file_path /
+    // original_name / mime_type / size) AND the modern columns (name / type /
+    // file_url / file_size / uploaded_by / created_at) so the same row is visible
+    // to the admin Employees view (reads legacy) AND the self-service /documents
+    // page (reads modern). Without this, candidates' onboarding uploads only
+    // appeared in the admin view.
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
+        const fileUrl = `/uploads/${file.filename}`;
         await pool.query(`
           INSERT INTO employee_documents (
-            employee_id, document_type, file_path, original_name, mime_type, size
-          ) VALUES ($1, $2, $3, $4, $5, $6)
+            employee_id,
+            document_type, file_path, original_name, mime_type, size,
+            name, type, file_url, file_size, uploaded_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $4, $2, $7, $6, $1)
         `, [
-          employeeId, file.fieldname, file.filename, file.originalname, file.mimetype, file.size
+          employeeId,
+          file.fieldname,            // $2 → document_type AND type
+          fileUrl,                   // $3 → file_path (full /uploads/... URL, so downloads work)
+          file.originalname,         // $4 → original_name AND name
+          file.mimetype,             // $5 → mime_type
+          file.size,                 // $6 → size AND file_size
+          fileUrl,                   // $7 → file_url
         ]);
       }
     }

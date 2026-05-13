@@ -141,13 +141,11 @@ const NAV = {
       { key: 'files',        label: 'Files',               to: '/more-services/files'        },
       { key: 'travel',       label: 'Travel',              to: '/more-services/travel'       },
       { key: 'compensation', label: 'Compensation',        to: '/more-services/compensation' },
-      { key: 'engagement',   label: 'Employee Engagement', to: '/more-services/surveys'      },
       { key: 'hrletters',    label: 'HR Letters',          to: '/more-services/hr-letters'   },
     ],
     getActiveTab: p => {
       if (p.startsWith('/more-services/travel'))       return 'travel';
       if (p.startsWith('/more-services/compensation')) return 'compensation';
-      if (p.startsWith('/more-services/surveys'))      return 'engagement';
       if (p.startsWith('/more-services/hr-letters'))   return 'hrletters';
       return 'files';
     },
@@ -155,12 +153,7 @@ const NAV = {
       files:        [{ to: '/more-services/files',        label: 'Document Storage' }],
       travel:       [{ to: '/more-services/travel',       label: 'Travel Requests'  }],
       compensation: [{ to: '/more-services/compensation', label: 'Claims'           }],
-      engagement:   [{ to: '/more-services/surveys',      label: 'Surveys'          }],
-      hrletters:    [
-        { to: '/more-services/hr-letters',                label: 'Address Proof'    },
-        { to: '/more-services/hr-letters/bonafide',       label: 'Bonafide Letter'  },
-        { to: '/more-services/hr-letters/experience',     label: 'Experience Letter'},
-      ],
+      hrletters:    [{ to: '/more-services/hr-letters',   label: 'Letter Requests'  }],
     },
   },
   employeemaster: {
