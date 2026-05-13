@@ -64,7 +64,7 @@ export default function OnboardingForm() {
   });
 
   const [education, setEducation] = useState([
-    { highestQualification: '', degree: '', universityOrInstitution: '', yearOfPassing: '', percentageOrCgpa: '', certifications: '' }
+    { highestQualification: '', degree: '', course: '', universityOrInstitution: '', yearOfPassing: '', percentageOrCgpa: '' }
   ]);
 
   const [files, setFiles] = useState({
@@ -100,7 +100,7 @@ export default function OnboardingForm() {
     setEducation(newEdu);
   };
 
-  const addEducation = () => setEducation([...education, { highestQualification: '', degree: '', universityOrInstitution: '', yearOfPassing: '', percentageOrCgpa: '', certifications: '' }]);
+  const addEducation = () => setEducation([...education, { highestQualification: '', degree: '', course: '', universityOrInstitution: '', yearOfPassing: '', percentageOrCgpa: '' }]);
   const removeEducation = (index) => setEducation(education.filter((_, i) => i !== index));
 
   const handleFileChange = (e, field) => {
@@ -313,31 +313,31 @@ export default function OnboardingForm() {
                     )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Highest Qualification</label>
-                        <select value={edu.highestQualification} onChange={(e) => handleEduChange(idx, 'highestQualification', e.target.value)} className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Highest Qualification <span className="text-red-500">*</span></label>
+                        <select value={edu.highestQualification} onChange={(e) => handleEduChange(idx, 'highestQualification', e.target.value)} required className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
                           <option value="">Select...</option>
                           {['10th', '12th', 'Diploma', 'UG', 'PG', 'PhD', 'Other'].map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Degree</label>
-                        <input type="text" value={edu.degree} onChange={(e) => handleEduChange(idx, 'degree', e.target.value)} className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" placeholder="e.g. B.Tech, B.Sc" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">University / Institution</label>
-                        <input type="text" value={edu.universityOrInstitution} onChange={(e) => handleEduChange(idx, 'universityOrInstitution', e.target.value)} className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Year of Passing</label>
-                        <input type="number" value={edu.yearOfPassing} onChange={(e) => handleEduChange(idx, 'yearOfPassing', e.target.value)} className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Percentage / CGPA</label>
-                        <input type="text" value={edu.percentageOrCgpa} onChange={(e) => handleEduChange(idx, 'percentageOrCgpa', e.target.value)} className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Degree <span className="text-red-500">*</span></label>
+                        <input type="text" value={edu.degree} onChange={(e) => handleEduChange(idx, 'degree', e.target.value)} required placeholder="e.g. B.Tech, B.Sc" className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
                       </div>
                       <div className="sm:col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Certifications</label>
-                        <input type="text" value={edu.certifications} onChange={(e) => handleEduChange(idx, 'certifications', e.target.value)} placeholder="Comma separated list" className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Course / Specialization <span className="text-red-500">*</span></label>
+                        <input type="text" value={edu.course} onChange={(e) => handleEduChange(idx, 'course', e.target.value)} required placeholder="e.g. Artificial Intelligence and Data Science, Computer Science" className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">University / Institution <span className="text-red-500">*</span></label>
+                        <input type="text" value={edu.universityOrInstitution} onChange={(e) => handleEduChange(idx, 'universityOrInstitution', e.target.value)} required className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Year of Passing <span className="text-red-500">*</span></label>
+                        <input type="number" value={edu.yearOfPassing} onChange={(e) => handleEduChange(idx, 'yearOfPassing', e.target.value)} required min="1950" max={new Date().getFullYear() + 1} className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Percentage / CGPA <span className="text-red-500">*</span></label>
+                        <input type="text" value={edu.percentageOrCgpa} onChange={(e) => handleEduChange(idx, 'percentageOrCgpa', e.target.value)} required placeholder="e.g. 82% or 8.4" className="w-full bg-white border border-slate-300 text-slate-900 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" />
                       </div>
                     </div>
                   </div>

@@ -297,6 +297,14 @@ const steps = [
        WHERE uploaded_by IS NULL;
    END $$`,
 
+  // ── Education: add degree + course/specialization ─────────────────────────
+  // The onboarding form collects "Degree" (e.g. B.Tech) and we're adding
+  // "Course / Specialization" (e.g. Artificial Intelligence & Data Science).
+  // The original schema only had highest_qualification — degree was being
+  // silently dropped on the backend INSERT.
+  `ALTER TABLE employee_education ADD COLUMN IF NOT EXISTS degree VARCHAR(255)`,
+  `ALTER TABLE employee_education ADD COLUMN IF NOT EXISTS course VARCHAR(255)`,
+
   // ── Backfill document type mapping ────────────────────────────────────────
   // Onboarding form uploads were originally stored with the raw form
   // fieldname (aadhaarCard, tenthCertificate, ...) in the `type` column.

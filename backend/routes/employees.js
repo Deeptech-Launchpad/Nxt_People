@@ -48,14 +48,15 @@ router.get('/metadata', async (req, res) => {
 // GET all employees
 router.get('/', async (req, res) => {
   try {
-    const { department, role, status, search, page = 1, limit = 20 } = req.query;
+    const { department, role, designation, status, search, page = 1, limit = 20 } = req.query;
     let query = 'WHERE 1=1';
     let params = [];
     let paramIndex = 1;
 
-    if (department) { query += ` AND e.department = $${paramIndex++}`; params.push(department); }
-    if (role) { query += ` AND e.role = $${paramIndex++}`; params.push(role); }
-    if (status) { query += ` AND e.status = $${paramIndex++}`; params.push(status); }
+    if (department)  { query += ` AND e.department = $${paramIndex++}`;  params.push(department); }
+    if (role)        { query += ` AND e.role = $${paramIndex++}`;        params.push(role); }
+    if (designation) { query += ` AND e.designation = $${paramIndex++}`; params.push(designation); }
+    if (status)      { query += ` AND e.status = $${paramIndex++}`;      params.push(status); }
     if (search) {
       query += ` AND (e.first_name ILIKE $${paramIndex} OR e.last_name ILIKE $${paramIndex} OR e.email ILIKE $${paramIndex} OR e.employee_id ILIKE $${paramIndex})`;
       params.push(`%${search}%`);

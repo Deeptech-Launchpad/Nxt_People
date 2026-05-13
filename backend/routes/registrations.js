@@ -116,18 +116,20 @@ router.post('/submit/:token', upload.any(), async (req, res) => {
 
     const employeeId = empInsert.rows[0].id;
 
-    // Insert education records
+    // Insert education records. `degree` (e.g. B.Tech) and `course`
+    // (e.g. AI & Data Science) were both being silently dropped before —
+    // schema and SQL now include them.
     if (education) {
       const eduArray = JSON.parse(education);
       for (let ed of eduArray) {
         await pool.query(`
           INSERT INTO employee_education (
-            employee_id, highest_qualification, university_or_institution,
-            year_of_passing, percentage_or_cgpa, certifications
-          ) VALUES ($1, $2, $3, $4, $5, $6)
+            employee_id, highest_qualification, degree, course,
+            university_or_institution, year_of_passing, percentage_or_cgpa, certifications
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `, [
-          employeeId, ed.highestQualification, ed.universityOrInstitution,
-          ed.yearOfPassing, ed.percentageOrCgpa, ed.certifications
+          employeeId, ed.highestQualification, ed.degree || null, ed.course || null,
+          ed.universityOrInstitution, ed.yearOfPassing, ed.percentageOrCgpa, ed.certifications
         ]);
       }
     }
@@ -285,19 +287,29 @@ router.put('/:id/confirm', async (req, res) => {
       password, reportingManagerId
     } = req.body;
 
-    const empRes = await pool.query('SELECT registration_status FROM employees WHERE id = $1', [id]);
+    const empRes = await pool.query('SELECT registration_status, employee_id FROM employees WHERE id = $1', [id]);
     if (empRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Candidate not found' });
     if (empRes.rows[0].registration_status !== 'pending') return res.status(400).json({ success: false, message: 'Only pending registrations can be confirmed' });
+
+    // Auto-generate employee_id if the candidate doesn't have one yet. Same
+    // NXT#### sequence the manual POST /employees uses, so IDs are continuous.
+    let assignedEmployeeId = empRes.rows[0].employee_id;
+    if (!assignedEmployeeId) {
+      const seqRes = await pool.query(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
+      );
+      assignedEmployeeId = `NXT${String(seqRes.rows[0].next).padStart(4, '0')}`;
+    }
 
     let passUpdate = '';
     let passValue = null;
     let queryParams = [
       dateOfJoining, companyName, division, employeeType,
       workingMode, designation, department, officialEmail, allowAccess,
-      req.user._id, id
+      req.user._id, assignedEmployeeId, id
     ];
 
-    let queryIdx = 12;
+    let queryIdx = 13;
 
     if (password) {
       passValue = await bcrypt.hash(password, 12);
@@ -329,8 +341,9 @@ router.put('/:id/confirm', async (req, res) => {
         registration_status = 'active',
         has_accepted = true,
         approved_by = $10,
+        employee_id = COALESCE(employee_id, $11),
         approved_at = NOW()
-      WHERE id = $11
+      WHERE id = $12
     `, queryParams);
 
     res.json({ success: true, message: 'Employee confirmed successfully' });

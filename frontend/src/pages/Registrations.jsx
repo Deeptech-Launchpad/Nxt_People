@@ -130,16 +130,26 @@ function ConfirmModal({ employee, onClose, onConfirmed }) {
     dateOfJoining: '', companyName: '', division: '', employeeType: '',
     workingMode: '', designation: '', department: '', officialEmail: '', allowAccess: '', password: '', reportingManagerId: ''
   });
-  const [allEmployees, setAllEmployees] = useState([]);
+  // Dropdown options — all sourced from the DB so HR doesn't have to maintain
+  // a hardcoded list in the frontend. `managers` is already filtered server-side
+  // to leadership designations (Lead / Manager / Head / admin / manager / hr).
+  const [meta, setMeta] = useState({ departments: [], designations: [], managers: [] });
 
   useEffect(() => {
     api.get(`/registrations/${employee._id}/full`)
       .then(r => setData(r.data.data))
-      .catch(err => toast.error('Failed to load candidate details'))
+      .catch(() => toast.error('Failed to load candidate details'))
       .finally(() => setLoading(false));
 
-    api.get('/employees?limit=1000&status=active')
-      .then(r => setAllEmployees(r.data.data || []))
+    api.get('/employees/metadata')
+      .then(r => {
+        const d = r.data.data || {};
+        setMeta({
+          departments:  d.departments  || [],
+          designations: d.designations || [],
+          managers:     d.managers     || [],
+        });
+      })
       .catch(console.error);
   }, [employee._id]);
 
@@ -264,21 +274,25 @@ function ConfirmModal({ employee, onClose, onConfirmed }) {
                 <label className="block text-xs font-medium text-slate-700 mb-1.5">Designation</label>
                 <select value={form.designation} onChange={e => setForm({...form, designation: e.target.value})} className="w-full bg-white border border-slate-300 text-slate-900 px-3 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
                   <option value="">Select...</option>
-                  <option>BUH</option><option>Manager</option><option>Associate</option><option>SDL</option><option>ASDL</option><option>SSL</option>
+                  {meta.designations.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1.5">Department</label>
                 <select value={form.department} onChange={e => setForm({...form, department: e.target.value})} className="w-full bg-white border border-slate-300 text-slate-900 px-3 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
                   <option value="">Select...</option>
-                  <option>Software</option><option>Content Engineer</option><option>Trainee</option>
+                  {meta.departments.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1.5">Reporting Person</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1.5">Reporting Person <span className="text-slate-400 font-normal">(Heads / Leads / Managers only)</span></label>
                 <select value={form.reportingManagerId} onChange={e => setForm({...form, reportingManagerId: e.target.value})} className="w-full bg-white border border-slate-300 text-slate-900 px-3 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
                   <option value="">None</option>
-                  {allEmployees.map(emp => <option key={emp._id || emp.id} value={emp._id || emp.id}>{emp.firstName} {emp.lastName}</option>)}
+                  {meta.managers.map(m => (
+                    <option key={m._id} value={m._id}>
+                      {m.firstName} {m.lastName}{m.designation ? ` — ${m.designation}` : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>

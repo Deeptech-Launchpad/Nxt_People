@@ -18,6 +18,7 @@ export default function Employees() {
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+  const [desigFilter, setDesigFilter] = useState('');
   const [loading, setLoading] = useState(true);
   // Zoho sync state — only used by admins
   const [zohoSyncing, setZohoSyncing] = useState(false);
@@ -35,31 +36,37 @@ export default function Employees() {
   const [departments, setDepartments] = useState(['Engineering', 'HR', 'Sales', 'Marketing']);
   const [designations, setDesignations] = useState(['Software Engineer', 'Manager']);
   const [roles, setRoles] = useState(['admin', 'manager', 'employee']);
-  const [allEmployees, setAllEmployees] = useState([]);
+  // `managers` is the leadership-filtered list (Heads / Leads / Managers) used
+  // for the Reporting Person dropdown. Replaces the old `allEmployees` list
+  // which let admin pick any employee as a manager.
+  const [managers, setManagers] = useState([]);
   const [approvingAuthorities, setApprovingAuthorities] = useState([]);
   const limit = 10;
 
   const load = () => {
     setLoading(true);
-    const params = new URLSearchParams({ page, limit, ...(search && {search}), ...(deptFilter && {department: deptFilter}), ...(roleFilter && {role: roleFilter}) });
+    const params = new URLSearchParams({
+      page, limit,
+      ...(search      && { search }),
+      ...(deptFilter  && { department:  deptFilter }),
+      ...(roleFilter  && { role:        roleFilter }),
+      ...(desigFilter && { designation: desigFilter }),
+    });
     api.get(`/employees?${params}`).then(r => { setEmployees(r.data.data); setTotal(r.data.total); }).catch(console.error).finally(()=>setLoading(false));
   };
 
   useEffect(() => {
     api.get('/employees/metadata').then(r => {
-      if (r.data.data.departments?.length) setDepartments(r.data.data.departments);
-      if (r.data.data.designations?.length) setDesignations(r.data.data.designations);
-      if (r.data.data.roles?.length) setRoles(r.data.data.roles);
-      if (r.data.data.approvingAuthorities?.length) setApprovingAuthorities(r.data.data.approvingAuthorities);
-    }).catch(console.error);
-
-    // Fetch all employees for reporting manager dropdown
-    api.get('/employees?limit=1000&status=active').then(r => {
-      setAllEmployees(r.data.data || []);
+      const d = r.data.data || {};
+      if (d.departments?.length)          setDepartments(d.departments);
+      if (d.designations?.length)         setDesignations(d.designations);
+      if (d.roles?.length)                setRoles(d.roles);
+      if (d.managers?.length)             setManagers(d.managers);
+      if (d.approvingAuthorities?.length) setApprovingAuthorities(d.approvingAuthorities);
     }).catch(console.error);
   }, []);
 
-  useEffect(load, [page, search, deptFilter, roleFilter]);
+  useEffect(load, [page, search, deptFilter, roleFilter, desigFilter]);
 
   const openCreate = () => { setEditEmp(null); setForm(initForm); setModal(true); };
   const openEdit = (emp) => {
@@ -162,6 +169,9 @@ export default function Employees() {
             </div>
             <select value={deptFilter} onChange={e=>{setDeptFilter(e.target.value);setPage(1)}} className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-brand-400">
               <option value="">All Departments</option>{departments.map(d=><option key={d}>{d}</option>)}
+            </select>
+            <select value={desigFilter} onChange={e=>{setDesigFilter(e.target.value);setPage(1)}} className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-brand-400">
+              <option value="">All Designations</option>{designations.map(d=><option key={d}>{d}</option>)}
             </select>
             <select value={roleFilter} onChange={e=>{setRoleFilter(e.target.value);setPage(1)}} className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-brand-400">
               <option value="">All Roles</option>{roles.map(r=><option key={r} className="capitalize">{r}</option>)}
@@ -332,10 +342,10 @@ export default function Employees() {
                    </select>
                  </div>
                  <div>
-                   <label className="block text-xs font-medium text-slate-600 mb-1.5">Reporting Person</label>
+                   <label className="block text-xs font-medium text-slate-600 mb-1.5">Reporting Person <span className="text-slate-400 font-normal">(Heads / Leads / Managers)</span></label>
                    <select value={form.reportingManagerId} onChange={e=>setForm({...form,reportingManagerId:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
                      <option value="">None</option>
-                     {allEmployees.map(emp => <option key={emp._id || emp.id} value={emp._id || emp.id}>{emp.firstName} {emp.lastName}</option>)}
+                     {managers.map(m => <option key={m._id} value={m._id}>{m.firstName} {m.lastName}{m.designation ? ` — ${m.designation}` : ''}</option>)}
                    </select>
                  </div>
                </div>
