@@ -14,7 +14,9 @@ const router  = express.Router();
 const pool    = require('../db');
 const logger  = require('../logger');
 const { protect, authorize } = require('../middleware/auth');
-const { iterateEmployees } = require('../utils/zoho');
+const { iterateEmployees, iteratePayroll, listEmployeeFiles, downloadFile } = require('../utils/zoho');
+const fs = require('fs');
+const path = require('path');
 
 router.use(protect, authorize('admin'));
 
@@ -375,6 +377,178 @@ router.post('/zoho-sync', async (req, res) => {
     res.status(500).json({ success: false, message: err.message, stats });
   } finally {
     client.release();
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Phase 2 — Payroll sync. Pulls bank account / IFSC / CTC from the Zoho
+// People Payroll form (separate from the employee form). Org needs the
+// Payroll module on their Zoho subscription; otherwise this endpoint
+// completes with `processed: 0` and no error.
+//
+// Matches by email — the Payroll form must have an Email or EmployeeID
+// column. Never overwrites a value HR has already entered manually.
+// ───────────────────────────────────────────────────────────────────────────
+router.post('/zoho-sync-payroll', async (req, res) => {
+  const stats = { processed: 0, updated: 0, skipped: 0, errors: [] };
+  try {
+    logger.info({ initiatedBy: req.user._id }, 'Zoho Payroll sync started');
+
+    for await (const rec of iteratePayroll()) {
+      stats.processed++;
+
+      const email = (rec.EmailID || rec.Email || rec.Email_ID || rec.Workemail || '').toLowerCase();
+      const empCode = rec.EmployeeID || rec.Employee_ID;
+      if (!email && !empCode) { stats.skipped++; continue; }
+
+      const bankName    = rec.BankName    || rec.Bank_Name    || rec.Bank;
+      const bankAccount = rec.BankAccountNumber || rec.AccountNumber || rec.Bank_Account_Number || rec.Account_Number;
+      const bankIfsc    = rec.IFSC || rec.IFSC_Code || rec.IFSCCode;
+      const monthlyCTC  = parseFloat(rec.MonthlyCTC || rec.Monthly_CTC || rec.CTC || rec.AnnualCTC && (rec.AnnualCTC / 12)) || null;
+      const basicSalary = parseFloat(rec.BasicSalary || rec.Basic_Salary || rec.Basic) || null;
+
+      if (!bankName && !bankAccount && !bankIfsc && !monthlyCTC && !basicSalary) {
+        stats.skipped++;
+        continue;
+      }
+
+      try {
+        // COALESCE — only fills NULLs, never overwrites admin-entered values.
+        const r = await pool.query(
+          `UPDATE employees
+              SET bank_name    = COALESCE(bank_name,    $1),
+                  bank_account = COALESCE(bank_account, $2),
+                  bank_ifsc    = COALESCE(bank_ifsc,    $3),
+                  monthly_ctc  = COALESCE(monthly_ctc,  $4),
+                  basic_salary = COALESCE(basic_salary, $5),
+                  updated_at   = NOW()
+            WHERE (LOWER(email) = $6 AND $6 <> '')
+               OR (employee_id = $7 AND $7 <> '')
+            RETURNING id`,
+          [bankName || null, bankAccount || null, bankIfsc || null, monthlyCTC, basicSalary, email, empCode || '']
+        );
+        if (r.rowCount > 0) stats.updated++;
+        else stats.skipped++;
+      } catch (err) {
+        stats.errors.push({ email: email || empCode, message: err.message });
+      }
+    }
+
+    logger.info({ stats }, 'Zoho Payroll sync complete');
+    res.json({ success: true, stats });
+  } catch (err) {
+    logger.error({ err }, 'Zoho Payroll sync failed');
+    res.status(500).json({ success: false, message: err.message, stats });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Phase 3 — Documents import. For each employee, list their Zoho file
+// attachments, download each one into backend/uploads/, and insert a row
+// into employee_documents (both legacy + modern column sets so the
+// Documents page sees them).
+//
+// Slow: 70 employees × ~5 files = ~350 API calls. Returns immediately
+// after kicking off and reports stats once done. Files that already
+// exist (matched by original name + employee) are skipped.
+// ───────────────────────────────────────────────────────────────────────────
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+// Best-effort mapping from Zoho attachment names → our canonical doc types,
+// so the Documents page groups them correctly.
+function inferDocType(name = '') {
+  const n = name.toLowerCase();
+  if (/(aadhaar|aadhar)/.test(n))                  return 'id_proof';
+  if (/(pan)/.test(n))                             return 'id_proof';
+  if (/(offer.*letter|appointment)/.test(n))       return 'offer_letter';
+  if (/(experience|relieving)/.test(n))            return 'experience';
+  if (/(10th|sslc|tenth)/.test(n))                 return 'educational';
+  if (/(12th|hsc|twelfth|plus.?two)/.test(n))      return 'educational';
+  if (/(ug|degree|bachelor)/.test(n))              return 'educational';
+  if (/(pg|master|mba)/.test(n))                   return 'educational';
+  if (/(resume|cv)/.test(n))                       return 'resume';
+  if (/(photo|passport)/.test(n))                  return 'photo';
+  if (/(address|utility|electricity)/.test(n))     return 'address_proof';
+  if (/(payslip|pay.?slip|salary.?slip)/.test(n))  return 'payslip';
+  if (/(nda|non.?disclosure)/.test(n))             return 'nda';
+  if (/(contract|agreement)/.test(n))              return 'contract';
+  return 'other';
+}
+
+router.post('/zoho-sync-documents', async (req, res) => {
+  const stats = { employees: 0, downloaded: 0, skipped: 0, failed: 0, errors: [] };
+  try {
+    logger.info({ initiatedBy: req.user._id }, 'Zoho Documents sync started');
+
+    // Walk Zoho employees so we have the recordId for each file lookup.
+    for await (const rec of iterateEmployees()) {
+      const email = (rec.EmailID || rec.Email || '').toLowerCase();
+      const zohoRecordId = rec.ZohoID || rec.Zoho_ID || rec.recordId || rec.id;
+      if (!email || !zohoRecordId) { stats.skipped++; continue; }
+
+      // Match local employee row.
+      const empRow = await pool.query('SELECT id FROM employees WHERE LOWER(email) = $1', [email]);
+      if (empRow.rows.length === 0) { stats.skipped++; continue; }
+      const employeeId = empRow.rows[0].id;
+      stats.employees++;
+
+      const files = await listEmployeeFiles(zohoRecordId);
+      for (const f of files) {
+        if (!f.fileName || !f.fileId) continue;
+
+        // Skip if we already imported this file (matched by original name).
+        const existing = await pool.query(
+          `SELECT id FROM employee_documents
+            WHERE employee_id = $1 AND COALESCE(original_name, name) = $2`,
+          [employeeId, f.fileName]
+        );
+        if (existing.rows.length > 0) { stats.skipped++; continue; }
+
+        const buf = await downloadFile(zohoRecordId, f.fileId);
+        if (!buf) { stats.failed++; continue; }
+
+        // Save with a unique filename, preserve the original extension.
+        const ext = path.extname(f.fileName) || '';
+        const localName = `zoho-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+        const localPath = path.join(uploadsDir, localName);
+        try {
+          fs.writeFileSync(localPath, buf);
+          const fileUrl = `/uploads/${localName}`;
+          const docType = inferDocType(f.fileName);
+
+          await pool.query(
+            `INSERT INTO employee_documents
+               (employee_id,
+                document_type, file_path, original_name, mime_type, size,
+                name, type, file_url, file_size, uploaded_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $4, $7, $8, $6, $1)`,
+            [
+              employeeId,
+              docType,                  // legacy document_type
+              fileUrl,                  // legacy file_path (using full URL for downloads)
+              f.fileName,               // original_name + name
+              f.fileType || null,       // mime_type
+              f.fileSize ? parseInt(f.fileSize, 10) : buf.length,
+              docType,                  // modern type
+              fileUrl,                  // modern file_url
+            ]
+          );
+          stats.downloaded++;
+        } catch (err) {
+          stats.failed++;
+          stats.errors.push({ email, file: f.fileName, message: err.message });
+          // Clean up the disk file if INSERT failed.
+          try { fs.unlinkSync(localPath); } catch {}
+        }
+      }
+    }
+
+    logger.info({ stats }, 'Zoho Documents sync complete');
+    res.json({ success: true, stats });
+  } catch (err) {
+    logger.error({ err }, 'Zoho Documents sync failed');
+    res.status(500).json({ success: false, message: err.message, stats });
   }
 });
 

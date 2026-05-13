@@ -110,4 +110,79 @@ async function* iterateEmployees({ pageSize = 200 } = {}) {
   }
 }
 
-module.exports = { getAccessToken, refreshAccessToken, zohoApi, iterateEmployees };
+/**
+ * Iterate Zoho People Payroll form records. Same shape as iterateEmployees
+ * but the form name comes from ZOHO_PAYROLL_FORM (defaults to 'payroll').
+ *
+ * Best-effort: if the org doesn't have the form (404) or the subscription
+ * doesn't include Payroll (403), this yields nothing instead of throwing.
+ * Callers can rely on the sync still succeeding for orgs that don't have
+ * Zoho Payroll.
+ */
+async function* iteratePayroll({ pageSize = 200 } = {}) {
+  const formName = process.env.ZOHO_PAYROLL_FORM || 'payroll';
+  let sIndex = 1;
+  try {
+    for (;;) {
+      const body = await zohoApi(`forms/${formName}/getRecords?sIndex=${sIndex}&rec_limit=${pageSize}`);
+      const result = body?.response?.result;
+      if (!Array.isArray(result) || result.length === 0) return;
+      for (const row of result) {
+        const id = Object.keys(row)[0];
+        const fields = Array.isArray(row[id]) ? row[id][0] : row[id];
+        if (fields && typeof fields === 'object') yield fields;
+      }
+      if (result.length < pageSize) return;
+      sIndex += pageSize;
+    }
+  } catch (err) {
+    logger.warn({ formName, msg: err.message }, 'Zoho Payroll iterate failed (subscription or form-name missing) — skipping');
+  }
+}
+
+/**
+ * List file attachments for one Zoho People employee record. Returns
+ * an array of { fileName, fileId, fileSize, fileType } objects.
+ * Empty array if the employee has no files, or if the API call fails.
+ */
+async function listEmployeeFiles(recordId) {
+  try {
+    const body = await zohoApi(`forms/employee/getRecordAttachments?recordId=${encodeURIComponent(recordId)}`);
+    const list = body?.response?.result || body?.result || [];
+    return Array.isArray(list)
+      ? list.map(f => ({
+          fileName: f.fileName || f.attachmentName || f.name,
+          fileId:   f.fileId   || f.id            || f.attachmentId,
+          fileSize: f.fileSize || f.size,
+          fileType: f.fileType || f.mimeType,
+        })).filter(f => f.fileId)
+      : [];
+  } catch (err) {
+    logger.warn({ recordId, msg: err.message }, 'Zoho file list failed');
+    return [];
+  }
+}
+
+/**
+ * Download one Zoho People file as a Buffer. Returns null on any failure
+ * (network, auth, not-found) so callers can continue with other files.
+ */
+async function downloadFile(recordId, fileId) {
+  const domain = process.env.ZOHO_API_DOMAIN || '';
+  if (!domain) return null;
+  const url = `${domain.replace(/\/$/, '')}/people/api/forms/employee/${encodeURIComponent(recordId)}/${encodeURIComponent(fileId)}/getFile`;
+  try {
+    const token = await getAccessToken();
+    const r = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${token}` } });
+    if (!r.ok) {
+      logger.warn({ url, status: r.status }, 'Zoho file download failed');
+      return null;
+    }
+    return Buffer.from(await r.arrayBuffer());
+  } catch (err) {
+    logger.warn({ url, msg: err.message }, 'Zoho file download threw');
+    return null;
+  }
+}
+
+module.exports = { getAccessToken, refreshAccessToken, zohoApi, iterateEmployees, iteratePayroll, listEmployeeFiles, downloadFile };

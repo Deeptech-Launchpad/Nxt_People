@@ -247,6 +247,44 @@ export default function Employees() {
     }
   };
 
+  // Phase 2 — pull bank account / IFSC / CTC from the Zoho People Payroll
+  // module. Best-effort: orgs without the Payroll subscription get a
+  // graceful "0 updated" result, no error.
+  const handlePayrollSync = async () => {
+    if (zohoSyncing) return;
+    if (!confirm('Sync payroll data (bank account, IFSC, CTC) from Zoho People Payroll? Existing values are never overwritten — only NULLs are filled.')) return;
+    setZohoSyncing(true);
+    try {
+      const r = await api.post('/admin/zoho-sync-payroll');
+      const s = r.data.stats;
+      toast.success(`Payroll: processed ${s.processed}, updated ${s.updated}, skipped ${s.skipped}`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Payroll sync failed');
+    } finally {
+      setZohoSyncing(false);
+    }
+  };
+
+  // Phase 3 — download Zoho People file attachments (Aadhaar/PAN/offer
+  // letter PDFs etc.) for every employee. Slow — ~5 min for 70 employees
+  // depending on how many files each has.
+  const handleDocumentsSync = async () => {
+    if (zohoSyncing) return;
+    if (!confirm("Import documents from Zoho People for every employee?\n\nThis can take several minutes — each employee's files are downloaded one at a time. Already-imported files are skipped.")) return;
+    setZohoSyncing(true);
+    try {
+      const r = await api.post('/admin/zoho-sync-documents');
+      const s = r.data.stats;
+      toast.success(`Documents: ${s.downloaded} downloaded, ${s.skipped} skipped, ${s.failed} failed (${s.employees} employees scanned)`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Documents sync failed');
+    } finally {
+      setZohoSyncing(false);
+    }
+  };
+
   const handleSendOnboarding = async (e) => {
     e.preventDefault();
     setSendingEmail(true);
@@ -299,15 +337,35 @@ export default function Employees() {
             </select>
           </div>
           {isAdmin && (
-            <button
-              onClick={handleZohoSync}
-              disabled={zohoSyncing}
-              title="Pull every employee from Zoho People into Nxt-People"
-              className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
-            >
-              <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />
-              {zohoSyncing ? 'Syncing…' : 'Sync from Zoho'}
-            </button>
+            <>
+              <button
+                onClick={handleZohoSync}
+                disabled={zohoSyncing}
+                title="Pull every employee from Zoho People into Nxt-People"
+                className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />
+                {zohoSyncing ? 'Syncing…' : 'Sync from Zoho'}
+              </button>
+              <button
+                onClick={handlePayrollSync}
+                disabled={zohoSyncing}
+                title="Pull bank account / IFSC / CTC from the Zoho People Payroll module"
+                className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />
+                Sync Payroll
+              </button>
+              <button
+                onClick={handleDocumentsSync}
+                disabled={zohoSyncing}
+                title="Download every employee's file attachments from Zoho — slow"
+                className="flex items-center gap-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />
+                Import Documents
+              </button>
+            </>
           )}
           <button onClick={() => setOnboardingModal(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 text-brand-600 border border-brand-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors">
             <Mail size={16}/> Send Preboarding
