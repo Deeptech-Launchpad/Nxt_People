@@ -1,0 +1,232 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── FORCE Lato font globally (Zoho People style) ───────────────────── */
+*, *::before, *::after {
+  font-family: 'Lato', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+/* Exception: keep monospace for code/timer elements */
+.font-mono, code, pre, kbd, [style*="JetBrains"], [style*="monospace"] {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+}
+
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    font-family: 'Lato', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13.5px;
+    font-weight: 400;
+    color: #1a1a2e;
+    background-color: #f2f3f7;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "kern" 1, "liga" 1, "tnum" 1;
+    line-height: 1.5;
+    letter-spacing: 0.005em;
+  }
+
+  /* Ensure all headings and labels use Lato */
+  h1, h2, h3, h4, h5, h6, label, button, input, select, textarea {
+    font-family: 'Lato', 'Inter', sans-serif;
+  }
+
+  /* All numbers render with tabular (monospace-width) digits */
+  span, p, div, td, th {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ── Custom scrollbar (Zoho uses thin scrollbars) ──────────────────── */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #d1d5db;
+    border-radius: 20px;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Page content offset for the sticky bottom bar */
+  .with-bottom-bar {
+    padding-bottom: 38px;
+  }
+}
+
+/* ── Zoho-style card hover effect ───────────────────────────────────── */
+@layer components {
+  .zoho-card {
+    @apply bg-white rounded-lg border border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.06)];
+    transition: box-shadow 0.15s ease;
+  }
+
+  .zoho-card:hover {
+    @apply shadow-[0_4px_12px_rgba(0,0,0,0.09)];
+  }
+
+  .zoho-tab-active {
+    @apply border-b-2 border-blue-500 text-blue-600 font-semibold;
+  }
+
+  .zoho-tab-inactive {
+    @apply border-b-2 border-transparent text-slate-600 hover:text-slate-800;
+  }
+
+  /* Status dot */
+  .status-in {
+    @apply inline-block w-2 h-2 rounded-full bg-emerald-500;
+  }
+  .status-out {
+    @apply inline-block w-2 h-2 rounded-full bg-slate-400;
+  }
+}
+
+/* ── Dark Mode — Proper targeted dark theme ─────────────────────────── */
+
+/* Global baseline — all text defaults to near-white in dark mode */
+html.dark body {
+  color: #f1f5f9 !important;
+  background-color: #111827 !important;
+}
+
+/* Force white text on all elements globally in dark mode */
+html.dark *:not(svg):not(path):not(.bg-\[#1a1d35\]):not([class*="bg-\[#"]) {
+  color: inherit;
+}
+
+html.dark .bg-\[#f2f3f7\]  { background-color: #111827 !important; }
+html.dark .bg-white         { background-color: #1f2937 !important; }
+
+/* Text colours */
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-gray-900,
+html.dark .text-gray-800  { color: #f1f5f9 !important; }
+
+html.dark .text-slate-700,
+html.dark .text-gray-700  { color: #cbd5e1 !important; }
+
+html.dark .text-slate-600,
+html.dark .text-slate-500,
+html.dark .text-gray-600,
+html.dark .text-gray-500  { color: #94a3b8 !important; }
+
+html.dark .text-slate-400,
+html.dark .text-gray-400  { color: #64748b !important; }
+
+/* Borders */
+html.dark .border-slate-200,
+html.dark .border-slate-100,
+html.dark .border-gray-200,
+html.dark .border-gray-100 { border-color: #374151 !important; }
+
+/* Cards / surfaces */
+html.dark .shadow-sm,
+html.dark .shadow-md { box-shadow: 0 1px 8px rgba(0,0,0,0.4) !important; }
+
+/* Inputs */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #1f2937 !important;
+  color: #f1f5f9 !important;
+  border-color: #374151 !important;
+}
+
+/* Timer boxes */
+html.dark [style*="background: #f0f1f5"],
+html.dark [style*="background:#f0f1f5"] {
+  background: #374151 !important;
+  color: #f1f5f9 !important;
+}
+
+/* Bottom bar */
+html.dark .fixed.bottom-0.bg-white {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+  color: #94a3b8 !important;
+}
+
+/* Sub-nav tab strip */
+html.dark .border-b.bg-white {
+  background-color: #111827 !important;
+  border-color: #374151 !important;
+}
+
+/* Hover rows/cells */
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-gray-50:hover { background-color: #1f2937 !important; }
+html.dark .hover\:bg-slate-100:hover { background-color: #374151 !important; }
+
+/* ── Dashboard-specific dark overrides ──────────────────────────────── */
+
+/* "General Shift" schedule box — named class for reliable dark mode targeting */
+.shift-bar {
+  background-color: #eff6ff;
+}
+
+html.dark .shift-bar {
+  background-color: #1e2d4a !important;
+}
+html.dark .shift-bar p { color: #e2e8f0 !important; }
+
+/* Tab body background — use attribute selector to match arbitrary Tailwind color */
+html.dark [class*="f8f9fc"] { background-color: #0f172a !important; }
+
+/* "Access my payroll" button — semi-transparent dark glass look */
+html.dark .bg-white\/90 {
+  background-color: rgba(30, 41, 59, 0.85) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(148, 163, 184, 0.3) !important;
+}
+html.dark .hover\:bg-white:hover {
+  background-color: rgba(51, 65, 85, 0.95) !important;
+}
+
+/* Status badge pills in activities (emerald/amber/slate) */
+html.dark .bg-emerald-100 { background-color: #064e3b !important; }
+html.dark .text-emerald-700 { color: #6ee7b7 !important; }
+html.dark .bg-amber-100   { background-color: #451a03 !important; }
+html.dark .text-amber-700  { color: #fcd34d !important; }
+html.dark .bg-slate-100   { background-color: #1e293b !important; }
+html.dark .text-slate-600  { color: #94a3b8 !important; }
+
+/* Gradient text (AltiusNxt brand label) — keep white in dark mode */
+html.dark .bg-clip-text {
+  background: none !important;
+  color: #e2e8f0 !important;
+  -webkit-text-fill-color: #e2e8f0 !important;
+}
+
+/* Page-level white gaps (right-side white area beyond content) */
+html.dark .flex.min-h-screen { background-color: #111827 !important; }
+html.dark .flex-1.min-w-0 { background-color: #111827 !important; }

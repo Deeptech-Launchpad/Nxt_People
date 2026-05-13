@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.vscode
+dist
+cypress/screenshots
+cypress/videos
+cypress-output*.txt
+cypress_error.txt
+*.log
+Dockerfile
+.dockerignore

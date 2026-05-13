@@ -1,0 +1,213 @@
+import React, { lazy, Suspense } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { AttendanceProvider } from './context/AttendanceContext';
+import { WeekendRulesProvider } from './context/WeekendRulesContext';
+import MobileBlocker from './components/layout/MobileBlocker';
+
+import Layout from './components/layout/Layout';
+import Login from './pages/Login';
+import OnboardingForm from './pages/OnboardingForm';
+
+/* ── Existing pages ─────────────────────────────────────────────────── */
+const Dashboard       = lazy(() => import('./pages/Dashboard'));
+const CheckInOut      = lazy(() => import('./pages/attendance/CheckInOut'));
+const MyAttendance    = lazy(() => import('./pages/attendance/MyAttendance'));
+const TeamAttendance  = lazy(() => import('./pages/attendance/TeamAttendance'));
+const Regularization  = lazy(() => import('./pages/attendance/Regularization'));
+const Employees       = lazy(() => import('./pages/Employees'));
+const Approvals       = lazy(() => import('./pages/Approvals'));
+const Settings        = lazy(() => import('./pages/Settings'));
+const Registrations   = lazy(() => import('./pages/Registrations'));
+const Companies       = lazy(() => import('./pages/Companies'));
+const ApiConnections  = lazy(() => import('./pages/ApiConnections'));
+const Profile         = lazy(() => import('./pages/Profile'));
+const Directory       = lazy(() => import('./pages/Directory'));
+const LeaveCalendar   = lazy(() => import('./pages/LeaveCalendar'));
+const OrgChart        = lazy(() => import('./pages/OrgChart'));
+const Announcements   = lazy(() => import('./pages/Announcements'));
+const WFHRequests     = lazy(() => import('./pages/WFHRequests'));
+const CompOff         = lazy(() => import('./pages/CompOff'));
+const Documents       = lazy(() => import('./pages/Documents'));
+const PayrollReport   = lazy(() => import('./pages/PayrollReport'));
+const Performance     = lazy(() => import('./pages/Performance'));
+const ExitManagement  = lazy(() => import('./pages/ExitManagement'));
+const ShiftRoster     = lazy(() => import('./pages/ShiftRoster'));
+const Shifts          = lazy(() => import('./pages/Shifts'));
+const Holidays        = lazy(() => import('./pages/Holidays'));
+const Timesheets      = lazy(() => import('./pages/Timesheets'));
+const Leave           = lazy(() => import('./pages/Leave'));
+const Reports         = lazy(() => import('./pages/Reports'));
+const DailyAttendance = lazy(() => import('./pages/DailyAttendance'));
+const LeaveEncashment = lazy(() => import('./pages/LeaveEncashment'));
+const Weekends        = lazy(() => import('./pages/Weekends'));
+const Chat            = lazy(() => import('./pages/Chat'));
+
+/* ── New pages — Phase 2: Home ──────────────────────────────────────── */
+const DashboardWidgets = lazy(() => import('./pages/DashboardWidgets'));
+
+/* ── New pages — Phase 3: Team ──────────────────────────────────────── */
+const TeamSpace    = lazy(() => import('./pages/TeamSpace'));
+const TeamProjects = lazy(() => import('./pages/TeamProjects'));
+const Peers        = lazy(() => import('./pages/Peers'));
+
+/* ── New pages — Phase 4: Organization ─────────────────────────────── */
+const OrgOverview    = lazy(() => import('./pages/OrgOverview'));
+const Policies       = lazy(() => import('./pages/Policies'));
+const BirthdayFolks  = lazy(() => import('./pages/BirthdayFolks'));
+const NewHires       = lazy(() => import('./pages/NewHires'));
+
+/* ── New pages — Phase 5: Time Tracker ─────────────────────────────── */
+const TimeLogs         = lazy(() => import('./pages/timetracker/TimeLogs'));
+const JobSchedule      = lazy(() => import('./pages/timetracker/JobSchedule'));
+const TimeTrackerProjs = lazy(() => import('./pages/timetracker/Projects'));
+
+/* ── New pages — Phase 6: Leave Tracker ────────────────────────────── */
+const LeaveSummary   = lazy(() => import('./pages/leavetracker/LeaveSummary'));
+const LeaveBalance   = lazy(() => import('./pages/leavetracker/LeaveBalance'));
+const LeaveRequests  = lazy(() => import('./pages/leavetracker/LeaveRequests'));
+const LeaveTeam      = lazy(() => import('./pages/leavetracker/LeaveTeam'));
+
+/* ── New pages — Phase 7: Performance ──────────────────────────────── */
+const PerformanceGoals = lazy(() => import('./pages/performance/Goals'));
+const SkillMatrix      = lazy(() => import('./pages/performance/SkillMatrix'));
+
+/* ── New pages — Phase 8: More Services ────────────────────────────── */
+const Travel       = lazy(() => import('./pages/moreservices/Travel'));
+const Compensation = lazy(() => import('./pages/moreservices/Compensation'));
+const Surveys      = lazy(() => import('./pages/moreservices/Surveys'));
+const HRLetters    = lazy(() => import('./pages/moreservices/HRLetters'));
+
+/* ── Loaders & Guards ──────────────────────────────────────────────── */
+const PageLoader = () => (
+  <div className="min-h-[60vh] flex items-center justify-center">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-8 h-8 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin"/>
+      <span className="text-slate-400 text-sm">Loading…</span>
+    </div>
+  </div>
+);
+
+const ProtectedRoute = ({ children, roles }) => {
+  const { user, loading } = useAuth();
+  if (loading) return <PageLoader/>;
+  if (!user) return <Navigate to="/login" replace/>;
+  if (roles && !roles.includes(user.role)) return <Navigate to="/" replace/>;
+  return children;
+};
+
+const AppRoutes = () => {
+  const { user } = useAuth();
+  return (
+    <Suspense fallback={<PageLoader/>}>
+      <Routes>
+        <Route path="/login" element={user ? <Navigate to="/" replace/> : <Login/>}/>
+        {/* Password reset must always render — even for users with an active
+         *  session. Otherwise clicking the email link in the same browser silently
+         *  redirects them home and the reset never happens. */}
+        <Route path="/reset-password/:token" element={<Login/>}/>
+        <Route path="/onboarding/:token" element={<OnboardingForm/>}/>
+        <Route path="/" element={<ProtectedRoute><Layout/></ProtectedRoute>}>
+
+          {/* ── Home / My Space ──────────────────────────────────────── */}
+          <Route index element={<Dashboard/>}/>
+          <Route path="dashboard"  element={<DashboardWidgets/>}/>
+          <Route path="calendar"   element={<LeaveCalendar/>}/>
+          <Route path="profile"    element={<Profile/>}/>
+
+          {/* ── Home / Team ──────────────────────────────────────────── */}
+          <Route path="team-space"    element={<TeamSpace/>}/>
+          <Route path="team/projects" element={<TeamProjects/>}/>
+          <Route path="team/peers"    element={<Peers/>}/>
+          <Route path="approvals"     element={<ProtectedRoute roles={['admin','manager']}><Approvals/></ProtectedRoute>}/>
+
+          {/* ── Home / Organization ──────────────────────────────────── */}
+          <Route path="organization" element={<OrgOverview/>}/>
+          <Route path="org-chart"    element={<OrgChart/>}/>
+          <Route path="dept-tree"    element={<OrgChart/>}/>
+          <Route path="announcements"element={<Announcements/>}/>
+          <Route path="policies"     element={<Policies/>}/>
+          <Route path="birthdays"    element={<BirthdayFolks/>}/>
+          <Route path="new-hires"    element={<NewHires/>}/>
+          <Route path="directory"    element={<Directory/>}/>
+          <Route path="companies"    element={<ProtectedRoute roles={['admin']}><Companies/></ProtectedRoute>}/>
+          <Route path="holidays"     element={<Holidays/>}/>
+
+          {/* ── Attendance ───────────────────────────────────────────── */}
+          <Route path="attendance/my"             element={<MyAttendance/>}/>
+          <Route path="attendance/checkin"        element={<CheckInOut/>}/>
+          <Route path="attendance/regularization" element={<Regularization/>}/>
+          <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','manager']}><TeamAttendance/></ProtectedRoute>}/>
+
+          {/* ── Time Tracker ─────────────────────────────────────────── */}
+          <Route path="time-tracker/timelogs"    element={<TimeLogs/>}/>
+          <Route path="time-tracker/timesheets"  element={<Timesheets/>}/>
+          <Route path="time-tracker/projects"    element={<TimeTrackerProjs/>}/>
+          <Route path="time-tracker/schedule"    element={<JobSchedule/>}/>
+
+          {/* ── Leave Tracker ────────────────────────────────────────── */}
+          <Route path="leave-tracker/summary"    element={<LeaveSummary/>}/>
+          <Route path="leave-tracker/balance"    element={<LeaveBalance/>}/>
+          <Route path="leave-tracker/requests"   element={<LeaveRequests/>}/>
+          <Route path="leave-tracker/comp-off"   element={<CompOff/>}/>
+          <Route path="leave-tracker/team"       element={<LeaveTeam/>}/>
+          <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
+          <Route path="leave-tracker/weekends"   element={<ProtectedRoute roles={['admin']}><Weekends/></ProtectedRoute>}/>
+
+          {/* ── Performance ──────────────────────────────────────────── */}
+          <Route path="performance/goals"  element={<PerformanceGoals/>}/>
+          <Route path="performance/skills" element={<SkillMatrix/>}/>
+          <Route path="performance"        element={<Performance/>}/>
+
+          {/* ── More Services ────────────────────────────────────────── */}
+          <Route path="more-services/files"        element={<Documents/>}/>
+          <Route path="more-services/travel"       element={<Travel/>}/>
+          <Route path="more-services/compensation" element={<Compensation/>}/>
+          <Route path="more-services/surveys"      element={<Surveys/>}/>
+          <Route path="more-services/hr-letters"   element={<HRLetters/>}/>
+
+          {/* ── Reports / Admin ──────────────────────────────────────── */}
+          <Route path="reports"          element={<ProtectedRoute roles={['admin','manager']}><Reports/></ProtectedRoute>}/>
+          <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','manager']}><DailyAttendance/></ProtectedRoute>}/>
+          <Route path="payroll"      element={<ProtectedRoute roles={['admin','manager']}><PayrollReport/></ProtectedRoute>}/>
+          <Route path="employees"    element={<ProtectedRoute roles={['admin','manager']}><Employees/></ProtectedRoute>}/>
+          <Route path="registrations"element={<ProtectedRoute roles={['admin','manager']}><Registrations/></ProtectedRoute>}/>
+          <Route path="shifts"       element={<ProtectedRoute roles={['admin']}><Shifts/></ProtectedRoute>}/>
+          <Route path="shift-roster" element={<ProtectedRoute roles={['admin','manager']}><ShiftRoster/></ProtectedRoute>}/>
+
+          {/* ── Other ────────────────────────────────────────────────── */}
+          <Route path="documents"      element={<Documents/>}/>
+          <Route path="chat"           element={<Chat/>}/>
+          <Route path="exit"           element={<ExitManagement/>}/>
+          <Route path="leave"          element={<Navigate to="/leave-tracker/requests" replace/>}/>
+          <Route path="timesheets"     element={<Navigate to="/time-tracker/timesheets" replace/>}/>
+          <Route path="wfh"            element={<WFHRequests/>}/>
+          <Route path="comp-off"       element={<Navigate to="/leave-tracker/comp-off" replace/>}/>
+          <Route path="leave-calendar" element={<Navigate to="/calendar" replace/>}/>
+          <Route path="leave-encashment" element={<LeaveEncashment/>}/>
+          <Route path="projects"       element={<Navigate to="/team/projects" replace/>}/>
+          <Route path="api-connections"element={<ProtectedRoute roles={['admin']}><ApiConnections/></ProtectedRoute>}/>
+          <Route path="settings"       element={<ProtectedRoute roles={['admin']}><Settings/></ProtectedRoute>}/>
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace/>}/>
+      </Routes>
+    </Suspense>
+  );
+};
+
+export default function App() {
+  return (
+    <MobileBlocker>
+      <AuthProvider>
+        <WeekendRulesProvider>
+          <AttendanceProvider>
+            <Toaster position="bottom-right" toastOptions={{ duration: 4000, style: { fontSize: '13px', fontWeight: 600 } }}/>
+            <AppRoutes/>
+          </AttendanceProvider>
+        </WeekendRulesProvider>
+      </AuthProvider>
+    </MobileBlocker>
+  );
+}

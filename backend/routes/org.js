@@ -1,0 +1,179 @@
+/**
+ * routes/org.js — Organization module endpoints
+ * Handles: birthdays, new-hires, employee tree, department directory
+ */
+const express = require('express');
+const router = express.Router();
+const pool = require('../db');
+const { protect } = require('../middleware/auth');
+
+router.use(protect);
+
+// ── GET /api/org/birthdays?month=5&year=2026 ──────────────────────────────────
+router.get('/birthdays', async (req, res) => {
+  try {
+    const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
+    const year  = parseInt(req.query.year)  || new Date().getFullYear();
+
+    const r = await pool.query(
+      `SELECT id as "_id", employee_id as "employeeId",
+       first_name as "firstName", last_name as "lastName",
+       email, designation, department, photo_url as "photoUrl", phone,
+       date_of_birth as "dateOfBirth"
+       FROM employees
+       WHERE status = 'active'
+         AND date_of_birth IS NOT NULL
+         AND EXTRACT(MONTH FROM date_of_birth) = $1
+       ORDER BY EXTRACT(DAY FROM date_of_birth) ASC`,
+      [month]
+    );
+    res.json({ success: true, data: r.rows, month, year });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET /api/org/new-hires ────────────────────────────────────────────────────
+router.get('/new-hires', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 15;
+    const r = await pool.query(
+      `SELECT id as "_id", employee_id as "employeeId",
+       first_name as "firstName", last_name as "lastName",
+       email, designation, department, photo_url as "photoUrl",
+       join_date as "joinDate"
+       FROM employees
+       WHERE status = 'active'
+         AND join_date >= CURRENT_DATE - INTERVAL '${days} days'
+       ORDER BY join_date DESC`
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET /api/org/departments ──────────────────────────────────────────────────
+router.get('/departments', async (req, res) => {
+  try {
+    // Try departments table first
+    let r;
+    try {
+      r = await pool.query(
+        `SELECT d.id as "_id", d.name, d.code, d.head_id as "headId",
+         COUNT(e.id) as "employeeCount"
+         FROM departments d
+         LEFT JOIN employees e ON e.department_id = d.id AND e.status = 'active'
+         GROUP BY d.id, d.name, d.code, d.head_id
+         ORDER BY d.name ASC`
+      );
+    } catch (_) {
+      // Fallback: aggregate from employees.department column
+      r = await pool.query(
+        `SELECT department as name, COUNT(*) as "employeeCount"
+         FROM employees WHERE status='active' AND department IS NOT NULL
+         GROUP BY department ORDER BY department ASC`
+      );
+      r.rows = r.rows.map((row, i) => ({ _id: i + 1, name: row.name, employeeCount: row.employeeCount }));
+    }
+    res.json({ success: true, data: r.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET /api/org/departments/:id/employees ────────────────────────────────────
+router.get('/departments/:id/employees', async (req, res) => {
+  try {
+    const { search } = req.query;
+    let q = `SELECT id as "_id", employee_id as "employeeId",
+             first_name as "firstName", last_name as "lastName",
+             email, designation, department, photo_url as "photoUrl", status
+             FROM employees
+             WHERE status = 'active'`;
+    const params = [];
+
+    // Try by department_id first, fall back to name matching
+    const isNumeric = /^\d+$/.test(req.params.id);
+    if (isNumeric) {
+      q += ` AND department_id = $${params.length + 1}`;
+      params.push(req.params.id);
+    } else {
+      q += ` AND LOWER(department) = LOWER($${params.length + 1})`;
+      params.push(req.params.id);
+    }
+
+    if (search) {
+      q += ` AND (LOWER(first_name) LIKE $${params.length + 1} OR LOWER(last_name) LIKE $${params.length + 1} OR LOWER(email) LIKE $${params.length + 1})`;
+      params.push(`%${search.toLowerCase()}%`);
+    }
+    q += ' ORDER BY first_name ASC';
+
+    const r = await pool.query(q, params);
+    res.json({ success: true, data: r.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET /api/org/employee-tree ─────────────────────────────────────────────────
+router.get('/employee-tree', async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id, employee_id as "employeeId", first_name as "firstName",
+       last_name as "lastName", designation, department, photo_url as "photoUrl",
+       reporting_manager_id as "managerId"
+       FROM employees WHERE status = 'active' ORDER BY id`
+    );
+    const all = r.rows;
+    const map = {};
+    all.forEach(e => { map[e.id] = { ...e, children: [] }; });
+
+    const roots = [];
+    all.forEach(e => {
+      if (e.managerId && map[e.managerId]) {
+        map[e.managerId].children.push(map[e.id]);
+      } else {
+        roots.push(map[e.id]);
+      }
+    });
+    res.json({ success: true, data: roots });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET /api/org/info ─────────────────────────────────────────────────────────
+router.get('/info', async (req, res) => {
+  try {
+    const [empCount, deptCount] = await Promise.all([
+      pool.query("SELECT COUNT(*) FROM employees WHERE status='active'"),
+      pool.query("SELECT COUNT(DISTINCT department) FROM employees WHERE status='active'"),
+    ]);
+    res.json({
+      success: true,
+      data: {
+        totalEmployees: parseInt(empCount.rows[0].count),
+        totalDepartments: parseInt(deptCount.rows[0].count),
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET /api/org/announcements ────────────────────────────────────────────────
+router.get('/announcements', async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id as "_id", title, content, author_id as "authorId",
+       created_at as "createdAt", expires_at as "expiresAt"
+       FROM announcements ORDER BY created_at DESC LIMIT 20`
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+module.exports = router;

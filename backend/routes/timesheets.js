@@ -1,0 +1,90 @@
+const express = require('express');
+const router = express.Router();
+const pool = require('../db');
+const { protect, authorize } = require('../middleware/auth');
+
+router.use(protect);
+
+router.get('/my', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id as "_id", week_start_date as "weekStartDate", week_end_date as "weekEndDate", total_hours as "totalHours", status, rejection_reason as "rejectionReason", notes FROM timesheets WHERE employee_id = $1 ORDER BY week_start_date DESC', [req.user._id]);
+    res.json({ success: true, data: result.rows });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.get('/', authorize('admin', 'manager'), async (req, res) => {
+  try {
+    const { status } = req.query;
+    let query = '';
+    let params = [];
+    if (status) {
+      query = 'WHERE t.status = $1';
+      params.push(status);
+    }
+    const result = await pool.query(`
+      SELECT t.id as "_id", t.week_start_date as "weekStartDate", t.week_end_date as "weekEndDate", t.total_hours as "totalHours", t.status, t.rejection_reason as "rejectionReason", t.notes,
+      json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'department', e.department) as employee
+      FROM timesheets t
+      JOIN employees e ON t.employee_id = e.id
+      ${query}
+      ORDER BY t.created_at DESC
+    `, params);
+    res.json({ success: true, data: result.rows });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/', async (req, res) => {
+  try {
+    const { weekStartDate, weekEndDate, totalHours, status, notes } = req.body;
+    const result = await pool.query(`
+      INSERT INTO timesheets (employee_id, week_start_date, week_end_date, total_hours, status, notes)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id as "_id", week_start_date as "weekStartDate", week_end_date as "weekEndDate", total_hours as "totalHours", status, notes
+    `, [req.user._id, weekStartDate, weekEndDate, totalHours || 0, status || 'draft', notes]);
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/:id', async (req, res) => {
+  try {
+    const { totalHours, notes } = req.body;
+    const result = await pool.query(`
+      UPDATE timesheets SET total_hours = $1, notes = $2, updated_at = NOW() WHERE id = $3 AND employee_id = $4
+      RETURNING id as "_id", week_start_date as "weekStartDate", week_end_date as "weekEndDate", total_hours as "totalHours", status, notes
+    `, [totalHours, notes, req.params.id, req.user._id]);
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/:id/submit', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      UPDATE timesheets SET status = 'submitted', updated_at = NOW() WHERE id = $1 AND employee_id = $2
+      RETURNING id as "_id", week_start_date as "weekStartDate", week_end_date as "weekEndDate", total_hours as "totalHours", status, notes
+    `, [req.params.id, req.user._id]);
+    res.json({ success: true, data: result.rows[0], message: 'Timesheet submitted' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
+  try {
+    const { action, rejectionReason } = req.body;
+
+    // Bug #15 fix: prevent self-approval — manager cannot approve their own timesheet
+    const ownerRes = await pool.query('SELECT employee_id FROM timesheets WHERE id = $1', [req.params.id]);
+    if (ownerRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Timesheet not found' });
+    if (ownerRes.rows[0].employee_id === req.user._id) {
+      return res.status(403).json({ success: false, message: 'You cannot approve your own timesheet' });
+    }
+
+    const status = action === 'approved' ? 'approved' : 'rejected';
+    const result = await pool.query(
+      `UPDATE timesheets SET status = $1, approved_by = $2, approved_at = NOW(), rejection_reason = $3, updated_at = NOW() WHERE id = $4
+       RETURNING id as "_id", week_start_date as "weekStartDate", week_end_date as "weekEndDate", total_hours as "totalHours", status, notes`,
+      [status, req.user._id, rejectionReason || null, req.params.id]
+    );
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+module.exports = router;

@@ -1,0 +1,88 @@
+# Production Docker Compose.
+#
+# Differences from docker-compose.yml (the dev/seed setup):
+#   • DB and backend are NOT port-exposed to the host — only the frontend
+#     container's nginx listens on 80, and proxies /api/ + /uploads/ to
+#     backend over the internal Docker network.
+#   • seed.sql is NOT mounted — production uses ADMIN_EMAIL bootstrap.
+#   • Secrets come from backend/.env (env_file), not inline defaults.
+#   • Migrations run automatically on backend startup via docker-entrypoint.sh.
+#   • All services restart unless explicitly stopped.
+#
+# Bring up:
+#   docker compose -f docker-compose.prod.yml --env-file backend/.env up -d --build
+#
+# Logs:
+#   docker compose -f docker-compose.prod.yml logs -f
+#
+# Shut down (data preserved):
+#   docker compose -f docker-compose.prod.yml down
+#
+# Shut down AND wipe DB volume (destructive):
+#   docker compose -f docker-compose.prod.yml down -v
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-nxt_people}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Schema only — no demo seed in production. migrate.js handles the rest.
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-nxt_people}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    # No `ports:` — DB is reachable only via the Docker network.
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override .env values that must match the compose network layout.
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: 5432
+      PORT: 5000
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Uploaded files survive container rebuilds. Back this up.
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # No `ports:` — backend is reachable only via nginx in the frontend container.
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      # Map host 80 → container 80. To terminate TLS, put a system nginx /
+      # Caddy / Traefik in front and remap to a high port (e.g. "127.0.0.1:8080:80").
+      - "80:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  pgdata:
+  uploads:

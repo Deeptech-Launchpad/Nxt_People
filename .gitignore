@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+frontend/dist/
+
+# Environment & secrets — NEVER commit these
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+frontend/.env
+frontend/.env.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+backend/logs/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage/
+backend/coverage/
+frontend/cypress/screenshots/
+frontend/cypress/videos/
+frontend/cypress-output*.txt
+frontend/cypress_error.txt
+
+# Uploads (runtime user content)
+backend/uploads/
+
+# Snapshot zip / backups
+*.zip
+*.bak
+*.tmp
