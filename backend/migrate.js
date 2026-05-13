@@ -19,13 +19,21 @@ const pool = require('./db');
 
 // Ordered list — earlier scripts create tables that later scripts ALTER.
 // Add new migrations here in the order they should run.
+//
+// Dependency notes (why this specific order):
+//   - phase1 must run first because it creates `notifications` and
+//     `announcements`, which zoho_features later ALTERs.
+//   - features must run before zoho_features because zoho_features's
+//     `time_logs` and `jobs` tables reference `projects`.
+//   - refresh_audit_projects's `project_members` also references `projects`,
+//     so it sits after features.
 const ORDER = [
-  'schema.sql',                          // base tables
-  'migrate_zoho_features.js',            // adds reporting_manager_id, late_minutes, leave_types, etc.
-  'migrate_refresh_audit_projects.js',   // refresh_tokens, audit_log, chat_*, project_members
+  'schema.sql',                          // base tables (employees, attendance, etc.)
   'migrate_phase1.js',                   // notifications, announcements, employee enrichment
+  'migrate_features.js',                 // projects, tasks, messages, leave_encashments
+  'migrate_refresh_audit_projects.js',   // refresh_tokens, audit_log, chat_*, project_members
+  'migrate_zoho_features.js',            // departments, leave_types, time_logs, jobs (needs projects + notifications)
   'migrate_phases2to5.js',               // attendance_regularizations, wfh_requests, etc.
-  'migrate_features.js',                 // leave_encashments, messages, projects, tasks
   'migrate_final.js',                    // comp_offs, performance_reviews, exit_requests, shift_roster
   'migrate_onboarding.js',               // employee_education, onboarding_tokens
   'migrate_reset_password.js',           // reset_password_token / expires columns
