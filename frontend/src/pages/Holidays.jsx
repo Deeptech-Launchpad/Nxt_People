@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Calendar, LayoutList, CalendarDays, MoreHorizontal, Download, Upload, Plus, Trash2, X } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -18,10 +18,53 @@ export default function Holidays() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ name: '', date: '', type: 'company', description: '', location: 'Saibaba Colony, Coimbatore', shifts: 'General Shift' });
   const [saving, setSaving] = useState(false);
-  
+  // Bulk import — hidden file input drives the visible "Import" button.
+  const fileInputRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+
   const load = () => {
     setLoading(true);
     api.get(`/holidays?year=${year}`).then(r => setHolidays(r.data.data)).catch(console.error).finally(() => setLoading(false));
+  };
+
+  // GET /api/holidays/template — fetches the xlsx template the backend
+  // builds at runtime, then triggers a browser download.
+  const handleDownloadTemplate = async () => {
+    try {
+      const r = await api.get('/holidays/template', { responseType: 'blob' });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'holidays_template.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Download failed');
+    }
+  };
+
+  // POST /api/holidays/import — upload a filled-in template. Backend parses
+  // every row, converts dates (handles both DD/MM/YYYY strings and Excel
+  // serial numbers), and INSERTs one holiday per row. Reports the count back.
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const r = await api.post('/holidays/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success(r.data.message || 'Imported');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Import failed');
+    } finally {
+      setImporting(false);
+      // Reset so the same file can be picked again after fixing rows.
+      e.target.value = '';
+    }
   };
 
   useEffect(load, [year]);
@@ -50,9 +93,33 @@ export default function Holidays() {
         {/* Left: empty or admin buttons */}
         <div className="flex gap-2">
           {user?.role === 'admin' && (
-            <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-[#1a73e8] hover:bg-[#1557B0] text-white px-3 py-1.5 rounded text-xs font-semibold transition-colors">
-              <Plus size={14} /> Add Holiday
-            </button>
+            <>
+              <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-[#1a73e8] hover:bg-[#1557B0] text-white px-3 py-1.5 rounded text-xs font-semibold transition-colors">
+                <Plus size={14} /> Add Holiday
+              </button>
+              <button
+                onClick={handleDownloadTemplate}
+                title="Download the xlsx template — fill it in, then click Import."
+                className="flex items-center gap-2 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded text-xs font-semibold transition-colors"
+              >
+                <Download size={14} /> Template
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                title="Upload a filled-in template. Each row becomes one holiday."
+                className="flex items-center gap-2 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded text-xs font-semibold transition-colors disabled:opacity-60"
+              >
+                <Upload size={14} /> {importing ? 'Importing…' : 'Import'}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleImport}
+                className="hidden"
+              />
+            </>
           )}
         </div>
 
