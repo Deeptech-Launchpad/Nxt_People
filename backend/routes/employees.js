@@ -235,7 +235,16 @@ router.post('/', authorize('admin', 'manager'), async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', true, $13, $14, $15, $16, $17, $18, $19)
        RETURNING id as "_id", first_name AS "firstName", last_name AS "lastName", email, role, department, designation, employee_id AS "employeeId"`,
       [firstName, lastName, email.toLowerCase(), hashedPassword, phone, role || 'employee', department, designation, company, division, joiningDate || new Date(), employeeId,
-       monthlyCTC || null, basicSalary || null, casualLeave ?? 12, sickLeave ?? 10, earnedLeave ?? 15, reportingManagerId || null, approvingAuthorityId || null]
+       // monthly_ctc and basic_salary are nullable — "" / 0 / undefined all collapse to NULL.
+       monthlyCTC || null, basicSalary || null,
+       // Leave-balance columns are NOT NULL with table-level defaults; we keep
+       // the same defaults here. `??` alone treats "" as a valid value and
+       // pg rejects it for NUMERIC columns ("invalid input syntax for type
+       // integer: ''") — so guard empty strings too.
+       (casualLeave === '' || casualLeave == null) ? 12 : Number(casualLeave),
+       (sickLeave   === '' || sickLeave   == null) ? 10 : Number(sickLeave),
+       (earnedLeave === '' || earnedLeave == null) ? 15 : Number(earnedLeave),
+       reportingManagerId || null, approvingAuthorityId || null]
     );
 
     await logAudit(req, {
