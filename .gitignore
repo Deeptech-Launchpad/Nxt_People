@@ -30,6 +30,9 @@ backend/logs/
 .DS_Store
 Thumbs.db
 
+# Claude Code memory / agent state — local-only
+.claude/
+
 # Test artifacts
 coverage/
 backend/coverage/
