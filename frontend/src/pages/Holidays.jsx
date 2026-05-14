@@ -88,7 +88,17 @@ export default function Holidays() {
         {/* Left: empty or admin buttons */}
         <div className="flex gap-2">
           {user?.role === 'admin' && (
-            <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-[#1a73e8] hover:bg-[#1557B0] text-white px-3 py-1.5 rounded text-xs font-semibold transition-colors">
+            <button
+              onClick={() => {
+                // Pre-fill the date with Jan 1 of the year currently being
+                // viewed in the table so admins don't think the form is
+                // year-less. They can then change day/month freely — the
+                // year comes along automatically.
+                setForm(f => ({ ...f, date: `${year}-01-01` }));
+                setModal(true);
+              }}
+              className="flex items-center gap-2 bg-[#1a73e8] hover:bg-[#1557B0] text-white px-3 py-1.5 rounded text-xs font-semibold transition-colors"
+            >
               <Plus size={14} /> Add Holiday
             </button>
           )}
@@ -204,6 +214,11 @@ export default function Holidays() {
                   <label className="block text-xs font-medium text-slate-600 mb-1">Date</label>
                   <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required disabled={!!lastSaved}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 disabled:bg-slate-50" />
+                  {form.date && (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Will be added under year <span className="font-semibold text-slate-600">{new Date(form.date + 'T00:00:00').getFullYear()}</span>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
