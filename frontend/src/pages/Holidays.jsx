@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Calendar, LayoutList, CalendarDays, MoreHorizontal, Download, Upload, Plus, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Download, Upload, Plus, Trash2, X } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -185,19 +185,14 @@ export default function Holidays() {
           </button>
         </div>
 
-        {/* Right: View Toggles & Filter */}
+        {/* Right: Filter dropdown only. The list/calendar view toggles and
+            the "⋯" kebab were placeholder mocks with no handlers — removed
+            until those features are actually implemented. */}
         <div className="flex items-center gap-3">
-          <div className="flex border border-slate-200 rounded text-slate-400">
-             <button className="px-2.5 py-1.5 border-r border-slate-200 hover:bg-slate-50 text-[#1a73e8] bg-blue-50/50"><LayoutList size={16}/></button>
-             <button className="px-2.5 py-1.5 hover:bg-slate-50"><CalendarDays size={16}/></button>
-          </div>
           <select className="border border-slate-200 text-sm text-slate-700 font-medium rounded px-3 py-1.5 outline-none">
             <option>My Holidays</option>
             <option>All Holidays</option>
           </select>
-          <button className="p-1.5 text-slate-400 hover:bg-slate-100 rounded">
-            <MoreHorizontal size={18} />
-          </button>
         </div>
       </div>
 
