@@ -65,14 +65,10 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed top-0 left-0 h-screen w-[72px] bg-[#1a2040] flex flex-col z-50 shadow-xl">
-      {/* Logo */}
-      <div className="flex items-center justify-center h-[48px] flex-shrink-0 bg-[#151a35]">
-        <div className="w-8 h-8 rounded-lg bg-[#1a73e8] flex items-center justify-center shadow-lg">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-          </svg>
-        </div>
-      </div>
+      {/* Spacer to align with the Topbar's navy primary bar (h-[48px]).
+          The duplicate cube logo lived here but was visually competing with
+          the HOME nav button directly below — branding belongs in the Topbar. */}
+      <div className="h-[48px] flex-shrink-0 bg-[#151a35]" />
 
       {/* Main nav */}
       <nav className="flex-1 flex flex-col overflow-y-auto scrollbar-none py-1">
