@@ -15,7 +15,8 @@ function getSection(pathname) {
   if (pathname.startsWith('/more-services') || pathname.startsWith('/documents')) return 'moreservices';
   if (pathname.startsWith('/employees') || pathname.startsWith('/registrations')) return 'employeemaster';
   if (pathname.startsWith('/reports') || pathname.startsWith('/payroll') ||
-      pathname.startsWith('/shifts') || pathname.startsWith('/shift-roster')) return 'reports';
+      pathname.startsWith('/shifts') || pathname.startsWith('/shift-roster') ||
+      pathname.startsWith('/daily-attendance')) return 'reports';
   return 'home';
 }
 

@@ -55,7 +55,13 @@ const NavItem = ({ item }) => {
 
 export default function Sidebar() {
   const { user } = useAuth();
+  const location = useLocation();
   const canSeeReports = user?.role === 'admin' || user?.role === 'manager';
+
+  // Reports icon should also highlight on /daily-attendance, /payroll,
+  // /shifts, /shift-roster — they all live under the Reports section.
+  const isReportsActive = ['/reports', '/daily-attendance', '/payroll', '/shifts', '/shift-roster']
+    .some(p => location.pathname.startsWith(p));
 
   return (
     <aside className="fixed top-0 left-0 h-screen w-[72px] bg-[#1a2040] flex flex-col z-50 shadow-xl">
@@ -94,19 +100,13 @@ export default function Sidebar() {
             </NavLink>
 
             <NavLink to="/reports"
-              className={({ isActive }) =>
-                `group relative flex flex-col items-center justify-center gap-1 w-full py-2 transition-all duration-150`
-              }
+              className="group relative flex flex-col items-center justify-center gap-1 w-full py-2 transition-all duration-150"
             >
-              {({ isActive }) => (
-                <>
-                  <div className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isActive ? 'bg-[#1a73e8] text-white shadow-lg' : 'text-white/70 group-hover:text-white group-hover:bg-white/10'}`}>
-                    <PieChart size={18} strokeWidth={isActive ? 2 : 1.6}/>
-                </div>
-                <span style={labelStyle} className={isActive ? 'text-white' : 'text-white/70 group-hover:text-white'}>Reports</span>
-              </>
-            )}
-          </NavLink>
+              <div className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isReportsActive ? 'bg-[#1a73e8] text-white shadow-lg' : 'text-white/70 group-hover:text-white group-hover:bg-white/10'}`}>
+                <PieChart size={18} strokeWidth={isReportsActive ? 2 : 1.6}/>
+              </div>
+              <span style={labelStyle} className={isReportsActive ? 'text-white' : 'text-white/70 group-hover:text-white'}>Reports</span>
+            </NavLink>
         </div>
         )}
       </nav>
