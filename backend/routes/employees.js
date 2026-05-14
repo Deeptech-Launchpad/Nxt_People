@@ -188,7 +188,20 @@ router.get('/:id', async (req, res) => {
     const eduRes = await pool.query('SELECT * FROM employee_education WHERE employee_id = $1 ORDER BY year_of_passing DESC', [req.params.id]);
     empData.education = eduRes.rows;
     
-    const docsRes = await pool.query('SELECT id, document_type as "documentType", file_path as "filePath", original_name as "originalName", mime_type as "mimeType", size FROM employee_documents WHERE employee_id = $1', [req.params.id]);
+    // employee_documents was migrated from (document_type, file_path,
+    // original_name, mime_type, size) to (type, file_url, name, file_size).
+    // Fresh deploys only have the new columns — alias them to the legacy
+    // names the frontend's profile view expects so we don't churn the UI.
+    const docsRes = await pool.query(
+      `SELECT id,
+              type      AS "documentType",
+              file_url  AS "filePath",
+              name      AS "originalName",
+              NULL      AS "mimeType",
+              file_size AS "size"
+         FROM employee_documents WHERE employee_id = $1`,
+      [req.params.id]
+    );
     empData.documents = docsRes.rows;
     
     res.json({ success: true, data: empData });
