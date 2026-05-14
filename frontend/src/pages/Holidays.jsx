@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Calendar, Download, Upload, Plus, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, LayoutList, CalendarDays, MoreHorizontal, Download, Upload, Plus, Trash2, X, RotateCw } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -29,6 +29,34 @@ export default function Holidays() {
   // Bulk import — hidden file input drives the visible "Import" button.
   const fileInputRef = useRef(null);
   const [importing, setImporting] = useState(false);
+  // View toggle: 'list' (default table) vs 'calendar' (12-month grid).
+  const [viewMode, setViewMode] = useState('list');
+  // 3-dot kebab menu state + ref for click-outside-to-close.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreMenuRef = useRef(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (e) => { if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) setMoreOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [moreOpen]);
+
+  // Export the holidays currently visible (filtered by the year nav above)
+  // as a plain CSV — admin can open in Excel / share over email.
+  const handleExportCsv = () => {
+    if (!holidays.length) { toast.error('No holidays to export'); return; }
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = 'Name,Date,Type,Location,Shifts,Description\n';
+    const rows = holidays.map(h => {
+      const d = parseLocalDate(h.date);
+      return [h.name, d.toLocaleDateString('en-GB'), h.type, h.location, h.shifts, h.description].map(esc).join(',');
+    }).join('\n');
+    const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `holidays-${year}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // GET /api/holidays/template — fetches the xlsx template the backend
   // builds at runtime, then triggers a browser download.
@@ -185,18 +213,61 @@ export default function Holidays() {
           </button>
         </div>
 
-        {/* Right: Filter dropdown only. The list/calendar view toggles and
-            the "⋯" kebab were placeholder mocks with no handlers — removed
-            until those features are actually implemented. */}
+        {/* Right: view toggle + kebab menu. Both now have real handlers. */}
         <div className="flex items-center gap-3">
-          <select className="border border-slate-200 text-sm text-slate-700 font-medium rounded px-3 py-1.5 outline-none">
-            <option>My Holidays</option>
-            <option>All Holidays</option>
-          </select>
+          <div className="flex border border-slate-200 rounded text-slate-400">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              title="List view"
+              className={`px-2.5 py-1.5 border-r border-slate-200 transition-colors ${viewMode === 'list' ? 'text-[#1a73e8] bg-blue-50/50' : 'hover:bg-slate-50'}`}
+            >
+              <LayoutList size={16}/>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('calendar')}
+              title="Calendar view"
+              className={`px-2.5 py-1.5 transition-colors ${viewMode === 'calendar' ? 'text-[#1a73e8] bg-blue-50/50' : 'hover:bg-slate-50'}`}
+            >
+              <CalendarDays size={16}/>
+            </button>
+          </div>
+          <div className="relative" ref={moreMenuRef}>
+            <button
+              type="button"
+              onClick={() => setMoreOpen(o => !o)}
+              title="More actions"
+              className="p-1.5 text-slate-500 hover:bg-slate-100 rounded"
+            >
+              <MoreHorizontal size={18} />
+            </button>
+            {moreOpen && (
+              <div className="absolute right-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1">
+                <button
+                  type="button"
+                  onClick={() => { load(); setMoreOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50"
+                >
+                  <RotateCw size={13} /> Refresh
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { handleExportCsv(); setMoreOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50"
+                >
+                  <Download size={13} /> Export CSV
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Table */}
+      {/* Body — list (table) OR calendar (12-month grid) depending on viewMode */}
+      {viewMode === 'calendar' ? (
+        <CalendarYearGrid year={year} holidays={holidays} parseLocalDate={parseLocalDate} />
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -255,6 +326,7 @@ export default function Holidays() {
           </tbody>
         </table>
       </div>
+      )}
 
       {modal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -404,6 +476,68 @@ export default function Holidays() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Calendar view: 12 mini-month boxes in a 4x3 grid ─────────────────────
+ * Days that have a holiday get a red background + tooltip with the name.
+ * Pure read-only — clicking a day does nothing right now (add later if
+ * the team wants click-to-edit behaviour). */
+function CalendarYearGrid({ year, holidays, parseLocalDate }) {
+  // Build a Set of day-of-year keys ("Y-M-D") that are holidays, with the
+  // first holiday hitting each key as the tooltip text. Multiple holidays
+  // on the same day will show only one — that's fine for a year overview.
+  const map = {};
+  for (const h of holidays) {
+    const d = parseLocalDate(h.date);
+    const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!map[k]) map[k] = h.name;
+  }
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const DOW    = ['S','M','T','W','T','F','S'];
+
+  return (
+    <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-slate-50">
+      {MONTHS.map((mName, mIdx) => {
+        const firstDow    = new Date(year, mIdx, 1).getDay();
+        const daysInMonth = new Date(year, mIdx + 1, 0).getDate();
+        const cells = [];
+        for (let i = 0; i < firstDow; i++) cells.push(null);
+        for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+        return (
+          <div key={mIdx} className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+            <h4 className="text-[13px] font-bold text-slate-800 mb-2 text-center">{mName} {year}</h4>
+            <div className="grid grid-cols-7 gap-0.5 mb-1">
+              {DOW.map((d, i) => (
+                <div key={i} className="text-[9px] text-slate-400 font-semibold text-center uppercase">{d}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-0.5">
+              {cells.map((day, idx) => {
+                if (day === null) return <div key={idx} className="h-6" />;
+                const k = `${year}-${mIdx}-${day}`;
+                const holidayName = map[k];
+                return (
+                  <div
+                    key={idx}
+                    title={holidayName ? `${day} ${mName}: ${holidayName}` : ''}
+                    className={`h-6 flex items-center justify-center text-[11px] rounded ${
+                      holidayName
+                        ? 'bg-red-100 text-red-700 font-bold cursor-help'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    {day}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
