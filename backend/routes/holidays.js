@@ -82,6 +82,7 @@ const SELECT_COLS = `
   h.category, h.is_compensatory AS "isCompensatory", h.mail_body AS "mailBody",
   h.compensation_type AS "compensationType",
   h.compensated_holiday_id AS "compensatedHolidayId",
+  h.compensated_rule_id    AS "compensatedRuleId",
   h.notified_at AS "notifiedAt"
 `;
 
@@ -107,19 +108,19 @@ router.post('/', authorize('admin'), audit('CREATE', 'holiday'), async (req, res
     const {
       name, date, type, description, year,
       category, isCompensatory, mailBody,
-      compensationType, compensatedHolidayId,
+      compensationType, compensatedHolidayId, compensatedRuleId,
     } = req.body;
     const result = await pool.query(
       `INSERT INTO holidays
          (name, date, type, description, year,
           category, is_compensatory, mail_body,
-          compensation_type, compensated_holiday_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          compensation_type, compensated_holiday_id, compensated_rule_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING ${SELECT_COLS.replace(/h\./g, '')}`,
       [
         name, date, type || 'company', description, year,
         category || null, !!isCompensatory, mailBody || null,
-        compensationType || null, compensatedHolidayId || null,
+        compensationType || null, compensatedHolidayId || null, compensatedRuleId || null,
       ]
     );
     res.status(201).json({ success: true, data: result.rows[0] });
@@ -131,20 +132,21 @@ router.put('/:id', authorize('admin'), audit('UPDATE', 'holiday'), async (req, r
     const {
       name, date, type, description, year,
       category, isCompensatory, mailBody,
-      compensationType, compensatedHolidayId,
+      compensationType, compensatedHolidayId, compensatedRuleId,
     } = req.body;
     const result = await pool.query(
       `UPDATE holidays
           SET name = $1, date = $2, type = $3, description = $4, year = $5,
               category = $6, is_compensatory = $7, mail_body = $8,
               compensation_type = $9, compensated_holiday_id = $10,
+              compensated_rule_id = $11,
               updated_at = NOW()
-        WHERE id = $11
+        WHERE id = $12
         RETURNING ${SELECT_COLS.replace(/h\./g, '')}`,
       [
         name, date, type, description, year,
         category || null, !!isCompensatory, mailBody || null,
-        compensationType || null, compensatedHolidayId || null,
+        compensationType || null, compensatedHolidayId || null, compensatedRuleId || null,
         req.params.id,
       ]
     );

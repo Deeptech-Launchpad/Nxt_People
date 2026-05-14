@@ -35,8 +35,11 @@ function normaliseRule(body) {
   const endCount = endType === 'after' ? (parseInt(body.endCount, 10) || null) : null;
 
   const isActive = body.isActive === undefined ? true : !!body.isActive;
+  // Future Compensation flag — when TRUE, the Working Day Exception's
+  // "Select Compensated Holiday" dropdown picks this rule up.
+  const isCompensatory = !!body.isCompensatory;
 
-  return { name, daysOfWeek, weeksOfMonth, intervalWeeks, startDate, endType, endDate, endCount, isActive };
+  return { name, daysOfWeek, weeksOfMonth, intervalWeeks, startDate, endType, endDate, endCount, isActive, isCompensatory };
 }
 
 /* GET — list all rules (any logged-in user, so the client can compute weekends). */
@@ -52,6 +55,7 @@ router.get('/', async (req, res) => {
               end_date        as "endDate",
               end_count       as "endCount",
               is_active       as "isActive",
+              is_compensatory as "isCompensatory",
               created_at      as "createdAt"
        FROM weekend_rules
        ORDER BY created_at ASC`
@@ -68,11 +72,11 @@ router.post('/', authorize('admin'), async (req, res) => {
     const v = normaliseRule(req.body);
     const r = await pool.query(
       `INSERT INTO weekend_rules
-         (name, days_of_week, weeks_of_month, interval_weeks, start_date, end_type, end_date, end_count, is_active, created_by)
-       VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, $6, $7, $8, $9, $10)
+         (name, days_of_week, weeks_of_month, interval_weeks, start_date, end_type, end_date, end_count, is_active, is_compensatory, created_by)
+       VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id`,
       [v.name, JSON.stringify(v.daysOfWeek), JSON.stringify(v.weeksOfMonth), v.intervalWeeks,
-       v.startDate, v.endType, v.endDate, v.endCount, v.isActive, req.user._id]
+       v.startDate, v.endType, v.endDate, v.endCount, v.isActive, v.isCompensatory, req.user._id]
     );
     res.status(201).json({ success: true, data: { id: r.rows[0].id, ...v } });
   } catch (err) {
@@ -86,19 +90,20 @@ router.put('/:id', authorize('admin'), async (req, res) => {
     const v = normaliseRule(req.body);
     const r = await pool.query(
       `UPDATE weekend_rules SET
-         name           = $1,
-         days_of_week   = $2::jsonb,
-         weeks_of_month = $3::jsonb,
-         interval_weeks = $4,
-         start_date     = $5,
-         end_type       = $6,
-         end_date       = $7,
-         end_count      = $8,
-         is_active      = $9,
-         updated_at     = NOW()
-       WHERE id = $10 RETURNING id`,
+         name            = $1,
+         days_of_week    = $2::jsonb,
+         weeks_of_month  = $3::jsonb,
+         interval_weeks  = $4,
+         start_date      = $5,
+         end_type        = $6,
+         end_date        = $7,
+         end_count       = $8,
+         is_active       = $9,
+         is_compensatory = $10,
+         updated_at      = NOW()
+       WHERE id = $11 RETURNING id`,
       [v.name, JSON.stringify(v.daysOfWeek), JSON.stringify(v.weeksOfMonth), v.intervalWeeks,
-       v.startDate, v.endType, v.endDate, v.endCount, v.isActive, req.params.id]
+       v.startDate, v.endType, v.endDate, v.endCount, v.isActive, v.isCompensatory, req.params.id]
     );
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Rule not found' });
     res.json({ success: true, data: { id: r.rows[0].id, ...v } });

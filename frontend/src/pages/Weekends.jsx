@@ -10,7 +10,13 @@ const DAY_PRETTY  = { sun:'Sunday', mon:'Monday', tue:'Tuesday', wed:'Wednesday'
 const ORDINAL     = ['1st', '2nd', '3rd', '4th', '5th'];
 
 const weekOfMonthForWeekday = (d) => Math.floor((d.getDate() - 1) / 7) + 1;
-const isoDate                = (d) => d.toISOString().slice(0, 10);
+// Local-time YYYY-MM-DD. `toISOString()` would convert to UTC first, which
+// shifts the date back a day for IST (UTC+5:30) users — clicking May 11 in
+// the calendar would set startDate to May 10. Use locale-aware formatting.
+const isoDate                = (d) => {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+};
 
 /* ── Recurrence presets built from a clicked date ────────────────────── */
 function buildPresets(date) {
@@ -188,21 +194,49 @@ function CalendarPreview({ onDayClick }) {
   const { isWeekend } = useWeekendRules();
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
-  const start = new Date(today);
-  start.setDate(start.getDate() - start.getDay());
+  // viewMonth: first-day-of-month for whichever month is being shown.
+  // Defaults to today's month. Arrow buttons step it ±1 month.
+  const [viewMonth, setViewMonth] = useState(() => {
+    const m = new Date(today); m.setDate(1); return m;
+  });
+
+  // Render a 6-week grid starting from the Sunday on/before the 1st of viewMonth.
+  const gridStart = new Date(viewMonth);
+  gridStart.setDate(gridStart.getDate() - gridStart.getDay());
 
   const cells = [];
   for (let w = 0; w < 6; w++) {
     for (let d = 0; d < 7; d++) {
-      const day = new Date(start);
-      day.setDate(start.getDate() + w * 7 + d);
+      const day = new Date(gridStart);
+      day.setDate(gridStart.getDate() + w * 7 + d);
       cells.push(day);
     }
   }
 
+  const shiftMonth = (delta) => {
+    const m = new Date(viewMonth);
+    m.setMonth(m.getMonth() + delta);
+    setViewMonth(m);
+  };
+  const goToday = () => {
+    const m = new Date(today); m.setDate(1); setViewMonth(m);
+  };
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-      <h3 className="text-[14px] font-bold text-slate-800 mb-1">Preview</h3>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-[14px] font-bold text-slate-800">Preview</h3>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => shiftMonth(-1)} title="Previous month"
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500">‹</button>
+          <button type="button" onClick={goToday} title="Today"
+            className="text-[11px] font-semibold text-slate-600 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50 min-w-[80px] text-center">
+            {viewMonth.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+          </button>
+          <button type="button" onClick={() => shiftMonth(1)} title="Next month"
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500">›</button>
+        </div>
+      </div>
       <p className="text-[11.5px] text-slate-500 mb-4">
         Click any date to mark it as a weekend. Amber = weekend by current rules.
       </p>
@@ -214,13 +248,13 @@ function CalendarPreview({ onDayClick }) {
         {cells.map((d, i) => {
           const isToday = d.getTime() === today.getTime();
           const isWknd  = isWeekend(d);
-          const inMonth = d.getMonth() === today.getMonth();
+          const inMonth = d.getMonth() === viewMonth.getMonth();
           return (
             <button
               type="button"
               key={i}
               onClick={() => onDayClick?.(d)}
-              title={`${d.toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short' })}`}
+              title={`${d.toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short', year:'numeric' })}`}
               className={`aspect-square flex items-center justify-center text-[12px] rounded-md border transition-all hover:ring-2 hover:ring-blue-300 hover:border-blue-300 ${
                 isToday
                   ? 'bg-[#1a73e8] text-white border-[#1a73e8] font-bold'

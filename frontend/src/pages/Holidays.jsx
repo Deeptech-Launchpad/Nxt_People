@@ -232,11 +232,11 @@ export default function Holidays() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Holiday Type</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Future Compensation?</label>
                     <div className="flex gap-3">
                       {[
-                        { v: false, label: 'Non-Compensatory', desc: 'No make-up day needed' },
-                        { v: true,  label: 'Compensatory',     desc: 'Employees work another day in exchange' },
+                        { v: false, label: 'No',  desc: 'No make-up working day needed' },
+                        { v: true,  label: 'Yes', desc: 'A Working Day Exception will be declared later to compensate. This holiday will then appear in the "Select Compensated Holiday" dropdown.' },
                       ].map(o => (
                         <label key={String(o.v)} className={`flex-1 px-3 py-2 rounded-lg border text-xs cursor-pointer ${form.isCompensatory === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'} ${lastSaved ? 'opacity-60 pointer-events-none' : ''}`}>
                           <input type="radio" name="iscomp" className="hidden" checked={form.isCompensatory === o.v} onChange={() => setForm({...form, isCompensatory: o.v})}/>

@@ -25,17 +25,26 @@ const blankRule = () => ({
   daysOfWeek: [],
   weeksOfMonth: [],
   intervalWeeks: 1,
-  startDate: new Date().toISOString().slice(0, 10),
+  // Local-time YYYY-MM-DD (not UTC) — see Weekends.jsx isoDate() for why.
+  startDate: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
   endType: 'never',
   endDate: '',
   endCount: 13,
   isActive: true,
   description: '',
+  // Future Compensation flag — when TRUE on a recurring weekend rule, a
+  // Working Day Exception can pick this rule from its dropdown to make up
+  // for one of its occurrences.
+  isCompensatory: false,
   // Working Day Exception extras (only used when mode === 'working_day').
   // Stored in the holidays table by the same POST /holidays endpoint.
   category: '',
   compensationType: '',
   compensatedHolidayId: '',
+  // When the compensated source is a weekend rule (not a holiday), we still
+  // send compensatedHolidayId to the backend but tag it here so the UI can
+  // display the rule's name in subsequent edits.
+  compensatedRuleId: '',
 });
 
 /** Human-readable summary of a rule — shown in the list view. */
@@ -55,6 +64,30 @@ function summarise(rule) {
 const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
   const { user } = useAuth();
   const { rules: contextRules, holidays: contextHolidays, reload } = useWeekendRules();
+
+  // Compensatory sources for the Working Day Exception dropdown — merged
+  // list of holidays + weekend rules, both filtered to those marked
+  // "Future Compensation = Yes". Each entry carries a kind discriminator
+  // so onChange can decide which backend field to populate.
+  const compensatorySources = React.useMemo(() => {
+    const fromHolidays = (contextHolidays || [])
+      .filter(h => h.type !== 'working_day' && h.isCompensatory === true)
+      .map(h => ({
+        kind: 'holiday',
+        id: h._id || h.id,
+        label: `${new Date(h.date).toLocaleDateString('en-IN')} — ${h.name}`,
+        date: h.date,
+      }));
+    const fromRules = (contextRules || [])
+      .filter(r => r.isCompensatory === true && r.isActive !== false)
+      .map(r => ({
+        kind: 'rule',
+        id: r.id,
+        label: `🔁 Rule: ${r.name}${r.startDate ? ` (from ${new Date(r.startDate).toLocaleDateString('en-IN')})` : ''}`,
+        date: r.startDate,
+      }));
+    return [...fromHolidays, ...fromRules];
+  }, [contextHolidays, contextRules]);
   const isAdmin = user?.role === 'admin';
 
   const [rules, setRules] = useState([]);
@@ -65,9 +98,24 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
   useEffect(() => { if (contextRules) setRules(contextRules); }, [contextRules]);
 
   const openNew  = (prefill) => setEditing({ ...blankRule(), ...(prefill || {}) });
-  const openEdit = (r) => setEditing({ ...r,
-    endDate:  r.endDate  ? String(r.endDate).slice(0, 10)  : '',
-    endCount: r.endCount || 13,
+  // YYYY-MM-DD in LOCAL time. toLocaleDateString('en-CA') is the timezone-
+  // safe way — toISOString().slice(0,10) would shift the date back a day
+  // in IST. Used to feed <input type="date"> from API timestamps.
+  const toLocalYMD = (v) => v ? new Date(v).toLocaleDateString('en-CA') : '';
+
+  const openEdit = (r) => setEditing({
+    // Start from blankRule so newly-added fields (isCompensatory, mode, etc.)
+    // have sensible defaults if the rule predates them.
+    ...blankRule(),
+    ...r,
+    mode: 'weekend',
+    // Date inputs expect YYYY-MM-DD; Postgres returns full ISO timestamps.
+    // Use local-time conversion so the date doesn't shift in IST.
+    startDate: toLocalYMD(r.startDate),
+    endDate:   toLocalYMD(r.endDate),
+    endCount:  r.endCount  || 13,
+    endType:   r.endType   || 'never',
+    isCompensatory: !!r.isCompensatory,
   });
   const closeEditor = () => setEditing(null);
 
@@ -91,10 +139,11 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
           year: new Date(editing.startDate).getFullYear(),
           description: editing.description || '',
           // Meeting feedback: capture why this working day was declared and
-          // (if it's making up for a past holiday) link to that holiday.
+          // (if it's making up for a past holiday or weekend rule) link to it.
           category:               editing.category || null,
           compensationType:       editing.compensationType || null,
           compensatedHolidayId:   editing.compensatedHolidayId || null,
+          compensatedRuleId:      editing.compensatedRuleId    || null,
         });
         toast.success('Working day exception added');
         closeEditor();
@@ -318,26 +367,47 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                   {editing.compensationType === 'past' && (
                     <div>
                       <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">
-                        Select Compensated Holiday
-                        <span className="text-slate-400 font-normal ml-1">(which past holiday is this making up for?)</span>
+                        Select Compensated Source
+                        <span className="text-slate-400 font-normal ml-1">(holiday OR weekend rule marked Future Compensation = Yes)</span>
                       </label>
                       <select
-                        value={editing.compensatedHolidayId || ''}
-                        onChange={(e) => setEditing({ ...editing, compensatedHolidayId: e.target.value })}
+                        value={
+                          editing.compensatedHolidayId
+                            ? `holiday:${editing.compensatedHolidayId}`
+                            : editing.compensatedRuleId
+                              ? `rule:${editing.compensatedRuleId}`
+                              : ''
+                        }
+                        onChange={(e) => {
+                          const [kind, id] = e.target.value.split(':');
+                          const src = compensatorySources.find(x => x.kind === kind && x.id === id);
+                          // For holidays, the working-day Date should match
+                          // the holiday's date (the day being overridden).
+                          // For weekend rules, leave the date as-is — admin
+                          // picks the specific occurrence manually.
+                          const autoDate = (kind === 'holiday' && src?.date) ? String(src.date).slice(0, 10) : editing.startDate;
+                          setEditing({
+                            ...editing,
+                            compensatedHolidayId: kind === 'holiday' ? id : null,
+                            compensatedRuleId:    kind === 'rule'    ? id : null,
+                            startDate: autoDate,
+                          });
+                        }}
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"
                       >
-                        <option value="">Select a holiday…</option>
-                        {(contextHolidays || [])
-                          .filter(h => h.type !== 'working_day')
-                          .map(h => (
-                            <option key={h._id || h.id} value={h._id || h.id}>
-                              {new Date(h.date).toLocaleDateString('en-IN')} — {h.name}
-                            </option>
-                          ))}
+                        <option value="">Select…</option>
+                        {compensatorySources.map(s => (
+                          <option key={`${s.kind}:${s.id}`} value={`${s.kind}:${s.id}`}>{s.label}</option>
+                        ))}
                       </select>
-                      <p className="text-[10.5px] text-slate-400 mt-1">
-                        Lists every recorded holiday so HR can pick which one this working day replaces.
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Picking a <strong>holiday</strong> auto-fills the Date above. <strong>Weekend rules</strong> keep your typed date (you pick the specific occurrence).
                       </p>
+                      {compensatorySources.length === 0 && (
+                        <p className="text-[11px] text-amber-600 mt-1">
+                          No compensatory sources yet. Create a Holiday OR a Weekend Rule with <strong>Future Compensation = Yes</strong> first.
+                        </p>
+                      )}
                     </div>
                   )}
                   <div>
@@ -564,6 +634,34 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                 </div>
                   );
                 })()}
+              </div>
+
+              {/* Future Compensation flag — TRUE means this weekend rule will
+                  later be made up for by a Working Day Exception. The exception's
+                  dropdown picks the rule up from this flag. */}
+              <div>
+                <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Future Compensation?</label>
+                <div className="flex gap-2">
+                  {[
+                    { v: false, label: 'No',  desc: 'No make-up working day needed.' },
+                    { v: true,  label: 'Yes', desc: 'A Working Day Exception will be declared later. This rule will appear in that dropdown.' },
+                  ].map(o => (
+                    <label
+                      key={String(o.v)}
+                      className={`flex-1 px-3 py-2 rounded-lg border text-[11.5px] cursor-pointer ${editing.isCompensatory === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                    >
+                      <input
+                        type="radio"
+                        name="rule_iscomp"
+                        className="hidden"
+                        checked={editing.isCompensatory === o.v}
+                        onChange={() => setEditing({ ...editing, isCompensatory: o.v })}
+                      />
+                      <p className="font-semibold">{o.label}</p>
+                      <p className="text-[10.5px] mt-0.5 opacity-70">{o.desc}</p>
+                    </label>
+                  ))}
+                </div>
               </div>
 
               </>)}

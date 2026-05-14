@@ -310,6 +310,12 @@ const steps = [
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_blacklisted        BOOLEAN DEFAULT FALSE`,
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS status_applied_at     TIMESTAMPTZ`,
 
+  // ── Weekend rule: future compensation flag ────────────────────────────────
+  // When TRUE, this recurring weekend rule will later be made up for by a
+  // Working Day Exception. The exception's "Select Compensated Holiday"
+  // dropdown then includes this rule as an option (alongside holidays).
+  `ALTER TABLE weekend_rules ADD COLUMN IF NOT EXISTS is_compensatory BOOLEAN DEFAULT FALSE`,
+
   // ── Holiday metadata (post-meeting feature) ───────────────────────────────
   // Adds the fields needed by the enhanced Holiday popup:
   //   • category         — Election / No Workload / General Maintenance / etc.
@@ -322,6 +328,9 @@ const steps = [
   `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS mail_body               TEXT`,
   `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS compensation_type       VARCHAR(30)`,
   `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS compensated_holiday_id  UUID REFERENCES holidays(id) ON DELETE SET NULL`,
+  // When the working-day exception compensates a recurring weekend rule
+  // (not a one-off holiday), we store the rule's id here instead.
+  `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS compensated_rule_id     UUID REFERENCES weekend_rules(id) ON DELETE SET NULL`,
   `ALTER TABLE holidays ADD COLUMN IF NOT EXISTS notified_at             TIMESTAMPTZ`,
 
   // ── Previous employment history from Zoho tabularSections.SS_EMP_HISTORY ─
