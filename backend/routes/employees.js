@@ -281,7 +281,9 @@ router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
     if (designation !== undefined) { updates.push(`designation = $${i++}`); params.push(designation); }
     if (company !== undefined) { updates.push(`company = $${i++}`); params.push(company); }
     if (division !== undefined) { updates.push(`division = $${i++}`); params.push(division); }
-    if (joiningDate !== undefined) { updates.push(`joining_date = $${i++}`); params.push(joiningDate); }
+    // Postgres rejects "" for DATE / TIMESTAMP columns with
+    // "invalid input syntax for type timestamp: ''" — coerce blanks to NULL.
+    if (joiningDate !== undefined) { updates.push(`joining_date = $${i++}`); params.push(joiningDate || null); }
     if (employeeId !== undefined) { updates.push(`employee_id = $${i++}`); params.push(employeeId || null); }
     if (monthlyCTC !== undefined && monthlyCTC !== '') { updates.push(`monthly_ctc = $${i++}`); params.push(parseFloat(monthlyCTC) || null); }
     if (basicSalary !== undefined && basicSalary !== '') { updates.push(`basic_salary = $${i++}`); params.push(parseFloat(basicSalary) || null); }
