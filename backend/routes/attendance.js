@@ -191,9 +191,6 @@ router.post('/checkin', async (req, res) => {
 router.post('/checkout', async (req, res) => {
   try {
     const { latitude, longitude } = req.body;
-    if (!latitude || !longitude) {
-      return res.status(400).json({ success: false, message: 'Location is required to check out. Please enable GPS and try again.' });
-    }
 
     const today = todayStr();
     const existingRes = await pool.query(
@@ -209,11 +206,23 @@ router.post('/checkout', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Already checked out' });
     }
 
-    const settingsRes = await pool.query('SELECT half_day_hours FROM settings LIMIT 1');
+    // Pull half_day_hours AND require_gps in one round-trip so check-out
+    // honours the same GPS rule as check-in. Previously this route blocked
+    // every check-out when GPS was missing, even though check-in defaults
+    // to allowing GPS-less attendance unless settings.require_gps = TRUE.
+    const settingsRes = await pool.query('SELECT half_day_hours, require_gps FROM settings LIMIT 1');
     const halfDayHours = settingsRes.rows[0]?.half_day_hours || 4;
+    const requireGps   = settingsRes.rows[0]?.require_gps;
+
+    if (requireGps && (!latitude || !longitude)) {
+      return res.status(403).json({ success: false, message: 'Location is required to check out. Please enable GPS and try again.', code: 'GPS_REQUIRED' });
+    }
 
     const now = new Date();
-    const location = req.body.location || `GPS (${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)})`;
+    const location = req.body.location ||
+      (latitude && longitude
+        ? `GPS (${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)})`
+        : 'Office');
 
     const checkInDate = new Date(record.check_in);
     
