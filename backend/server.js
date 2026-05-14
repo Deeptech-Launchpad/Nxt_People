@@ -85,23 +85,31 @@ cron.schedule('0 0 1 * *', async () => {
       logger.info('Leave accrual disabled in settings — skipping');
       return;
     }
+    // Batch accrual: one UPDATE + one bulk INSERT per leave type. Avoids the
+    // per-employee N+1 (was 6 round-trips × N employees). Matches the
+    // payroll.js implementation so behaviour is identical between the cron
+    // path and the admin-triggered POST /api/payroll/accrue path.
     const empRes = await pool.query("SELECT id FROM employees WHERE status='active'");
-    let credited = 0;
-    for (const emp of empRes.rows) {
-      if (s.casual_accrual_per_month > 0) {
-        await pool.query('UPDATE employees SET casual_leave = COALESCE(casual_leave,0) + $1 WHERE id=$2', [s.casual_accrual_per_month, emp.id]);
-        await pool.query('INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason) VALUES ($1,$2,$3,$4)', [emp.id, 'casual', s.casual_accrual_per_month, 'Auto Monthly Accrual']);
-      }
-      if (s.sick_accrual_per_month > 0) {
-        await pool.query('UPDATE employees SET sick_leave = COALESCE(sick_leave,0) + $1 WHERE id=$2', [s.sick_accrual_per_month, emp.id]);
-        await pool.query('INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason) VALUES ($1,$2,$3,$4)', [emp.id, 'sick', s.sick_accrual_per_month, 'Auto Monthly Accrual']);
-      }
-      if (s.earned_accrual_per_month > 0) {
-        await pool.query('UPDATE employees SET earned_leave = COALESCE(earned_leave,0) + $1 WHERE id=$2', [s.earned_accrual_per_month, emp.id]);
-        await pool.query('INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason) VALUES ($1,$2,$3,$4)', [emp.id, 'earned', s.earned_accrual_per_month, 'Auto Monthly Accrual']);
-      }
-      credited++;
-    }
+    const empIds = empRes.rows.map(r => r.id);
+    const credited = empIds.length;
+
+    const accrue = async (column, code, days) => {
+      if (!days || days <= 0 || empIds.length === 0) return;
+      await pool.query(
+        `UPDATE employees SET ${column} = COALESCE(${column},0) + $1 WHERE id = ANY($2::uuid[])`,
+        [days, empIds]
+      );
+      await pool.query(
+        `INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason)
+         SELECT unnest($1::uuid[]), $2, $3, 'Auto Monthly Accrual'`,
+        [empIds, code, days]
+      );
+    };
+
+    await accrue('casual_leave', 'casual', s.casual_accrual_per_month);
+    await accrue('sick_leave',   'sick',   s.sick_accrual_per_month);
+    await accrue('earned_leave', 'earned', s.earned_accrual_per_month);
+
     logger.info({ credited }, 'Monthly leave accrual complete');
   } catch (err) {
     logger.error({ err }, 'Leave accrual cron failed');
@@ -112,24 +120,31 @@ cron.schedule('0 0 1 * *', async () => {
 cron.schedule('5 0 1 1 *', async () => {
   try {
     logger.info('Running yearly leave carry forward / lapse cron');
-    const empRes = await pool.query("SELECT id, casual_leave, sick_leave, earned_leave FROM employees WHERE status='active'");
-
-    for (const emp of empRes.rows) {
-      // Casual / sick lapse to 0; earned leave carries forward up to a cap (currently 15).
-      // TODO: read the cap from settings.leave_policy when that schema is finalised.
-      const maxEarned = 15;
-      const newEarned = Math.min(Number(emp.earned_leave) || 0, maxEarned);
-
-      await pool.query(
-        `UPDATE employees SET casual_leave = 0, sick_leave = 0, earned_leave = $1 WHERE id = $2`,
-        [newEarned, emp.id]
-      );
-      await pool.query(
-        'INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason) VALUES ($1,$2,$3,$4)',
-        [emp.id, 'earned', newEarned - (Number(emp.earned_leave) || 0), 'Yearly Lapse & Carry Forward']
-      );
-    }
-    logger.info('Yearly leave carry forward complete');
+    // Single set-based UPDATE replaces the per-employee loop. We snapshot
+    // the OLD earned_leave in a CTE first because RETURNING returns
+    // post-UPDATE values, which would make the logged delta always 0.
+    // TODO: read the cap from settings.leave_policy when that schema is finalised.
+    const maxEarned = 15;
+    const r = await pool.query(
+      `WITH old_vals AS (
+         SELECT id, COALESCE(earned_leave, 0)::numeric AS old_earned
+           FROM employees
+          WHERE status = 'active'
+       ),
+       ups AS (
+         UPDATE employees e
+            SET casual_leave = 0,
+                sick_leave   = 0,
+                earned_leave = LEAST(o.old_earned, $1)
+           FROM old_vals o
+          WHERE e.id = o.id
+          RETURNING e.id, (LEAST(o.old_earned, $1) - o.old_earned) AS delta
+       )
+       INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason)
+       SELECT id, 'earned', delta, 'Yearly Lapse & Carry Forward' FROM ups`,
+      [maxEarned]
+    );
+    logger.info({ affected: r.rowCount }, 'Yearly leave carry forward complete');
   } catch (err) {
     logger.error({ err }, 'Yearly carry forward cron failed');
   }
@@ -137,17 +152,18 @@ cron.schedule('5 0 1 1 *', async () => {
 
 // 3. Daily Check-in Reminder (Runs Mon-Sat at 9:00 AM)
 //    Skips weekends + holidays via the centralised rule evaluator.
+//    Single INSERT...SELECT replaces per-employee N+1 (was N round-trips at 150 employees).
 cron.schedule('0 9 * * 1-6', async () => {
   try {
     if (await isNonWorkingDay()) return;
     logger.info('Sending daily 9 AM Check-in reminders');
-    const empRes = await pool.query("SELECT id FROM employees WHERE status='active'");
-    for (const emp of empRes.rows) {
-      await pool.query(
-        'INSERT INTO notifications (employee_id, type, title, message, link) VALUES ($1, $2, $3, $4, $5)',
-        [emp.id, 'attendance', 'Check-in Reminder', "Don't forget to check in for the day!", '/attendance/my']
-      );
-    }
+    const r = await pool.query(
+      `INSERT INTO notifications (employee_id, type, title, message, link)
+       SELECT id, 'attendance', 'Check-in Reminder', $1, '/attendance/my'
+         FROM employees WHERE status='active'`,
+      ["Don't forget to check in for the day!"]
+    );
+    logger.info({ sent: r.rowCount }, '9 AM Check-in reminders sent');
   } catch (err) {
     logger.error({ err }, 'Error sending 9 AM reminders');
   }
@@ -158,13 +174,13 @@ cron.schedule('0 18 * * 1-6', async () => {
   try {
     if (await isNonWorkingDay()) return;
     logger.info('Sending daily 6 PM Check-out reminders');
-    const empRes = await pool.query("SELECT id FROM employees WHERE status='active'");
-    for (const emp of empRes.rows) {
-      await pool.query(
-        'INSERT INTO notifications (employee_id, type, title, message, link) VALUES ($1, $2, $3, $4, $5)',
-        [emp.id, 'attendance', 'Check-out Reminder', "It's 6 PM! Don't forget to check out before you leave.", '/attendance/my']
-      );
-    }
+    const r = await pool.query(
+      `INSERT INTO notifications (employee_id, type, title, message, link)
+       SELECT id, 'attendance', 'Check-out Reminder', $1, '/attendance/my'
+         FROM employees WHERE status='active'`,
+      ["It's 6 PM! Don't forget to check out before you leave."]
+    );
+    logger.info({ sent: r.rowCount }, '6 PM Check-out reminders sent');
   } catch (err) {
     logger.error({ err }, 'Error sending 6 PM reminders');
   }

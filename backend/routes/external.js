@@ -19,6 +19,30 @@ const validateApiKey = async (req, res, next) => {
 };
 router.use(validateApiKey);
 
+/**
+ * Audit helper for external (API-key) requests. The standard audit
+ * middleware assumes a logged-in employee (req.user) — external requests
+ * don't have one, so we write directly with the connection's identity as
+ * the actor. Fire-and-forget so audit-table hiccups can't take a sync down.
+ */
+const auditExternal = (req, action, resource, details) => {
+  const conn = req.apiConnection;
+  pool.query(
+    `INSERT INTO audit_log
+       (actor_id, actor_email, actor_role, action, resource, resource_id, changes, ip_address, user_agent)
+     VALUES (NULL, $1, 'api_connection', $2, $3, $4, $5, $6, $7)`,
+    [
+      `api:${conn?.name || 'unknown'}`,
+      action,
+      resource,
+      null,
+      JSON.stringify(details || {}),
+      req.ip || null,
+      req.get('user-agent')?.substring(0, 500) || null,
+    ]
+  ).catch(err => console.error('AUDIT WRITE FAILED (external)', { action, resource, error: err.message }));
+};
+
 router.get('/employees', async (req, res) => {
   try {
     if (!req.apiConnection.allowed_data_types.includes('employees')) {
@@ -31,6 +55,7 @@ router.get('/employees', async (req, res) => {
       params.push(req.apiConnection.company);
     }
     const result = await pool.query(`SELECT employee_id as "employeeId", first_name as "firstName", last_name as "lastName", email, phone, designation, division, company, department, joining_date as "joiningDate" FROM employees ${query}`, params);
+    auditExternal(req, 'READ', 'employees', { count: result.rows.length, filter: { company: req.apiConnection.company || null } });
     res.json({ success: true, source: req.apiConnection.name, count: result.rows.length, data: result.rows });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -59,6 +84,12 @@ router.post('/employees', async (req, res) => {
         }
       } catch (e) { results.errors.push({ record, reason: e.message }); }
     }
+    auditExternal(req, 'BULK_UPSERT', 'employees', {
+      total: records.length,
+      created: results.created,
+      updated: results.updated,
+      errorCount: results.errors.length,
+    });
     res.json({ success: true, message: 'Sync complete', results });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -85,9 +116,11 @@ router.post('/login', async (req, res) => {
     if (emp.registration_status !== 'active') return res.status(403).json({ success: false, code: 'NOT_ACTIVE', message: 'Your account is not active. Please contact HR.' });
 
     if (!emp.password || !(await bcrypt.compare(password, emp.password))) {
+      auditExternal(req, 'LOGIN_FAILED', 'auth', { email: email.toLowerCase(), reason: 'bad_password' });
       return res.status(401).json({ success: false, code: 'WRONG_PASSWORD', message: 'Incorrect password.' });
     }
 
+    auditExternal(req, 'LOGIN_SUCCESS', 'auth', { email: email.toLowerCase(), employeeId: emp.employeeId });
     res.json({
       success: true, message: 'Login successful',
       user: { id: emp._id, employeeId: emp.employeeId, firstName: emp.firstName, lastName: emp.lastName, email: emp.email, phone: emp.phone, role: emp.role, designation: emp.designation, department: emp.department, division: emp.division, company: emp.company }

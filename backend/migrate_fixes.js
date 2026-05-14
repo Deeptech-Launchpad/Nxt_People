@@ -669,6 +669,28 @@ const steps = [
   // explicit start_date is retroactive by default (matches admin expectation
   // when creating a "Sundays are weekends" rule via the UI).
   `ALTER TABLE weekend_rules ALTER COLUMN start_date SET DEFAULT DATE '2020-01-01'`,
+
+  // ── attendance.shift_id was originally added as a raw UUID with no FK,
+  //    so deleting a shift left orphan attendance rows pointing at a vanished
+  //    shifts(id). Step 1: null out any orphans (the rows themselves stay,
+  //    they just lose their shift reference). Step 2: add the FK constraint
+  //    if it doesn't exist yet — guarded so re-running this migration is safe.
+  `UPDATE attendance
+      SET shift_id = NULL
+    WHERE shift_id IS NOT NULL
+      AND shift_id NOT IN (SELECT id FROM shifts)`,
+  `DO $$
+   BEGIN
+     IF NOT EXISTS (
+       SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'attendance'
+          AND constraint_name = 'attendance_shift_id_fkey'
+     ) THEN
+       ALTER TABLE attendance
+         ADD CONSTRAINT attendance_shift_id_fkey
+         FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE SET NULL;
+     END IF;
+   END $$`,
 ];
 
 async function runFixes() {

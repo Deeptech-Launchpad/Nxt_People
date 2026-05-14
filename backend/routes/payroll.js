@@ -87,26 +87,30 @@ router.post('/accrue', authorize('admin'), async (req, res) => {
     const s = settingsRes.rows[0];
     if (!s?.leave_accrual_enabled) return res.status(400).json({ success: false, message: 'Leave accrual is disabled in Settings' });
 
+    // Batch the accrual: one UPDATE + one bulk INSERT per leave type instead
+    // of 6 round-trips per employee. At 150 active employees that's 6 queries
+    // total instead of ~900. INSERT uses unnest() so a single parameterised
+    // statement covers every employee.
     const empRes = await pool.query("SELECT id FROM employees WHERE status='active'");
-    let credited = 0;
-    for (const emp of empRes.rows) {
-      // Casual
-      if (s.casual_accrual_per_month > 0) {
-        await pool.query('UPDATE employees SET casual_leave = COALESCE(casual_leave,0) + $1 WHERE id=$2', [s.casual_accrual_per_month, emp.id]);
-        await pool.query('INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason) VALUES ($1,$2,$3,$4)', [emp.id, 'casual', s.casual_accrual_per_month, 'Monthly accrual']);
-      }
-      // Sick
-      if (s.sick_accrual_per_month > 0) {
-        await pool.query('UPDATE employees SET sick_leave = COALESCE(sick_leave,0) + $1 WHERE id=$2', [s.sick_accrual_per_month, emp.id]);
-        await pool.query('INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason) VALUES ($1,$2,$3,$4)', [emp.id, 'sick', s.sick_accrual_per_month, 'Monthly accrual']);
-      }
-      // Earned
-      if (s.earned_accrual_per_month > 0) {
-        await pool.query('UPDATE employees SET earned_leave = COALESCE(earned_leave,0) + $1 WHERE id=$2', [s.earned_accrual_per_month, emp.id]);
-        await pool.query('INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason) VALUES ($1,$2,$3,$4)', [emp.id, 'earned', s.earned_accrual_per_month, 'Monthly accrual']);
-      }
-      credited++;
-    }
+    const empIds = empRes.rows.map(r => r.id);
+    const credited = empIds.length;
+
+    const accrueLeaveType = async (column, code, days, reason) => {
+      if (!days || days <= 0 || empIds.length === 0) return;
+      await pool.query(
+        `UPDATE employees SET ${column} = COALESCE(${column},0) + $1 WHERE id = ANY($2::uuid[])`,
+        [days, empIds]
+      );
+      await pool.query(
+        `INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason)
+         SELECT unnest($1::uuid[]), $2, $3, $4`,
+        [empIds, code, days, reason]
+      );
+    };
+
+    await accrueLeaveType('casual_leave', 'casual', s.casual_accrual_per_month, 'Monthly accrual');
+    await accrueLeaveType('sick_leave',   'sick',   s.sick_accrual_per_month,   'Monthly accrual');
+    await accrueLeaveType('earned_leave', 'earned', s.earned_accrual_per_month, 'Monthly accrual');
     await logAudit(req, {
       action: 'ACCRUE_LEAVE',
       resource: 'Payroll',

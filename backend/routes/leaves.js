@@ -8,7 +8,19 @@ const { logAudit } = require('../utils/audit');
 router.use(protect);
 
 const VALID_LEAVE_TYPES = ['casual', 'sick', 'earned', 'unpaid'];
-const LEAVE_BALANCE_COLUMN = { casual: 'casual_leave', sick: 'sick_leave', earned: 'earned_leave', unpaid: 'unpaid_leave' };
+// Whitelist mapping leave_type code → physical column name. Defense in
+// depth: even though `leave.leave_type` reaches the balance-decrement
+// UPDATE from a DB row (not directly from request body), interpolating a
+// column name into SQL is dangerous if any future code path stores
+// attacker-influenced text in the column. Keep this map exhaustive — any
+// missing key short-circuits the UPDATE rather than building bad SQL.
+const LEAVE_BALANCE_COLUMN = Object.freeze({
+  casual: 'casual_leave',
+  sick:   'sick_leave',
+  earned: 'earned_leave',
+  unpaid: 'unpaid_leave',
+});
+const VALID_BALANCE_COLUMNS = new Set(Object.values(LEAVE_BALANCE_COLUMN));
 
 // ── GET my leaves ──────────────────────────────────────────────────────────────
 router.get('/my', async (req, res) => {
@@ -230,7 +242,12 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
 
       if (leave.leave_type !== 'unpaid') {
         const col = LEAVE_BALANCE_COLUMN[leave.leave_type];
-        if (col) await pool.query(`UPDATE employees SET ${col}=GREATEST(0,${col}-$1) WHERE id=$2`, [leave.total_days, leave.employee_id]);
+        // Hard whitelist guard before interpolating into SQL. Without this,
+        // a future change that lets `leave.leave_type` carry arbitrary text
+        // could turn the line below into an injection sink.
+        if (col && VALID_BALANCE_COLUMNS.has(col)) {
+          await pool.query(`UPDATE employees SET ${col}=GREATEST(0,${col}-$1) WHERE id=$2`, [leave.total_days, leave.employee_id]);
+        }
         try {
           const year = new Date(leave.start_date).getFullYear();
           const ltRes = await pool.query(`SELECT id FROM leave_types WHERE code=$1`, [leave.leave_type]);

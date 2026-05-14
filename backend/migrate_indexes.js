@@ -17,11 +17,16 @@ const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_leaves_employee_id        ON leaves(employee_id)`,
   `CREATE INDEX IF NOT EXISTS idx_leaves_status             ON leaves(status)`,
   `CREATE INDEX IF NOT EXISTS idx_leaves_dates              ON leaves(start_date, end_date)`,
+  // Reports + "Recent Leaves" widgets sort by created_at DESC. Without this
+  // index, at 50k+ rows the query plans an ORDER BY sort over the whole table.
+  `CREATE INDEX IF NOT EXISTS idx_leaves_created_at         ON leaves(created_at DESC)`,
 
   // ── Timesheets ────────────────────────────────────────────────────────────
   `CREATE INDEX IF NOT EXISTS idx_timesheets_employee_id    ON timesheets(employee_id)`,
   `CREATE INDEX IF NOT EXISTS idx_timesheets_dates          ON timesheets(week_start_date, week_end_date)`,
   `CREATE INDEX IF NOT EXISTS idx_timesheets_status         ON timesheets(status)`,
+  // Same rationale as leaves: ORDER BY created_at on the admin timesheets list.
+  `CREATE INDEX IF NOT EXISTS idx_timesheets_created_at     ON timesheets(created_at DESC)`,
 
   // ── Employees ─────────────────────────────────────────────────────────────
   `CREATE INDEX IF NOT EXISTS idx_employees_email           ON employees(email)`,

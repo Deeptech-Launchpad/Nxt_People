@@ -46,6 +46,22 @@ const forgotPasswordLimiter = rateLimit({
   message: { success: false, message: 'Too many requests. Try again later.' },
 });
 
+// Limiter for /check-email. The endpoint differentiates account states
+// (new / pending / approved / active) so the login UI can route correctly,
+// which inherently leaks account existence. We can't collapse the response
+// without breaking the UX, so we slow enumeration down: 20 lookups per
+// 15-minute window per IP+email tuple. A scripted attacker rotating
+// emails still hits the per-IP cap quickly.
+const checkEmailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: ipPlusEmail,
+  skip: skipRateLimit,
+  message: { success: false, message: 'Too many requests. Try again later.' },
+});
+
 // Access token: short-lived (15 min by default)
 const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, {
   expiresIn: process.env.JWT_ACCESS_EXPIRE || '15m',
@@ -70,14 +86,20 @@ const generateRefreshToken = async (employeeId, req) => {
   return rawToken;
 };
 
-// @POST /api/auth/check-email
-router.post('/check-email', async (req, res) => {
+// @POST /api/auth/check-email — drives the login UI's "what should I show
+// for this email" branching. Leaks account state by design (the UI needs to
+// know whether to show register / pending / accept-terms / login), so the
+// limiter above slows enumeration. We deliberately do NOT return first_name
+// any more — that was a real PII leak with no UX justification (the user
+// types their email and the page greeted them by name before they proved
+// identity).
+router.post('/check-email', checkEmailLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
     const result = await pool.query(
-      'SELECT registration_status, has_accepted, first_name FROM employees WHERE email = $1',
+      'SELECT registration_status, has_accepted FROM employees WHERE email = $1',
       [email.toLowerCase()]
     );
 
@@ -90,7 +112,6 @@ router.post('/check-email', async (req, res) => {
       success: true,
       status: employee.registration_status,
       hasAccepted: employee.has_accepted,
-      firstName: employee.first_name
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

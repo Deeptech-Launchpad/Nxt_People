@@ -200,12 +200,82 @@ Once admin is logged in and Zoho credentials are set in `backend/.env`:
 
 ```bash
 cd /opt/nxt-people
+
+# 1. Take a DB snapshot BEFORE pulling — your rollback artifact.
+docker compose -f docker-compose.prod.yml exec db \
+  pg_dump -U postgres -d nxt_people --no-owner --format=custom \
+  > pre-upgrade-$(date +%Y%m%d-%H%M%S).dump
+
+# 2. Note the current commit so you can roll the code back if needed.
+git rev-parse HEAD > pre-upgrade-commit.txt
+
+# 3. Pull + rebuild.
 git pull
 docker compose -f docker-compose.prod.yml --env-file backend/.env up -d --build
 ```
 
 Backend migrations run automatically on container start. Zero-downtime is
 not configured by default — there's a few seconds of 502 during restart.
+
+### Rolling back a bad deploy
+
+If the new version is broken (5xx storm, login fails, migration corrupts data),
+roll back in this order:
+
+```bash
+# 1. Bring the new stack down (DB volume preserved).
+docker compose -f docker-compose.prod.yml down
+
+# 2. Reset the working tree to the last known-good commit.
+git checkout "$(cat pre-upgrade-commit.txt)"
+
+# 3. If the bad release ran destructive migrations, restore the DB snapshot
+#    you took above. SKIP THIS STEP if migrations were additive only —
+#    restoring throws away every row written since the snapshot.
+cat pre-upgrade-YYYYMMDD-HHMMSS.dump | \
+  docker compose -f docker-compose.prod.yml exec -T db \
+  pg_restore -U postgres -d nxt_people --clean --if-exists
+
+# 4. Bring the old version back up.
+docker compose -f docker-compose.prod.yml --env-file backend/.env up -d --build
+```
+
+If you only need to roll back the **frontend** (most common — bad UI ship,
+clean DB), pull the previous commit and rebuild just the frontend container:
+
+```bash
+git checkout "$(cat pre-upgrade-commit.txt)" -- frontend/
+docker compose -f docker-compose.prod.yml up -d --build frontend
+```
+
+### Automating backups
+
+Add a daily cron to ship dumps off the prod host:
+
+```cron
+# /etc/cron.d/nxt-people-backup
+0 2 * * * root cd /opt/nxt-people && \
+  docker compose -f docker-compose.prod.yml exec -T db \
+  pg_dump -U postgres -d nxt_people --no-owner --format=custom \
+  | aws s3 cp - s3://your-bucket/nxt-people/db-$(date +\%Y\%m\%d).dump
+```
+
+Substitute S3 with B2, rsync to a peer machine, or whatever off-site target
+you trust. Verify the dump is restorable monthly — an untested backup is
+not a backup.
+
+### TLS certificate renewal
+
+`certbot --nginx -d hr.acme.com` installs a systemd timer (`certbot.timer`)
+that renews automatically. Verify it's healthy after the first issue:
+
+```bash
+systemctl status certbot.timer        # should be "active (waiting)"
+sudo certbot renew --dry-run          # exercises the full flow
+```
+
+Set a calendar reminder ~80 days out to confirm the next renewal landed.
+Lets Encrypt certs are 90 days; the timer fires at 60.
 
 ### Tail logs
 

@@ -62,8 +62,12 @@ services:
       test: ["CMD-SHELL", "wget -qO- http://localhost:5000/api/health || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      # A slow first-boot migration (large DB, many ALTER TABLEs) used to trip
+      # the 3-retry / 60s ceiling and the container got marked unhealthy
+      # before migrate.js finished. Doubled retries + a 90s start_period gives
+      # migrations up to ~5 minutes of grace before docker restarts the box.
+      retries: 6
+      start_period: 90s
     # No `ports:` — backend is reachable only via nginx in the frontend container.
 
   frontend:

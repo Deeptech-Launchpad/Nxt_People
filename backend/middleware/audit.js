@@ -21,6 +21,11 @@ const audit = (action, resource) => (req, res, next) => {
         (Array.isArray(data?.data) ? null : data?.data?.id) ||
         null;
 
+      // Fire-and-forget on purpose — making the audit await-block would let
+      // an audit-table outage cascade into "your DELETE worked but the
+      // response failed". On the rare audit-write failure we log enough
+      // context (who/what/when) that the row can be reconstructed manually,
+      // and we report to Sentry if it's wired up.
       pool.query(
         `INSERT INTO audit_log
          (actor_id, actor_email, actor_role, action, resource, resource_id, changes, ip_address, user_agent)
@@ -36,7 +41,17 @@ const audit = (action, resource) => (req, res, next) => {
           req.ip || null,
           req.get('user-agent')?.substring(0, 500) || null,
         ]
-      ).catch(err => console.error('⚠️  Audit log write failed:', err.message));
+      ).catch(err => {
+        console.error('AUDIT WRITE FAILED', {
+          timestamp: new Date().toISOString(),
+          actor: req.user.email,
+          action, resource, resourceId,
+          error: err.message,
+        });
+        if (global.Sentry?.captureException) {
+          global.Sentry.captureException(err, { tags: { audit: 'write_failed', action, resource } });
+        }
+      });
     }
     return originalJson(data);
   };

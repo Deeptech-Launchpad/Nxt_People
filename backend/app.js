@@ -24,6 +24,15 @@ if (sentryEnabled && Sentry.Handlers?.requestHandler) {
 }
 
 // ── Core middleware ────────────────────────────────────────────────────────────
+// In production, CORS_ORIGIN MUST be set explicitly to the public URL. The
+// previous fallback to localhost:5173 in production was a silent footgun:
+// the frontend's real origin got rejected while localhost-from-the-server
+// silently passed, masking the misconfiguration until users reported "logged
+// in but every API call fails".
+if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGIN) {
+  console.error('FATAL: CORS_ORIGIN must be set in production. Refusing to start.');
+  process.exit(1);
+}
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
 app.use(cors({ origin: corsOrigin, credentials: true, methods: ['GET','POST','PUT','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }));
 app.use(express.json({ limit: '10mb' }));

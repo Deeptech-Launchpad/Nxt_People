@@ -26,8 +26,14 @@ const Badge = ({ status }) => {
 };
 
 function ApproveModal({ employee, onClose, onApproved }) {
+  // Reset to defaults whenever the modal is opened for a new employee.
+  // Without the key/useEffect, closing+reopening for a different employee
+  // would leak the previous approval's role and password into the form.
   const [form, setForm] = useState({ role: 'employee', department: '', password: '' });
   const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    setForm({ role: 'employee', department: '', password: '' });
+  }, [employee?._id]);
 
   const handleApprove = async () => {
     setLoading(true);
@@ -71,7 +77,7 @@ function ApproveModal({ employee, onClose, onApproved }) {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1.5">Initial password <span className="text-slate-500 font-normal">(required for login)</span></label>
-            <input type="text" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="w-full bg-white border border-slate-300 text-slate-900 px-3 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 placeholder-slate-400 shadow-sm" placeholder="Set a temporary password" />
+            <input type="password" autoComplete="new-password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="w-full bg-white border border-slate-300 text-slate-900 px-3 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 placeholder-slate-400 shadow-sm" placeholder="Set a temporary password" />
           </div>
         </div>
         <div className="flex gap-3 mt-6">
