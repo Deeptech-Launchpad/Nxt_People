@@ -81,15 +81,17 @@ router.get('/', async (req, res) => {
 });
 
 // PUT /api/profile — update own editable fields.
-// Admin-only fields (department, designation, role, email, employee_id,
-// company, division, joining_date, shift, reporting/approving manager, status)
-// are deliberately excluded — those changes go through /api/employees/:id.
+// Employees can self-edit ONLY their alternative phone number, current
+// address, and emergency contact details. Everything else (name, DOB,
+// PAN, bank details, role, department, joining date, etc.) is HR-managed
+// and reaches the DB only via /api/employees/:id (admin/manager-gated).
+// Locked fields in the request body are silently ignored — frontend already
+// hides them, this is the defense-in-depth backstop.
 router.put('/', async (req, res) => {
   try {
     const {
-      firstName, lastName, phone, dateOfBirth, address,
+      phone, address,
       emergencyContactName, emergencyContactPhone, emergencyContactRelation,
-      panNumber, bankAccount, bankIfsc,
     } = req.body;
 
     const updates = [];
@@ -97,23 +99,11 @@ router.put('/', async (req, res) => {
     let i = 1;
     const set = (col, val) => { updates.push(`${col} = $${i++}`); params.push(val); };
 
-    if (firstName !== undefined) {
-      if (!String(firstName).trim()) return res.status(400).json({ success: false, message: 'First name cannot be empty' });
-      set('first_name', String(firstName).trim());
-    }
-    if (lastName !== undefined) {
-      if (!String(lastName).trim()) return res.status(400).json({ success: false, message: 'Last name cannot be empty' });
-      set('last_name', String(lastName).trim());
-    }
     if (phone !== undefined)                    set('phone', phone);
     if (address !== undefined)                  set('address', address);
-    if (dateOfBirth !== undefined)              set('date_of_birth', dateOfBirth || null);
     if (emergencyContactName !== undefined)     set('emergency_contact_name', emergencyContactName);
     if (emergencyContactPhone !== undefined)    set('emergency_contact_phone', emergencyContactPhone);
     if (emergencyContactRelation !== undefined) set('emergency_contact_relation', emergencyContactRelation);
-    if (panNumber !== undefined)                set('pan_number', panNumber ? String(panNumber).toUpperCase().trim() : null);
-    if (bankAccount !== undefined)              set('bank_account', bankAccount ? String(bankAccount).trim() : null);
-    if (bankIfsc !== undefined)                 set('bank_ifsc', bankIfsc ? String(bankIfsc).toUpperCase().trim() : null);
 
     if (updates.length === 0) return res.json({ success: true, message: 'Nothing to update' });
     updates.push(`updated_at = NOW()`);

@@ -121,15 +121,11 @@ export default function Profile() {
       .then((r) => {
         const d = r.data.data || {};
         setProfile(d);
+        // Only the fields employees are allowed to self-edit.
+        // Name, DOB, PAN, bank details, role, dept — HR-managed.
         setForm({
-          firstName: d.firstName || '',
-          lastName: d.lastName || '',
           phone: d.phone || '',
-          dateOfBirth: d.dateOfBirth ? d.dateOfBirth.split('T')[0] : '',
           address: d.address || '',
-          panNumber: d.panNumber || '',
-          bankAccount: d.bankAccount || '',
-          bankIfsc: d.bankIfsc || '',
           emergencyContactName: d.emergencyContactName || '',
           emergencyContactPhone: d.emergencyContactPhone || '',
           emergencyContactRelation: d.emergencyContactRelation || '',
@@ -402,95 +398,28 @@ export default function Profile() {
             </div>
             <form onSubmit={handleSave} className="p-6 space-y-5 overflow-y-auto flex-1">
 
-              {/* Basic Information */}
+              {/* Alternative Phone */}
               <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Basic Information</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">First Name</label>
-                    <input
-                      value={form.firstName}
-                      onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-                      required
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Last Name</label>
-                    <input
-                      value={form.lastName}
-                      onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-                      required
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Phone</label>
-                    <input
-                      value={form.phone}
-                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
-                      placeholder="+91 98765 43210"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Date of Birth</label>
-                    <input
-                      type="date"
-                      value={form.dateOfBirth}
-                      onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
-                    />
-                  </div>
-                </div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Alternative Phone Number</p>
+                <input
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
+                  placeholder="+91 98765 43210"
+                />
+                <p className="text-[11px] text-slate-400 mt-1.5">A reachable personal number — work phone is set by HR.</p>
               </div>
 
-              {/* Address */}
+              {/* Current Address */}
               <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Address</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Current Address</p>
                 <textarea
                   value={form.address}
                   onChange={(e) => setForm({ ...form, address: e.target.value })}
                   rows={2}
-                  placeholder="Home address..."
+                  placeholder="Where you currently live..."
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 resize-none"
                 />
-              </div>
-
-              {/* Identity Information */}
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Identity Information</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">PAN</label>
-                    <input
-                      value={form.panNumber}
-                      onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })}
-                      maxLength={10}
-                      placeholder="ABCDE1234F"
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-blue-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Bank IFSC</label>
-                    <input
-                      value={form.bankIfsc}
-                      onChange={(e) => setForm({ ...form, bankIfsc: e.target.value.toUpperCase() })}
-                      maxLength={11}
-                      placeholder="HDFC0001234"
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-blue-400"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Bank Account Number</label>
-                    <input
-                      value={form.bankAccount}
-                      onChange={(e) => setForm({ ...form, bankAccount: e.target.value.replace(/\D/g, '') })}
-                      placeholder="Numeric account number"
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-blue-400"
-                    />
-                  </div>
-                </div>
               </div>
 
               {/* Emergency Contact */}
