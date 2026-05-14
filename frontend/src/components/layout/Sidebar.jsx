@@ -65,12 +65,7 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed top-0 left-0 h-screen w-[72px] bg-[#1a2040] flex flex-col z-50 shadow-xl">
-      {/* Spacer to align with the Topbar's navy primary bar (h-[48px]).
-          The duplicate cube logo lived here but was visually competing with
-          the HOME nav button directly below — branding belongs in the Topbar. */}
-      <div className="h-[48px] flex-shrink-0 bg-[#151a35]" />
-
-      {/* Main nav */}
+      {/* Main nav — HOME is the first item, flush to the top of the sidebar. */}
       <nav className="flex-1 flex flex-col overflow-y-auto scrollbar-none py-1">
         {NAV_ITEMS.map(item => <NavItem key={item.to} item={item}/>)}
 
