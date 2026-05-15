@@ -8,7 +8,7 @@ import {
   Megaphone, Clock, ExternalLink, User as UserIcon,
   MoreHorizontal, LogIn, LogOut,
   Calendar, Star, CheckCircle,
-  MessageSquare, Sun, Sunrise, Sunset, Moon, Briefcase, Filter, X, Activity, Settings, User, Search
+  MessageSquare, Briefcase, Filter, X, Activity, Settings, User, Search
 } from 'lucide-react';
 
 import api from '../utils/api';
@@ -819,10 +819,14 @@ export default function Dashboard() {
                     </div>
                     <div className="h-10 w-[1px] bg-slate-200"></div>
                     <div className="flex-1">
-                      <h4 className="text-[15px] font-bold text-slate-800">
+                      {/* Heading scaled up + heavier weight to match Zoho's
+                          prominence — was 15px font-bold slate-800, now
+                          18px extrabold slate-900 so it carries the same
+                          visual weight as the AltiusNxt logo beside it. */}
+                      <h4 className="text-[18px] font-extrabold text-slate-900 tracking-tight">
                         {getGreeting()} {user?.firstName || 'User'}
                       </h4>
-                      <p className="text-[12.5px] text-slate-500 mt-0.5">Have a productive day!</p>
+                      <p className="text-[13.5px] text-slate-500 mt-1">Have a productive day!</p>
                     </div>
                     {/* Animated time-of-day icon — rotating rays + pulsing
                         core + soft glow, swapped for a moon overnight. */}
