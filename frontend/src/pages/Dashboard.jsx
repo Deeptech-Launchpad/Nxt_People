@@ -23,16 +23,17 @@ function getGreeting() {
 }
 
 /* Time-of-day icon — animated, Zoho-People style.
- * The sun stays put in the card; only the sky behind it, the sun's
- * color tint, and the dot rays shift across the day. The card itself
- * gets a `getTimeOfDaySky()` gradient. No moon swap — same sun icon
- * around the clock (user spec). */
+ * The sun stays put in the card with a fixed warm-gold palette
+ * (no more rose/red at evening — that read as Mars, not a sun).
+ * Only the SKY (card background) shifts through the day. The dot
+ * rays and halo carry a faint time-of-day tint that stays in the
+ * yellow/amber/orange family. */
 function getTimeOfDayColor() {
   const h = new Date().getHours();
   if (h >= 5  && h < 8)  return 'text-orange-400';   // dawn — peach
   if (h >= 8  && h < 17) return 'text-amber-500';    // day — amber
-  if (h >= 17 && h < 20) return 'text-rose-400';     // dusk — rose
-  return 'text-indigo-400';                          // night — indigo tint
+  if (h >= 17 && h < 20) return 'text-orange-500';   // dusk — warm orange (was rose-400)
+  return 'text-amber-400';                           // night — keep golden, sky carries the night cue
 }
 
 /* Background gradient applied to the greeting card itself. The "sky".
@@ -50,43 +51,55 @@ function getTimeOfDaySky() {
 function AnimatedTimeOfDayIcon({ size = 48 }) {
   const color = getTimeOfDayColor();
 
-  // Sun stays fixed all day — Zoho-People style: soft gradient ball with
-  // a ring of dotted rays around it (not lines), plus a gentle halo.
-  // Rays slowly rotate, core gently breathes, halo expands+contracts.
+  // Sun stays fixed all day — Zoho-People style: warm golden gradient
+  // ball with a small white cloud nuzzling its right side, twelve dotted
+  // rays around the rim, plus a soft halo. The core is hard-coded to
+  // gold (no currentColor) so the sun always reads as a sun. Only the
+  // halo + dots inherit the time-of-day tint via currentColor.
   return (
     <div className={`relative ${color}`} style={{ width: size, height: size }}>
       <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0">
         <defs>
           <radialGradient id="nxt-sun-halo" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"  stopColor="currentColor" stopOpacity="0.35" />
-            <stop offset="55%" stopColor="currentColor" stopOpacity="0.18" />
+            <stop offset="0%"  stopColor="currentColor" stopOpacity="0.30" />
+            <stop offset="55%" stopColor="currentColor" stopOpacity="0.12" />
             <stop offset="100%" stopColor="currentColor" stopOpacity="0"   />
           </radialGradient>
-          <radialGradient id="nxt-sun-fill" cx="40%" cy="38%" r="62%">
-            <stop offset="0%"  stopColor="#fff7ce" stopOpacity="0.95" />
-            <stop offset="55%" stopColor="currentColor" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="currentColor" stopOpacity="0.7"  />
+          {/* Fixed warm-gold core (NOT currentColor) so the sun reads as
+              a sun in every time slot. Upper-left highlight gives it the
+              sense of light coming from above. */}
+          <radialGradient id="nxt-sun-fill" cx="38%" cy="35%" r="65%">
+            <stop offset="0%"  stopColor="#fff6c4" stopOpacity="1"   />
+            <stop offset="50%" stopColor="#fbd24a" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.85" />
           </radialGradient>
         </defs>
         {/* Soft outer glow halo */}
         <circle cx="32" cy="32" r="28" fill="url(#nxt-sun-halo)" className="nxt-sun-glow" />
       </svg>
-      {/* Dotted rays — small circles around the rim, slow rotation */}
+      {/* Dotted rays — small circles around the rim, slow rotation. */}
       <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0 nxt-sun-rays">
-        <g fill="currentColor" opacity="0.75">
+        <g fill="currentColor" opacity="0.7">
           {Array.from({ length: 12 }).map((_, i) => {
             const angle = (i * 30 * Math.PI) / 180;
             const cx = 32 + Math.cos(angle) * 26;
             const cy = 32 + Math.sin(angle) * 26;
-            // Alternate dot sizes for a softer twinkle
-            const r = i % 2 === 0 ? 1.4 : 1;
+            const r = i % 2 === 0 ? 1.3 : 0.9;
             return <circle key={i} cx={cx} cy={cy} r={r} />;
           })}
         </g>
       </svg>
-      {/* Core — gradient ball, gentle pulse */}
+      {/* Core ball + cloud accent. Gentle pulse via nxt-sun-core keyframes. */}
       <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0 nxt-sun-core">
         <circle cx="32" cy="32" r="15" fill="url(#nxt-sun-fill)" />
+        {/* Small cloud overlapping the lower-right of the sun, matches
+            the wisp visible in the Zoho reference. White with a touch of
+            blue-grey shadow so it stays subtle. */}
+        <g fill="#ffffff" opacity="0.92">
+          <ellipse cx="43" cy="38" rx="6"   ry="3.4" />
+          <ellipse cx="38" cy="40" rx="3.8" ry="3"   />
+          <ellipse cx="47" cy="40" rx="3"   ry="2.4" />
+        </g>
       </svg>
     </div>
   );
@@ -593,7 +606,7 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setAvatarOpen(true)}
                   title="View profile photo"
-                  className="w-[110px] h-[110px] rounded-xl bg-gradient-to-b from-slate-100 to-slate-200 border-4 border-white flex items-center justify-center text-slate-300 -mt-[55px] shadow-xl relative z-10 overflow-hidden hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
+                  className="w-[110px] h-[110px] rounded-xl bg-slate-50 border-4 border-white flex items-center justify-center text-slate-300 -mt-[55px] shadow-xl relative z-10 overflow-hidden hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer transition-colors"
                 >
                   {user?.photoUrl
                     ? <img src={user.photoUrl} alt="avatar" className="w-full h-full object-cover" />
