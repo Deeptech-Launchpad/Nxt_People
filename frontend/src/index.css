@@ -98,19 +98,32 @@
   0%, 100% { opacity: .8; }
   50%      { opacity: 1;   }
 }
-/* Cloud drifts right -> left across the sun and loops, fading in as it
- * enters from the right edge and out as it leaves on the left. Slow
- * (12s) for a calm, dreamy feel. */
+/* Cloud drifts right -> left across the sky and loops. Two variants
+ * with different speeds + offsets so the two clouds feel independent
+ * rather than parallel-locked. Fades at edges so the loop is invisible. */
 @keyframes nxt-cloud-drift {
-  0%   { transform: translateX(30px); opacity: 0; }
-  15%  { transform: translateX(16px); opacity: 1; }
-  85%  { transform: translateX(-16px); opacity: 1; }
-  100% { transform: translateX(-30px); opacity: 0; }
+  0%   { transform: translateX(34px); opacity: 0; }
+  15%  { transform: translateX(18px); opacity: 1; }
+  85%  { transform: translateX(-18px); opacity: 1; }
+  100% { transform: translateX(-34px); opacity: 0; }
 }
-.nxt-sun-rays  { animation: nxt-sun-rays 14s linear infinite; transform-origin: center; }
-.nxt-sun-glow  { animation: nxt-sun-glow 2.4s ease-in-out infinite; transform-origin: center; }
-.nxt-cloud-drift { animation: nxt-cloud-drift 12s linear infinite; transform-origin: center; }
-.nxt-moon      { animation: nxt-moon-twinkle 3.2s ease-in-out infinite; }
+@keyframes nxt-cloud-drift-2 {
+  0%   { transform: translateX(38px); opacity: 0; }
+  20%  { transform: translateX(22px); opacity: 0.85; }
+  80%  { transform: translateX(-22px); opacity: 0.85; }
+  100% { transform: translateX(-38px); opacity: 0; }
+}
+/* Twinkle for the stars surrounding the moon at night. */
+@keyframes nxt-star-twinkle {
+  0%, 100% { opacity: .3; }
+  50%      { opacity: 1;  }
+}
+.nxt-sun-rays    { animation: nxt-sun-rays 14s linear infinite; transform-origin: center; }
+.nxt-sun-glow    { animation: nxt-sun-glow 2.4s ease-in-out infinite; transform-origin: center; }
+.nxt-cloud-drift   { animation: nxt-cloud-drift   12s linear infinite; transform-origin: center; }
+.nxt-cloud-drift-2 { animation: nxt-cloud-drift-2 16s linear infinite; transform-origin: center; animation-delay: -4s; }
+.nxt-star-twinkle  { animation: nxt-star-twinkle 2.6s ease-in-out infinite; }
+.nxt-moon        { animation: nxt-moon-twinkle 3.2s ease-in-out infinite; }
 
 /* ── Zoho-style card hover effect ───────────────────────────────────── */
 @layer components {

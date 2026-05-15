@@ -49,13 +49,51 @@ function getTimeOfDaySky() {
 }
 
 function AnimatedTimeOfDayIcon({ size = 48 }) {
+  const h = new Date().getHours();
+  const isNight = h < 5 || h >= 20;
   const color = getTimeOfDayColor();
 
-  // Sun stays fixed all day — Zoho-People style: warm golden gradient
-  // ball with a small white cloud nuzzling its right side, twelve dotted
-  // rays around the rim, plus a soft halo. The core is hard-coded to
-  // gold (no currentColor) so the sun always reads as a sun. Only the
-  // halo + dots inherit the time-of-day tint via currentColor.
+  // ── Night: crescent moon with twinkling stars ──────────────────────
+  if (isNight) {
+    const stars = [
+      { cx: 14, cy: 18, r: 0.9 },
+      { cx: 50, cy: 14, r: 1.1 },
+      { cx: 12, cy: 44, r: 0.8 },
+      { cx: 54, cy: 50, r: 1.0 },
+      { cx: 18, cy: 30, r: 0.6 },
+    ];
+    return (
+      <div className="relative text-indigo-300" style={{ width: size, height: size }}>
+        <svg viewBox="0 0 64 64" width={size} height={size}>
+          <defs>
+            <radialGradient id="nxt-moon-glow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"  stopColor="#e0e7ff" stopOpacity="0.45" />
+              <stop offset="60%" stopColor="#e0e7ff" stopOpacity="0.15" />
+              <stop offset="100%" stopColor="#e0e7ff" stopOpacity="0"   />
+            </radialGradient>
+            <radialGradient id="nxt-moon-body" cx="38%" cy="35%" r="65%">
+              <stop offset="0%"  stopColor="#fefce8" stopOpacity="1"   />
+              <stop offset="60%" stopColor="#fde68a" stopOpacity="0.95" />
+              <stop offset="100%" stopColor="#fbbf24" stopOpacity="0.85" />
+            </radialGradient>
+          </defs>
+          <circle cx="32" cy="32" r="26" fill="url(#nxt-moon-glow)" className="nxt-sun-glow" />
+          {/* Crescent: a full filled disc with a slightly-offset cutout. */}
+          <mask id="nxt-moon-mask">
+            <rect width="64" height="64" fill="white" />
+            <circle cx="38" cy="28" r="14" fill="black" />
+          </mask>
+          <circle cx="32" cy="32" r="15" fill="url(#nxt-moon-body)" mask="url(#nxt-moon-mask)" />
+          {/* Stars twinkling around the moon */}
+          <g fill="#e2e8f0" className="nxt-star-twinkle">
+            {stars.map((s, i) => <circle key={i} cx={s.cx} cy={s.cy} r={s.r} />)}
+          </g>
+        </svg>
+      </div>
+    );
+  }
+
+  // ── Day: warm golden gradient sun + two drifting clouds + rays + halo.
   return (
     <div className={`relative ${color}`} style={{ width: size, height: size }}>
       <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0">
@@ -102,10 +140,10 @@ function AnimatedTimeOfDayIcon({ size = 48 }) {
         <circle cx="32" cy="32" r="15" fill="url(#nxt-sun-fill)" />
       </svg>
 
-      {/* Cloud — drifts right -> left across the sun and loops. Lives
-          in its own SVG so the translateX keyframe doesn't move the
-          sun core. Single fluffy silhouette (the secondary cloud was
-          removed to match the cleaner Zoho reference). */}
+      {/* Two clouds drifting right -> left at different speeds and
+          y-positions so they feel independent rather than parallel-locked.
+          Each lives in its own SVG so its translateX keyframe doesn't
+          move the sun core. */}
       <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0">
         <g className="nxt-cloud-drift" fill="#ffffff" filter="url(#nxt-cloud-shadow)">
           <path d="
@@ -116,6 +154,21 @@ function AnimatedTimeOfDayIcon({ size = 48 }) {
             a 3.2 3.2 0 0 1 1.2 6.2
             L 25 40.2
             a 2.6 2.6 0 0 1 -1 -4.2
+            z" />
+        </g>
+      </svg>
+      <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0">
+        <g className="nxt-cloud-drift-2" fill="#ffffff" opacity="0.85" filter="url(#nxt-cloud-shadow)">
+          {/* Slightly smaller, higher up so it doesn't overlap the first
+              cloud's path. */}
+          <path d="
+            M 30 22
+            a 2.4 2.4 0 0 1 2 -2
+            a 3.4 3.4 0 0 1 3.2 -2
+            a 3.8 3.8 0 0 1 4 2.8
+            a 2.2 2.2 0 0 1 0.8 4.4
+            L 30.6 25
+            a 1.8 1.8 0 0 1 -0.6 -3
             z" />
         </g>
       </svg>
@@ -862,7 +915,7 @@ export default function Dashboard() {
                     </div>
                     {/* Animated time-of-day icon — rotating rays + pulsing
                         core + soft glow, swapped for a moon overnight. */}
-                    <AnimatedTimeOfDayIcon size={76} />
+                    <AnimatedTimeOfDayIcon size={96} />
                   </div>
 
                   {/* ── Announcements card — surfaces unread + urgent + recent ── */}
