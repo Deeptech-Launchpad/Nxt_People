@@ -64,7 +64,10 @@ router.post('/import', authorize('admin'), audit('IMPORT', 'holiday'), upload.si
         }
       }
 
-      const year = new Date(dateStr).getFullYear();
+      // Parse as local-midnight so 2026-12-31 doesn't shift to 2026-12-30
+      // when JS treats it as UTC and we're in IST. `${dateStr}T00:00:00`
+      // anchors it to the server's local day.
+      const year = new Date(`${dateStr}T00:00:00`).getFullYear();
       const type = typeRaw.toLowerCase();
 
       await pool.query(`INSERT INTO holidays (name, date, type, description, year) VALUES ($1, $2, $3, $4, $5)`, [name, dateStr, type, description, year]);
@@ -196,7 +199,12 @@ router.post('/:id/notify', authorize('admin'), audit('NOTIFY', 'holiday'), async
       } catch { failed++; }
     }
 
-    await pool.query('UPDATE holidays SET notified_at = NOW() WHERE id = $1', [req.params.id]);
+    // Only stamp notified_at when every recipient succeeded. Partial-success
+    // would mislead the UI ("Sent on …") into thinking the broadcast worked
+    // when 17 of 20 inboxes bounced. Admin can re-trigger after fixing SMTP.
+    if (failed === 0 && sent > 0) {
+      await pool.query('UPDATE holidays SET notified_at = NOW() WHERE id = $1', [req.params.id]);
+    }
     res.json({ success: true, sent, failed, total: emps.rows.length });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });

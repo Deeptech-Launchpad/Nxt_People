@@ -1,8 +1,30 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const pool = require('../db');
 const bcrypt = require('bcryptjs');
+
+// Per-API-key rate limit. Prevents a leaked key from being used to
+// hammer the bulk-upsert endpoint into a denial of service. Keyed on
+// the SHA-256 of the key so we don't store secrets in memory; if no
+// key is present, fall back to ipKeyGenerator (IPv6-safe helper from
+// express-rate-limit; raw req.ip would let v6 callers bypass limits
+// by rotating addresses inside their /64).
+const externalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req, res) => {
+    const apiKey = req.headers['x-api-key'] || '';
+    if (apiKey) return crypto.createHash('sha256').update(apiKey).digest('hex');
+    return ipKeyGenerator(req, res);
+  },
+  skip: () => process.env.NODE_ENV !== 'production' || process.env.RATE_LIMIT_DISABLED === 'true',
+  message: { success: false, message: 'Rate limit exceeded for this API key. Try again in 15 minutes.' },
+});
+router.use(externalLimiter);
 
 const validateApiKey = async (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
@@ -18,6 +40,10 @@ const validateApiKey = async (req, res, next) => {
   next();
 };
 router.use(validateApiKey);
+
+// Hard cap on bulk-upsert array size. One sync call should not be able to
+// kick off thousands of sequential queries from one HTTP request.
+const MAX_BULK_RECORDS = 500;
 
 /**
  * Audit helper for external (API-key) requests. The standard audit
@@ -66,6 +92,14 @@ router.post('/employees', async (req, res) => {
       return res.status(403).json({ success: false, message: 'This connection does not have write access to employees data.' });
     }
     const records = Array.isArray(req.body) ? req.body : [req.body];
+    // Reject oversized payloads up-front. Without this cap a single call
+    // could fan out into thousands of sequential queries on the pool.
+    if (records.length > MAX_BULK_RECORDS) {
+      return res.status(413).json({
+        success: false,
+        message: `Bulk payload too large. Max ${MAX_BULK_RECORDS} records per request, got ${records.length}. Split into batches.`,
+      });
+    }
     const results = { created: 0, updated: 0, errors: [] };
 
     for (const record of records) {

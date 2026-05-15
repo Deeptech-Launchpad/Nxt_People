@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { audit } = require('../middleware/audit');
 
 // Whitelist map — column names come from code, never from user input
 const ENCASHMENT_COL = {
@@ -37,7 +38,7 @@ router.get('/pending', authorize('admin', 'manager'), async (req, res) => {
 });
 
 // POST apply for encashment
-router.post('/', async (req, res) => {
+router.post('/', audit('CREATE', 'encashment'), async (req, res) => {
   try {
     const { leaveType, days, reason } = req.body;
 
@@ -71,7 +72,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT approve/reject
-router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'manager'), audit('ACTION', 'encashment'), async (req, res) => {
   try {
     const { action, reason } = req.body;
     const status = action === 'approve' ? 'approved' : 'rejected';

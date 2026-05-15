@@ -311,7 +311,7 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const leaveRes = await pool.query(
-      'SELECT status FROM leaves WHERE id=$1 AND employee_id=$2',
+      'SELECT status, leave_type, start_date, end_date FROM leaves WHERE id=$1 AND employee_id=$2',
       [req.params.id, req.user._id]
     );
     if (leaveRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Leave not found' });
@@ -319,6 +319,18 @@ router.delete('/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Cannot cancel approved leave' });
     }
     await pool.query('DELETE FROM leaves WHERE id=$1', [req.params.id]);
+    // Audit trail for cancellations — was missing entirely before.
+    await logAudit(req, {
+      action: 'CANCEL',
+      resource: 'Leave',
+      resourceId: req.params.id,
+      changes: {
+        prior_status: leaveRes.rows[0].status,
+        leave_type:   leaveRes.rows[0].leave_type,
+        start_date:   leaveRes.rows[0].start_date,
+        end_date:     leaveRes.rows[0].end_date,
+      },
+    });
     res.json({ success: true, message: 'Leave cancelled' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

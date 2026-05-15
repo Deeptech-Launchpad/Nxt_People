@@ -313,8 +313,11 @@ router.put('/:id/confirm', async (req, res) => {
 
     let passUpdate = '';
     let passValue = null;
+    // date_of_joining is a DATE column — postgres rejects "" with
+    // "invalid input syntax for type date: ''". Coerce blanks to NULL
+    // here (mirrors the same fix in /api/employees POST/PUT).
     let queryParams = [
-      dateOfJoining, companyName, division, employeeType,
+      dateOfJoining || null, companyName, division, employeeType,
       workingMode, designation, department, officialEmail, allowAccess,
       req.user._id, assignedEmployeeId, id
     ];

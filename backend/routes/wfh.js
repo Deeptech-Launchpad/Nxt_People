@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { audit } = require('../middleware/audit');
 const { createNotification } = require('./notifications');
 router.use(protect);
 
@@ -31,7 +32,7 @@ router.get('/pending', authorize('admin', 'manager'), async (req, res) => {
 });
 
 // POST apply WFH
-router.post('/', async (req, res) => {
+router.post('/', audit('CREATE', 'wfh_request'), async (req, res) => {
   try {
     const { date, reason } = req.body;
     if (!date || !reason) return res.status(400).json({ success: false, message: 'Date and reason are required' });
@@ -47,7 +48,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT approve/reject
-router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'manager'), audit('ACTION', 'wfh_request'), async (req, res) => {
   try {
     const { action, rejectionReason } = req.body;
     const wRes = await pool.query('SELECT * FROM wfh_requests WHERE id=$1', [req.params.id]);

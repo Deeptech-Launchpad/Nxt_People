@@ -72,8 +72,14 @@ function runJsFile(file) {
   for (const file of ORDER) {
     const abs = path.join(here, file);
     if (!fs.existsSync(abs)) {
-      console.log(`  ⏭  ${file} (missing — skipping)`);
-      continue;
+      // Fail loudly. Previously this silently skipped, so an accidentally
+      // deleted migration would let the app boot against an incomplete
+      // schema and crash later with cryptic FK errors. Better to refuse
+      // to migrate at all than to half-migrate.
+      console.error(`\n❌ Missing migration file: ${file}`);
+      console.error('   This file is listed in ORDER but does not exist on disk.');
+      console.error('   Restore it from git history or remove it from migrate.js ORDER intentionally.');
+      process.exit(1);
     }
     try {
       if (file.endsWith('.sql')) {

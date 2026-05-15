@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { audit } = require('../middleware/audit');
 const { createNotification } = require('./notifications');
 router.use(protect);
 
@@ -32,7 +33,7 @@ router.get('/pending', authorize('admin', 'manager'), async (req, res) => {
 });
 
 // POST apply comp-off
-router.post('/', async (req, res) => {
+router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
   try {
     const { workedDate, reason, daysEarned = 1 } = req.body;
     if (!workedDate) return res.status(400).json({ success: false, message: 'Worked date is required' });
@@ -46,7 +47,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT approve/reject
-router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'manager'), audit('ACTION', 'comp_off'), async (req, res) => {
   try {
     const { action, rejectionReason } = req.body;
     const existing = await pool.query('SELECT * FROM comp_offs WHERE id=$1', [req.params.id]);
@@ -72,7 +73,7 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
 });
 
 // POST use comp-off (deduct from balance)
-router.post('/:id/use', async (req, res) => {
+router.post('/:id/use', audit('USE', 'comp_off'), async (req, res) => {
   try {
     const { daysToUse } = req.body;
     await pool.query(

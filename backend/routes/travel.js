@@ -11,6 +11,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { audit } = require('../middleware/audit');
 router.use(protect);
 
 const SELECT_OWN = `
@@ -56,7 +57,7 @@ router.get('/', authorize('admin', 'manager'), async (_req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', audit('CREATE', 'travel_request'), async (req, res) => {
   try {
     const { destination, purpose, fromDate, toDate, transport } = req.body;
     if (!destination || !fromDate || !toDate) {
@@ -76,7 +77,7 @@ router.post('/', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'manager'), audit('ACTION', 'travel_request'), async (req, res) => {
   try {
     const { action, rejectionReason } = req.body;
     if (!['approve', 'reject'].includes(action)) {
@@ -101,7 +102,7 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', audit('CANCEL', 'travel_request'), async (req, res) => {
   try {
     // Employee can only cancel their own pending request.
     const r = await pool.query(
