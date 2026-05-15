@@ -52,9 +52,15 @@ router.post('/checkin', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Already checked in today' });
     }
 
-    // Fetch settings + shift for late detection
+    // Fetch settings + shift for late detection.
+    // enforce_geofence is a new flag (default FALSE) that separates two
+    // policies that used to be conflated under require_gps:
+    //   - require_gps:       GPS coords MUST be sent (browser permission)
+    //   - enforce_geofence:  GPS must additionally be inside the radius
+    // Default keeps geofence informational so WFH/field/late employees
+    // can still check in; HR sees the distance in attendance reports.
     const settingsRes = await pool.query(
-      'SELECT late_after_minutes, require_gps, office_latitude, office_longitude, gps_radius_meters FROM settings LIMIT 1'
+      'SELECT late_after_minutes, require_gps, enforce_geofence, office_latitude, office_longitude, gps_radius_meters FROM settings LIMIT 1'
     );
     const settings = settingsRes.rows[0] || {};
 
@@ -87,7 +93,11 @@ router.post('/checkin', async (req, res) => {
       withinRange = distance <= radius;
       if (!withinRange) {
         gpsWarning = `You are ${distance}m from office (allowed: ${radius}m)`;
-        if (settings.require_gps) {
+        // Hard-block ONLY when the org has explicitly opted into geofence
+        // enforcement. Default is soft-warn so WFH / field / late-commute
+        // employees can still check in (HR sees the distance via the
+        // stored lat/lng + the gpsWarning surfaced in the response).
+        if (settings.enforce_geofence) {
           return res.status(403).json({ success: false, message: gpsWarning, code: 'OUT_OF_RANGE' });
         }
       }

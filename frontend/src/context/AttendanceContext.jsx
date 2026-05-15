@@ -93,13 +93,20 @@ export const AttendanceProvider = ({ children }) => {
        const r = await api.post('/attendance/checkin', { location: 'Office', ...coords });
        const rec = r.data.data;
        setRecord(rec);
-       
+
        // Include any previously worked hours today (cumulative timer)
        const prevHours = parseFloat(rec.workingHours || 0);
        const baseSeconds = Math.round(prevHours * 3600);
        startTimer(rec.checkIn, baseSeconds);
-       
+
        toast.success(r.data.lateMessage || 'Checked in successfully!');
+       // Soft geofence warning — backend captured the GPS but flagged
+       // that you were outside the office radius. We surface it as info,
+       // not an error, so HR sees the distance in reports but the
+       // check-in still goes through (WFH / field / late commute).
+       if (r.data.gpsWarning) {
+         toast(r.data.gpsWarning, { icon: '📍', duration: 5000 });
+       }
        return rec;
      } catch (err) {
        toast.error(err.response?.data?.message || 'Check-in failed');

@@ -692,6 +692,13 @@ const steps = [
      END IF;
    END $$`,
 
+  // ── Attendance: separate "GPS required" from "geofence enforced" ─────────
+  // Previously `require_gps = TRUE` meant both. WFH / field / late-commute
+  // employees got blocked even though HR wanted to allow them. The new flag
+  // defaults FALSE so geofence becomes a soft warning unless explicitly
+  // turned on. require_gps still controls whether browsers must send lat/lng.
+  `ALTER TABLE settings ADD COLUMN IF NOT EXISTS enforce_geofence BOOLEAN DEFAULT FALSE`,
+
   // ── Settings table must be a singleton ───────────────────────────────────
   // The app reads `SELECT * FROM settings LIMIT 1`, but nothing was stopping
   // two concurrent admins from creating duplicate rows via INSERT. Collapse
