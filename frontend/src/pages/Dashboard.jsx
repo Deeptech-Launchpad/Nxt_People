@@ -57,40 +57,43 @@ function AnimatedTimeOfDayIcon({ size = 48 }) {
     );
   }
 
-  // Sun / sunrise / sunset — same primitives, color set by getTimeOfDayColor.
+  // Sun / sunrise / sunset — Zoho-People style: soft gradient ball with
+  // a ring of dotted rays around it (not lines), plus a gentle halo.
+  // Rays slowly rotate, core gently breathes, halo expands+contracts.
   return (
     <div className={`relative ${color}`} style={{ width: size, height: size }}>
       <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0">
         <defs>
           <radialGradient id="nxt-sun-halo" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"  stopColor="currentColor" stopOpacity="0.55" />
-            <stop offset="60%" stopColor="currentColor" stopOpacity="0.25" />
+            <stop offset="0%"  stopColor="currentColor" stopOpacity="0.35" />
+            <stop offset="55%" stopColor="currentColor" stopOpacity="0.18" />
             <stop offset="100%" stopColor="currentColor" stopOpacity="0"   />
           </radialGradient>
-          <radialGradient id="nxt-sun-fill" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"  stopColor="currentColor" stopOpacity="1" />
-            <stop offset="100%" stopColor="currentColor" stopOpacity="0.85" />
+          <radialGradient id="nxt-sun-fill" cx="40%" cy="38%" r="62%">
+            <stop offset="0%"  stopColor="#fff7ce" stopOpacity="0.95" />
+            <stop offset="55%" stopColor="currentColor" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="currentColor" stopOpacity="0.7"  />
           </radialGradient>
         </defs>
-        {/* Soft glow halo behind everything */}
-        <circle cx="32" cy="32" r="26" fill="url(#nxt-sun-halo)" className="nxt-sun-glow" />
+        {/* Soft outer glow halo */}
+        <circle cx="32" cy="32" r="28" fill="url(#nxt-sun-halo)" className="nxt-sun-glow" />
       </svg>
-      {/* Rays — rotate slowly */}
+      {/* Dotted rays — small circles around the rim, slow rotation */}
       <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0 nxt-sun-rays">
-        <g stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none">
-          {Array.from({ length: 8 }).map((_, i) => {
-            const angle = (i * 45 * Math.PI) / 180;
-            const x1 = 32 + Math.cos(angle) * 22;
-            const y1 = 32 + Math.sin(angle) * 22;
-            const x2 = 32 + Math.cos(angle) * 30;
-            const y2 = 32 + Math.sin(angle) * 30;
-            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} />;
+        <g fill="currentColor" opacity="0.75">
+          {Array.from({ length: 12 }).map((_, i) => {
+            const angle = (i * 30 * Math.PI) / 180;
+            const cx = 32 + Math.cos(angle) * 26;
+            const cy = 32 + Math.sin(angle) * 26;
+            // Alternate dot sizes for a softer twinkle
+            const r = i % 2 === 0 ? 1.4 : 1;
+            return <circle key={i} cx={cx} cy={cy} r={r} />;
           })}
         </g>
       </svg>
-      {/* Core — pulse */}
+      {/* Core — gradient ball, gentle pulse */}
       <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0 nxt-sun-core">
-        <circle cx="32" cy="32" r="14" fill="url(#nxt-sun-fill)" />
+        <circle cx="32" cy="32" r="15" fill="url(#nxt-sun-fill)" />
       </svg>
     </div>
   );
@@ -597,7 +600,7 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setAvatarOpen(true)}
                   title="View profile photo"
-                  className="w-[110px] h-[110px] rounded-xl bg-gradient-to-b from-slate-100 to-slate-200 border-4 border-white flex items-center justify-center text-slate-300 -mt-[55px] shadow-xl relative z-10 overflow-hidden hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-zoom-in"
+                  className="w-[110px] h-[110px] rounded-xl bg-gradient-to-b from-slate-100 to-slate-200 border-4 border-white flex items-center justify-center text-slate-300 -mt-[55px] shadow-xl relative z-10 overflow-hidden hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
                 >
                   {user?.photoUrl
                     ? <img src={user.photoUrl} alt="avatar" className="w-full h-full object-cover" />
