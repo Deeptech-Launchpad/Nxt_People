@@ -103,6 +103,16 @@ export default function Profile() {
   const onCropComplete = useCallback((_area, areaPixels) => {
     setCroppedAreaPixels(areaPixels);
   }, []);
+  // Lightbox state — opens when the user clicks their profile photo
+  // (the same UX as tapping your DP in WhatsApp / Instagram). Click
+  // anywhere on the backdrop or press Escape to close.
+  const [viewerOpen, setViewerOpen] = useState(false);
+  useEffect(() => {
+    if (!viewerOpen) return;
+    const close = (e) => { if (e.key === 'Escape') setViewerOpen(false); };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [viewerOpen]);
 
   /** Open the OS file picker programmatically. */
   const triggerPhotoPicker = () => fileInputRef.current?.click();
@@ -297,6 +307,32 @@ export default function Profile() {
         className="hidden"
       />
 
+      {/* ── Profile photo lightbox — Instagram/WhatsApp-style viewer.
+       *  Tap the photo, see it big; tap anywhere or press Escape to close. ── */}
+      {viewerOpen && profile.photoUrl && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setViewerOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            type="button"
+            onClick={() => setViewerOpen(false)}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={profile.photoUrl}
+            alt={fullName}
+            onClick={e => e.stopPropagation()}
+            className="max-w-[92vw] max-h-[88vh] rounded-2xl shadow-2xl object-contain cursor-default"
+          />
+        </div>
+      )}
+
       {/* ── Cropper modal — opens after the user picks a file. Drag to
        *  reposition, scroll/slider to zoom, the circle marks what will
        *  be saved as the profile photo. ── */}
@@ -375,11 +411,18 @@ export default function Profile() {
           <div className="px-6 py-5 flex items-center gap-5">
             <div className="relative shrink-0">
               {profile.photoUrl ? (
-                <img
-                  src={profile.photoUrl}
-                  alt="Profile"
-                  className="w-20 h-20 rounded-full object-cover border border-slate-200"
-                />
+                <button
+                  type="button"
+                  onClick={() => setViewerOpen(true)}
+                  title="View full size"
+                  className="block rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300"
+                >
+                  <img
+                    src={profile.photoUrl}
+                    alt="Profile"
+                    className="w-20 h-20 rounded-full object-cover border border-slate-200 cursor-zoom-in hover:opacity-90 transition-opacity"
+                  />
+                </button>
               ) : (
                 <div className="w-20 h-20 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center text-[22px] font-bold border border-slate-200">
                   {initials}
