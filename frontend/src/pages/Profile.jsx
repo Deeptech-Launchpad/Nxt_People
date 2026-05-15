@@ -465,6 +465,9 @@ export default function Profile() {
 
         <Section title="Identity Information">
           <Row label="PAN">{profile.panNumber ? <Masked value={profile.panNumber} /> : null}</Row>
+          <Row label="Aadhaar Number">{profile.aadhaarNumber ? <Masked value={profile.aadhaarNumber} /> : null}</Row>
+          <Row label="UAN Number">{profile.uanNumber ? <Masked value={profile.uanNumber} /> : null}</Row>
+          <Row label="Bank Name">{profile.bankName}</Row>
           <Row label="Bank Account">{profile.bankAccount ? <Masked value={profile.bankAccount} /> : null}</Row>
           <Row label="Bank IFSC">{profile.bankIfsc}</Row>
         </Section>
