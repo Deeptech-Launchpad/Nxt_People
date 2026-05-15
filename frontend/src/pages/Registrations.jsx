@@ -94,6 +94,9 @@ function ApproveModal({ employee, onClose, onApproved }) {
 function RejectModal({ employee, onClose, onRejected }) {
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
+  // Reset whenever the modal opens for a different candidate so a rejection
+  // reason from the previous person doesn't leak into the new modal.
+  useEffect(() => { setReason(''); }, [employee?._id]);
 
   const handleReject = async () => {
     setLoading(true);

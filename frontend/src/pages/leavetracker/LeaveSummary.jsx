@@ -68,6 +68,10 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
     e.preventDefault();
     if (!form.fromDate) return toast.error('Please select From date');
     if (!form.toDate)   return toast.error('Please select To date');
+    // Backend rejects this with a vague message — catch it client-side so
+    // the user gets immediate feedback. Compare as ISO strings (YYYY-MM-DD
+    // sorts lexicographically the same way as chronologically).
+    if (form.toDate < form.fromDate) return toast.error('To date cannot be before From date');
     if (!form.reason.trim()) return toast.error('Reason is required');
     setLoading(true);
     try {

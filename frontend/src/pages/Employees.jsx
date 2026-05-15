@@ -146,15 +146,25 @@ export default function Employees() {
     api.get(`/employees?${params}`).then(r => { setEmployees(r.data.data); setTotal(r.data.total); }).catch(console.error).finally(()=>setLoading(false));
   };
 
+  // Metadata (managers / departments / designations) used to be fetched
+  // once on mount, so promoting someone to manager elsewhere wouldn't
+  // appear in the dropdown until a full page reload. Re-fetch when the
+  // tab regains focus so admin sees fresh dropdowns without F5.
   useEffect(() => {
-    api.get('/employees/metadata').then(r => {
-      const d = r.data.data || {};
-      if (d.departments?.length)          setDepartments(d.departments);
-      if (d.designations?.length)         setDesignations(d.designations);
-      // roles is intentionally hardcoded above — no metadata override
-      if (d.managers?.length)             setManagers(d.managers);
-      if (d.approvingAuthorities?.length) setApprovingAuthorities(d.approvingAuthorities);
-    }).catch(console.error);
+    const fetchMetadata = () => {
+      api.get('/employees/metadata').then(r => {
+        const d = r.data.data || {};
+        if (d.departments?.length)          setDepartments(d.departments);
+        if (d.designations?.length)         setDesignations(d.designations);
+        // roles is intentionally hardcoded above — no metadata override
+        if (d.managers?.length)             setManagers(d.managers);
+        if (d.approvingAuthorities?.length) setApprovingAuthorities(d.approvingAuthorities);
+      }).catch(console.error);
+    };
+    fetchMetadata();
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchMetadata(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
   useEffect(load, [page, search, deptFilter, roleFilter, desigFilter, statusFilter]);
