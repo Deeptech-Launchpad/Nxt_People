@@ -28,29 +28,38 @@ function getGreeting() {
  * Only the SKY (card background) shifts through the day. The dot
  * rays and halo carry a faint time-of-day tint that stays in the
  * yellow/amber/orange family. */
+// Total minutes since midnight — used so the night boundary can land
+// on 5:30 PM (1050 mins) instead of being stuck on an hour mark.
+function totalMins() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+
 function getTimeOfDayColor() {
-  const h = new Date().getHours();
-  if (h >= 5  && h < 8)  return 'text-orange-400';   // dawn — peach
-  if (h >= 8  && h < 17) return 'text-amber-500';    // day — amber
-  if (h >= 17 && h < 20) return 'text-orange-500';   // dusk — warm orange (was rose-400)
-  return 'text-amber-400';                           // night — keep golden, sky carries the night cue
+  const m = totalMins();
+  if (m >= 5  * 60 && m < 8  * 60)         return 'text-orange-400'; // dawn
+  if (m >= 8  * 60 && m < 17 * 60)         return 'text-amber-500';  // day
+  if (m >= 17 * 60 && m < 17 * 60 + 30)    return 'text-orange-500'; // brief dusk 5–5:30 PM
+  return 'text-indigo-300';                                          // night (5:30 PM onwards)
 }
 
 /* Background gradient applied to the greeting card itself. The "sky".
- * Subtle tints kept on the light side so dark text stays readable
- * across every time slot. */
+ * Night palette (5:30 PM onwards) goes a step darker now — user wanted
+ * the evening to read as actual evening, not just a tinted morning. */
 function getTimeOfDaySky() {
-  const h = new Date().getHours();
-  if (h >= 5  && h < 8)  return 'from-amber-50 via-orange-50 to-yellow-50';      // dawn
-  if (h >= 8  && h < 12) return 'from-sky-50 via-blue-50 to-white';              // morning
-  if (h >= 12 && h < 17) return 'from-yellow-50 via-amber-50 to-orange-50';      // afternoon
-  if (h >= 17 && h < 20) return 'from-orange-100 via-rose-50 to-amber-50';       // dusk
-  return 'from-indigo-100 via-violet-50 to-slate-100';                            // night
+  const m = totalMins();
+  if (m >= 5  * 60 && m < 8  * 60)        return 'from-amber-50 via-orange-50 to-yellow-50';   // dawn
+  if (m >= 8  * 60 && m < 12 * 60)        return 'from-sky-50 via-blue-50 to-white';           // morning
+  if (m >= 12 * 60 && m < 17 * 60)        return 'from-yellow-50 via-amber-50 to-orange-50';   // afternoon
+  if (m >= 17 * 60 && m < 17 * 60 + 30)   return 'from-orange-100 via-rose-50 to-amber-50';    // brief dusk
+  return 'from-indigo-300 via-slate-300 to-indigo-200';                                         // night
 }
 
 function AnimatedTimeOfDayIcon({ size = 48 }) {
-  const h = new Date().getHours();
-  const isNight = h < 5 || h >= 20;
+  // Moon kicks in at 5:30 PM (per user spec — Indian winter sunset is
+  // around 6 PM so the evening should already feel like night by 5:30).
+  const m = totalMins();
+  const isNight = m < 5 * 60 || m >= 17 * 60 + 30;
   const color = getTimeOfDayColor();
 
   // ── Night: crescent moon with twinkling stars ──────────────────────
@@ -340,7 +349,7 @@ const RequestMenu = ({ x, y, onClose, canRegularize = false }) => {
 /* ══════════════════════════════════════════════════════════════════════ */
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   const {
     isCheckedIn, isCheckedOut, timerDisplay,
     hrs, mins, secs,
@@ -416,16 +425,45 @@ export default function Dashboard() {
     const [loadingDeptMembers, setLoadingDeptMembers] = useState(false);
     const [showMembersModal, setShowMembersModal] = useState(false);
 
-    /* ── Avatar lightbox state ── Clicking your photo in the profile card
-       opens a Zoho-style preview with a Change Image button that jumps to
-       the Profile page where the upload UI lives. */
+    /* ── Avatar lightbox state ── Clicking your photo in the profile
+       card opens a Zoho-style preview. Change Image now opens the OS
+       file picker inline rather than navigating away to /profile. */
     const [avatarOpen, setAvatarOpen] = useState(false);
+    const [photoUploading, setPhotoUploading] = useState(false);
+    const photoFileRef = useRef(null);
     useEffect(() => {
       if (!avatarOpen) return;
       const close = (e) => { if (e.key === 'Escape') setAvatarOpen(false); };
       document.addEventListener('keydown', close);
       return () => document.removeEventListener('keydown', close);
     }, [avatarOpen]);
+
+    // Handle the file the user picks from their device. Uploads to
+    // POST /api/profile/photo (multer-backed), then patches the cached
+    // user so the top-right + dashboard avatars both re-render with the
+    // new photoUrl without a page reload.
+    const handleDashPhotoUpload = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setPhotoUploading(true);
+      try {
+        const fd = new FormData();
+        fd.append('photo', file);
+        const r = await api.post('/profile/photo', fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        if (r.data?.photoUrl) {
+          setUser(prev => prev ? { ...prev, photoUrl: r.data.photoUrl } : prev);
+        }
+        toast.success('Profile photo updated');
+        setAvatarOpen(false);
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Upload failed');
+      } finally {
+        setPhotoUploading(false);
+        e.target.value = ''; // reset so picking the same file again still fires onChange
+      }
+    };
 
     /* ── Approvals state ── */
     const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -1808,11 +1846,21 @@ export default function Dashboard() {
                </p>
                <button
                  type="button"
-                 onClick={() => { setAvatarOpen(false); navigate('/profile'); }}
-                 className="mt-5 w-full border border-blue-500 text-blue-600 hover:bg-blue-50 font-semibold py-2.5 rounded-lg text-[13px] transition-colors"
+                 onClick={() => photoFileRef.current?.click()}
+                 disabled={photoUploading}
+                 className="mt-5 w-full border border-blue-500 text-blue-600 hover:bg-blue-50 font-semibold py-2.5 rounded-lg text-[13px] transition-colors disabled:opacity-60"
                >
-                 ✎ Change Image
+                 {photoUploading ? 'Uploading…' : '✎ Change Image'}
                </button>
+               {/* Hidden input — clicking the button opens the OS file
+                   picker straight from this modal. No navigate(). */}
+               <input
+                 ref={photoFileRef}
+                 type="file"
+                 accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+                 onChange={handleDashPhotoUpload}
+                 className="hidden"
+               />
              </div>
            </div>
          </div>
