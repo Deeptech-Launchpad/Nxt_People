@@ -428,9 +428,20 @@ export default function Topbar() {
           <div className="relative" ref={userMenuRef}>
             <button onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center gap-1.5 hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-bold text-white ring-2 ring-white/20">
-                {user?.firstName?.[0] || 'U'}{user?.lastName?.[0] || ''}
-              </div>
+              {/* Profile photo if uploaded; falls back to initials. AuthContext
+                  updates after Profile photo save, so this re-renders without
+                  a page reload. */}
+              {user?.photoUrl ? (
+                <img
+                  src={user.photoUrl}
+                  alt={user.firstName || 'Avatar'}
+                  className="w-8 h-8 rounded-full object-cover ring-2 ring-white/20"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-bold text-white ring-2 ring-white/20">
+                  {user?.firstName?.[0] || 'U'}{user?.lastName?.[0] || ''}
+                </div>
+              )}
             </button>
             {showUserMenu && (
               <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-2xl z-50 border border-slate-100 overflow-hidden">

@@ -8,7 +8,7 @@ import {
   Megaphone, Clock, ExternalLink, User as UserIcon,
   MoreHorizontal, LogIn, LogOut,
   Calendar, Star, CheckCircle,
-  MessageSquare, Sun, Briefcase, Filter, X, Activity, Settings, User, Search
+  MessageSquare, Sun, Sunrise, Sunset, Moon, Briefcase, Filter, X, Activity, Settings, User, Search
 } from 'lucide-react';
 
 import api from '../utils/api';
@@ -20,6 +20,25 @@ function getGreeting() {
   if (h < 12) return 'Good Morning';
   if (h < 17) return 'Good Afternoon';
   return 'Good Evening';
+}
+
+/* Time-of-day icon — sunrise at dawn, sun in working hours, sunset in the
+ * evening, moon overnight. The component itself is returned so the caller
+ * can size/color it however it wants. Zoho-People-style "time aware" header. */
+function TimeOfDayIcon(props) {
+  const h = new Date().getHours();
+  if (h >= 5  && h < 8)  return <Sunrise {...props} />;
+  if (h >= 8  && h < 17) return <Sun     {...props} />;
+  if (h >= 17 && h < 20) return <Sunset  {...props} />;
+  return <Moon {...props} />;
+}
+
+function getTimeOfDayColor() {
+  const h = new Date().getHours();
+  if (h >= 5  && h < 8)  return 'text-orange-400';
+  if (h >= 8  && h < 17) return 'text-amber-500';
+  if (h >= 17 && h < 20) return 'text-rose-400';
+  return 'text-indigo-400';
 }
 
 /**
@@ -494,7 +513,10 @@ export default function Dashboard() {
 
       {/* ── Main content (overlaps banner by ~80px) ───────────────────── */}
       <div className="relative z-10 w-full px-6 -mt-[80px] pb-12">
-        <div className="flex items-start gap-5 max-w-[1200px]">
+        {/* Removed the 1200px cap — on wide monitors the right side was
+            sitting empty. Let the row stretch with the parent so the
+            activity panel fills available width. */}
+        <div className="flex items-start gap-5 w-full">
 
           {/* ══ LEFT COLUMN ═══════════════════════════════════════════ */}
           <div className="w-[280px] flex-shrink-0 space-y-4">
@@ -712,11 +734,15 @@ export default function Dashboard() {
                 <div className="flex flex-col gap-4">
                   {/* Good Morning Banner */}
                   <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-center gap-5 shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 bg-[#1a73e8] rounded flex items-center justify-center text-white font-bold text-xl shadow-md">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-                      </div>
-                      <span className="text-[16px] font-bold text-slate-800 tracking-tight">AltiusNxt</span>
+                    {/* Branding — real AltiusNxt logo. File lives at
+                        frontend/public/altius-logo.png so Vite serves it
+                        from the root and no import is needed. */}
+                    <div className="flex items-center">
+                      <img
+                        src="/altius-logo.png"
+                        alt="AltiusNxt"
+                        className="h-10 w-auto object-contain"
+                      />
                     </div>
                     <div className="h-10 w-[1px] bg-slate-200"></div>
                     <div className="flex-1">
@@ -725,8 +751,9 @@ export default function Dashboard() {
                       </h4>
                       <p className="text-[12.5px] text-slate-500 mt-0.5">Have a productive day!</p>
                     </div>
-                    <div className="text-amber-500 opacity-80">
-                      <Sun size={48} strokeWidth={1} />
+                    {/* Time-of-day icon — sunrise / sun / sunset / moon. */}
+                    <div className={`${getTimeOfDayColor()} opacity-80`}>
+                      <TimeOfDayIcon size={48} strokeWidth={1} />
                     </div>
                   </div>
 

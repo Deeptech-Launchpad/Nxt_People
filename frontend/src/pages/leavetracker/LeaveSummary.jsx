@@ -359,33 +359,39 @@ export default function LeaveSummary() {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {cards.map(card => (
-              <div key={card.code} className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow">
-                {/* Icon */}
-                <div className={`w-11 h-11 rounded flex items-center justify-center text-[22px] mb-4 ${ICON_BG[card.code] || 'bg-gray-50'}`}>
-                  {card.icon || ICON_MAP[card.code] || '📋'}
+            {cards.map(card => {
+              // Permission leave is tracked in hours (matches Zoho People).
+              // Other leave types stay in days.
+              const unit = card.code === 'permission' ? 'hrs' : '';
+              const fmt = (v) => v === null || v === undefined ? '—' : `${v}${unit ? ' ' + unit : ''}`;
+              return (
+                <div key={card.code} className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                  {/* Icon */}
+                  <div className={`w-11 h-11 rounded flex items-center justify-center text-[22px] mb-4 ${ICON_BG[card.code] || 'bg-gray-50'}`}>
+                    {card.icon || ICON_MAP[card.code] || '📋'}
+                  </div>
+                  {/* Name */}
+                  <p className="text-[12.5px] font-bold text-gray-600 mb-3">{card.name}</p>
+                  {/* Available */}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[12px] text-gray-500">Available</span>
+                    <span className="text-[13px] font-bold text-[#34a853]">
+                      {fmt(card.available)}
+                    </span>
+                  </div>
+                  {/* Booked */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] text-gray-500">Booked</span>
+                    <span className="flex items-center gap-1 text-[12.5px] font-semibold text-gray-700">
+                      {fmt(card.booked)}
+                      <button className="text-gray-300 hover:text-gray-500 transition-colors">
+                        <Info size={11} />
+                      </button>
+                    </span>
+                  </div>
                 </div>
-                {/* Name */}
-                <p className="text-[12.5px] font-bold text-gray-600 mb-3">{card.name}</p>
-                {/* Available */}
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[12px] text-gray-500">Available</span>
-                  <span className="text-[13px] font-bold text-[#34a853]">
-                    {card.available !== null ? card.available : '—'}
-                  </span>
-                </div>
-                {/* Booked */}
-                <div className="flex items-center justify-between">
-                  <span className="text-[12px] text-gray-500">Booked</span>
-                  <span className="flex items-center gap-1 text-[12.5px] font-semibold text-gray-700">
-                    {card.booked}
-                    <button className="text-gray-300 hover:text-gray-500 transition-colors">
-                      <Info size={11} />
-                    </button>
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
