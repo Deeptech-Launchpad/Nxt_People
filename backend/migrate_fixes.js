@@ -691,6 +691,14 @@ const steps = [
          FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE SET NULL;
      END IF;
    END $$`,
+
+  // ── Settings table must be a singleton ───────────────────────────────────
+  // The app reads `SELECT * FROM settings LIMIT 1`, but nothing was stopping
+  // two concurrent admins from creating duplicate rows via INSERT. Collapse
+  // any existing duplicates to the oldest row, then add a partial unique
+  // index so future INSERTs fail noisily instead of silently splintering.
+  `DELETE FROM settings WHERE id NOT IN (SELECT id FROM settings ORDER BY id LIMIT 1)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uniq_settings_singleton ON settings ((1))`,
 ];
 
 async function runFixes() {

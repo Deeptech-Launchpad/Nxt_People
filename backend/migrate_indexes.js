@@ -48,7 +48,11 @@ const INDEXES = [
 
   // ── WFH / Comp-off / Regularizations ─────────────────────────────────────
   `CREATE INDEX IF NOT EXISTS idx_wfh_employee_status       ON wfh_requests(employee_id, status)`,
-  `CREATE INDEX IF NOT EXISTS idx_compoff_employee          ON comp_off_requests(employee_id)`,
+  // migrate_fixes.js renamed comp_off_requests -> comp_offs early in the
+  // run, so the index has to target the new name. Drop the legacy index if
+  // it exists on a freshly-renamed table to keep things tidy.
+  `DROP INDEX IF EXISTS idx_compoff_employee`,
+  `CREATE INDEX IF NOT EXISTS idx_compoff_employee_status   ON comp_offs(employee_id, status)`,
   `CREATE INDEX IF NOT EXISTS idx_regularize_employee       ON attendance_regularizations(employee_id, status)`,
 ];
 
