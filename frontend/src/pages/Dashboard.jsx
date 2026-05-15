@@ -22,23 +22,78 @@ function getGreeting() {
   return 'Good Evening';
 }
 
-/* Time-of-day icon — sunrise at dawn, sun in working hours, sunset in the
- * evening, moon overnight. The component itself is returned so the caller
- * can size/color it however it wants. Zoho-People-style "time aware" header. */
-function TimeOfDayIcon(props) {
-  const h = new Date().getHours();
-  if (h >= 5  && h < 8)  return <Sunrise {...props} />;
-  if (h >= 8  && h < 17) return <Sun     {...props} />;
-  if (h >= 17 && h < 20) return <Sunset  {...props} />;
-  return <Moon {...props} />;
-}
-
+/* Time-of-day icon — animated, Zoho-People style. The outer rays rotate
+ * slowly, the core pulses, and a soft glow halo expands+contracts. Color
+ * shifts across the day. Falls back to a still moon overnight (no rays). */
 function getTimeOfDayColor() {
   const h = new Date().getHours();
   if (h >= 5  && h < 8)  return 'text-orange-400';
   if (h >= 8  && h < 17) return 'text-amber-500';
   if (h >= 17 && h < 20) return 'text-rose-400';
   return 'text-indigo-400';
+}
+
+function AnimatedTimeOfDayIcon({ size = 48 }) {
+  const h = new Date().getHours();
+  const isNight = h < 5 || h >= 20;
+  const color   = getTimeOfDayColor();
+
+  if (isNight) {
+    // Moon — gentle twinkle, no rays.
+    return (
+      <div className={color} style={{ width: size, height: size }}>
+        <svg viewBox="0 0 64 64" width={size} height={size} className="nxt-moon">
+          <defs>
+            <radialGradient id="nxt-moon-grad" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"  stopColor="currentColor" stopOpacity="0.95" />
+              <stop offset="80%" stopColor="currentColor" stopOpacity="0.6"  />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="0"   />
+            </radialGradient>
+          </defs>
+          <circle cx="32" cy="32" r="22" fill="url(#nxt-moon-grad)" />
+          <path d="M40 18 a16 16 0 1 0 6 24 12 12 0 0 1 -6 -24z" fill="currentColor" opacity="0.95"/>
+        </svg>
+      </div>
+    );
+  }
+
+  // Sun / sunrise / sunset — same primitives, color set by getTimeOfDayColor.
+  return (
+    <div className={`relative ${color}`} style={{ width: size, height: size }}>
+      <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0">
+        <defs>
+          <radialGradient id="nxt-sun-halo" cx="50%" cy="50%" r="50%">
+            <stop offset="0%"  stopColor="currentColor" stopOpacity="0.55" />
+            <stop offset="60%" stopColor="currentColor" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="currentColor" stopOpacity="0"   />
+          </radialGradient>
+          <radialGradient id="nxt-sun-fill" cx="50%" cy="50%" r="50%">
+            <stop offset="0%"  stopColor="currentColor" stopOpacity="1" />
+            <stop offset="100%" stopColor="currentColor" stopOpacity="0.85" />
+          </radialGradient>
+        </defs>
+        {/* Soft glow halo behind everything */}
+        <circle cx="32" cy="32" r="26" fill="url(#nxt-sun-halo)" className="nxt-sun-glow" />
+      </svg>
+      {/* Rays — rotate slowly */}
+      <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0 nxt-sun-rays">
+        <g stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none">
+          {Array.from({ length: 8 }).map((_, i) => {
+            const angle = (i * 45 * Math.PI) / 180;
+            const x1 = 32 + Math.cos(angle) * 22;
+            const y1 = 32 + Math.sin(angle) * 22;
+            const x2 = 32 + Math.cos(angle) * 30;
+            const y2 = 32 + Math.sin(angle) * 30;
+            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} />;
+          })}
+        </g>
+      </svg>
+      {/* Core — pulse */}
+      <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0 nxt-sun-core">
+        <circle cx="32" cy="32" r="14" fill="url(#nxt-sun-fill)" />
+      </svg>
+    </div>
+  );
 }
 
 /**
@@ -280,6 +335,17 @@ export default function Dashboard() {
     const [deptMembers, setDeptMembers] = useState([]);
     const [loadingDeptMembers, setLoadingDeptMembers] = useState(false);
     const [showMembersModal, setShowMembersModal] = useState(false);
+
+    /* ── Avatar lightbox state ── Clicking your photo in the profile card
+       opens a Zoho-style preview with a Change Image button that jumps to
+       the Profile page where the upload UI lives. */
+    const [avatarOpen, setAvatarOpen] = useState(false);
+    useEffect(() => {
+      if (!avatarOpen) return;
+      const close = (e) => { if (e.key === 'Escape') setAvatarOpen(false); };
+      document.addEventListener('keydown', close);
+      return () => document.removeEventListener('keydown', close);
+    }, [avatarOpen]);
 
     /* ── Approvals state ── */
     const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -523,14 +589,21 @@ export default function Dashboard() {
 
             {/* Profile card */}
             <div className="bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] border border-slate-200 overflow-visible text-center pb-5">
-              {/* Avatar - larger, passport style */}
+              {/* Avatar — larger, passport style. Clickable: opens a Zoho-
+                  style modal showing the full photo plus a "Change Image"
+                  button that navigates to the Profile page. */}
               <div className="flex justify-center">
-                <div className="w-[110px] h-[110px] rounded-xl bg-gradient-to-b from-slate-100 to-slate-200 border-4 border-white flex items-center justify-center text-slate-300 -mt-[55px] shadow-xl relative z-10 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setAvatarOpen(true)}
+                  title="View profile photo"
+                  className="w-[110px] h-[110px] rounded-xl bg-gradient-to-b from-slate-100 to-slate-200 border-4 border-white flex items-center justify-center text-slate-300 -mt-[55px] shadow-xl relative z-10 overflow-hidden hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-zoom-in"
+                >
                   {user?.photoUrl
                     ? <img src={user.photoUrl} alt="avatar" className="w-full h-full object-cover" />
                     : <UserIcon size={60} strokeWidth={1} className="opacity-30" />
                   }
-                </div>
+                </button>
               </div>
 
               <div className="mt-2 px-4">
@@ -751,10 +824,9 @@ export default function Dashboard() {
                       </h4>
                       <p className="text-[12.5px] text-slate-500 mt-0.5">Have a productive day!</p>
                     </div>
-                    {/* Time-of-day icon — sunrise / sun / sunset / moon. */}
-                    <div className={`${getTimeOfDayColor()} opacity-80`}>
-                      <TimeOfDayIcon size={48} strokeWidth={1} />
-                    </div>
+                    {/* Animated time-of-day icon — rotating rays + pulsing
+                        core + soft glow, swapped for a moon overnight. */}
+                    <AnimatedTimeOfDayIcon size={56} />
                   </div>
 
                   {/* ── Announcements card — surfaces unread + urgent + recent ── */}
@@ -1607,6 +1679,53 @@ export default function Dashboard() {
                    <p className="text-center text-slate-500 text-[13px] py-4">No employees found matching your search.</p>
                  )}
                </div>
+             </div>
+           </div>
+         </div>
+       )}
+
+       {/* ── Avatar lightbox (Zoho-People style) ──────────────────────────
+        *  Triggered by clicking the profile photo above the check-in
+        *  timer. Shows a large preview + a "Change Image" button which
+        *  navigates to the Profile page where the cropper / upload UI
+        *  already lives. Click anywhere outside the card or press Esc
+        *  to close. */}
+       {avatarOpen && (
+         <div
+           className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+           onClick={() => setAvatarOpen(false)}
+           role="dialog"
+           aria-modal="true"
+         >
+           <div
+             className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+             onClick={(e) => e.stopPropagation()}
+           >
+             <button
+               type="button"
+               onClick={() => setAvatarOpen(false)}
+               className="absolute top-3 right-3 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center"
+               aria-label="Close"
+             >
+               <X size={16} />
+             </button>
+             <div className="flex flex-col items-center">
+               <div className="w-64 h-64 rounded-2xl overflow-hidden bg-slate-100 flex items-center justify-center mb-4">
+                 {user?.photoUrl
+                   ? <img src={user.photoUrl} alt={user.firstName || 'avatar'} className="w-full h-full object-cover" />
+                   : <UserIcon size={120} strokeWidth={1} className="text-slate-300" />
+                 }
+               </div>
+               <p className="text-[13px] font-semibold text-slate-700">
+                 {user?.employeeId} <span className="text-slate-400 font-normal">-</span> {user?.firstName} {user?.lastName}
+               </p>
+               <button
+                 type="button"
+                 onClick={() => { setAvatarOpen(false); navigate('/profile'); }}
+                 className="mt-5 w-full border border-blue-500 text-blue-600 hover:bg-blue-50 font-semibold py-2.5 rounded-lg text-[13px] transition-colors"
+               >
+                 ✎ Change Image
+               </button>
              </div>
            </div>
          </div>

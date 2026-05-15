@@ -82,6 +82,27 @@
   }
 }
 
+/* ── Time-of-day icon animations (greeting card on My Space) ─────────── */
+@keyframes nxt-sun-rays {
+  to { transform: rotate(360deg); }
+}
+@keyframes nxt-sun-core {
+  0%, 100% { transform: scale(1);     opacity: .95; }
+  50%      { transform: scale(1.08);  opacity: 1;   }
+}
+@keyframes nxt-sun-glow {
+  0%, 100% { opacity: .35; transform: scale(1); }
+  50%      { opacity: .65; transform: scale(1.15); }
+}
+@keyframes nxt-moon-twinkle {
+  0%, 100% { opacity: .8; }
+  50%      { opacity: 1;   }
+}
+.nxt-sun-rays  { animation: nxt-sun-rays 14s linear infinite; transform-origin: center; }
+.nxt-sun-core  { animation: nxt-sun-core 2.4s ease-in-out infinite; transform-origin: center; }
+.nxt-sun-glow  { animation: nxt-sun-glow 2.4s ease-in-out infinite; transform-origin: center; }
+.nxt-moon      { animation: nxt-moon-twinkle 3.2s ease-in-out infinite; }
+
 /* ── Zoho-style card hover effect ───────────────────────────────────── */
 @layer components {
   .zoho-card {
