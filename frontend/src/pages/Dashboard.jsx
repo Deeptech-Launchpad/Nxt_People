@@ -976,14 +976,12 @@ export default function Dashboard() {
                               } else {
                                 label = 'Present'; labelColor = 'text-emerald-600';
                               }
-                            } else if (isToday) {
-                              // Show Present the moment the user has a check-in for today
-                              // (live or already-fetched record).
-                              if (isCheckedIn || record?.checkIn) {
-                                label = 'Present'; labelColor = 'text-emerald-600';
-                              }
                             }
-                            // Future: no status label.
+                            // Today: no Present/Absent label — Zoho People convention.
+                            // The blue date pill + live hours below convey the state
+                            // already; the status would be premature ("Present" before
+                            // checkout / "Absent" before the day is over).
+                            // Future: also no status label.
 
                             return (
                               <div
