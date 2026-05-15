@@ -89,45 +89,33 @@ function AnimatedTimeOfDayIcon({ size = 48 }) {
           })}
         </g>
       </svg>
-      {/* Core ball + cloud accent. Gentle pulse via nxt-sun-core keyframes. */}
-      <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0 nxt-sun-core">
+      {/* Sun core — STATIC. Used to pulse via nxt-sun-core; user wanted
+          a calm fixed sun, only the cloud moves. */}
+      <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0">
         <defs>
-          {/* Soft shadow tucked under each cloud so the white reads as
-              cotton on a coloured sky rather than a flat sticker. */}
+          {/* Soft shadow under the cloud so the white reads as cotton
+              on a coloured sky rather than a flat sticker. */}
           <filter id="nxt-cloud-shadow" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="0.6" stdDeviation="0.6" floodColor="#94a3b8" floodOpacity="0.35" />
           </filter>
         </defs>
-
-        {/* Sun core ball */}
         <circle cx="32" cy="32" r="15" fill="url(#nxt-sun-fill)" />
+      </svg>
 
-        {/* Primary cloud — sits over the lower-right of the sun. A
-            chain of four overlapping circles + a flat base line gives a
-            proper fluffy silhouette instead of three loose ellipses. */}
-        <g fill="#ffffff" filter="url(#nxt-cloud-shadow)">
+      {/* Cloud — drifts right -> left across the sun and loops. Lives
+          in its own SVG so the translateX keyframe doesn't move the
+          sun core. Single fluffy silhouette (the secondary cloud was
+          removed to match the cleaner Zoho reference). */}
+      <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0">
+        <g className="nxt-cloud-drift" fill="#ffffff" filter="url(#nxt-cloud-shadow)">
           <path d="
-            M 35 42
+            M 24 36
             a 3.6 3.6 0 0 1 3 -3
             a 5 5 0 0 1 4.6 -3
             a 5.4 5.4 0 0 1 5.8 4
             a 3.2 3.2 0 0 1 1.2 6.2
-            L 36 46.2
+            L 25 40.2
             a 2.6 2.6 0 0 1 -1 -4.2
-            z" />
-        </g>
-
-        {/* Smaller secondary cloud floating in the upper-right corner —
-            adds depth and matches the multi-cloud feel of the Zoho ref. */}
-        <g fill="#ffffff" opacity="0.88" filter="url(#nxt-cloud-shadow)" className="nxt-cloud-2">
-          <path d="
-            M 47 22
-            a 1.8 1.8 0 0 1 1.6 -1.4
-            a 2.4 2.4 0 0 1 2.4 -1.6
-            a 2.6 2.6 0 0 1 2.8 2
-            a 1.6 1.6 0 0 1 0.6 3
-            L 47.6 24
-            a 1.3 1.3 0 0 1 -0.6 -2
             z" />
         </g>
       </svg>

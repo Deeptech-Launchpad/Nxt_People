@@ -98,9 +98,18 @@
   0%, 100% { opacity: .8; }
   50%      { opacity: 1;   }
 }
+/* Cloud drifts right -> left across the sun and loops, fading in as it
+ * enters from the right edge and out as it leaves on the left. Slow
+ * (12s) for a calm, dreamy feel. */
+@keyframes nxt-cloud-drift {
+  0%   { transform: translateX(30px); opacity: 0; }
+  15%  { transform: translateX(16px); opacity: 1; }
+  85%  { transform: translateX(-16px); opacity: 1; }
+  100% { transform: translateX(-30px); opacity: 0; }
+}
 .nxt-sun-rays  { animation: nxt-sun-rays 14s linear infinite; transform-origin: center; }
-.nxt-sun-core  { animation: nxt-sun-core 2.4s ease-in-out infinite; transform-origin: center; }
 .nxt-sun-glow  { animation: nxt-sun-glow 2.4s ease-in-out infinite; transform-origin: center; }
+.nxt-cloud-drift { animation: nxt-cloud-drift 12s linear infinite; transform-origin: center; }
 .nxt-moon      { animation: nxt-moon-twinkle 3.2s ease-in-out infinite; }
 
 /* ── Zoho-style card hover effect ───────────────────────────────────── */
