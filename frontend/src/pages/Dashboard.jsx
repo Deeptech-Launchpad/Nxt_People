@@ -22,42 +22,35 @@ function getGreeting() {
   return 'Good Evening';
 }
 
-/* Time-of-day icon — animated, Zoho-People style. The outer rays rotate
- * slowly, the core pulses, and a soft glow halo expands+contracts. Color
- * shifts across the day. Falls back to a still moon overnight (no rays). */
+/* Time-of-day icon — animated, Zoho-People style.
+ * The sun stays put in the card; only the sky behind it, the sun's
+ * color tint, and the dot rays shift across the day. The card itself
+ * gets a `getTimeOfDaySky()` gradient. No moon swap — same sun icon
+ * around the clock (user spec). */
 function getTimeOfDayColor() {
   const h = new Date().getHours();
-  if (h >= 5  && h < 8)  return 'text-orange-400';
-  if (h >= 8  && h < 17) return 'text-amber-500';
-  if (h >= 17 && h < 20) return 'text-rose-400';
-  return 'text-indigo-400';
+  if (h >= 5  && h < 8)  return 'text-orange-400';   // dawn — peach
+  if (h >= 8  && h < 17) return 'text-amber-500';    // day — amber
+  if (h >= 17 && h < 20) return 'text-rose-400';     // dusk — rose
+  return 'text-indigo-400';                          // night — indigo tint
+}
+
+/* Background gradient applied to the greeting card itself. The "sky".
+ * Subtle tints kept on the light side so dark text stays readable
+ * across every time slot. */
+function getTimeOfDaySky() {
+  const h = new Date().getHours();
+  if (h >= 5  && h < 8)  return 'from-amber-50 via-orange-50 to-yellow-50';      // dawn
+  if (h >= 8  && h < 12) return 'from-sky-50 via-blue-50 to-white';              // morning
+  if (h >= 12 && h < 17) return 'from-yellow-50 via-amber-50 to-orange-50';      // afternoon
+  if (h >= 17 && h < 20) return 'from-orange-100 via-rose-50 to-amber-50';       // dusk
+  return 'from-indigo-100 via-violet-50 to-slate-100';                            // night
 }
 
 function AnimatedTimeOfDayIcon({ size = 48 }) {
-  const h = new Date().getHours();
-  const isNight = h < 5 || h >= 20;
-  const color   = getTimeOfDayColor();
+  const color = getTimeOfDayColor();
 
-  if (isNight) {
-    // Moon — gentle twinkle, no rays.
-    return (
-      <div className={color} style={{ width: size, height: size }}>
-        <svg viewBox="0 0 64 64" width={size} height={size} className="nxt-moon">
-          <defs>
-            <radialGradient id="nxt-moon-grad" cx="50%" cy="50%" r="50%">
-              <stop offset="0%"  stopColor="currentColor" stopOpacity="0.95" />
-              <stop offset="80%" stopColor="currentColor" stopOpacity="0.6"  />
-              <stop offset="100%" stopColor="currentColor" stopOpacity="0"   />
-            </radialGradient>
-          </defs>
-          <circle cx="32" cy="32" r="22" fill="url(#nxt-moon-grad)" />
-          <path d="M40 18 a16 16 0 1 0 6 24 12 12 0 0 1 -6 -24z" fill="currentColor" opacity="0.95"/>
-        </svg>
-      </div>
-    );
-  }
-
-  // Sun / sunrise / sunset — Zoho-People style: soft gradient ball with
+  // Sun stays fixed all day — Zoho-People style: soft gradient ball with
   // a ring of dotted rays around it (not lines), plus a gentle halo.
   // Rays slowly rotate, core gently breathes, halo expands+contracts.
   return (
@@ -809,7 +802,12 @@ export default function Dashboard() {
               {activeTab === 'activities' && (
                 <div className="flex flex-col gap-4">
                   {/* Good Morning Banner */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-center gap-5 shadow-sm">
+                  {/* Card itself is the sky — gradient changes through the day
+                      (dawn / morning / afternoon / dusk / night). The sun
+                      stays fixed in the right slot, only its tint + dots
+                      adapt. Card stays light enough to keep dark text legible
+                      around the clock. */}
+                  <div className={`bg-gradient-to-r ${getTimeOfDaySky()} rounded-xl border border-slate-200 p-5 flex items-center gap-5 shadow-sm transition-colors duration-500`}>
                     {/* Branding — real AltiusNxt logo. File lives at
                         frontend/public/altius-logo.png so Vite serves it
                         from the root and no import is needed. */}
