@@ -828,6 +828,104 @@ const steps = [
     UNIQUE (employee_id, financial_year)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_tax_decl_status ON payroll_tax_declarations (status, financial_year DESC)`,
+
+  // ── Payroll Phase 6: tax_slabs ────────────────────────────────────────
+  // Per-FY + regime slab tables. Each row is one rung of the slab:
+  //   "Above X up to Y, tax rate is R%". Cess and surcharge stay outside
+  //   this table — computed as flat percentages in code. Seed rows are
+  //   inserted below for FY 2026-27 (India), both regimes.
+  `CREATE TABLE IF NOT EXISTS payroll_tax_slabs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    financial_year VARCHAR(9) NOT NULL,
+    regime VARCHAR(10) NOT NULL CHECK (regime IN ('old','new')),
+    threshold_from  NUMERIC(14,2) NOT NULL,
+    threshold_to    NUMERIC(14,2),                -- NULL = no upper limit
+    rate_percent    NUMERIC(5,2) NOT NULL,
+    seq             INTEGER NOT NULL,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_tax_slabs_lookup ON payroll_tax_slabs (financial_year, regime, seq)`,
+
+  // Seed FY 2026-27 slabs. INSERT ... WHERE NOT EXISTS so re-running is safe.
+  `INSERT INTO payroll_tax_slabs (financial_year, regime, threshold_from, threshold_to, rate_percent, seq)
+   SELECT * FROM (VALUES
+     ('2026-27','new',       0::numeric,  400000::numeric, 0,  1),
+     ('2026-27','new',  400000::numeric,  800000::numeric, 5,  2),
+     ('2026-27','new',  800000::numeric, 1200000::numeric, 10, 3),
+     ('2026-27','new', 1200000::numeric, 1600000::numeric, 15, 4),
+     ('2026-27','new', 1600000::numeric, 2000000::numeric, 20, 5),
+     ('2026-27','new', 2000000::numeric, 2400000::numeric, 25, 6),
+     ('2026-27','new', 2400000::numeric, NULL,             30, 7),
+     ('2026-27','old',       0::numeric,  250000::numeric, 0,  1),
+     ('2026-27','old',  250000::numeric,  500000::numeric, 5,  2),
+     ('2026-27','old',  500000::numeric, 1000000::numeric, 20, 3),
+     ('2026-27','old', 1000000::numeric, NULL,             30, 4)
+   ) AS t(financial_year, regime, threshold_from, threshold_to, rate_percent, seq)
+   WHERE NOT EXISTS (SELECT 1 FROM payroll_tax_slabs WHERE financial_year = '2026-27')`,
+
+  // ── Per-month adjustments (bonus / overtime / one-off deduction) ──────
+  // Picked up by run-month for any month/year where there's at least one
+  // active row. Sign matters: positive amounts add to gross, negatives
+  // subtract. Type is informational (rendered on the payslip).
+  `CREATE TABLE IF NOT EXISTS payroll_adjustments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    pay_month   INTEGER NOT NULL CHECK (pay_month BETWEEN 1 AND 12),
+    pay_year    INTEGER NOT NULL,
+    type        VARCHAR(40) NOT NULL,   -- 'bonus' | 'overtime' | 'reimbursement' | 'deduction' | 'other'
+    amount      NUMERIC(12,2) NOT NULL, -- positive for earnings, negative for deductions
+    notes       TEXT,
+    created_by  UUID REFERENCES employees(id),
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_adj_employee_period ON payroll_adjustments (employee_id, pay_year, pay_month)`,
+
+  // ── Loans / advances ──────────────────────────────────────────────────
+  // Admin disburses principal, sets monthly_recovery; run-month deducts
+  // until total_paid >= principal then auto-flips status to 'closed'.
+  `CREATE TABLE IF NOT EXISTS payroll_loans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    loan_type    VARCHAR(20) DEFAULT 'advance',  -- advance | loan
+    principal    NUMERIC(12,2) NOT NULL,
+    monthly_recovery NUMERIC(12,2) NOT NULL,
+    total_paid   NUMERIC(12,2) DEFAULT 0,
+    start_month  INTEGER NOT NULL,
+    start_year   INTEGER NOT NULL,
+    status       VARCHAR(20) DEFAULT 'active',   -- active | closed | paused
+    notes        TEXT,
+    approved_by  UUID REFERENCES employees(id),
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    closed_at    TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_loans_active ON payroll_loans (employee_id, status)`,
+
+  // ── New columns on payroll_payslips for the rest of the sprint ────────
+  // - slip_number: human-readable PSL-YYYY-MM-NNNN, generated at run time
+  // - supersedes / superseded_by: correction payslip chain
+  // - approved_by_manager_at: optional manager endorsement before lock
+  // - reimbursement: variable pay pulled from compensation_claims
+  // - loan_recovery: amount deducted toward an active loan
+  // - bonus / overtime / other_adjustment: sum of payroll_adjustments
+  // - email_sent_at: when the notification went out (idempotent re-send)
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS slip_number VARCHAR(30)`,
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS supersedes UUID REFERENCES payroll_payslips(id)`,
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS superseded_by UUID REFERENCES payroll_payslips(id)`,
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS approved_by_manager_id UUID REFERENCES employees(id)`,
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS approved_by_manager_at TIMESTAMPTZ`,
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS reimbursement NUMERIC(12,2) DEFAULT 0`,
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS loan_recovery NUMERIC(12,2) DEFAULT 0`,
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS bonus NUMERIC(12,2) DEFAULT 0`,
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS overtime NUMERIC(12,2) DEFAULT 0`,
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS other_adjustment NUMERIC(12,2) DEFAULT 0`,
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ`,
+  // The old (employee, month, year) UNIQUE constraint now blocks
+  // correction slips. Drop it and replace with a partial unique that
+  // only applies to active (non-superseded) rows.
+  `ALTER TABLE payroll_payslips DROP CONSTRAINT IF EXISTS payroll_payslips_employee_id_pay_month_pay_year_key`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uniq_payslip_active
+     ON payroll_payslips (employee_id, pay_month, pay_year)
+     WHERE superseded_by IS NULL`,
 ];
 
 async function runFixes() {

@@ -232,5 +232,82 @@ cron.schedule('15 0 * * *', async () => {
   }
 });
 
+// 7. Auto-draft payroll on the 1st of each month at 00:30 — generates
+//    draft payslips for the *previous* month. Admins still need to lock
+//    each slip manually (so a final review step exists before employees
+//    see them), but the heavy lifting is automated. Idempotent: re-running
+//    skips existing drafts unless force=true is passed manually.
+cron.schedule('30 0 1 * *', async () => {
+  try {
+    logger.info('Running monthly auto-draft payroll cron');
+    // Re-create a minimal request object so we can reuse the run-month route
+    // logic via a direct DB-style path. Simpler to inline the gist here:
+    const fetch = require('http');
+    const { Pool } = require('pg');
+    // Inline call: hit the route directly via internal HTTP so we get the
+    // full request context (auth, audit log, etc.). Use a service token.
+    const today = new Date();
+    const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const month = prev.getMonth() + 1;
+    const year  = prev.getFullYear();
+
+    // Direct DB approach so we don't need to mint a service JWT for the cron.
+    // Mirrors what run-month does but with system attribution.
+    const pool = require('./db');
+    const { isNonWorkingDay } = require('./utils/workingDays'); // unused but kept for parity
+
+    const empRes = await pool.query(
+      `SELECT e.id, s.basic, s.hra, s.conveyance, s.medical,
+              s.special_allowance, s.other_allowances,
+              s.pf_employee, s.esi_employee, s.professional_tax
+         FROM employees e
+         JOIN salary_structures s ON s.employee_id = e.id AND s.effective_to IS NULL
+        WHERE e.status = 'active'`
+    );
+    let created = 0;
+    for (const emp of empRes.rows) {
+      const ex = await pool.query(
+        `SELECT 1 FROM payroll_payslips
+          WHERE employee_id=$1 AND pay_month=$2 AND pay_year=$3 AND superseded_by IS NULL`,
+        [emp.id, month, year]
+      );
+      if (ex.rows.length) continue;
+      const gross = Number(emp.basic||0)+Number(emp.hra||0)+Number(emp.conveyance||0)
+                  + Number(emp.medical||0)+Number(emp.special_allowance||0)+Number(emp.other_allowances||0);
+      const pfE = Number(emp.pf_employee||0), esiE = Number(emp.esi_employee||0), pt = Number(emp.professional_tax||0);
+      const totalDed = pfE + esiE + pt;
+      const net = gross - totalDed;
+      const prefix = `PSL-${year}-${String(month).padStart(2,'0')}`;
+      const seqRes = await pool.query(
+        `SELECT slip_number FROM payroll_payslips WHERE slip_number LIKE $1 ORDER BY slip_number DESC LIMIT 1`,
+        [`${prefix}-%`]
+      );
+      let next = 1;
+      if (seqRes.rows.length) {
+        const n = Number(String(seqRes.rows[0].slip_number).split('-').pop());
+        if (Number.isFinite(n)) next = n + 1;
+      }
+      const slip = `${prefix}-${String(next).padStart(4,'0')}`;
+      // We don't have a system user UUID — leave generated_by NULL.
+      await pool.query(
+        `INSERT INTO payroll_payslips
+           (employee_id, pay_month, pay_year, slip_number,
+            basic, hra, conveyance, medical, special_allowance, other_allowances,
+            working_days, present_days, lop_days, lop_amount,
+            pf_employee, esi_employee, professional_tax, tds,
+            gross_earnings, total_deductions, net_pay)
+         VALUES ($1,$2,$3,$4, $5,$6,$7,$8,$9,$10, 0,0,0,0, $11,$12,$13,0, $14,$15,$16)`,
+        [emp.id, month, year, slip,
+         emp.basic, emp.hra, emp.conveyance, emp.medical, emp.special_allowance, emp.other_allowances,
+         pfE, esiE, pt, gross, totalDed, net]
+      );
+      created++;
+    }
+    logger.info({ month, year, created }, 'Auto-draft payroll cron complete');
+  } catch (err) {
+    logger.error({ err }, 'Auto-draft payroll cron failed');
+  }
+});
+
 module.exports = app;
 

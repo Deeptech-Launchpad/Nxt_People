@@ -3,6 +3,8 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
+const { ruleMatchesDate } = require('../utils/workingDays');
+const { sendMail } = require('../utils/mailer');
 router.use(protect);
 
 // GET payroll report for a month
@@ -346,26 +348,46 @@ function logAuditWrapper(action, resource) {
 const MONTH_NAMES = ['', 'January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 
-// Working-day count for a month — Mon-Fri minus public holidays. Saturday
-// counts per the org's weekend rules; for Phase 2 we treat Sat/Sun as
-// non-working. (Phase 4 can integrate the configurable weekend rules.)
+// Working-day count for a month — honours the org's configurable weekend
+// rules + holidays. A day is non-working if any active weekend rule
+// matches, OR a holiday row sits on that date (unless the holiday is an
+// explicit 'working_day' override, in which case the day counts).
 async function workingDaysInMonth(month, year) {
   const days = new Date(year, month, 0).getDate(); // 28..31
-  // Holidays in this calendar month
-  const hols = await pool.query(
-    `SELECT date FROM holidays WHERE year = $1 AND EXTRACT(MONTH FROM date) = $2 AND type != 'working_day'`,
-    [year, month]
-  );
-  const holSet = new Set(hols.rows.map(r => {
-    const d = new Date(r.date);
-    return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
-  }));
+  const monthStart = `${year}-${String(month).padStart(2,'0')}-01`;
+  const monthEnd   = new Date(year, month, 0).toLocaleDateString('en-CA');
+
+  const [holsRes, rulesRes] = await Promise.all([
+    pool.query(
+      `SELECT date, type FROM holidays
+        WHERE date BETWEEN $1::date AND $2::date`,
+      [monthStart, monthEnd]
+    ),
+    pool.query(
+      `SELECT days_of_week, weeks_of_month, interval_weeks,
+              start_date, end_type, end_date, end_count, is_active
+         FROM weekend_rules WHERE is_active = TRUE`
+    ),
+  ]);
+
+  const holMap = new Map();
+  for (const h of holsRes.rows) {
+    const d = new Date(h.date);
+    const key = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+    holMap.set(key, h.type);
+  }
+
   let working = 0;
   for (let d = 1; d <= days; d++) {
     const dt = new Date(year, month - 1, d);
-    const dow = dt.getDay();
-    if (dow === 0 || dow === 6) continue;                 // Sat/Sun off
-    if (holSet.has(`${year}-${month}-${d}`)) continue;    // Holiday off
+    const key = `${year}-${month}-${d}`;
+    const holType = holMap.get(key);
+
+    if (holType && holType !== 'working_day') continue;     // Holiday off
+    if (holType === 'working_day') { working++; continue; } // Holiday override → working
+
+    const isWeekend = rulesRes.rows.some(rule => ruleMatchesDate(rule, dt));
+    if (isWeekend) continue;
     working++;
   }
   return working;
@@ -389,22 +411,179 @@ async function lopDaysFor(employeeId, month, year) {
   return Number(r.rows[0].lop || 0);
 }
 
+/** Indian FY for a given (month, year). Apr-Mar boundary. Returns "2026-27". */
+function fyForMonth(month, year) {
+  const fy = month >= 4 ? year : year - 1;
+  return `${fy}-${String((fy + 1) % 100).padStart(2, '0')}`;
+}
+
+/** Next slip number for a (month, year). Format PSL-YYYY-MM-NNNN. The
+ *  sequence resets every month. Uses MAX+1 inside a single query so the
+ *  caller doesn't need a separate sequence object. */
+async function nextSlipNumber(client, month, year) {
+  const prefix = `PSL-${year}-${String(month).padStart(2, '0')}`;
+  const r = await client.query(
+    `SELECT slip_number FROM payroll_payslips
+      WHERE slip_number LIKE $1 || '-%'
+      ORDER BY slip_number DESC LIMIT 1`,
+    [prefix]
+  );
+  let next = 1;
+  if (r.rows.length) {
+    const last = r.rows[0].slip_number;
+    const seq = Number(last.split('-').pop());
+    if (Number.isFinite(seq)) next = seq + 1;
+  }
+  return `${prefix}-${String(next).padStart(4, '0')}`;
+}
+
+/**
+ * Compute monthly TDS for an employee using slabs from payroll_tax_slabs
+ * and the employee's approved tax_declaration (if any).
+ *
+ * Approach:
+ *   1. Project annual gross = monthlyGrossFull × 12 (uses the structure
+ *      gross, NOT the prorated number — proration is just a one-off LOP hit).
+ *   2. Old regime + approved declaration: subtract HRA, 80C (cap ₹1.5L),
+ *      80D (cap ₹25K), 80E (uncapped), home-loan interest (cap ₹2L).
+ *      Standard deduction ₹50K applies to both regimes.
+ *   3. Look up the applicable slab table for the FY + regime, walk the
+ *      brackets, accumulate annual tax. Add 4% cess.
+ *   4. Divide by 12 — that's the monthly TDS to deduct.
+ *
+ * Returns 0 if no slabs are seeded for this FY/regime (graceful degradation).
+ */
+async function computeMonthlyTDS(client, { employeeId, monthlyGrossFull, fy }) {
+  // Pull declaration (if approved). Default = new regime, no exemptions.
+  const declRes = await client.query(
+    `SELECT regime, hra_annual_rent, section_80c, section_80d, section_80e,
+            home_loan_interest, other_deductions, status
+       FROM payroll_tax_declarations
+      WHERE employee_id = $1 AND financial_year = $2`,
+    [employeeId, fy]
+  );
+  const decl = declRes.rows[0];
+  const regime = (decl?.status === 'approved' && decl?.regime) ? decl.regime : 'new';
+
+  let annualGross = monthlyGrossFull * 12;
+  let taxableIncome = annualGross - 50000; // Standard deduction (both regimes)
+
+  if (regime === 'old' && decl?.status === 'approved') {
+    const cap = (v, max) => Math.min(Number(v || 0), max);
+    taxableIncome -= cap(decl.hra_annual_rent, 1_50_000);   // HRA proxy cap
+    taxableIncome -= cap(decl.section_80c,     1_50_000);
+    taxableIncome -= cap(decl.section_80d,        25_000);
+    taxableIncome -= Number(decl.section_80e || 0);          // 80E uncapped
+    taxableIncome -= cap(decl.home_loan_interest, 2_00_000);
+    taxableIncome -= Number(decl.other_deductions || 0);
+  }
+  if (taxableIncome < 0) taxableIncome = 0;
+
+  const slabsRes = await client.query(
+    `SELECT threshold_from, threshold_to, rate_percent
+       FROM payroll_tax_slabs
+      WHERE financial_year = $1 AND regime = $2
+      ORDER BY seq ASC`,
+    [fy, regime]
+  );
+  if (slabsRes.rows.length === 0) return 0;
+
+  let annualTax = 0;
+  for (const s of slabsRes.rows) {
+    const from = Number(s.threshold_from);
+    const to   = s.threshold_to === null ? Infinity : Number(s.threshold_to);
+    const rate = Number(s.rate_percent);
+    if (taxableIncome <= from) break;
+    const slice = Math.min(taxableIncome, to) - from;
+    if (slice > 0) annualTax += slice * (rate / 100);
+  }
+  // Section 87A rebate — both regimes give a full rebate up to ₹5L (old) / ₹7L (new).
+  if (regime === 'old' && taxableIncome <= 5_00_000 && annualTax <= 12_500) annualTax = 0;
+  if (regime === 'new' && taxableIncome <= 7_00_000 && annualTax <= 25_000) annualTax = 0;
+  // 4% health & education cess
+  annualTax *= 1.04;
+
+  return Math.round(annualTax / 12);
+}
+
+/** Total monthly loan recovery for an employee = sum of monthly_recovery
+ *  on active loans, capped at outstanding balance per loan. */
+async function loanRecoveryFor(client, employeeId) {
+  const r = await client.query(
+    `SELECT id, principal, recovered, monthly_recovery
+       FROM payroll_loans
+      WHERE employee_id = $1 AND status = 'active'`,
+    [employeeId]
+  );
+  let total = 0;
+  const lines = [];
+  for (const l of r.rows) {
+    const outstanding = Number(l.principal) - Number(l.recovered || 0);
+    if (outstanding <= 0) continue;
+    const amt = Math.min(Number(l.monthly_recovery || 0), outstanding);
+    if (amt > 0) {
+      total += amt;
+      lines.push({ id: l.id, amount: amt, outstanding });
+    }
+  }
+  return { total, lines };
+}
+
+/** Sum of approved compensation_claims for the month, marked pending-payroll.
+ *  We use the claim_date month as the membership signal. Once a payslip is
+ *  locked, the claims it pulled get their status flipped to 'paid'. */
+async function reimbursementsFor(client, employeeId, month, year) {
+  const start = `${year}-${String(month).padStart(2,'0')}-01`;
+  const end   = new Date(year, month, 0).toLocaleDateString('en-CA');
+  const r = await client.query(
+    `SELECT id, amount FROM compensation_claims
+      WHERE employee_id = $1 AND status = 'approved'
+        AND claim_date BETWEEN $2::date AND $3::date`,
+    [employeeId, start, end]
+  );
+  const total = r.rows.reduce((s, x) => s + Number(x.amount || 0), 0);
+  return { total, ids: r.rows.map(x => x.id) };
+}
+
+/** Apply ad-hoc adjustments (bonus/overtime/deduction/other) for the period. */
+async function adjustmentsFor(client, employeeId, month, year) {
+  const r = await client.query(
+    `SELECT type, amount FROM payroll_adjustments
+      WHERE employee_id = $1 AND pay_month = $2 AND pay_year = $3`,
+    [employeeId, month, year]
+  );
+  let bonus = 0, overtime = 0, deduction = 0, other = 0;
+  for (const a of r.rows) {
+    const amt = Number(a.amount || 0);
+    if (a.type === 'bonus')         bonus     += amt;
+    else if (a.type === 'overtime') overtime  += amt;
+    else if (a.type === 'deduction') deduction += amt;
+    else                            other     += amt;
+  }
+  return { bonus, overtime, deduction, other };
+}
+
 // POST /api/payroll/admin/run-month — generate draft payslips for all
 // active employees who have a current salary_structure. Skips employees
 // without a structure (admin needs to set them up first). Skips
 // employees who already have a payslip for the month (use force=true
 // to overwrite drafts; locked/paid slips are never touched).
 router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN', 'payroll'), async (req, res) => {
+  const client = await pool.connect();
   try {
     const month = Number(req.body.month) || (new Date().getMonth() + 1);
     const year  = Number(req.body.year)  || new Date().getFullYear();
     const force = !!req.body.force;
 
-    if (month < 1 || month > 12) return res.status(400).json({ success: false, message: 'Invalid month' });
+    if (month < 1 || month > 12) {
+      client.release();
+      return res.status(400).json({ success: false, message: 'Invalid month' });
+    }
 
     const workingDays = await workingDaysInMonth(month, year);
+    const fy = fyForMonth(month, year);
 
-    const employees = await pool.query(
+    const employees = await client.query(
       `SELECT e.id, e.first_name, e.last_name,
               s.basic, s.hra, s.conveyance, s.medical,
               s.special_allowance, s.other_allowances,
@@ -418,10 +597,11 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
 
     for (const emp of employees.rows) {
       try {
-        // Check for an existing slip — locked/paid are immutable.
-        const existing = await pool.query(
+        // Active (non-superseded) slip — locked/paid are immutable.
+        const existing = await client.query(
           `SELECT id, status FROM payroll_payslips
-            WHERE employee_id = $1 AND pay_month = $2 AND pay_year = $3`,
+            WHERE employee_id = $1 AND pay_month = $2 AND pay_year = $3
+              AND superseded_by IS NULL`,
           [emp.id, month, year]
         );
         if (existing.rows.length > 0) {
@@ -429,7 +609,7 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
           if (status !== 'draft' || !force) { results.skipped++; continue; }
         }
 
-        // LOP proration
+        // LOP proration on earnings
         const lopDays = Math.min(await lopDaysFor(emp.id, month, year), workingDays);
         const ratio = workingDays > 0 ? (workingDays - lopDays) / workingDays : 1;
 
@@ -442,53 +622,69 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
 
         const grossFull    = Number(emp.basic||0) + Number(emp.hra||0) + Number(emp.conveyance||0)
                            + Number(emp.medical||0) + Number(emp.special_allowance||0) + Number(emp.other_allowances||0);
-        const gross        = basic + hra + conveyance + medical + spec + other;
-        const lopAmount    = grossFull - gross;
+        const baseGross    = basic + hra + conveyance + medical + spec + other;
+        const lopAmount    = grossFull - baseGross;
 
-        // Deductions are flat (don't prorate PF/ESI/PT for LOP days —
-        // statutory rules apply on the actual paid amount but for the
-        // simplified Phase 2 we keep them constant).
-        const pfE          = Number(emp.pf_employee || 0);
-        const esiE         = Number(emp.esi_employee || 0);
-        const pt           = Number(emp.professional_tax || 0);
-        const tds          = 0; // Phase 5
+        // Pull-ins: reimbursements, adjustments, loan recovery
+        const reim    = await reimbursementsFor(client, emp.id, month, year);
+        const adj     = await adjustmentsFor(client, emp.id, month, year);
+        const loans   = await loanRecoveryFor(client, emp.id);
 
-        const totalDed     = pfE + esiE + pt + tds;
-        const net          = gross - totalDed;
+        // Gross earnings now includes bonus, overtime, reimbursement
+        const gross = baseGross + adj.bonus + adj.overtime + reim.total;
+
+        // Deductions: PF/ESI/PT flat, TDS computed from slabs, plus loan
+        // recovery and ad-hoc deduction adjustments.
+        const pfE   = Number(emp.pf_employee || 0);
+        const esiE  = Number(emp.esi_employee || 0);
+        const pt    = Number(emp.professional_tax || 0);
+        const tds   = await computeMonthlyTDS(client, {
+          employeeId: emp.id, monthlyGrossFull: grossFull, fy,
+        });
+
+        const totalDed = pfE + esiE + pt + tds + loans.total + adj.deduction;
+        const net      = gross - totalDed + adj.other; // 'other' can be +/-
 
         if (existing.rows.length > 0 && force) {
-          await pool.query(
+          await client.query(
             `UPDATE payroll_payslips
                 SET basic=$1, hra=$2, conveyance=$3, medical=$4,
                     special_allowance=$5, other_allowances=$6,
                     working_days=$7, present_days=$8, lop_days=$9, lop_amount=$10,
                     pf_employee=$11, esi_employee=$12, professional_tax=$13, tds=$14,
                     gross_earnings=$15, total_deductions=$16, net_pay=$17,
-                    generated_at=NOW(), generated_by=$18
-              WHERE id=$19`,
+                    reimbursement=$18, loan_recovery=$19, bonus=$20, overtime=$21,
+                    other_adjustment=$22,
+                    generated_at=NOW(), generated_by=$23
+              WHERE id=$24`,
             [basic, hra, conveyance, medical, spec, other,
              workingDays, workingDays - lopDays, lopDays, lopAmount,
              pfE, esiE, pt, tds,
              gross, totalDed, net,
+             reim.total, loans.total, adj.bonus, adj.overtime,
+             adj.deduction + adj.other,
              req.user._id, existing.rows[0].id]
           );
           results.updated++;
         } else {
-          await pool.query(
+          const slip = await nextSlipNumber(client, month, year);
+          await client.query(
             `INSERT INTO payroll_payslips
-               (employee_id, pay_month, pay_year,
+               (employee_id, pay_month, pay_year, slip_number,
                 basic, hra, conveyance, medical, special_allowance, other_allowances,
                 working_days, present_days, lop_days, lop_amount,
                 pf_employee, esi_employee, professional_tax, tds,
                 gross_earnings, total_deductions, net_pay,
+                reimbursement, loan_recovery, bonus, overtime, other_adjustment,
                 generated_by)
-             VALUES ($1,$2,$3, $4,$5,$6,$7,$8,$9, $10,$11,$12,$13,
-                     $14,$15,$16,$17, $18,$19,$20, $21)`,
-            [emp.id, month, year,
+             VALUES ($1,$2,$3,$4, $5,$6,$7,$8,$9,$10, $11,$12,$13,$14,
+                     $15,$16,$17,$18, $19,$20,$21, $22,$23,$24,$25,$26, $27)`,
+            [emp.id, month, year, slip,
              basic, hra, conveyance, medical, spec, other,
              workingDays, workingDays - lopDays, lopDays, lopAmount,
              pfE, esiE, pt, tds,
              gross, totalDed, net,
+             reim.total, loans.total, adj.bonus, adj.overtime, adj.deduction + adj.other,
              req.user._id]
           );
           results.created++;
@@ -497,10 +693,11 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
         results.errors.push({ employeeId: emp.id, reason: e.message });
       }
     }
-
     res.json({ success: true, month, year, workingDays, results });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -517,11 +714,17 @@ router.get('/admin/payslips', authorize('admin', 'manager'), async (req, res) =>
     const wsql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const r = await pool.query(
       `SELECT p.id, p.pay_month AS "payMonth", p.pay_year AS "payYear",
-              p.status, p.gross_earnings AS "grossEarnings",
+              p.status, p.slip_number AS "slipNumber",
+              p.gross_earnings AS "grossEarnings",
               p.total_deductions AS "totalDeductions", p.net_pay AS "netPay",
               p.working_days AS "workingDays", p.present_days AS "presentDays",
               p.lop_days AS "lopDays", p.lop_amount AS "lopAmount",
               p.locked_at AS "lockedAt", p.paid_at AS "paidAt",
+              p.approved_by_manager_at AS "approvedByManagerAt",
+              p.email_sent_at AS "emailSentAt",
+              p.superseded_by AS "supersededBy", p.supersedes,
+              p.tds, p.reimbursement, p.loan_recovery AS "loanRecovery",
+              p.bonus, p.overtime, p.other_adjustment AS "otherAdjustment",
               e.id AS "employeeId", e.employee_id AS "employeeCode",
               e.first_name AS "firstName", e.last_name AS "lastName",
               e.department, e.designation
@@ -560,19 +763,157 @@ router.get('/admin/payslips/:id', authorize('admin', 'manager'), async (req, res
 });
 
 // PUT /api/payroll/admin/payslips/:id/lock — once locked, employee can see.
+// Side-effects on lock:
+//   • Compensation claims that contributed to the reimbursement total are
+//     marked status='paid' (so they don't double-count next month).
+//   • Active loans get their recovered amount incremented by this slip's
+//     loan_recovery; loans whose recovered = principal flip to 'closed'.
+//   • Email goes out to the employee with the payslip PDF attached.
 router.put('/admin/payslips/:id/lock', authorize('admin'), logAuditWrapper('LOCK', 'payslip'), async (req, res) => {
+  const client = await pool.connect();
   try {
-    const r = await pool.query(
+    await client.query('BEGIN');
+    const lockRes = await client.query(
       `UPDATE payroll_payslips SET status='locked', locked_at=NOW()
-        WHERE id=$1 AND status='draft' RETURNING id`,
+        WHERE id=$1 AND status='draft' RETURNING id, employee_id, pay_month, pay_year,
+                                              reimbursement, loan_recovery`,
       [req.params.id]
     );
-    if (r.rows.length === 0) return res.status(400).json({ success: false, message: 'Only draft payslips can be locked' });
+    if (lockRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'Only draft payslips can be locked' });
+    }
+    const slip = lockRes.rows[0];
+
+    // Mark this month's approved claims as paid
+    if (Number(slip.reimbursement) > 0) {
+      const start = `${slip.pay_year}-${String(slip.pay_month).padStart(2,'0')}-01`;
+      const end   = new Date(slip.pay_year, slip.pay_month, 0).toLocaleDateString('en-CA');
+      await client.query(
+        `UPDATE compensation_claims SET status='paid', approved_at=COALESCE(approved_at, NOW())
+          WHERE employee_id=$1 AND status='approved'
+            AND claim_date BETWEEN $2::date AND $3::date`,
+        [slip.employee_id, start, end]
+      );
+    }
+
+    // Apply loan recovery — split across active loans by their monthly_recovery
+    if (Number(slip.loan_recovery) > 0) {
+      const loans = await loanRecoveryFor(client, slip.employee_id);
+      for (const ln of loans.lines) {
+        await client.query(
+          `UPDATE payroll_loans
+              SET recovered = recovered + $1,
+                  status = CASE WHEN recovered + $1 >= principal THEN 'closed' ELSE status END,
+                  closed_at = CASE WHEN recovered + $1 >= principal THEN NOW() ELSE closed_at END
+            WHERE id=$2`,
+          [ln.amount, ln.id]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
     res.json({ success: true });
+
+    // Fire-and-forget email — don't block the response on SMTP latency.
+    sendLockEmail(req.params.id).catch(err => console.error('[payroll] lock email failed:', err.message));
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
   }
 });
+
+/**
+ * Build the payslip PDF as a Buffer (for emails). Same layout as the
+ * streamed PDF — shares the renderer below.
+ */
+async function buildPayslipPdfBuffer(payslip) {
+  const PDFDocument = require('pdfkit');
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end',  () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    renderPayslipDoc(doc, payslip);
+    doc.end();
+  });
+}
+
+/** Look up + send the lock email. Pulls slip + employee in one query. */
+async function sendLockEmail(payslipId) {
+  const r = await pool.query(
+    `SELECT p.*, e.email, e.first_name, e.last_name, e.employee_id AS "employeeCode",
+            e.department, e.designation, e.bank_name, e.bank_account, e.bank_ifsc,
+            e.pan_number, e.uan_number
+       FROM payroll_payslips p
+       JOIN employees e ON p.employee_id = e.id
+      WHERE p.id = $1`,
+    [payslipId]
+  );
+  if (r.rows.length === 0) return;
+  const p = r.rows[0];
+  if (!p.email) return;
+
+  const pdf = await buildPayslipPdfBuffer({
+    ...p, payMonth: p.pay_month, payYear: p.pay_year,
+    firstName: p.first_name, lastName: p.last_name,
+  });
+
+  const company = process.env.COMPANY_NAME || 'AltiusNxt';
+  const monthName = MONTH_NAMES[p.pay_month];
+  const ind = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(n)||0);
+
+  const html = `
+    <div style="font-family:Segoe UI,Arial,sans-serif;max-width:600px;margin:0 auto;background:#f4f6f9;padding:24px;">
+      <div style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <div style="background:linear-gradient(135deg,#1a2040 0%,#2d3578 100%);padding:32px;text-align:center;">
+          <p style="color:#fff;font-size:13px;letter-spacing:2px;font-weight:700;margin:0;">PAYSLIP READY</p>
+          <p style="color:#cbd5e1;font-size:14px;margin:6px 0 0;">${monthName} ${p.pay_year}</p>
+        </div>
+        <div style="padding:32px;">
+          <p style="font-size:15px;color:#1e293b;">Hi ${p.first_name},</p>
+          <p style="font-size:14px;color:#475569;line-height:1.6;">Your payslip for <strong>${monthName} ${p.pay_year}</strong> has been finalised and is attached as a PDF for your records.</p>
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:18px 22px;margin:20px 0;">
+            <p style="font-size:11px;color:#3b82f6;font-weight:700;letter-spacing:1px;margin:0 0 6px;">NET PAY</p>
+            <p style="font-size:28px;font-weight:800;color:#1e3a8a;margin:0;">${ind(p.net_pay)}</p>
+            <p style="font-size:12px;color:#64748b;margin:8px 0 0;">Gross ${ind(p.gross_earnings)} − Deductions ${ind(p.total_deductions)}</p>
+          </div>
+          ${p.slip_number ? `<p style="font-size:12px;color:#94a3b8;">Slip No: <strong style="color:#475569;">${p.slip_number}</strong></p>` : ''}
+          <p style="font-size:13px;color:#64748b;margin-top:20px;">You can also download this payslip anytime by logging into the HR portal under <strong>My Payroll</strong>.</p>
+          <p style="font-size:13px;color:#475569;margin-top:24px;">Regards,<br/><strong>${company} Payroll Team</strong></p>
+        </div>
+        <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px;text-align:center;font-size:11px;color:#94a3b8;">
+          Automated payslip notification • Do not reply
+        </div>
+      </div>
+    </div>
+  `;
+
+  const nodemailer = require('nodemailer');
+  const transporter = nodemailer.createTransport({
+    service: process.env.EMAIL_SERVICE || 'gmail',
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.EMAIL_PORT) || 587,
+    secure: false,
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+  });
+  await transporter.sendMail({
+    from: `"${company} Payroll" <${process.env.EMAIL_USER}>`,
+    to: p.email,
+    subject: `Payslip — ${monthName} ${p.pay_year}`,
+    html,
+    attachments: [{
+      filename: `payslip-${p.slip_number || p.id}.pdf`,
+      content: pdf,
+      contentType: 'application/pdf',
+    }],
+  });
+
+  await pool.query(`UPDATE payroll_payslips SET email_sent_at = NOW() WHERE id = $1`, [payslipId]);
+}
 
 // PUT /api/payroll/admin/payslips/:id/mark-paid — admin records payment.
 router.put('/admin/payslips/:id/mark-paid', authorize('admin'), logAuditWrapper('PAID', 'payslip'), async (req, res) => {
@@ -692,14 +1033,7 @@ router.get('/team', authorize('admin', 'manager'), async (req, res) => {
  * no temp files. Layout: company header, employee block, two-column
  * Earnings/Deductions table, totals, bank footer.
  */
-function streamPayslipPdf(res, p) {
-  const PDFDocument = require('pdfkit');
-  const doc = new PDFDocument({ size: 'A4', margin: 40 });
-  const fileName = `payslip-${p.firstName}-${p.payMonth}-${p.payYear}.pdf`.replace(/\s+/g,'_');
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
-  doc.pipe(res);
-
+function renderPayslipDoc(doc, p) {
   const ind = (n) =>
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(n)||0);
 
@@ -709,6 +1043,7 @@ function streamPayslipPdf(res, p) {
   doc.fontSize(9).fillColor('#64748b').text(`HR Department · ${process.env.COMPANY_ADDRESS || 'Saibaba Colony, Coimbatore'}`);
   doc.moveDown(0.5);
   doc.fontSize(14).fillColor('#0f172a').text(`Payslip — ${MONTH_NAMES[p.pay_month]} ${p.pay_year}`, { align: 'right' });
+  if (p.slip_number) doc.fontSize(9).fillColor('#94a3b8').text(p.slip_number, { align: 'right' });
   doc.moveTo(40, doc.y + 4).lineTo(555, doc.y + 4).strokeColor('#cbd5e1').stroke();
   doc.moveDown();
 
@@ -748,27 +1083,34 @@ function streamPayslipPdf(res, p) {
   const colWidth = 250;
   const rowH = 18;
 
-  // Header bars
   doc.rect(40, tableTop, colWidth, 22).fill('#ecfdf5');
   doc.fillColor('#065f46').fontSize(10).font('Helvetica-Bold').text('EARNINGS', 50, tableTop + 6);
   doc.rect(305, tableTop, colWidth, 22).fill('#fef2f2');
   doc.fillColor('#991b1b').text('DEDUCTIONS', 315, tableTop + 6);
 
+  // Only show rows with non-zero values for the variable lines (bonus, OT,
+  // reimbursement, loan recovery, other adj) so we don't clutter the slip
+  // with empty rows for employees who don't have them.
   const earnings = [
-    ['Basic',             p.basic],
-    ['HRA',               p.hra],
-    ['Conveyance',        p.conveyance],
-    ['Medical',           p.medical],
-    ['Special Allowance', p.special_allowance],
-    ['Other Allowances',  p.other_allowances],
-  ];
+    ['Basic',             p.basic, true],
+    ['HRA',               p.hra, true],
+    ['Conveyance',        p.conveyance, true],
+    ['Medical',           p.medical, true],
+    ['Special Allowance', p.special_allowance, true],
+    ['Other Allowances',  p.other_allowances, true],
+    ['Bonus',             p.bonus, Number(p.bonus) > 0],
+    ['Overtime',          p.overtime, Number(p.overtime) > 0],
+    ['Reimbursement',     p.reimbursement, Number(p.reimbursement) > 0],
+  ].filter(([, , show]) => show);
   const deductions = [
-    ['PF (Employee)',     p.pf_employee],
-    ['ESI (Employee)',    p.esi_employee],
-    ['Professional Tax',  p.professional_tax],
-    ['TDS',               p.tds],
-    ['LOP Adjustment',    p.lop_amount],
-  ];
+    ['PF (Employee)',     p.pf_employee, true],
+    ['ESI (Employee)',    p.esi_employee, true],
+    ['Professional Tax',  p.professional_tax, true],
+    ['TDS',               p.tds, true],
+    ['LOP Adjustment',    p.lop_amount, Number(p.lop_amount) > 0],
+    ['Loan Recovery',     p.loan_recovery, Number(p.loan_recovery) > 0],
+    ['Other Adjustment',  p.other_adjustment, Number(p.other_adjustment) !== 0],
+  ].filter(([, , show]) => show);
   const maxRows = Math.max(earnings.length, deductions.length);
   const bodyTop = tableTop + 24;
 
@@ -778,12 +1120,10 @@ function streamPayslipPdf(res, p) {
     if (i % 2 === 0) {
       doc.rect(40, y - 2, colWidth * 2 + 15, rowH).fill('#f8fafc');
     }
-    // Earnings
     if (earnings[i]) {
       doc.fillColor('#1f2937').text(earnings[i][0], 50, y);
       doc.fillColor('#065f46').text(ind(earnings[i][1]), 50, y, { width: colWidth - 20, align: 'right' });
     }
-    // Deductions
     if (deductions[i]) {
       doc.fillColor('#1f2937').text(deductions[i][0], 315, y);
       doc.fillColor('#991b1b').text(ind(deductions[i][1]), 315, y, { width: colWidth - 20, align: 'right' });
@@ -798,19 +1138,26 @@ function streamPayslipPdf(res, p) {
   doc.fillColor('#1f2937').text('Total Deductions', 315, totalsY + 8);
   doc.fillColor('#991b1b').text(ind(p.total_deductions), 315, totalsY + 8, { width: colWidth - 20, align: 'right' });
 
-  // ── Net pay highlight ─────────────────────────────────────────────────
   const netY = totalsY + 36;
   doc.rect(40, netY, 515, 36).fill('#eff6ff').strokeColor('#bfdbfe').stroke();
   doc.fillColor('#1e3a8a').fontSize(11).font('Helvetica-Bold').text('NET PAY', 50, netY + 12);
   doc.fontSize(16).text(ind(p.net_pay), 50, netY + 8, { width: 505, align: 'right' });
 
-  // ── Footer ────────────────────────────────────────────────────────────
   doc.y = netY + 60;
   doc.fontSize(8).fillColor('#94a3b8').font('Helvetica').text(
     `This is a system-generated payslip. No signature required. Generated on ${new Date().toLocaleString('en-IN')}.`,
     40, doc.y, { width: 515, align: 'center' }
   );
+}
 
+function streamPayslipPdf(res, p) {
+  const PDFDocument = require('pdfkit');
+  const doc = new PDFDocument({ size: 'A4', margin: 40 });
+  const fileName = `payslip-${p.firstName}-${p.payMonth}-${p.payYear}.pdf`.replace(/\s+/g,'_');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+  doc.pipe(res);
+  renderPayslipDoc(doc, p);
   doc.end();
 }
 
@@ -1135,6 +1482,320 @@ router.get('/admin/reports/:type', authorize('admin'), async (req, res) => {
           [x.code, `${x.first_name} ${x.last_name}`, x.gross_earnings, x.professional_tax]));
     }
     res.status(400).json({ success: false, message: 'type must be pf | esi | tds | pt' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+/* ════════════════════════════════════════════════════════════════════════
+ *  PHASE 6 — Manager approval, corrections, adjustments, loans, NEFT
+ * ══════════════════════════════════════════════════════════════════════ */
+
+// PUT /api/payroll/admin/payslips/:id/approve — manager (or admin) signs off
+// on a draft. The slip stays draft (admin still needs to lock it for the
+// employee to see), but approvedByManagerAt tells admin it's been reviewed.
+router.put('/payslips/:id/approve', authorize('admin', 'manager'),
+  logAuditWrapper('APPROVE', 'payslip'),
+  async (req, res) => {
+    try {
+      // Manager: only their direct reports. Admin: anyone.
+      const where = req.user.role === 'admin'
+        ? `p.id = $1 AND p.status = 'draft'`
+        : `p.id = $1 AND p.status = 'draft' AND e.reporting_manager_id = $2`;
+      const params = req.user.role === 'admin' ? [req.params.id] : [req.params.id, req.user._id];
+      const r = await pool.query(
+        `UPDATE payroll_payslips p
+            SET approved_by_manager_id = $${params.length + 1},
+                approved_by_manager_at = NOW()
+           FROM employees e
+          WHERE p.employee_id = e.id
+            AND ${where}
+          RETURNING p.id`,
+        [...params, req.user._id]
+      );
+      if (r.rows.length === 0) return res.status(400).json({ success: false, message: 'Slip not found or not eligible for approval' });
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  }
+);
+
+// POST /api/payroll/admin/payslips/:id/correct — supersede a locked/paid
+// slip with a corrected one. The original is marked superseded_by; the
+// new slip carries supersedes pointing back. Both remain visible in
+// history but only the corrected one is "active" for compliance.
+router.post('/admin/payslips/:id/correct', authorize('admin'),
+  logAuditWrapper('CORRECT', 'payslip'),
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const old = await client.query(
+        `SELECT * FROM payroll_payslips WHERE id = $1 AND superseded_by IS NULL`,
+        [req.params.id]
+      );
+      if (old.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, message: 'Slip not found or already superseded' });
+      }
+      const o = old.rows[0];
+      const b = req.body || {};
+      const apply = (key) => b[key] !== undefined ? Number(b[key]) : Number(o[key] || 0);
+
+      const basic        = apply('basic');
+      const hra          = apply('hra');
+      const conveyance   = apply('conveyance');
+      const medical      = apply('medical');
+      const spec         = apply('special_allowance');
+      const otherAllow   = apply('other_allowances');
+      const bonus        = apply('bonus');
+      const overtime     = apply('overtime');
+      const reimbursement= apply('reimbursement');
+      const pfE          = apply('pf_employee');
+      const esiE         = apply('esi_employee');
+      const pt           = apply('professional_tax');
+      const tds          = apply('tds');
+      const loanRec      = apply('loan_recovery');
+      const otherAdj     = apply('other_adjustment');
+      const lopAmount    = apply('lop_amount');
+
+      const gross    = basic + hra + conveyance + medical + spec + otherAllow + bonus + overtime + reimbursement;
+      const totalDed = pfE + esiE + pt + tds + loanRec + Math.max(0, otherAdj);
+      const net      = gross - totalDed + (otherAdj < 0 ? otherAdj : 0);
+
+      const slip = await nextSlipNumber(client, o.pay_month, o.pay_year);
+      const ins = await client.query(
+        `INSERT INTO payroll_payslips
+           (employee_id, pay_month, pay_year, slip_number, supersedes,
+            basic, hra, conveyance, medical, special_allowance, other_allowances,
+            working_days, present_days, lop_days, lop_amount,
+            pf_employee, esi_employee, professional_tax, tds,
+            gross_earnings, total_deductions, net_pay,
+            reimbursement, loan_recovery, bonus, overtime, other_adjustment,
+            generated_by, status)
+         VALUES ($1,$2,$3,$4,$5, $6,$7,$8,$9,$10,$11,
+                 $12,$13,$14,$15, $16,$17,$18,$19,
+                 $20,$21,$22, $23,$24,$25,$26,$27, $28,'draft')
+         RETURNING id`,
+        [o.employee_id, o.pay_month, o.pay_year, slip, o.id,
+         basic, hra, conveyance, medical, spec, otherAllow,
+         o.working_days, o.present_days, o.lop_days, lopAmount,
+         pfE, esiE, pt, tds,
+         gross, totalDed, net,
+         reimbursement, loanRec, bonus, overtime, otherAdj,
+         req.user._id]
+      );
+      await client.query(
+        `UPDATE payroll_payslips SET superseded_by = $1 WHERE id = $2`,
+        [ins.rows[0].id, o.id]
+      );
+      await client.query('COMMIT');
+      res.status(201).json({ success: true, id: ins.rows[0].id, slipNumber: slip });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      res.status(500).json({ success: false, message: err.message });
+    } finally { client.release(); }
+  }
+);
+
+/* ── Adjustments (one-off per-month line items) ──────────────────────── */
+
+// GET /api/payroll/admin/adjustments?month=&year=
+router.get('/admin/adjustments', authorize('admin'), async (req, res) => {
+  try {
+    const month = req.query.month ? Number(req.query.month) : null;
+    const year  = req.query.year  ? Number(req.query.year)  : null;
+    const where = [], params = [];
+    if (month) { params.push(month); where.push(`a.pay_month = $${params.length}`); }
+    if (year)  { params.push(year);  where.push(`a.pay_year  = $${params.length}`); }
+    const wsql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await pool.query(
+      `SELECT a.id, a.pay_month AS "payMonth", a.pay_year AS "payYear",
+              a.type, a.amount, a.reason, a.created_at AS "createdAt",
+              e.id AS "employeeId", e.employee_id AS "employeeCode",
+              e.first_name AS "firstName", e.last_name AS "lastName"
+         FROM payroll_adjustments a
+         JOIN employees e ON a.employee_id = e.id
+         ${wsql}
+        ORDER BY a.pay_year DESC, a.pay_month DESC, e.first_name ASC`,
+      params
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST /api/payroll/admin/adjustments
+router.post('/admin/adjustments', authorize('admin'),
+  logAuditWrapper('CREATE', 'payroll_adjustment'),
+  async (req, res) => {
+    try {
+      const b = req.body || {};
+      if (!b.employeeId || !b.payMonth || !b.payYear || !b.type) {
+        return res.status(400).json({ success: false, message: 'employeeId, payMonth, payYear, type are required' });
+      }
+      if (!['bonus','overtime','deduction','other'].includes(b.type)) {
+        return res.status(400).json({ success: false, message: 'type must be bonus | overtime | deduction | other' });
+      }
+      const r = await pool.query(
+        `INSERT INTO payroll_adjustments
+           (employee_id, pay_month, pay_year, type, amount, reason, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [b.employeeId, Number(b.payMonth), Number(b.payYear), b.type,
+         num(b.amount), b.reason || null, req.user._id]
+      );
+      res.status(201).json({ success: true, id: r.rows[0].id });
+    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  }
+);
+
+// DELETE /api/payroll/admin/adjustments/:id — only if no payslip has been
+// generated for that employee/month yet (admin can otherwise correct via
+// the supersede flow).
+router.delete('/admin/adjustments/:id', authorize('admin'),
+  logAuditWrapper('DELETE', 'payroll_adjustment'),
+  async (req, res) => {
+    try {
+      const r = await pool.query(`DELETE FROM payroll_adjustments WHERE id = $1 RETURNING id`, [req.params.id]);
+      if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  }
+);
+
+/* ── Loans / advances ─────────────────────────────────────────────────── */
+
+router.get('/admin/loans', authorize('admin'), async (req, res) => {
+  try {
+    const status = req.query.status || null;
+    const where = [], params = [];
+    if (status) { params.push(status); where.push(`l.status = $${params.length}`); }
+    const wsql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await pool.query(
+      `SELECT l.id, l.principal, l.recovered, l.monthly_recovery AS "monthlyRecovery",
+              l.status, l.issued_at AS "issuedAt", l.closed_at AS "closedAt",
+              l.notes,
+              (l.principal - COALESCE(l.recovered, 0)) AS outstanding,
+              e.id AS "employeeId", e.employee_id AS "employeeCode",
+              e.first_name AS "firstName", e.last_name AS "lastName",
+              e.department, e.designation
+         FROM payroll_loans l
+         JOIN employees e ON l.employee_id = e.id
+         ${wsql}
+        ORDER BY l.issued_at DESC`,
+      params
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/admin/loans', authorize('admin'),
+  logAuditWrapper('CREATE', 'payroll_loan'),
+  async (req, res) => {
+    try {
+      const b = req.body || {};
+      if (!b.employeeId || !b.principal) {
+        return res.status(400).json({ success: false, message: 'employeeId and principal are required' });
+      }
+      const r = await pool.query(
+        `INSERT INTO payroll_loans
+           (employee_id, principal, monthly_recovery, notes, issued_at, created_by)
+         VALUES ($1, $2, $3, $4, COALESCE($5::date, CURRENT_DATE), $6) RETURNING id`,
+        [b.employeeId, num(b.principal), num(b.monthlyRecovery), b.notes || null,
+         b.issuedAt || null, req.user._id]
+      );
+      res.status(201).json({ success: true, id: r.rows[0].id });
+    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  }
+);
+
+router.put('/admin/loans/:id', authorize('admin'),
+  logAuditWrapper('UPDATE', 'payroll_loan'),
+  async (req, res) => {
+    try {
+      const b = req.body || {};
+      const r = await pool.query(
+        `UPDATE payroll_loans
+            SET monthly_recovery = COALESCE($1, monthly_recovery),
+                status           = COALESCE($2, status),
+                notes            = COALESCE($3, notes)
+          WHERE id = $4 RETURNING id`,
+        [b.monthlyRecovery !== undefined ? num(b.monthlyRecovery) : null,
+         b.status || null, b.notes !== undefined ? b.notes : null, req.params.id]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  }
+);
+
+router.delete('/admin/loans/:id', authorize('admin'),
+  logAuditWrapper('DELETE', 'payroll_loan'),
+  async (req, res) => {
+    try {
+      // Block deletion if any recovery has happened — admin should mark
+      // it closed instead so the history is preserved.
+      const chk = await pool.query(`SELECT recovered FROM payroll_loans WHERE id = $1`, [req.params.id]);
+      if (chk.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+      if (Number(chk.rows[0].recovered) > 0) {
+        return res.status(400).json({ success: false, message: 'Cannot delete a loan with recovery history — close it instead' });
+      }
+      await pool.query(`DELETE FROM payroll_loans WHERE id = $1`, [req.params.id]);
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  }
+);
+
+/* ── NEFT bank file export ────────────────────────────────────────────── */
+
+// GET /api/payroll/admin/reports/neft?month=&year= — bank-upload-ready CSV
+// for locked/paid slips. Standard banks accept this columnar format for
+// bulk salary credits.
+router.get('/admin/reports/neft', authorize('admin'), async (req, res) => {
+  try {
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+    const year  = Number(req.query.year)  || new Date().getFullYear();
+    const r = await pool.query(
+      `SELECT e.employee_id AS code, e.first_name, e.last_name,
+              e.bank_account, e.bank_ifsc, e.bank_name,
+              p.net_pay, p.slip_number
+         FROM payroll_payslips p
+         JOIN employees e ON p.employee_id = e.id
+        WHERE p.pay_month = $1 AND p.pay_year = $2
+          AND p.status IN ('locked','paid')
+          AND p.superseded_by IS NULL
+        ORDER BY e.first_name ASC`,
+      [month, year]
+    );
+    const period = `${String(month).padStart(2,'0')}-${year}`;
+    sendCsv(res, `neft-${period}.csv`,
+      ['Beneficiary Name','Beneficiary A/c No','IFSC','Bank','Amount','Reference'],
+      r.rows.map(x => [
+        `${x.first_name} ${x.last_name}`,
+        x.bank_account || '',
+        x.bank_ifsc || '',
+        x.bank_name || '',
+        Number(x.net_pay || 0).toFixed(2),
+        x.slip_number || x.code,
+      ])
+    );
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+/* ── Tax slabs viewer ─────────────────────────────────────────────────── */
+
+// GET /api/payroll/admin/tax-slabs?fy=2026-27 — both regimes side-by-side
+router.get('/admin/tax-slabs', authorize('admin'), async (req, res) => {
+  try {
+    const fy = req.query.fy || currentFY();
+    const r = await pool.query(
+      `SELECT regime, threshold_from AS "from", threshold_to AS "to", rate_percent AS "ratePercent", seq
+         FROM payroll_tax_slabs
+        WHERE financial_year = $1
+        ORDER BY regime, seq`,
+      [fy]
+    );
+    const out = { old: [], new: [] };
+    for (const row of r.rows) {
+      if (out[row.regime]) out[row.regime].push(row);
+    }
+    res.json({ success: true, data: out, financialYear: fy });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

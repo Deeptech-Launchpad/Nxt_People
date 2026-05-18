@@ -38,6 +38,9 @@ const TeamPayroll     = lazy(() => import('./pages/payroll/TeamPayroll'));
 const TaxDeclaration  = lazy(() => import('./pages/payroll/TaxDeclaration'));
 const DeclarationApprovals = lazy(() => import('./pages/payroll/DeclarationApprovals'));
 const ComplianceReports = lazy(() => import('./pages/payroll/ComplianceReports'));
+const Adjustments       = lazy(() => import('./pages/payroll/Adjustments'));
+const Loans             = lazy(() => import('./pages/payroll/Loans'));
+const TaxSlabs          = lazy(() => import('./pages/payroll/TaxSlabs'));
 const Performance     = lazy(() => import('./pages/Performance'));
 const ExitManagement  = lazy(() => import('./pages/ExitManagement'));
 const ShiftRoster     = lazy(() => import('./pages/ShiftRoster'));
@@ -183,6 +186,9 @@ const AppRoutes = () => {
           <Route path="payroll/tax-declaration" element={<TaxDeclaration/>}/>
           <Route path="payroll/declarations"   element={<ProtectedRoute roles={['admin']}><DeclarationApprovals/></ProtectedRoute>}/>
           <Route path="payroll/compliance"     element={<ProtectedRoute roles={['admin']}><ComplianceReports/></ProtectedRoute>}/>
+          <Route path="payroll/adjustments"    element={<ProtectedRoute roles={['admin']}><Adjustments/></ProtectedRoute>}/>
+          <Route path="payroll/loans"          element={<ProtectedRoute roles={['admin']}><Loans/></ProtectedRoute>}/>
+          <Route path="payroll/tax-slabs"      element={<ProtectedRoute roles={['admin']}><TaxSlabs/></ProtectedRoute>}/>
           <Route path="employees"    element={<ProtectedRoute roles={['admin','manager']}><Employees/></ProtectedRoute>}/>
           <Route path="registrations"element={<ProtectedRoute roles={['admin','manager']}><Registrations/></ProtectedRoute>}/>
           <Route path="shifts"       element={<ProtectedRoute roles={['admin']}><Shifts/></ProtectedRoute>}/>

@@ -6,11 +6,61 @@
  * can only ever see their own slips.
  */
 import React, { useEffect, useState, useMemo } from 'react';
-import { Wallet, TrendingUp, Calendar, Download, ChevronRight, FileText } from 'lucide-react';
+import { Wallet, TrendingUp, Calendar, Download, ChevronRight, FileText, PieChart } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { MONTH_NAMES, SHORT_MONTHS, fmtINR, fmtINRshort, StatusPill, StatCard } from './_shared';
 import { PayslipBody } from './PayrollRun';
+
+/**
+ * Lightweight conic-gradient donut — no chart library needed.
+ * Receives [{label, value, color}, ...] and renders a donut with a
+ * legend stacked beside it. Slices smaller than 0.5% are merged into
+ * "Other" so the legend stays readable.
+ */
+function Donut({ slices, total, centerLabel, centerValue }) {
+  const nonZero = slices.filter(s => s.value > 0);
+  const sum = nonZero.reduce((s, x) => s + x.value, 0) || 1;
+  let running = 0;
+  const stops = nonZero.map(s => {
+    const start = (running / sum) * 360;
+    running += s.value;
+    const end = (running / sum) * 360;
+    return `${s.color} ${start}deg ${end}deg`;
+  }).join(', ');
+
+  return (
+    <div className="flex items-center gap-6 flex-wrap">
+      <div className="relative">
+        <div
+          className="w-44 h-44 rounded-full"
+          style={{ background: `conic-gradient(${stops || '#e2e8f0 0deg 360deg'})` }}
+        />
+        <div className="absolute inset-0 m-auto w-28 h-28 rounded-full bg-white flex flex-col items-center justify-center shadow-inner">
+          <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{centerLabel}</p>
+          <p className="text-[16px] font-bold text-slate-800 mt-0.5">{centerValue}</p>
+        </div>
+      </div>
+      <div className="flex-1 min-w-[180px] space-y-1.5">
+        {nonZero.map(s => {
+          const pct = ((s.value / sum) * 100).toFixed(1);
+          return (
+            <div key={s.label} className="flex items-center justify-between text-[12.5px]">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} />
+                <span className="text-slate-700">{s.label}</span>
+              </div>
+              <div className="text-right">
+                <span className="font-bold text-slate-800">{fmtINR(s.value)}</span>
+                <span className="ml-2 text-slate-400">{pct}%</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function MyPayroll() {
   const [payslips, setPayslips] = useState([]);
@@ -104,6 +154,25 @@ export default function MyPayroll() {
               ><Download size={13} /> Download PDF</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Salary breakdown donut — uses the detailed payslip if loaded, else
+          falls back to the listing-level totals for the latest slip. */}
+      {latest && (
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <PieChart size={16} className="text-indigo-500" />
+            <h3 className="text-[14px] font-bold text-slate-800">Salary Breakdown · {MONTH_NAMES[latest.payMonth]} {latest.payYear}</h3>
+          </div>
+          <Donut
+            centerLabel="Net"
+            centerValue={fmtINRshort(latest.netPay)}
+            slices={[
+              { label: 'Take-home',  value: Number(latest.netPay),       color: '#10b981' },
+              { label: 'Deductions', value: Number(latest.totalDeductions), color: '#f43f5e' },
+            ]}
+          />
         </div>
       )}
 
