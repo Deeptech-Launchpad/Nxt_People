@@ -183,6 +183,7 @@ const NAV = {
         { to: '/reports',           label: 'Attendance Report', exact: true, roles: ['admin', 'manager'] },
         { to: '/daily-attendance',  label: 'Daily Attendance',               roles: ['admin', 'manager'] },
         { to: '/payroll',           label: 'Payroll',                        roles: ['admin', 'manager'] },
+        { to: '/payroll/setup',     label: 'Salary Setup',                   roles: ['admin']             },
         { to: '/shifts',            label: 'Shifts',                         roles: ['admin']             },
         { to: '/shift-roster',      label: 'Shift Roster',                   roles: ['admin', 'manager'] },
       ],

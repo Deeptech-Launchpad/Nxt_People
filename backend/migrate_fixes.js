@@ -706,6 +706,47 @@ const steps = [
   // index so future INSERTs fail noisily instead of silently splintering.
   `DELETE FROM settings WHERE id NOT IN (SELECT id FROM settings ORDER BY id LIMIT 1)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS uniq_settings_singleton ON settings ((1))`,
+
+  // ── Payroll Phase 1: salary_structures (versioned per employee) ──────────
+  // One row per (employee, period). Each component is a monthly amount.
+  // When admin edits, we close the previous row (set effective_to = today-1)
+  // and INSERT a new row — that way every historical change is preserved
+  // and we can answer "what was their CTC in March 2026?" at audit time.
+  // PF/ESI/PT are stored separately so the eventual payroll-run code can
+  // pull them straight out without re-doing statutory math each time.
+  `CREATE TABLE IF NOT EXISTS salary_structures (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    effective_from DATE NOT NULL,
+    effective_to   DATE,
+    -- Monthly earnings
+    basic              NUMERIC(12,2) DEFAULT 0,
+    hra                NUMERIC(12,2) DEFAULT 0,
+    conveyance         NUMERIC(12,2) DEFAULT 0,
+    medical            NUMERIC(12,2) DEFAULT 0,
+    special_allowance  NUMERIC(12,2) DEFAULT 0,
+    other_allowances   NUMERIC(12,2) DEFAULT 0,
+    -- Monthly deductions (employee-borne)
+    pf_employee        NUMERIC(12,2) DEFAULT 0,
+    esi_employee       NUMERIC(12,2) DEFAULT 0,
+    professional_tax   NUMERIC(12,2) DEFAULT 0,
+    -- Employer contribution (tracked for CTC math, not deducted)
+    pf_employer        NUMERIC(12,2) DEFAULT 0,
+    -- Eligibility flags
+    pf_applicable      BOOLEAN DEFAULT TRUE,
+    esi_applicable     BOOLEAN DEFAULT FALSE,
+    -- Audit
+    notes              TEXT,
+    created_by         UUID REFERENCES employees(id),
+    created_at         TIMESTAMPTZ DEFAULT NOW()
+  )`,
+  // Fast lookup of "current row for employee X" — primary access pattern.
+  `CREATE INDEX IF NOT EXISTS idx_salary_struct_employee_effective
+     ON salary_structures (employee_id, effective_from DESC)`,
+  // Only one OPEN row (effective_to IS NULL) per employee — the "current"
+  // structure. Versioned history rows have effective_to set.
+  `CREATE UNIQUE INDEX IF NOT EXISTS uniq_salary_struct_current
+     ON salary_structures (employee_id) WHERE effective_to IS NULL`,
 ];
 
 async function runFixes() {

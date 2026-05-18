@@ -31,6 +31,7 @@ const WFHRequests     = lazy(() => import('./pages/WFHRequests'));
 const CompOff         = lazy(() => import('./pages/CompOff'));
 const Documents       = lazy(() => import('./pages/Documents'));
 const PayrollReport   = lazy(() => import('./pages/PayrollReport'));
+const PayrollSetup    = lazy(() => import('./pages/payroll/PayrollSetup'));
 const Performance     = lazy(() => import('./pages/Performance'));
 const ExitManagement  = lazy(() => import('./pages/ExitManagement'));
 const ShiftRoster     = lazy(() => import('./pages/ShiftRoster'));
@@ -168,7 +169,8 @@ const AppRoutes = () => {
           {/* ── Reports / Admin ──────────────────────────────────────── */}
           <Route path="reports"          element={<ProtectedRoute roles={['admin','manager']}><Reports/></ProtectedRoute>}/>
           <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','manager']}><DailyAttendance/></ProtectedRoute>}/>
-          <Route path="payroll"      element={<ProtectedRoute roles={['admin','manager']}><PayrollReport/></ProtectedRoute>}/>
+          <Route path="payroll"        element={<ProtectedRoute roles={['admin','manager']}><PayrollReport/></ProtectedRoute>}/>
+          <Route path="payroll/setup"  element={<ProtectedRoute roles={['admin']}><PayrollSetup/></ProtectedRoute>}/>
           <Route path="employees"    element={<ProtectedRoute roles={['admin','manager']}><Employees/></ProtectedRoute>}/>
           <Route path="registrations"element={<ProtectedRoute roles={['admin','manager']}><Registrations/></ProtectedRoute>}/>
           <Route path="shifts"       element={<ProtectedRoute roles={['admin']}><Shifts/></ProtectedRoute>}/>
