@@ -8,6 +8,8 @@ const fs = require('fs');
 const { protect } = require('../middleware/auth');
 router.use(protect);
 
+const PROFILE_PHOTO_MAX_MB = 10;
+
 /* ── Photo upload (used by every role: employee / manager / admin) ────────
  *   Stored under backend/uploads/photos/ and served via /uploads/photos/<f>. */
 const photosDir = path.join(__dirname, '..', 'uploads', 'photos');
@@ -22,12 +24,29 @@ const photoStorage = multer.diskStorage({
 });
 const photoUpload = multer({
   storage: photoStorage,
-  limits:  { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  limits:  { fileSize: PROFILE_PHOTO_MAX_MB * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
     cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
   },
 });
+
+/* Convert multer's storage/size errors into a clean 4xx with a friendly
+ * message. Without this, LIMIT_FILE_SIZE bubbles up as a generic 500 from
+ * the global error handler — the client toast then reads "Internal
+ * server error" instead of telling the user to pick a smaller photo. */
+function handleMulterError(err, req, res, next) {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        success: false,
+        message: `Image is too large. Pick something under ${PROFILE_PHOTO_MAX_MB} MB.`,
+      });
+    }
+    return res.status(400).json({ success: false, message: err.message });
+  }
+  return next(err);
+}
 
 // GET /api/profile — get own full profile
 router.get('/', async (req, res) => {
@@ -119,7 +138,14 @@ router.put('/', async (req, res) => {
 });
 
 // POST /api/profile/photo — upload (or replace) the caller's profile picture.
-router.post('/photo', photoUpload.single('photo'), async (req, res) => {
+// handleMulterError sits between multer and the route body so size/type
+// errors return a clean 413/400 instead of falling through to a 500.
+router.post('/photo', (req, res, next) => {
+  photoUpload.single('photo')(req, res, (err) => {
+    if (err) return handleMulterError(err, req, res, next);
+    next();
+  });
+}, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No image attached' });
 
