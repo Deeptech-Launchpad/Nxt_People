@@ -292,6 +292,18 @@ function AccessManager({ connection, onClose }) {
     finally { setSaving(false); }
   };
 
+  const bulkRevoke = async (ids) => {
+    if (ids.length === 0) return;
+    if (!window.confirm(`Revoke access for ${ids.length} ${ids.length === 1 ? 'employee' : 'employees'}? They'll be blocked from logging in immediately.`)) return;
+    setSaving(true);
+    try {
+      const r = await api.post(`/api-connections/${connection._id}/access/revoke`, { employeeIds: ids });
+      toast.success(`Revoked access for ${r.data.revoked ?? ids.length}`);
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return rows
@@ -301,6 +313,7 @@ function AccessManager({ connection, onClose }) {
 
   const grantedCount = rows.filter(r => r.hasAccess).length;
   const visibleNotGranted = filtered.filter(r => !r.hasAccess);
+  const visibleGranted    = filtered.filter(r =>  r.hasAccess);
   const color = connection.appColor || 'from-blue-500 to-indigo-600';
 
   return (
@@ -339,6 +352,12 @@ function AccessManager({ connection, onClose }) {
             <button onClick={() => bulkGrant(visibleNotGranted.map(r => r._id))} disabled={saving}
               className="px-3 py-1.5 text-[12px] font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60">
               Grant {visibleNotGranted.length} shown
+            </button>
+          )}
+          {visibleGranted.length > 0 && (
+            <button onClick={() => bulkRevoke(visibleGranted.map(r => r._id))} disabled={saving}
+              className="px-3 py-1.5 text-[12px] font-semibold bg-rose-600 text-white rounded-lg hover:bg-rose-700 disabled:opacity-60">
+              Revoke {visibleGranted.length} shown
             </button>
           )}
         </div>

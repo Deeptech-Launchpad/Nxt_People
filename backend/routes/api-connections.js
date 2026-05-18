@@ -181,4 +181,23 @@ router.delete('/:id/access/:employeeId', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// POST /api/api-connections/:id/access/revoke — bulk soft-revoke.
+// Body: { employeeIds: [...], reason? }
+router.post('/:id/access/revoke', async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.employeeIds) ? req.body.employeeIds : [];
+    if (ids.length === 0) return res.status(400).json({ success: false, message: 'employeeIds[] required' });
+    const reason = req.body?.reason || null;
+    const r = await pool.query(`
+      UPDATE application_access
+         SET revoked_at = NOW(), revoked_by = $1, revoke_reason = $2
+       WHERE api_connection_id = $3
+         AND employee_id = ANY($4::uuid[])
+         AND revoked_at IS NULL
+       RETURNING id
+    `, [req.user._id, reason, req.params.id, ids]);
+    res.json({ success: true, revoked: r.rowCount });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 module.exports = router;
