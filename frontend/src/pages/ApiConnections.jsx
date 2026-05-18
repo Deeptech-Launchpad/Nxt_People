@@ -439,10 +439,26 @@ export default function ApiConnections() {
       {/* How it works */}
       <div className="bg-white shadow-sm border border-slate-200 rounded-2xl p-5 mb-6">
         <div className="flex items-start gap-3">
-          <Zap size={18} className="text-brand-400 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-slate-800 text-sm font-semibold mb-1">How to connect an external website</p>
-            <p className="text-slate-500 text-xs leading-relaxed">Create a connection and copy the API key. In your external website, send requests to <code className="bg-slate-200 px-1.5 py-0.5 rounded text-brand-300">POST /api/external/employees</code> with the header <code className="bg-slate-200 px-1.5 py-0.5 rounded text-brand-300">x-api-key: your-key</code> to push employee data. Use <code className="bg-slate-200 px-1.5 py-0.5 rounded text-brand-300">GET /api/external/status</code> to verify connectivity.</p>
+          <Zap size={18} className="text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="space-y-2">
+            <p className="text-slate-800 text-sm font-semibold">How to connect an external website</p>
+            <p className="text-slate-600 text-[12.5px] leading-relaxed">
+              Create a connection, then copy the API key from the card. Every call from your external website
+              must include the header{' '}
+              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 font-mono text-[11.5px]">x-api-key: your-key</code>.
+            </p>
+            <p className="text-slate-600 text-[12.5px] leading-relaxed">
+              <strong className="text-slate-800">For user-facing apps</strong> (LMS, User Report, etc.) — verify each login by calling{' '}
+              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 font-mono text-[11.5px]">POST /api/external/access/check</code>{' '}
+              with <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 font-mono text-[11.5px]">{'{ email }'}</code>.
+              Returns <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 font-mono text-[11.5px]">{'{ allowed, employee }'}</code>.
+            </p>
+            <p className="text-slate-600 text-[12.5px] leading-relaxed">
+              <strong className="text-slate-800">For data-sync integrations</strong> — push employee data to{' '}
+              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 font-mono text-[11.5px]">POST /api/external/employees</code>.
+              Health check at{' '}
+              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 font-mono text-[11.5px]">GET /api/external/status</code>.
+            </p>
           </div>
         </div>
       </div>
