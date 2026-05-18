@@ -874,30 +874,51 @@ const steps = [
     pay_year    INTEGER NOT NULL,
     type        VARCHAR(40) NOT NULL,   -- 'bonus' | 'overtime' | 'reimbursement' | 'deduction' | 'other'
     amount      NUMERIC(12,2) NOT NULL, -- positive for earnings, negative for deductions
-    notes       TEXT,
+    reason      TEXT,
     created_by  UUID REFERENCES employees(id),
     created_at  TIMESTAMPTZ DEFAULT NOW()
   )`,
+  // Bring older installs in line — original schema used `notes`, route reads `reason`.
+  `ALTER TABLE payroll_adjustments ADD COLUMN IF NOT EXISTS reason TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_adj_employee_period ON payroll_adjustments (employee_id, pay_year, pay_month)`,
 
   // ── Loans / advances ──────────────────────────────────────────────────
   // Admin disburses principal, sets monthly_recovery; run-month deducts
-  // until total_paid >= principal then auto-flips status to 'closed'.
+  // until recovered >= principal then auto-flips status to 'closed'.
   `CREATE TABLE IF NOT EXISTS payroll_loans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    loan_type    VARCHAR(20) DEFAULT 'advance',  -- advance | loan
-    principal    NUMERIC(12,2) NOT NULL,
-    monthly_recovery NUMERIC(12,2) NOT NULL,
-    total_paid   NUMERIC(12,2) DEFAULT 0,
-    start_month  INTEGER NOT NULL,
-    start_year   INTEGER NOT NULL,
-    status       VARCHAR(20) DEFAULT 'active',   -- active | closed | paused
-    notes        TEXT,
-    approved_by  UUID REFERENCES employees(id),
-    created_at   TIMESTAMPTZ DEFAULT NOW(),
-    closed_at    TIMESTAMPTZ
+    principal        NUMERIC(12,2) NOT NULL,
+    monthly_recovery NUMERIC(12,2) NOT NULL DEFAULT 0,
+    recovered        NUMERIC(12,2) NOT NULL DEFAULT 0,
+    status           VARCHAR(20) DEFAULT 'active',   -- active | closed | paused
+    notes            TEXT,
+    issued_at        DATE DEFAULT CURRENT_DATE,
+    closed_at        TIMESTAMPTZ,
+    created_by       UUID REFERENCES employees(id),
+    created_at       TIMESTAMPTZ DEFAULT NOW()
   )`,
+  // Older installs may have a payroll_loans with the legacy column set
+  // (loan_type / total_paid / start_month / start_year / approved_by) and
+  // missing the columns the route uses. Patch them in-place:
+  `ALTER TABLE payroll_loans ADD COLUMN IF NOT EXISTS recovered NUMERIC(12,2) NOT NULL DEFAULT 0`,
+  `ALTER TABLE payroll_loans ADD COLUMN IF NOT EXISTS issued_at DATE DEFAULT CURRENT_DATE`,
+  `ALTER TABLE payroll_loans ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES employees(id)`,
+  // Backfill recovered from total_paid if that column exists from the legacy shape.
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payroll_loans' AND column_name='total_paid')
+     THEN UPDATE payroll_loans SET recovered = total_paid WHERE total_paid IS NOT NULL AND recovered = 0;
+     END IF;
+   END $$`,
+  // Make the legacy NOT NULL columns optional so new INSERTs that omit them don't fail.
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payroll_loans' AND column_name='start_month' AND is_nullable='NO')
+     THEN ALTER TABLE payroll_loans ALTER COLUMN start_month DROP NOT NULL; END IF;
+     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payroll_loans' AND column_name='start_year' AND is_nullable='NO')
+     THEN ALTER TABLE payroll_loans ALTER COLUMN start_year DROP NOT NULL; END IF;
+     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payroll_loans' AND column_name='monthly_recovery' AND is_nullable='NO')
+     THEN ALTER TABLE payroll_loans ALTER COLUMN monthly_recovery DROP NOT NULL; END IF;
+   END $$`,
   `CREATE INDEX IF NOT EXISTS idx_loans_active ON payroll_loans (employee_id, status)`,
 
   // ── New columns on payroll_payslips for the rest of the sprint ────────

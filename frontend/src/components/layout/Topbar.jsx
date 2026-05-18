@@ -284,8 +284,15 @@ function SubNav({ items }) {
 
   return (
     <div ref={containerRef} className="flex-1 h-full flex items-center justify-between gap-3 min-w-0">
-      {/* Hidden measurement row — laid out exactly like the real row but invisible. */}
-      <div ref={measureRef} className="absolute opacity-0 pointer-events-none flex items-center gap-5" aria-hidden="true">
+      {/* Hidden measurement row — fixed to off-screen so it never contributes
+          to layout or causes horizontal scroll. The kids still measure at
+          their natural rendered widths. */}
+      <div
+        ref={measureRef}
+        className="flex items-center gap-5"
+        aria-hidden="true"
+        style={{ position: 'fixed', top: '-9999px', left: '-9999px', visibility: 'hidden' }}
+      >
         {items.map(item => (
           <span key={`m-${item.to}`} className="text-[14px] font-semibold whitespace-nowrap px-1">{item.label}</span>
         ))}
