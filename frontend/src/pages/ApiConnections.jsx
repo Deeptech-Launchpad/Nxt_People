@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import {
-  Globe, Plus, Pencil, Trash2, RefreshCw, Copy, Check, Eye, EyeOff, X, Zap,
+  Globe, Plus, Pencil, Trash2, RefreshCw, Copy, Check, X, Zap,
   Users, Search, Layers, BookOpen, BarChart3, Briefcase, Calendar, Cloud, Cog,
   Database, FileText, Image, Lock, Mail, Map, Phone, Server, Star, Tag,
 } from 'lucide-react';
@@ -52,10 +52,16 @@ function ConnectionModal({ connection, onClose, onSaved }) {
     if (form.allowedDataTypes.length === 0) return toast.error('Select at least one data type');
     setLoading(true);
     try {
-      if (isEdit) await api.put(`/api-connections/${connection._id}`, form);
-      else await api.post('/api-connections', form);
-      toast.success(isEdit ? 'Connection updated' : 'Connection created');
-      onSaved();
+      if (isEdit) {
+        await api.put(`/api-connections/${connection._id}`, form);
+        toast.success('Connection updated');
+        onSaved(null);
+      } else {
+        const r = await api.post('/api-connections', form);
+        toast.success('Connection created');
+        // Pass the raw key up so the parent can show the reveal modal.
+        onSaved({ name: form.name, apiKey: r.data.data?.apiKey });
+      }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Save failed');
     } finally {
@@ -163,28 +169,57 @@ function ConnectionModal({ connection, onClose, onSaved }) {
   );
 }
 
-function ApiKeyDisplay({ value }) {
-  const [show, setShow] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const copy = () => {
-    navigator.clipboard.writeText(value);
-    setCopied(true);
-    toast.success('API key copied');
-    setTimeout(() => setCopied(false), 2000);
-  };
-
+/** Inline display of the stored key *prefix* — the full key isn't
+ *  retrievable (we only store its SHA-256 hash). Tells the admin which
+ *  key is current so they can match it against what they've pasted into
+ *  the external app. If they've lost the key, the rotate button issues
+ *  a new one (shown once in KeyRevealModal). */
+function ApiKeyDisplay({ prefix }) {
   return (
     <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mt-2">
       <code className="flex-1 text-xs text-slate-500 font-mono truncate">
-        {show ? value : '••••••••••••••••••••••••••••••••'}
+        {prefix || '—'}{prefix && '••••••••••••••••••••••••'}
       </code>
-      <button onClick={() => setShow(!show)} className="text-slate-600 hover:text-slate-500 transition-colors flex-shrink-0">
-        {show ? <EyeOff size={13} /> : <Eye size={13} />}
-      </button>
-      <button onClick={copy} className="text-slate-600 hover:text-slate-500 transition-colors flex-shrink-0">
-        {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-      </button>
+      <span className="text-[10.5px] text-slate-400 flex-shrink-0">stored as hash · rotate to issue a new one</span>
+    </div>
+  );
+}
+
+/** One-time reveal modal shown after create or rotate. The raw key is
+ *  in memory only — once this modal closes, it's gone for good. */
+function KeyRevealModal({ name, apiKey, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(apiKey).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+        <div className="bg-gradient-to-r from-amber-500 to-orange-600 text-white px-6 py-5">
+          <p className="text-[16px] font-bold">Save this key now</p>
+          <p className="text-[12.5px] opacity-90 mt-1">This is the only time you'll see it. If you lose it, you'll need to rotate again — which will break your existing integration.</p>
+        </div>
+        <div className="p-5 space-y-3">
+          <p className="text-[12px] text-slate-500">Connection: <strong className="text-slate-800">{name}</strong></p>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 font-mono text-[11.5px] text-slate-800 break-all">
+            {apiKey}
+          </div>
+          <button onClick={copy}
+            className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 text-white text-[13px] font-semibold px-4 py-2.5 rounded-lg hover:bg-slate-800">
+            {copied ? <><Check size={14} /> Copied!</> : <><Copy size={14} /> Copy to clipboard</>}
+          </button>
+          <p className="text-[11.5px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-200 rounded-lg p-3">
+            Paste this into your external app as the <code className="bg-white px-1 py-0.5 rounded">X-API-Key</code> header for calls to <code className="bg-white px-1 py-0.5 rounded">/api/external/access/check</code>.
+          </p>
+        </div>
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-[13px] font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800">
+            I've saved it
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -318,6 +353,7 @@ export default function ApiConnections() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [accessTarget, setAccessTarget] = useState(null);
+  const [revealKey, setRevealKey] = useState(null); // { name, apiKey }
 
   const fetchConnections = useCallback(async () => {
     setLoading(true);
@@ -347,7 +383,9 @@ export default function ApiConnections() {
   const regenerateKey = async (id, name) => {
     if (!confirm(`Regenerate API key for "${name}"? The old key will stop working immediately.`)) return;
     try {
-      await api.post(`/api-connections/${id}/regenerate-key`);
+      const r = await api.post(`/api-connections/${id}/regenerate-key`);
+      const apiKey = r.data?.data?.apiKey;
+      if (apiKey) setRevealKey({ name, apiKey });
       toast.success('API key regenerated');
       fetchConnections();
     } catch (err) {
@@ -415,7 +453,7 @@ export default function ApiConnections() {
                     )}
                     <div>
                       <p className="text-xs font-medium text-slate-500 mt-3 mb-0.5">API Key</p>
-                      <ApiKeyDisplay value={conn.apiKey} />
+                      <ApiKeyDisplay prefix={conn.apiKeyPrefix} />
                     </div>
                   </div>
                 </div>
@@ -446,12 +484,22 @@ export default function ApiConnections() {
         <ConnectionModal
           connection={editTarget}
           onClose={() => { setModalOpen(false); setEditTarget(null); }}
-          onSaved={() => { setModalOpen(false); setEditTarget(null); fetchConnections(); }}
+          onSaved={(created) => {
+            setModalOpen(false);
+            setEditTarget(null);
+            fetchConnections();
+            // `created` is { name, apiKey } only when a brand-new connection was made.
+            if (created?.apiKey) setRevealKey(created);
+          }}
         />
       )}
 
       {accessTarget && (
         <AccessManager connection={accessTarget} onClose={() => setAccessTarget(null)} />
+      )}
+
+      {revealKey && (
+        <KeyRevealModal name={revealKey.name} apiKey={revealKey.apiKey} onClose={() => setRevealKey(null)} />
       )}
     </div>
   );
