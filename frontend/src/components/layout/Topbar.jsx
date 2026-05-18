@@ -12,7 +12,8 @@ function getSection(pathname) {
       pathname.startsWith('/wfh') || pathname.startsWith('/comp-off') ||
       pathname.startsWith('/leave-calendar') || pathname.startsWith('/leave-encashment')) return 'leavetracker';
   if (pathname.startsWith('/performance')) return 'performance';
-  if (pathname.startsWith('/more-services') || pathname.startsWith('/documents')) return 'moreservices';
+  if (pathname.startsWith('/more-services') || pathname.startsWith('/documents')
+    || pathname.startsWith('/my-apps') || pathname.startsWith('/api-connections')) return 'moreservices';
   if (pathname.startsWith('/employees') || pathname.startsWith('/registrations')) return 'employeemaster';
   if (pathname.startsWith('/reports') || pathname.startsWith('/payroll') ||
       pathname.startsWith('/shifts') || pathname.startsWith('/shift-roster') ||
@@ -143,11 +144,13 @@ const NAV = {
       { key: 'travel',       label: 'Travel',              to: '/more-services/travel'       },
       { key: 'compensation', label: 'Compensation',        to: '/more-services/compensation' },
       { key: 'hrletters',    label: 'HR Letters',          to: '/more-services/hr-letters'   },
+      { key: 'apps',         label: 'Apps',                to: '/my-apps'                    },
     ],
     getActiveTab: p => {
       if (p.startsWith('/more-services/travel'))       return 'travel';
       if (p.startsWith('/more-services/compensation')) return 'compensation';
       if (p.startsWith('/more-services/hr-letters'))   return 'hrletters';
+      if (p.startsWith('/my-apps') || p.startsWith('/api-connections')) return 'apps';
       return 'files';
     },
     subNav: {
@@ -155,6 +158,10 @@ const NAV = {
       travel:       [{ to: '/more-services/travel',       label: 'Travel Requests'  }],
       compensation: [{ to: '/more-services/compensation', label: 'Claims'           }],
       hrletters:    [{ to: '/more-services/hr-letters',   label: 'Letter Requests'  }],
+      apps: [
+        { to: '/my-apps',         label: 'My Apps'        },
+        { to: '/api-connections', label: 'Manage Apps & API Connections', roles: ['admin'] },
+      ],
     },
   },
   employeemaster: {

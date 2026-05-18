@@ -17,6 +17,7 @@ const SELECT_FIELDS = `
   a.id as "_id", a.name, a.website_url as "websiteUrl", a.description,
   a.api_key_prefix as "apiKeyPrefix",
   a.company, a.is_active as "isActive", a.allowed_data_types as "allowedDataTypes",
+  a.is_user_app as "isUserApp", a.app_icon as "appIcon", a.app_color as "appColor",
   a.last_sync_at as "lastSyncAt", a.created_at as "createdAt"
 `;
 
@@ -34,13 +35,14 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { name, websiteUrl, description, company, allowedDataTypes } = req.body;
+    const { name, websiteUrl, description, company, allowedDataTypes, isUserApp, appIcon, appColor } = req.body;
     const { raw, hash, prefix } = generateApiKey();
     const result = await pool.query(`
-      INSERT INTO api_connections (name, website_url, description, company, allowed_data_types, api_key_hash, api_key_prefix, created_by_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO api_connections (name, website_url, description, company, allowed_data_types, api_key_hash, api_key_prefix, created_by_id, is_user_app, app_icon, app_color)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING ${SELECT_FIELDS.replace(/a\./g, '')}
-    `, [name, websiteUrl, description, company, allowedDataTypes || ['employees'], hash, prefix, req.user._id]);
+    `, [name, websiteUrl, description, company, allowedDataTypes || ['employees'], hash, prefix, req.user._id,
+        !!isUserApp, appIcon || 'Layers', appColor || 'from-blue-500 to-indigo-600']);
     // Return the raw key ONCE — the server stores only its hash.
     res.status(201).json({ success: true, data: { ...result.rows[0], apiKey: raw }, message: 'Save this key now — it will not be shown again.' });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
@@ -48,12 +50,23 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { name, websiteUrl, description, company, allowedDataTypes, isActive } = req.body;
+    const { name, websiteUrl, description, company, allowedDataTypes, isActive, isUserApp, appIcon, appColor } = req.body;
     const result = await pool.query(`
-      UPDATE api_connections SET name = COALESCE($1, name), website_url = COALESCE($2, website_url), description = COALESCE($3, description), company = COALESCE($4, company), allowed_data_types = COALESCE($5, allowed_data_types), is_active = COALESCE($6, is_active), updated_at = NOW()
-      WHERE id = $7
+      UPDATE api_connections SET
+        name = COALESCE($1, name),
+        website_url = COALESCE($2, website_url),
+        description = COALESCE($3, description),
+        company = COALESCE($4, company),
+        allowed_data_types = COALESCE($5, allowed_data_types),
+        is_active = COALESCE($6, is_active),
+        is_user_app = COALESCE($7, is_user_app),
+        app_icon    = COALESCE($8, app_icon),
+        app_color   = COALESCE($9, app_color),
+        updated_at = NOW()
+      WHERE id = $10
       RETURNING ${SELECT_FIELDS.replace(/a\./g, '')}
-    `, [name, websiteUrl, description, company, allowedDataTypes, isActive, req.params.id]);
+    `, [name, websiteUrl, description, company, allowedDataTypes, isActive,
+        isUserApp === undefined ? null : !!isUserApp, appIcon, appColor, req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Connection not found' });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
@@ -77,6 +90,70 @@ router.post('/:id/regenerate-key', async (req, res) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Connection not found' });
     res.json({ success: true, data: { ...result.rows[0], apiKey: raw }, message: 'API key regenerated. Save it now — it will not be shown again.' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+/* ════════════════════════════════════════════════════════════════════════
+ *  Per-connection access grants — used by the "Access" tab on each
+ *  user-facing app. External apps verify these grants via
+ *  POST /api/external/access/check (routes/external-access.js).
+ * ══════════════════════════════════════════════════════════════════════ */
+
+// GET /api/api-connections/:id/access — list every active employee with
+// their grant status for this connection. Single query so the modal can
+// render a complete toggle list without N+1.
+router.get('/:id/access', async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT e.id AS "_id", e.employee_id AS "employeeId",
+             e.first_name AS "firstName", e.last_name AS "lastName",
+             e.email, e.department, e.designation, e.photo_url AS "photoUrl",
+             (ac.id IS NOT NULL AND ac.revoked_at IS NULL) AS "hasAccess",
+             ac.granted_at AS "grantedAt"
+        FROM employees e
+        LEFT JOIN application_access ac
+          ON ac.employee_id = e.id AND ac.api_connection_id = $1
+       WHERE e.status = 'active'
+       ORDER BY e.first_name ASC, e.last_name ASC
+    `, [req.params.id]);
+    res.json({ success: true, data: r.rows });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST /api/api-connections/:id/access — bulk grant. Body: { employeeIds }.
+// Upsert pattern: if a revoked row exists, un-revoke it (history preserved).
+router.post('/:id/access', async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.employeeIds) ? req.body.employeeIds : [];
+    if (ids.length === 0) return res.status(400).json({ success: false, message: 'employeeIds[] required' });
+
+    const conn = await pool.query(`SELECT id, name FROM api_connections WHERE id = $1`, [req.params.id]);
+    if (conn.rows.length === 0) return res.status(404).json({ success: false, message: 'Connection not found' });
+
+    await pool.query(`
+      INSERT INTO application_access (api_connection_id, employee_id, granted_by)
+      SELECT $1, unnest($2::uuid[]), $3
+        ON CONFLICT (api_connection_id, employee_id) DO UPDATE
+          SET revoked_at = NULL, revoked_by = NULL, revoke_reason = NULL,
+              granted_at = NOW(), granted_by = EXCLUDED.granted_by
+    `, [req.params.id, ids, req.user._id]);
+
+    res.json({ success: true, granted: ids.length });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE /api/api-connections/:id/access/:employeeId — soft-revoke
+router.delete('/:id/access/:employeeId', async (req, res) => {
+  try {
+    const reason = req.body?.reason || null;
+    const r = await pool.query(`
+      UPDATE application_access
+         SET revoked_at = NOW(), revoked_by = $1, revoke_reason = $2
+       WHERE api_connection_id = $3 AND employee_id = $4 AND revoked_at IS NULL
+       RETURNING id
+    `, [req.user._id, reason, req.params.id, req.params.employeeId]);
+    if (r.rows.length === 0) return res.status(400).json({ success: false, message: 'No active grant to revoke' });
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

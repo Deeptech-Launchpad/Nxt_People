@@ -88,6 +88,10 @@ app.use('/api/dashboard',        require('./routes/dashboard'));
 app.use('/api/registrations',    require('./routes/registrations'));
 app.use('/api/companies',        require('./routes/companies'));
 app.use('/api/api-connections',  require('./routes/api-connections'));
+app.use('/api/my-apps',          require('./routes/my-apps'));
+// external-access mounted BEFORE external so the more-specific path wins;
+// Express dispatches by registration order, not by specificity.
+app.use('/api/external/access',  require('./routes/external-access'));
 app.use('/api/external',         require('./routes/external'));
 app.use('/api/notifications',    require('./routes/notifications'));
 app.use('/api/announcements',    require('./routes/announcements'));

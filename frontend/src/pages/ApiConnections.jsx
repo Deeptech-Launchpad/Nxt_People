@@ -1,16 +1,40 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
-import { Globe, Plus, Pencil, Trash2, RefreshCw, Copy, Check, Eye, EyeOff, X, Zap } from 'lucide-react';
+import {
+  Globe, Plus, Pencil, Trash2, RefreshCw, Copy, Check, Eye, EyeOff, X, Zap,
+  Users, Search, Layers, BookOpen, BarChart3, Briefcase, Calendar, Cloud, Cog,
+  Database, FileText, Image, Lock, Mail, Map, Phone, Server, Star, Tag,
+} from 'lucide-react';
 
 const DATA_TYPES = ['employees', 'attendance', 'leaves', 'timesheets'];
+
+// Icons the admin can pick for a user-facing app (shows in the launcher).
+const APP_ICONS = {
+  Layers, Globe, BookOpen, BarChart3, Briefcase, Calendar, Cloud, Cog,
+  Database, FileText, Image, Lock, Mail, Map, Phone, Server, Star, Tag,
+};
+const APP_ICON_NAMES = Object.keys(APP_ICONS);
+const APP_COLORS = [
+  'from-blue-500 to-indigo-600',
+  'from-emerald-500 to-teal-600',
+  'from-rose-500 to-pink-600',
+  'from-amber-500 to-orange-600',
+  'from-purple-500 to-fuchsia-600',
+  'from-sky-500 to-cyan-600',
+  'from-slate-700 to-slate-900',
+];
+const AppIcon = ({ name, ...rest }) => {
+  const Cmp = APP_ICONS[name] || Layers;
+  return <Cmp {...rest} />;
+};
 
 function ConnectionModal({ connection, onClose, onSaved }) {
   const isEdit = !!connection;
   const [form, setForm] = useState(
     isEdit
-      ? { name: connection.name, websiteUrl: connection.websiteUrl || '', description: connection.description || '', company: connection.company || '', isActive: connection.isActive, allowedDataTypes: connection.allowedDataTypes || ['employees'] }
-      : { name: '', websiteUrl: '', description: '', company: '', isActive: true, allowedDataTypes: ['employees'] }
+      ? { name: connection.name, websiteUrl: connection.websiteUrl || '', description: connection.description || '', company: connection.company || '', isActive: connection.isActive, allowedDataTypes: connection.allowedDataTypes || ['employees'], isUserApp: !!connection.isUserApp, appIcon: connection.appIcon || 'Layers', appColor: connection.appColor || 'from-blue-500 to-indigo-600' }
+      : { name: '', websiteUrl: '', description: '', company: '', isActive: true, allowedDataTypes: ['employees'], isUserApp: false, appIcon: 'Layers', appColor: 'from-blue-500 to-indigo-600' }
   );
   const [loading, setLoading] = useState(false);
 
@@ -79,6 +103,54 @@ function ConnectionModal({ connection, onClose, onSaved }) {
               <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${form.isActive ? 'left-5.5' : 'left-0.5'}`} style={{ left: form.isActive ? '22px' : '2px' }} />
             </button>
           </div>
+
+          {/* User-facing app toggle — when on, this connection shows in the
+              My Apps launcher and gets a per-employee access list. */}
+          <div className="border-t border-slate-200 pt-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-slate-700">User-facing app</p>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">Turn on if this is a website employees log into (LMS, User Report, etc.). Shows in the My Apps launcher; admins pick who can access.</p>
+              </div>
+              <button type="button" onClick={() => setForm(f => ({ ...f, isUserApp: !f.isUserApp }))} className={`relative flex-shrink-0 rounded-full transition-all ${form.isUserApp ? 'bg-brand-600' : 'bg-slate-200'}`} style={{ height: '22px', width: '40px' }}>
+                <span className="absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all" style={{ left: form.isUserApp ? '22px' : '2px' }} />
+              </button>
+            </div>
+
+            {form.isUserApp && (
+              <div className="mt-3 space-y-3 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Launcher Icon</label>
+                  <div className="grid grid-cols-9 gap-1 bg-white border border-slate-200 rounded-lg p-1.5 max-h-[88px] overflow-y-auto">
+                    {APP_ICON_NAMES.map(n => (
+                      <button key={n} type="button" onClick={() => setForm(f => ({ ...f, appIcon: n }))}
+                        className={`p-1.5 rounded transition-all ${form.appIcon === n ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+                        <AppIcon name={n} size={13} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Theme</label>
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {APP_COLORS.map(c => (
+                      <button key={c} type="button" onClick={() => setForm(f => ({ ...f, appColor: c }))}
+                        className={`h-7 rounded-lg bg-gradient-to-br ${c} ${form.appColor === c ? 'ring-2 ring-offset-1 ring-slate-900' : ''}`} />
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-lg p-2 flex items-center gap-2">
+                  <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${form.appColor} flex items-center justify-center text-white`}>
+                    <AppIcon name={form.appIcon} size={16} />
+                  </div>
+                  <div>
+                    <p className="text-[11.5px] font-bold text-slate-800">{form.name || 'App Name'}</p>
+                    <p className="text-[10px] text-slate-400">Preview tile</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex gap-3 mt-6">
           <button onClick={onClose} className="flex-1 bg-white hover:bg-slate-200 text-slate-700 font-medium py-2.5 rounded-xl text-sm transition-all">Cancel</button>
@@ -117,11 +189,135 @@ function ApiKeyDisplay({ value }) {
   );
 }
 
+function AccessManager({ connection, onClose }) {
+  const [rows, setRows]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch]   = useState('');
+  const [filter, setFilter]   = useState('all');
+  const [saving, setSaving]   = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api.get(`/api-connections/${connection._id}/access`)
+      .then(r => setRows(r.data.data || []))
+      .catch(err => toast.error(err.response?.data?.message || 'Failed'))
+      .finally(() => setLoading(false));
+  }, [connection._id]);
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = (employeeId, currentlyHas) => async () => {
+    setSaving(true);
+    try {
+      if (currentlyHas) await api.delete(`/api-connections/${connection._id}/access/${employeeId}`);
+      else              await api.post  (`/api-connections/${connection._id}/access`, { employeeIds: [employeeId] });
+      setRows(rs => rs.map(r => r._id === employeeId ? { ...r, hasAccess: !currentlyHas } : r));
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  const bulkGrant = async (ids) => {
+    if (ids.length === 0) return;
+    setSaving(true);
+    try {
+      await api.post(`/api-connections/${connection._id}/access`, { employeeIds: ids });
+      toast.success(`Granted to ${ids.length} ${ids.length === 1 ? 'employee' : 'employees'}`);
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return rows
+      .filter(r => filter === 'all' || (filter === 'granted' ? r.hasAccess : !r.hasAccess))
+      .filter(r => !q || `${r.firstName} ${r.lastName} ${r.email} ${r.employeeId} ${r.department || ''}`.toLowerCase().includes(q));
+  }, [rows, search, filter]);
+
+  const grantedCount = rows.filter(r => r.hasAccess).length;
+  const visibleNotGranted = filtered.filter(r => !r.hasAccess);
+  const color = connection.appColor || 'from-blue-500 to-indigo-600';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className={`bg-gradient-to-r ${color} text-white px-6 py-5 flex items-start justify-between`}>
+          <div>
+            <p className="text-[11px] uppercase tracking-wider font-bold opacity-90">Access Manager</p>
+            <p className="text-[20px] font-bold mt-1 flex items-center gap-2">
+              <AppIcon name={connection.appIcon || 'Layers'} size={20} /> {connection.name}
+            </p>
+            <p className="text-[12px] opacity-90 mt-1">{grantedCount} of {rows.length} employees have access</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-white/15 hover:bg-white/25 flex items-center justify-center"><X size={14} /></button>
+        </div>
+
+        <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2 flex-wrap">
+          <div className="flex-1 min-w-[200px] flex items-center bg-slate-50 border border-slate-200 rounded-lg px-3">
+            <Search size={14} className="text-slate-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name / ID / email / dept"
+              className="flex-1 bg-transparent py-2 text-[13px] focus:outline-none ml-2" />
+          </div>
+          <div className="flex items-center gap-1">
+            {[
+              { v: 'all',         label: 'All'     },
+              { v: 'granted',     label: 'Granted' },
+              { v: 'not_granted', label: 'Pending' },
+            ].map(f => (
+              <button key={f.v} onClick={() => setFilter(f.v)}
+                className={`px-3 py-1.5 text-[12px] font-semibold rounded-lg ${filter === f.v ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {visibleNotGranted.length > 0 && (
+            <button onClick={() => bulkGrant(visibleNotGranted.map(r => r._id))} disabled={saving}
+              className="px-3 py-1.5 text-[12px] font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60">
+              Grant {visibleNotGranted.length} shown
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="py-10 text-center text-slate-400">Loading employees…</div>
+          ) : filtered.length === 0 ? (
+            <div className="py-10 text-center text-slate-400">No employees match.</div>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {filtered.map(r => (
+                <li key={r._id} className="px-5 py-3 flex items-center justify-between hover:bg-slate-50">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center text-[12px] font-bold text-slate-700 flex-shrink-0">
+                      {(r.firstName?.[0] || '') + (r.lastName?.[0] || '')}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13.5px] font-bold text-slate-800 truncate">{r.firstName} {r.lastName}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{r.employeeId} · {r.department || '—'} · {r.email}</p>
+                    </div>
+                  </div>
+                  <button onClick={toggle(r._id, r.hasAccess)} disabled={saving}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all flex-shrink-0 ${
+                      r.hasAccess ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}>
+                    {r.hasAccess ? <><Check size={13} /> Granted</> : 'Grant'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ApiConnections() {
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
+  const [accessTarget, setAccessTarget] = useState(null);
 
   const fetchConnections = useCallback(async () => {
     setLoading(true);
@@ -224,6 +420,12 @@ export default function ApiConnections() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
+                  {conn.isUserApp && (
+                    <button onClick={() => setAccessTarget(conn)} title="Manage user access"
+                      className="inline-flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg mr-1">
+                      <Users size={13} /> Access
+                    </button>
+                  )}
                   <button onClick={() => regenerateKey(conn._id, conn.name)} title="Regenerate API key" className="text-slate-500 hover:text-amber-400 p-2 rounded-lg hover:bg-slate-100 transition-all">
                     <RefreshCw size={14} />
                   </button>
@@ -246,6 +448,10 @@ export default function ApiConnections() {
           onClose={() => { setModalOpen(false); setEditTarget(null); }}
           onSaved={() => { setModalOpen(false); setEditTarget(null); fetchConnections(); }}
         />
+      )}
+
+      {accessTarget && (
+        <AccessManager connection={accessTarget} onClose={() => setAccessTarget(null)} />
       )}
     </div>
   );

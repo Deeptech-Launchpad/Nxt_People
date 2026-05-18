@@ -947,6 +947,36 @@ const steps = [
   `CREATE UNIQUE INDEX IF NOT EXISTS uniq_payslip_active
      ON payroll_payslips (employee_id, pay_month, pay_year)
      WHERE superseded_by IS NULL`,
+
+  // ── Per-employee access grants for registered API connections ─────────
+  // NxtPeople is the master directory. Existing api_connections rows
+  // already represent each external website (LMS, User Report, …); this
+  // table records which employees each connection is allowed to validate
+  // via /api/external/access/check.
+  //
+  // Three new columns on api_connections distinguish "user-facing apps"
+  // (need access grants + show in the My Apps launcher) from data-sync
+  // connections (don't need grants). app_icon / app_color give the
+  // launcher its visual identity.
+  `ALTER TABLE api_connections ADD COLUMN IF NOT EXISTS is_user_app BOOLEAN DEFAULT FALSE`,
+  `ALTER TABLE api_connections ADD COLUMN IF NOT EXISTS app_icon VARCHAR(40) DEFAULT 'Layers'`,
+  `ALTER TABLE api_connections ADD COLUMN IF NOT EXISTS app_color VARCHAR(60) DEFAULT 'from-blue-500 to-indigo-600'`,
+
+  `CREATE TABLE IF NOT EXISTS application_access (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    api_connection_id UUID NOT NULL REFERENCES api_connections(id) ON DELETE CASCADE,
+    employee_id       UUID NOT NULL REFERENCES employees(id)       ON DELETE CASCADE,
+    granted_at        TIMESTAMPTZ DEFAULT NOW(),
+    granted_by        UUID REFERENCES employees(id) ON DELETE SET NULL,
+    revoked_at        TIMESTAMPTZ,
+    revoked_by        UUID REFERENCES employees(id) ON DELETE SET NULL,
+    revoke_reason     TEXT,
+    UNIQUE(api_connection_id, employee_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_app_access_employee_active
+     ON application_access(employee_id) WHERE revoked_at IS NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_app_access_connection_active
+     ON application_access(api_connection_id) WHERE revoked_at IS NULL`,
 ];
 
 async function runFixes() {

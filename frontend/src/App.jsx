@@ -22,6 +22,7 @@ const Settings        = lazy(() => import('./pages/Settings'));
 const Registrations   = lazy(() => import('./pages/Registrations'));
 const Companies       = lazy(() => import('./pages/Companies'));
 const ApiConnections  = lazy(() => import('./pages/ApiConnections'));
+const MyApps          = lazy(() => import('./pages/MyApps'));
 const Profile         = lazy(() => import('./pages/Profile'));
 const Directory       = lazy(() => import('./pages/Directory'));
 const LeaveCalendar   = lazy(() => import('./pages/LeaveCalendar'));
@@ -206,6 +207,7 @@ const AppRoutes = () => {
           <Route path="leave-encashment" element={<LeaveEncashment/>}/>
           <Route path="projects"       element={<Navigate to="/team/projects" replace/>}/>
           <Route path="api-connections"element={<ProtectedRoute roles={['admin']}><ApiConnections/></ProtectedRoute>}/>
+          <Route path="my-apps"          element={<MyApps/>}/>
           <Route path="settings"       element={<ProtectedRoute roles={['admin']}><Settings/></ProtectedRoute>}/>
         </Route>
 
