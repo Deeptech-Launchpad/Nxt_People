@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Plus, CheckCircle, X } from 'lucide-react';
+import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 
@@ -215,6 +215,122 @@ const SubNavLink = ({ to, label, exact }) => {
     </NavLink>
   );
 };
+
+/* ── SubNav (with overflow "More" dropdown) ──────────────────────── */
+/** When the sub-nav has too many tabs to fit on one line, this component
+ *  measures the row on mount + on resize, hides the tail that overflows,
+ *  and stuffs the rest behind a 3-dot button on the right. If the active
+ *  route is in the overflow set, the More button gets the active styling. */
+function SubNav({ items }) {
+  const location = useLocation();
+  const containerRef = React.useRef(null);
+  const measureRef   = React.useRef(null);
+  const [visibleCount, setVisibleCount] = React.useState(items.length);
+  const [showMore, setShowMore] = React.useState(false);
+  const moreRef = React.useRef();
+
+  // Close the dropdown on outside click + route change.
+  React.useEffect(() => {
+    const h = (e) => {
+      if (moreRef.current && !moreRef.current.contains(e.target)) setShowMore(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  React.useEffect(() => { setShowMore(false); }, [location.pathname]);
+
+  // Measure: render every tab off-screen, then walk the widths and pick
+  // how many fit in the visible row (reserving ~52px for the More button).
+  React.useEffect(() => {
+    const recompute = () => {
+      const container = containerRef.current;
+      const measure   = measureRef.current;
+      if (!container || !measure) return;
+      const available = container.clientWidth - 56; // reserve for More button
+      const children  = Array.from(measure.children);
+      let used = 0, fit = 0;
+      const gap = 20; // matches gap-5 (1.25rem)
+      for (let i = 0; i < children.length; i++) {
+        const w = children[i].offsetWidth + (i > 0 ? gap : 0);
+        if (used + w > available) break;
+        used += w;
+        fit++;
+      }
+      // If everything fits, render normally (no More button).
+      setVisibleCount(fit >= items.length ? items.length : Math.max(1, fit));
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    if (containerRef.current) ro.observe(containerRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); };
+  }, [items]);
+
+  const visible  = items.slice(0, visibleCount);
+  const overflow = items.slice(visibleCount);
+
+  // If the active route lives in the overflow set, swap it into the
+  // visible row so the user always sees their current tab highlighted.
+  const isActiveItem = (item) => item.exact
+    ? location.pathname === item.to
+    : location.pathname.startsWith(item.to) && item.to !== '/';
+  const activeInOverflow = overflow.find(isActiveItem);
+  const finalVisible  = activeInOverflow
+    ? [activeInOverflow, ...visible.slice(0, -1)]
+    : visible;
+  const finalOverflow = activeInOverflow
+    ? [visible[visible.length - 1], ...overflow.filter(i => i !== activeInOverflow)]
+    : overflow;
+
+  return (
+    <div ref={containerRef} className="flex-1 h-full flex items-center justify-between gap-3 min-w-0">
+      {/* Hidden measurement row — laid out exactly like the real row but invisible. */}
+      <div ref={measureRef} className="absolute opacity-0 pointer-events-none flex items-center gap-5" aria-hidden="true">
+        {items.map(item => (
+          <span key={`m-${item.to}`} className="text-[14px] font-semibold whitespace-nowrap px-1">{item.label}</span>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-5 h-full min-w-0 overflow-hidden">
+        {finalVisible.map(item => <SubNavLink key={item.to} {...item}/>)}
+      </div>
+
+      {finalOverflow.length > 0 && (
+        <div ref={moreRef} className="relative flex-shrink-0">
+          <button
+            onClick={() => setShowMore(v => !v)}
+            className={`h-7 w-9 rounded-md flex items-center justify-center transition-all
+              ${activeInOverflow || showMore
+                ? 'bg-slate-100 text-[#1a73e8]'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+            aria-label="More options"
+            title={`${finalOverflow.length} more`}
+          >
+            <MoreHorizontal size={18} strokeWidth={2.2} />
+          </button>
+          {showMore && (
+            <div className="absolute right-0 top-[36px] bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 min-w-[200px] z-50">
+              {finalOverflow.map(item => {
+                const active = isActiveItem(item);
+                return (
+                  <NavLink key={item.to} to={item.to} onClick={() => setShowMore(false)}
+                    className={`flex items-center px-4 py-2 text-[13px] transition-colors
+                      ${active
+                        ? 'text-[#1a73e8] font-bold bg-blue-50/50'
+                        : 'text-slate-600 font-semibold hover:text-slate-900 hover:bg-slate-50'
+                      }`}>
+                    {item.label}
+                  </NavLink>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ── Topbar ──────────────────────────────────────────────────────── */
 export default function Topbar() {
@@ -472,10 +588,8 @@ export default function Topbar() {
       </div>
 
       {/* ── White sub-nav ─────────────────────────────────────────────── */}
-      <div className="h-[42px] bg-white border-b border-slate-200 flex items-center px-5 overflow-x-auto scrollbar-none shadow-sm">
-        <div className="flex items-center gap-5 h-full">
-          {subNavItems.map(item => <SubNavLink key={item.to} {...item}/>)}
-        </div>
+      <div className="h-[42px] bg-white border-b border-slate-200 flex items-center px-5 shadow-sm relative">
+        <SubNav items={subNavItems} />
       </div>
     </div>
   );
