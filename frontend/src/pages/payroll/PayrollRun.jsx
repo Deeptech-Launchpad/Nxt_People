@@ -76,20 +76,18 @@ export default function PayrollRun() {
     } catch (err) { toast.error(err.response?.data?.message || 'Delete failed'); }
   };
 
-  const downloadPdf = (id) => {
-    const url = api.defaults.baseURL + `/payroll/admin/payslips/${id}/pdf`;
-    const token = localStorage.getItem('nxt_access_token');
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.blob())
-      .then(blob => {
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = `payslip-${id}.pdf`;
-        a.click();
-        URL.revokeObjectURL(objectUrl);
-      })
-      .catch(() => toast.error('PDF download failed'));
+  const downloadPdf = async (id) => {
+    try {
+      const r = await api.get(`/payroll/admin/payslips/${id}/pdf`, { responseType: 'blob' });
+      const objectUrl = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = `payslip-${id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'PDF download failed');
+    }
   };
 
   // Filtering + aggregation in memo so big lists stay snappy.
@@ -305,20 +303,19 @@ export function PayslipModal({ id, onClose, adminScope = false }) {
       .finally(() => setLoading(false));
   }, [id, adminScope]);
 
-  const downloadPdf = () => {
-    const url = api.defaults.baseURL + (adminScope ? `/payroll/admin/payslips/${id}/pdf` : `/payroll/my/${id}/pdf`);
-    const token = localStorage.getItem('nxt_access_token');
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.blob())
-      .then(blob => {
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = `payslip-${id}.pdf`;
-        a.click();
-        URL.revokeObjectURL(objectUrl);
-      })
-      .catch(() => toast.error('PDF download failed'));
+  const downloadPdf = async () => {
+    try {
+      const path = adminScope ? `/payroll/admin/payslips/${id}/pdf` : `/payroll/my/${id}/pdf`;
+      const r = await api.get(path, { responseType: 'blob' });
+      const objectUrl = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = `payslip-${id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'PDF download failed');
+    }
   };
 
   return (

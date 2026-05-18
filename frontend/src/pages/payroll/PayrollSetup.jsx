@@ -438,15 +438,17 @@ function BulkUpload({ onDone }) {
 
   const downloadTemplate = async () => {
     try {
-      const url = api.defaults.baseURL + '/payroll/admin/structure-template';
-      const token = localStorage.getItem('nxt_access_token');
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      const blob = await r.blob();
-      const u = URL.createObjectURL(blob);
+      // Use the axios `api` client so the Authorization header + token
+      // refresh interceptor kick in automatically. The earlier fetch()
+      // version pulled the wrong localStorage key and was downloading
+      // a JSON 401 response saved as .xlsx (hence the "file corrupted"
+      // error in Excel).
+      const r = await api.get('/payroll/admin/structure-template', { responseType: 'blob' });
+      const u = URL.createObjectURL(r.data);
       const a = document.createElement('a');
       a.href = u; a.download = 'salary_structure_template.xlsx'; a.click();
       URL.revokeObjectURL(u);
-    } catch { toast.error('Template download failed'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Template download failed'); }
   };
 
   const handleFile = async (e) => {

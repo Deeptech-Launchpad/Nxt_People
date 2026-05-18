@@ -46,12 +46,8 @@ export default function ComplianceReports() {
   const download = async (type) => {
     setDownloading(type);
     try {
-      const url = api.defaults.baseURL + `/payroll/admin/reports/${type}?month=${month}&year=${year}`;
-      const token = localStorage.getItem('nxt_access_token');
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!r.ok) throw new Error('Download failed');
-      const blob = await r.blob();
-      const objectUrl = URL.createObjectURL(blob);
+      const r = await api.get(`/payroll/admin/reports/${type}?month=${month}&year=${year}`, { responseType: 'blob' });
+      const objectUrl = URL.createObjectURL(r.data);
       const a = document.createElement('a');
       a.href = objectUrl;
       a.download = `${type}-${String(month).padStart(2,'0')}-${year}.csv`;
@@ -59,7 +55,7 @@ export default function ComplianceReports() {
       URL.revokeObjectURL(objectUrl);
       toast.success(`${type.toUpperCase()} report downloaded`);
     } catch (err) {
-      toast.error(err.message || 'Failed');
+      toast.error(err.response?.data?.message || 'Failed');
     } finally { setDownloading(null); }
   };
 

@@ -33,20 +33,18 @@ export default function MyPayroll() {
       .catch(err => toast.error(err.response?.data?.message || 'Failed'));
   }, [selected]);
 
-  const downloadPdf = (id) => {
-    const url = api.defaults.baseURL + `/payroll/my/${id}/pdf`;
-    const token = localStorage.getItem('nxt_access_token');
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.blob())
-      .then(blob => {
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = `payslip-${id}.pdf`;
-        a.click();
-        URL.revokeObjectURL(objectUrl);
-      })
-      .catch(() => toast.error('PDF download failed'));
+  const downloadPdf = async (id) => {
+    try {
+      const r = await api.get(`/payroll/my/${id}/pdf`, { responseType: 'blob' });
+      const objectUrl = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = `payslip-${id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'PDF download failed');
+    }
   };
 
   // YTD totals for the current FY (Apr–Mar). Reuses the listing data
