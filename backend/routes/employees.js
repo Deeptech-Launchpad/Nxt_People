@@ -422,7 +422,7 @@ router.post('/send-onboarding', authorize('admin', 'manager'), async (req, res) 
 router.delete('/:id', authorize('admin'), async (req, res) => {
   try {
     await pool.query('DELETE FROM employees WHERE id = $1', [req.params.id]);
-    
+
     await logAudit(req, {
       action: 'DELETE',
       resource: 'Employee',
@@ -433,6 +433,71 @@ router.delete('/:id', authorize('admin'), async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+/* ════════════════════════════════════════════════════════════════════════
+ *  App access — used by the Approve Registration modal and the Edit
+ *  Employee modal so admin can grant/revoke app access without a second
+ *  trip to the API Connections page.
+ * ══════════════════════════════════════════════════════════════════════ */
+
+// GET /api/employees/:id/app-access — all user-facing apps with this
+// employee's current access status. One query, no N+1.
+router.get('/:id/app-access', authorize('admin'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT a.id, a.name, a.description,
+             a.app_icon  AS "icon",
+             a.app_color AS "color",
+             a.website_url AS "websiteUrl",
+             (ac.id IS NOT NULL AND ac.revoked_at IS NULL) AS "hasAccess"
+        FROM api_connections a
+        LEFT JOIN application_access ac
+          ON ac.api_connection_id = a.id AND ac.employee_id = $1
+       WHERE a.is_user_app = TRUE AND a.is_active = TRUE
+       ORDER BY a.name ASC
+    `, [req.params.id]);
+    res.json({ success: true, data: r.rows });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// PUT /api/employees/:id/app-access — sync this employee's access list
+// to match `apiConnectionIds` exactly: grant new ones, revoke removed ones.
+// Idempotent. Used by Approve modal (post-approve) and Edit modal (post-save).
+router.put('/:id/app-access', authorize('admin'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const wanted = Array.isArray(req.body?.apiConnectionIds) ? req.body.apiConnectionIds : [];
+    await client.query('BEGIN');
+
+    // Grant or un-revoke everything the admin checked
+    if (wanted.length > 0) {
+      await client.query(`
+        INSERT INTO application_access (api_connection_id, employee_id, granted_by)
+        SELECT unnest($1::uuid[]), $2, $3
+          ON CONFLICT (api_connection_id, employee_id) DO UPDATE
+            SET revoked_at = NULL, revoked_by = NULL, revoke_reason = NULL,
+                granted_at = NOW(), granted_by = EXCLUDED.granted_by
+      `, [wanted, req.params.id, req.user._id]);
+    }
+
+    // Soft-revoke anything previously granted that's no longer checked.
+    // ANY() needs a non-empty array — pass a sentinel UUID when wanted is empty.
+    const exclusion = wanted.length ? wanted : ['00000000-0000-0000-0000-000000000000'];
+    await client.query(`
+      UPDATE application_access
+         SET revoked_at = NOW(), revoked_by = $1, revoke_reason = 'Removed via employee edit'
+       WHERE employee_id = $2
+         AND revoked_at IS NULL
+         AND NOT (api_connection_id = ANY($3::uuid[]))
+    `, [req.user._id, req.params.id, exclusion]);
+
+    await client.query('COMMIT');
+    res.json({ success: true, granted: wanted.length });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ success: false, message: err.message });
+  } finally { client.release(); }
 });
 
 module.exports = router;

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { Clock, CheckCircle2, XCircle, User, Mail, Phone, Briefcase, Building2, Layers, BadgeCheck, ChevronDown, Search, Filter, FileText, Eye, Download } from 'lucide-react';
+import AppAccessPicker from '../components/AppAccessPicker';
 
 const STATUS_TABS = [
   { key: 'pending', label: 'Pending', color: 'text-amber-400', dot: 'bg-amber-400' },
@@ -31,14 +32,47 @@ function ApproveModal({ employee, onClose, onApproved }) {
   // would leak the previous approval's role and password into the form.
   const [form, setForm] = useState({ role: 'employee', department: '', password: '' });
   const [loading, setLoading] = useState(false);
+  // App access list — fetched on open so admin can pick apps in the same
+  // modal instead of a second trip to the API Connections page.
+  const [apps, setApps] = useState([]);
+  const [appsLoading, setAppsLoading] = useState(true);
+  const [selectedApps, setSelectedApps] = useState(new Set());
+
   useEffect(() => {
     setForm({ role: 'employee', department: '', password: '' });
+    setSelectedApps(new Set());
+    if (!employee?._id) return;
+    setAppsLoading(true);
+    api.get(`/employees/${employee._id}/app-access`)
+      .then(r => {
+        const list = r.data.data || [];
+        setApps(list);
+        // Pre-tick any apps already granted (e.g. re-opening approve on a
+        // rejected→pending registration that previously had grants).
+        setSelectedApps(new Set(list.filter(a => a.hasAccess).map(a => a.id)));
+      })
+      .catch(() => setApps([]))
+      .finally(() => setAppsLoading(false));
   }, [employee?._id]);
 
   const handleApprove = async () => {
     setLoading(true);
     try {
+      // 1. Approve first — this is the operation that *creates* the
+      //    employee record into a usable state, so the access call after
+      //    can find the row.
       await api.put(`/registrations/${employee._id}/approve`, form);
+
+      // 2. Sync app access. Don't fail the whole approve if this errors —
+      //    surface a softer toast so admin knows to retry from Edit.
+      try {
+        await api.put(`/employees/${employee._id}/app-access`, {
+          apiConnectionIds: Array.from(selectedApps),
+        });
+      } catch (err) {
+        toast.error('Approved, but app access could not be saved. Open Edit to retry.');
+      }
+
       toast.success(`${employee.firstName} approved successfully`);
       onApproved();
     } catch (err) {
@@ -50,9 +84,9 @@ function ApproveModal({ employee, onClose, onApproved }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-sm shadow-xl">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-lg shadow-xl max-h-[92vh] overflow-y-auto">
         <h3 className="font-display font-bold text-slate-900 text-lg mb-1">Approve Registration</h3>
-        <p className="text-slate-500 text-sm mb-5">Set role and initial password for <span className="text-slate-800 font-medium">{employee.firstName} {employee.lastName}</span></p>
+        <p className="text-slate-500 text-sm mb-5">Set role, password and app access for <span className="text-slate-800 font-medium">{employee.firstName} {employee.lastName}</span></p>
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1.5">Role</label>
@@ -78,6 +112,18 @@ function ApproveModal({ employee, onClose, onApproved }) {
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1.5">Initial password <span className="text-slate-500 font-normal">(required for login)</span></label>
             <input type="password" autoComplete="new-password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="w-full bg-white border border-slate-300 text-slate-900 px-3 py-2.5 rounded-xl text-sm focus:outline-none focus:border-brand-500 placeholder-slate-400 shadow-sm" placeholder="Set a temporary password" />
+          </div>
+
+          {/* App access — admin picks which internal apps this user can use */}
+          <div className="border-t border-slate-100 pt-4">
+            <label className="block text-xs font-medium text-slate-700 mb-2">App access</label>
+            <AppAccessPicker
+              apps={apps}
+              selected={selectedApps}
+              onChange={setSelectedApps}
+              loading={appsLoading}
+              compact
+            />
           </div>
         </div>
         <div className="flex gap-3 mt-6">

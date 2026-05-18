@@ -3,6 +3,7 @@ import { Plus, Search, Edit2, Trash2, X, ChevronLeft, ChevronRight, Mail, Send, 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import AppAccessPicker from '../components/AppAccessPicker';
 
 // Options will be fetched dynamically from the database
 
@@ -68,6 +69,11 @@ export default function Employees() {
   const [loadingView, setLoadingView] = useState(false);
   const [form, setForm] = useState(initForm);
   const [saving, setSaving] = useState(false);
+  // App access — loaded on Edit-open, surfaced as a checkbox grid in the
+  // modal, synced via PUT /employees/:id/app-access after the main save.
+  const [appAccessList, setAppAccessList] = useState([]);
+  const [appAccessLoading, setAppAccessLoading] = useState(false);
+  const [selectedApps, setSelectedApps] = useState(new Set());
   // Employment status update modal (separate from Edit Employee — focused on
   // the exit/notice-period workflow with applied date, end date, reason,
   // rehire eligibility, blacklist).
@@ -173,10 +179,24 @@ export default function Employees() {
     setEditEmp(null);
     setForm(initForm);
     setLastSuggestedId('');
+    setAppAccessList([]);
+    setSelectedApps(new Set());
     setModal(true);
   };
   const openEdit = async (emp) => {
     setEditEmp(emp);
+    // Kick off app-access fetch in parallel with the employee detail fetch.
+    setAppAccessLoading(true);
+    setAppAccessList([]);
+    setSelectedApps(new Set());
+    api.get(`/employees/${emp._id}/app-access`)
+      .then(r => {
+        const list = r.data.data || [];
+        setAppAccessList(list);
+        setSelectedApps(new Set(list.filter(a => a.hasAccess).map(a => a.id)));
+      })
+      .catch(() => setAppAccessList([]))
+      .finally(() => setAppAccessLoading(false));
     // Fetch full employee record — list endpoint doesn't include PII fields
     // (PAN, Aadhaar, bank, etc.). The GET /employees/:id returns everything.
     let full = emp;
@@ -281,8 +301,30 @@ export default function Employees() {
     try {
       const payload = { ...form };
       if (!payload.password) delete payload.password;
-      if (editEmp) { await api.put(`/employees/${editEmp._id}`, payload); toast.success('Employee updated'); }
-      else { await api.post('/employees', payload); toast.success('Employee created'); }
+
+      // Save the employee fields first — that's the primary operation.
+      let employeeId = editEmp?._id;
+      if (editEmp) {
+        await api.put(`/employees/${editEmp._id}`, payload);
+        toast.success('Employee updated');
+      } else {
+        const r = await api.post('/employees', payload);
+        employeeId = r.data?.data?._id || r.data?.data?.id;
+        toast.success('Employee created');
+      }
+
+      // Then sync the app-access selection (idempotent — sets the list to
+      // exactly what's checked). Skip if no apps are registered yet.
+      if (employeeId && appAccessList.length > 0) {
+        try {
+          await api.put(`/employees/${employeeId}/app-access`, {
+            apiConnectionIds: Array.from(selectedApps),
+          });
+        } catch (_) {
+          toast.error('Saved, but app access could not be updated. Try again from Edit.');
+        }
+      }
+
       setModal(false); load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setSaving(false); }
@@ -829,6 +871,21 @@ export default function Employees() {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* App Access — only meaningful when editing an existing
+                  employee. Lets admin grant/revoke internal app access
+                  inline instead of a second trip to the Apps page. */}
+              {editEmp && (
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">App Access</p>
+                  <AppAccessPicker
+                    apps={appAccessList}
+                    selected={selectedApps}
+                    onChange={setSelectedApps}
+                    loading={appAccessLoading}
+                  />
                 </div>
               )}
 
