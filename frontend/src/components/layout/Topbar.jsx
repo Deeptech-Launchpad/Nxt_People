@@ -199,22 +199,19 @@ const NAV = {
 };
 
 /* ── SubNavLink ──────────────────────────────────────────────────── */
-const SubNavLink = ({ to, label, exact }) => {
-  const location = useLocation();
-  const isActive = exact
-    ? location.pathname === to
-    : location.pathname.startsWith(to) && to !== '/';
-  return (
-    <NavLink to={to}
-      className={`h-full flex items-center px-1 border-b-2 text-[14px] whitespace-nowrap transition-all duration-150 mt-[2px] tracking-[-0.01em]
-        ${isActive
-          ? 'border-[#1a73e8] text-[#1a73e8] font-bold'
-          : 'border-transparent text-slate-500 font-semibold hover:text-slate-800 hover:border-slate-300'
-        }`}>
-      {label}
-    </NavLink>
-  );
-};
+// Active-state is now decided by the parent (SubNav) so we can pick a
+// single best-match — preventing the case where `/payroll/setup` lit up
+// both "Payroll Report" (/payroll) and "Salary Setup" (/payroll/setup).
+const SubNavLink = ({ to, label, isActive }) => (
+  <NavLink to={to}
+    className={`h-full flex items-center px-1 border-b-2 text-[14px] whitespace-nowrap transition-all duration-150 mt-[2px] tracking-[-0.01em]
+      ${isActive
+        ? 'border-[#1a73e8] text-[#1a73e8] font-bold'
+        : 'border-transparent text-slate-500 font-semibold hover:text-slate-800 hover:border-slate-300'
+      }`}>
+    {label}
+  </NavLink>
+);
 
 /* ── SubNav (with overflow "More" dropdown) ──────────────────────── */
 /** When the sub-nav has too many tabs to fit on one line, this component
@@ -269,17 +266,32 @@ function SubNav({ items }) {
   const visible  = items.slice(0, visibleCount);
   const overflow = items.slice(visibleCount);
 
-  // If the active route lives in the overflow set, swap it into the
-  // visible row so the user always sees their current tab highlighted.
-  const isActiveItem = (item) => item.exact
-    ? location.pathname === item.to
-    : location.pathname.startsWith(item.to) && item.to !== '/';
-  const activeInOverflow = overflow.find(isActiveItem);
+  // Best-match active rule: among all items whose `to` matches the current
+  // pathname, pick the one with the LONGEST `to`. That way `/payroll/setup`
+  // lights up "Salary Setup" only, not also "Payroll Report" (`/payroll`).
+  const activeIndex = (() => {
+    let best = -1, bestLen = -1;
+    items.forEach((item, i) => {
+      const matches = item.exact
+        ? location.pathname === item.to
+        : (item.to === '/'
+            ? location.pathname === '/'
+            : location.pathname.startsWith(item.to));
+      if (matches && item.to.length > bestLen) { best = i; bestLen = item.to.length; }
+    });
+    return best;
+  })();
+  const activeItem = activeIndex >= 0 ? items[activeIndex] : null;
+  const activeInOverflow = activeItem && overflow.includes(activeItem) ? activeItem : null;
+
+  // If the active route is in the overflow set, swap it into the END of the
+  // visible row (just before the More button) — feels closer to "stays
+  // where my eye expects it" and avoids pushing every other tab right.
   const finalVisible  = activeInOverflow
-    ? [activeInOverflow, ...visible.slice(0, -1)]
+    ? [...visible.slice(0, -1), activeInOverflow]
     : visible;
   const finalOverflow = activeInOverflow
-    ? [visible[visible.length - 1], ...overflow.filter(i => i !== activeInOverflow)]
+    ? [...overflow.filter(i => i !== activeInOverflow), visible[visible.length - 1]]
     : overflow;
 
   return (
@@ -299,7 +311,9 @@ function SubNav({ items }) {
       </div>
 
       <div className="flex items-center gap-5 h-full min-w-0 overflow-hidden">
-        {finalVisible.map(item => <SubNavLink key={item.to} {...item}/>)}
+        {finalVisible.map(item => (
+          <SubNavLink key={item.to} to={item.to} label={item.label} isActive={item === activeItem} />
+        ))}
       </div>
 
       {finalOverflow.length > 0 && (
@@ -318,19 +332,16 @@ function SubNav({ items }) {
           </button>
           {showMore && (
             <div className="absolute right-0 top-[36px] bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 min-w-[200px] z-50">
-              {finalOverflow.map(item => {
-                const active = isActiveItem(item);
-                return (
-                  <NavLink key={item.to} to={item.to} onClick={() => setShowMore(false)}
-                    className={`flex items-center px-4 py-2 text-[13px] transition-colors
-                      ${active
-                        ? 'text-[#1a73e8] font-bold bg-blue-50/50'
-                        : 'text-slate-600 font-semibold hover:text-slate-900 hover:bg-slate-50'
-                      }`}>
-                    {item.label}
-                  </NavLink>
-                );
-              })}
+              {finalOverflow.map(item => (
+                <NavLink key={item.to} to={item.to} onClick={() => setShowMore(false)}
+                  className={`flex items-center px-4 py-2 text-[13px] transition-colors
+                    ${item === activeItem
+                      ? 'text-[#1a73e8] font-bold bg-blue-50/50'
+                      : 'text-slate-600 font-semibold hover:text-slate-900 hover:bg-slate-50'
+                    }`}>
+                  {item.label}
+                </NavLink>
+              ))}
             </div>
           )}
         </div>
