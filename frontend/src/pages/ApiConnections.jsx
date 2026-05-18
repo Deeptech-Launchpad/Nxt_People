@@ -170,17 +170,31 @@ function ConnectionModal({ connection, onClose, onSaved }) {
 }
 
 /** Inline display of the stored key *prefix* — the full key isn't
- *  retrievable (we only store its SHA-256 hash). Tells the admin which
- *  key is current so they can match it against what they've pasted into
- *  the external app. If they've lost the key, the rotate button issues
- *  a new one (shown once in KeyRevealModal). */
+ *  retrievable (we only store its SHA-256 hash). The copy button copies
+ *  the prefix so the admin can verify which key is current without
+ *  pretending the full key is recoverable. If they've lost the full key,
+ *  the rotate button issues a new one (shown once in KeyRevealModal). */
 function ApiKeyDisplay({ prefix }) {
+  const [copied, setCopied] = useState(false);
+  const copyPrefix = () => {
+    if (!prefix) return;
+    navigator.clipboard.writeText(prefix).then(() => {
+      setCopied(true);
+      toast.success('Prefix copied — useful to identify which key is current.');
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
   return (
     <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mt-2">
       <code className="flex-1 text-xs text-slate-500 font-mono truncate">
         {prefix || '—'}{prefix && '••••••••••••••••••••••••'}
       </code>
-      <span className="text-[10.5px] text-slate-400 flex-shrink-0">stored as hash · rotate to issue a new one</span>
+      <button onClick={copyPrefix} disabled={!prefix}
+        title="Copy prefix"
+        className="text-slate-500 hover:text-slate-800 transition-colors flex-shrink-0 disabled:opacity-40">
+        {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+      </button>
+      <span className="text-[10.5px] text-slate-400 flex-shrink-0 hidden sm:inline">stored as hash · rotate for full key</span>
     </div>
   );
 }
