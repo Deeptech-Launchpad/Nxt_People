@@ -37,11 +37,15 @@ router.post('/', async (req, res) => {
   try {
     const { name, websiteUrl, description, company, allowedDataTypes, isUserApp, appIcon, appColor } = req.body;
     const { raw, hash, prefix } = generateApiKey();
+    // allowed_data_types is JSONB — must be JSON-stringified before passing.
+    // pg-node would otherwise serialize a JS array as a Postgres ARRAY literal
+    // (`{employees}`), which JSONB rejects with "invalid input syntax for type json".
+    const allowedTypesJson = JSON.stringify(allowedDataTypes || ['employees']);
     const result = await pool.query(`
       INSERT INTO api_connections (name, website_url, description, company, allowed_data_types, api_key_hash, api_key_prefix, created_by_id, is_user_app, app_icon, app_color)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11)
       RETURNING ${SELECT_FIELDS.replace(/a\./g, '')}
-    `, [name, websiteUrl, description, company, allowedDataTypes || ['employees'], hash, prefix, req.user._id,
+    `, [name, websiteUrl, description, company, allowedTypesJson, hash, prefix, req.user._id,
         !!isUserApp, appIcon || 'Layers', appColor || 'from-blue-500 to-indigo-600']);
     // Return the raw key ONCE — the server stores only its hash.
     res.status(201).json({ success: true, data: { ...result.rows[0], apiKey: raw }, message: 'Save this key now — it will not be shown again.' });
@@ -51,13 +55,15 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { name, websiteUrl, description, company, allowedDataTypes, isActive, isUserApp, appIcon, appColor } = req.body;
+    // See note in POST — JSONB needs JSON.stringify, not a raw JS array.
+    const allowedTypesJson = allowedDataTypes ? JSON.stringify(allowedDataTypes) : null;
     const result = await pool.query(`
       UPDATE api_connections SET
         name = COALESCE($1, name),
         website_url = COALESCE($2, website_url),
         description = COALESCE($3, description),
         company = COALESCE($4, company),
-        allowed_data_types = COALESCE($5, allowed_data_types),
+        allowed_data_types = COALESCE($5::jsonb, allowed_data_types),
         is_active = COALESCE($6, is_active),
         is_user_app = COALESCE($7, is_user_app),
         app_icon    = COALESCE($8, app_icon),
@@ -65,7 +71,7 @@ router.put('/:id', async (req, res) => {
         updated_at = NOW()
       WHERE id = $10
       RETURNING ${SELECT_FIELDS.replace(/a\./g, '')}
-    `, [name, websiteUrl, description, company, allowedDataTypes, isActive,
+    `, [name, websiteUrl, description, company, allowedTypesJson, isActive,
         isUserApp === undefined ? null : !!isUserApp, appIcon, appColor, req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Connection not found' });
     res.json({ success: true, data: result.rows[0] });
