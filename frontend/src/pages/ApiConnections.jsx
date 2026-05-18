@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import {
-  Globe, Plus, Pencil, Trash2, RefreshCw, Copy, Check, X, Zap,
+  Globe, Plus, Pencil, Trash2, RefreshCw, Copy, Check, Eye, EyeOff, X, Zap,
   Users, Search, Layers, BookOpen, BarChart3, Briefcase, Calendar, Cloud, Cog,
   Database, FileText, Image, Lock, Mail, Map, Phone, Server, Star, Tag,
 } from 'lucide-react';
@@ -169,32 +169,49 @@ function ConnectionModal({ connection, onClose, onSaved }) {
   );
 }
 
-/** Inline display of the stored key *prefix* — the full key isn't
- *  retrievable (we only store its SHA-256 hash). The copy button copies
- *  the prefix so the admin can verify which key is current without
- *  pretending the full key is recoverable. If they've lost the full key,
- *  the rotate button issues a new one (shown once in KeyRevealModal). */
-function ApiKeyDisplay({ prefix }) {
+/** Inline display of the API key. The full key is stored encrypted at
+ *  rest (AES-256-GCM via SHA-256(JWT_SECRET)) so we can decrypt it for
+ *  authorised admins. Eye toggles visibility, copy copies the full key.
+ *  Older connections created before encryption was rolled out won't have
+ *  a value here — admin needs to rotate to issue one. */
+function ApiKeyDisplay({ apiKey, prefix }) {
+  const [show, setShow] = useState(false);
   const [copied, setCopied] = useState(false);
-  const copyPrefix = () => {
-    if (!prefix) return;
-    navigator.clipboard.writeText(prefix).then(() => {
+  const hasFullKey = !!apiKey;
+
+  const copy = () => {
+    const text = hasFullKey ? apiKey : prefix;
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      toast.success('Prefix copied — useful to identify which key is current.');
+      toast.success(hasFullKey ? 'API key copied' : 'Prefix copied — rotate to get the full key.');
       setTimeout(() => setCopied(false), 1500);
     });
   };
+
+  const masked = '••••••••••••••••••••••••••••••••';
   return (
     <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mt-2">
       <code className="flex-1 text-xs text-slate-500 font-mono truncate">
-        {prefix || '—'}{prefix && '••••••••••••••••••••••••'}
+        {hasFullKey
+          ? (show ? apiKey : masked)
+          : (prefix ? `${prefix}${masked.slice(prefix.length)}` : '—')}
       </code>
-      <button onClick={copyPrefix} disabled={!prefix}
-        title="Copy prefix"
+      {hasFullKey && (
+        <button onClick={() => setShow(s => !s)}
+          title={show ? 'Hide' : 'Reveal'}
+          className="text-slate-500 hover:text-slate-800 transition-colors flex-shrink-0">
+          {show ? <EyeOff size={13} /> : <Eye size={13} />}
+        </button>
+      )}
+      <button onClick={copy} disabled={!hasFullKey && !prefix}
+        title={hasFullKey ? 'Copy key' : 'Copy prefix'}
         className="text-slate-500 hover:text-slate-800 transition-colors flex-shrink-0 disabled:opacity-40">
         {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
       </button>
-      <span className="text-[10.5px] text-slate-400 flex-shrink-0 hidden sm:inline">stored as hash · rotate for full key</span>
+      {!hasFullKey && (
+        <span className="text-[10.5px] text-slate-400 flex-shrink-0 hidden sm:inline">rotate to get full key</span>
+      )}
     </div>
   );
 }
@@ -467,7 +484,7 @@ export default function ApiConnections() {
                     )}
                     <div>
                       <p className="text-xs font-medium text-slate-500 mt-3 mb-0.5">API Key</p>
-                      <ApiKeyDisplay prefix={conn.apiKeyPrefix} />
+                      <ApiKeyDisplay apiKey={conn.apiKey} prefix={conn.apiKeyPrefix} />
                     </div>
                   </div>
                 </div>

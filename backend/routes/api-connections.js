@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const crypto = require('crypto');
 const { protect, authorize } = require('../middleware/auth');
+const { encrypt, decrypt } = require('../utils/crypto-vault');
 router.use(protect, authorize('admin'));
 
 // Generate a fresh API key + its SHA-256 hash + a short prefix shown in the UI.
@@ -12,14 +13,25 @@ const generateApiKey = () => {
   return { raw, hash, prefix: raw.slice(0, 8) };
 };
 
-// SELECT clause used everywhere — never exposes the raw api_key.
+// SELECT clause used everywhere. api_key_encrypted is decrypted in JS
+// before being returned to the admin client — never sent over the wire
+// in encrypted form.
 const SELECT_FIELDS = `
   a.id as "_id", a.name, a.website_url as "websiteUrl", a.description,
-  a.api_key_prefix as "apiKeyPrefix",
+  a.api_key_prefix as "apiKeyPrefix", a.api_key_encrypted as "apiKeyEncrypted",
   a.company, a.is_active as "isActive", a.allowed_data_types as "allowedDataTypes",
   a.is_user_app as "isUserApp", a.app_icon as "appIcon", a.app_color as "appColor",
   a.last_sync_at as "lastSyncAt", a.created_at as "createdAt"
 `;
+
+/** Strip api_key_encrypted from a row and replace it with the decrypted
+ *  raw key (or null if this connection predates encryption). The frontend
+ *  only ever sees the plaintext via this helper. */
+function withDecryptedKey(row) {
+  if (!row) return row;
+  const { apiKeyEncrypted, ...rest } = row;
+  return { ...rest, apiKey: decrypt(apiKeyEncrypted) };
+}
 
 router.get('/', async (req, res) => {
   try {
@@ -29,7 +41,8 @@ router.get('/', async (req, res) => {
       FROM api_connections a LEFT JOIN employees e ON a.created_by_id = e.id
       ORDER BY a.created_at DESC
     `);
-    res.json({ success: true, data: result.rows });
+    // Decrypt api_key_encrypted into apiKey before returning to the client.
+    res.json({ success: true, data: result.rows.map(withDecryptedKey) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -37,18 +50,20 @@ router.post('/', async (req, res) => {
   try {
     const { name, websiteUrl, description, company, allowedDataTypes, isUserApp, appIcon, appColor } = req.body;
     const { raw, hash, prefix } = generateApiKey();
+    const encryptedKey = encrypt(raw);
     // allowed_data_types is JSONB — must be JSON-stringified before passing.
     // pg-node would otherwise serialize a JS array as a Postgres ARRAY literal
     // (`{employees}`), which JSONB rejects with "invalid input syntax for type json".
     const allowedTypesJson = JSON.stringify(allowedDataTypes || ['employees']);
     const result = await pool.query(`
-      INSERT INTO api_connections (name, website_url, description, company, allowed_data_types, api_key_hash, api_key_prefix, created_by_id, is_user_app, app_icon, app_color)
-      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11)
+      INSERT INTO api_connections (name, website_url, description, company, allowed_data_types, api_key_hash, api_key_prefix, api_key_encrypted, created_by_id, is_user_app, app_icon, app_color)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)
       RETURNING ${SELECT_FIELDS.replace(/a\./g, '')}
-    `, [name, websiteUrl, description, company, allowedTypesJson, hash, prefix, req.user._id,
+    `, [name, websiteUrl, description, company, allowedTypesJson, hash, prefix, encryptedKey, req.user._id,
         !!isUserApp, appIcon || 'Layers', appColor || 'from-blue-500 to-indigo-600']);
-    // Return the raw key ONCE — the server stores only its hash.
-    res.status(201).json({ success: true, data: { ...result.rows[0], apiKey: raw }, message: 'Save this key now — it will not be shown again.' });
+    // Raw key is also surfaced explicitly so the create-time reveal modal
+    // still works even if the client doesn't read it via decrypt-on-list.
+    res.status(201).json({ success: true, data: { ...withDecryptedKey(result.rows[0]), apiKey: raw }, message: 'Connection created. Key is now revealable on the card.' });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
 });
 
@@ -74,7 +89,7 @@ router.put('/:id', async (req, res) => {
     `, [name, websiteUrl, description, company, allowedTypesJson, isActive,
         isUserApp === undefined ? null : !!isUserApp, appIcon, appColor, req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Connection not found' });
-    res.json({ success: true, data: result.rows[0] });
+    res.json({ success: true, data: withDecryptedKey(result.rows[0]) });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
 });
 
@@ -89,13 +104,16 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/regenerate-key', async (req, res) => {
   try {
     const { raw, hash, prefix } = generateApiKey();
+    const encryptedKey = encrypt(raw);
     const result = await pool.query(
-      `UPDATE api_connections SET api_key_hash = $1, api_key_prefix = $2, updated_at = NOW() WHERE id = $3
+      `UPDATE api_connections
+          SET api_key_hash = $1, api_key_prefix = $2, api_key_encrypted = $3, updated_at = NOW()
+        WHERE id = $4
        RETURNING id as "_id", name, api_key_prefix as "apiKeyPrefix"`,
-      [hash, prefix, req.params.id]
+      [hash, prefix, encryptedKey, req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Connection not found' });
-    res.json({ success: true, data: { ...result.rows[0], apiKey: raw }, message: 'API key regenerated. Save it now — it will not be shown again.' });
+    res.json({ success: true, data: { ...result.rows[0], apiKey: raw }, message: 'API key regenerated.' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

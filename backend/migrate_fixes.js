@@ -961,6 +961,10 @@ const steps = [
   `ALTER TABLE api_connections ADD COLUMN IF NOT EXISTS is_user_app BOOLEAN DEFAULT FALSE`,
   `ALTER TABLE api_connections ADD COLUMN IF NOT EXISTS app_icon VARCHAR(40) DEFAULT 'Layers'`,
   `ALTER TABLE api_connections ADD COLUMN IF NOT EXISTS app_color VARCHAR(60) DEFAULT 'from-blue-500 to-indigo-600'`,
+  // Encrypted copy of the raw API key so admins can reveal/copy it later
+  // via the UI. The SHA-256 hash is kept for fast lookup on external calls.
+  // Encryption uses AES-256-GCM with key = SHA-256(JWT_SECRET).
+  `ALTER TABLE api_connections ADD COLUMN IF NOT EXISTS api_key_encrypted TEXT`,
 
   `CREATE TABLE IF NOT EXISTS application_access (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
