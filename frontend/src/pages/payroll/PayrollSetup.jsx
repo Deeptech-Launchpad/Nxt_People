@@ -10,8 +10,8 @@
  * No payslip generation here — that's Phase 2. This page is only about
  * storing the canonical salary structure per employee.
  */
-import React, { useEffect, useState, useMemo } from 'react';
-import { Search, Pencil, History, X, IndianRupee, Info } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { Search, Pencil, History, X, IndianRupee, Info, Upload, Download, FileSpreadsheet } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 
@@ -344,7 +344,7 @@ export default function PayrollSetup() {
       </div>
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-3">
+      <div className="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-3 flex-wrap gap-3">
         <div className="relative w-72">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -355,9 +355,12 @@ export default function PayrollSetup() {
             className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-[13px] focus:outline-none focus:border-blue-400"
           />
         </div>
-        <p className="text-[11.5px] text-slate-500">
-          Showing {filtered.length} of {employees.length}
-        </p>
+        <div className="flex items-center gap-2">
+          <BulkUpload onDone={load} />
+          <p className="text-[11.5px] text-slate-500 ml-2">
+            Showing {filtered.length} of {employees.length}
+          </p>
+        </div>
       </div>
 
       {/* Table */}
@@ -425,4 +428,88 @@ function StatCard({ label, value, color = 'text-slate-800', small }) {
       <p className={`mt-1 font-bold ${color} ${small ? 'text-[15px]' : 'text-[20px]'}`}>{value}</p>
     </div>
   );
+}
+
+/* ── Bulk salary upload via xlsx ───────────────────────────────────────── */
+function BulkUpload({ onDone }) {
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const downloadTemplate = async () => {
+    try {
+      const url = api.defaults.baseURL + '/payroll/admin/structure-template';
+      const token = localStorage.getItem('nxt_access_token');
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const blob = await r.blob();
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = u; a.download = 'salary_structure_template.xlsx'; a.click();
+      URL.revokeObjectURL(u);
+    } catch { toast.error('Template download failed'); }
+  };
+
+  const handleFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploading(true);
+    setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const r = await api.post('/payroll/admin/bulk-upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setResult(r.data.results);
+      toast.success(`Processed ${r.data.results.processed} rows · ${r.data.results.succeeded} updated`);
+      onDone?.();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <>
+      <button onClick={downloadTemplate}
+        title="Download xlsx template"
+        className="flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold">
+        <Download size={12} /> Template
+      </button>
+      <button onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        title="Upload a filled template — each row updates one employee's structure"
+        className="flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-60">
+        <Upload size={12} /> {uploading ? 'Uploading…' : 'Bulk Upload'}
+      </button>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} className="hidden" />
+      {result && (
+        <div className="absolute z-50 right-6 top-32 bg-white border border-slate-200 rounded-xl shadow-2xl p-4 w-80">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[13px] font-bold text-slate-800 flex items-center gap-2">
+              <FileSpreadsheet size={14} className="text-emerald-600" /> Upload summary
+            </p>
+            <button onClick={() => setResult(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+          </div>
+          <div className="space-y-1 text-[12.5px]">
+            <Line k="Processed"      v={result.processed} />
+            <Line k="Succeeded"      v={result.succeeded} c="text-emerald-700" />
+            <Line k="Not found"      v={result.notFound?.length || 0} c={result.notFound?.length ? 'text-amber-700' : 'text-slate-500'} />
+            <Line k="Errors"         v={result.failed?.length || 0} c={result.failed?.length ? 'text-rose-700' : 'text-slate-500'} />
+          </div>
+          {result.notFound?.length > 0 && (
+            <details className="mt-2 text-[11px] text-slate-500">
+              <summary className="cursor-pointer">Show missing IDs ({result.notFound.length})</summary>
+              <p className="font-mono mt-1 break-words">{result.notFound.join(', ')}</p>
+            </details>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+function Line({ k, v, c = 'text-slate-700' }) {
+  return <div className="flex items-center justify-between"><span className="text-slate-500">{k}</span><span className={`font-bold ${c}`}>{v}</span></div>;
 }

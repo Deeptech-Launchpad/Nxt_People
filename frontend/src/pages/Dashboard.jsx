@@ -661,7 +661,7 @@ export default function Dashboard() {
         <div className="absolute top-4 right-6 flex items-center gap-2">
           {/* Access My Payroll */}
           <button
-            onClick={() => navigate('/payroll')}
+            onClick={() => navigate('/payroll/my')}
             className="bg-white/90 backdrop-blur-sm hover:bg-white text-slate-700 text-[12px] font-semibold px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all shadow-sm border border-white/80"
           >
             <ExternalLink size={12} /> Access my payroll

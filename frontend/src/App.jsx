@@ -32,6 +32,12 @@ const CompOff         = lazy(() => import('./pages/CompOff'));
 const Documents       = lazy(() => import('./pages/Documents'));
 const PayrollReport   = lazy(() => import('./pages/PayrollReport'));
 const PayrollSetup    = lazy(() => import('./pages/payroll/PayrollSetup'));
+const PayrollRun      = lazy(() => import('./pages/payroll/PayrollRun'));
+const MyPayroll       = lazy(() => import('./pages/payroll/MyPayroll'));
+const TeamPayroll     = lazy(() => import('./pages/payroll/TeamPayroll'));
+const TaxDeclaration  = lazy(() => import('./pages/payroll/TaxDeclaration'));
+const DeclarationApprovals = lazy(() => import('./pages/payroll/DeclarationApprovals'));
+const ComplianceReports = lazy(() => import('./pages/payroll/ComplianceReports'));
 const Performance     = lazy(() => import('./pages/Performance'));
 const ExitManagement  = lazy(() => import('./pages/ExitManagement'));
 const ShiftRoster     = lazy(() => import('./pages/ShiftRoster'));
@@ -169,8 +175,14 @@ const AppRoutes = () => {
           {/* ── Reports / Admin ──────────────────────────────────────── */}
           <Route path="reports"          element={<ProtectedRoute roles={['admin','manager']}><Reports/></ProtectedRoute>}/>
           <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','manager']}><DailyAttendance/></ProtectedRoute>}/>
-          <Route path="payroll"        element={<ProtectedRoute roles={['admin','manager']}><PayrollReport/></ProtectedRoute>}/>
-          <Route path="payroll/setup"  element={<ProtectedRoute roles={['admin']}><PayrollSetup/></ProtectedRoute>}/>
+          <Route path="payroll"                element={<ProtectedRoute roles={['admin','manager']}><PayrollReport/></ProtectedRoute>}/>
+          <Route path="payroll/setup"          element={<ProtectedRoute roles={['admin']}><PayrollSetup/></ProtectedRoute>}/>
+          <Route path="payroll/run"            element={<ProtectedRoute roles={['admin']}><PayrollRun/></ProtectedRoute>}/>
+          <Route path="payroll/my"             element={<MyPayroll/>}/>
+          <Route path="payroll/team"           element={<ProtectedRoute roles={['admin','manager']}><TeamPayroll/></ProtectedRoute>}/>
+          <Route path="payroll/tax-declaration" element={<TaxDeclaration/>}/>
+          <Route path="payroll/declarations"   element={<ProtectedRoute roles={['admin']}><DeclarationApprovals/></ProtectedRoute>}/>
+          <Route path="payroll/compliance"     element={<ProtectedRoute roles={['admin']}><ComplianceReports/></ProtectedRoute>}/>
           <Route path="employees"    element={<ProtectedRoute roles={['admin','manager']}><Employees/></ProtectedRoute>}/>
           <Route path="registrations"element={<ProtectedRoute roles={['admin','manager']}><Registrations/></ProtectedRoute>}/>
           <Route path="shifts"       element={<ProtectedRoute roles={['admin']}><Shifts/></ProtectedRoute>}/>
