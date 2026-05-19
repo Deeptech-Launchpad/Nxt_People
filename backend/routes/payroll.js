@@ -1597,6 +1597,36 @@ router.post('/admin/payslips/:id/correct', authorize('admin'),
         `UPDATE payroll_payslips SET superseded_by = $1 WHERE id = $2`,
         [ins.rows[0].id, o.id]
       );
+
+      // Reset compensation claims that were marked 'paid' on the old slip
+      // back to 'approved' so the corrected slip can pull them in cleanly
+      // when it locks. Without this, claims stay stuck 'paid' against the
+      // superseded slip and the new lock skips them — employee loses the
+      // reimbursement entirely.
+      if (Number(o.reimbursement) > 0) {
+        const start = `${o.pay_year}-${String(o.pay_month).padStart(2,'0')}-01`;
+        const end   = new Date(o.pay_year, o.pay_month, 0).toLocaleDateString('en-CA');
+        await client.query(
+          `UPDATE compensation_claims SET status = 'approved'
+             WHERE employee_id = $1 AND status = 'paid'
+               AND claim_date BETWEEN $2::date AND $3::date`,
+          [o.employee_id, start, end]
+        );
+      }
+
+      // Same idea for loan recovery — refund the old recovery so the
+      // corrected slip can apply a fresh amount without double-debiting.
+      if (Number(o.loan_recovery) > 0) {
+        await client.query(
+          `UPDATE payroll_loans
+              SET recovered = GREATEST(0, recovered - $1),
+                  status    = CASE WHEN status = 'closed' THEN 'active' ELSE status END,
+                  closed_at = CASE WHEN status = 'closed' THEN NULL ELSE closed_at END
+            WHERE employee_id = $2 AND status IN ('active','closed')`,
+          [Number(o.loan_recovery), o.employee_id]
+        );
+      }
+
       await client.query('COMMIT');
       res.status(201).json({ success: true, id: ins.rows[0].id, slipNumber: slip });
     } catch (err) {

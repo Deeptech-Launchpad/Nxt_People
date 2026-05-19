@@ -11,6 +11,19 @@ const pool   = require('./db');
 const logger = require('./logger');
 const { isNonWorkingDay } = require('./utils/workingDays');
 
+// Process-level safety nets. Without these, an unhandled promise rejection
+// just prints a deprecation warning (then crashes silently in future Node
+// versions), and an uncaught exception kills the process with no log.
+process.on('unhandledRejection', (reason) => {
+  logger.error({ reason: reason?.message || reason, stack: reason?.stack }, 'Unhandled promise rejection');
+});
+process.on('uncaughtException', (err) => {
+  logger.error({ err: err?.message, stack: err?.stack }, 'Uncaught exception — exiting');
+  // Don't try to keep running after an uncaught exception; the process
+  // state is unpredictable. The Docker restart policy will bring us back.
+  setTimeout(() => process.exit(1), 100);
+});
+
 // Check DB Connection + bootstrap the configured admin user.
 pool.query('SELECT NOW()', async (err) => {
   if (err) { logger.error({ err }, 'PostgreSQL connection failed'); return; }

@@ -43,6 +43,7 @@ export default function Reports() {
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `nxt-people-report-${Date.now()}.csv`; a.click();
+    URL.revokeObjectURL(url);
   };
 
   const fmt = d => d ? new Date(d).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) : '—';

@@ -67,6 +67,13 @@ router.get('/', async (req, res) => {
     let params = [];
     let paramIndex = 1;
 
+    // Managers can only see their direct reports — never the full org.
+    // Admins (and the elevated 'hr' role if used) see everyone.
+    if (req.user.role === 'manager') {
+      query += ` AND e.reporting_manager_id = $${paramIndex++}`;
+      params.push(req.user._id);
+    }
+
     if (department)  { query += ` AND e.department = $${paramIndex++}`;  params.push(department); }
     if (role)        { query += ` AND e.role = $${paramIndex++}`;        params.push(role); }
     if (designation) { query += ` AND e.designation = $${paramIndex++}`; params.push(designation); }

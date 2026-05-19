@@ -102,11 +102,21 @@ router.post('/', authorize('admin'), async (req, res) => {
       [title, body, type, isPinned, pinExpiry, expiresAt || null, req.user._id]
     );
 
-    // Notify every other active employee.
-    const { createNotification } = require('./notifications');
-    const empRes = await pool.query("SELECT id FROM employees WHERE status='active' AND id != $1", [req.user._id]);
-    for (const emp of empRes.rows) {
-      await createNotification(emp.id, 'announcement', 'New Announcement', title, '/');
+    // Notify every other active employee in a single set-based INSERT.
+    // Previous code looped and made N round-trips — at 200+ employees the
+    // request would block for seconds. INSERT ... SELECT scales O(1) round-
+    // trips regardless of headcount. Logger.warn on failure so a notif
+    // glitch doesn't roll back the announcement itself.
+    try {
+      await pool.query(
+        `INSERT INTO notifications (employee_id, type, title, message, link)
+         SELECT id, 'announcement', $1, $2, '/'
+           FROM employees
+          WHERE status = 'active' AND id != $3`,
+        ['New Announcement', title, req.user._id]
+      );
+    } catch (err) {
+      console.warn('[announcements] bulk notification insert failed:', err.message);
     }
 
     res.status(201).json({ success: true, data: result.rows[0] });

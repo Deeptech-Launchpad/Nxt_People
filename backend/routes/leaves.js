@@ -296,7 +296,8 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
         `Your ${leaveLabel} leave from ${startLabel} (${leave.total_days} day${leave.total_days !== 1 ? 's' : ''}) has been approved.`,
         '/leave-tracker/summary'
       );
-      try { await pool.query(`INSERT INTO feeds (employee_id,type,title,body,icon) VALUES ($1,'leave_approved','Leave Approved ✓',$2,'✅')`, [leave.employee_id, `Your ${leaveLabel} leave from ${startLabel} has been approved.`]); } catch (_) {}
+      try { await pool.query(`INSERT INTO feeds (employee_id,type,title,body,icon) VALUES ($1,'leave_approved','Leave Approved ✓',$2,'✅')`, [leave.employee_id, `Your ${leaveLabel} leave from ${startLabel} has been approved.`]); }
+      catch (err) { console.warn('[leaves] feed insert (approved) failed:', err.message); }
       await logAudit(req, { action: 'APPROVE', resource: 'Leave', resourceId: req.params.id, changes: { status: 'approved' } });
       return res.json({ success: true, data: up.rows[0], message: 'Leave approved.' });
     }
@@ -342,7 +343,8 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
         `Your ${leaveLabel} leave from ${startLabel} was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`,
         '/leave-tracker/summary'
       );
-      try { await pool.query(`INSERT INTO feeds (employee_id,type,title,body,icon) VALUES ($1,'leave_rejected','Leave Rejected',$2,'❌')`, [leave.employee_id, `Your ${leaveLabel} leave from ${startLabel} was rejected.`]); } catch (_) {}
+      try { await pool.query(`INSERT INTO feeds (employee_id,type,title,body,icon) VALUES ($1,'leave_rejected','Leave Rejected',$2,'❌')`, [leave.employee_id, `Your ${leaveLabel} leave from ${startLabel} was rejected.`]); }
+      catch (err) { console.warn('[leaves] feed insert (rejected) failed:', err.message); }
       await logAudit(req, { action: 'REJECT', resource: 'Leave', resourceId: req.params.id, changes: { status: 'rejected', rejectionReason } });
       return res.json({ success: true, data: up.rows[0], message: 'Leave rejected.' });
     }

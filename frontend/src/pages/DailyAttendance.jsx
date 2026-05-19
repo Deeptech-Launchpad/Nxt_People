@@ -95,6 +95,7 @@ export default function DailyAttendance() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = `daily-attendance-${date}.csv`; a.click();
+    URL.revokeObjectURL(url);
   };
 
   const PRESENCE_PILL = {

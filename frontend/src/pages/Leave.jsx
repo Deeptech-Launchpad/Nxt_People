@@ -174,11 +174,13 @@ export default function Leave() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1.5">From</label>
-                  <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: e.target.value > form.endDate ? e.target.value : form.endDate })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                  {/* Block past-dated leave requests at the UI level. Local
+                      date in YYYY-MM-DD so the input accepts it directly. */}
+                  <input type="date" value={form.startDate} min={new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: e.target.value > form.endDate ? e.target.value : form.endDate })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1.5">To</label>
-                  <input type="date" value={form.endDate} min={form.startDate} onChange={e => setForm({ ...form, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                  <input type="date" value={form.endDate} min={form.startDate || new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
                 </div>
               </div>
               <div>
