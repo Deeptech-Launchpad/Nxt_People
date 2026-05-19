@@ -63,6 +63,12 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
     const reg = regRes.rows[0];
     if (!reg) { client.release(); return res.status(404).json({ success: false, message: 'Request not found' }); }
 
+    // Block self-approval — managers can't approve their own regularization.
+    if (reg.employee_id === req.user._id && req.user.role !== 'admin') {
+      client.release();
+      return res.status(403).json({ success: false, message: 'You cannot approve or reject your own regularization request.' });
+    }
+
     const status = action === 'approved' ? 'approved' : 'rejected';
 
     await client.query('BEGIN');

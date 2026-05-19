@@ -3,6 +3,29 @@
  * without binding to a port or starting cron jobs).
  */
 require('dotenv').config();
+
+// ── Startup environment validation ──────────────────────────────────
+// Fail loudly at boot instead of producing weird runtime errors later
+// when a required env var is missing. Only enforced in production; in
+// dev / test we let the server boot so missing setup is easy to spot.
+const REQUIRED_ENV = ['JWT_SECRET', 'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
+const RECOMMENDED_ENV = ['EMAIL_USER', 'EMAIL_PASS', 'ADMIN_EMAIL'];
+if (process.env.NODE_ENV === 'production') {
+  const missing = REQUIRED_ENV.filter(k => !process.env[k]);
+  if (missing.length > 0) {
+    console.error(`[FATAL] Missing required env vars in production: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+    console.error('[FATAL] JWT_SECRET must be at least 32 characters in production');
+    process.exit(1);
+  }
+  const missingOpt = RECOMMENDED_ENV.filter(k => !process.env[k]);
+  if (missingOpt.length > 0) {
+    console.warn(`[WARN] Recommended env vars not set: ${missingOpt.join(', ')} — features that depend on them will be disabled.`);
+  }
+}
+
 // Sentry must be imported (and init'd) before anything that might throw.
 const { Sentry, enabled: sentryEnabled } = require('./sentry');
 

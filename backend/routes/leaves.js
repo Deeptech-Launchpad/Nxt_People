@@ -209,8 +209,17 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
     const isAdmin              = req.user.role === 'admin';
     const isReportingAuth      = String(leave.reporting_manager_id) === String(req.user._id);
     const isApprovingAuth      = String(leave.approving_authority_id) === String(req.user._id);
+    const isOwner              = String(leave.employee_id)           === String(req.user._id);
     const leaveLabel           = leave.leave_type.charAt(0).toUpperCase() + leave.leave_type.slice(1);
     const startLabel           = new Date(leave.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+    // Hard guard against self-approval: even if HR mis-configures an employee
+    // as their own reporting_manager_id / approving_authority_id, they
+    // cannot forward / approve / reject their own leave. Only admins (who
+    // are intentionally outside the chain) are exempt.
+    if (isOwner && !isAdmin && (action === 'approved' || action === 'forward' || action === 'rejected')) {
+      return res.status(403).json({ success: false, message: 'You cannot act on your own leave request.' });
+    }
 
     // ── STEP 1: Reporting Authority FORWARDS to Approving Authority ──
     if (action === 'forward') {

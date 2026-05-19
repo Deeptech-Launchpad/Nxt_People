@@ -104,6 +104,15 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
     if (!['approve', 'reject'].includes(action)) {
       return res.status(400).json({ success: false, message: 'action must be approve or reject' });
     }
+
+    // Block self-approval — a manager cannot approve their own claim.
+    // Admins are exempt as the final authority.
+    const own = await pool.query(`SELECT employee_id FROM compensation_claims WHERE id = $1`, [req.params.id]);
+    if (own.rows.length === 0) return res.status(404).json({ success: false, message: 'Claim not found' });
+    if (String(own.rows[0].employee_id) === String(req.user._id) && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'You cannot approve or reject your own claim.' });
+    }
+
     const status = action === 'approve' ? 'approved' : 'rejected';
     const r = await pool.query(
       `UPDATE compensation_claims

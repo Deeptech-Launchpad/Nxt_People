@@ -454,6 +454,11 @@ async function nextSlipNumber(client, month, year) {
  * Returns 0 if no slabs are seeded for this FY/regime (graceful degradation).
  */
 async function computeMonthlyTDS(client, { employeeId, monthlyGrossFull, fy }) {
+  // Input validation — without this a corrupted structure or accidental
+  // Infinity/NaN propagates straight through the slab math and produces a
+  // garbage TDS that ends up on a real payslip. Bail to 0 instead.
+  if (!Number.isFinite(monthlyGrossFull) || monthlyGrossFull <= 0) return 0;
+
   // Pull declaration (if approved). Default = new regime, no exemptions.
   const declRes = await client.query(
     `SELECT regime, hra_annual_rent, section_80c, section_80d, section_80e,
@@ -1428,7 +1433,13 @@ router.put('/admin/declarations/:id/action', authorize('admin'),
 
 function csvEscape(v) {
   if (v === null || v === undefined) return '';
-  const s = String(v);
+  let s = String(v);
+  // Defuse Excel/LibreOffice formula injection. A cell starting with =, +,
+  // -, @, or tab/CR is interpreted as a formula on open — so an employee
+  // named "=cmd|'/c calc'!A0" or a leading "+91…" mobile would execute or
+  // misrender. Prefix a single quote (the OWASP-recommended neutraliser);
+  // it's invisible to most CSV consumers and stops the formula parse.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   if (s.includes('"') || s.includes(',') || s.includes('\n')) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

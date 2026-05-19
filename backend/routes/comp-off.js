@@ -54,6 +54,12 @@ router.put('/:id/action', authorize('admin', 'manager'), audit('ACTION', 'comp_o
     const co = existing.rows[0];
     if (!co) return res.status(404).json({ success: false, message: 'Not found' });
 
+    // Block self-approval — a manager cannot approve their own comp-off.
+    // Admins are exempt because they're the final authority.
+    if (co.employee_id === req.user._id && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'You cannot approve or reject your own comp-off request.' });
+    }
+
     const status = action === 'approved' ? 'approved' : 'rejected';
     await pool.query(
       'UPDATE comp_offs SET status=$1, approved_by=$2, approved_at=NOW(), rejection_reason=$3 WHERE id=$4',
