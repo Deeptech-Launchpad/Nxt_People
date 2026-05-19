@@ -51,30 +51,36 @@ router.post('/', async (req, res) => {
 });
 
 // PUT approve/reject
+// Atomic by design: marking the regularization approved AND patching the
+// attendance row must commit together. Previously two separate pool.query
+// calls — a crash between them left the regularization "approved" while
+// the actual attendance row stayed unchanged, silently losing the fix.
 router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
+  const client = await pool.connect();
   try {
     const { action, rejectionReason } = req.body;
-    const regRes = await pool.query('SELECT * FROM attendance_regularizations WHERE id = $1', [req.params.id]);
+    const regRes = await client.query('SELECT * FROM attendance_regularizations WHERE id = $1', [req.params.id]);
     const reg = regRes.rows[0];
-    if (!reg) return res.status(404).json({ success: false, message: 'Request not found' });
+    if (!reg) { client.release(); return res.status(404).json({ success: false, message: 'Request not found' }); }
 
     const status = action === 'approved' ? 'approved' : 'rejected';
-    await pool.query(
+
+    await client.query('BEGIN');
+    await client.query(
       `UPDATE attendance_regularizations SET status=$1, approved_by=$2, approved_at=NOW(), rejection_reason=$3, updated_at=NOW() WHERE id=$4`,
       [status, req.user._id, rejectionReason || null, req.params.id]
     );
 
-    // If approved, update the actual attendance record
     if (action === 'approved') {
-      const exists = await pool.query('SELECT id FROM attendance WHERE employee_id=$1 AND date=$2', [reg.employee_id, reg.date]);
+      const exists = await client.query('SELECT id FROM attendance WHERE employee_id=$1 AND date=$2', [reg.employee_id, reg.date]);
       if (exists.rows.length > 0) {
-        await pool.query(
+        await client.query(
           `UPDATE attendance SET check_in = CASE WHEN $1::time IS NOT NULL THEN ($2::date + $1::time)::timestamp ELSE check_in END,
            check_out = CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp ELSE check_out END, updated_at=NOW() WHERE employee_id=$4 AND date=$2`,
           [reg.check_in, reg.date, reg.check_out, reg.employee_id]
         );
       } else {
-        await pool.query(
+        await client.query(
           `INSERT INTO attendance (employee_id, date, check_in, check_out, status) VALUES ($1,$2,
            CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp END,
            CASE WHEN $4::time IS NOT NULL THEN ($2::date + $4::time)::timestamp END, 'present')`,
@@ -82,7 +88,10 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
         );
       }
     }
+    await client.query('COMMIT');
 
+    // Soft side-effect outside the txn — notification glitch shouldn't undo
+    // a successful approval.
     const notifTitle = action === 'approved' ? 'Regularization Approved ✓' : 'Regularization Rejected';
     const notifMsg = action === 'approved'
       ? `Your attendance regularization for ${new Date(reg.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} has been approved.`
@@ -90,7 +99,12 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
     await createNotification(reg.employee_id, 'info', notifTitle, notifMsg, '/attendance/my');
 
     res.json({ success: true, message: `Regularization ${action}` });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
 });
 
 module.exports = router;

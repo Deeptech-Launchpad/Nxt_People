@@ -930,6 +930,13 @@ const steps = [
   // - bonus / overtime / other_adjustment: sum of payroll_adjustments
   // - email_sent_at: when the notification went out (idempotent re-send)
   `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS slip_number VARCHAR(30)`,
+  // Race-protect slip number generation. nextSlipNumber() reads MAX+1
+  // then INSERTs; two simultaneous callers could pick the same number.
+  // A unique index makes Postgres reject the dupe so the caller (already
+  // inside a try/catch) can retry. WHERE clause lets old NULL rows
+  // coexist during rollout — they'll be backfilled / aged out naturally.
+  `CREATE UNIQUE INDEX IF NOT EXISTS uniq_payslip_slip_number
+     ON payroll_payslips (slip_number) WHERE slip_number IS NOT NULL`,
   `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS supersedes UUID REFERENCES payroll_payslips(id)`,
   `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS superseded_by UUID REFERENCES payroll_payslips(id)`,
   `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS approved_by_manager_id UUID REFERENCES employees(id)`,
