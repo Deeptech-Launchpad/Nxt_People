@@ -165,7 +165,7 @@ const NAV = {
     },
   },
   employeemaster: {
-    label: 'Employee Master',
+    label: 'Employees',
     primaryTabs: [
       { key: 'employees', label: 'Employees', to: '/employees' },
       { key: 'registrations', label: 'Registrations', to: '/registrations' },

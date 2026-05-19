@@ -84,7 +84,7 @@ export default function Sidebar() {
                     <div className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isEmpActive ? 'bg-[#1a73e8] text-white shadow-lg' : 'text-white/70 group-hover:text-white group-hover:bg-white/10'}`}>
                       <Users size={18} strokeWidth={isEmpActive ? 2 : 1.6}/>
                     </div>
-                    <span style={labelStyle} className={isEmpActive ? 'text-white' : 'text-white/70 group-hover:text-white'}>Employee<br/>Master</span>
+                    <span style={labelStyle} className={isEmpActive ? 'text-white' : 'text-white/70 group-hover:text-white'}>Employees</span>
                   </>
                 );
               }}
