@@ -240,29 +240,49 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
       if (!isAdmin && leave.status !== 'pending_approval')
         return res.status(400).json({ success: false, message: 'Leave must be forwarded by the Reporting Authority first.' });
 
-      if (leave.leave_type !== 'unpaid') {
-        const col = LEAVE_BALANCE_COLUMN[leave.leave_type];
-        // Hard whitelist guard before interpolating into SQL. Without this,
-        // a future change that lets `leave.leave_type` carry arbitrary text
-        // could turn the line below into an injection sink.
-        if (col && VALID_BALANCE_COLUMNS.has(col)) {
-          await pool.query(`UPDATE employees SET ${col}=GREATEST(0,${col}-$1) WHERE id=$2`, [leave.total_days, leave.employee_id]);
-        }
-        try {
-          const year = new Date(leave.start_date).getFullYear();
-          const ltRes = await pool.query(`SELECT id FROM leave_types WHERE code=$1`, [leave.leave_type]);
-          if (ltRes.rows[0]) await pool.query(
-            `UPDATE leave_balances SET booked=booked+$1 WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
-            [leave.total_days, leave.employee_id, ltRes.rows[0].id, year]
-          );
-        } catch (_) {}
-      }
+      // ── Atomic balance + status update ───────────────────────────
+      // Three mutations move together: legacy column balance, leave_balances
+      // booked counter, leaves.status. If any fails mid-way the user would
+      // either lose days without getting their leave, or get it without
+      // their balance debited. Wrap in a single transaction so it's
+      // either all-or-nothing.
+      const client = await pool.connect();
+      let up;
+      try {
+        await client.query('BEGIN');
 
-      const up = await pool.query(
-        `UPDATE leaves SET status='approved', approved_by=$1, approved_at=NOW(), updated_at=NOW()
-         WHERE id=$2 RETURNING id as "_id", status, leave_type as "leaveType", start_date as "startDate", end_date as "endDate", total_days as "totalDays"`,
-        [req.user._id, req.params.id]
-      );
+        if (leave.leave_type !== 'unpaid') {
+          const col = LEAVE_BALANCE_COLUMN[leave.leave_type];
+          // Hard whitelist guard before interpolating into SQL.
+          if (col && VALID_BALANCE_COLUMNS.has(col)) {
+            await client.query(`UPDATE employees SET ${col}=GREATEST(0,${col}-$1) WHERE id=$2`, [leave.total_days, leave.employee_id]);
+          }
+          const year = new Date(leave.start_date).getFullYear();
+          const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [leave.leave_type]);
+          if (ltRes.rows[0]) {
+            await client.query(
+              `UPDATE leave_balances SET booked=booked+$1 WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
+              [leave.total_days, leave.employee_id, ltRes.rows[0].id, year]
+            );
+          }
+        }
+
+        up = await client.query(
+          `UPDATE leaves SET status='approved', approved_by=$1, approved_at=NOW(), updated_at=NOW()
+           WHERE id=$2 RETURNING id as "_id", status, leave_type as "leaveType", start_date as "startDate", end_date as "endDate", total_days as "totalDays"`,
+          [req.user._id, req.params.id]
+        );
+
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        client.release();
+        throw err;
+      }
+      client.release();
+
+      // Soft side-effects — kept outside the txn so a notif/feed glitch
+      // doesn't roll back a successful approval. Each is independently safe.
       await createNotification(leave.employee_id, 'leave', 'Leave Approved ✓',
         `Your ${leaveLabel} leave from ${startLabel} (${leave.total_days} day${leave.total_days !== 1 ? 's' : ''}) has been approved.`,
         '/leave-tracker/summary'
@@ -277,22 +297,38 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
       if (!isReportingAuth && !isApprovingAuth && !isAdmin)
         return res.status(403).json({ success: false, message: 'You are not authorized to reject this leave.' });
 
-      if (leave.leave_type !== 'unpaid') {
-        try {
-          const year = new Date(leave.start_date).getFullYear();
-          const ltRes = await pool.query(`SELECT id FROM leave_types WHERE code=$1`, [leave.leave_type]);
-          if (ltRes.rows[0]) await pool.query(
-            `UPDATE leave_balances SET available=available+$1 WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
-            [leave.total_days, leave.employee_id, ltRes.rows[0].id, year]
-          );
-        } catch (_) {}
-      }
+      // Same all-or-nothing rule on rejection: balance refund + status
+      // update must succeed together so we don't double-credit a leave.
+      const client = await pool.connect();
+      let up;
+      try {
+        await client.query('BEGIN');
 
-      const up = await pool.query(
-        `UPDATE leaves SET status='rejected', approved_by=$1, approved_at=NOW(), rejection_reason=$2, updated_at=NOW()
-         WHERE id=$3 RETURNING id as "_id", status, leave_type as "leaveType"`,
-        [req.user._id, rejectionReason || null, req.params.id]
-      );
+        if (leave.leave_type !== 'unpaid') {
+          const year = new Date(leave.start_date).getFullYear();
+          const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [leave.leave_type]);
+          if (ltRes.rows[0]) {
+            await client.query(
+              `UPDATE leave_balances SET available=available+$1 WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
+              [leave.total_days, leave.employee_id, ltRes.rows[0].id, year]
+            );
+          }
+        }
+
+        up = await client.query(
+          `UPDATE leaves SET status='rejected', approved_by=$1, approved_at=NOW(), rejection_reason=$2, updated_at=NOW()
+           WHERE id=$3 RETURNING id as "_id", status, leave_type as "leaveType"`,
+          [req.user._id, rejectionReason || null, req.params.id]
+        );
+
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        client.release();
+        throw err;
+      }
+      client.release();
+
       await createNotification(leave.employee_id, 'leave', 'Leave Rejected',
         `Your ${leaveLabel} leave from ${startLabel} was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`,
         '/leave-tracker/summary'

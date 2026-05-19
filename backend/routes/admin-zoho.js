@@ -258,23 +258,28 @@ async function upsertEmployee(client, mapped) {
 }
 
 /* ── POST /api/admin/zoho-sync ───────────────────────────────────────────── */
-router.post('/zoho-sync', async (req, res) => {
+/**
+ * Run the Zoho People → NxtPeople employee sync once. Extracted from the
+ * route handler so the cron in server.js (and any future scheduled job)
+ * can invoke it directly without going through HTTP. Returns the stats
+ * object; throws on hard failure.
+ *
+ * @param {string|null} initiatedBy  — the admin id (if user-triggered) or
+ *   'cron' (if scheduled). Only used for log correlation.
+ */
+async function runEmployeeSync(initiatedBy = 'cron') {
   const stats = { inserted: 0, updated: 0, skipped: 0, managersResolved: 0, secondaryManagersResolved: 0, errors: [] };
-  const managerLinks = [];          // [{ employeeEmail, managerEmail }]
-  const secondaryManagerLinks = []; // [{ employeeEmail, managerEmail }]
+  const managerLinks = [];
+  const secondaryManagerLinks = [];
 
   const client = await pool.connect();
   try {
-    logger.info({ initiatedBy: req.user._id }, 'Zoho sync started');
+    logger.info({ initiatedBy }, 'Zoho sync started');
 
-    // ── Pass 1 — upsert every employee + their tabularSections children ─
     for await (const rec of iterateEmployees()) {
       const mapped = mapEmployee(rec);
       if (!mapped) { stats.skipped++; continue; }
 
-      // Pull tabularSections data BEFORE upsert so we can fill emergency
-      // contact fields from family rows when Zoho doesn't provide them at
-      // the top level.
       const tabular = parseTabularSections(rec);
       if (tabular.emergency) {
         mapped.emergencyContactName     = mapped.emergencyContactName     || tabular.emergency.name;
@@ -286,17 +291,9 @@ router.post('/zoho-sync', async (req, res) => {
         const op = await upsertEmployee(client, mapped);
         stats[op]++;
 
-        // Resolve the new employee id so we can attach education / history rows.
-        const idRow = await client.query(
-          `SELECT id FROM employees WHERE LOWER(email) = $1`,
-          [mapped.email]
-        );
+        const idRow = await client.query(`SELECT id FROM employees WHERE LOWER(email) = $1`, [mapped.email]);
         const empId = idRow.rows[0]?.id;
 
-        // Replace-on-sync: insert missing rows only (never overwrites manual edits).
-        // Education rows go to employee_education. Explicit ::type casts on
-        // every param so Postgres doesn't trip when a row has NULL values
-        // ("inconsistent types deduced for parameter $N").
         if (empId && tabular.education.length > 0) {
           for (const ed of tabular.education) {
             await client.query(
@@ -316,7 +313,6 @@ router.post('/zoho-sync', async (req, res) => {
             );
           }
         }
-        // Previous employment rows.
         if (empId && tabular.prevEmployment.length > 0) {
           for (const pe of tabular.prevEmployment) {
             await client.query(
@@ -334,54 +330,48 @@ router.post('/zoho-sync', async (req, res) => {
           }
         }
 
-        if (mapped.reportsToEmail) {
-          managerLinks.push({
-            employeeEmail: mapped.email,
-            managerEmail:  mapped.reportsToEmail,
-          });
-        }
-        if (mapped.secondaryReportsToEmail) {
-          secondaryManagerLinks.push({
-            employeeEmail: mapped.email,
-            managerEmail:  mapped.secondaryReportsToEmail,
-          });
-        }
+        if (mapped.reportsToEmail)            managerLinks.push({ employeeEmail: mapped.email, managerEmail: mapped.reportsToEmail });
+        if (mapped.secondaryReportsToEmail)   secondaryManagerLinks.push({ employeeEmail: mapped.email, managerEmail: mapped.secondaryReportsToEmail });
       } catch (err) {
         stats.errors.push({ email: mapped.email, message: err.message });
       }
     }
 
-    // ── Pass 2 — resolve manager links once everyone exists ──────────────
     for (const link of managerLinks) {
       const r = await client.query(
-        `UPDATE employees e
-            SET reporting_manager_id = m.id, updated_at = NOW()
-           FROM employees m
-          WHERE LOWER(e.email) = $1 AND LOWER(m.email) = $2`,
+        `UPDATE employees e SET reporting_manager_id = m.id, updated_at = NOW()
+           FROM employees m WHERE LOWER(e.email) = $1 AND LOWER(m.email) = $2`,
         [link.employeeEmail, link.managerEmail]
       );
       if (r.rowCount > 0) stats.managersResolved++;
     }
     for (const link of secondaryManagerLinks) {
       const r = await client.query(
-        `UPDATE employees e
-            SET secondary_manager_id = m.id, updated_at = NOW()
-           FROM employees m
-          WHERE LOWER(e.email) = $1 AND LOWER(m.email) = $2`,
+        `UPDATE employees e SET secondary_manager_id = m.id, updated_at = NOW()
+           FROM employees m WHERE LOWER(e.email) = $1 AND LOWER(m.email) = $2`,
         [link.employeeEmail, link.managerEmail]
       );
       if (r.rowCount > 0) stats.secondaryManagersResolved++;
     }
 
     logger.info({ stats }, 'Zoho sync complete');
-    res.json({ success: true, stats });
-  } catch (err) {
-    logger.error({ err }, 'Zoho sync failed');
-    res.status(500).json({ success: false, message: err.message, stats });
+    return stats;
   } finally {
     client.release();
   }
+}
+
+router.post('/zoho-sync', async (req, res) => {
+  try {
+    const stats = await runEmployeeSync(req.user._id);
+    res.json({ success: true, stats });
+  } catch (err) {
+    logger.error({ err }, 'Zoho sync failed');
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
+
+// Old in-route implementation removed — see runEmployeeSync() above.
 
 // ───────────────────────────────────────────────────────────────────────────
 // Phase 2 — Payroll sync. Pulls bank account / IFSC / CTC from the Zoho
@@ -555,4 +545,7 @@ router.post('/zoho-sync-documents', async (req, res) => {
   }
 });
 
+// Expose the sync function so server.js / cron jobs can run it without
+// going through HTTP. Default export stays the router for app.js mounting.
 module.exports = router;
+module.exports.runEmployeeSync = runEmployeeSync;

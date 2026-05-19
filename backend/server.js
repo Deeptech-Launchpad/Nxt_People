@@ -309,5 +309,22 @@ cron.schedule('30 0 1 * *', async () => {
   }
 });
 
+// 8. Nightly Zoho People sync (runs daily at 02:30 — quiet hours).
+//    Re-uses the same runEmployeeSync() function the admin's manual
+//    "Sync Now" button calls, so behaviour is identical. Disabled if
+//    ZOHO_REFRESH_TOKEN isn't set (org doesn't have Zoho integration).
+cron.schedule('30 2 * * *', async () => {
+  if (!process.env.ZOHO_REFRESH_TOKEN) return;
+  try {
+    const { runEmployeeSync } = require('./routes/admin-zoho');
+    if (typeof runEmployeeSync !== 'function') return;
+    logger.info('Running nightly Zoho employee sync');
+    const stats = await runEmployeeSync('cron');
+    logger.info({ stats }, 'Nightly Zoho sync complete');
+  } catch (err) {
+    logger.error({ err }, 'Nightly Zoho sync failed');
+  }
+});
+
 module.exports = app;
 

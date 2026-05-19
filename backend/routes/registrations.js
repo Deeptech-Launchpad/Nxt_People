@@ -34,7 +34,29 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + path.extname(file.originalname))
   }
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB max
+// 5 MB per file, plus an explicit field whitelist so a malicious client
+// can't post 10,000 files under unknown field names. Field names map to
+// the FIELD_TO_TYPE table below; keep the two in sync.
+const UPLOAD_FIELDS = [
+  { name: 'aadhaarCard',        maxCount: 1 },
+  { name: 'panCard',            maxCount: 1 },
+  { name: 'tenthCertificate',   maxCount: 2 }, // marksheet + certificate
+  { name: 'twelfthCertificate', maxCount: 2 },
+  { name: 'ugCertificate',      maxCount: 4 }, // each year + degree
+  { name: 'pgCertificate',      maxCount: 4 },
+  { name: 'experienceLetters',  maxCount: 5 }, // multiple prior employers
+  { name: 'resume',             maxCount: 1 },
+  { name: 'passportPhoto',      maxCount: 1 },
+  { name: 'addressProof',       maxCount: 2 },
+  { name: 'offerLetter',        maxCount: 1 },
+];
+const upload = multer({
+  storage,
+  limits: {
+    fileSize:  5 * 1024 * 1024,   // 5 MB per file
+    files:     30,                 // hard upper bound across all fields
+  },
+});
 
 // ---------------------------------------------------------------------------
 // PUBLIC ROUTES
@@ -66,19 +88,26 @@ router.get('/validate-token/:token', async (req, res) => {
   }
 });
 
-router.post('/submit/:token', upload.any(), async (req, res) => {
+router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => {
+  // Use a dedicated client for the whole transaction. The previous code
+  // used pool.query('BEGIN') which can land BEGIN/COMMIT/ROLLBACK on
+  // different physical connections under pool churn — silently breaking
+  // atomicity. Single-client guarantees all statements share one txn.
+  const client = await pool.connect();
   try {
     const { token } = req.params;
-    
+
     // Validate token again
-    const tokenRes = await pool.query(
+    const tokenRes = await client.query(
       'SELECT id, email, expires_at, used FROM onboarding_tokens WHERE token = $1',
       [token]
     );
 
-    if (tokenRes.rows.length === 0) return res.status(400).json({ success: false, message: 'Invalid token.' });
-    if (tokenRes.rows[0].used) return res.status(410).json({ success: false, message: 'Link already used.' });
-    if (new Date() > new Date(tokenRes.rows[0].expires_at)) return res.status(410).json({ success: false, message: 'Link expired.' });
+    if (tokenRes.rows.length === 0)              { client.release(); return res.status(400).json({ success: false, message: 'Invalid token.' }); }
+    if (tokenRes.rows[0].used)                   { client.release(); return res.status(410).json({ success: false, message: 'Link already used.' }); }
+    if (new Date() > new Date(tokenRes.rows[0].expires_at)) {
+      client.release(); return res.status(410).json({ success: false, message: 'Link expired.' });
+    }
 
     const {
       firstName, lastName, gender, dateOfBirth, maritalStatus,
@@ -90,11 +119,10 @@ router.post('/submit/:token', upload.any(), async (req, res) => {
       education // JSON string
     } = req.body;
 
-    // Start transaction
-    await pool.query('BEGIN');
+    await client.query('BEGIN');
 
     // Insert into employees table
-    const empInsert = await pool.query(`
+    const empInsert = await client.query(`
       INSERT INTO employees (
         first_name, last_name, email, phone, gender, date_of_birth, marital_status, blood_group,
         alternate_mobile, current_address, permanent_address, city, state, country, pin_code,
@@ -117,13 +145,11 @@ router.post('/submit/:token', upload.any(), async (req, res) => {
 
     const employeeId = empInsert.rows[0].id;
 
-    // Insert education records. `degree` (e.g. B.Tech) and `course`
-    // (e.g. AI & Data Science) were both being silently dropped before —
-    // schema and SQL now include them.
+    // Insert education records.
     if (education) {
       const eduArray = JSON.parse(education);
       for (let ed of eduArray) {
-        await pool.query(`
+        await client.query(`
           INSERT INTO employee_education (
             employee_id, highest_qualification, degree, course,
             university_or_institution, year_of_passing, percentage_or_cgpa, certifications
@@ -135,19 +161,9 @@ router.post('/submit/:token', upload.any(), async (req, res) => {
       }
     }
 
-    // Process files. Write to BOTH the legacy columns (document_type / file_path /
-    // original_name / mime_type / size) AND the modern columns (name / type /
-    // file_url / file_size / uploaded_by / created_at) so the same row is visible
-    // to the admin Employees view (reads legacy) AND the self-service /documents
-    // page (reads modern). Without this, candidates' onboarding uploads only
-    // appeared in the admin view.
-    //
-    // The onboarding form posts files under fieldnames like "aadhaarCard",
-    // "tenthCertificate", etc. The self-service page groups by a canonical
-    // type taxonomy (id_proof / educational / experience / ...), so we map
-    // the raw fieldname → canonical type for the `type` column. The legacy
-    // `document_type` column keeps the raw fieldname so existing admin views
-    // (which display "aadhaarCard" verbatim) don't change.
+    // Map raw form fieldname → canonical document type so the same row
+    // is visible to BOTH the admin employees view (reads legacy
+    // `document_type`) AND the self-service /documents page (reads `type`).
     const FIELD_TO_TYPE = {
       aadhaarCard:        'id_proof',
       panCard:            'id_proof',
@@ -161,38 +177,42 @@ router.post('/submit/:token', upload.any(), async (req, res) => {
       addressProof:       'address_proof',
       offerLetter:        'offer_letter',
     };
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        const fileUrl  = `/uploads/${file.filename}`;
-        const docType  = FIELD_TO_TYPE[file.fieldname] || 'other';
-        await pool.query(`
-          INSERT INTO employee_documents (
-            employee_id,
-            document_type, file_path, original_name, mime_type, size,
-            name, type, file_url, file_size, uploaded_by
-          ) VALUES ($1, $2, $3, $4, $5, $6, $4, $7, $8, $6, $1)
-        `, [
-          employeeId,
-          file.fieldname,            // $2 → document_type (legacy, raw form fieldname)
-          fileUrl,                   // $3 → file_path (full /uploads/... URL)
-          file.originalname,         // $4 → original_name AND name
-          file.mimetype,             // $5 → mime_type
-          file.size,                 // $6 → size AND file_size
-          docType,                   // $7 → type (canonical taxonomy)
-          fileUrl,                   // $8 → file_url
-        ]);
-      }
+
+    // upload.fields() puts files in req.files keyed by fieldname.
+    // Flatten back to a list and insert each.
+    const filesFlat = Object.values(req.files || {}).flat();
+    for (const file of filesFlat) {
+      const fileUrl = `/uploads/${file.filename}`;
+      const docType = FIELD_TO_TYPE[file.fieldname] || 'other';
+      await client.query(`
+        INSERT INTO employee_documents (
+          employee_id,
+          document_type, file_path, original_name, mime_type, size,
+          name, type, file_url, file_size, uploaded_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $4, $7, $8, $6, $1)
+      `, [
+        employeeId,
+        file.fieldname,
+        fileUrl,
+        file.originalname,
+        file.mimetype,
+        file.size,
+        docType,
+        fileUrl,
+      ]);
     }
 
     // Mark token as used
-    await pool.query('UPDATE onboarding_tokens SET used = true WHERE id = $1', [tokenRes.rows[0].id]);
+    await client.query('UPDATE onboarding_tokens SET used = true WHERE id = $1', [tokenRes.rows[0].id]);
 
-    await pool.query('COMMIT');
+    await client.query('COMMIT');
 
     res.json({ success: true, message: 'Submitted successfully. HR will review and contact you.' });
   } catch (err) {
-    await pool.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
   }
 });
 
