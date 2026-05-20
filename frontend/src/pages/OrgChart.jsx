@@ -185,9 +185,9 @@ const LINE_COLOR   = '#DCDCDC';   // gray — the bulk of the tree
 const ACTIVE_COLOR = '#0088FF';   // blue — the "active branch" hook
 const CARD_PITCH   = 70;          // full card: 58px + gap-3 (12px)
 const CARD_HALF    = 29;          // centerline of a full card
-const MINI_PITCH   = 48;          // mini card: 40px + gap-2 (8px)
+const MINI_PITCH   = 60;          // mini card: 40px + 20px gap
 const MINI_HALF    = 20;          // centerline of a mini card
-const MINI_GAP     = 8;           // gap-2 between mini cards
+const MINI_GAP     = 20;          // breathing room between mini cards
 const FULL_GAP     = 12;          // gap-3 between full cards
 // Connector geometry. COL_GAP and HOOK_LEN must be equal so the parent
 // hook exactly bridges the gap from the previous column's right edge to
@@ -333,10 +333,16 @@ export default function OrgChart() {
   };
 
   /* ── Build the visible columns from the expanded path ────────────────── */
+  // Stop adding columns the moment we hit a leaf with no children — Zoho
+  // simply doesn't render an empty "No reports" column at the end. This
+  // also keeps the column count tight so the "last 2 full" rule resolves
+  // the right columns to full cards.
   const columns = [];
   columns.push(roots.filter(filterMatch));
   for (const selId of selectedPath) {
-    columns.push((childrenOf[selId] || []).filter(filterMatch));
+    const kids = (childrenOf[selId] || []).filter(filterMatch);
+    if (kids.length === 0) break;
+    columns.push(kids);
   }
   const expandedIds = new Set(selectedPath);
 
