@@ -173,23 +173,50 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
 }
 
 /* ── Floating popup shown when a card is clicked ───────────────────────── */
-/* ── Column of children with vertical + horizontal connectors.
-   Lines use a softer slate-blue (#94a3b8) so the live BLUE highlight on
-   the active card stands out — matches Zoho's muted-grey tree lines. */
+/* ── Column of children with parent-aware connectors.
+   The vertical line spans from the FIRST child's Y down to the PARENT's
+   Y position in the previous column, and a horizontal hook extends LEFT
+   from that point back toward the parent. Visually the line now clearly
+   originates at the expanded card's row — matching Zoho. */
 const LINE_COLOR = '#94a3b8';
-function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onToggle, onHoverChange }) {
+const CARD_PITCH = 70;   // card height (~58px) + gap-3 (12px)
+const CARD_HALF  = 29;   // half of card height — where the centerline sits
+const HOOK_LEN   = 24;   // horizontal segment length
+
+function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onToggle, onHoverChange, parentIndex = 0 }) {
+  // Y of each child's centerline (children always start at top of column).
+  const firstChildY = CARD_HALF;
+  const lastChildY  = (children.length - 1) * CARD_PITCH + CARD_HALF;
+  // Y of the parent's centerline in the previous column (assuming the
+  // previous column also stacks full-size cards on the same pitch).
+  const parentY     = parentIndex * CARD_PITCH + CARD_HALF;
+  // Vertical line range — must cover BOTH the parent and every child so
+  // the geometry visually closes.
+  const lineTop     = Math.min(parentY, firstChildY);
+  const lineBottom  = Math.max(parentY, lastChildY);
+
   return (
-    <div className="relative pl-6 flex flex-col gap-3">
-      <div className="absolute top-0 bottom-0 left-0" style={{ width: 1, background: LINE_COLOR }} />
+    <div className="relative flex flex-col gap-3" style={{ paddingLeft: HOOK_LEN }}>
+      {/* Vertical connector — exactly tall enough to reach both ends */}
+      <div className="absolute" style={{
+        left: 0, top: lineTop, height: lineBottom - lineTop,
+        width: 1, background: LINE_COLOR,
+      }} />
+      {/* Hook back toward the parent at the parent's Y. Extends LEFT into
+          the gap between columns so the line visibly originates from the
+          expanded card. */}
+      <div className="absolute" style={{
+        left: -HOOK_LEN, top: parentY, width: HOOK_LEN, height: 1,
+        background: LINE_COLOR,
+      }} />
+      {/* Children: each card has a horizontal branch from the vertical
+          line into its own left edge. */}
       {children.map(emp => (
         <div key={emp._id} className="relative">
-          <div
-            className="absolute"
-            style={{
-              left: -24, top: '50%', width: 24, height: 1,
-              background: LINE_COLOR, transform: 'translateY(-50%)',
-            }}
-          />
+          <div className="absolute" style={{
+            left: -HOOK_LEN, top: '50%', width: HOOK_LEN, height: 1,
+            background: LINE_COLOR, transform: 'translateY(-50%)',
+          }} />
           <EmployeeCard
             emp={emp}
             isExpanded={expandedIds.has(emp._id)}
@@ -377,9 +404,14 @@ export default function OrgChart() {
             {columns.map((colEmps, depth) => {
               // Ancestor compression: once the tree is 3+ columns deep,
               // every column except the last TWO collapses to mini cards.
-              // Keeps the right edge readable on narrow screens.
               const isAncestor = columns.length >= 3 && depth < columns.length - 2;
               const isRoot     = depth === 0;
+              // Parent index in the previous column — drives the connector
+              // hook's vertical position so the line visibly originates at
+              // the expanded card's row.
+              const parentIndex = depth > 0
+                ? Math.max(0, columns[depth - 1].findIndex(e => e._id === selectedPath[depth - 1]))
+                : 0;
 
               return (
                 <React.Fragment key={depth}>
@@ -428,6 +460,7 @@ export default function OrgChart() {
                         expandedIds={expandedIds}
                         subtreeSize={subtreeSize}
                         childrenOf={childrenOf}
+                        parentIndex={parentIndex}
                         onToggle={(empId) => handleToggle(depth, empId)}
                         onHoverChange={setHovered}
                       />
