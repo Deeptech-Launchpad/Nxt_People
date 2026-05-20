@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Building2, Clock, Calendar, Shield, MapPin, RefreshCw, TrendingUp, Repeat } from 'lucide-react';
+import { Save, Building2, Clock, Calendar, Shield, MapPin, RefreshCw, TrendingUp, Repeat, Wallet } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import WeekendRulesEditor from '../components/WeekendRulesEditor';
@@ -41,6 +41,7 @@ export default function Settings() {
     { id: 'accrual', label: 'Leave Accrual', icon: TrendingUp },
     { id: 'weekends', label: 'Weekends', icon: Repeat },
     { id: 'gps', label: 'GPS & Location', icon: MapPin },
+    { id: 'payroll', label: 'Payroll', icon: Wallet },
     { id: 'security', label: 'Security', icon: Shield },
   ];
 
@@ -218,6 +219,33 @@ export default function Settings() {
                 </div>
                 <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-700">
                   📍 Tip: Use Google Maps to find your office coordinates. Right-click your office → "What's here?" to copy lat/lng.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'payroll' && (
+            <div>
+              <h3 className="font-display font-semibold text-slate-800 mb-1">Payroll Controls</h3>
+              <p className="text-slate-400 text-sm mb-5">Org-wide policies that govern how payroll runs and locks.</p>
+              <div className="space-y-5 max-w-md">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings?.requireManagerApprovalBeforeLock || false}
+                    onChange={e => setSettings({ ...settings, requireManagerApprovalBeforeLock: e.target.checked })}
+                    className="w-4 h-4 mt-0.5 rounded accent-brand-600"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">Require manager approval before lock</p>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                      When ON, an admin cannot lock a payslip until the employee's reporting manager has reviewed
+                      and approved it. Adds a two-eyes guarantee to monthly payroll. When OFF (default), admin can lock without manager sign-off.
+                    </p>
+                  </div>
+                </label>
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700 leading-relaxed">
+                  💡 Locking sends the employee their payslip PDF over email AND marks compensation claims as paid + applies loan recovery. Once locked, only a correction (supersede) can change the slip — turn this on if you want a second pair of eyes before that becomes irreversible.
                 </div>
               </div>
             </div>

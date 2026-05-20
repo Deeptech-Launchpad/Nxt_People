@@ -24,7 +24,8 @@ const SELECT_COLS = `
   office_latitude as "officeLatitude",
   office_longitude as "officeLongitude",
   gps_radius_meters as "gpsRadiusMeters",
-  require_gps as "requireGps"
+  require_gps as "requireGps",
+  require_manager_approval_before_lock as "requireManagerApprovalBeforeLock"
 `;
 
 router.get('/', async (req, res) => {
@@ -46,7 +47,8 @@ router.put('/', authorize('admin'), async (req, res) => {
       lateAfterMinutes, halfDayHours, allowRemoteCheckIn,
       leavePolicy,
       leaveAccrualEnabled, casualAccrualPerMonth, sickAccrualPerMonth, earnedAccrualPerMonth,
-      officeLatitude, officeLongitude, gpsRadiusMeters, requireGps
+      officeLatitude, officeLongitude, gpsRadiusMeters, requireGps,
+      requireManagerApprovalBeforeLock
     } = req.body;
 
     let result = await pool.query('SELECT id FROM settings LIMIT 1');
@@ -76,8 +78,9 @@ router.put('/', authorize('admin'), async (req, res) => {
         office_longitude = $16,
         gps_radius_meters = COALESCE($17, gps_radius_meters),
         require_gps = COALESCE($18, require_gps),
+        require_manager_approval_before_lock = COALESCE($19, require_manager_approval_before_lock),
         updated_at = NOW()
-      WHERE id = $19
+      WHERE id = $20
       RETURNING ${SELECT_COLS}
     `, [
       companyName, companyEmail, timezone,
@@ -87,6 +90,7 @@ router.put('/', authorize('admin'), async (req, res) => {
       leavePolicy ? JSON.stringify(leavePolicy) : null,
       leaveAccrualEnabled, casualAccrualPerMonth, sickAccrualPerMonth, earnedAccrualPerMonth,
       officeLatitude ?? null, officeLongitude ?? null, gpsRadiusMeters, requireGps,
+      requireManagerApprovalBeforeLock === undefined ? null : !!requireManagerApprovalBeforeLock,
       id
     ]);
 

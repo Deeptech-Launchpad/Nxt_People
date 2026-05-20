@@ -947,6 +947,14 @@ const steps = [
   `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS overtime NUMERIC(12,2) DEFAULT 0`,
   `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS other_adjustment NUMERIC(12,2) DEFAULT 0`,
   `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ`,
+  // Stamped when the NEFT bank-upload CSV is generated for a payslip.
+  // Subsequent NEFT-export attempts warn the admin to prevent accidental
+  // double payment when the bank file gets uploaded twice.
+  `ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS payment_exported_at TIMESTAMPTZ`,
+  // Org-wide setting: if TRUE, payslips cannot be locked until a manager
+  // has signed off (approved_by_manager_at IS NOT NULL). Default FALSE so
+  // existing orgs are unaffected.
+  `ALTER TABLE settings ADD COLUMN IF NOT EXISTS require_manager_approval_before_lock BOOLEAN DEFAULT FALSE`,
   // The old (employee, month, year) UNIQUE constraint now blocks
   // correction slips. Drop it and replace with a partial unique that
   // only applies to active (non-superseded) rows.

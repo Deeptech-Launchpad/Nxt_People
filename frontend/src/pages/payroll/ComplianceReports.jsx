@@ -5,7 +5,7 @@
  * draft slips never leak into a return that's filed with the govt.
  */
 import React, { useState } from 'react';
-import { Download, Calendar, Building2, ShieldCheck, FileSpreadsheet, FileBarChart } from 'lucide-react';
+import { Download, Calendar, Building2, ShieldCheck, FileSpreadsheet, FileBarChart, Banknote } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { MONTH_NAMES } from './_shared';
@@ -35,6 +35,13 @@ const REPORTS = [
     desc: 'State-specific professional tax register. Tamil Nadu defaults to ₹208/mo.',
     icon: FileSpreadsheet, color: 'from-amber-500 to-orange-600', accent: 'amber',
   },
+  {
+    type: 'neft',
+    title: 'NEFT Bank File',
+    desc: 'Salary credit file for bank bulk upload. Includes beneficiary, A/c, IFSC, amount.',
+    icon: Banknote, color: 'from-violet-500 to-indigo-600', accent: 'violet',
+    warnOnReexport: true,
+  },
 ];
 
 export default function ComplianceReports() {
@@ -43,19 +50,54 @@ export default function ComplianceReports() {
   const [year, setYear]   = useState(today.getFullYear());
   const [downloading, setDownloading] = useState(null);
 
+  // For non-NEFT exports just hit the endpoint directly.
+  // NEFT is special: the backend returns 409 if some slips are already
+  // exported, so we run a pre-flight, surface a confirmation prompt to
+  // the admin, and only then send the actual download with ?force=true.
+  const triggerCsv = async (type, force = false) => {
+    const qs = `month=${month}&year=${year}${force ? '&force=true' : ''}`;
+    const r = await api.get(`/payroll/admin/reports/${type}?${qs}`, { responseType: 'blob' });
+    const objectUrl = URL.createObjectURL(r.data);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = `${type}-${String(month).padStart(2,'0')}-${year}.csv`;
+    a.click();
+    URL.revokeObjectURL(objectUrl);
+    toast.success(`${type.toUpperCase()} report downloaded`);
+  };
+
   const download = async (type) => {
     setDownloading(type);
     try {
-      const r = await api.get(`/payroll/admin/reports/${type}?month=${month}&year=${year}`, { responseType: 'blob' });
-      const objectUrl = URL.createObjectURL(r.data);
-      const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = `${type}-${String(month).padStart(2,'0')}-${year}.csv`;
-      a.click();
-      URL.revokeObjectURL(objectUrl);
-      toast.success(`${type.toUpperCase()} report downloaded`);
+      if (type === 'neft') {
+        // Preflight to detect prior export. If found, ask admin to confirm.
+        const status = await api.get(`/payroll/admin/reports/neft/status?month=${month}&year=${year}`);
+        if (status.data.alreadyExported > 0) {
+          const exportedAt = status.data.lastExportedAt
+            ? new Date(status.data.lastExportedAt).toLocaleString('en-IN')
+            : 'previously';
+          const ok = window.confirm(
+            `⚠ ${status.data.alreadyExported} of ${status.data.total} payslip(s) for this month were already sent to the bank on ${exportedAt}.\n\n` +
+            `Downloading again and uploading to the bank could DOUBLE-PAY salaries.\n\n` +
+            `Continue anyway?`
+          );
+          if (!ok) { setDownloading(null); return; }
+          await triggerCsv('neft', true);
+        } else {
+          await triggerCsv('neft', false);
+        }
+      } else {
+        await triggerCsv(type, false);
+      }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed');
+      // Backend returns 409 + JSON body when force is needed.
+      let msg = 'Failed';
+      if (err.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await err.response.data.text()).message || msg; } catch (_) {}
+      } else {
+        msg = err.response?.data?.message || err.message || msg;
+      }
+      toast.error(msg);
     } finally { setDownloading(null); }
   };
 

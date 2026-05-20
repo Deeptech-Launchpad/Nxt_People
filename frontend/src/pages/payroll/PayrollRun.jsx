@@ -10,7 +10,7 @@
  * Status lifecycle is rendered as a coloured pill (draft / locked / paid).
  */
 import React, { useEffect, useState, useMemo } from 'react';
-import { Play, Search, Eye, Lock, CheckCircle2, Trash2, Download, RefreshCw, FileText, Filter, AlertCircle } from 'lucide-react';
+import { Play, Search, Eye, Lock, CheckCircle2, Trash2, Download, RefreshCw, FileText, Filter, AlertCircle, MailCheck } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { MONTH_NAMES, SHORT_MONTHS, fmtINR, fmtINRshort, StatusPill, StatCard } from './_shared';
@@ -55,7 +55,38 @@ export default function PayrollRun() {
       await api.put(`/payroll/admin/payslips/${id}/lock`);
       toast.success('Locked');
       load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Lock failed'); }
+    } catch (err) {
+      // Manager-approval gate returns a distinct code so we can show a
+      // clearer message than just "Lock failed".
+      if (err.response?.data?.code === 'MANAGER_APPROVAL_REQUIRED') {
+        toast.error(err.response.data.message, { duration: 6000 });
+      } else {
+        toast.error(err.response?.data?.message || 'Lock failed');
+      }
+    }
+  };
+
+  // Open the EXACT email body the employee would receive on lock in a new
+  // tab. Lets admin spot wrong TDS / net pay / formatting before the
+  // fire-and-forget email goes out.
+  const previewEmail = (id) => {
+    const token = localStorage.getItem('nxt_token');
+    // We have to use fetch instead of api.get because we want the HTML to
+    // open in a new tab, not parse as JSON. Token must be appended as a
+    // query param since new windows can't carry Authorization headers.
+    // For security, we'll fetch as a blob and use a one-shot data URL.
+    api.get(`/payroll/admin/payslips/${id}/preview-email`, { responseType: 'text' })
+      .then(r => {
+        const blob = new Blob([r.data], { type: 'text/html' });
+        const url  = URL.createObjectURL(blob);
+        const w    = window.open(url, '_blank', 'width=720,height=900,scrollbars=yes');
+        // Revoke after 1 minute — gives the window time to render.
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        if (!w) toast.error('Allow popups for this site to preview the email.');
+      })
+      .catch(err => toast.error(err.response?.data?.message || 'Preview failed'));
+    // Silence unused var lint
+    void token;
   };
 
   const markPaid = async (id) => {
@@ -230,6 +261,7 @@ export default function PayrollRun() {
                     <IconBtn title="Download PDF" onClick={() => downloadPdf(p.id)}><Download size={13} /></IconBtn>
                     {p.status === 'draft' && (
                       <>
+                        <IconBtn title="Preview email (as employee will see)" onClick={() => previewEmail(p.id)} color="text-indigo-600 hover:bg-indigo-50"><MailCheck size={13} /></IconBtn>
                         <IconBtn title="Lock" onClick={() => lockPayslip(p.id)} color="text-blue-600 hover:bg-blue-50"><Lock size={13} /></IconBtn>
                         <IconBtn title="Delete" onClick={() => removeDraft(p.id)} color="text-red-500 hover:bg-red-50"><Trash2 size={13} /></IconBtn>
                       </>

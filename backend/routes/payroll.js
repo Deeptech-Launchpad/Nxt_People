@@ -348,67 +348,84 @@ function logAuditWrapper(action, resource) {
 const MONTH_NAMES = ['', 'January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 
-// Working-day count for a month — honours the org's configurable weekend
-// rules + holidays. A day is non-working if any active weekend rule
-// matches, OR a holiday row sits on that date (unless the holiday is an
-// explicit 'working_day' override, in which case the day counts).
-async function workingDaysInMonth(month, year) {
-  const days = new Date(year, month, 0).getDate(); // 28..31
+// Load the holiday map + active weekend rules for a calendar month ONCE.
+// Returns the data structures so callers can compute working days for
+// arbitrary date ranges inside that month without re-querying the DB —
+// critical for run-month, which needs per-employee partial ranges.
+async function loadHolidaysAndRules(month, year) {
   const monthStart = `${year}-${String(month).padStart(2,'0')}-01`;
   const monthEnd   = new Date(year, month, 0).toLocaleDateString('en-CA');
-
   const [holsRes, rulesRes] = await Promise.all([
-    pool.query(
-      `SELECT date, type FROM holidays
-        WHERE date BETWEEN $1::date AND $2::date`,
-      [monthStart, monthEnd]
-    ),
+    pool.query(`SELECT date, type FROM holidays WHERE date BETWEEN $1::date AND $2::date`, [monthStart, monthEnd]),
     pool.query(
       `SELECT days_of_week, weeks_of_month, interval_weeks,
               start_date, end_type, end_date, end_count, is_active
          FROM weekend_rules WHERE is_active = TRUE`
     ),
   ]);
-
   const holMap = new Map();
   for (const h of holsRes.rows) {
     const d = new Date(h.date);
-    const key = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
-    holMap.set(key, h.type);
+    holMap.set(`${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`, h.type);
   }
+  return { holMap, rules: rulesRes.rows };
+}
 
+// Count working days inside [start, end] (inclusive). A day is non-working
+// if any active weekend rule matches OR a holiday row sits on that date —
+// except `holiday.type='working_day'` which is an explicit override.
+function workingDaysInRange(start, end, holMap, rules) {
+  if (!start || !end || start > end) return 0;
   let working = 0;
-  for (let d = 1; d <= days; d++) {
-    const dt = new Date(year, month - 1, d);
-    const key = `${year}-${month}-${d}`;
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+  const stop = new Date(end);
+  stop.setHours(0, 0, 0, 0);
+  while (cursor <= stop) {
+    const key = `${cursor.getFullYear()}-${cursor.getMonth()+1}-${cursor.getDate()}`;
     const holType = holMap.get(key);
-
-    if (holType && holType !== 'working_day') continue;     // Holiday off
-    if (holType === 'working_day') { working++; continue; } // Holiday override → working
-
-    const isWeekend = rulesRes.rows.some(rule => ruleMatchesDate(rule, dt));
-    if (isWeekend) continue;
-    working++;
+    if (holType === 'working_day') {
+      working++;
+    } else if (!holType) {
+      const isWeekend = rules.some(rule => ruleMatchesDate(rule, cursor));
+      if (!isWeekend) working++;
+    }
+    cursor.setDate(cursor.getDate() + 1);
   }
   return working;
 }
 
-// Unpaid (LOP) leave days for an employee in a given month. We count
-// approved leaves with leave_type = 'unpaid' that intersect the period.
-async function lopDaysFor(employeeId, month, year) {
-  const start = `${year}-${String(month).padStart(2,'0')}-01`;
-  const end   = new Date(year, month, 0).toLocaleDateString('en-CA');
-  const r = await pool.query(
+// Working-day count for a full month — wrapper over the range helper.
+async function workingDaysInMonth(month, year) {
+  const { holMap, rules } = await loadHolidaysAndRules(month, year);
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd   = new Date(year, month, 0);
+  return workingDaysInRange(monthStart, monthEnd, holMap, rules);
+}
+
+// Unpaid (LOP) leave days for an employee inside a date range. We count
+// approved leaves with leave_type = 'unpaid' that intersect [start, end].
+async function lopDaysForRange(employeeId, startDate, endDate, queryRunner = pool) {
+  const start = startDate instanceof Date ? startDate.toLocaleDateString('en-CA') : startDate;
+  const end   = endDate   instanceof Date ? endDate.toLocaleDateString('en-CA')   : endDate;
+  const r = await queryRunner.query(
     `SELECT COALESCE(SUM(total_days), 0) AS lop
        FROM leaves
       WHERE employee_id = $1
         AND status = 'approved'
         AND leave_type = 'unpaid'
-        AND start_date <= $3
-        AND end_date   >= $2`,
+        AND start_date <= $3::date
+        AND end_date   >= $2::date`,
     [employeeId, start, end]
   );
   return Number(r.rows[0].lop || 0);
+}
+
+// Legacy month-bounded shim for older callers.
+async function lopDaysFor(employeeId, month, year) {
+  const start = `${year}-${String(month).padStart(2,'0')}-01`;
+  const end   = new Date(year, month, 0).toLocaleDateString('en-CA');
+  return lopDaysForRange(employeeId, start, end);
 }
 
 /** Indian FY for a given (month, year). Apr-Mar boundary. Returns "2026-27". */
@@ -585,11 +602,17 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
       return res.status(400).json({ success: false, message: 'Invalid month' });
     }
 
-    const workingDays = await workingDaysInMonth(month, year);
+    // Load holiday map + weekend rules once for the whole run so the
+    // per-employee partial-range calc doesn't re-fetch N times.
+    const { holMap, rules } = await loadHolidaysAndRules(month, year);
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd   = new Date(year, month, 0);
+    const workingDays = workingDaysInRange(monthStart, monthEnd, holMap, rules);
     const fy = fyForMonth(month, year);
 
     const employees = await client.query(
       `SELECT e.id, e.first_name, e.last_name,
+              e.joining_date, e.exit_date, e.status,
               s.basic, s.hra, s.conveyance, s.medical,
               s.special_allowance, s.other_allowances,
               s.pf_employee, s.esi_employee, s.professional_tax
@@ -598,11 +621,15 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
         WHERE e.status = 'active'`
     );
 
-    const results = { created: 0, updated: 0, skipped: 0, errors: [] };
+    const results = { created: 0, updated: 0, skipped: 0, errors: [], partials: 0 };
 
     for (const emp of employees.rows) {
+      // Per-employee transaction: a failure on employee #34 doesn't leave
+      // 1-33 in a half-committed state, AND doesn't taint the shared
+      // connection's txn state for employees 35..N.
       try {
-        // Active (non-superseded) slip — locked/paid are immutable.
+        await client.query('BEGIN');
+
         const existing = await client.query(
           `SELECT id, status FROM payroll_payslips
             WHERE employee_id = $1 AND pay_month = $2 AND pay_year = $3
@@ -611,12 +638,49 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
         );
         if (existing.rows.length > 0) {
           const status = existing.rows[0].status;
-          if (status !== 'draft' || !force) { results.skipped++; continue; }
+          if (status !== 'draft' || !force) {
+            results.skipped++;
+            await client.query('ROLLBACK');
+            continue;
+          }
         }
 
-        // LOP proration on earnings
-        const lopDays = Math.min(await lopDaysFor(emp.id, month, year), workingDays);
-        const ratio = workingDays > 0 ? (workingDays - lopDays) / workingDays : 1;
+        // Mid-month joiner / exit pro-rata. Compute the employee's
+        // effective range inside this calendar month; if it falls
+        // entirely outside, skip entirely.
+        const joining = emp.joining_date ? new Date(emp.joining_date) : null;
+        const exit    = emp.exit_date    ? new Date(emp.exit_date)    : null;
+        let effectiveStart = monthStart;
+        let effectiveEnd   = monthEnd;
+        let isPartial      = false;
+
+        if (joining && joining > monthEnd) {
+          // Not yet joined this month — no payslip needed
+          results.skipped++;
+          await client.query('ROLLBACK');
+          continue;
+        }
+        if (joining && joining > monthStart) { effectiveStart = joining; isPartial = true; }
+        if (exit    && exit    < monthStart) {
+          // Already exited — skip
+          results.skipped++;
+          await client.query('ROLLBACK');
+          continue;
+        }
+        if (exit    && exit    < monthEnd)   { effectiveEnd   = exit;    isPartial = true; }
+
+        const empWorkingDays = isPartial
+          ? workingDaysInRange(effectiveStart, effectiveEnd, holMap, rules)
+          : workingDays;
+
+        // LOP within the effective range only — a joiner can't have unpaid
+        // leave before joining_date.
+        const rawLop = await lopDaysForRange(emp.id, effectiveStart, effectiveEnd, client);
+        const lopDays = Math.min(rawLop, empWorkingDays);
+        // Paid days = effective working days minus LOP within that range.
+        // Salary scales against the FULL month, so prorate by paid/full.
+        const paidDays = empWorkingDays - lopDays;
+        const ratio    = workingDays > 0 ? paidDays / workingDays : 1;
 
         const basic        = Number(emp.basic || 0) * ratio;
         const hra          = Number(emp.hra || 0) * ratio;
@@ -630,16 +694,12 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
         const baseGross    = basic + hra + conveyance + medical + spec + other;
         const lopAmount    = grossFull - baseGross;
 
-        // Pull-ins: reimbursements, adjustments, loan recovery
         const reim    = await reimbursementsFor(client, emp.id, month, year);
         const adj     = await adjustmentsFor(client, emp.id, month, year);
         const loans   = await loanRecoveryFor(client, emp.id);
 
-        // Gross earnings now includes bonus, overtime, reimbursement
         const gross = baseGross + adj.bonus + adj.overtime + reim.total;
 
-        // Deductions: PF/ESI/PT flat, TDS computed from slabs, plus loan
-        // recovery and ad-hoc deduction adjustments.
         const pfE   = Number(emp.pf_employee || 0);
         const esiE  = Number(emp.esi_employee || 0);
         const pt    = Number(emp.professional_tax || 0);
@@ -648,7 +708,7 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
         });
 
         const totalDed = pfE + esiE + pt + tds + loans.total + adj.deduction;
-        const net      = gross - totalDed + adj.other; // 'other' can be +/-
+        const net      = gross - totalDed + adj.other;
 
         if (existing.rows.length > 0 && force) {
           await client.query(
@@ -663,7 +723,7 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
                     generated_at=NOW(), generated_by=$23
               WHERE id=$24`,
             [basic, hra, conveyance, medical, spec, other,
-             workingDays, workingDays - lopDays, lopDays, lopAmount,
+             empWorkingDays, paidDays, lopDays, lopAmount,
              pfE, esiE, pt, tds,
              gross, totalDed, net,
              reim.total, loans.total, adj.bonus, adj.overtime,
@@ -686,7 +746,7 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
                      $15,$16,$17,$18, $19,$20,$21, $22,$23,$24,$25,$26, $27)`,
             [emp.id, month, year, slip,
              basic, hra, conveyance, medical, spec, other,
-             workingDays, workingDays - lopDays, lopDays, lopAmount,
+             empWorkingDays, paidDays, lopDays, lopAmount,
              pfE, esiE, pt, tds,
              gross, totalDed, net,
              reim.total, loans.total, adj.bonus, adj.overtime, adj.deduction + adj.other,
@@ -694,7 +754,11 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
           );
           results.created++;
         }
+        if (isPartial) results.partials++;
+
+        await client.query('COMMIT');
       } catch (e) {
+        await client.query('ROLLBACK').catch(() => {});
         results.errors.push({ employeeId: emp.id, reason: e.message });
       }
     }
@@ -774,9 +838,52 @@ router.get('/admin/payslips/:id', authorize('admin', 'manager'), async (req, res
 //   • Active loans get their recovered amount incremented by this slip's
 //     loan_recovery; loans whose recovered = principal flip to 'closed'.
 //   • Email goes out to the employee with the payslip PDF attached.
+// GET /api/payroll/admin/payslips/:id/preview-email — render the EXACT
+// HTML body the employee would receive on lock. Lets admin sanity-check
+// before clicking Lock (after which the email is fire-and-forget and a
+// mistake means re-sending an apology + correction slip).
+router.get('/admin/payslips/:id/preview-email', authorize('admin', 'manager'), async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT p.*, e.first_name, e.last_name FROM payroll_payslips p
+         JOIN employees e ON p.employee_id = e.id WHERE p.id = $1`,
+      [req.params.id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Payslip not found' });
+    const html = buildLockEmailHtml(r.rows[0]);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    // Wrap in a minimal document so it renders correctly when shown in an iframe.
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Email Preview</title></head><body style="margin:0">${html}</body></html>`);
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.put('/admin/payslips/:id/lock', authorize('admin'), logAuditWrapper('LOCK', 'payslip'), async (req, res) => {
   const client = await pool.connect();
   try {
+    // Optional manager-approval gate — settings.require_manager_approval_before_lock
+    // can force admins to wait for a manager's sign-off before any slip
+    // can be locked. Keeps the org-wide "two-eyes" policy if turned on.
+    const settingsRes = await client.query('SELECT require_manager_approval_before_lock FROM settings LIMIT 1');
+    const mustApprove = !!settingsRes.rows[0]?.require_manager_approval_before_lock;
+    if (mustApprove) {
+      const check = await client.query(
+        `SELECT approved_by_manager_at, status FROM payroll_payslips WHERE id = $1`,
+        [req.params.id]
+      );
+      if (check.rows.length === 0) {
+        client.release();
+        return res.status(404).json({ success: false, message: 'Payslip not found' });
+      }
+      if (check.rows[0].status === 'draft' && !check.rows[0].approved_by_manager_at) {
+        client.release();
+        return res.status(400).json({
+          success: false,
+          code:    'MANAGER_APPROVAL_REQUIRED',
+          message: 'This payslip needs manager approval before it can be locked. Open the slip and ask the reporting manager to approve first.',
+        });
+      }
+    }
+
     await client.query('BEGIN');
     const lockRes = await client.query(
       `UPDATE payroll_payslips SET status='locked', locked_at=NOW()
@@ -848,30 +955,16 @@ async function buildPayslipPdfBuffer(payslip) {
 }
 
 /** Look up + send the lock email. Pulls slip + employee in one query. */
-async function sendLockEmail(payslipId) {
-  const r = await pool.query(
-    `SELECT p.*, e.email, e.first_name, e.last_name, e.employee_id AS "employeeCode",
-            e.department, e.designation, e.bank_name, e.bank_account, e.bank_ifsc,
-            e.pan_number, e.uan_number
-       FROM payroll_payslips p
-       JOIN employees e ON p.employee_id = e.id
-      WHERE p.id = $1`,
-    [payslipId]
-  );
-  if (r.rows.length === 0) return;
-  const p = r.rows[0];
-  if (!p.email) return;
-
-  const pdf = await buildPayslipPdfBuffer({
-    ...p, payMonth: p.pay_month, payYear: p.pay_year,
-    firstName: p.first_name, lastName: p.last_name,
-  });
-
+/**
+ * Build the exact HTML body the employee will see when their payslip is
+ * locked. Shared between the actual lock email and the admin "Preview as
+ * Employee" endpoint so a one-character drift between them is impossible.
+ */
+function buildLockEmailHtml(p) {
   const company = process.env.COMPANY_NAME || 'AltiusNxt';
   const monthName = MONTH_NAMES[p.pay_month];
   const ind = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(n)||0);
-
-  const html = `
+  return `
     <div style="font-family:Segoe UI,Arial,sans-serif;max-width:600px;margin:0 auto;background:#f4f6f9;padding:24px;">
       <div style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
         <div style="background:linear-gradient(135deg,#1a2040 0%,#2d3578 100%);padding:32px;text-align:center;">
@@ -896,6 +989,30 @@ async function sendLockEmail(payslipId) {
       </div>
     </div>
   `;
+}
+
+async function sendLockEmail(payslipId) {
+  const r = await pool.query(
+    `SELECT p.*, e.email, e.first_name, e.last_name, e.employee_id AS "employeeCode",
+            e.department, e.designation, e.bank_name, e.bank_account, e.bank_ifsc,
+            e.pan_number, e.uan_number
+       FROM payroll_payslips p
+       JOIN employees e ON p.employee_id = e.id
+      WHERE p.id = $1`,
+    [payslipId]
+  );
+  if (r.rows.length === 0) return;
+  const p = r.rows[0];
+  if (!p.email) return;
+
+  const pdf = await buildPayslipPdfBuffer({
+    ...p, payMonth: p.pay_month, payYear: p.pay_year,
+    firstName: p.first_name, lastName: p.last_name,
+  });
+
+  const company   = process.env.COMPANY_NAME || 'AltiusNxt';
+  const monthName = MONTH_NAMES[p.pay_month];
+  const html      = buildLockEmailHtml(p);
 
   const nodemailer = require('nodemailer');
   const transporter = nodemailer.createTransport({
@@ -1785,15 +1902,73 @@ router.delete('/admin/loans/:id', authorize('admin'),
 
 /* ── NEFT bank file export ────────────────────────────────────────────── */
 
-// GET /api/payroll/admin/reports/neft?month=&year= — bank-upload-ready CSV
-// for locked/paid slips. Standard banks accept this columnar format for
-// bulk salary credits.
-router.get('/admin/reports/neft', authorize('admin'), async (req, res) => {
+// GET /api/payroll/admin/reports/neft/status?month=&year= — preview before
+// downloading. Returns counts so the UI can confirm with the admin if any
+// slips have already been exported to the bank (re-download is a real
+// double-payment risk).
+router.get('/admin/reports/neft/status', authorize('admin'), async (req, res) => {
   try {
     const month = Number(req.query.month) || (new Date().getMonth() + 1);
     const year  = Number(req.query.year)  || new Date().getFullYear();
     const r = await pool.query(
-      `SELECT e.employee_id AS code, e.first_name, e.last_name,
+      `SELECT
+         COUNT(*) AS total,
+         COUNT(*) FILTER (WHERE payment_exported_at IS NOT NULL) AS already_exported,
+         COUNT(*) FILTER (WHERE payment_exported_at IS NULL)     AS fresh,
+         MAX(payment_exported_at) AS last_exported_at
+         FROM payroll_payslips
+        WHERE pay_month = $1 AND pay_year = $2
+          AND status IN ('locked','paid')
+          AND superseded_by IS NULL`,
+      [month, year]
+    );
+    const row = r.rows[0] || {};
+    res.json({
+      success: true,
+      month, year,
+      total:           Number(row.total            || 0),
+      alreadyExported: Number(row.already_exported || 0),
+      fresh:           Number(row.fresh            || 0),
+      lastExportedAt:  row.last_exported_at,
+    });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// GET /api/payroll/admin/reports/neft?month=&year=&force=true — bank-upload-
+// ready CSV for locked/paid slips. Without ?force=true, returns a JSON
+// warning if any slip is already marked exported (preventing accidental
+// re-upload to the bank). After streaming the CSV, payslips are stamped
+// payment_exported_at so the next call surfaces the warning.
+router.get('/admin/reports/neft', authorize('admin'), async (req, res) => {
+  try {
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+    const year  = Number(req.query.year)  || new Date().getFullYear();
+    const force = req.query.force === 'true';
+
+    // Idempotency guard — block accidental re-download.
+    const dupeCheck = await pool.query(
+      `SELECT COUNT(*) AS already_exported, MAX(payment_exported_at) AS last_exported_at
+         FROM payroll_payslips
+        WHERE pay_month = $1 AND pay_year = $2
+          AND status IN ('locked','paid')
+          AND superseded_by IS NULL
+          AND payment_exported_at IS NOT NULL`,
+      [month, year]
+    );
+    const alreadyExported = Number(dupeCheck.rows[0]?.already_exported || 0);
+    if (alreadyExported > 0 && !force) {
+      return res.status(409).json({
+        success: false,
+        code:    'ALREADY_EXPORTED',
+        message: `${alreadyExported} payslip(s) for ${String(month).padStart(2,'0')}/${year} were already exported to the bank on ${dupeCheck.rows[0].last_exported_at}. Re-download could cause a double payment. Add ?force=true to override.`,
+        alreadyExported,
+        lastExportedAt: dupeCheck.rows[0].last_exported_at,
+      });
+    }
+
+    const r = await pool.query(
+      `SELECT p.id AS payslip_id,
+              e.employee_id AS code, e.first_name, e.last_name,
               e.bank_account, e.bank_ifsc, e.bank_name,
               p.net_pay, p.slip_number
          FROM payroll_payslips p
@@ -1804,6 +1979,20 @@ router.get('/admin/reports/neft', authorize('admin'), async (req, res) => {
         ORDER BY e.first_name ASC`,
       [month, year]
     );
+
+    // Stamp the export BEFORE streaming the CSV so the next call sees them
+    // as already-exported. If the stream itself fails partway, the stamp is
+    // still in place (correct from a safety standpoint — we should NOT
+    // re-download something we already started sending to the bank).
+    const ids = r.rows.map(x => x.payslip_id);
+    if (ids.length > 0) {
+      await pool.query(
+        `UPDATE payroll_payslips SET payment_exported_at = NOW()
+          WHERE id = ANY($1::uuid[])`,
+        [ids]
+      );
+    }
+
     const period = `${String(month).padStart(2,'0')}-${year}`;
     sendCsv(res, `neft-${period}.csv`,
       ['Beneficiary Name','Beneficiary A/c No','IFSC','Bank','Amount','Reference'],
