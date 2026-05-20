@@ -183,21 +183,31 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
 //   --primarybluclr = #0088FF  → the "active branch" hook
 const LINE_COLOR   = '#DCDCDC';   // gray — the bulk of the tree
 const ACTIVE_COLOR = '#0088FF';   // blue — the "active branch" hook
-const CARD_PITCH   = 70;          // card height (~58px) + gap-3 (12px)
-const CARD_HALF    = 29;          // centerline of a card
-// Connector geometry. HOOK_LEN matches the column gap so the hook lands
-// exactly at the previous column's right edge — no overlap into the
-// parent column's cards.
-const HOOK_LEN     = 40;
-const COL_GAP      = 40;
+const CARD_PITCH   = 70;          // full card: 58px + gap-3 (12px)
+const CARD_HALF    = 29;          // centerline of a full card
+const MINI_PITCH   = 48;          // mini card: 40px + gap-2 (8px)
+const MINI_HALF    = 20;          // centerline of a mini card
+const MINI_GAP     = 8;           // gap-2 between mini cards
+const FULL_GAP     = 12;          // gap-3 between full cards
+// Connector geometry. COL_GAP and HOOK_LEN must be equal so the parent
+// hook exactly bridges the gap from the previous column's right edge to
+// the spine on the children column's left edge.
+const HOOK_LEN     = 20;
+const COL_GAP      = 20;
 
-function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onToggle, onHoverChange, parentIndex = 0 }) {
+function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onToggle, onHoverChange,
+                          parentIndex = 0, parentPitch = CARD_PITCH, parentHalf = CARD_HALF, mini = false }) {
+  // Pitch/half for THIS column's stack (mini cards are shorter & gap-tighter).
+  const pitch = mini ? MINI_PITCH : CARD_PITCH;
+  const half  = mini ? MINI_HALF  : CARD_HALF;
+
   // Y of each child's centerline (children always start at top of column).
-  const firstChildY = CARD_HALF;
-  const lastChildY  = (children.length - 1) * CARD_PITCH + CARD_HALF;
-  // Y of the parent's centerline in the previous column (assuming the
-  // previous column also stacks full-size cards on the same pitch).
-  const parentY     = parentIndex * CARD_PITCH + CARD_HALF;
+  const firstChildY = half;
+  const lastChildY  = (children.length - 1) * pitch + half;
+  // Y of the parent's centerline in the previous column — uses the PARENT
+  // column's pitch, not this column's, so the hook lands on the right row
+  // even when the parent is a mini card.
+  const parentY     = parentIndex * parentPitch + parentHalf;
   // Vertical line range — must cover BOTH the parent and every child so
   // the geometry visually closes.
   const lineTop     = Math.min(parentY, firstChildY);
@@ -208,15 +218,17 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
   // child as one continuous highlight, matching Zoho's behaviour.
   const selectedChildIdx = children.findIndex(c => expandedIds.has(c._id));
   const selectedChildY   = selectedChildIdx >= 0
-    ? selectedChildIdx * CARD_PITCH + CARD_HALF
+    ? selectedChildIdx * pitch + half
     : null;
-  // The blue overlay on the vertical line covers parentY ↔ selectedChildY.
   const activeTop    = selectedChildY != null ? Math.min(parentY, selectedChildY) : null;
   const activeHeight = selectedChildY != null ? Math.abs(selectedChildY - parentY) : 0;
 
   return (
-    <div className="relative flex flex-col gap-3" style={{ paddingLeft: HOOK_LEN }}>
-      {/* Gray vertical connector — exactly tall enough to reach both ends */}
+    <div className="relative flex flex-col" style={{
+      paddingLeft: HOOK_LEN,
+      gap: mini ? MINI_GAP : FULL_GAP,
+    }}>
+      {/* Gray vertical spine — exactly tall enough to reach both ends */}
       <div className="absolute" style={{
         left: 0, top: lineTop, height: lineBottom - lineTop,
         width: 1, background: LINE_COLOR,
@@ -234,8 +246,8 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
         left: -HOOK_LEN, top: parentY - 1, width: HOOK_LEN, height: 2,
         background: ACTIVE_COLOR,
       }} />
-      {/* Children: each card has a horizontal branch from the vertical
-          line into its own left edge. The selected child's branch is BLUE
+      {/* Children: each card has a horizontal branch from the spine
+          into its own left edge. The selected child's branch is BLUE
           and 2px (live branch); others are GRAY 1px (resting). */}
       {children.map(emp => {
         const isActive = expandedIds.has(emp._id);
@@ -251,6 +263,7 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
             }} />
             <EmployeeCard
               emp={emp}
+              mini={mini}
               isExpanded={isActive}
               totalCount={subtreeSize[emp._id] || 0}
               directCount={(childrenOf[emp._id] || []).length}
@@ -435,31 +448,30 @@ export default function OrgChart() {
         ) : (
           <div className="flex items-start min-w-max" style={{ gap: COL_GAP }}>
             {columns.map((colEmps, depth) => {
-              // Ancestor compression: keep the last THREE columns as full
-              // cards (parent's sibling column, active column, and its
-              // children) so the user keeps context as they navigate deep.
-              // Matches Zoho — they never compress the immediate-parent's
-              // sibling row even when you go one more level down.
-              const isAncestor = columns.length >= 4 && depth < columns.length - 3;
-              const isRoot     = depth === 0;
+              // Ancestor compression: keep the last TWO columns as full
+              // cards (the active card's row + its children). Everything
+              // earlier in the path collapses to mini — matches Zoho.
+              const isAncestor    = columns.length >= 3 && depth < columns.length - 2;
+              const isRoot        = depth === 0;
+              const prevIsMini    = depth > 0 && columns.length >= 3 && (depth - 1) < columns.length - 2;
               // Parent index in the previous column — drives the connector
               // hook's vertical position so the line visibly originates at
               // the expanded card's row.
               const parentIndex = depth > 0
                 ? Math.max(0, columns[depth - 1].findIndex(e => e._id === selectedPath[depth - 1]))
                 : 0;
+              const parentPitch = prevIsMini ? MINI_PITCH : CARD_PITCH;
+              const parentHalf  = prevIsMini ? MINI_HALF  : CARD_HALF;
 
               return (
                 <React.Fragment key={depth}>
                   {isRoot ? (
-                    // Root column: same column-style stack as before, no
-                    // connectors (nothing to connect to on the left).
-                    // No fixed width — let it auto-size to the card contents
-                    // (280px in full mode, ~38px in mini mode). The earlier
-                    // explicit width: 220 caused full cards to overflow
-                    // their container by 60px, which threw off the
-                    // connector hook position in the next column.
-                    <div className="flex flex-col gap-3" style={{ alignItems: 'flex-start' }}>
+                    // Root column: no connector (nothing on the left).
+                    // Auto-size to card contents; just stack the cards.
+                    <div className="flex flex-col" style={{
+                      alignItems: 'flex-start',
+                      gap: isAncestor ? MINI_GAP : FULL_GAP,
+                    }}>
                       {colEmps.length === 0 ? (
                         <p className="text-[12px] text-slate-400 italic">No employees</p>
                       ) : (
@@ -477,31 +489,22 @@ export default function OrgChart() {
                         ))
                       )}
                     </div>
-                  ) : isAncestor ? (
-                    <div className="flex flex-col gap-2 items-center">
-                      {colEmps.map(emp => (
-                        <EmployeeCard
-                          key={emp._id}
-                          emp={emp}
-                          mini
-                          isExpanded={expandedIds.has(emp._id)}
-                          totalCount={subtreeSize[emp._id] || 0}
-                          directCount={(childrenOf[emp._id] || []).length}
-                          onToggle={() => handleToggle(depth, emp._id)}
-                          onHoverChange={setHovered}
-                        />
-                      ))}
-                    </div>
                   ) : (
                     colEmps.length === 0 ? (
                       <p className="text-[12px] text-slate-400 italic px-4 py-2">No reports</p>
                     ) : (
+                      // Both mini ancestor columns AND the full active/child
+                      // columns route through ChildrenColumn so the spine +
+                      // blue active branch trace continuously from the root.
                       <ChildrenColumn
                         children={colEmps}
+                        mini={isAncestor}
                         expandedIds={expandedIds}
                         subtreeSize={subtreeSize}
                         childrenOf={childrenOf}
                         parentIndex={parentIndex}
+                        parentPitch={parentPitch}
+                        parentHalf={parentHalf}
                         onToggle={(empId) => handleToggle(depth, empId)}
                         onHoverChange={setHovered}
                       />
