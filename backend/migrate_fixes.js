@@ -641,6 +641,24 @@ const steps = [
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS aadhaar_number       VARCHAR(20)`,
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS uan_number           VARCHAR(20)`,
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS bank_name            VARCHAR(100)`,
+  // Structured address parts from Zoho *.childValues. Flat `address` /
+  // `permanent_address` columns stay for display; these enable querying
+  // by city/state/pincode for compliance reports + state-based PT.
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_line1   VARCHAR(255)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_line2   VARCHAR(255)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_city    VARCHAR(100)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_state   VARCHAR(100)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_pincode VARCHAR(20)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_country VARCHAR(100)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS permanent_address_line1   VARCHAR(255)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS permanent_address_line2   VARCHAR(255)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS permanent_address_city    VARCHAR(100)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS permanent_address_state   VARCHAR(100)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS permanent_address_pincode VARCHAR(20)`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS permanent_address_country VARCHAR(100)`,
+  // Family member DOB — currently dropped from Zoho's Dependent Details
+  // section. Lets the org track dependents for insurance / fee schemes.
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS emergency_contact_dob DATE`,
 
   // Seed default rules. Each is name-scoped so deleting one and re-running
   // migrations safely recreates just the missing one (and never duplicates

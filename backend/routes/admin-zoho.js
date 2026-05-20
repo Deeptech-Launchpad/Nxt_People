@@ -97,6 +97,11 @@ function mapEmployee(rec) {
     personalEmail:  (pick(rec, 'Other_Email', 'PersonalEmail', 'Personal_Email') || '').toLowerCase() || null,
     address:           pick(rec, 'Present_Address', 'Presentaddress', 'PresentAddress', 'CurrentAddress', 'Address'),
     permanentAddress:  pick(rec, 'Permanent_Address', 'Permanentaddress', 'PermanentAddress'),
+    // Structured address parts from the *.childValues object. Zoho returns
+    // these as a SIBLING field keyed with a literal dot in the name, not
+    // as a nested property — access via bracket notation.
+    addressParts:          parseAddressChildValues(rec['Present_Address.childValues']),
+    permanentAddressParts: parseAddressChildValues(rec['Permanent_Address.childValues']),
     // ── Identity documents (PII) ──────────────────────────────────────
     panNumber:     pick(rec, 'Pan_Number', 'PAN_Number', 'PAN', 'PANNumber'),
     aadhaarNumber: pick(rec, 'Aadhaar_Number', 'AadhaarNumber', 'Aadhar_Number', 'AadharNumber', 'Aadhaar'),
@@ -165,24 +170,49 @@ function parseTabularSections(rec) {
   })).filter(r => r.institute || r.qualification || r.degree || r.course);
 
   const prevEmployment = empHistoryRows.map(row => ({
+    // Aliases now cover the AltiusNxt tenant's exact field names: Jobtitle
+    // (lowercase t), Todate (lowercase d), Previous_JobDesc — all three
+    // were being silently dropped before. The census tool revealed 39 / 33
+    // / 18 employees were affected respectively.
     company:      pick(row, 'Previous_Company', 'Company_Name', 'Company', 'Employer', 'PreviousCompany'),
-    designation:  pick(row, 'Designation', 'Job_Title', 'Role', 'Position'),
-    fromDate:     toIsoDate(pick(row, 'From_Date', 'From', 'Start_Date', 'Joining_Date', 'FromDate')),
-    toDate:       toIsoDate(pick(row, 'To_Date', 'To', 'End_Date', 'Relieving_Date', 'ToDate')),
-    description:  pick(row, 'Job_Description', 'Description', 'Responsibilities'),
+    designation:  pick(row, 'Designation', 'Job_Title', 'Jobtitle', 'Role', 'Position'),
+    fromDate:     toIsoDate(pick(row, 'From_Date', 'From', 'Start_Date', 'Joining_Date', 'FromDate', 'Fromdate')),
+    toDate:       toIsoDate(pick(row, 'To_Date', 'To', 'End_Date', 'Relieving_Date', 'ToDate', 'Todate')),
+    description:  pick(row, 'Job_Description', 'Description', 'Responsibilities', 'Previous_JobDesc', 'JobDesc'),
   })).filter(r => r.company || r.designation);
 
   // Emergency / family contact: first row of the dependent / family section.
-  // Your tenant uses "Dependent Details" with fields Name + DependentRelationship.
-  // Phone isn't always present — leave blank if Zoho doesn't have it.
+  // DependentDOB is now also pulled — useful for dependent insurance,
+  // school-fee deductions, gift schemes triggered by family birthdays.
   const first = familyRows[0];
   const emergency = first ? {
     name:     pick(first, 'Name', 'First_Name', 'Contact_Name', 'Full_Name', 'DependentName'),
     phone:    pick(first, 'Mobile_no', 'Mobile', 'Phone', 'Contact_Number', 'Mobile_Number', 'DependentMobile', 'DependentContact'),
     relation: pick(first, 'DependentRelationship', 'Relationship', 'Relation', 'Type'),
+    dob:      toIsoDate(pick(first, 'DependentDOB', 'DateOfBirth', 'Date_Of_Birth', 'DOB')),
   } : null;
 
   return { education, prevEmployment, emergency };
+}
+
+/**
+ * Extract structured address parts from Zoho's <field>.childValues object.
+ * Returns { line1, line2, city, state, pincode, country } with whichever
+ * keys Zoho's response actually contains (variants vary by tenant config).
+ */
+function parseAddressChildValues(childValues) {
+  if (!childValues || typeof childValues !== 'object') return null;
+  const out = {
+    line1:   pick(childValues, 'Address_Line_1', 'AddressLine1', 'Line1', 'Address1', 'Line_1'),
+    line2:   pick(childValues, 'Address_Line_2', 'AddressLine2', 'Line2', 'Address2', 'Line_2', 'Street'),
+    city:    pick(childValues, 'City', 'CITY', 'Town', 'city'),
+    state:   pick(childValues, 'State', 'STATE', 'state', 'Province', 'Region'),
+    pincode: pick(childValues, 'Pincode', 'PIN', 'PinCode', 'ZipCode', 'Zip', 'Postal_Code', 'PostalCode'),
+    country: pick(childValues, 'Country', 'COUNTRY', 'country', 'Nation'),
+  };
+  // Bail out if every field is empty — keep nulls so we don't overwrite
+  // a manually edited row with empties.
+  return Object.values(out).some(v => v) ? out : null;
 }
 
 /**
@@ -197,15 +227,22 @@ async function upsertEmployee(client, mapped) {
 
   // Build a single COALESCE-based UPDATE / explicit INSERT so we never wipe
   // a value we don't have. Listed in the same order so the param indexes stay aligned.
+  // Extract address parts if Zoho returned childValues — null otherwise.
+  const ap = mapped.addressParts          || {};
+  const pp = mapped.permanentAddressParts || {};
+
   const cols = [
     'first_name', 'last_name', 'nick_name',
     'department', 'designation', 'company', 'division', 'work_location', 'employment_type', 'source_of_hire',
     'date_of_birth', 'gender', 'marital_status', 'blood_group', 'nationality', 'about_me',
     'phone', 'work_phone', 'extension', 'personal_email',
     'address', 'permanent_address',
+    // Structured address components from Zoho childValues.
+    'address_line1', 'address_line2', 'address_city', 'address_state', 'address_pincode', 'address_country',
+    'permanent_address_line1', 'permanent_address_line2', 'permanent_address_city', 'permanent_address_state', 'permanent_address_pincode', 'permanent_address_country',
     'pan_number', 'aadhaar_number', 'uan_number',
     'bank_name', 'bank_account', 'bank_ifsc',
-    'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
+    'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation', 'emergency_contact_dob',
     'photo_url',
     'joining_date',
     'employee_id',
@@ -217,16 +254,18 @@ async function upsertEmployee(client, mapped) {
     mapped.dateOfBirth, mapped.gender || null, mapped.maritalStatus || null, mapped.bloodGroup || null, mapped.nationality || null, mapped.aboutMe || null,
     mapped.phone || null, mapped.workPhone || null, mapped.extension || null, mapped.personalEmail || null,
     mapped.address || null, mapped.permanentAddress || null,
+    ap.line1 || null, ap.line2 || null, ap.city || null, ap.state || null, ap.pincode || null, ap.country || null,
+    pp.line1 || null, pp.line2 || null, pp.city || null, pp.state || null, pp.pincode || null, pp.country || null,
     mapped.panNumber || null, mapped.aadhaarNumber || null, mapped.uanNumber || null,
     mapped.bankName || null, mapped.bankAccount || null, mapped.bankIfsc || null,
-    mapped.emergencyContactName || null, mapped.emergencyContactPhone || null, mapped.emergencyContactRelation || null,
+    mapped.emergencyContactName || null, mapped.emergencyContactPhone || null, mapped.emergencyContactRelation || null, mapped.emergencyContactDob || null,
     mapped.photoUrl || null,
     mapped.joiningDate,
     mapped.employeeId || null,
     mapped.exitDate, mapped.totalExperience || null, mapped.expertise || null,
   ];
-  // joining_date, date_of_birth, exit_date need a ::date cast in the SQL.
-  const DATE_CAST_COLS = new Set(['date_of_birth', 'joining_date', 'exit_date']);
+  // joining_date, date_of_birth, exit_date, emergency_contact_dob need ::date cast in the SQL.
+  const DATE_CAST_COLS = new Set(['date_of_birth', 'joining_date', 'exit_date', 'emergency_contact_dob']);
 
   if (existing.rows.length > 0) {
     // UPDATE — never touches role / password / MFA / leave balances.
@@ -285,6 +324,7 @@ async function runEmployeeSync(initiatedBy = 'cron') {
         mapped.emergencyContactName     = mapped.emergencyContactName     || tabular.emergency.name;
         mapped.emergencyContactPhone    = mapped.emergencyContactPhone    || tabular.emergency.phone;
         mapped.emergencyContactRelation = mapped.emergencyContactRelation || tabular.emergency.relation;
+        mapped.emergencyContactDob      = mapped.emergencyContactDob      || tabular.emergency.dob;
       }
 
       try {
