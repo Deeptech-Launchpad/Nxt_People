@@ -36,14 +36,47 @@ const pick = (record, ...candidates) => {
 };
 
 /** Convert various date strings Zoho returns into 'YYYY-MM-DD' or null. */
+// Parse the date formats Zoho actually returns and produce yyyy-MM-dd.
+// new Date() alone is dangerous for our case: it parses dd/MM/yyyy as
+// MM/dd/yyyy (US locale), which silently swaps day/month when the day is
+// 1-12 and returns Invalid Date when the day is >12 — meaning dd/MM dates
+// like "19/03/2004" were being dropped completely by the previous parser,
+// while "01/03/2026" was being stored as Jan 3 instead of Mar 1.
 const toIsoDate = (raw) => {
   if (!raw) return null;
-  // Zoho commonly returns dd-MMM-yyyy ("15-Aug-2024") or dd/MM/yyyy.
-  const tryParse = (s) => {
-    const d = new Date(s);
-    return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : null;
-  };
-  return tryParse(raw) || tryParse(String(raw).replace(/-/g, ' ')) || null;
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  // ISO 8601: yyyy-MM-dd (also handles "2024-08-15T00:00:00Z" prefixes).
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) {
+    const [, y, mo, d] = m;
+    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // dd/MM/yyyy or dd-MM-yyyy (the format Zoho People's UI shows + their API
+  // often returns). Validate ranges so 31/13/2024 doesn't silently coerce.
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) {
+    const d = +m[1], mo = +m[2], y = m[3];
+    if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12) {
+      return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+  }
+
+  // dd-MMM-yyyy / dd MMM yyyy / dd/MMM/yyyy (the older Zoho v1 format).
+  const monthMap = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  m = s.match(/^(\d{1,2})[\/\-\s]([A-Za-z]{3})[\/\-\s](\d{4})$/);
+  if (m) {
+    const d = +m[1], mo = monthMap[m[2].toLowerCase()], y = m[3];
+    if (mo && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+  }
+
+  // Last resort — native Date for RFC / locale strings we didn't anticipate.
+  const dt = new Date(s);
+  return Number.isFinite(dt.getTime()) ? dt.toISOString().slice(0, 10) : null;
 };
 
 /** Map a single Zoho record to the columns we write. */

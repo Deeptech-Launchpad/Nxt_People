@@ -469,6 +469,7 @@ export default function Profile() {
           <Row label="First Name">{profile.firstName}</Row>
           <Row label="Phone">{profile.phone}</Row>
           <Row label="Last Name">{profile.lastName}</Row>
+          <Row label="Nickname">{profile.nickName}</Row>
           <Row label="Status">
             {profile.status ? (
               <span className={`inline-block px-2 py-0.5 rounded text-[11.5px] font-semibold ${
@@ -487,13 +488,19 @@ export default function Profile() {
           <Row label="Designation">{profile.designation}</Row>
           <Row label="Company">{profile.company}</Row>
           <Row label="Division">{profile.division}</Row>
+          <Row label="Work Location">{profile.workLocation}</Row>
+          <Row label="Employment Type">{profile.employmentType}</Row>
+          <Row label="Source of Hire">{profile.sourceOfHire}</Row>
           <Row label="Role">{profile.role}</Row>
           <Row label="Date of Joining">{fmtDate(profile.joiningDate)}</Row>
+          <Row label="Total Experience">{profile.totalExperience}</Row>
+          <Row label="Expertise">{profile.expertise}</Row>
           <Row label="Shift">
             {profile.shift?.name
               ? `${profile.shift.name} (${profile.shift.startTime}–${profile.shift.endTime})`
               : null}
           </Row>
+          <Row label="Exit Date">{profile.exitDate ? fmtDate(profile.exitDate) : null}</Row>
         </Section>
 
         <Section title="Hierarchy Information">
@@ -501,9 +508,39 @@ export default function Profile() {
           <Row label="Approving Authority">{approverName}</Row>
         </Section>
 
+        <Section title="Contact Information">
+          <Row label="Personal Email">{profile.personalEmail}</Row>
+          <Row label="Work Phone">{profile.workPhone}</Row>
+          <Row label="Extension">{profile.extension}</Row>
+        </Section>
+
         <Section title="Personal Details">
           <Row label="Date of Birth">{profile.dateOfBirth ? fmtDate(profile.dateOfBirth) : null}</Row>
+          <Row label="Gender">{profile.gender}</Row>
+          <Row label="Marital Status">{profile.maritalStatus}</Row>
+          <Row label="Blood Group">{profile.bloodGroup}</Row>
+          <Row label="Nationality">{profile.nationality}</Row>
+          <Row label="About Me">{profile.aboutMe}</Row>
+        </Section>
+
+        <Section title="Current Address">
           <Row label="Address">{profile.address}</Row>
+          <Row label="Address Line 1">{profile.addressLine1}</Row>
+          <Row label="Address Line 2">{profile.addressLine2}</Row>
+          <Row label="City">{profile.addressCity}</Row>
+          <Row label="State">{profile.addressState}</Row>
+          <Row label="Pincode">{profile.addressPincode}</Row>
+          <Row label="Country">{profile.addressCountry}</Row>
+        </Section>
+
+        <Section title="Permanent Address">
+          <Row label="Address">{profile.permanentAddress}</Row>
+          <Row label="Address Line 1">{profile.permanentAddressLine1}</Row>
+          <Row label="Address Line 2">{profile.permanentAddressLine2}</Row>
+          <Row label="City">{profile.permanentAddressCity}</Row>
+          <Row label="State">{profile.permanentAddressState}</Row>
+          <Row label="Pincode">{profile.permanentAddressPincode}</Row>
+          <Row label="Country">{profile.permanentAddressCountry}</Row>
         </Section>
 
         <Section title="Identity Information">
@@ -519,6 +556,7 @@ export default function Profile() {
           <Row label="Contact Name">{profile.emergencyContactName}</Row>
           <Row label="Contact Phone">{profile.emergencyContactPhone}</Row>
           <Row label="Relationship">{profile.emergencyContactRelation}</Row>
+          <Row label="Date of Birth">{profile.emergencyContactDob ? fmtDate(profile.emergencyContactDob) : null}</Row>
         </Section>
 
         <Section title="Security">
