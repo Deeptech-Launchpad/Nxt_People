@@ -407,13 +407,7 @@ export default function OrgChart() {
             <div className="flex flex-col gap-4 max-w-[320px]">
               {displayEmployees.map((emp, idx) => (
                 <div key={idx} className="flex items-center gap-4 p-2 rounded-lg border border-slate-100">
-                  <div className="w-10 h-10 rounded border border-slate-200 overflow-hidden flex-shrink-0">
-                    <img
-                      src={emp.photoUrl || PHOTO_FALLBACK(emp.firstName, emp.lastName)}
-                      alt=""
-                      className="w-full h-full object-cover opacity-80"
-                    />
-                  </div>
+                  <Avatar photoUrl={emp.photoUrl} size={40} />
                   <div>
                     <p className="text-[13px] font-bold text-slate-800">{emp.firstName} {emp.lastName}</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">{emp.designation || 'Employee'}</p>
