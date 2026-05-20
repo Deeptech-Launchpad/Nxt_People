@@ -117,6 +117,12 @@ router.get('/departments/:id/employees', async (req, res) => {
 });
 
 // ── GET /api/org/employee-tree ─────────────────────────────────────────────────
+// Each node carries:
+//   • directReportsCount   = immediate children only
+//   • totalReportsCount    = the whole subtree (matches what Zoho People shows
+//                            on each card — e.g. "Karthick · 35" means his
+//                            entire org has 35 people under him)
+//   • children             = nested tree
 router.get('/employee-tree', async (req, res) => {
   try {
     const r = await pool.query(
@@ -127,7 +133,7 @@ router.get('/employee-tree', async (req, res) => {
     );
     const all = r.rows;
     const map = {};
-    all.forEach(e => { map[e.id] = { ...e, children: [] }; });
+    all.forEach(e => { map[e.id] = { ...e, children: [], directReportsCount: 0, totalReportsCount: 0 }; });
 
     const roots = [];
     all.forEach(e => {
@@ -137,6 +143,20 @@ router.get('/employee-tree', async (req, res) => {
         roots.push(map[e.id]);
       }
     });
+
+    // Walk bottom-up to compute total subtree size. Recursive function —
+    // safe for our scale (a few hundred nodes max; depth rarely exceeds 6).
+    const computeCounts = (node) => {
+      node.directReportsCount = node.children.length;
+      let subtree = 0;
+      for (const child of node.children) {
+        subtree += 1 + computeCounts(child);
+      }
+      node.totalReportsCount = subtree;
+      return subtree;
+    };
+    roots.forEach(computeCounts);
+
     res.json({ success: true, data: roots });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

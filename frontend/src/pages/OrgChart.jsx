@@ -138,6 +138,19 @@ export default function OrgChart() {
   }
   const roots = employees.filter(e => !e.reportingManagerId || !empMap[e.reportingManagerId]);
 
+  /* ── Subtree size per employee (matches what Zoho's tree shows).
+       Walks descendants once, memoised — so a 200-person org is still O(N). */
+  const subtreeSize = {};
+  const computeSubtree = (id) => {
+    if (subtreeSize[id] != null) return subtreeSize[id];
+    const kids = childrenOf[id] || [];
+    let total = 0;
+    for (const k of kids) total += 1 + computeSubtree(k._id);
+    subtreeSize[id] = total;
+    return total;
+  };
+  employees.forEach(e => computeSubtree(e._id));
+
   /* ── Search filter is applied flat across all employees ──────────────── */
   const filterMatch = (e) => {
     if (!searchTerm) return true;
@@ -273,7 +286,10 @@ export default function OrgChart() {
                         key={emp._id}
                         emp={emp}
                         isSelected={selectedPath[depth] === emp._id}
-                        childCount={(childrenOf[emp._id] || []).length}
+                        // Show full subtree count (matches Zoho's "Karthick · 35"
+                        // semantics) so the badge reflects total team size, not
+                        // just immediate directs.
+                        childCount={subtreeSize[emp._id] || 0}
                         onClick={() => handleSelect(depth, emp._id)}
                         onAction={handleAction}
                       />
