@@ -1,7 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { User, Search, Eye, MessageSquare, Video, Phone, ChevronRight } from 'lucide-react';
+import { User, Search, Eye, MessageSquare, Video, Phone, ChevronUp, ChevronDown, X } from 'lucide-react';
 import api from '../utils/api';
+
+/* ── Initials avatar — deterministic colour from name hash ──────────────── */
+const AVATAR_COLORS = [
+  'bg-blue-500',  'bg-indigo-500', 'bg-purple-500', 'bg-rose-500',
+  'bg-amber-500', 'bg-emerald-500', 'bg-teal-500',  'bg-cyan-500',
+];
+function initialsOf(first = '', last = '') {
+  return ((first[0] || '') + (last[0] || '')).toUpperCase() || '?';
+}
+function colorOf(name) {
+  let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+function Avatar({ firstName, lastName, size = 36, photoUrl, photoBroken, onPhotoError }) {
+  const initials = initialsOf(firstName, lastName);
+  const color    = colorOf(`${firstName} ${lastName}`);
+  const showPhoto = photoUrl && !photoBroken;
+  return (
+    <div
+      className={`rounded-full ${showPhoto ? 'bg-slate-100' : color} text-white font-bold flex items-center justify-center flex-shrink-0 overflow-hidden`}
+      style={{ width: size, height: size, fontSize: Math.floor(size * 0.4) }}
+    >
+      {showPhoto
+        ? <img src={photoUrl} alt="" className="w-full h-full object-cover" onError={onPhotoError} />
+        : initials}
+    </div>
+  );
+}
 
 /* ───────────────────────────────────────────────────────────────────────
  *  Employee Tree — Zoho-People-style horizontal columns.
@@ -13,102 +41,218 @@ import api from '../utils/api';
  *  Department Tree mode is the older two-column layout, kept as-is.
  * ─────────────────────────────────────────────────────────────────────── */
 
-const PHOTO_FALLBACK = (firstName, lastName) =>
-  `https://ui-avatars.com/api/?name=${encodeURIComponent(firstName || '')}+${encodeURIComponent(lastName || '')}&background=f1f5f9&color=475569`;
-
-/* ── Single employee card used inside every column ─────────────────────── */
-function EmployeeCard({ emp, isSelected, childCount, onClick, onAction }) {
-  const [hover, setHover] = useState(false);
-  // photoBroken tracks whether the <img> failed to load. When true we render
-  // the User icon instead of the broken-image placeholder — covers stale
-  // Zoho-CDN URLs left in the DB from before the sync filter was added.
+/* ── Single employee card. Two click targets:
+       • The card body → opens the floating popup (handled by parent).
+       • The blue count badge → expand/collapse this employee's children.
+   In `mini` mode (used for ancestor compression), only the avatar + badge
+   render — name/role are hidden to save horizontal space. */
+function EmployeeCard({ emp, isExpanded, totalCount, directCount, onCardClick, onBadgeClick, mini = false }) {
   const [photoBroken, setPhotoBroken] = useState(false);
-  const photo = emp.photoUrl || PHOTO_FALLBACK(emp.firstName, emp.lastName);
-  const showPhoto = emp.photoUrl && !photoBroken;
+
+  if (mini) {
+    return (
+      <div className="relative">
+        <button
+          type="button"
+          onClick={onCardClick}
+          title={`${emp.firstName} ${emp.lastName}${emp.designation ? ' · ' + emp.designation : ''}`}
+          className="bg-white border rounded-full p-0.5 flex items-center transition-all"
+          style={{ borderColor: isExpanded ? '#2563eb' : '#e2e8f0', borderWidth: isExpanded ? 1.5 : 1 }}
+        >
+          <Avatar firstName={emp.firstName} lastName={emp.lastName} photoUrl={emp.photoUrl} photoBroken={photoBroken} onPhotoError={() => setPhotoBroken(true)} size={34} />
+        </button>
+        {totalCount > 0 && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onBadgeClick(); }}
+            className="absolute -right-1 -bottom-1 text-[9px] font-bold text-blue-600 bg-white border border-blue-600 rounded px-1 leading-tight"
+            title={isExpanded ? 'Collapse' : 'Expand'}
+          >
+            {totalCount}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="relative" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <button
-        type="button"
-        onClick={onClick}
-        className={`w-full bg-white border rounded-lg p-2.5 flex items-center gap-3 transition-all text-left
-          ${isSelected
-            ? 'border-blue-400 ring-2 ring-blue-100 shadow'
-            : 'border-slate-200 hover:border-blue-300 hover:shadow-sm'}`}
-      >
-        <div className="w-9 h-9 rounded border border-slate-200 overflow-hidden bg-slate-50 flex items-center justify-center text-slate-400 flex-shrink-0">
-          {showPhoto
-            ? <img src={photo} alt="" className="w-full h-full object-cover" onError={() => setPhotoBroken(true)} />
-            : <User size={18} />}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-bold text-slate-800 truncate">{emp.firstName} {emp.lastName}</p>
-          <p className="text-[11px] text-slate-500 truncate mt-0.5">{emp.designation || emp.role || 'Employee'}</p>
-        </div>
-        {childCount > 0 && (
-          <span className="ml-1 text-[10.5px] font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded-sm flex-shrink-0">
-            {childCount}
-          </span>
-        )}
-      </button>
+    <button
+      type="button"
+      onClick={onCardClick}
+      className="bg-white rounded-lg p-2.5 flex items-center gap-3 text-left transition-shadow hover:shadow-sm"
+      style={{
+        width: 220,
+        borderColor: isExpanded ? '#2563eb' : '#e2e8f0',
+        borderWidth: isExpanded ? 1.5 : 1,
+        borderStyle: 'solid',
+      }}
+    >
+      <Avatar firstName={emp.firstName} lastName={emp.lastName} photoUrl={emp.photoUrl} photoBroken={photoBroken} onPhotoError={() => setPhotoBroken(true)} size={36} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-bold text-slate-800 truncate leading-tight">{emp.firstName} {emp.lastName}</p>
+        <p className="text-[11px] text-slate-500 truncate mt-0.5">{emp.designation || emp.role || 'Employee'}</p>
+      </div>
+      {totalCount > 0 && (
+        <span
+          onClick={(e) => { e.stopPropagation(); onBadgeClick(); }}
+          title={isExpanded ? 'Collapse this team' : 'Expand this team'}
+          className="ml-1 text-[11px] font-bold border border-blue-600 text-blue-600 hover:bg-blue-50 px-1.5 py-0.5 rounded flex-shrink-0 cursor-pointer transition-colors"
+          style={{ direction: 'ltr' }}
+          // Use onMouseDown so the click registers BEFORE the parent button's
+          // synthetic-event bubbling logic, and the parent doesn't also fire.
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {totalCount}
+        </span>
+      )}
+    </button>
+  );
+}
 
-      {hover && (
-        <div className="absolute left-0 top-full mt-1.5 z-30 w-[260px] bg-white border border-slate-200 rounded-lg shadow-2xl p-3">
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded border border-slate-200 overflow-hidden bg-slate-50 flex-shrink-0">
-              {showPhoto
-                ? <img src={photo} alt="" className="w-full h-full object-cover" onError={() => setPhotoBroken(true)} />
-                : <div className="w-full h-full flex items-center justify-center text-slate-400"><User size={22} /></div>}
-            </div>
-            <div className="min-w-0">
-              <p className="text-[12.5px] font-bold text-slate-800 truncate">
-                {emp.employeeId && <span className="text-slate-500 font-mono mr-1">{emp.employeeId}</span>}
-                {emp.firstName} {emp.lastName}
-              </p>
-              <p className="text-[11px] text-blue-600 hover:underline truncate">
-                {emp.email && <a href={`mailto:${emp.email}`}>{emp.email}</a>}
-              </p>
-              <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                {emp.designation || emp.role || 'Employee'}
-                {emp.department && <span className="text-slate-400"> · {emp.department}</span>}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 mt-3">
-            <button
-              type="button"
-              title="View profile"
-              onClick={(e) => { e.stopPropagation(); onAction('view', emp); }}
-              className="w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center"
-            >
-              <Eye size={13} />
-            </button>
-            <a
-              title="Send email"
-              href={emp.email ? `mailto:${emp.email}` : '#'}
-              onClick={(e) => e.stopPropagation()}
-              className="w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center"
-            >
-              <MessageSquare size={13} />
+/* ── Floating popup shown when a card is clicked ───────────────────────── */
+function EmployeePopup({ emp, totalMembers, directReports, onClose, onAction, anchorRect }) {
+  const ref = useRef(null);
+  const [photoBroken, setPhotoBroken] = useState(false);
+
+  // Close on outside click + Escape key.
+  useEffect(() => {
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    const onKey   = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown',   onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown',   onKey);
+    };
+  }, [onClose]);
+
+  // Position the popup just below the anchor card. Fall back to fixed
+  // centred if no anchor (e.g. opened programmatically).
+  const style = anchorRect
+    ? { top: anchorRect.bottom + 6, left: anchorRect.left, position: 'fixed' }
+    : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', position: 'fixed' };
+
+  return (
+    <div ref={ref} style={style} className="z-50 w-[280px] bg-white border border-slate-200 rounded-xl shadow-2xl p-4">
+      <div className="flex items-start gap-3">
+        <Avatar firstName={emp.firstName} lastName={emp.lastName} photoUrl={emp.photoUrl} photoBroken={photoBroken} onPhotoError={() => setPhotoBroken(true)} size={48} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-bold text-slate-800 truncate">
+            {emp.employeeId && <span className="text-slate-400 font-mono text-[11px] mr-1">{emp.employeeId}</span>}
+            {emp.firstName} {emp.lastName}
+          </p>
+          {emp.email && (
+            <a href={`mailto:${emp.email}`} className="text-[11.5px] text-blue-600 hover:underline truncate block mt-0.5">
+              {emp.email}
             </a>
-            <button
-              type="button"
-              title="Video call (coming soon)"
-              onClick={(e) => e.stopPropagation()}
-              className="w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center"
-            >
-              <Video size={13} />
-            </button>
-            <a
-              title="Call"
-              href={emp.phone ? `tel:${emp.phone}` : '#'}
-              onClick={(e) => e.stopPropagation()}
-              className="w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center"
-            >
-              <Phone size={13} />
-            </a>
-          </div>
+          )}
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            {emp.designation || emp.role || 'Employee'}
+            {emp.department && <span className="text-slate-400"> · {emp.department}</span>}
+          </p>
         </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-700 -m-1 p-1" aria-label="Close">
+          <X size={14} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100">
+        <div className="text-center">
+          <p className="text-[18px] font-bold text-blue-600 leading-tight">{totalMembers}</p>
+          <p className="text-[10.5px] text-slate-500 mt-0.5">Total Members</p>
+        </div>
+        <div className="text-center">
+          <p className="text-[18px] font-bold text-blue-600 leading-tight">{directReports}</p>
+          <p className="text-[10.5px] text-slate-500 mt-0.5">Direct Reports</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center gap-2 mt-3">
+        <button
+          title="View profile"
+          onClick={() => onAction('view', emp)}
+          className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors"
+        ><Eye size={14} /></button>
+        <a
+          title="Send email"
+          href={emp.email ? `mailto:${emp.email}` : '#'}
+          className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors"
+        ><MessageSquare size={14} /></a>
+        <button
+          title="Video call"
+          onClick={() => emp.email && window.open(`https://meet.google.com/new`, '_blank')}
+          className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors"
+        ><Video size={14} /></button>
+        <a
+          title="Call"
+          href={emp.phone ? `tel:${emp.phone}` : '#'}
+          className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors"
+        ><Phone size={14} /></a>
+      </div>
+    </div>
+  );
+}
+
+/* ── Column of children with vertical connector + 5-row scroll window ──── */
+const PAGE_SIZE = 5;
+function ChildrenColumn({ children, expandedIds, popupId, subtreeSize, childrenOf, onCardClick, onBadgeClick }) {
+  const [page, setPage] = useState(0);
+  const total = children.length;
+  const start = Math.min(page * PAGE_SIZE, Math.max(0, total - PAGE_SIZE));
+  const slice = children.slice(start, start + PAGE_SIZE);
+  const showPager = total > PAGE_SIZE;
+
+  return (
+    <div className="flex flex-col items-stretch" style={{ minWidth: 244 }}>
+      {showPager && (
+        <button
+          onClick={() => setPage(p => Math.max(0, p - 1))}
+          disabled={start === 0}
+          className="self-start ml-1 mb-1 text-blue-600 disabled:opacity-30 hover:bg-blue-50 rounded p-0.5"
+          title="Show previous"
+        ><ChevronUp size={16} /></button>
+      )}
+      <div className="relative pl-6">
+        {/* Vertical blue connector */}
+        <div
+          className="absolute top-0 bottom-0 left-0"
+          style={{ width: 1.5, background: '#2563eb' }}
+        />
+        <div className="flex flex-col gap-3">
+          {slice.map(emp => (
+            <div key={emp._id} className="relative">
+              {/* Horizontal branch line */}
+              <div
+                className="absolute"
+                style={{
+                  left: -24, top: '50%', width: 24, height: 1.5,
+                  background: '#2563eb', transform: 'translateY(-50%)',
+                }}
+              />
+              <EmployeeCard
+                emp={emp}
+                isExpanded={expandedIds.has(emp._id) || popupId === emp._id}
+                totalCount={subtreeSize[emp._id] || 0}
+                directCount={(childrenOf[emp._id] || []).length}
+                onCardClick={(e) => onCardClick(emp, e)}
+                onBadgeClick={() => onBadgeClick(emp._id)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+      {showPager && (
+        <button
+          onClick={() => setPage(p => Math.min(Math.ceil(total / PAGE_SIZE) - 1, p + 1))}
+          disabled={start + PAGE_SIZE >= total}
+          className="self-start ml-1 mt-1 text-blue-600 disabled:opacity-30 hover:bg-blue-50 rounded p-0.5"
+          title="Show next"
+        ><ChevronDown size={16} /></button>
+      )}
+      {showPager && (
+        <p className="text-[10.5px] text-slate-400 ml-2 mt-1">
+          {start + 1}–{Math.min(start + PAGE_SIZE, total)} of {total}
+        </p>
       )}
     </div>
   );
@@ -118,9 +262,14 @@ export default function OrgChart() {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  // Path of selected manager ids — each entry opens the next column.
-  // [] means only the root column is shown.
+  // Path of expanded manager ids, in order. The same shape as before, but
+  // the BADGE controls this — clicking the card opens a popup instead.
+  // Clicking the badge of a currently-expanded node collapses everything
+  // from that depth onward (recursive collapse falls out for free).
   const [selectedPath, setSelectedPath] = useState([]);
+  // Floating popup state. Click on a card body opens the popup; click on
+  // an action button or outside closes it.
+  const [popup, setPopup] = useState(null);  // { emp, anchorRect }
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -166,21 +315,40 @@ export default function OrgChart() {
         || (e.employeeId  || '').toLowerCase().includes(q);
   };
 
-  /* ── Build the visible columns from the selected path ────────────────── */
+  /* ── Build the visible columns from the expanded path ────────────────── */
   const columns = [];
-  // Column 0: roots
   columns.push(roots.filter(filterMatch));
-  // Subsequent columns: direct reports of the selected employee in the previous column
   for (const selId of selectedPath) {
     columns.push((childrenOf[selId] || []).filter(filterMatch));
   }
+  const expandedIds = new Set(selectedPath);
 
-  const handleSelect = (depth, empId) => {
-    // Trim the path to this depth + push the new selection.
-    setSelectedPath(prev => [...prev.slice(0, depth), empId]);
+  // Badge click: expand or collapse this node.
+  // If the node is the CURRENT tail of selectedPath, collapse it (and any
+  // sub-tail underneath). Otherwise, expand it at the appropriate depth.
+  const handleBadgeClick = (depth, empId) => {
+    setSelectedPath(prev => {
+      if (prev[depth] === empId) {
+        // Already expanded at this depth → collapse it and everything below.
+        return prev.slice(0, depth);
+      }
+      // Replace whatever's at this depth (and deeper) with the new selection.
+      return [...prev.slice(0, depth), empId];
+    });
+  };
+
+  // Card click: open the popup for this employee.
+  const handleCardClick = (emp, evt) => {
+    // Capture the card's bounding rect so the popup can anchor below it.
+    const target = evt?.currentTarget || evt?.target;
+    const rect = target && target.getBoundingClientRect
+      ? target.getBoundingClientRect()
+      : null;
+    setPopup({ emp, anchorRect: rect });
   };
 
   const handleAction = (action, emp) => {
+    setPopup(null);
     if (action === 'view') navigate(`/employees?search=${encodeURIComponent(emp.employeeId || emp.email || '')}`);
   };
 
@@ -279,36 +447,90 @@ export default function OrgChart() {
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="flex items-start gap-3 min-w-max">
-            {columns.map((colEmps, depth) => (
-              <React.Fragment key={depth}>
-                <div className="w-[260px] flex-shrink-0 flex flex-col gap-2">
-                  {colEmps.length === 0 ? (
-                    <p className="text-[12px] text-slate-400 italic px-2">No reports</p>
+          <div className="flex items-start gap-2 min-w-max">
+            {columns.map((colEmps, depth) => {
+              // Ancestor compression: once the tree is 3+ columns deep,
+              // every column except the last TWO collapses to mini cards.
+              // Keeps the right edge readable on narrow screens.
+              const isAncestor = columns.length >= 3 && depth < columns.length - 2;
+              const isRoot     = depth === 0;
+
+              return (
+                <React.Fragment key={depth}>
+                  {isRoot ? (
+                    // Root column: same column-style stack as before, no
+                    // connectors (nothing to connect to on the left).
+                    <div className="flex flex-col gap-3" style={{ width: isAncestor ? 56 : 220 }}>
+                      {colEmps.length === 0 ? (
+                        <p className="text-[12px] text-slate-400 italic">No employees</p>
+                      ) : (
+                        colEmps.map(emp => (
+                          <EmployeeCard
+                            key={emp._id}
+                            emp={emp}
+                            mini={isAncestor}
+                            isExpanded={expandedIds.has(emp._id) || popup?.emp?._id === emp._id}
+                            totalCount={subtreeSize[emp._id] || 0}
+                            directCount={(childrenOf[emp._id] || []).length}
+                            onCardClick={(evt) => handleCardClick(emp, evt)}
+                            onBadgeClick={() => handleBadgeClick(depth, emp._id)}
+                          />
+                        ))
+                      )}
+                    </div>
+                  ) : isAncestor ? (
+                    // Ancestor column: render mini cards in a tight stack,
+                    // but no connectors — connectors only render around the
+                    // CURRENT children of the most-recently-expanded node.
+                    <div className="flex flex-col gap-2 items-center">
+                      {colEmps.map(emp => (
+                        <EmployeeCard
+                          key={emp._id}
+                          emp={emp}
+                          mini
+                          isExpanded={expandedIds.has(emp._id) || popup?.emp?._id === emp._id}
+                          totalCount={subtreeSize[emp._id] || 0}
+                          directCount={(childrenOf[emp._id] || []).length}
+                          onCardClick={(evt) => handleCardClick(emp, evt)}
+                          onBadgeClick={() => handleBadgeClick(depth, emp._id)}
+                        />
+                      ))}
+                    </div>
                   ) : (
-                    colEmps.map(emp => (
-                      <EmployeeCard
-                        key={emp._id}
-                        emp={emp}
-                        isSelected={selectedPath[depth] === emp._id}
-                        // Show full subtree count (matches Zoho's "Karthick · 35"
-                        // semantics) so the badge reflects total team size, not
-                        // just immediate directs.
-                        childCount={subtreeSize[emp._id] || 0}
-                        onClick={() => handleSelect(depth, emp._id)}
-                        onAction={handleAction}
+                    // Live column: full-size cards + blue connectors + 5-row pager.
+                    colEmps.length === 0 ? (
+                      <p className="text-[12px] text-slate-400 italic px-4 py-2">No reports</p>
+                    ) : (
+                      <ChildrenColumn
+                        children={colEmps}
+                        expandedIds={expandedIds}
+                        popupId={popup?.emp?._id || null}
+                        subtreeSize={subtreeSize}
+                        childrenOf={childrenOf}
+                        onCardClick={(emp, evt) => handleCardClick(emp, evt)}
+                        onBadgeClick={(empId) => handleBadgeClick(depth, empId)}
                       />
-                    ))
+                    )
                   )}
-                </div>
-                {depth < columns.length - 1 && (
-                  <ChevronRight size={16} className="text-slate-300 mt-3 flex-shrink-0" />
-                )}
-              </React.Fragment>
-            ))}
+                </React.Fragment>
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* Floating popup, mounted at the page root so it can position above
+          all columns. Click outside or Escape closes it. */}
+      {popup && (
+        <EmployeePopup
+          emp={popup.emp}
+          totalMembers={subtreeSize[popup.emp._id] || 0}
+          directReports={(childrenOf[popup.emp._id] || []).length}
+          anchorRect={popup.anchorRect}
+          onClose={() => setPopup(null)}
+          onAction={handleAction}
+        />
+      )}
     </div>
   );
 }
