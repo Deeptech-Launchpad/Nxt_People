@@ -202,13 +202,18 @@ function parseTabularSections(rec) {
  */
 function parseAddressChildValues(childValues) {
   if (!childValues || typeof childValues !== 'object') return null;
+  // Zoho's address childValues use UPPERCASE keys (CITY, STATE, COUNTRY,
+  // ADDRESS1, ADDRESS2, PINCODE, STATE_CODE, COUNTRY_CODE). Earlier guesses
+  // (Address_Line_1, Pincode, etc.) didn't match — verified by inspecting
+  // a real record. Keep the title-case variants too so other tenants with
+  // different forms still work.
   const out = {
-    line1:   pick(childValues, 'Address_Line_1', 'AddressLine1', 'Line1', 'Address1', 'Line_1'),
-    line2:   pick(childValues, 'Address_Line_2', 'AddressLine2', 'Line2', 'Address2', 'Line_2', 'Street'),
-    city:    pick(childValues, 'City', 'CITY', 'Town', 'city'),
-    state:   pick(childValues, 'State', 'STATE', 'state', 'Province', 'Region'),
-    pincode: pick(childValues, 'Pincode', 'PIN', 'PinCode', 'ZipCode', 'Zip', 'Postal_Code', 'PostalCode'),
-    country: pick(childValues, 'Country', 'COUNTRY', 'country', 'Nation'),
+    line1:   pick(childValues, 'ADDRESS1', 'Address_Line_1', 'AddressLine1', 'Line1', 'Address1', 'Line_1'),
+    line2:   pick(childValues, 'ADDRESS2', 'Address_Line_2', 'AddressLine2', 'Line2', 'Address2', 'Line_2', 'Street'),
+    city:    pick(childValues, 'CITY', 'City', 'Town', 'city'),
+    state:   pick(childValues, 'STATE', 'State', 'state', 'Province', 'Region'),
+    pincode: pick(childValues, 'PINCODE', 'Pincode', 'PIN', 'PinCode', 'ZipCode', 'Zip', 'Postal_Code', 'PostalCode'),
+    country: pick(childValues, 'COUNTRY', 'Country', 'country', 'Nation'),
   };
   // Bail out if every field is empty — keep nulls so we don't overwrite
   // a manually edited row with empties.
