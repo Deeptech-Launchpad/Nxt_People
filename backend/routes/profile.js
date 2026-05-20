@@ -115,7 +115,37 @@ router.get('/', async (req, res) => {
        WHERE e.id = $1`,
       [req.user._id]
     );
-    res.json({ success: true, data: result.rows[0] });
+    const profile = result.rows[0];
+    if (profile) {
+      // Education + previous employment live in their own tables. Tag them
+      // on so the Profile page can render them inline without an extra
+      // round-trip. Tables are owned by the Zoho sync (admin-zoho.js) which
+      // upserts rows by (employee_id, institute) / (employee_id, company).
+      const [eduRes, prevRes] = await Promise.all([
+        pool.query(
+          `SELECT id, highest_qualification AS "qualification", degree, course,
+                  university_or_institution AS "institute",
+                  year_of_passing AS "yearOfPassing",
+                  percentage_or_cgpa  AS "percentageOrCgpa"
+             FROM employee_education
+            WHERE employee_id = $1
+            ORDER BY year_of_passing DESC NULLS LAST`,
+          [req.user._id]
+        ),
+        pool.query(
+          `SELECT id, company, designation,
+                  from_date AS "fromDate", to_date AS "toDate",
+                  job_description AS "description"
+             FROM employee_previous_employment
+            WHERE employee_id = $1
+            ORDER BY from_date DESC NULLS LAST`,
+          [req.user._id]
+        ),
+      ]);
+      profile.education = eduRes.rows;
+      profile.previousEmployment = prevRes.rows;
+    }
+    res.json({ success: true, data: profile });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -559,6 +559,56 @@ export default function Profile() {
           <Row label="Date of Birth">{profile.emergencyContactDob ? fmtDate(profile.emergencyContactDob) : null}</Row>
         </Section>
 
+        {/* Education — synced from Zoho's "Education Details" tabular section.
+            One card per row so multiple degrees show cleanly. */}
+        <section className="bg-white border border-slate-200 rounded-md">
+          <h3 className="px-6 py-4 text-[15px] font-bold text-slate-800 border-b border-slate-100">
+            Education
+          </h3>
+          {profile.education && profile.education.length > 0 ? (
+            <div className="px-6 py-3 space-y-3">
+              {profile.education.map((ed, i) => (
+                <div key={ed.id || i} className="grid grid-cols-1 md:grid-cols-2 md:gap-x-12">
+                  <Row label="Qualification">{ed.qualification}</Row>
+                  <Row label="Degree">{ed.degree}</Row>
+                  <Row label="Course / Specialization">{ed.course}</Row>
+                  <Row label="Institute">{ed.institute}</Row>
+                  <Row label="Year of Passing">{ed.yearOfPassing}</Row>
+                  <Row label="Percentage / CGPA">{ed.percentageOrCgpa}</Row>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="px-6 py-5 text-[13px] text-slate-400 italic">
+              No education records yet. Add a row under <span className="font-medium">Education Details</span> in Zoho People.
+            </p>
+          )}
+        </section>
+
+        {/* Previous Employment — synced from Zoho's "Work experience" tabular section. */}
+        <section className="bg-white border border-slate-200 rounded-md">
+          <h3 className="px-6 py-4 text-[15px] font-bold text-slate-800 border-b border-slate-100">
+            Previous Employment
+          </h3>
+          {profile.previousEmployment && profile.previousEmployment.length > 0 ? (
+            <div className="px-6 py-3 space-y-3">
+              {profile.previousEmployment.map((pe, i) => (
+                <div key={pe.id || i} className="grid grid-cols-1 md:grid-cols-2 md:gap-x-12">
+                  <Row label="Company">{pe.company}</Row>
+                  <Row label="Designation">{pe.designation}</Row>
+                  <Row label="From">{pe.fromDate ? fmtDate(pe.fromDate) : null}</Row>
+                  <Row label="To">{pe.toDate ? fmtDate(pe.toDate) : null}</Row>
+                  <Row label="Description">{pe.description}</Row>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="px-6 py-5 text-[13px] text-slate-400 italic">
+              No previous employment records yet. Add a row under <span className="font-medium">Work experience</span> in Zoho People.
+            </p>
+          )}
+        </section>
+
         <Section title="Security">
           <Row label="Password">
             <div className="flex items-center gap-3">
