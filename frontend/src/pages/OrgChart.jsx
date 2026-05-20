@@ -33,7 +33,7 @@ function Avatar({ size = 36, photoUrl, photoBroken, onPhotoError }) {
    Shown only while the cursor is over the card; disappears on mouse-leave.
    Click does NOT trigger this — the card click expands children, the
    hover surfaces details. Matches Zoho's pattern exactly. */
-function HoverPopup({ emp, totalMembers, directReports, anchorRect }) {
+function HoverPopup({ emp, totalMembers, directReports, anchorRect, onMouseEnter, onMouseLeave }) {
   // Position the popup just below the anchor card.
   const style = anchorRect
     ? { top: anchorRect.bottom + 4, left: anchorRect.left, position: 'fixed' }
@@ -43,7 +43,9 @@ function HoverPopup({ emp, totalMembers, directReports, anchorRect }) {
   return (
     <div
       style={style}
-      className="z-40 w-[280px] bg-white border border-slate-200 rounded-lg shadow-xl p-3 pointer-events-none"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className="z-40 w-[280px] bg-white border border-slate-200 rounded-lg shadow-xl p-3"
     >
       <div className="flex items-start gap-3">
         <Avatar photoUrl={emp.photoUrl} size={42} />
@@ -69,7 +71,7 @@ function HoverPopup({ emp, totalMembers, directReports, anchorRect }) {
         <span>Direct reports <strong className="ml-1 text-slate-800">{directReports}</strong></span>
       </div>
 
-      <div className="flex items-center justify-start gap-2 mt-3 pointer-events-auto">
+      <div className="flex items-center justify-start gap-2 mt-3">
         <button title="View" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><Eye size={13} /></button>
         <button title="Message" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><MessageSquare size={13} /></button>
         <button title="Video" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><Video size={13} /></button>
@@ -288,6 +290,18 @@ export default function OrgChart() {
   // Currently hovered card — drives the floating details popup. null while
   // no card is hovered. Set by EmployeeCard on mouse-enter (after ~150ms).
   const [hovered, setHovered] = useState(null);  // { emp, anchorRect, totalCount, directCount }
+  // Grace-period timer so the user can move the cursor from the card down
+  // into the popup without it disappearing en route. The popup itself
+  // cancels this timer on mouse-enter and re-arms it on mouse-leave.
+  const closeTimerRef = useRef(null);
+  const setHover = (data) => {
+    clearTimeout(closeTimerRef.current);
+    if (data) {
+      setHovered(data);
+    } else {
+      closeTimerRef.current = setTimeout(() => setHovered(null), 200);
+    }
+  };
 
   const location = useLocation();
   const isDepartmentTree = location.pathname === '/dept-tree';
@@ -484,7 +498,7 @@ export default function OrgChart() {
                             totalCount={subtreeSize[emp._id] || 0}
                             directCount={(childrenOf[emp._id] || []).length}
                             onToggle={() => handleToggle(depth, emp._id)}
-                            onHoverChange={setHovered}
+                            onHoverChange={setHover}
                           />
                         ))
                       )}
@@ -525,6 +539,8 @@ export default function OrgChart() {
           totalMembers={hovered.totalCount || 0}
           directReports={hovered.directCount || 0}
           anchorRect={hovered.anchorRect}
+          onMouseEnter={() => clearTimeout(closeTimerRef.current)}
+          onMouseLeave={() => setHover(null)}
         />
       )}
     </div>
