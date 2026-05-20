@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { User, Search } from 'lucide-react';
+import { User, Search, Eye, MessageSquare, Video, Phone } from 'lucide-react';
 import api from '../utils/api';
 
 /* ── Square photo thumbnail. When no photo, a soft gray User silhouette
@@ -29,14 +29,82 @@ function Avatar({ size = 36, photoUrl, photoBroken, onPhotoError }) {
  *  Department Tree mode is the older two-column layout, kept as-is.
  * ─────────────────────────────────────────────────────────────────────── */
 
+/* ── Hover-only popup with employee details + 4 action buttons.
+   Shown only while the cursor is over the card; disappears on mouse-leave.
+   Click does NOT trigger this — the card click expands children, the
+   hover surfaces details. Matches Zoho's pattern exactly. */
+function HoverPopup({ emp, totalMembers, directReports, anchorRect }) {
+  // Position the popup just below the anchor card.
+  const style = anchorRect
+    ? { top: anchorRect.bottom + 4, left: anchorRect.left, position: 'fixed' }
+    : null;
+  if (!style) return null;
+
+  return (
+    <div
+      style={style}
+      className="z-40 w-[280px] bg-white border border-slate-200 rounded-lg shadow-xl p-3 pointer-events-none"
+    >
+      <div className="flex items-start gap-3">
+        <Avatar photoUrl={emp.photoUrl} size={42} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[12.5px] font-bold text-slate-800 truncate">
+            {emp.employeeId && <span className="text-slate-400 font-mono mr-1">{emp.employeeId}</span>}
+            <span className="text-slate-400">-</span> {emp.firstName} {emp.lastName}
+          </p>
+          {emp.email && (
+            <p className="text-[11.5px] text-blue-600 truncate mt-0.5">{emp.email}</p>
+          )}
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            {emp.designation || emp.role || 'Employee'}
+          </p>
+          {emp.department && (
+            <p className="text-[11px] text-slate-500">{emp.department}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 text-[11.5px]">
+        <span>Total Members <strong className="ml-1 text-slate-800">{totalMembers}</strong></span>
+        <span>Direct reports <strong className="ml-1 text-slate-800">{directReports}</strong></span>
+      </div>
+
+      <div className="flex items-center justify-start gap-2 mt-3 pointer-events-auto">
+        <button title="View" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><Eye size={13} /></button>
+        <button title="Message" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><MessageSquare size={13} /></button>
+        <button title="Video" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><Video size={13} /></button>
+        <button title="Phone" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><Phone size={13} /></button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Single employee card.
-   Both the card body AND the badge expand/collapse the node — matches
-   Zoho's behaviour where clicking anywhere on a card opens that
-   person's reports in the next column. The badge stays as a separate
-   visual element (showing total team size) but its click does the same
-   thing as the card click. */
-function EmployeeCard({ emp, isExpanded, totalCount, onToggle, mini = false }) {
+   • Click anywhere on the card (body or badge) → expand/collapse children
+     (single source of truth for navigation, matches Zoho).
+   • Hover → show details popup with action buttons (handled by parent).
+   The parent owns the hover popup so it can be portal-rendered above
+   sibling z-indexes without being clipped by the column's overflow. */
+function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHoverChange, mini = false }) {
   const [photoBroken, setPhotoBroken] = useState(false);
+  const cardRef = useRef(null);
+
+  // Open the hover popup after a short delay so quick mouse movements
+  // across the column don't trigger flicker. Cancel the timer on leave.
+  const hoverTimer = useRef(null);
+  const handleEnter = () => {
+    if (mini) return; // Mini cards have title-attr tooltips, no popup
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => {
+      const rect = cardRef.current && cardRef.current.getBoundingClientRect();
+      onHoverChange && onHoverChange({ emp, anchorRect: rect, totalCount, directCount });
+    }, 150);
+  };
+  const handleLeave = () => {
+    clearTimeout(hoverTimer.current);
+    onHoverChange && onHoverChange(null);
+  };
+  useEffect(() => () => clearTimeout(hoverTimer.current), []);
 
   if (mini) {
     return (
@@ -71,8 +139,11 @@ function EmployeeCard({ emp, isExpanded, totalCount, onToggle, mini = false }) {
 
   return (
     <button
+      ref={cardRef}
       type="button"
       onClick={onToggle}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
       className="rounded-md p-2.5 flex items-center gap-3 text-left transition-shadow hover:shadow-sm"
       style={{
         width: 280,
@@ -89,9 +160,6 @@ function EmployeeCard({ emp, isExpanded, totalCount, onToggle, mini = false }) {
       </div>
       {totalCount > 0 && (
         <span
-          // Badge is visually distinct but behaves identically to a card
-          // click. stopPropagation prevents double-firing — without it,
-          // both the badge handler and the parent button would toggle.
           onClick={(e) => { e.stopPropagation(); onToggle(); }}
           onMouseDown={(e) => e.stopPropagation()}
           title={isExpanded ? 'Collapse this team' : 'Expand this team'}
@@ -105,28 +173,30 @@ function EmployeeCard({ emp, isExpanded, totalCount, onToggle, mini = false }) {
 }
 
 /* ── Floating popup shown when a card is clicked ───────────────────────── */
-/* ── Column of children with vertical + horizontal blue connectors.
-   All children render continuously (page scrolls); no pagination. */
-function ChildrenColumn({ children, expandedIds, subtreeSize, onToggle }) {
+/* ── Column of children with vertical + horizontal connectors.
+   Lines use a softer slate-blue (#94a3b8) so the live BLUE highlight on
+   the active card stands out — matches Zoho's muted-grey tree lines. */
+const LINE_COLOR = '#94a3b8';
+function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onToggle, onHoverChange }) {
   return (
     <div className="relative pl-6 flex flex-col gap-3">
-      {/* Vertical blue connector — spans the full height of the column */}
-      <div className="absolute top-0 bottom-0 left-0" style={{ width: 1.5, background: '#2563eb' }} />
+      <div className="absolute top-0 bottom-0 left-0" style={{ width: 1, background: LINE_COLOR }} />
       {children.map(emp => (
         <div key={emp._id} className="relative">
-          {/* Horizontal branch line into this card */}
           <div
             className="absolute"
             style={{
-              left: -24, top: '50%', width: 24, height: 1.5,
-              background: '#2563eb', transform: 'translateY(-50%)',
+              left: -24, top: '50%', width: 24, height: 1,
+              background: LINE_COLOR, transform: 'translateY(-50%)',
             }}
           />
           <EmployeeCard
             emp={emp}
             isExpanded={expandedIds.has(emp._id)}
             totalCount={subtreeSize[emp._id] || 0}
+            directCount={(childrenOf[emp._id] || []).length}
             onToggle={() => onToggle(emp._id)}
+            onHoverChange={onHoverChange}
           />
         </div>
       ))}
@@ -142,6 +212,9 @@ export default function OrgChart() {
   // toggles the node at the corresponding depth. Recursive collapse falls
   // out because we just truncate selectedPath at the toggle depth.
   const [selectedPath, setSelectedPath] = useState([]);
+  // Currently hovered card — drives the floating details popup. null while
+  // no card is hovered. Set by EmployeeCard on mouse-enter (after ~150ms).
+  const [hovered, setHovered] = useState(null);  // { emp, anchorRect, totalCount, directCount }
 
   const location = useLocation();
   const isDepartmentTree = location.pathname === '/dept-tree';
@@ -324,15 +397,14 @@ export default function OrgChart() {
                             mini={isAncestor}
                             isExpanded={expandedIds.has(emp._id)}
                             totalCount={subtreeSize[emp._id] || 0}
+                            directCount={(childrenOf[emp._id] || []).length}
                             onToggle={() => handleToggle(depth, emp._id)}
+                            onHoverChange={setHovered}
                           />
                         ))
                       )}
                     </div>
                   ) : isAncestor ? (
-                    // Ancestor column: render mini cards in a tight stack,
-                    // but no connectors — connectors only render around the
-                    // CURRENT children of the most-recently-expanded node.
                     <div className="flex flex-col gap-2 items-center">
                       {colEmps.map(emp => (
                         <EmployeeCard
@@ -341,12 +413,13 @@ export default function OrgChart() {
                           mini
                           isExpanded={expandedIds.has(emp._id)}
                           totalCount={subtreeSize[emp._id] || 0}
+                          directCount={(childrenOf[emp._id] || []).length}
                           onToggle={() => handleToggle(depth, emp._id)}
+                          onHoverChange={setHovered}
                         />
                       ))}
                     </div>
                   ) : (
-                    // Live column: full-size cards + blue connectors + 5-row pager.
                     colEmps.length === 0 ? (
                       <p className="text-[12px] text-slate-400 italic px-4 py-2">No reports</p>
                     ) : (
@@ -354,7 +427,9 @@ export default function OrgChart() {
                         children={colEmps}
                         expandedIds={expandedIds}
                         subtreeSize={subtreeSize}
+                        childrenOf={childrenOf}
                         onToggle={(empId) => handleToggle(depth, empId)}
+                        onHoverChange={setHovered}
                       />
                     )
                   )}
@@ -364,6 +439,17 @@ export default function OrgChart() {
           </div>
         )}
       </div>
+
+      {/* Hover-only details popup. Mounted at the component root with
+          position:fixed so it overlays cleanly above the column scroll. */}
+      {hovered && (
+        <HoverPopup
+          emp={hovered.emp}
+          totalMembers={hovered.totalCount || 0}
+          directReports={hovered.directCount || 0}
+          anchorRect={hovered.anchorRect}
+        />
+      )}
     </div>
   );
 }
