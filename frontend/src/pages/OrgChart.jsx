@@ -178,14 +178,15 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
    Y position in the previous column, and a horizontal hook extends LEFT
    from that point back toward the parent. Visually the line now clearly
    originates at the expanded card's row — matching Zoho. */
-const LINE_COLOR = '#94a3b8';
-const CARD_PITCH = 70;   // card height (~58px) + gap-3 (12px)
-const CARD_HALF  = 29;   // half of card height — where the centerline sits
-// Connector geometry. HOOK_LEN matches the gap between columns in the
-// main render so the hook lands exactly at the previous column's right
-// edge — no overlap into the parent column's cards.
-const HOOK_LEN   = 40;
-const COL_GAP    = 40;
+const LINE_COLOR   = '#94a3b8';   // gray — the bulk of the tree
+const ACTIVE_COLOR = '#2563eb';   // blue — the "active branch" hook
+const CARD_PITCH   = 70;          // card height (~58px) + gap-3 (12px)
+const CARD_HALF    = 29;          // centerline of a card
+// Connector geometry. HOOK_LEN matches the column gap so the hook lands
+// exactly at the previous column's right edge — no overlap into the
+// parent column's cards.
+const HOOK_LEN     = 40;
+const COL_GAP      = 40;
 
 function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onToggle, onHoverChange, parentIndex = 0 }) {
   // Y of each child's centerline (children always start at top of column).
@@ -206,12 +207,12 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
         left: 0, top: lineTop, height: lineBottom - lineTop,
         width: 1, background: LINE_COLOR,
       }} />
-      {/* Hook back toward the parent at the parent's Y. Extends LEFT into
-          the gap between columns so the line visibly originates from the
-          expanded card. */}
+      {/* Hook back toward the parent at the parent's Y. This is the
+          "live branch" — coloured BLUE because it visually extends out
+          of the active card's badge. Rest of the tree stays gray. */}
       <div className="absolute" style={{
-        left: -HOOK_LEN, top: parentY, width: HOOK_LEN, height: 1,
-        background: LINE_COLOR,
+        left: -HOOK_LEN, top: parentY, width: HOOK_LEN, height: 1.5,
+        background: ACTIVE_COLOR,
       }} />
       {/* Children: each card has a horizontal branch from the vertical
           line into its own left edge. */}
