@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { User, Search, Eye, MessageSquare, Video, Phone, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import { User, Search } from 'lucide-react';
 import api from '../utils/api';
 
 /* ── Square photo thumbnail. When no photo, a soft gray User silhouette
@@ -29,12 +29,13 @@ function Avatar({ size = 36, photoUrl, photoBroken, onPhotoError }) {
  *  Department Tree mode is the older two-column layout, kept as-is.
  * ─────────────────────────────────────────────────────────────────────── */
 
-/* ── Single employee card. Two click targets:
-       • The card body → opens the floating popup (handled by parent).
-       • The blue count badge → expand/collapse this employee's children.
-   In `mini` mode (used for ancestor compression), only the avatar + badge
-   render — name/role are hidden to save horizontal space. */
-function EmployeeCard({ emp, isExpanded, totalCount, onCardClick, onBadgeClick, mini = false }) {
+/* ── Single employee card.
+   Both the card body AND the badge expand/collapse the node — matches
+   Zoho's behaviour where clicking anywhere on a card opens that
+   person's reports in the next column. The badge stays as a separate
+   visual element (showing total team size) but its click does the same
+   thing as the card click. */
+function EmployeeCard({ emp, isExpanded, totalCount, onToggle, mini = false }) {
   const [photoBroken, setPhotoBroken] = useState(false);
 
   if (mini) {
@@ -42,9 +43,9 @@ function EmployeeCard({ emp, isExpanded, totalCount, onCardClick, onBadgeClick, 
       <div className="flex items-center">
         <button
           type="button"
-          onClick={onCardClick}
+          onClick={onToggle}
           title={`${emp.firstName} ${emp.lastName}${emp.designation ? ' · ' + emp.designation : ''}`}
-          className="bg-white p-0.5 transition-all"
+          className="bg-white p-0.5 transition-all hover:shadow-sm"
           style={{
             borderColor: isExpanded ? '#2563eb' : '#e2e8f0',
             borderWidth: isExpanded ? 1.5 : 1,
@@ -56,7 +57,7 @@ function EmployeeCard({ emp, isExpanded, totalCount, onCardClick, onBadgeClick, 
         </button>
         {totalCount > 0 && (
           <span
-            onClick={(e) => { e.stopPropagation(); onBadgeClick(); }}
+            onClick={(e) => { e.stopPropagation(); onToggle(); }}
             onMouseDown={(e) => e.stopPropagation()}
             title={isExpanded ? 'Collapse' : 'Expand'}
             className="ml-1 text-[10.5px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
@@ -71,11 +72,11 @@ function EmployeeCard({ emp, isExpanded, totalCount, onCardClick, onBadgeClick, 
   return (
     <button
       type="button"
-      onClick={onCardClick}
+      onClick={onToggle}
       className="rounded-md p-2.5 flex items-center gap-3 text-left transition-shadow hover:shadow-sm"
       style={{
         width: 280,
-        background: isExpanded ? '#eff6ff' : '#ffffff',  // light blue tint on active
+        background: isExpanded ? '#eff6ff' : '#ffffff',
         borderColor: isExpanded ? '#2563eb' : '#e2e8f0',
         borderWidth: isExpanded ? 1.5 : 1,
         borderStyle: 'solid',
@@ -88,7 +89,10 @@ function EmployeeCard({ emp, isExpanded, totalCount, onCardClick, onBadgeClick, 
       </div>
       {totalCount > 0 && (
         <span
-          onClick={(e) => { e.stopPropagation(); onBadgeClick(); }}
+          // Badge is visually distinct but behaves identically to a card
+          // click. stopPropagation prevents double-firing — without it,
+          // both the badge handler and the parent button would toggle.
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
           onMouseDown={(e) => e.stopPropagation()}
           title={isExpanded ? 'Collapse this team' : 'Expand this team'}
           className="ml-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded flex-shrink-0 cursor-pointer transition-colors"
@@ -101,93 +105,9 @@ function EmployeeCard({ emp, isExpanded, totalCount, onCardClick, onBadgeClick, 
 }
 
 /* ── Floating popup shown when a card is clicked ───────────────────────── */
-function EmployeePopup({ emp, totalMembers, directReports, onClose, onAction, anchorRect }) {
-  const ref = useRef(null);
-  const [photoBroken, setPhotoBroken] = useState(false);
-
-  // Close on outside click + Escape key.
-  useEffect(() => {
-    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    const onKey   = (e) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('mousedown', onClick);
-    document.addEventListener('keydown',   onKey);
-    return () => {
-      document.removeEventListener('mousedown', onClick);
-      document.removeEventListener('keydown',   onKey);
-    };
-  }, [onClose]);
-
-  // Position the popup just below the anchor card. Fall back to fixed
-  // centred if no anchor (e.g. opened programmatically).
-  const style = anchorRect
-    ? { top: anchorRect.bottom + 6, left: anchorRect.left, position: 'fixed' }
-    : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', position: 'fixed' };
-
-  return (
-    <div ref={ref} style={style} className="z-50 w-[280px] bg-white border border-slate-200 rounded-xl shadow-2xl p-4">
-      <div className="flex items-start gap-3">
-        <Avatar firstName={emp.firstName} lastName={emp.lastName} photoUrl={emp.photoUrl} photoBroken={photoBroken} onPhotoError={() => setPhotoBroken(true)} size={48} />
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-bold text-slate-800 truncate">
-            {emp.employeeId && <span className="text-slate-400 font-mono text-[11px] mr-1">{emp.employeeId}</span>}
-            {emp.firstName} {emp.lastName}
-          </p>
-          {emp.email && (
-            <a href={`mailto:${emp.email}`} className="text-[11.5px] text-blue-600 hover:underline truncate block mt-0.5">
-              {emp.email}
-            </a>
-          )}
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            {emp.designation || emp.role || 'Employee'}
-            {emp.department && <span className="text-slate-400"> · {emp.department}</span>}
-          </p>
-        </div>
-        <button onClick={onClose} className="text-slate-400 hover:text-slate-700 -m-1 p-1" aria-label="Close">
-          <X size={14} />
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100">
-        <div className="text-center">
-          <p className="text-[18px] font-bold text-blue-600 leading-tight">{totalMembers}</p>
-          <p className="text-[10.5px] text-slate-500 mt-0.5">Total Members</p>
-        </div>
-        <div className="text-center">
-          <p className="text-[18px] font-bold text-blue-600 leading-tight">{directReports}</p>
-          <p className="text-[10.5px] text-slate-500 mt-0.5">Direct Reports</p>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-center gap-2 mt-3">
-        <button
-          title="View profile"
-          onClick={() => onAction('view', emp)}
-          className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors"
-        ><Eye size={14} /></button>
-        <a
-          title="Send email"
-          href={emp.email ? `mailto:${emp.email}` : '#'}
-          className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors"
-        ><MessageSquare size={14} /></a>
-        <button
-          title="Video call"
-          onClick={() => emp.email && window.open(`https://meet.google.com/new`, '_blank')}
-          className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors"
-        ><Video size={14} /></button>
-        <a
-          title="Call"
-          href={emp.phone ? `tel:${emp.phone}` : '#'}
-          className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors"
-        ><Phone size={14} /></a>
-      </div>
-    </div>
-  );
-}
-
 /* ── Column of children with vertical + horizontal blue connectors.
-   All children render continuously (page scrolls); no pagination, no
-   max-5-window. Matches Zoho's behaviour. */
-function ChildrenColumn({ children, expandedIds, popupId, subtreeSize, onCardClick, onBadgeClick }) {
+   All children render continuously (page scrolls); no pagination. */
+function ChildrenColumn({ children, expandedIds, subtreeSize, onToggle }) {
   return (
     <div className="relative pl-6 flex flex-col gap-3">
       {/* Vertical blue connector — spans the full height of the column */}
@@ -204,10 +124,9 @@ function ChildrenColumn({ children, expandedIds, popupId, subtreeSize, onCardCli
           />
           <EmployeeCard
             emp={emp}
-            isExpanded={expandedIds.has(emp._id) || popupId === emp._id}
+            isExpanded={expandedIds.has(emp._id)}
             totalCount={subtreeSize[emp._id] || 0}
-            onCardClick={(evt) => onCardClick(emp, evt)}
-            onBadgeClick={() => onBadgeClick(emp._id)}
+            onToggle={() => onToggle(emp._id)}
           />
         </div>
       ))}
@@ -219,17 +138,12 @@ export default function OrgChart() {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  // Path of expanded manager ids, in order. The same shape as before, but
-  // the BADGE controls this — clicking the card opens a popup instead.
-  // Clicking the badge of a currently-expanded node collapses everything
-  // from that depth onward (recursive collapse falls out for free).
+  // Path of expanded manager ids, in order. Clicking a card (or its badge)
+  // toggles the node at the corresponding depth. Recursive collapse falls
+  // out because we just truncate selectedPath at the toggle depth.
   const [selectedPath, setSelectedPath] = useState([]);
-  // Floating popup state. Click on a card body opens the popup; click on
-  // an action button or outside closes it.
-  const [popup, setPopup] = useState(null);  // { emp, anchorRect }
 
   const location = useLocation();
-  const navigate = useNavigate();
   const isDepartmentTree = location.pathname === '/dept-tree';
   const [selectedDept, setSelectedDept] = useState('Software');
 
@@ -280,33 +194,15 @@ export default function OrgChart() {
   }
   const expandedIds = new Set(selectedPath);
 
-  // Badge click: expand or collapse this node.
-  // If the node is the CURRENT tail of selectedPath, collapse it (and any
-  // sub-tail underneath). Otherwise, expand it at the appropriate depth.
-  const handleBadgeClick = (depth, empId) => {
+  // Click anywhere on a card (body or badge) toggles expansion of that
+  // node at the given depth. Clicking an already-expanded node collapses
+  // it and everything below; clicking a sibling at the same depth swaps
+  // to that branch.
+  const handleToggle = (depth, empId) => {
     setSelectedPath(prev => {
-      if (prev[depth] === empId) {
-        // Already expanded at this depth → collapse it and everything below.
-        return prev.slice(0, depth);
-      }
-      // Replace whatever's at this depth (and deeper) with the new selection.
+      if (prev[depth] === empId) return prev.slice(0, depth);
       return [...prev.slice(0, depth), empId];
     });
-  };
-
-  // Card click: open the popup for this employee.
-  const handleCardClick = (emp, evt) => {
-    // Capture the card's bounding rect so the popup can anchor below it.
-    const target = evt?.currentTarget || evt?.target;
-    const rect = target && target.getBoundingClientRect
-      ? target.getBoundingClientRect()
-      : null;
-    setPopup({ emp, anchorRect: rect });
-  };
-
-  const handleAction = (action, emp) => {
-    setPopup(null);
-    if (action === 'view') navigate(`/employees?search=${encodeURIComponent(emp.employeeId || emp.email || '')}`);
   };
 
   /* ── Department Tree Render (unchanged) ──────────────────────────────── */
@@ -426,10 +322,9 @@ export default function OrgChart() {
                             key={emp._id}
                             emp={emp}
                             mini={isAncestor}
-                            isExpanded={expandedIds.has(emp._id) || popup?.emp?._id === emp._id}
+                            isExpanded={expandedIds.has(emp._id)}
                             totalCount={subtreeSize[emp._id] || 0}
-                            onCardClick={(evt) => handleCardClick(emp, evt)}
-                            onBadgeClick={() => handleBadgeClick(depth, emp._id)}
+                            onToggle={() => handleToggle(depth, emp._id)}
                           />
                         ))
                       )}
@@ -444,10 +339,9 @@ export default function OrgChart() {
                           key={emp._id}
                           emp={emp}
                           mini
-                          isExpanded={expandedIds.has(emp._id) || popup?.emp?._id === emp._id}
+                          isExpanded={expandedIds.has(emp._id)}
                           totalCount={subtreeSize[emp._id] || 0}
-                          onCardClick={(evt) => handleCardClick(emp, evt)}
-                          onBadgeClick={() => handleBadgeClick(depth, emp._id)}
+                          onToggle={() => handleToggle(depth, emp._id)}
                         />
                       ))}
                     </div>
@@ -459,10 +353,8 @@ export default function OrgChart() {
                       <ChildrenColumn
                         children={colEmps}
                         expandedIds={expandedIds}
-                        popupId={popup?.emp?._id || null}
                         subtreeSize={subtreeSize}
-                        onCardClick={(emp, evt) => handleCardClick(emp, evt)}
-                        onBadgeClick={(empId) => handleBadgeClick(depth, empId)}
+                        onToggle={(empId) => handleToggle(depth, empId)}
                       />
                     )
                   )}
@@ -472,19 +364,6 @@ export default function OrgChart() {
           </div>
         )}
       </div>
-
-      {/* Floating popup, mounted at the page root so it can position above
-          all columns. Click outside or Escape closes it. */}
-      {popup && (
-        <EmployeePopup
-          emp={popup.emp}
-          totalMembers={subtreeSize[popup.emp._id] || 0}
-          directReports={(childrenOf[popup.emp._id] || []).length}
-          anchorRect={popup.anchorRect}
-          onClose={() => setPopup(null)}
-          onAction={handleAction}
-        />
-      )}
     </div>
   );
 }
