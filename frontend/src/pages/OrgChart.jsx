@@ -423,7 +423,12 @@ export default function OrgChart() {
                   {isRoot ? (
                     // Root column: same column-style stack as before, no
                     // connectors (nothing to connect to on the left).
-                    <div className="flex flex-col gap-3" style={{ width: isAncestor ? 56 : 220 }}>
+                    // No fixed width — let it auto-size to the card contents
+                    // (280px in full mode, ~38px in mini mode). The earlier
+                    // explicit width: 220 caused full cards to overflow
+                    // their container by 60px, which threw off the
+                    // connector hook position in the next column.
+                    <div className="flex flex-col gap-3" style={{ alignItems: 'flex-start' }}>
                       {colEmps.length === 0 ? (
                         <p className="text-[12px] text-slate-400 italic">No employees</p>
                       ) : (
