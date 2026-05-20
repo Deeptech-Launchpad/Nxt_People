@@ -115,9 +115,17 @@ function mapEmployee(rec) {
     emergencyContactPhone:    pick(rec, 'EmergencyContactNumber', 'EmergencyContactPhone', 'Emergency_Contact_Number'),
     emergencyContactRelation: pick(rec, 'EmergencyContactRelationship', 'EmergencyContactRelation'),
     // ── Photo ─────────────────────────────────────────────────────────
-    // Photo_downloadUrl is Zoho's CDN URL; preferred over the raw Photo field
-    // (which is sometimes just an id or base64 blob).
-    photoUrl: pick(rec, 'Photo_downloadUrl', 'PhotoURL', 'PhotoUrl', 'Photo', 'EmployeePhoto'),
+    // Zoho's photo URLs (`https://contacts.zoho.in/file?ID=…`) require a
+    // logged-in Zoho session — browsers can't load them anonymously, so
+    // they render as broken-image icons. Skip those entirely; let the UI
+    // show its initials/avatar fallback. Only accept URLs that are clearly
+    // public (a real https URL not pointing at Zoho's authenticated CDN).
+    photoUrl: (() => {
+      const raw = pick(rec, 'Photo_downloadUrl', 'PhotoURL', 'PhotoUrl', 'Photo', 'EmployeePhoto');
+      if (!raw) return null;
+      if (/contacts\.zoho\.|people\.zoho\./i.test(raw)) return null;
+      return raw;
+    })(),
     // ── Exit / experience / expertise ─────────────────────────────────
     exitDate:        toIsoDate(pick(rec, 'Dateofexit', 'Date_of_exit', 'DateOfExit', 'ExitDate')),
     // Zoho exposes both a numeric (months?) and a formatted "5 years 3 months"

@@ -19,7 +19,12 @@ const PHOTO_FALLBACK = (firstName, lastName) =>
 /* ── Single employee card used inside every column ─────────────────────── */
 function EmployeeCard({ emp, isSelected, childCount, onClick, onAction }) {
   const [hover, setHover] = useState(false);
+  // photoBroken tracks whether the <img> failed to load. When true we render
+  // the User icon instead of the broken-image placeholder — covers stale
+  // Zoho-CDN URLs left in the DB from before the sync filter was added.
+  const [photoBroken, setPhotoBroken] = useState(false);
   const photo = emp.photoUrl || PHOTO_FALLBACK(emp.firstName, emp.lastName);
+  const showPhoto = emp.photoUrl && !photoBroken;
 
   return (
     <div className="relative" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
@@ -32,8 +37,8 @@ function EmployeeCard({ emp, isSelected, childCount, onClick, onAction }) {
             : 'border-slate-200 hover:border-blue-300 hover:shadow-sm'}`}
       >
         <div className="w-9 h-9 rounded border border-slate-200 overflow-hidden bg-slate-50 flex items-center justify-center text-slate-400 flex-shrink-0">
-          {emp.photoUrl
-            ? <img src={photo} alt="" className="w-full h-full object-cover" />
+          {showPhoto
+            ? <img src={photo} alt="" className="w-full h-full object-cover" onError={() => setPhotoBroken(true)} />
             : <User size={18} />}
         </div>
         <div className="min-w-0 flex-1">
@@ -51,8 +56,8 @@ function EmployeeCard({ emp, isSelected, childCount, onClick, onAction }) {
         <div className="absolute left-0 top-full mt-1.5 z-30 w-[260px] bg-white border border-slate-200 rounded-lg shadow-2xl p-3">
           <div className="flex items-start gap-3">
             <div className="w-12 h-12 rounded border border-slate-200 overflow-hidden bg-slate-50 flex-shrink-0">
-              {emp.photoUrl
-                ? <img src={photo} alt="" className="w-full h-full object-cover" />
+              {showPhoto
+                ? <img src={photo} alt="" className="w-full h-full object-cover" onError={() => setPhotoBroken(true)} />
                 : <div className="w-full h-full flex items-center justify-center text-slate-400"><User size={22} /></div>}
             </div>
             <div className="min-w-0">
