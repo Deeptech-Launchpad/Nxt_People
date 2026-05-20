@@ -115,7 +115,7 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
           title={`${emp.firstName} ${emp.lastName}${emp.designation ? ' · ' + emp.designation : ''}`}
           className="bg-white p-0.5 transition-all hover:shadow-sm"
           style={{
-            borderColor: isExpanded ? '#2563eb' : '#e2e8f0',
+            borderColor: isExpanded ? '#0088FF' : '#e2e8f0',
             borderWidth: isExpanded ? 1.5 : 1,
             borderStyle: 'solid',
             borderRadius: 6,
@@ -148,7 +148,7 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
       style={{
         width: 280,
         background: isExpanded ? '#eff6ff' : '#ffffff',
-        borderColor: isExpanded ? '#2563eb' : '#e2e8f0',
+        borderColor: isExpanded ? '#0088FF' : '#e2e8f0',
         borderWidth: isExpanded ? 1.5 : 1,
         borderStyle: 'solid',
       }}
@@ -178,8 +178,11 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
    Y position in the previous column, and a horizontal hook extends LEFT
    from that point back toward the parent. Visually the line now clearly
    originates at the expanded card's row — matching Zoho. */
-const LINE_COLOR   = '#94a3b8';   // gray — the bulk of the tree
-const ACTIVE_COLOR = '#2563eb';   // blue — the "active branch" hook
+// Match Zoho People's exact design tokens (lifted from their dev tools):
+//   --brdr_gry      = #DCDCDC  → resting connector lines
+//   --primarybluclr = #0088FF  → the "active branch" hook
+const LINE_COLOR   = '#DCDCDC';   // gray — the bulk of the tree
+const ACTIVE_COLOR = '#0088FF';   // blue — the "active branch" hook
 const CARD_PITCH   = 70;          // card height (~58px) + gap-3 (12px)
 const CARD_HALF    = 29;          // centerline of a card
 // Connector geometry. HOOK_LEN matches the column gap so the hook lands
@@ -209,9 +212,9 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
       }} />
       {/* Hook back toward the parent at the parent's Y. This is the
           "live branch" — coloured BLUE because it visually extends out
-          of the active card's badge. Rest of the tree stays gray. */}
+          of the active card's badge. Zoho draws this at 2px. */}
       <div className="absolute" style={{
-        left: -HOOK_LEN, top: parentY, width: HOOK_LEN, height: 1.5,
+        left: -HOOK_LEN, top: parentY - 1, width: HOOK_LEN, height: 2,
         background: ACTIVE_COLOR,
       }} />
       {/* Children: each card has a horizontal branch from the vertical
