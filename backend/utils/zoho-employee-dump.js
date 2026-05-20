@@ -82,15 +82,12 @@ const isFilled = (v) =>
       const count = Array.isArray(rows) ? rows.length : 0;
       console.log(`\n  📂 ${name}  (${count} row${count === 1 ? '' : 's'})`);
       if (count === 0) continue;
+      // Dump the raw row structure so we can see EXACTLY what Zoho returns.
+      // Some tabular rows are flat objects, others are wrapped — printing
+      // the raw JSON is the only way to be sure of the field names + values.
       rows.forEach((row, idx) => {
-        if (rows.length > 1) console.log(`     — row ${idx + 1} —`);
-        for (const [k, v] of Object.entries(row)) {
-          if (/\.(ID|id|displayValue)$/.test(k)) continue;
-          const filled = isFilled(v);
-          const tag = filled ? '✓' : '✗';
-          const shown = filled ? `= ${v}` : '(empty)';
-          console.log(`     ${tag} ${k.padEnd(30)} ${shown}`);
-        }
+        console.log(`     — row ${idx + 1} (raw JSON) —`);
+        console.log(JSON.stringify(row, null, 2).split('\n').map(l => '     ' + l).join('\n'));
       });
     }
   }
