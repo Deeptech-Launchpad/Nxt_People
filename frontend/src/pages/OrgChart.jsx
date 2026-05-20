@@ -203,38 +203,63 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
   const lineTop     = Math.min(parentY, firstChildY);
   const lineBottom  = Math.max(parentY, lastChildY);
 
+  // Y of the currently-expanded child in this column (if any). Drives the
+  // blue "active branch" so the line visually traces from parent → selected
+  // child as one continuous highlight, matching Zoho's behaviour.
+  const selectedChildIdx = children.findIndex(c => expandedIds.has(c._id));
+  const selectedChildY   = selectedChildIdx >= 0
+    ? selectedChildIdx * CARD_PITCH + CARD_HALF
+    : null;
+  // The blue overlay on the vertical line covers parentY ↔ selectedChildY.
+  const activeTop    = selectedChildY != null ? Math.min(parentY, selectedChildY) : null;
+  const activeHeight = selectedChildY != null ? Math.abs(selectedChildY - parentY) : 0;
+
   return (
     <div className="relative flex flex-col gap-3" style={{ paddingLeft: HOOK_LEN }}>
-      {/* Vertical connector — exactly tall enough to reach both ends */}
+      {/* Gray vertical connector — exactly tall enough to reach both ends */}
       <div className="absolute" style={{
         left: 0, top: lineTop, height: lineBottom - lineTop,
         width: 1, background: LINE_COLOR,
       }} />
-      {/* Hook back toward the parent at the parent's Y. This is the
-          "live branch" — coloured BLUE because it visually extends out
-          of the active card's badge. Zoho draws this at 2px. */}
+      {/* Blue vertical overlay: covers only the active sub-path so the
+          highlight is continuous from parent down to the selected child. */}
+      {selectedChildY != null && activeHeight > 0 && (
+        <div className="absolute" style={{
+          left: -1, top: activeTop, height: activeHeight,
+          width: 2, background: ACTIVE_COLOR,
+        }} />
+      )}
+      {/* Blue hook back toward the parent — Zoho draws this at 2px. */}
       <div className="absolute" style={{
         left: -HOOK_LEN, top: parentY - 1, width: HOOK_LEN, height: 2,
         background: ACTIVE_COLOR,
       }} />
       {/* Children: each card has a horizontal branch from the vertical
-          line into its own left edge. */}
-      {children.map(emp => (
-        <div key={emp._id} className="relative">
-          <div className="absolute" style={{
-            left: -HOOK_LEN, top: '50%', width: HOOK_LEN, height: 1,
-            background: LINE_COLOR, transform: 'translateY(-50%)',
-          }} />
-          <EmployeeCard
-            emp={emp}
-            isExpanded={expandedIds.has(emp._id)}
-            totalCount={subtreeSize[emp._id] || 0}
-            directCount={(childrenOf[emp._id] || []).length}
-            onToggle={() => onToggle(emp._id)}
-            onHoverChange={onHoverChange}
-          />
-        </div>
-      ))}
+          line into its own left edge. The selected child's branch is BLUE
+          and 2px (live branch); others are GRAY 1px (resting). */}
+      {children.map(emp => {
+        const isActive = expandedIds.has(emp._id);
+        return (
+          <div key={emp._id} className="relative">
+            <div className="absolute" style={{
+              left: isActive ? -HOOK_LEN - 1 : -HOOK_LEN,
+              top: '50%',
+              width: isActive ? HOOK_LEN + 1 : HOOK_LEN,
+              height: isActive ? 2 : 1,
+              background: isActive ? ACTIVE_COLOR : LINE_COLOR,
+              transform: 'translateY(-50%)',
+            }} />
+            <EmployeeCard
+              emp={emp}
+              isExpanded={isActive}
+              totalCount={subtreeSize[emp._id] || 0}
+              directCount={(childrenOf[emp._id] || []).length}
+              onToggle={() => onToggle(emp._id)}
+              onHoverChange={onHoverChange}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -410,9 +435,12 @@ export default function OrgChart() {
         ) : (
           <div className="flex items-start min-w-max" style={{ gap: COL_GAP }}>
             {columns.map((colEmps, depth) => {
-              // Ancestor compression: once the tree is 3+ columns deep,
-              // every column except the last TWO collapses to mini cards.
-              const isAncestor = columns.length >= 3 && depth < columns.length - 2;
+              // Ancestor compression: keep the last THREE columns as full
+              // cards (parent's sibling column, active column, and its
+              // children) so the user keeps context as they navigate deep.
+              // Matches Zoho — they never compress the immediate-parent's
+              // sibling row even when you go one more level down.
+              const isAncestor = columns.length >= 4 && depth < columns.length - 3;
               const isRoot     = depth === 0;
               // Parent index in the previous column — drives the connector
               // hook's vertical position so the line visibly originates at
