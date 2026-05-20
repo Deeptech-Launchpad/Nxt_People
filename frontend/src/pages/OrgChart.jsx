@@ -181,7 +181,11 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
 const LINE_COLOR = '#94a3b8';
 const CARD_PITCH = 70;   // card height (~58px) + gap-3 (12px)
 const CARD_HALF  = 29;   // half of card height — where the centerline sits
-const HOOK_LEN   = 24;   // horizontal segment length
+// Connector geometry. HOOK_LEN matches the gap between columns in the
+// main render so the hook lands exactly at the previous column's right
+// edge — no overlap into the parent column's cards.
+const HOOK_LEN   = 40;
+const COL_GAP    = 40;
 
 function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onToggle, onHoverChange, parentIndex = 0 }) {
   // Y of each child's centerline (children always start at top of column).
@@ -400,7 +404,7 @@ export default function OrgChart() {
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="flex items-start gap-2 min-w-max">
+          <div className="flex items-start min-w-max" style={{ gap: COL_GAP }}>
             {columns.map((colEmps, depth) => {
               // Ancestor compression: once the tree is 3+ columns deep,
               // every column except the last TWO collapses to mini cards.
