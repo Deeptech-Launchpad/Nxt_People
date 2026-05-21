@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal } from 'lucide-react';
+import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal, MessageCircle } from 'lucide-react';
+import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 
@@ -368,6 +369,9 @@ export default function Topbar() {
   const [showNotifs, setShowNotifs]               = useState(false);
   const [notifications, setNotifications]         = useState([]);
   const [unreadCount, setUnreadCount]             = useState(0);
+  // Real-time chat unread counter — driven by the WebSocket context so the
+  // badge updates instantly when a new DM arrives, no polling needed.
+  const { unreadTotal: chatUnread } = useChat();
   const [showUserMenu, setShowUserMenu]           = useState(false);
   const [showQuickActions, setShowQuickActions]   = useState(false);
   const [showSearch, setShowSearch]               = useState(false);
@@ -531,6 +535,20 @@ export default function Topbar() {
               </div>
             )}
           </div>
+
+          {/* Chat — quick-jump to /chat with an unread badge driven by the
+              WebSocket context. Separate from the notifications bell so the
+              two counters don't compete for the same pill. */}
+          <button onClick={() => navigate('/chat')}
+            title={chatUnread > 0 ? `${chatUnread} unread message${chatUnread === 1 ? '' : 's'}` : 'Open chat'}
+            className="relative hover:bg-white/10 transition-colors p-1 rounded">
+            <MessageCircle size={17} />
+            {chatUnread > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] bg-emerald-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center ring-2 ring-[#1a2040]">
+                {chatUnread > 9 ? '9+' : chatUnread}
+              </span>
+            )}
+          </button>
 
           {/* Notifications */}
           <div className="relative flex items-center" ref={notifRef}>

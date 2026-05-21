@@ -42,13 +42,16 @@ function HoverPopup({ emp, totalMembers, directReports, anchorRect, onMouseEnter
     : null;
   if (!style) return null;
 
-  // Action buttons: wired so View opens the full employee page, Message
-  // opens the OS mail client, Phone opens the OS dialler. Video is left
-  // disabled because the app has no integrated video service yet.
+  // Action buttons:
+  //  • View  → full employee profile page
+  //  • Chat  → /chat?user=:id (in-app real-time chat; sends a connection
+  //            request automatically if not yet connected)
+  //  • Video → disabled (no integrated video service yet)
+  //  • Phone → OS dialler via tel:
   const goView    = () => navigate(`/employees/${emp._id}`);
+  const goChat    = () => navigate(`/chat?user=${emp._id}`);
   const phoneNum  = emp.phone || emp.workPhone || null;
-  const mailHref  = emp.email ? `mailto:${emp.email}` : null;
-  const telHref   = phoneNum  ? `tel:${phoneNum}`    : null;
+  const telHref   = phoneNum  ? `tel:${phoneNum}` : null;
   const btnBase   = 'w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center';
   const btnOff    = 'w-8 h-8 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center cursor-not-allowed';
 
@@ -87,13 +90,9 @@ function HoverPopup({ emp, totalMembers, directReports, anchorRect, onMouseEnter
         <button type="button" onClick={goView} title="View profile" className={btnBase}>
           <Eye size={13} />
         </button>
-        {mailHref ? (
-          <a href={mailHref} title={`Email ${emp.email}`} className={btnBase}>
-            <MessageSquare size={13} />
-          </a>
-        ) : (
-          <span title="No email on file" className={btnOff}><MessageSquare size={13} /></span>
-        )}
+        <button type="button" onClick={goChat} title={`Chat with ${emp.firstName || 'colleague'}`} className={btnBase}>
+          <MessageSquare size={13} />
+        </button>
         <span title="Video calling not enabled" className={btnOff}>
           <Video size={13} />
         </span>

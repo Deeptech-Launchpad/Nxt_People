@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AttendanceProvider } from './context/AttendanceContext';
 import { WeekendRulesProvider } from './context/WeekendRulesContext';
+import { ChatProvider } from './context/ChatContext';
 import MobileBlocker from './components/layout/MobileBlocker';
 
 import Layout from './components/layout/Layout';
@@ -231,8 +232,10 @@ export default function App() {
       <AuthProvider>
         <WeekendRulesProvider>
           <AttendanceProvider>
-            <Toaster position="bottom-right" toastOptions={{ duration: 4000, style: { fontSize: '13px', fontWeight: 600 } }}/>
-            <AppRoutes/>
+            <ChatProvider>
+              <Toaster position="bottom-right" toastOptions={{ duration: 4000, style: { fontSize: '13px', fontWeight: 600 } }}/>
+              <AppRoutes/>
+            </ChatProvider>
           </AttendanceProvider>
         </WeekendRulesProvider>
       </AuthProvider>

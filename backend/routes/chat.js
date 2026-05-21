@@ -334,10 +334,13 @@ router.post('/threads/:userId/messages', async (req, res) => {
       createdAt: ins.rows[0].createdAt,
       readAt: null,
     };
-    // Push to BOTH parties so a sender's other tabs also reflect the new
-    // message instantly (no need to wait for HTTP response to propagate).
-    chatHub.send(peer, { type: 'message', message });
-    chatHub.send(me,   { type: 'message', message });
+    // Push to the recipient. We do NOT echo to the sender's own sockets —
+    // the sender already received the message in the HTTP response and
+    // inserts it directly into local state; echoing would just need to be
+    // de-duped client-side. (If you add a multi-tab "see my own sends on
+    // my other devices" feature later, attach peerId to the payload and
+    // bring back chatHub.send(me, ...).)
+    chatHub.send(peer, { type: 'message', message, peerId: me });
     res.json({ success: true, data: message });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
