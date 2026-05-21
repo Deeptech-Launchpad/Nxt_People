@@ -98,6 +98,18 @@ router.get('/space', async (req, res) => {
       ),
     ]);
 
+    // Diagnostic — keeps us from chasing ghosts when the page shows zeros.
+    // Returns the raw values the SQL actually saw, so the browser devtools
+    // panel makes the problem obvious (mis-cased dept, NULL employee.dept,
+    // total-active count, etc.). Cheap, fixed-cost.
+    const debug = await pool.query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM employees WHERE status='active') AS "totalActive",
+         (SELECT COUNT(*)::int FROM employees WHERE status='active' AND department IS NOT NULL) AS "withDept",
+         (SELECT COUNT(*)::int FROM employees WHERE LOWER(TRIM(status))='active') AS "activeLowered",
+         (SELECT json_agg(DISTINCT department) FROM employees WHERE status='active') AS "departments"`
+    );
+
     res.json({
       success: true,
       data: {
@@ -112,10 +124,15 @@ router.get('/space', async (req, res) => {
         recentlyCheckedIn:  recentRes.rows,
         newHires:           newHiresRes.rows,
         birthdayBuddy:      birthdaysRes.rows,
+        _debug: {
+          myDeptFromAuth: me.department,
+          myEmail: me.email,
+          ...debug.rows[0],
+        },
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: err.message, stack: err.stack });
   }
 });
 
