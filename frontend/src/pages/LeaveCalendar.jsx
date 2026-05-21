@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import api from '../utils/api';
+import { useWeekendRules } from '../context/WeekendRulesContext';
 
 function getDaysInMonth(year, month) {
   return new Date(year, month + 1, 0).getDate();
@@ -14,6 +15,10 @@ export default function LeaveCalendar() {
   const [date, setDate] = useState(new Date(2026, 4, 1)); // Default May 2026 or new Date()
   const [events, setEvents] = useState({});
   const [loading, setLoading] = useState(false);
+  // Pulls the org's weekend rules (e.g. "Sundays" + "1st & 3rd Saturdays")
+  // so days that aren't actually weekends per policy still surface
+  // Absent when missed. Falls back to Sun/Sat if the context is empty.
+  const { isWeekend: isWeekendByRule } = useWeekendRules();
 
   const year = date.getFullYear();
   const month = date.getMonth();
@@ -92,10 +97,34 @@ export default function LeaveCalendar() {
         }
       });
 
+      // 4. Infer Absent for past working days with no attendance row.
+      // The /attendance/my endpoint only returns rows where the employee
+      // ACTUALLY checked in (or has an explicit status='absent' record),
+      // so days where the user never showed up have no row at all and
+      // were silently rendering as empty cells. Walk every past day in
+      // the visible month, skip weekends / holidays / leaves / days that
+      // already have a pill, and mark the remainder as Absent.
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      for (let d = 1; d <= daysInMonth; d++) {
+        const day = new Date(year, month, d);
+        if (day >= today) continue;                  // skip today + future
+        const ds = day.toLocaleDateString('en-CA'); // YYYY-MM-DD
+        const isWeekend = typeof isWeekendByRule === 'function'
+          ? isWeekendByRule(day)
+          : (day.getDay() === 0 || day.getDay() === 6);
+        if (isWeekend) continue;
+        const existing = newEvents[ds] || [];
+        if (existing.some(e => ['holiday','leave','present','absent'].includes(e.type))) continue;
+        if (!newEvents[ds]) newEvents[ds] = [];
+        newEvents[ds].push({ type: 'absent', text: 'Absent' });
+      }
+
       setEvents(newEvents);
     }).finally(() => {
       setLoading(false);
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month, daysInMonth]);
 
   const currentDayHighlight = new Date().getMonth() === month && new Date().getFullYear() === year ? new Date().getDate() : null;
