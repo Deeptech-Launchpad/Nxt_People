@@ -66,20 +66,19 @@ router.get('/space', async (req, res) => {
        ORDER BY a.check_in DESC LIMIT 5`,
         dept ? [dept] : []
       ),
-      // 5. New hires — joined in last 15 days, my department (uses string
-      // interpolation for INTERVAL because PG doesn't accept parameterised
-      // INTERVALs; the value is a hardcoded integer literal so injection
-      // isn't possible).
+      // 5. New hires — joined in last 15 days, my department. Column is
+      // `joining_date` (not `join_date`) — that one-letter typo was the
+      // SQL error that 500'd the whole endpoint.
       pool.query(
         `SELECT id, employee_id AS "employeeId",
                 first_name AS "firstName", last_name AS "lastName",
                 designation, photo_url AS "photoUrl",
-                join_date AS "joinDate"
+                joining_date AS "joinDate"
            FROM employees
           WHERE status = 'active'
-            AND join_date >= CURRENT_DATE - INTERVAL '15 days'
+            AND joining_date >= CURRENT_DATE - INTERVAL '15 days'
             ${dept ? 'AND LOWER(TRIM(department)) = LOWER(TRIM($1))' : ''}
-       ORDER BY join_date DESC LIMIT 10`,
+       ORDER BY joining_date DESC LIMIT 10`,
         dept ? [dept] : []
       ),
       // 6. Today's birthdays in my department
@@ -98,24 +97,6 @@ router.get('/space', async (req, res) => {
       ),
     ]);
 
-    // Diagnostic — two separate queries because mixing DISTINCT into a
-    // single combined-subquery SELECT caused a 500 on the deployed PG.
-    const [counts, depts] = await Promise.all([
-      pool.query(
-        `SELECT
-           (SELECT COUNT(*)::int FROM employees WHERE status = 'active') AS "totalActive",
-           (SELECT COUNT(*)::int FROM employees WHERE status = 'active' AND department IS NOT NULL) AS "withDept"`
-      ),
-      pool.query(
-        `SELECT DISTINCT department FROM employees
-           WHERE status = 'active' AND department IS NOT NULL ORDER BY department`
-      ),
-    ]);
-    const debug = {
-      ...(counts.rows[0] || {}),
-      departments: depts.rows.map(r => r.department),
-    };
-
     res.json({
       success: true,
       data: {
@@ -130,11 +111,6 @@ router.get('/space', async (req, res) => {
         recentlyCheckedIn:  recentRes.rows,
         newHires:           newHiresRes.rows,
         birthdayBuddy:      birthdaysRes.rows,
-        _debug: {
-          myDeptFromAuth: me.department,
-          myEmail: me.email,
-          ...debug,
-        },
       },
     });
   } catch (err) {
