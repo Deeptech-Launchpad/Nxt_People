@@ -50,6 +50,7 @@
     "pino-http": "^10.3.0",
     "pino-pretty": "^11.3.0",
     "qrcode": "^1.5.4",
+    "ws": "^8.20.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

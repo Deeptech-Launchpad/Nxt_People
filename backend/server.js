@@ -3,12 +3,14 @@
  * Imports the Express app factory from app.js (single source of truth for
  * routes and middleware) then starts the HTTP server and cron jobs.
  */
-const cron = require('node-cron');
+const http  = require('http');
+const cron  = require('node-cron');
 require('dotenv').config();
 
-const app    = require('./app');   // ← single source of truth for all routes
-const pool   = require('./db');
-const logger = require('./logger');
+const app     = require('./app');   // ← single source of truth for all routes
+const pool    = require('./db');
+const logger  = require('./logger');
+const chatWs  = require('./ws-chat');
 const { isNonWorkingDay } = require('./utils/workingDays');
 
 // Process-level safety nets. Without these, an unhandled promise rejection
@@ -84,7 +86,12 @@ async function ensureAdminUser() {
 }
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => logger.info({ port: PORT }, 'Server listening'));
+// Wrap Express in an http.Server so the chat WebSocket server can share
+// the same port (handles `upgrade` events on /ws/chat). The HTTP routes
+// continue to work exactly as before via the Express request listener.
+const server = http.createServer(app);
+chatWs.attach(server);
+server.listen(PORT, () => logger.info({ port: PORT }, 'Server listening (HTTP + WebSocket)'));
 
 
 // ================= CRON JOBS =================

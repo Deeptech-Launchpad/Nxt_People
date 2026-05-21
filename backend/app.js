@@ -120,6 +120,7 @@ app.use('/api/notifications',    require('./routes/notifications'));
 app.use('/api/announcements',    require('./routes/announcements'));
 app.use('/api/feeds',            require('./routes/feeds'));
 app.use('/api/profile',          require('./routes/profile'));
+app.use('/api/chat',             require('./routes/chat'));
 app.use('/api/regularizations',  require('./routes/regularizations'));
 app.use('/api/wfh',              require('./routes/wfh'));
 app.use('/api/comp-off',         require('./routes/comp-off'));

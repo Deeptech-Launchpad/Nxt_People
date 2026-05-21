@@ -1014,6 +1014,54 @@ const steps = [
      ON application_access(employee_id) WHERE revoked_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_app_access_connection_active
      ON application_access(api_connection_id) WHERE revoked_at IS NULL`,
+
+  // ── Chat: connection-request graph + 1:1 threads + messages ──────────────
+  // Modelled after Google Chat / LinkedIn: you can't message someone until
+  // they accept your connection request. One row per direction, so it's easy
+  // to support cancel/decline/block per side later.
+  `CREATE TABLE IF NOT EXISTS chat_connections (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    requester_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    recipient_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    status       TEXT NOT NULL DEFAULT 'pending',  -- pending | accepted | declined | blocked
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    accepted_at  TIMESTAMPTZ,
+    UNIQUE (requester_id, recipient_id),
+    CHECK  (requester_id <> recipient_id),
+    CHECK  (status IN ('pending','accepted','declined','blocked'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_conn_recipient
+     ON chat_connections(recipient_id, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_conn_requester
+     ON chat_connections(requester_id, status)`,
+
+  // Threads — one canonical row per pair, enforced by CHECK + UNIQUE on the
+  // sorted pair (user_a < user_b). This lets us do a fast lookup with
+  // LEAST/GREATEST without ambiguity.
+  `CREATE TABLE IF NOT EXISTS chat_threads (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_a_id       UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    user_b_id       UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    last_message_at TIMESTAMPTZ,
+    UNIQUE (user_a_id, user_b_id),
+    CHECK  (user_a_id < user_b_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_threads_user_a ON chat_threads(user_a_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_threads_user_b ON chat_threads(user_b_id)`,
+
+  `CREATE TABLE IF NOT EXISTS chat_messages (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    thread_id  UUID NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+    sender_id  UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    content    TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    read_at    TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_time
+     ON chat_messages(thread_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_messages_unread
+     ON chat_messages(thread_id, sender_id, read_at) WHERE read_at IS NULL`,
 ];
 
 async function runFixes() {
