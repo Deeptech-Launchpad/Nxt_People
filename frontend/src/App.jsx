@@ -127,10 +127,12 @@ const AppRoutes = () => {
           <Route path="profile"    element={<Profile/>}/>
 
           {/* ── Home / Team ──────────────────────────────────────────── */}
-          <Route path="team-space"    element={<TeamSpace/>}/>
-          <Route path="team/projects" element={<TeamProjects/>}/>
-          <Route path="team/peers"    element={<Peers/>}/>
-          <Route path="approvals"     element={<ProtectedRoute roles={['admin','manager']}><Approvals/></ProtectedRoute>}/>
+          <Route path="team-space"      element={<TeamSpace/>}/>
+          <Route path="team/department" element={<OrgChart/>}/>
+          <Route path="team/projects"   element={<TeamProjects/>}/>
+          <Route path="team/peers"      element={<Peers/>}/>
+          <Route path="team/approvals"  element={<ProtectedRoute roles={['admin','manager']}><Approvals/></ProtectedRoute>}/>
+          <Route path="approvals"       element={<ProtectedRoute roles={['admin','manager']}><Approvals/></ProtectedRoute>}/>
 
           {/* ── Home / Organization ──────────────────────────────────── */}
           <Route path="organization" element={<OrgOverview/>}/>

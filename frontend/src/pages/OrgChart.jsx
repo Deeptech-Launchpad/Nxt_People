@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { User, Search, Eye, MessageSquare, Video, Phone } from 'lucide-react';
 import api from '../utils/api';
+import { useAuth } from '../context/AuthContext';
 
 /* ── Square photo thumbnail. When no photo, a soft gray User silhouette
    (matches Zoho's placeholder — no initials, no coloured background). */
@@ -304,8 +305,10 @@ export default function OrgChart() {
   };
 
   const location = useLocation();
-  const isDepartmentTree = location.pathname === '/dept-tree';
-  const [selectedDept, setSelectedDept] = useState('Software');
+  // /dept-tree (org-wide) and /team/department (under Team) both render the
+  // same two-column view; the only difference is the default-selected dept.
+  const isDepartmentTree = location.pathname === '/dept-tree' || location.pathname === '/team/department';
+  const [selectedDept, setSelectedDept] = useState(null);
 
   useEffect(() => {
     api.get('/employees?limit=200&status=active')
@@ -313,6 +316,20 @@ export default function OrgChart() {
        .catch(console.error)
        .finally(() => setLoading(false));
   }, []);
+
+  // Pre-select a sensible default once employees load:
+  //   • /team/department → the logged-in user's own department
+  //   • /dept-tree       → the first department in the list
+  const { user } = useAuth();
+  useEffect(() => {
+    if (selectedDept || employees.length === 0) return;
+    if (location.pathname === '/team/department' && user?.department) {
+      setSelectedDept(user.department);
+    } else {
+      const first = employees.find(e => e.department)?.department;
+      if (first) setSelectedDept(first);
+    }
+  }, [employees, location.pathname, user, selectedDept]);
 
   /* ── Index employees + relationships once per render ─────────────────── */
   const empMap     = Object.fromEntries(employees.map(e => [e._id, e]));
@@ -388,9 +405,28 @@ export default function OrgChart() {
     const activeDept = deptsList.find(d => d.name === selectedDept) || deptsList[0] || null;
     const displayEmployees = activeDept?.employees || [];
 
+    // Geometry for the dept → employees connector lines. Mirrors the
+    // Employee Tree spine/hook style: gray spine spanning all employees,
+    // blue hook from the selected department, gray hooks to each employee.
+    const COL_PAD_TOP   = 32;   // p-8 top padding inside each column
+    const DEPT_PITCH    = 70;   // dept card 58 + gap-3 (12)
+    const DEPT_HALF     = 29;
+    const EMP_PITCH     = 74;   // emp card 58 + gap-4 (16)
+    const EMP_HALF      = 29;
+    const DEPT_RIGHT_X  = 348;  // left col card right edge (380 width − p-8)
+    const SPINE_X       = 388;  // sits in the gap between columns
+    const EMP_LEFT_X    = 412;  // right col card left edge (380 + p-8)
+
+    const selectedDeptIdx = Math.max(0, deptsList.findIndex(d => d.name === activeDept?.name));
+    const selectedDeptY   = COL_PAD_TOP + selectedDeptIdx * DEPT_PITCH + DEPT_HALF;
+    const firstEmpY       = COL_PAD_TOP + EMP_HALF;
+    const lastEmpY        = COL_PAD_TOP + Math.max(0, displayEmployees.length - 1) * EMP_PITCH + EMP_HALF;
+    const spineTop        = Math.min(selectedDeptY, firstEmpY);
+    const spineBottom     = Math.max(selectedDeptY, lastEmpY);
+
     return (
       <div className="bg-white min-h-[calc(100vh-120px)] border-t border-slate-200">
-        <div className="flex h-full">
+        <div className="flex h-full relative">
           <div className="w-[380px] p-8 border-r border-slate-100 flex flex-col gap-3">
             {deptsList.map(dept => {
               const isActive = (activeDept?.name) === dept.name;
@@ -417,6 +453,42 @@ export default function OrgChart() {
               );
             })}
           </div>
+
+          {/* Tree connectors — SVG overlay so the lines render reliably on
+              top of the column backgrounds (previous absolute-div approach
+              was getting visually swallowed by the white right column). */}
+          {displayEmployees.length > 0 && (
+            <svg
+              className="absolute pointer-events-none"
+              style={{ left: 0, top: 0, width: EMP_LEFT_X + 16, height: spineBottom + 32, zIndex: 5 }}
+            >
+              {/* Gray vertical spine */}
+              <line
+                x1={SPINE_X} y1={spineTop}
+                x2={SPINE_X} y2={spineBottom}
+                stroke={LINE_COLOR} strokeWidth={1}
+              />
+              {/* Blue active hook from the selected department to the spine */}
+              <line
+                x1={DEPT_RIGHT_X} y1={selectedDeptY}
+                x2={SPINE_X}      y2={selectedDeptY}
+                stroke={ACTIVE_COLOR} strokeWidth={2}
+              />
+              {/* Gray hooks from the spine into each employee card */}
+              {displayEmployees.map((emp, idx) => {
+                const empY = COL_PAD_TOP + idx * EMP_PITCH + EMP_HALF;
+                return (
+                  <line
+                    key={`hook-${idx}`}
+                    x1={SPINE_X}    y1={empY}
+                    x2={EMP_LEFT_X} y2={empY}
+                    stroke={LINE_COLOR} strokeWidth={1}
+                  />
+                );
+              })}
+            </svg>
+          )}
+
           <div className="flex-1 p-8">
             <div className="flex flex-col gap-4 max-w-[320px]">
               {displayEmployees.map((emp, idx) => (
