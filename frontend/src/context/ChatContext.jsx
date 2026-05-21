@@ -51,6 +51,14 @@ export function ChatProvider({ children }) {
   const [typing, setTyping] = useState({});
   // For the topbar badge — total unread across every thread, sender ≠ me.
   const [unreadTotal, setUnreadTotal] = useState(0);
+  // Notification arrival counter. Bumps every time a 'notification' event
+  // arrives over the WebSocket — the Topbar listens to it via useEffect
+  // and re-fetches /api/notifications so the bell badge updates in real
+  // time without 60-second polling. Keeping the actual notifications list
+  // owned by Topbar avoids duplicating state between contexts.
+  const [notificationTick, setNotificationTick] = useState(0);
+  // Most recently received notification — handy for toast-style flashes.
+  const [latestNotification, setLatestNotification] = useState(null);
 
   const refreshContacts = useCallback(async () => {
     try {
@@ -173,6 +181,13 @@ export function ChatProvider({ children }) {
       case 'connection-accepted':
         refreshContacts();
         break;
+      case 'notification':
+        // Bump the tick + store the latest payload. The Topbar listens to
+        // the tick and re-fetches /api/notifications so the bell badge,
+        // dropdown list, and blue dot all light up in real time.
+        setNotificationTick(n => n + 1);
+        if (evt.notification) setLatestNotification(evt.notification);
+        break;
       default:
         break;
     }
@@ -270,6 +285,10 @@ export function ChatProvider({ children }) {
       messagesByPeer, loadMessages, sendMessage, markRead, sendTyping,
       presence, typing,
       unreadTotal,
+      // Realtime notification signal — Topbar listens to notificationTick
+      // and re-fetches /api/notifications. latestNotification can drive
+      // optional toast popups for unviewed pages.
+      notificationTick, latestNotification,
       searchEmployees,
       sendConnectionRequest, acceptConnection, declineConnection, cancelRequest,
     }}>
@@ -285,15 +304,6 @@ export const useChat = () => {
 };
 
 // ── helpers ───────────────────────────────────────────────────────────────
-
-// Server doesn't tell us who the "other side" is when WE sent a message,
-// but the API payload includes threadId only. We use a different trick:
-// the caller of sendMessage knows the peer, and the WS echo for our own
-// sends has senderId === me — we identify the peer from messagesByPeer.
-// To keep things simple, we just *skip* the WS echo for our own sends here
-// by returning null and letting sendMessage's caller insert it via the
-// existing reducer. (See sendMessage above.)
-function otherFromThread() { return null; }
 
 function bumpUnread(contacts, peerId, msg) {
   return {

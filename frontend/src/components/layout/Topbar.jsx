@@ -371,7 +371,9 @@ export default function Topbar() {
   const [unreadCount, setUnreadCount]             = useState(0);
   // Real-time chat unread counter — driven by the WebSocket context so the
   // badge updates instantly when a new DM arrives, no polling needed.
-  const { unreadTotal: chatUnread } = useChat();
+  // notificationTick fires every time a 'notification' event lands on the
+  // WS so the bell re-fetches without waiting for the 60-second poll.
+  const { unreadTotal: chatUnread, notificationTick } = useChat();
   const [showUserMenu, setShowUserMenu]           = useState(false);
   const [showQuickActions, setShowQuickActions]   = useState(false);
   const [showSearch, setShowSearch]               = useState(false);
@@ -390,9 +392,18 @@ export default function Topbar() {
 
   useEffect(() => {
     loadNotifications();
+    // Keep the 60-second poll as a safety net for clients whose WS dropped
+    // briefly. The WS-driven refresh below covers the normal case instantly.
     const t = setInterval(loadNotifications, 60000);
     return () => clearInterval(t);
   }, [loadNotifications]);
+
+  // Real-time refresh: every time the WebSocket layer reports a new
+  // notification, re-fetch /api/notifications. Cheap because the bell is
+  // already mounted globally.
+  useEffect(() => {
+    if (notificationTick > 0) loadNotifications();
+  }, [notificationTick, loadNotifications]);
 
   useEffect(() => {
     const h = e => {
@@ -544,21 +555,34 @@ export default function Topbar() {
             className="relative hover:bg-white/10 transition-colors p-1 rounded">
             <MessageCircle size={17} />
             {chatUnread > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] bg-emerald-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center ring-2 ring-[#1a2040]">
-                {chatUnread > 9 ? '9+' : chatUnread}
-              </span>
+              <>
+                <span className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-[#0088FF] rounded-full ring-2 ring-[#1a2040] animate-pulse" />
+                <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] bg-emerald-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center ring-2 ring-[#1a2040]">
+                  {chatUnread > 9 ? '9+' : chatUnread}
+                </span>
+              </>
             )}
           </button>
 
-          {/* Notifications */}
+          {/* Notifications — bell with two indicators:
+              • Blue pulsing dot at top-left  → "you have NEW activity"
+                (visible whenever unreadCount > 0; same condition as the count
+                badge, but pulses for a moment to draw the eye when a fresh
+                event lands via the WebSocket).
+              • Red count badge at top-right → exact number of unread items.
+              Both share the same condition so the user always sees one if
+              they see the other. */}
           <div className="relative flex items-center" ref={notifRef}>
             <button onClick={() => setShowNotifs(!showNotifs)}
-              className="hover:bg-white/10 transition-colors p-1 rounded">
+              className="relative hover:bg-white/10 transition-colors p-1 rounded">
               <Bell size={17} />
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center ring-2 ring-[#1a2040]">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
+                <>
+                  <span className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-[#0088FF] rounded-full ring-2 ring-[#1a2040] animate-pulse" />
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center ring-2 ring-[#1a2040]">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                </>
               )}
             </button>
             {showNotifs && (

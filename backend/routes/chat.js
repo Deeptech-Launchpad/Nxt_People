@@ -15,6 +15,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const chatHub = require('../ws-chat');
+const { createNotification } = require('./notifications');
 
 router.use(protect);
 
@@ -188,11 +189,18 @@ router.post('/connect/:userId', async (req, res) => {
        VALUES ($1, $2, 'pending') RETURNING id, status`,
       [me, peer]
     );
-    // Push to the recipient if they're online so the badge updates instantly.
+    // Two channels: a live 'connection-request' so the chat sidebar
+    // updates instantly, and a persisted notification so the bell shows
+    // it even after the recipient closes the chat tab.
     chatHub.send(peer, {
       type: 'connection-request',
       from: { id: me, firstName: req.user.firstName, lastName: req.user.lastName, employeeId: req.user.employeeId },
     });
+    const fromName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'A colleague';
+    createNotification(peer, 'chat',
+      `${fromName} wants to chat`,
+      `${fromName} sent you a connection request.`,
+      `/chat`);
     res.json({ success: true, data: r.rows[0] });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -223,6 +231,11 @@ router.post('/connect/:userId/accept', async (req, res) => {
     await client.query('COMMIT');
 
     chatHub.send(peer, { type: 'connection-accepted', by: { id: me, firstName: req.user.firstName, lastName: req.user.lastName } });
+    const acceptName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'A colleague';
+    createNotification(peer, 'chat',
+      `${acceptName} accepted your request`,
+      `You can now message ${acceptName}.`,
+      `/chat?user=${me}`);
     res.json({ success: true });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -341,6 +354,19 @@ router.post('/threads/:userId/messages', async (req, res) => {
     // my other devices" feature later, attach peerId to the payload and
     // bring back chatHub.send(me, ...).)
     chatHub.send(peer, { type: 'message', message, peerId: me });
+
+    // Persisted notification so the bell badge fires even if the recipient
+    // doesn't have the chat tab open. We DON'T create a notification when
+    // the recipient is currently viewing this conversation (they'll see it
+    // live in the chat itself) — that's handled client-side by markRead.
+    // For now: always notify; the topbar grouping de-dups so a flurry of
+    // messages from one peer doesn't spam the dropdown.
+    const senderName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'A colleague';
+    const preview = content.length > 80 ? content.slice(0, 80) + '…' : content;
+    createNotification(peer, 'chat',
+      `New message from ${senderName}`,
+      preview,
+      `/chat?user=${me}`);
     res.json({ success: true, data: message });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
