@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   ChevronLeft, ChevronRight, Grid3X3, List, Calendar,
   ChevronDown, Filter, MoreHorizontal, RotateCcw, Minus,
-  LogIn, LogOut
+  LogIn, LogOut, Download, Eye
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
@@ -226,6 +226,13 @@ export default function MyAttendance() {
   const { isCheckedIn, isCheckedOut, timerDisplay, checkIn, checkOut, actionLoading: attLoading, elapsed } = useAttendance();
   const { isWeekend: isWeekendByRule } = useWeekendRules();
   const [view, setView] = useState('timeline');
+  // Filter period: 'weekly' (the default 7-day strip) or 'monthly'
+  // (full-month aggregation). Affects which date range we send to
+  // /attendance/summary so the footer counts always reflect the visible
+  // window — never the whole month when the user is in week-view.
+  const [filterPeriod, setFilterPeriod] = useState('weekly');
+  const [showFilter, setShowFilter] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [weekStart, setWeekStart] = useState(weekOf(new Date()));
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -255,21 +262,39 @@ export default function MyAttendance() {
   const weekEndDate = new Date(weekStart);
   weekEndDate.setDate(weekStart.getDate() + 6);
 
-  /* ── fetch for the current month containing this week (+ year's holidays) ── */
+  /* ── fetch for the visible range ───────────────────────────────────────
+   *  Summary is now scoped to the EXACT date range the user is viewing —
+   *  Weekly view → 7 days, Monthly view → ~30 days. Previously the summary
+   *  always queried the whole month even for a weekly view, which is why
+   *  the footer showed "Weekend 10 Days" while only 1 weekend day was on
+   *  screen. The /my endpoint still pulls a whole month so paging between
+   *  weeks within the same month doesn't refetch.
+   */
   useEffect(() => {
     setLoading(true);
     const m = weekStart.getMonth();
     const y = weekStart.getFullYear();
+
+    let rangeStart, rangeEnd;
+    if (filterPeriod === 'monthly') {
+      rangeStart = isoDate(new Date(y, m, 1));
+      rangeEnd   = isoDate(new Date(y, m + 1, 0));
+    } else {
+      rangeStart = isoDate(weekStart);
+      rangeEnd   = isoDate(weekEndDate);
+    }
+
     Promise.all([
       api.get(`/attendance/my?month=${m}&year=${y}`),
-      api.get(`/attendance/summary?month=${m}&year=${y}`),
+      api.get(`/attendance/summary?startDate=${rangeStart}&endDate=${rangeEnd}`),
       api.get(`/holidays?year=${y}`),
     ]).then(([r1, r2, r3]) => {
       setRecords(r1.data.data || []);
       setSummary(r2.data.data || {});
       setHolidays(r3.data.data || []);
     }).catch(() => {}).finally(() => setLoading(false));
-  }, [weekStart.getMonth(), weekStart.getFullYear()]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStart.getMonth(), weekStart.getFullYear(), weekStart.getDate(), filterPeriod]);
 
   /* ── map records by date ── */
   const recordMap = {};
@@ -394,12 +419,105 @@ export default function MyAttendance() {
             ))}
            </div>
 
-           <button className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500 transition-colors">
-             <Filter size={13} />
-           </button>
-           <button className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500 transition-colors">
-             <MoreHorizontal size={14} />
-           </button>
+           {/* Filter — Weekly vs Monthly period. Drives the date range we
+               send to /attendance/summary so the footer counts reflect the
+               visible window. */}
+           <div className="relative">
+             <button
+               onClick={() => { setShowFilter(s => !s); setShowMoreMenu(false); }}
+               className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+                 showFilter ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-100 text-slate-500'
+               }`}
+               title="Filter"
+             >
+               <Filter size={13} />
+             </button>
+             {showFilter && (
+               <div className="absolute right-0 mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-30">
+                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                   <span className="text-[13px] font-bold text-slate-800">Filter</span>
+                   <button onClick={() => setShowFilter(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+                 </div>
+                 <div className="p-4 space-y-3">
+                   <div>
+                     <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1.5">Period</label>
+                     <select
+                       value={filterPeriod}
+                       onChange={(e) => { setFilterPeriod(e.target.value); setShowFilter(false); }}
+                       className="w-full border border-slate-200 rounded px-2.5 py-1.5 text-[12.5px] focus:outline-none focus:border-blue-400"
+                     >
+                       <option value="weekly">Weekly</option>
+                       <option value="monthly">Monthly</option>
+                     </select>
+                   </div>
+                   <div className="flex gap-2 pt-1">
+                     <button
+                       onClick={() => { setFilterPeriod('weekly'); setShowFilter(false); }}
+                       className="flex-1 text-[12px] font-medium text-slate-600 border border-slate-200 rounded px-3 py-1.5 hover:bg-slate-50"
+                     >
+                       Reset
+                     </button>
+                   </div>
+                 </div>
+               </div>
+             )}
+           </div>
+
+           {/* 3-dot menu: Export + Audit History (matches Zoho's overflow menu) */}
+           <div className="relative">
+             <button
+               onClick={() => { setShowMoreMenu(s => !s); setShowFilter(false); }}
+               className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+                 showMoreMenu ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-100 text-slate-500'
+               }`}
+               title="More"
+             >
+               <MoreHorizontal size={14} />
+             </button>
+             {showMoreMenu && (
+               <div className="absolute right-0 mt-1 w-44 bg-white border border-slate-200 rounded-md shadow-lg z-30 py-1">
+                 <button
+                   onClick={() => {
+                     setShowMoreMenu(false);
+                     const start = isoDate(filterPeriod === 'monthly'
+                       ? new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)
+                       : weekStart);
+                     const end = isoDate(filterPeriod === 'monthly'
+                       ? new Date(weekStart.getFullYear(), weekStart.getMonth() + 1, 0)
+                       : weekEndDate);
+                     // Programmatic anchor click → forces the browser to use
+                     // the Content-Disposition filename instead of opening it.
+                     // We can't use api.get() here because axios buffers the
+                     // body; we want the browser to stream the download.
+                     const token = localStorage.getItem('nxt_token');
+                     fetch(`${api.defaults.baseURL}/attendance/export?startDate=${start}&endDate=${end}`, {
+                       headers: { Authorization: `Bearer ${token}` },
+                     })
+                       .then(r => r.blob())
+                       .then(blob => {
+                         const url = URL.createObjectURL(blob);
+                         const a = document.createElement('a');
+                         a.href = url;
+                         a.download = `attendance_${start}_to_${end}.csv`;
+                         document.body.appendChild(a); a.click();
+                         document.body.removeChild(a);
+                         URL.revokeObjectURL(url);
+                       });
+                   }}
+                   className="w-full text-left px-3 py-2 text-[12.5px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                 >
+                   <Download size={13} className="text-slate-500" /> Export
+                 </button>
+                 <button
+                   onClick={() => setShowMoreMenu(false)}
+                   className="w-full text-left px-3 py-2 text-[12.5px] text-slate-400 hover:bg-slate-50 flex items-center gap-2 cursor-not-allowed"
+                   title="Audit history not enabled yet"
+                 >
+                   <Eye size={13} className="text-slate-400" /> Audit History
+                 </button>
+               </div>
+             )}
+           </div>
          </div>
        </div>
 
@@ -594,6 +712,98 @@ export default function MyAttendance() {
         </div>
       )}
 
+      {/* ── Calendar view ────────────────────────────────────────────────
+       *  Full-month grid (Sun–Sat columns) with each cell showing the
+       *  status + hours worked. Matches Zoho's monthly calendar layout —
+       *  clicking any cell jumps the week navigator to that date so the
+       *  user can drill into the timeline view for that week.
+       */}
+      {view === 'calendar' && (() => {
+        const m = weekStart.getMonth();
+        const y = weekStart.getFullYear();
+        const monthName = new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        const firstDay  = new Date(y, m, 1);
+        const lastDay   = new Date(y, m + 1, 0);
+        // Lead with empty cells so the 1st lands on the right weekday.
+        const cells = [];
+        for (let i = 0; i < firstDay.getDay(); i++) cells.push(null);
+        for (let d = 1; d <= lastDay.getDate(); d++) cells.push(new Date(y, m, d));
+        // Trail with empty cells so the grid is rectangular (6 rows × 7 cols).
+        while (cells.length % 7 !== 0) cells.push(null);
+
+        return (
+          <div className="mx-4 my-4 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-[14px] font-bold text-slate-800">{monthName}</h3>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setWeekStart(weekOf(new Date(y, m - 1, 15)))} className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500">
+                  <ChevronLeft size={15} />
+                </button>
+                <button onClick={() => setWeekStart(weekOf(new Date(y, m + 1, 15)))} className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500">
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
+            {/* Weekday header */}
+            <div className="grid grid-cols-7 border-b border-slate-100">
+              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                <div key={d} className="px-3 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{d}</div>
+              ))}
+            </div>
+            {/* Date cells */}
+            <div className="grid grid-cols-7">
+              {cells.map((day, idx) => {
+                if (!day) return <div key={idx} className="h-[88px] border-r border-b border-slate-100 bg-slate-50/40" />;
+                const ds = isoDate(day);
+                const r  = recordMap[ds];
+                const isWknd = effectiveIsWeekend(day);
+                const isToday = ds === todayStr;
+                const isFuture = day > new Date();
+                let pill = null;
+                if (isWknd && !r) {
+                  // Calendar shows weekends faintly with no pill (Zoho pattern).
+                } else if (r) {
+                  const status = r.status === 'late' ? 'Present' : r.status === 'half-day' ? 'Half day' : (r.status || 'Present').replace(/^./, c => c.toUpperCase());
+                  const isAbsent = r.status === 'absent';
+                  pill = (
+                    <div className={`text-[11px] font-medium px-2 py-1 rounded leading-tight ${
+                      isAbsent ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                               : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    }`}>
+                      <div>{status}</div>
+                      {r.workingHours != null && <div className="text-[10px] opacity-80">{fmtHHMM(r.workingHours)} Hrs</div>}
+                    </div>
+                  );
+                } else if (!isWknd && !isFuture && ds < todayStr) {
+                  pill = (
+                    <div className="text-[11px] font-medium px-2 py-1 rounded leading-tight bg-rose-50 text-rose-700 border border-rose-200">
+                      Absent
+                    </div>
+                  );
+                }
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => setWeekStart(weekOf(day))}
+                    className={`h-[88px] border-r border-b border-slate-100 p-2 text-left transition-colors hover:bg-blue-50/40 ${
+                      isWknd ? 'bg-amber-50/30' : ''
+                    }`}
+                  >
+                    <div className={`text-[11.5px] font-semibold mb-1 inline-flex items-center justify-center ${
+                      isToday ? 'w-6 h-6 rounded-full bg-blue-600 text-white' :
+                      isWknd  ? 'text-slate-400' : 'text-slate-700'
+                    }`}>
+                      {day.getDate()}
+                    </div>
+                    {pill}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Summary footer bar ────────────────────────────────────────── */}
       <div className="mx-4 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex items-center px-5 py-3 gap-6 flex-wrap">
@@ -610,12 +820,15 @@ export default function MyAttendance() {
           <div className="w-px h-5 bg-slate-200" />
 
           {[
-            { label: 'Payable Days', val: summary?.present ?? 0, color: '#f59e0b' },
-            { label: 'Present',      val: summary?.present ?? 0, color: '#a78bfa' },
-            { label: 'On Duty',      val: 0,                     color: '#6366f1' },
-            { label: 'Paid leave',   val: summary?.leave ?? 0,   color: '#22c55e' },
-            { label: 'Holidays',     val: 0,                     color: '#f97316' },
-            { label: 'Weekend',      val: summary?.weekend ?? 0, color: '#94a3b8' },
+            // payableDays is now backend-computed: working days in the visible
+            // range that are today or earlier (excludes future days; today
+            // still counts even while the shift is in progress).
+            { label: 'Payable Days', val: summary?.payableDays ?? 0, color: '#f59e0b' },
+            { label: 'Present',      val: summary?.present ?? 0,     color: '#a78bfa' },
+            { label: 'On Duty',      val: summary?.onDuty ?? 0,      color: '#6366f1' },
+            { label: 'Paid leave',   val: summary?.leave ?? 0,       color: '#22c55e' },
+            { label: 'Holidays',     val: summary?.holidays ?? 0,    color: '#f97316' },
+            { label: 'Weekend',      val: summary?.weekend ?? 0,     color: '#94a3b8' },
           ].map(({ label, val, color }) => (
             <div key={label} className="flex items-center gap-2">
               <div className="w-[3px] h-[14px] rounded-full" style={{ backgroundColor: color }} />

@@ -390,47 +390,210 @@ router.get('/team', authorize('admin', 'manager'), async (req, res) => {
 });
 
 // ── GET attendance summary ─────────────────────────────────────────────────────
+// Accepts EITHER (startDate, endDate) OR legacy (month, year). The week-view
+// in MyAttendance passes a 7-day range so the counts reflect what's visible —
+// previously /summary always ran a full-month query, which is why a weekly
+// view was showing "Weekend 10 Days" (the whole month, not the week).
+//
+// Counts returned: present, absent, late, halfDay, leave, holidays, onDuty,
+// weekend, payableDays, totalHours, totalLateMinutes.
+//   • Weekend uses weekend_rules when available, otherwise settings.working_days,
+//     otherwise falls back to Sun + (1st/3rd Sat). Whatever convention is
+//     active at the rest of the app applies here too.
+//   • Holidays is a separate count via the holidays table for the same range.
+//   • payableDays excludes future days (a day in the future isn't payable yet)
+//     AND today if the day is still in progress (no check-out).
 router.get('/summary', async (req, res) => {
   try {
-    const { month, year, employeeId } = req.query;
+    const { startDate, endDate, month, year, employeeId } = req.query;
     const now = new Date();
-    const m = month !== undefined ? parseInt(month) : now.getMonth();
-    const y = parseInt(year) || now.getFullYear();
 
-    const start = toDateStr(new Date(y, m, 1));
-    const end   = toDateStr(new Date(y, m + 1, 0));
+    // Resolve the date range. If startDate+endDate provided, honour them;
+    // otherwise compute the full month from month+year (legacy callers).
+    let start, end;
+    if (startDate && endDate) {
+      start = startDate;
+      end   = endDate;
+    } else {
+      const m = month !== undefined ? parseInt(month) : now.getMonth();
+      const y = parseInt(year) || now.getFullYear();
+      start = toDateStr(new Date(y, m, 1));
+      end   = toDateStr(new Date(y, m + 1, 0));
+    }
 
     const empId = req.user.role === 'admin' && employeeId ? employeeId : req.user._id;
 
-    const result = await pool.query(
-      'SELECT status, working_hours, late_minutes FROM attendance WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date',
-      [empId, start, end]
-    );
+    // Pull attendance + holidays + settings + weekend_rules in parallel.
+    // settings.working_days is the simplest weekend source; if weekend_rules
+    // is populated we prefer that (richer recurrence patterns).
+    const [attRes, hRes, sRes, wrRes] = await Promise.all([
+      pool.query(
+        'SELECT date, status, working_hours, late_minutes, check_out FROM attendance WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date',
+        [empId, start, end]
+      ),
+      pool.query(
+        `SELECT date FROM holidays WHERE date >= $1::date AND date <= $2::date`,
+        [start, end]
+      ),
+      pool.query(`SELECT working_days FROM settings LIMIT 1`),
+      pool.query(`SELECT days_of_week, weeks_of_month, interval_weeks, start_date
+                    FROM weekend_rules WHERE is_active = TRUE`),
+    ]);
 
-    // Count weekends in the month
-    let weekendDays = 0;
-    const cur = new Date(y, m, 1);
-    const endDate = new Date(y, m + 1, 0);
-    while (cur <= endDate) {
-      const d = cur.getDay();
-      if (d === 0 || d === 6) weekendDays++;
+    const workingDays = Array.isArray(sRes.rows[0]?.working_days)
+      ? sRes.rows[0].working_days.map(d => String(d).toLowerCase().slice(0, 3))
+      : ['mon','tue','wed','thu','fri'];
+    const weekendRules = wrRes.rows;
+    const dayMap = ['sun','mon','tue','wed','thu','fri','sat'];
+
+    const isWeekend = (d) => {
+      // weekend_rules takes precedence when any row exists. Each rule says
+      // "this date IS a weekend" — we OR them together.
+      if (weekendRules.length > 0) {
+        return weekendRules.some(rule => ruleMatches(rule, d));
+      }
+      // Fall back to settings.working_days: weekend ⇔ day is NOT a working day.
+      return !workingDays.includes(dayMap[d.getDay()]);
+    };
+
+    // Iterate every day in the range to compute weekend/holiday/payable counts.
+    const holidayDates = new Set(hRes.rows.map(r => toDateStr(new Date(r.date))));
+    const attByDate    = new Map(attRes.rows.map(r => [toDateStr(new Date(r.date)), r]));
+
+    const today = toDateStr(now);
+    let weekendDays = 0, holidayDays = 0, payableDays = 0;
+
+    const cur = new Date(start);
+    const stop = new Date(end);
+    while (cur <= stop) {
+      const dStr = toDateStr(cur);
+      const wknd = isWeekend(cur);
+      const hol  = holidayDates.has(dStr);
+      if (wknd) weekendDays++;
+      if (hol)  holidayDays++;
+
+      // Payable: any past-or-today day that's NOT a weekend (working day).
+      // Future days don't count; "today" counts even if check-out hasn't
+      // happened yet (Zoho treats the current day as payable once it begins).
+      if (!wknd && dStr <= today) payableDays++;
       cur.setDate(cur.getDate() + 1);
     }
 
-    const summary = { present: 0, absent: 0, late: 0, halfDay: 0, leave: 0,
-                      totalHours: 0, totalLateMinutes: 0, weekend: weekendDays };
-    result.rows.forEach(r => {
-      if (r.status === 'present') summary.present++;
-      else if (r.status === 'absent') summary.absent++;
-      else if (r.status === 'late') { summary.late++; summary.present++; }
-      else if (r.status === 'half-day') summary.halfDay++;
-      else if (r.status === 'leave') summary.leave++;
-      summary.totalHours += Number(r.working_hours) || 0;
+    const summary = {
+      present: 0, absent: 0, late: 0, halfDay: 0, leave: 0,
+      onDuty: 0, holidays: holidayDays, weekend: weekendDays,
+      payableDays,
+      totalHours: 0, totalLateMinutes: 0,
+    };
+    attRes.rows.forEach(r => {
+      switch (r.status) {
+        case 'present':  summary.present++; break;
+        case 'absent':   summary.absent++;  break;
+        case 'late':     summary.late++; summary.present++; break;
+        case 'half-day': summary.halfDay++; break;
+        case 'leave':    summary.leave++;   break;
+        case 'on_duty':
+        case 'on-duty':  summary.onDuty++;  break;
+        default: break;
+      }
+      summary.totalHours       += Number(r.working_hours) || 0;
       summary.totalLateMinutes += r.late_minutes || 0;
     });
     summary.totalHours = Math.round(summary.totalHours * 100) / 100;
 
-    res.json({ success: true, data: summary });
+    res.json({ success: true, data: summary, range: { start, end } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Recurrence-aware weekend rule matcher (matches the frontend's
+// utils/weekendRules.js logic — kept simple, no end-date handling because
+// that wasn't enforced on the frontend either).
+function ruleMatches(rule, date) {
+  const dayMap = ['sun','mon','tue','wed','thu','fri','sat'];
+  const dow = dayMap[date.getDay()];
+  const days = Array.isArray(rule.days_of_week) ? rule.days_of_week.map(d => String(d).toLowerCase()) : [];
+  if (!days.includes(dow)) return false;
+
+  const startDate = rule.start_date ? new Date(rule.start_date) : null;
+  if (startDate && date < startDate) return false;
+
+  const weeksOfMonth = Array.isArray(rule.weeks_of_month) ? rule.weeks_of_month.map(Number) : [];
+  if (weeksOfMonth.length > 0) {
+    // Which occurrence of this weekday is it in the month? (1st, 2nd, 3rd …)
+    const occurrence = Math.floor((date.getDate() - 1) / 7) + 1;
+    if (!weeksOfMonth.includes(occurrence)) return false;
+  }
+
+  const interval = Math.max(1, parseInt(rule.interval_weeks) || 1);
+  if (interval > 1 && startDate) {
+    const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+    const weeksSinceStart = Math.floor((date - startDate) / msPerWeek);
+    if (weeksSinceStart % interval !== 0) return false;
+  }
+  return true;
+}
+
+// ── GET /attendance/export?startDate=&endDate= ──────────────────────────────
+// CSV export of the caller's own attendance for the given range. Columns match
+// what Zoho's export gives: Employee Id, Name, Date, First Check-In, Last
+// Check-Out, Total Hours, Payable Hours, Status, Shift, Reason, Description.
+router.get('/export', async (req, res) => {
+  try {
+    const { startDate, endDate, employeeId } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate required (YYYY-MM-DD)' });
+    }
+    const empId = req.user.role === 'admin' && employeeId ? employeeId : req.user._id;
+
+    const r = await pool.query(
+      `SELECT e.employee_id AS "employeeId",
+              e.first_name || ' ' || COALESCE(e.last_name,'') AS name,
+              a.date, a.check_in AS "checkIn", a.check_out AS "checkOut",
+              a.working_hours AS "workingHours", a.status,
+              s.name AS "shiftName", s.start_time AS "shiftStart", s.end_time AS "shiftEnd",
+              a.late_minutes AS "lateMinutes", a.notes
+         FROM attendance a
+         JOIN employees e ON e.id = a.employee_id
+    LEFT JOIN shifts s    ON s.id = e.shift_id
+        WHERE a.employee_id = $1::uuid
+          AND a.date >= $2::date AND a.date <= $3::date
+        ORDER BY a.date ASC`,
+      [empId, startDate, endDate]
+    );
+
+    const fmtTime = (t) => (t ? new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
+    const csvEscape = (v) => {
+      if (v == null) return '';
+      const s = String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const header = ['Employee Id','Name','Date','First Check-In','Last Check-Out',
+                    'Total Hours','Status','Shift','Late By (min)','Notes'];
+    const lines = [header.join(',')];
+
+    for (const row of r.rows) {
+      const shift = row.shiftName ? `${row.shiftName} (${row.shiftStart || ''}-${row.shiftEnd || ''})` : '';
+      lines.push([
+        csvEscape(row.employeeId),
+        csvEscape(row.name),
+        csvEscape(toDateStr(new Date(row.date))),
+        csvEscape(fmtTime(row.checkIn)),
+        csvEscape(fmtTime(row.checkOut)),
+        csvEscape(row.workingHours != null ? Number(row.workingHours).toFixed(2) : ''),
+        csvEscape(row.status || ''),
+        csvEscape(shift),
+        csvEscape(row.lateMinutes || 0),
+        csvEscape(row.notes || ''),
+      ].join(','));
+    }
+
+    const filename = `attendance_${startDate}_to_${endDate}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(lines.join('\n'));
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
