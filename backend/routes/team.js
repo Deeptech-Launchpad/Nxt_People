@@ -138,6 +138,11 @@ router.get('/space', async (req, res) => {
       },
     });
   } catch (err) {
+    // Explicit log so the real SQL/JS error appears in docker logs.
+    // pino-http only captures the response status, not the JSON body,
+    // so the previous 500 looked like "failed with status code 500"
+    // with no detail. console.error lands in the container's stdout.
+    console.error('[/api/team/space] failed:', err.message, '\n', err.stack);
     res.status(500).json({ success: false, message: err.message, stack: err.stack });
   }
 });
