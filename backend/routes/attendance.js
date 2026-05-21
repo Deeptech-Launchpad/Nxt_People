@@ -104,7 +104,16 @@ router.post('/checkin', async (req, res) => {
     }
 
     const now = new Date();
-    const checkInMins = now.getHours() * 60 + now.getMinutes();
+    // Resolve "minutes past midnight" using the org's configured timezone
+    // (defaults to IST). Docker containers default to UTC, so naive
+    // now.getHours() would tag a 10:17 IST check-in as 04:47 UTC and
+    // wrongly mark it on-time. Asking Postgres to compute this directly
+    // avoids the JS Date timezone footgun entirely.
+    const tzNowRes = await pool.query(
+      `SELECT (EXTRACT(HOUR FROM NOW() AT TIME ZONE COALESCE((SELECT timezone FROM settings LIMIT 1), 'Asia/Kolkata')) * 60
+            + EXTRACT(MINUTE FROM NOW() AT TIME ZONE COALESCE((SELECT timezone FROM settings LIMIT 1), 'Asia/Kolkata')))::int AS mins`
+    );
+    const checkInMins = Number(tzNowRes.rows[0]?.mins) || (now.getHours() * 60 + now.getMinutes());
 
     // ── Late detection ──────────────────────────────────────────────────────────
     // ALWAYS compute lateMinutes from the actual minutes past shift start —
@@ -312,18 +321,29 @@ router.get('/my', async (req, res) => {
     const start = toDateStr(new Date(y, m, 1));
     const end   = toDateStr(new Date(y, m + 1, 0));
 
-    // Pull the employee's current shift start + the fallback from settings
-    // alongside attendance so we can compute lateMinutes per row.
+    // Read the org timezone from settings (defaults to Asia/Kolkata) so the
+    // SQL EXTRACT below returns the wall-clock time the employee actually
+    // saw when they checked in, not whatever timezone the backend container
+    // happens to be running in. Without this, a UTC server treats a 10:17
+    // IST check-in as 04:47 and computes negative lateness → "Late by"
+    // never renders for legitimately-late rows.
     const [attRes, shiftRes, sRes] = await Promise.all([
       pool.query(
         `SELECT id as "_id", date, check_in as "checkIn", check_out as "checkOut",
                 working_hours as "workingHours", status,
                 late_minutes as "lateMinutes",
-                check_in_location as "checkInLocation"
+                check_in_location as "checkInLocation",
+                -- Compute minutes-past-midnight in IST (default; overridden
+                -- below if settings.timezone differs). PG's AT TIME ZONE on
+                -- a TIMESTAMPTZ converts to that zone's wall clock.
+                CASE WHEN check_in IS NULL THEN NULL ELSE
+                  (EXTRACT(HOUR   FROM check_in AT TIME ZONE COALESCE($4::text, 'Asia/Kolkata')) * 60 +
+                   EXTRACT(MINUTE FROM check_in AT TIME ZONE COALESCE($4::text, 'Asia/Kolkata')))::int
+                END AS "checkInMins"
            FROM attendance
           WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date
           ORDER BY date ASC`,
-        [req.user._id, start, end]
+        [req.user._id, start, end, null]
       ),
       pool.query(
         `SELECT s.start_time
@@ -331,9 +351,10 @@ router.get('/my', async (req, res) => {
           WHERE e.id = $1`,
         [req.user._id]
       ),
-      pool.query(`SELECT late_after_minutes FROM settings LIMIT 1`),
+      pool.query(`SELECT late_after_minutes, timezone FROM settings LIMIT 1`),
     ]);
 
+    const tz         = sRes.rows[0]?.timezone || 'Asia/Kolkata';
     const shiftStart = shiftRes.rows[0]?.start_time || null;
     const lateAfter  = sRes.rows[0]?.late_after_minutes || 570; // 09:30 AM default
 
@@ -341,23 +362,42 @@ router.get('/my', async (req, res) => {
       ? (() => { const [h, mi] = String(shiftStart).split(':').map(Number); return h * 60 + (mi || 0); })()
       : lateAfter;
 
-    const mapped = attRes.rows.map(r => {
-      // Always compute lateness from the actual check-in time. The stored
-      // late_minutes column was historically only filled when the old
-      // grace-aware check was triggered, so older rows often have 0 even
-      // for legitimately-late check-ins (e.g. 10:17 AM with a 9:30 shift).
-      // We take the max of stored vs. computed so we never under-report.
+    // Re-run the same query with the resolved tz so EXTRACT uses the org's
+    // configured timezone instead of the IST default (only matters for orgs
+    // that override the default; the extra round-trip cost is negligible).
+    let rows = attRes.rows;
+    if (tz !== 'Asia/Kolkata') {
+      const r2 = await pool.query(
+        `SELECT id as "_id", date, check_in as "checkIn", check_out as "checkOut",
+                working_hours as "workingHours", status,
+                late_minutes as "lateMinutes",
+                check_in_location as "checkInLocation",
+                CASE WHEN check_in IS NULL THEN NULL ELSE
+                  (EXTRACT(HOUR   FROM check_in AT TIME ZONE $4::text) * 60 +
+                   EXTRACT(MINUTE FROM check_in AT TIME ZONE $4::text))::int
+                END AS "checkInMins"
+           FROM attendance
+          WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date
+          ORDER BY date ASC`,
+        [req.user._id, start, end, tz]
+      );
+      rows = r2.rows;
+    }
+
+    const mapped = rows.map(r => {
+      // Always compute lateness from the SQL-extracted check-in minutes
+      // (timezone-correct). Take the max of stored vs computed so we never
+      // under-report, but the SQL value is the canonical one.
       let computed = 0;
-      if (r.checkIn) {
-        const t = new Date(r.checkIn);
-        const ciMins = t.getHours() * 60 + t.getMinutes();
-        const diff = ciMins - shiftStartMins;
+      if (r.checkInMins != null) {
+        const diff = r.checkInMins - shiftStartMins;
         if (diff > 0) computed = diff;
       }
       const lateMinutes = Math.max(Number(r.lateMinutes) || 0, computed);
+      const { checkInMins, ...rest } = r; // drop the helper column from response
       return {
-        ...r,
-        workingHours: Number(r.workingHours) || 0,
+        ...rest,
+        workingHours: Number(rest.workingHours) || 0,
         lateMinutes,
       };
     });
