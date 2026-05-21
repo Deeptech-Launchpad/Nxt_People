@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Phone, Mail, Users } from 'lucide-react';
+import { Search, Phone, MessageSquare, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -10,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
  *  reporting manager set (e.g. CEOs / top of the tree). */
 export default function Peers() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
   const [me, setMe] = useState(null);                  // own row (for reportingManagerId + manager metadata)
   const [search, setSearch] = useState('');
@@ -106,7 +108,6 @@ export default function Peers() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {filtered.map(e => {
-            const mailHref  = e.email ? `mailto:${e.email}` : null;
             const phoneNum  = e.phone || e.workPhone;
             const telHref   = phoneNum ? `tel:${phoneNum}` : null;
             return (
@@ -121,15 +122,21 @@ export default function Peers() {
                 <p className="text-[10.5px] text-blue-500 truncate">{e.department || '—'}</p>
                 <div className="flex items-center justify-center gap-3 mt-3">
                   {telHref ? (
-                    <a href={telHref} title={`Call ${phoneNum}`} className="text-slate-400 hover:text-blue-500 transition-colors"><Phone size={13}/></a>
+                    <a href={telHref} title="Call" className="text-slate-400 hover:text-blue-500 transition-colors"><Phone size={13}/></a>
                   ) : (
                     <span className="text-slate-200" title="No phone on file"><Phone size={13}/></span>
                   )}
-                  {mailHref ? (
-                    <a href={mailHref} title={`Email ${e.email}`} className="text-slate-400 hover:text-blue-500 transition-colors"><Mail size={13}/></a>
-                  ) : (
-                    <span className="text-slate-200" title="No email on file"><Mail size={13}/></span>
-                  )}
+                  {/* Chat button → opens the in-app chat with this peer
+                      pre-selected (sends a connection request automatically
+                      if not yet connected). Previously this was a mailto: */}
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/chat?user=${e._id}`)}
+                    title="Chat"
+                    className="text-slate-400 hover:text-blue-500 transition-colors"
+                  >
+                    <MessageSquare size={13}/>
+                  </button>
                 </div>
               </div>
             );

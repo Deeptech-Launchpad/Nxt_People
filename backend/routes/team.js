@@ -23,7 +23,7 @@ router.get('/space', async (req, res) => {
 
     // If the caller has no department, the page still works but with empty
     // department-scoped widgets. We won't 500 for that.
-    const inDept = dept ? `AND e.department = $1` : '';
+    const inDept = dept ? `AND LOWER(TRIM(e.department)) = LOWER(TRIM($1))` : '';
     const params = dept ? [me._id, dept] : [me._id];
 
     const [strengthRes, availRes, locRes, recentRes, newHiresRes, birthdaysRes] = await Promise.all([
@@ -41,7 +41,7 @@ router.get('/space', async (req, res) => {
             SUM(CASE WHEN a.check_in IS NULL THEN 1 ELSE 0 END)::int     AS "yetToCheckIn"
            FROM employees e
       LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
-          WHERE e.status = 'active' ${dept ? 'AND e.department = $1' : ''}`,
+          WHERE e.status = 'active' ${dept ? 'AND LOWER(TRIM(e.department)) = LOWER(TRIM($1))' : ''}`,
         dept ? [dept] : []
       ),
       // 3. Location diversity — work_location → count, top 5
@@ -49,7 +49,7 @@ router.get('/space', async (req, res) => {
         `SELECT COALESCE(NULLIF(work_location, ''), 'Unassigned') AS location,
                 COUNT(*)::int AS n
            FROM employees
-          WHERE status = 'active' ${dept ? 'AND department = $1' : ''}
+          WHERE status = 'active' ${dept ? 'AND LOWER(TRIM(department)) = LOWER(TRIM($1))' : ''}
        GROUP BY location
        ORDER BY n DESC LIMIT 5`,
         dept ? [dept] : []
@@ -62,7 +62,7 @@ router.get('/space', async (req, res) => {
                 a.check_in AS "checkIn"
            FROM attendance a JOIN employees e ON e.id = a.employee_id
           WHERE a.date = CURRENT_DATE AND a.check_in IS NOT NULL
-            AND e.status = 'active' ${dept ? 'AND e.department = $1' : ''}
+            AND e.status = 'active' ${dept ? 'AND LOWER(TRIM(e.department)) = LOWER(TRIM($1))' : ''}
        ORDER BY a.check_in DESC LIMIT 5`,
         dept ? [dept] : []
       ),
@@ -78,7 +78,7 @@ router.get('/space', async (req, res) => {
            FROM employees
           WHERE status = 'active'
             AND join_date >= CURRENT_DATE - INTERVAL '15 days'
-            ${dept ? 'AND department = $1' : ''}
+            ${dept ? 'AND LOWER(TRIM(department)) = LOWER(TRIM($1))' : ''}
        ORDER BY join_date DESC LIMIT 10`,
         dept ? [dept] : []
       ),
@@ -92,7 +92,7 @@ router.get('/space', async (req, res) => {
             AND date_of_birth IS NOT NULL
             AND EXTRACT(MONTH FROM date_of_birth) = EXTRACT(MONTH FROM CURRENT_DATE)
             AND EXTRACT(DAY   FROM date_of_birth) = EXTRACT(DAY   FROM CURRENT_DATE)
-            ${dept ? 'AND department = $1' : ''}
+            ${dept ? 'AND LOWER(TRIM(department)) = LOWER(TRIM($1))' : ''}
        ORDER BY first_name ASC`,
         dept ? [dept] : []
       ),
