@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { User, Search, Eye, MessageSquare, Video, Phone } from 'lucide-react';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
@@ -35,11 +35,22 @@ function Avatar({ size = 36, photoUrl, photoBroken, onPhotoError }) {
    Click does NOT trigger this — the card click expands children, the
    hover surfaces details. Matches Zoho's pattern exactly. */
 function HoverPopup({ emp, totalMembers, directReports, anchorRect, onMouseEnter, onMouseLeave }) {
+  const navigate = useNavigate();
   // Position the popup just below the anchor card.
   const style = anchorRect
     ? { top: anchorRect.bottom + 4, left: anchorRect.left, position: 'fixed' }
     : null;
   if (!style) return null;
+
+  // Action buttons: wired so View opens the full employee page, Message
+  // opens the OS mail client, Phone opens the OS dialler. Video is left
+  // disabled because the app has no integrated video service yet.
+  const goView    = () => navigate(`/employees/${emp._id}`);
+  const phoneNum  = emp.phone || emp.workPhone || null;
+  const mailHref  = emp.email ? `mailto:${emp.email}` : null;
+  const telHref   = phoneNum  ? `tel:${phoneNum}`    : null;
+  const btnBase   = 'w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center';
+  const btnOff    = 'w-8 h-8 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center cursor-not-allowed';
 
   return (
     <div
@@ -73,10 +84,26 @@ function HoverPopup({ emp, totalMembers, directReports, anchorRect, onMouseEnter
       </div>
 
       <div className="flex items-center justify-start gap-2 mt-3">
-        <button title="View" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><Eye size={13} /></button>
-        <button title="Message" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><MessageSquare size={13} /></button>
-        <button title="Video" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><Video size={13} /></button>
-        <button title="Phone" className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"><Phone size={13} /></button>
+        <button type="button" onClick={goView} title="View profile" className={btnBase}>
+          <Eye size={13} />
+        </button>
+        {mailHref ? (
+          <a href={mailHref} title={`Email ${emp.email}`} className={btnBase}>
+            <MessageSquare size={13} />
+          </a>
+        ) : (
+          <span title="No email on file" className={btnOff}><MessageSquare size={13} /></span>
+        )}
+        <span title="Video calling not enabled" className={btnOff}>
+          <Video size={13} />
+        </span>
+        {telHref ? (
+          <a href={telHref} title={`Call ${phoneNum}`} className={btnBase}>
+            <Phone size={13} />
+          </a>
+        ) : (
+          <span title="No phone number on file" className={btnOff}><Phone size={13} /></span>
+        )}
       </div>
     </div>
   );
@@ -305,6 +332,7 @@ export default function OrgChart() {
   };
 
   const location = useLocation();
+  const navigate = useNavigate();
   // /dept-tree (org-wide) and /team/department (under Team) both render the
   // same two-column view; the only difference is the default-selected dept.
   const isDepartmentTree = location.pathname === '/dept-tree' || location.pathname === '/team/department';
@@ -491,18 +519,53 @@ export default function OrgChart() {
 
           <div className="flex-1 p-8">
             <div className="flex flex-col gap-4 max-w-[320px]">
-              {displayEmployees.map((emp, idx) => (
-                <div key={idx} className="flex items-center gap-4 p-2 rounded-lg border border-slate-100">
-                  <Avatar photoUrl={emp.photoUrl} size={40} />
-                  <div>
-                    <p className="text-[13px] font-bold text-slate-800">{emp.firstName} {emp.lastName}</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">{emp.designation || 'Employee'}</p>
-                  </div>
-                </div>
-              ))}
+              {displayEmployees.map((emp, idx) => {
+                // Each card behaves like Zoho's: click navigates to the
+                // employee's full profile, hover surfaces the action popup
+                // (View / Email / Phone) anchored beneath the card.
+                const handleEnter = (e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setHover({
+                    emp,
+                    anchorRect: rect,
+                    totalCount: subtreeSize[emp._id] || 0,
+                    directCount: (childrenOf[emp._id] || []).length,
+                  });
+                };
+                return (
+                  <button
+                    key={emp._id || idx}
+                    type="button"
+                    onClick={() => navigate(`/employees/${emp._id}`)}
+                    onMouseEnter={handleEnter}
+                    onMouseLeave={() => setHover(null)}
+                    className="flex items-center gap-4 p-2 rounded-lg border border-slate-100 bg-white hover:border-blue-300 hover:shadow-sm transition-all text-left"
+                  >
+                    <Avatar photoUrl={emp.photoUrl} size={40} />
+                    <div>
+                      <p className="text-[13px] font-bold text-slate-800">{emp.firstName} {emp.lastName}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">{emp.designation || 'Employee'}</p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
+
+        {/* Hover popup — shared with the Employee Tree. Rendered here so
+            dept-tree gets the same "click name → see profile, hover →
+            see contact actions" pattern Zoho uses. */}
+        {hovered && (
+          <HoverPopup
+            emp={hovered.emp}
+            totalMembers={hovered.totalCount || 0}
+            directReports={hovered.directCount || 0}
+            anchorRect={hovered.anchorRect}
+            onMouseEnter={() => clearTimeout(closeTimerRef.current)}
+            onMouseLeave={() => setHover(null)}
+          />
+        )}
       </div>
     );
   }
