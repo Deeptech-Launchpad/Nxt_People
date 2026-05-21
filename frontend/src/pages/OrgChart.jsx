@@ -337,6 +337,9 @@ export default function OrgChart() {
   // same two-column view; the only difference is the default-selected dept.
   const isDepartmentTree = location.pathname === '/dept-tree' || location.pathname === '/team/department';
   const [selectedDept, setSelectedDept] = useState(null);
+  // Currently-clicked employee in the dept-tree right column. Drives the
+  // blue connector overlay + card highlight. Cleared when the dept changes.
+  const [selectedEmp, setSelectedEmp] = useState(null);
 
   useEffect(() => {
     api.get('/employees?limit=200&status=active')
@@ -461,7 +464,7 @@ export default function OrgChart() {
               return (
                 <div
                   key={dept.name}
-                  onClick={() => setSelectedDept(dept.name)}
+                  onClick={() => { setSelectedDept(dept.name); setSelectedEmp(null); }}
                   className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${
                     isActive ? 'border-[#3b82f6] shadow-[0_0_0_1px_rgba(59,130,246,0.2)]' : 'border-slate-100 hover:border-slate-300'
                   }`}
@@ -482,47 +485,67 @@ export default function OrgChart() {
             })}
           </div>
 
-          {/* Tree connectors — SVG overlay so the lines render reliably on
-              top of the column backgrounds (previous absolute-div approach
-              was getting visually swallowed by the white right column). */}
-          {displayEmployees.length > 0 && (
-            <svg
-              className="absolute pointer-events-none"
-              style={{ left: 0, top: 0, width: EMP_LEFT_X + 16, height: spineBottom + 32, zIndex: 5 }}
-            >
-              {/* Gray vertical spine */}
-              <line
-                x1={SPINE_X} y1={spineTop}
-                x2={SPINE_X} y2={spineBottom}
-                stroke={LINE_COLOR} strokeWidth={1}
-              />
-              {/* Blue active hook from the selected department to the spine */}
-              <line
-                x1={DEPT_RIGHT_X} y1={selectedDeptY}
-                x2={SPINE_X}      y2={selectedDeptY}
-                stroke={ACTIVE_COLOR} strokeWidth={2}
-              />
-              {/* Gray hooks from the spine into each employee card */}
-              {displayEmployees.map((emp, idx) => {
-                const empY = COL_PAD_TOP + idx * EMP_PITCH + EMP_HALF;
-                return (
+          {/* Tree connectors — SVG overlay. Matches Zoho: gray spine + gray
+              hooks by default, blue accent only along the path from the
+              selected department through to the clicked employee. */}
+          {displayEmployees.length > 0 && (() => {
+            const selectedEmpIdx = displayEmployees.findIndex(e => e._id === selectedEmp);
+            const selectedEmpY = selectedEmpIdx >= 0
+              ? COL_PAD_TOP + selectedEmpIdx * EMP_PITCH + EMP_HALF
+              : null;
+            return (
+              <svg
+                className="absolute pointer-events-none"
+                style={{ left: 0, top: 0, width: EMP_LEFT_X + 16, height: spineBottom + 32, zIndex: 5 }}
+              >
+                {/* Gray vertical spine */}
+                <line
+                  x1={SPINE_X} y1={spineTop}
+                  x2={SPINE_X} y2={spineBottom}
+                  stroke={LINE_COLOR} strokeWidth={1}
+                />
+                {/* Blue spine segment from the dept row down to the selected
+                    employee row — only drawn when an employee is selected. */}
+                {selectedEmpY != null && (
                   <line
-                    key={`hook-${idx}`}
-                    x1={SPINE_X}    y1={empY}
-                    x2={EMP_LEFT_X} y2={empY}
-                    stroke={LINE_COLOR} strokeWidth={1}
+                    x1={SPINE_X} y1={Math.min(selectedDeptY, selectedEmpY)}
+                    x2={SPINE_X} y2={Math.max(selectedDeptY, selectedEmpY)}
+                    stroke={ACTIVE_COLOR} strokeWidth={2}
                   />
-                );
-              })}
-            </svg>
-          )}
+                )}
+                {/* Blue hook from the selected department into the spine */}
+                <line
+                  x1={DEPT_RIGHT_X} y1={selectedDeptY}
+                  x2={SPINE_X}      y2={selectedDeptY}
+                  stroke={ACTIVE_COLOR} strokeWidth={2}
+                />
+                {/* Per-employee hooks: blue + thicker for the selected one,
+                    gray + thin for the rest. */}
+                {displayEmployees.map((emp, idx) => {
+                  const empY = COL_PAD_TOP + idx * EMP_PITCH + EMP_HALF;
+                  const isSel = emp._id === selectedEmp;
+                  return (
+                    <line
+                      key={`hook-${idx}`}
+                      x1={SPINE_X}    y1={empY}
+                      x2={EMP_LEFT_X} y2={empY}
+                      stroke={isSel ? ACTIVE_COLOR : LINE_COLOR}
+                      strokeWidth={isSel ? 2 : 1}
+                    />
+                  );
+                })}
+              </svg>
+            );
+          })()}
 
           <div className="flex-1 p-8">
             <div className="flex flex-col gap-4 max-w-[320px]">
               {displayEmployees.map((emp, idx) => {
-                // Each card behaves like Zoho's: click navigates to the
-                // employee's full profile, hover surfaces the action popup
-                // (View / Email / Phone) anchored beneath the card.
+                // Click selects (drives the blue connector + card highlight),
+                // hover surfaces the action popup. Navigation to the full
+                // profile happens via the eye button INSIDE the popup —
+                // matches Zoho's exact pattern.
+                const isSel = emp._id === selectedEmp;
                 const handleEnter = (e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   setHover({
@@ -536,10 +559,16 @@ export default function OrgChart() {
                   <button
                     key={emp._id || idx}
                     type="button"
-                    onClick={() => navigate(`/employees/${emp._id}`)}
+                    onClick={() => setSelectedEmp(emp._id)}
                     onMouseEnter={handleEnter}
                     onMouseLeave={() => setHover(null)}
-                    className="flex items-center gap-4 p-2 rounded-lg border border-slate-100 bg-white hover:border-blue-300 hover:shadow-sm transition-all text-left"
+                    className="flex items-center gap-4 p-2 rounded-lg bg-white hover:shadow-sm transition-all text-left"
+                    style={{
+                      borderWidth: isSel ? 1.5 : 1,
+                      borderStyle: 'solid',
+                      borderColor: isSel ? '#0088FF' : '#e2e8f0',
+                      background: isSel ? '#eff6ff' : '#ffffff',
+                    }}
                   >
                     <Avatar photoUrl={emp.photoUrl} size={40} />
                     <div>
