@@ -752,13 +752,15 @@ export default function Dashboard() {
                   {isCheckedOut ? 'Out' : isCheckedIn ? 'In' : 'Not Checked In'}
                 </span>
 
-                {/* Clean Zoho-style timer: HH : MM : SS */}
-                <div className="flex items-center gap-1 font-mono">
-                  <span className="text-[26px] font-bold text-slate-800 tracking-tighter w-[36px] text-center">{hrs}</span>
-                  <span className="text-[22px] font-bold text-slate-400 mb-1">:</span>
-                  <span className="text-[26px] font-bold text-slate-800 tracking-tighter w-[36px] text-center">{mins}</span>
-                  <span className="text-[22px] font-bold text-slate-400 mb-1">:</span>
-                  <span className="text-[26px] font-bold text-slate-800 tracking-tighter w-[36px] text-center">{secs}</span>
+                {/* Zoho-style timer: each two-digit segment in its own
+                    rounded gray pill, separated by colons.
+                    HH : MM : SS */}
+                <div className="flex items-center gap-2 font-mono">
+                  <span className="text-[20px] font-bold text-slate-800 tracking-tighter bg-slate-100 rounded-md px-2.5 py-1 min-w-[44px] text-center leading-none">{hrs}</span>
+                  <span className="text-[18px] font-bold text-slate-400">:</span>
+                  <span className="text-[20px] font-bold text-slate-800 tracking-tighter bg-slate-100 rounded-md px-2.5 py-1 min-w-[44px] text-center leading-none">{mins}</span>
+                  <span className="text-[18px] font-bold text-slate-400">:</span>
+                  <span className="text-[20px] font-bold text-slate-800 tracking-tighter bg-slate-100 rounded-md px-2.5 py-1 min-w-[44px] text-center leading-none">{secs}</span>
                 </div>
               </div>
 
