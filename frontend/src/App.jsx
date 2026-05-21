@@ -17,6 +17,7 @@ const MyAttendance    = lazy(() => import('./pages/attendance/MyAttendance'));
 const TeamAttendance  = lazy(() => import('./pages/attendance/TeamAttendance'));
 const Regularization  = lazy(() => import('./pages/attendance/Regularization'));
 const Employees       = lazy(() => import('./pages/Employees'));
+const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'));
 const Approvals       = lazy(() => import('./pages/Approvals'));
 const Settings        = lazy(() => import('./pages/Settings'));
 const Registrations   = lazy(() => import('./pages/Registrations'));
@@ -193,6 +194,11 @@ const AppRoutes = () => {
           <Route path="payroll/loans"          element={<ProtectedRoute roles={['admin']}><Loans/></ProtectedRoute>}/>
           <Route path="payroll/tax-slabs"      element={<ProtectedRoute roles={['admin']}><TaxSlabs/></ProtectedRoute>}/>
           <Route path="employees"    element={<ProtectedRoute roles={['admin','manager']}><Employees/></ProtectedRoute>}/>
+          {/* Read-only profile of any colleague — reachable from the eye
+              button on the Employee/Department tree popups. Open to every
+              logged-in role; the backend GET /api/employees/:id is already
+              just `protect`-gated. */}
+          <Route path="employees/:id" element={<EmployeeProfile/>}/>
           <Route path="registrations"element={<ProtectedRoute roles={['admin','manager']}><Registrations/></ProtectedRoute>}/>
           <Route path="shifts"       element={<ProtectedRoute roles={['admin']}><Shifts/></ProtectedRoute>}/>
           <Route path="shift-roster" element={<ProtectedRoute roles={['admin','manager']}><ShiftRoster/></ProtectedRoute>}/>
