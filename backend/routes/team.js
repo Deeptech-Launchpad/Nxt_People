@@ -98,17 +98,23 @@ router.get('/space', async (req, res) => {
       ),
     ]);
 
-    // Diagnostic — keeps us from chasing ghosts when the page shows zeros.
-    // Returns the raw values the SQL actually saw, so the browser devtools
-    // panel makes the problem obvious (mis-cased dept, NULL employee.dept,
-    // total-active count, etc.). Cheap, fixed-cost.
-    const debug = await pool.query(
-      `SELECT
-         (SELECT COUNT(*)::int FROM employees WHERE status='active') AS "totalActive",
-         (SELECT COUNT(*)::int FROM employees WHERE status='active' AND department IS NOT NULL) AS "withDept",
-         (SELECT COUNT(*)::int FROM employees WHERE LOWER(TRIM(status))='active') AS "activeLowered",
-         (SELECT json_agg(DISTINCT department) FROM employees WHERE status='active') AS "departments"`
-    );
+    // Diagnostic — two separate queries because mixing DISTINCT into a
+    // single combined-subquery SELECT caused a 500 on the deployed PG.
+    const [counts, depts] = await Promise.all([
+      pool.query(
+        `SELECT
+           (SELECT COUNT(*)::int FROM employees WHERE status = 'active') AS "totalActive",
+           (SELECT COUNT(*)::int FROM employees WHERE status = 'active' AND department IS NOT NULL) AS "withDept"`
+      ),
+      pool.query(
+        `SELECT DISTINCT department FROM employees
+           WHERE status = 'active' AND department IS NOT NULL ORDER BY department`
+      ),
+    ]);
+    const debug = {
+      ...(counts.rows[0] || {}),
+      departments: depts.rows.map(r => r.department),
+    };
 
     res.json({
       success: true,
@@ -127,7 +133,7 @@ router.get('/space', async (req, res) => {
         _debug: {
           myDeptFromAuth: me.department,
           myEmail: me.email,
-          ...debug.rows[0],
+          ...debug,
         },
       },
     });
