@@ -336,9 +336,17 @@ router.get('/my', async (req, res) => {
                 -- Compute minutes-past-midnight in IST (default; overridden
                 -- below if settings.timezone differs). PG's AT TIME ZONE on
                 -- a TIMESTAMPTZ converts to that zone's wall clock.
+                -- check_in is a plain TIMESTAMP storing the UTC wall-clock
+                -- (Node sends NOW() as TIMESTAMPTZ, PG drops the TZ on insert
+                -- into a TIMESTAMP column using the session TZ — UTC in
+                -- Docker). So we first tag it AS UTC, then convert TO the
+                -- org timezone. A single AT TIME ZONE on a TIMESTAMP runs
+                -- the conversion the WRONG way (treats the value as being
+                -- in that zone, converts to UTC) — that's the bug that
+                -- showed "Late by 13:47" for a real 47-min lateness.
                 CASE WHEN check_in IS NULL THEN NULL ELSE
-                  (EXTRACT(HOUR   FROM check_in AT TIME ZONE COALESCE($4::text, 'Asia/Kolkata')) * 60 +
-                   EXTRACT(MINUTE FROM check_in AT TIME ZONE COALESCE($4::text, 'Asia/Kolkata')))::int
+                  (EXTRACT(HOUR   FROM check_in AT TIME ZONE 'UTC' AT TIME ZONE COALESCE($4::text, 'Asia/Kolkata')) * 60 +
+                   EXTRACT(MINUTE FROM check_in AT TIME ZONE 'UTC' AT TIME ZONE COALESCE($4::text, 'Asia/Kolkata')))::int
                 END AS "checkInMins"
            FROM attendance
           WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date
