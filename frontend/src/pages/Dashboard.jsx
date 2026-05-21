@@ -1450,11 +1450,13 @@ export default function Dashboard() {
                                   statusLabel = 'Half-day'; statusColor = 'text-blue-500';
                                 } else if (wh < 4 && !isToday) {
                                   statusLabel = 'Absent'; statusColor = 'text-rose-500';
-                                } else {
+                                } else if (att.checkOut) {
+                                  // Only mark Present once the day is closed — Zoho convention.
+                                  // While the user is still on the clock (today, checked in but
+                                  // not yet out) we leave the label blank; the live timer is
+                                  // already conveying the state.
                                   statusLabel = 'Present'; statusColor = 'text-emerald-600';
                                 }
-                              } else if (isToday && isCheckedIn) {
-                                statusLabel = 'Present'; statusColor = 'text-emerald-600';
                               }
 
                               if (isWeekend) {
