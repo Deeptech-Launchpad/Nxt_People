@@ -23,7 +23,7 @@ router.get('/space', async (req, res) => {
 
     // If the caller has no department, the page still works but with empty
     // department-scoped widgets. We won't 500 for that.
-    const inDept = dept ? `AND e.department = $2` : '';
+    const inDept = dept ? `AND e.department = $1` : '';
     const params = dept ? [me._id, dept] : [me._id];
 
     const [strengthRes, availRes, locRes, recentRes, newHiresRes, birthdaysRes] = await Promise.all([

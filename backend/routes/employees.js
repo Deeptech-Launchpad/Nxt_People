@@ -179,8 +179,8 @@ router.get('/:id', async (req, res) => {
               e.exit_date              AS "exitDate",
               e.total_experience       AS "totalExperience",
               json_build_object('name', s.name, 'startTime', s.start_time, 'endTime', s.end_time) AS shift,
-              json_build_object('firstName', m.first_name, 'lastName', m.last_name, 'email', m.email, 'id', m.id) AS manager,
-              json_build_object('firstName', aa.first_name, 'lastName', aa.last_name, 'email', aa.email, 'id', aa.id, 'designation', aa.designation) AS "approvingAuthority"
+              json_build_object('firstName', m.first_name, 'lastName', m.last_name, 'email', m.email, 'id', m.id, 'employeeId', m.employee_id, 'designation', m.designation) AS manager,
+              json_build_object('firstName', aa.first_name, 'lastName', aa.last_name, 'email', aa.email, 'id', aa.id, 'employeeId', aa.employee_id, 'designation', aa.designation) AS "approvingAuthority"
          FROM employees e
          LEFT JOIN shifts s ON e.shift_id = s.id
          LEFT JOIN employees m ON e.reporting_manager_id = m.id
