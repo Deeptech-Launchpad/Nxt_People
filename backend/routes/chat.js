@@ -25,12 +25,12 @@ async function getOrCreateThread(client, userA, userB) {
   // Sort the pair so user_a_id < user_b_id (CHECK constraint).
   const [a, b] = userA < userB ? [userA, userB] : [userB, userA];
   const existing = await client.query(
-    `SELECT id FROM chat_threads WHERE user_a_id = $1 AND user_b_id = $2`,
+    `SELECT id FROM chat_dm_threads WHERE user_a_id = $1 AND user_b_id = $2`,
     [a, b]
   );
   if (existing.rows.length > 0) return existing.rows[0].id;
   const created = await client.query(
-    `INSERT INTO chat_threads (user_a_id, user_b_id) VALUES ($1, $2) RETURNING id`,
+    `INSERT INTO chat_dm_threads (user_a_id, user_b_id) VALUES ($1, $2) RETURNING id`,
     [a, b]
   );
   return created.rows[0].id;
@@ -71,20 +71,20 @@ router.get('/contacts', async (req, res) => {
               e.photo_url AS "photoUrl",
               p.accepted_at AS "connectedAt",
               (
-                SELECT m.content FROM chat_messages m
-                  JOIN chat_threads t ON t.id = m.thread_id
+                SELECT m.content FROM chat_dm_messages m
+                  JOIN chat_dm_threads t ON t.id = m.thread_id
                  WHERE (t.user_a_id = LEAST($1::uuid, e.id) AND t.user_b_id = GREATEST($1::uuid, e.id))
               ORDER BY m.created_at DESC LIMIT 1
               ) AS "lastMessage",
               (
-                SELECT m.created_at FROM chat_messages m
-                  JOIN chat_threads t ON t.id = m.thread_id
+                SELECT m.created_at FROM chat_dm_messages m
+                  JOIN chat_dm_threads t ON t.id = m.thread_id
                  WHERE (t.user_a_id = LEAST($1::uuid, e.id) AND t.user_b_id = GREATEST($1::uuid, e.id))
               ORDER BY m.created_at DESC LIMIT 1
               ) AS "lastMessageAt",
               (
-                SELECT COUNT(*)::int FROM chat_messages m
-                  JOIN chat_threads t ON t.id = m.thread_id
+                SELECT COUNT(*)::int FROM chat_dm_messages m
+                  JOIN chat_dm_threads t ON t.id = m.thread_id
                  WHERE (t.user_a_id = LEAST($1::uuid, e.id) AND t.user_b_id = GREATEST($1::uuid, e.id))
                    AND m.sender_id = e.id
                    AND m.read_at IS NULL
@@ -290,8 +290,8 @@ router.get('/threads/:userId/messages', async (req, res) => {
     const r = await pool.query(
       `SELECT m.id, m.sender_id AS "senderId", m.content,
               m.created_at AS "createdAt", m.read_at AS "readAt"
-         FROM chat_messages m
-         JOIN chat_threads t ON t.id = m.thread_id
+         FROM chat_dm_messages m
+         JOIN chat_dm_threads t ON t.id = m.thread_id
         WHERE t.user_a_id = $1 AND t.user_b_id = $2
               ${cursor}
         ORDER BY m.created_at DESC LIMIT $3`,
@@ -319,11 +319,11 @@ router.post('/threads/:userId/messages', async (req, res) => {
     await client.query('BEGIN');
     const threadId = await getOrCreateThread(client, me, peer);
     const ins = await client.query(
-      `INSERT INTO chat_messages (thread_id, sender_id, content)
+      `INSERT INTO chat_dm_messages (thread_id, sender_id, content)
        VALUES ($1, $2, $3) RETURNING id, created_at AS "createdAt"`,
       [threadId, me, content]
     );
-    await client.query(`UPDATE chat_threads SET last_message_at = NOW() WHERE id = $1`, [threadId]);
+    await client.query(`UPDATE chat_dm_threads SET last_message_at = NOW() WHERE id = $1`, [threadId]);
     await client.query('COMMIT');
 
     const message = {
@@ -356,9 +356,9 @@ router.post('/threads/:userId/read', async (req, res) => {
     const peer = req.params.userId;
     const [a, b] = me < peer ? [me, peer] : [peer, me];
     const r = await pool.query(
-      `UPDATE chat_messages
+      `UPDATE chat_dm_messages
           SET read_at = NOW()
-        WHERE thread_id = (SELECT id FROM chat_threads WHERE user_a_id = $1 AND user_b_id = $2)
+        WHERE thread_id = (SELECT id FROM chat_dm_threads WHERE user_a_id = $1 AND user_b_id = $2)
           AND sender_id = $3
           AND read_at IS NULL`,
       [a, b, peer]
@@ -379,8 +379,8 @@ router.get('/unread', async (req, res) => {
     const me = req.user._id;
     const r = await pool.query(
       `SELECT COUNT(*)::int AS unread
-         FROM chat_messages m
-         JOIN chat_threads t ON t.id = m.thread_id
+         FROM chat_dm_messages m
+         JOIN chat_dm_threads t ON t.id = m.thread_id
         WHERE m.read_at IS NULL
           AND m.sender_id <> $1
           AND (t.user_a_id = $1 OR t.user_b_id = $1)`,

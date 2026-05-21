@@ -1015,6 +1015,13 @@ const steps = [
   `CREATE INDEX IF NOT EXISTS idx_app_access_connection_active
      ON application_access(api_connection_id) WHERE revoked_at IS NULL`,
 
+  // ── Chat cleanup: the first attempt of this migration created chat_threads
+  //    (empty) before we discovered chat_messages was already taken by a
+  //    legacy table. We've since renamed the new tables to chat_dm_threads /
+  //    chat_dm_messages. Drop the orphan chat_threads if it exists. Safe to
+  //    run repeatedly — DROP TABLE IF EXISTS is a no-op when absent.
+  `DROP TABLE IF EXISTS chat_threads`,
+
   // ── Chat: connection-request graph + 1:1 threads + messages ──────────────
   // Modelled after Google Chat / LinkedIn: you can't message someone until
   // they accept your connection request. One row per direction, so it's easy
@@ -1037,8 +1044,11 @@ const steps = [
 
   // Threads — one canonical row per pair, enforced by CHECK + UNIQUE on the
   // sorted pair (user_a < user_b). This lets us do a fast lookup with
-  // LEAST/GREATEST without ambiguity.
-  `CREATE TABLE IF NOT EXISTS chat_threads (
+  // LEAST/GREATEST without ambiguity. Named chat_dm_threads (not just
+  // chat_threads) to leave room for the legacy chat_conversations /
+  // chat_messages tables used by routes/messages.js — those will be
+  // retired in a later phase, this new DM system runs alongside until then.
+  `CREATE TABLE IF NOT EXISTS chat_dm_threads (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_a_id       UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     user_b_id       UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -1047,21 +1057,24 @@ const steps = [
     UNIQUE (user_a_id, user_b_id),
     CHECK  (user_a_id < user_b_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_chat_threads_user_a ON chat_threads(user_a_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_chat_threads_user_b ON chat_threads(user_b_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_dm_threads_user_a ON chat_dm_threads(user_a_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_dm_threads_user_b ON chat_dm_threads(user_b_id)`,
 
-  `CREATE TABLE IF NOT EXISTS chat_messages (
+  // chat_dm_messages — separate from the legacy chat_messages (which is
+  // tied to conversation_id, not thread_id). Renaming avoids the schema
+  // collision we hit on the first migration run.
+  `CREATE TABLE IF NOT EXISTS chat_dm_messages (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    thread_id  UUID NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+    thread_id  UUID NOT NULL REFERENCES chat_dm_threads(id) ON DELETE CASCADE,
     sender_id  UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     content    TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     read_at    TIMESTAMPTZ
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_time
-     ON chat_messages(thread_id, created_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS idx_chat_messages_unread
-     ON chat_messages(thread_id, sender_id, read_at) WHERE read_at IS NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_dm_messages_thread_time
+     ON chat_dm_messages(thread_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_dm_messages_unread
+     ON chat_dm_messages(thread_id, sender_id, read_at) WHERE read_at IS NULL`,
 ];
 
 async function runFixes() {
