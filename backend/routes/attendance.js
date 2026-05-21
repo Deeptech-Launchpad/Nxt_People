@@ -342,19 +342,23 @@ router.get('/my', async (req, res) => {
       : lateAfter;
 
     const mapped = attRes.rows.map(r => {
-      let lateMinutes = r.lateMinutes;
-      // If the DB didn't store a value (older row, or grace-period skip),
-      // compute it from the actual check-in time.
-      if (lateMinutes == null && r.checkIn) {
+      // Always compute lateness from the actual check-in time. The stored
+      // late_minutes column was historically only filled when the old
+      // grace-aware check was triggered, so older rows often have 0 even
+      // for legitimately-late check-ins (e.g. 10:17 AM with a 9:30 shift).
+      // We take the max of stored vs. computed so we never under-report.
+      let computed = 0;
+      if (r.checkIn) {
         const t = new Date(r.checkIn);
         const ciMins = t.getHours() * 60 + t.getMinutes();
         const diff = ciMins - shiftStartMins;
-        lateMinutes = diff > 0 ? diff : 0;
+        if (diff > 0) computed = diff;
       }
+      const lateMinutes = Math.max(Number(r.lateMinutes) || 0, computed);
       return {
         ...r,
         workingHours: Number(r.workingHours) || 0,
-        lateMinutes: lateMinutes || 0,
+        lateMinutes,
       };
     });
 
