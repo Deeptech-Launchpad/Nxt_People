@@ -107,18 +107,21 @@ router.post('/checkin', async (req, res) => {
     const checkInMins = now.getHours() * 60 + now.getMinutes();
 
     // ── Late detection ──────────────────────────────────────────────────────────
+    // ALWAYS compute lateMinutes from the actual minutes past shift start —
+    // even 1 minute late shows "Late by 00:01" in the UI (Zoho parity). The
+    // grace period only decides whether status flips to 'late' (which has
+    // downstream effects on policy / reports). Display lateness != status
+    // lateness.
     let lateMinutes = 0;
     let status = 'present';
 
     if (shift && shift.start_time) {
-      // Parse shift start_time (e.g. "09:00" or "09:00:00")
       const [shiftH, shiftM] = shift.start_time.split(':').map(Number);
       const shiftStartMins = shiftH * 60 + (shiftM || 0);
-      // Use grace period: 15 minutes
       const graceMins = 15;
-      if (checkInMins > shiftStartMins + graceMins) {
+      if (checkInMins > shiftStartMins) {
         lateMinutes = checkInMins - shiftStartMins;
-        status = 'late';
+        if (checkInMins > shiftStartMins + graceMins) status = 'late';
       }
     } else {
       // Fall back to settings.late_after_minutes
@@ -290,14 +293,18 @@ router.post('/checkout', async (req, res) => {
 });
 
 // ── GET my attendance (monthly) ───────────────────────────────────────────────
+// Computes lateMinutes ON THE FLY from check-in vs. the employee's current
+// shift start time. This handles two cases the stored late_minutes can't:
+//   • Older rows from before the late-detection logic existed (NULL in DB).
+//   • New rows where the check-in fell inside the 15-min grace period — we
+//     don't flip status to 'late' in that case (preserves the grace-period
+//     semantics) but the UI still wants to show "Late by 00:02" like Zoho.
+// The stored column remains the source of truth for the status flag and
+// daily reports; the computed value is purely a display helper.
 router.get('/my', async (req, res) => {
   try {
     const { month, year } = req.query;
     const now = new Date();
-    // parseInt(undefined) returns NaN, and `??` doesn't catch NaN — only
-    // null/undefined. Without this guard, callers that omit ?month=... get
-    // a 500 because `new Date(y, NaN, 1)` produces an invalid date and the
-    // SQL ::date cast throws.
     const parsedM = parseInt(month, 10);
     const m = Number.isFinite(parsedM) ? parsedM : now.getMonth();
     const y = parseInt(year, 10) || now.getFullYear();
@@ -305,21 +312,51 @@ router.get('/my', async (req, res) => {
     const start = toDateStr(new Date(y, m, 1));
     const end   = toDateStr(new Date(y, m + 1, 0));
 
-    const result = await pool.query(
-      `SELECT id as "_id", date, check_in as "checkIn", check_out as "checkOut",
-       working_hours as "workingHours", status, late_minutes as "lateMinutes",
-       check_in_location as "checkInLocation"
-       FROM attendance
-       WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date
-       ORDER BY date ASC`,
-      [req.user._id, start, end]
-    );
+    // Pull the employee's current shift start + the fallback from settings
+    // alongside attendance so we can compute lateMinutes per row.
+    const [attRes, shiftRes, sRes] = await Promise.all([
+      pool.query(
+        `SELECT id as "_id", date, check_in as "checkIn", check_out as "checkOut",
+                working_hours as "workingHours", status,
+                late_minutes as "lateMinutes",
+                check_in_location as "checkInLocation"
+           FROM attendance
+          WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date
+          ORDER BY date ASC`,
+        [req.user._id, start, end]
+      ),
+      pool.query(
+        `SELECT s.start_time
+           FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
+          WHERE e.id = $1`,
+        [req.user._id]
+      ),
+      pool.query(`SELECT late_after_minutes FROM settings LIMIT 1`),
+    ]);
 
-    const mapped = result.rows.map(r => ({
-      ...r,
-      workingHours: Number(r.workingHours) || 0,
-      lateMinutes: r.lateMinutes || 0
-    }));
+    const shiftStart = shiftRes.rows[0]?.start_time || null;
+    const lateAfter  = sRes.rows[0]?.late_after_minutes || 570; // 09:30 AM default
+
+    const shiftStartMins = shiftStart
+      ? (() => { const [h, mi] = String(shiftStart).split(':').map(Number); return h * 60 + (mi || 0); })()
+      : lateAfter;
+
+    const mapped = attRes.rows.map(r => {
+      let lateMinutes = r.lateMinutes;
+      // If the DB didn't store a value (older row, or grace-period skip),
+      // compute it from the actual check-in time.
+      if (lateMinutes == null && r.checkIn) {
+        const t = new Date(r.checkIn);
+        const ciMins = t.getHours() * 60 + t.getMinutes();
+        const diff = ciMins - shiftStartMins;
+        lateMinutes = diff > 0 ? diff : 0;
+      }
+      return {
+        ...r,
+        workingHours: Number(r.workingHours) || 0,
+        lateMinutes: lateMinutes || 0,
+      };
+    });
 
     res.json({ success: true, data: mapped });
   } catch (err) {
@@ -428,7 +465,7 @@ router.get('/summary', async (req, res) => {
     // is populated we prefer that (richer recurrence patterns).
     const [attRes, hRes, sRes, wrRes] = await Promise.all([
       pool.query(
-        'SELECT date, status, working_hours, late_minutes, check_out FROM attendance WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date',
+        'SELECT date, status, working_hours, late_minutes, check_in, check_out FROM attendance WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date',
         [empId, start, end]
       ),
       pool.query(
@@ -485,15 +522,21 @@ router.get('/summary', async (req, res) => {
       payableDays,
       totalHours: 0, totalLateMinutes: 0,
     };
+    // Present-day counting follows Zoho's convention: a day only counts
+    // once the employee has checked OUT. An in-progress day (checked in
+    // but not yet out) is still on the clock and doesn't tally — otherwise
+    // a week with one fully-worked day + one in-progress day would
+    // misleadingly say "Present 2 Days".
     attRes.rows.forEach(r => {
+      const completed = !!r.check_out;
       switch (r.status) {
-        case 'present':  summary.present++; break;
-        case 'absent':   summary.absent++;  break;
-        case 'late':     summary.late++; summary.present++; break;
-        case 'half-day': summary.halfDay++; break;
-        case 'leave':    summary.leave++;   break;
+        case 'present':  if (completed) summary.present++; break;
+        case 'absent':   summary.absent++; break;
+        case 'late':     summary.late++; if (completed) summary.present++; break;
+        case 'half-day': if (completed) summary.halfDay++; break;
+        case 'leave':    summary.leave++; break;
         case 'on_duty':
-        case 'on-duty':  summary.onDuty++;  break;
+        case 'on-duty':  summary.onDuty++; break;
         default: break;
       }
       summary.totalHours       += Number(r.working_hours) || 0;
