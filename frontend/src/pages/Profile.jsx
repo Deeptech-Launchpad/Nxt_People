@@ -1,37 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Pencil, X, Eye, EyeOff, Save, Key, Camera, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Pencil, X, Eye, EyeOff, Key, Camera, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import Cropper from 'react-easy-crop';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import MfaSettingsCard from '../components/MfaSettingsCard';
-
-/* ── Helper: take a cropped region of an Image and return a JPEG Blob.
- *  react-easy-crop hands back pixel coordinates in `croppedAreaPixels`; we
- *  paint that rectangle onto an offscreen canvas and toBlob() it. */
-function getCroppedBlob(imageSrc, croppedAreaPixels) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = croppedAreaPixels.width;
-      canvas.height = croppedAreaPixels.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(
-        img,
-        croppedAreaPixels.x, croppedAreaPixels.y,
-        croppedAreaPixels.width, croppedAreaPixels.height,
-        0, 0,
-        croppedAreaPixels.width, croppedAreaPixels.height
-      );
-      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('Crop failed'))), 'image/jpeg', 0.92);
-    };
-    img.onerror = () => reject(new Error('Image load failed'));
-    img.src = imageSrc;
-  });
-}
+import PhotoCropperModal from '../components/PhotoCropperModal';
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 
@@ -94,15 +68,10 @@ export default function Profile() {
 
   const fileInputRef = useRef(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  // Cropper state — set when the user picks a file, cleared when they
-  // confirm or cancel. While `cropSrc` is non-null the cropper modal is open.
-  const [cropSrc, setCropSrc]                       = useState(null);
-  const [cropPos, setCropPos]                       = useState({ x: 0, y: 0 });
-  const [cropZoom, setCropZoom]                     = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels]   = useState(null);
-  const onCropComplete = useCallback((_area, areaPixels) => {
-    setCroppedAreaPixels(areaPixels);
-  }, []);
+  // Cropper modal owns its own pos/zoom/areaPixels — we only track the
+  // image data URL that triggers it. When cropSrc is non-null the
+  // PhotoCropperModal is open.
+  const [cropSrc, setCropSrc] = useState(null);
   // Lightbox state — opens when the user clicks their profile photo
   // (the same UX as tapping your DP in WhatsApp / Instagram). Click
   // anywhere on the backdrop or press Escape to close.
@@ -138,29 +107,22 @@ export default function Profile() {
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
-      setCropSrc(reader.result);
-      setCropPos({ x: 0, y: 0 });
-      setCropZoom(1);
-    };
+    reader.onload = () => setCropSrc(reader.result);
     reader.readAsDataURL(file);
     // Reset the file input so picking the same file again re-opens the cropper.
     e.target.value = '';
   };
 
-  // Step 2 — user clicks Save in the cropper modal. Render the cropped
-  // region to a JPEG blob, upload that, refresh the profile.
-  const handleCropSave = async () => {
-    if (!cropSrc || !croppedAreaPixels) return;
+  // Step 2 — cropper modal called us with the final JPEG blob. Upload it
+  // and refresh the profile + auth context so every avatar re-renders.
+  const handleCropSave = async (blob) => {
+    if (!blob) return;
     setUploadingPhoto(true);
     try {
-      const blob = await getCroppedBlob(cropSrc, croppedAreaPixels);
       const form = new FormData();
       form.append('photo', blob, 'profile.jpg');
       const r = await api.post('/profile/photo', form, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Profile picture updated');
-      // Propagate the new URL to AuthContext so every avatar (sidebar, topbar,
-      // dashboard) updates without waiting for a re-login.
       setUser(prev => prev ? { ...prev, photoUrl: r.data.photoUrl } : prev);
       load();
       setCropSrc(null);
@@ -336,72 +298,13 @@ export default function Profile() {
         </div>
       )}
 
-      {/* ── Cropper modal — opens after the user picks a file. Drag to
-       *  reposition, scroll/slider to zoom, the circle marks what will
-       *  be saved as the profile photo. ── */}
-      {cropSrc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="text-[15px] font-semibold text-slate-800">Position your photo</h3>
-                <p className="text-[11.5px] text-slate-500 mt-0.5">Drag to move · scroll or use the slider to zoom</p>
-              </div>
-              <button
-                onClick={() => setCropSrc(null)}
-                disabled={uploadingPhoto}
-                className="w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500 disabled:opacity-50"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="relative h-[320px] bg-slate-900">
-              <Cropper
-                image={cropSrc}
-                crop={cropPos}
-                zoom={cropZoom}
-                aspect={1}
-                cropShape="round"
-                showGrid={false}
-                onCropChange={setCropPos}
-                onZoomChange={setCropZoom}
-                onCropComplete={onCropComplete}
-              />
-            </div>
-
-            <div className="px-5 py-3 border-t border-slate-100">
-              <label className="text-[11px] font-medium text-slate-500 block mb-1">Zoom</label>
-              <input
-                type="range"
-                min={1}
-                max={3}
-                step={0.05}
-                value={cropZoom}
-                onChange={e => setCropZoom(Number(e.target.value))}
-                className="w-full accent-blue-600"
-              />
-            </div>
-
-            <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
-              <button
-                onClick={() => setCropSrc(null)}
-                disabled={uploadingPhoto}
-                className="border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-slate-50 disabled:opacity-60"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCropSave}
-                disabled={uploadingPhoto || !croppedAreaPixels}
-                className="bg-[#1a73e8] hover:bg-[#1557B0] text-white px-4 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-60 flex items-center gap-1.5"
-              >
-                <Save size={13} /> {uploadingPhoto ? 'Saving…' : 'Save photo'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Shared cropper modal — also used by Dashboard's avatar lightbox */}
+      <PhotoCropperModal
+        src={cropSrc}
+        uploading={uploadingPhoto}
+        onSave={handleCropSave}
+        onCancel={() => setCropSrc(null)}
+      />
 
       {/* ── Sections ───────────────────────────────────────────────────────── */}
       <div className="max-w-6xl mx-auto px-6 py-6 space-y-4">

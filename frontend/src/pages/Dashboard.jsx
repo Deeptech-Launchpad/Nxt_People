@@ -13,6 +13,7 @@ import {
 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import PhotoCropperModal from '../components/PhotoCropperModal';
 
 /* ── Greeting helper ─────────────────────────────────────────────────── */
 function getGreeting() {
@@ -438,17 +439,41 @@ export default function Dashboard() {
       return () => document.removeEventListener('keydown', close);
     }, [avatarOpen]);
 
-    // Handle the file the user picks from their device. Uploads to
-    // POST /api/profile/photo (multer-backed), then patches the cached
-    // user so the top-right + dashboard avatars both re-render with the
-    // new photoUrl without a page reload.
-    const handleDashPhotoUpload = async (e) => {
+    // Cropper data URL — when truthy, PhotoCropperModal is visible.
+    // We keep the avatar-lightbox open in the background so the user can
+    // come back to it on Cancel.
+    const [cropSrc, setCropSrc] = useState(null);
+
+    // Step 1 — user picked a file. Validate size/type, read as data URL,
+    // hand off to the cropper. The upload itself waits until they confirm
+    // the crop region, matching the Profile page's flow exactly.
+    const handleDashPhotoPicked = (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('Image must be 10 MB or smaller');
+        e.target.value = '';
+        return;
+      }
+      if (!/^image\//i.test(file.type)) {
+        toast.error('Only image files are allowed');
+        e.target.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => setCropSrc(reader.result);
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    };
+
+    // Step 2 — cropper produced a cropped JPEG blob. Upload, patch the
+    // cached user so every avatar re-renders, close both modals.
+    const handleDashCropSave = async (blob) => {
+      if (!blob) return;
       setPhotoUploading(true);
       try {
         const fd = new FormData();
-        fd.append('photo', file);
+        fd.append('photo', blob, 'profile.jpg');
         const r = await api.post('/profile/photo', fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
@@ -456,12 +481,12 @@ export default function Dashboard() {
           setUser(prev => prev ? { ...prev, photoUrl: r.data.photoUrl } : prev);
         }
         toast.success('Profile photo updated');
+        setCropSrc(null);
         setAvatarOpen(false);
       } catch (err) {
         toast.error(err.response?.data?.message || 'Upload failed');
       } finally {
         setPhotoUploading(false);
-        e.target.value = ''; // reset so picking the same file again still fires onChange
       }
     };
 
@@ -1848,23 +1873,38 @@ export default function Dashboard() {
                <p className="text-[13px] font-semibold text-slate-700">
                  {user?.employeeId} <span className="text-slate-400 font-normal">-</span> {user?.firstName} {user?.lastName}
                </p>
-               {/* Send the user to /profile so they get the proper
-                   crop-and-zoom flow (react-easy-crop). Earlier this
-                   button uploaded directly via the OS file picker,
-                   which skipped the cropper and produced uncentred
-                   profile photos. Profile.jsx owns the cropper modal
-                   and the 10 MB size check. */}
+               {/* Open the OS file picker — the chosen file flows into
+                   PhotoCropperModal (rendered below) where the user
+                   can drag + zoom to position before upload. */}
                <button
                  type="button"
-                 onClick={() => { setAvatarOpen(false); navigate('/profile'); }}
-                 className="mt-5 w-full border border-blue-500 text-blue-600 hover:bg-blue-50 font-semibold py-2.5 rounded-lg text-[13px] transition-colors"
+                 onClick={() => photoFileRef.current?.click()}
+                 disabled={photoUploading}
+                 className="mt-5 w-full border border-blue-500 text-blue-600 hover:bg-blue-50 font-semibold py-2.5 rounded-lg text-[13px] transition-colors disabled:opacity-60"
                >
-                 ✎ Change Image
+                 {photoUploading ? 'Uploading…' : '✎ Change Image'}
                </button>
+               <input
+                 ref={photoFileRef}
+                 type="file"
+                 accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+                 onChange={handleDashPhotoPicked}
+                 className="hidden"
+               />
              </div>
            </div>
          </div>
        )}
+
+       {/* Shared crop modal — sits on top of the avatar lightbox so the
+           user can position/zoom their picked photo, then on Save we
+           upload and close both modals. */}
+       <PhotoCropperModal
+         src={cropSrc}
+         uploading={photoUploading}
+         onSave={handleDashCropSave}
+         onCancel={() => setCropSrc(null)}
+       />
      </div>
    );
 }
