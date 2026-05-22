@@ -1848,23 +1848,19 @@ export default function Dashboard() {
                <p className="text-[13px] font-semibold text-slate-700">
                  {user?.employeeId} <span className="text-slate-400 font-normal">-</span> {user?.firstName} {user?.lastName}
                </p>
+               {/* Send the user to /profile so they get the proper
+                   crop-and-zoom flow (react-easy-crop). Earlier this
+                   button uploaded directly via the OS file picker,
+                   which skipped the cropper and produced uncentred
+                   profile photos. Profile.jsx owns the cropper modal
+                   and the 10 MB size check. */}
                <button
                  type="button"
-                 onClick={() => photoFileRef.current?.click()}
-                 disabled={photoUploading}
-                 className="mt-5 w-full border border-blue-500 text-blue-600 hover:bg-blue-50 font-semibold py-2.5 rounded-lg text-[13px] transition-colors disabled:opacity-60"
+                 onClick={() => { setAvatarOpen(false); navigate('/profile'); }}
+                 className="mt-5 w-full border border-blue-500 text-blue-600 hover:bg-blue-50 font-semibold py-2.5 rounded-lg text-[13px] transition-colors"
                >
-                 {photoUploading ? 'Uploading…' : '✎ Change Image'}
+                 ✎ Change Image
                </button>
-               {/* Hidden input — clicking the button opens the OS file
-                   picker straight from this modal. No navigate(). */}
-               <input
-                 ref={photoFileRef}
-                 type="file"
-                 accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-                 onChange={handleDashPhotoUpload}
-                 className="hidden"
-               />
              </div>
            </div>
          </div>

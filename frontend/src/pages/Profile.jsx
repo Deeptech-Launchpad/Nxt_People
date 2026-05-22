@@ -124,8 +124,11 @@ export default function Profile() {
   const handlePhotoChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image must be 5 MB or smaller');
+    // Backend allows up to PROFILE_PHOTO_MAX_MB = 10 MB. Stay in sync —
+    // a stricter frontend rejection just confuses users who could
+    // legitimately upload a higher-res photo.
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image must be 10 MB or smaller');
       e.target.value = '';
       return;
     }
