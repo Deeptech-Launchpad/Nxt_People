@@ -95,6 +95,16 @@ server.listen(PORT, () => logger.info({ port: PORT }, 'Server listening (HTTP + 
 
 
 // ================= CRON JOBS =================
+// Every cron below must explicitly pin its timezone. node-cron defaults
+// to the container's system clock, which is UTC in Docker — so a `0 9
+// * * 1-6` schedule was firing at 14:30 IST instead of 09:00 IST, and
+// the 9 AM check-in reminder never landed when employees expected it.
+// Configurable via CRON_TZ env var so non-Indian deployments can flip
+// to America/New_York etc. without a code change.
+const CRON_TZ = process.env.CRON_TZ || 'Asia/Kolkata';
+const cronOpts = { timezone: CRON_TZ };
+logger.info({ CRON_TZ }, 'Cron jobs configured to run in this timezone');
+
 // 1. Monthly Leave Accrual (Runs on the 1st of every month at midnight)
 cron.schedule('0 0 1 * *', async () => {
   try {
@@ -134,7 +144,7 @@ cron.schedule('0 0 1 * *', async () => {
   } catch (err) {
     logger.error({ err }, 'Leave accrual cron failed');
   }
-});
+}, cronOpts);
 
 // 2. Yearly Leave Carry Forward / Lapse (Runs on Jan 1st at 00:05)
 cron.schedule('5 0 1 1 *', async () => {
@@ -168,7 +178,7 @@ cron.schedule('5 0 1 1 *', async () => {
   } catch (err) {
     logger.error({ err }, 'Yearly carry forward cron failed');
   }
-});
+}, cronOpts);
 
 // 3. Daily Check-in Reminder (Runs Mon-Sat at 9:00 AM)
 //    Skips weekends + holidays via the centralised rule evaluator.
@@ -187,7 +197,7 @@ cron.schedule('0 9 * * 1-6', async () => {
   } catch (err) {
     logger.error({ err }, 'Error sending 9 AM reminders');
   }
-});
+}, cronOpts);
 
 // 4. Daily Check-out Reminder (Runs Mon-Sat at 6:00 PM)
 cron.schedule('0 18 * * 1-6', async () => {
@@ -204,7 +214,7 @@ cron.schedule('0 18 * * 1-6', async () => {
   } catch (err) {
     logger.error({ err }, 'Error sending 6 PM reminders');
   }
-});
+}, cronOpts);
 
 // 5. Auto-flip Notice Period employees past their end date → Resigned.
 //    Runs daily at 00:30. This is the access-revocation trigger: once an
@@ -228,7 +238,7 @@ cron.schedule('30 0 * * *', async () => {
   } catch (err) {
     logger.error({ err }, 'Notice Period auto-flip cron failed');
   }
-});
+}, cronOpts);
 
 // 6. Auto-unpin expired announcements (Runs daily at 00:15).
 //    HR sets pinned_until when posting; this flips is_pinned to FALSE once
@@ -250,7 +260,7 @@ cron.schedule('15 0 * * *', async () => {
   } catch (err) {
     logger.error({ err }, 'Auto-unpin cron failed');
   }
-});
+}, cronOpts);
 
 // 7. Auto-draft payroll on the 1st of each month at 00:30 — generates
 //    draft payslips for the *previous* month. Admins still need to lock
@@ -327,7 +337,7 @@ cron.schedule('30 0 1 * *', async () => {
   } catch (err) {
     logger.error({ err }, 'Auto-draft payroll cron failed');
   }
-});
+}, cronOpts);
 
 // 8. Nightly Zoho People sync (runs daily at 02:30 — quiet hours).
 //    Re-uses the same runEmployeeSync() function the admin's manual
@@ -344,7 +354,7 @@ cron.schedule('30 2 * * *', async () => {
   } catch (err) {
     logger.error({ err }, 'Nightly Zoho sync failed');
   }
-});
+}, cronOpts);
 
 module.exports = app;
 
