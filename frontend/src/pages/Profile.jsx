@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Pencil, X, Eye, EyeOff, Key, Camera, Trash2 } from 'lucide-react';
+import { Pencil, X, Eye, EyeOff, Save, Key, Camera, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
