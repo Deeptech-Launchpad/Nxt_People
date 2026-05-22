@@ -113,8 +113,10 @@ const NAV = {
     },
     subNav: {
       mydata: [
+        // Leave Balance removed — Leave Summary already shows per-type
+        // availability counts, so the dedicated balance tab was a
+        // redundant duplicate.
         { to: '/leave-tracker/summary',  label: 'Leave Summary'        },
-        { to: '/leave-tracker/balance',  label: 'Leave Balance'        },
         { to: '/leave-tracker/requests', label: 'Leave Requests'       },
         { to: '/leave-tracker/comp-off', label: 'Compensatory Request' },
       ],
@@ -144,8 +146,11 @@ const NAV = {
     label: 'More Services',
     primaryTabs: [
       { key: 'files',        label: 'Files',               to: '/more-services/files'        },
-      { key: 'travel',       label: 'Travel',              to: '/more-services/travel'       },
-      { key: 'compensation', label: 'Compensation',        to: '/more-services/compensation' },
+      // Travel + Compensation are intentionally disabled — the underlying
+      // workflows aren't fully built out yet. Visible so users see what's
+      // planned, but the click is a no-op until each is implemented.
+      { key: 'travel',       label: 'Travel',              to: '/more-services/travel',       disabled: true },
+      { key: 'compensation', label: 'Compensation',        to: '/more-services/compensation', disabled: true },
       { key: 'hrletters',    label: 'HR Letters',          to: '/more-services/hr-letters'   },
       { key: 'apps',         label: 'Apps',                to: '/my-apps'                    },
     ],
@@ -198,9 +203,10 @@ const NAV = {
         { to: '/payroll/team',           label: 'Team Payroll',                       roles: ['admin', 'manager'] },
         { to: '/payroll/declarations',   label: 'Tax Declarations',                   roles: ['admin']             },
         { to: '/payroll/compliance',     label: 'Compliance',                         roles: ['admin']             },
-        { to: '/payroll/adjustments',    label: 'Adjustments',                        roles: ['admin']             },
-        { to: '/payroll/loans',          label: 'Loans & Advances',                   roles: ['admin']             },
-        { to: '/payroll/tax-slabs',      label: 'Tax Slabs',                          roles: ['admin']             },
+        // Adjustments / Loans & Advances / Tax Slabs removed from the
+        // Reports sub-nav — the underlying admin workflows still exist
+        // at those routes for direct deep-linking, but they shouldn't
+        // be surfaced as primary nav until the UX is finalised.
         { to: '/shifts',                 label: 'Shifts',                             roles: ['admin']             },
         { to: '/shift-roster',           label: 'Shift Roster',                       roles: ['admin', 'manager'] },
       ],
@@ -452,8 +458,20 @@ export default function Topbar() {
             <span className="text-white/70 text-[13.5px] font-bold mr-3 border-r border-white/20 pr-4">
               {config.label}
             </span>
-          )}          {primaryTabs.map(({ key, label, to }) => {
+          )}          {primaryTabs.map(({ key, label, to, disabled }) => {
             const active = isHome ? homeTab === key : activeTab === key;
+            // Disabled primary tabs (e.g. Travel / Compensation in More
+            // Services) render visible but non-clickable until the
+            // feature is wired up. Greyed text + cursor-not-allowed +
+            // "Coming soon" tooltip.
+            if (disabled) {
+              return (
+                <span key={key} title="Coming soon"
+                  className="h-full px-4 flex items-center text-[14px] border-b-[3px] border-transparent text-white/30 font-semibold cursor-not-allowed">
+                  {label}
+                </span>
+              );
+            }
             return (
               <button key={key} onClick={() => navigate(to)}
                 className={`h-full px-4 flex items-center text-[14px] border-b-[3px] transition-all duration-150 tracking-[-0.01em]

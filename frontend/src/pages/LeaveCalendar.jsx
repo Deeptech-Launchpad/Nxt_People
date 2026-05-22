@@ -85,7 +85,13 @@ export default function LeaveCalendar() {
           if (!newEvents[ad].some(e => e.type === 'leave' || e.type === 'holiday')) {
             newEvents[ad].push({ type: 'absent', text: 'Absent' });
           }
-        } else if (a.status === 'present' || a.status === 'late' || a.status === 'half-day') {
+        } else if (
+          (a.status === 'present' || a.status === 'late' || a.status === 'half-day')
+          // Only mark Present once the day is closed — same convention as
+          // Dashboard. While the user is still on the clock (today,
+          // checked in but no checkout yet) we leave the cell blank.
+          && a.checkOut
+        ) {
           let hrs = '';
           const hours = a.workingHours || a.totalHours;
           if (hours) {

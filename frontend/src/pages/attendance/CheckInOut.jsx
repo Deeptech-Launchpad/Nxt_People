@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Clock, MapPin, CheckCircle, LogIn, LogOut, Navigation, AlertTriangle, Wifi, WifiOff } from 'lucide-react';
-import api from '../../utils/api';
-import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
+import { useAttendance } from '../../context/AttendanceContext';
 
 function useGeolocation() {
   const [position, setPosition] = useState(null);
@@ -27,45 +26,35 @@ const STATUS_COLORS = { present: 'text-emerald-600 bg-emerald-50 border-emerald-
 
 export default function CheckInOut() {
   const { user } = useAuth();
-  const [record, setRecord] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
+  // Read + mutate attendance through the shared context so other pages
+  // (Home dashboard, top-bar avatar, calendar) refresh in lockstep when
+  // we check in/out from this page. Was previously calling the API
+  // directly and only updating local state, which left Dashboard's
+  // useAttendance() hook stale.
+  const { record, loading, actionLoading, isCheckedIn, isCheckedOut, checkIn, checkOut } = useAttendance();
   const [time, setTime] = useState(new Date());
   const [gpsWarning, setGpsWarning] = useState(null);
   const { position, gpsError, gpsLoading, refresh: refreshGps } = useGeolocation();
 
   useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
-  useEffect(() => { api.get('/attendance/today').then(r => setRecord(r.data.data)).catch(console.error).finally(() => setLoading(false)); }, []);
 
   const handleCheckIn = async () => {
-    setActionLoading(true); setGpsWarning(null);
+    setGpsWarning(null);
     try {
-      const payload = { latitude: position?.latitude, longitude: position?.longitude };
-      const r = await api.post('/attendance/checkin', payload);
-      setRecord(r.data.data);
-      if (r.data.gpsWarning) { setGpsWarning(r.data.gpsWarning); toast.success(`Checked in — ⚠️ ${r.data.gpsWarning}`); }
-      else toast.success('✅ Checked in successfully!');
+      await checkIn();
+      // checkIn() in the context already toasts success. Nothing else to do —
+      // the context will broadcast the updated record to every consumer.
     } catch (err) {
-      const msg = err.response?.data?.message || 'Check-in failed';
-      if (err.response?.data?.code === 'OUT_OF_RANGE') toast.error(`📍 ${msg}`, { duration: 6000 });
-      else toast.error(msg);
+      // The context handles its own error toast; we just stay quiet here.
+      if (err.response?.data?.gpsWarning) setGpsWarning(err.response.data.gpsWarning);
     }
-    finally { setActionLoading(false); }
   };
 
   const handleCheckOut = async () => {
-    setActionLoading(true);
     try {
-      const payload = { latitude: position?.latitude, longitude: position?.longitude };
-      const r = await api.post('/attendance/checkout', payload);
-      setRecord(r.data.data);
-      toast.success('👋 Checked out successfully!');
-    } catch (err) { toast.error(err.response?.data?.message || 'Check-out failed'); }
-    finally { setActionLoading(false); }
+      await checkOut();
+    } catch (_) { /* context toasts the error */ }
   };
-
-  const isCheckedIn = record?.checkIn && !record?.checkOut;
-  const isCheckedOut = !!record?.checkOut;
   const workingHours = record?.workingHours ? `${Math.floor(record.workingHours)}h ${Math.round((record.workingHours % 1) * 60)}m` : null;
 
   const timeStr = time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });

@@ -15,8 +15,11 @@ const NAV_ITEMS = [
     matches: p => p.startsWith('/time-tracker') },
   { to: '/leave-tracker/summary',    icon: CalendarDays, label: 'Leave\nTracker',
     matches: p => p.startsWith('/leave-tracker') || p === '/leave' || p.startsWith('/wfh') || p.startsWith('/comp-off') || p.startsWith('/leave-calendar') || p.startsWith('/leave-encashment') },
+  // Performance is intentionally disabled — feature isn't built out yet.
+  // Visible in the sidebar so users see it's planned, but the click is
+  // a no-op until we wire up goals/reviews/skills properly.
   { to: '/performance/goals',        icon: Trophy,       label: 'Performance',
-    matches: p => p.startsWith('/performance') },
+    matches: p => p.startsWith('/performance'), disabled: true },
   { to: '/more-services/files',      icon: LayoutGrid,   label: 'More\nServices',
     matches: p => p.startsWith('/more-services') || p.startsWith('/documents') },
 ];
@@ -36,6 +39,23 @@ const labelStyle = {
 const NavItem = ({ item }) => {
   const location = useLocation();
   const isActive = item.matches(location.pathname);
+
+  // Disabled items render as a dim, non-clickable div with a tooltip —
+  // we want users to see the item exists in the nav, but the click is
+  // a no-op until the underlying feature is built out.
+  if (item.disabled) {
+    return (
+      <div
+        title="Coming soon"
+        className="group relative flex flex-col items-center justify-center gap-1 w-full py-2 cursor-not-allowed opacity-40"
+      >
+        <div className="w-9 h-9 flex items-center justify-center rounded-full text-white/70">
+          <item.icon size={18} strokeWidth={1.6} />
+        </div>
+        <span style={labelStyle} className="text-white/70">{item.label}</span>
+      </div>
+    );
+  }
 
   return (
     <NavLink
