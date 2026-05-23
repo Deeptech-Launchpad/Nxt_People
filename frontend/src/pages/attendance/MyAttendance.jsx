@@ -78,9 +78,14 @@ const StatusPill = ({ status }) => {
 };
 
 /* ── Add Request Dropdown Menu ────────────────────────────────────────── */
-const RequestMenu = ({ x, y, onClose, canRegularize = false }) => {
+// Same positioning model as the Dashboard variant — caller hands in the
+// button's bounding rect, the menu measures its own real height in a
+// useLayoutEffect and flips above when there isn't room below.
+const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
   const navigate = useNavigate();
-  // Regularize only on today + past worked days — same rule as the Dashboard popup.
+  const menuRef  = useRef(null);
+  const [pos, setPos] = useState({ left: -9999, top: -9999, ready: false });
+
   const options = [
     canRegularize && { label: 'Regularize Attendance', path: '/attendance/regularization', icon: '✏️' },
     { label: 'Apply OnDuty',           path: '/attendance/regularization', icon: '📍' },
@@ -88,10 +93,30 @@ const RequestMenu = ({ x, y, onClose, canRegularize = false }) => {
     { label: 'Apply Compensatory Off', path: '/leave-tracker/comp-off',    icon: '🔁' },
   ].filter(Boolean);
 
+  React.useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el || !buttonRect) return;
+    const menuH = el.offsetHeight;
+    const menuW = el.offsetWidth;
+    const GUTTER = 16;
+    const spaceBelow = window.innerHeight - buttonRect.bottom;
+    const spaceAbove = buttonRect.top;
+    const openAbove = spaceBelow < menuH + GUTTER && spaceAbove > spaceBelow;
+    const top = openAbove
+      ? Math.max(GUTTER, buttonRect.top - menuH - 6)
+      : Math.min(window.innerHeight - menuH - GUTTER, buttonRect.bottom + 6);
+    const left = Math.max(
+      GUTTER,
+      Math.min(buttonRect.right - menuW, window.innerWidth - menuW - GUTTER)
+    );
+    setPos({ left, top, ready: true });
+  }, [buttonRect]);
+
   return (
     <div
+      ref={menuRef}
       className="request-menu-popup fixed z-50 bg-white rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.12)] border border-slate-100 w-56 overflow-hidden"
-      style={{ left: x, top: y }}
+      style={{ left: pos.left, top: pos.top, opacity: pos.ready ? 1 : 0 }}
       onClick={e => e.stopPropagation()}
     >
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 bg-slate-50/60">
@@ -626,14 +651,18 @@ export default function MyAttendance() {
                          <button
                            onClick={(e) => {
                              e.stopPropagation();
+                             // Hand the button's rect to RequestMenu; it measures
+                             // its own height and decides above/below.
                              const rect = e.currentTarget.getBoundingClientRect();
-                             // Clamp menu position so the 224px-wide popup never overflows the viewport.
-                             const MENU_W = 224;
-                             const GUTTER = 16;
-                             const x = Math.min(rect.left, window.innerWidth - MENU_W - GUTTER);
                              const isPastDay = ds < todayStr;
                              const canRegularize = (ds === todayStr) || (isPastDay && !!record);
-                             setShowRequestMenu({ x, y: rect.bottom + 4, canRegularize });
+                             setShowRequestMenu({
+                               buttonRect: {
+                                 top: rect.top, bottom: rect.bottom,
+                                 left: rect.left, right: rect.right,
+                               },
+                               canRegularize,
+                             });
                            }}
                            className="request-menu-trigger flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold px-2.5 py-1.5 rounded-md transition-colors shadow-sm"
                          >
@@ -888,8 +917,7 @@ export default function MyAttendance() {
        {/* Request Dropdown Menu */}
        {showRequestMenu && (
          <RequestMenu
-           x={showRequestMenu.x}
-           y={showRequestMenu.y}
+           buttonRect={showRequestMenu.buttonRect}
            canRegularize={!!showRequestMenu.canRegularize}
            onClose={() => setShowRequestMenu(null)}
          />

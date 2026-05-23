@@ -305,19 +305,55 @@ const FeedCard = ({ icon, children }) => (
 
 /* ── Add Request menu (used by the Attendance Weekly Log rows).
  *    `canRegularize` is true only for today + past days where the user
- *    actually checked in — matches Zoho's behaviour. */
-const RequestMenu = ({ x, y, onClose, canRegularize = false }) => {
+ *    actually checked in — matches Zoho's behaviour.
+ *
+ *    Positioning: the caller passes the BUTTON's bounding rect instead
+ *    of pre-computed x/y. The menu measures its own real height after
+ *    first paint via useLayoutEffect, then anchors itself above OR
+ *    below the button based on actual viewport space — no more
+ *    height guesses, no more bottom-row overflow. */
+const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
   const navigate = useNavigate();
+  const menuRef  = useRef(null);
+  // Start fully off-screen on first paint so the user doesn't see a
+  // flash at the wrong position; useLayoutEffect re-positions before
+  // the browser paints.
+  const [pos, setPos] = useState({ left: -9999, top: -9999, ready: false });
+
   const options = [
     canRegularize && { label: 'Regularize Attendance', path: '/attendance/regularization', icon: '✏️' },
     { label: 'Apply OnDuty',           path: '/attendance/regularization', icon: '📍' },
     { label: 'Apply Leave',            path: '/leave-tracker/requests',    icon: '📅' },
     { label: 'Apply Compensatory Off', path: '/leave-tracker/comp-off',    icon: '🔁' },
   ].filter(Boolean);
+
+  React.useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el || !buttonRect) return;
+    const menuH = el.offsetHeight;
+    const menuW = el.offsetWidth;
+    const GUTTER = 16;
+    const spaceBelow = window.innerHeight - buttonRect.bottom;
+    const spaceAbove = buttonRect.top;
+    // Flip above when there's more room above OR when below can't fit
+    // the actual menu. Either case lands the menu fully on screen.
+    const openAbove = spaceBelow < menuH + GUTTER && spaceAbove > spaceBelow;
+    const top = openAbove
+      ? Math.max(GUTTER, buttonRect.top - menuH - 6)
+      : Math.min(window.innerHeight - menuH - GUTTER, buttonRect.bottom + 6);
+    // Right-align to the button, then clamp horizontally.
+    const left = Math.max(
+      GUTTER,
+      Math.min(buttonRect.right - menuW, window.innerWidth - menuW - GUTTER)
+    );
+    setPos({ left, top, ready: true });
+  }, [buttonRect]);
+
   return (
     <div
+      ref={menuRef}
       className="request-menu-popup fixed z-50 bg-white rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.1)] border border-slate-100 w-56 overflow-hidden"
-      style={{ left: x, top: y }}
+      style={{ left: pos.left, top: pos.top, opacity: pos.ready ? 1 : 0 }}
       onClick={e => e.stopPropagation()}
     >
       {/* Header with close button — gives users an explicit way out */}
@@ -1548,28 +1584,15 @@ export default function Dashboard() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  // Hand the BUTTON's rect to RequestMenu — it measures its
+                                  // own rendered height in a useLayoutEffect and decides
+                                  // above/below from there. No more height guesses.
                                   const rect = e.currentTarget.getBoundingClientRect();
-                                  // Horizontal: anchor the menu's right edge to the button's
-                                  // right edge, then clamp so the 224 px popup never
-                                  // overflows the viewport.
-                                  const MENU_W = 224;
-                                  const MENU_H = 120;          // Approximate height — RequestMenu has ~2 rows max
-                                  const GUTTER = 16;
-                                  const x = Math.max(
-                                    GUTTER,
-                                    Math.min(rect.right - MENU_W, window.innerWidth - MENU_W - GUTTER)
-                                  );
-                                  // Vertical: open below by default, but if the row is near
-                                  // the bottom of the viewport (last row of the week, etc.)
-                                  // flip the menu above the button so it stays on screen.
-                                  // Matches Zoho's behaviour exactly.
-                                  const spaceBelow = window.innerHeight - rect.bottom;
-                                  const y = spaceBelow >= MENU_H + GUTTER
-                                    ? rect.bottom + 6
-                                    : rect.top - MENU_H - 6;
                                   setShowRequestMenu({
-                                    x,
-                                    y,
+                                    buttonRect: {
+                                      top: rect.top, bottom: rect.bottom,
+                                      left: rect.left, right: rect.right,
+                                    },
                                     canRegularize,
                                   });
                                 }}
@@ -1779,11 +1802,12 @@ export default function Dashboard() {
 </div>
          </div>
        )}
-       {/* Add Request menu — opened from the Attendance Weekly Log rows */}
+       {/* Add Request menu — opened from the Attendance Weekly Log rows.
+           RequestMenu owns its own positioning logic now; we just hand it
+           the button's bounding rect. */}
        {showRequestMenu && (
          <RequestMenu
-           x={showRequestMenu.x}
-           y={showRequestMenu.y}
+           buttonRect={showRequestMenu.buttonRect}
            canRegularize={!!showRequestMenu.canRegularize}
            onClose={() => setShowRequestMenu(null)}
          />
