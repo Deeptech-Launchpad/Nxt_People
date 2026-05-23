@@ -3,15 +3,42 @@ import { CheckCircle, XCircle, Clock, Home, X, RefreshCw, Gift, Search } from 'l
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 
+// localStorage key for the "last-seen count per tab" persistence. Bump
+// the v1 suffix if we ever change the shape of the saved value.
+const SEEN_KEY = 'nxt_approvals_seen_v1';
+
+const loadSeen = () => {
+  try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}') || {}; }
+  catch { return {}; }
+};
+const saveSeen = (obj) => {
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify(obj)); } catch (_) {}
+};
+
 export default function Approvals() {
   const [data, setData] = useState({ leaves: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('leaves');
-  const [viewedTabs, setViewedTabs] = useState(new Set(['leaves']));
+  // Last-seen count per tab — persisted to localStorage so the badge
+  // stays cleared across refreshes (was previously a stale per-session
+  // Set that always re-populated on reload). If new items arrive later
+  // and the count exceeds what's stored here, the badge naturally
+  // re-appears with the delta.
+  const [seenCounts, setSeenCounts] = useState(() => loadSeen());
   const [searchFilter, setSearchFilter] = useState('');
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [actionLoading, setActionLoading] = useState('');
+
+  // When the user clicks a tab, mark its current count as "seen" and
+  // persist. Done as a small helper so the rendering code stays clean.
+  const markTabSeen = (tabId, currentCount) => {
+    setSeenCounts(prev => {
+      const next = { ...prev, [tabId]: currentCount || 0 };
+      saveSeen(next);
+      return next;
+    });
+  };
 
   const load = () => {
     setLoading(true);
@@ -36,6 +63,14 @@ export default function Approvals() {
   };
 
   useEffect(load, []);
+
+  // The 'leaves' tab is the default open one — auto-mark it as seen
+  // whenever fresh data arrives so the user never sees a badge on the
+  // tab they're already looking at.
+  useEffect(() => {
+    if (!loading) markTabSeen('leaves', data.leaves?.length || 0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, data.leaves?.length]);
 
   const action = async (endpoint, id, act, reason) => {
     setActionLoading(id);
@@ -123,17 +158,27 @@ export default function Approvals() {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         {/* Tabs */}
         <div className="flex border-b border-slate-100 overflow-x-auto items-center">
-          {TABS.map(([id, label, count]) => (
-            <button key={id} onClick={() => { setTab(id); setViewedTabs(prev => new Set(prev).add(id)); setSearchFilter(''); }}
-              className={`flex items-center gap-2 px-5 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-              {label}
-              {count > 0 && !viewedTabs.has(id) && (
-                <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold ${tab === id ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                  {count}
-                </span>
-              )}
-            </button>
-          ))}
+          {TABS.map(([id, label, count]) => {
+            // Show the badge only if there's at least one item the user
+            // hasn't seen yet — i.e. the current count is bigger than
+            // what they last viewed. After a hard refresh the seenCounts
+            // come back from localStorage, so the badge stays cleared
+            // until new items actually arrive.
+            const currentCount = count || 0;
+            const seen        = seenCounts[id] || 0;
+            const showBadge   = currentCount > 0 && currentCount > seen;
+            return (
+              <button key={id} onClick={() => { setTab(id); markTabSeen(id, currentCount); setSearchFilter(''); }}
+                className={`flex items-center gap-2 px-5 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                {label}
+                {showBadge && (
+                  <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold ${tab === id ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    {currentCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
           <div className="ml-auto flex items-center gap-2 pr-4">
             {['approvedLeaves', 'rejectedLeaves'].includes(tab) && (
               <div className="relative">
