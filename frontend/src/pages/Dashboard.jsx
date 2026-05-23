@@ -1549,17 +1549,27 @@ export default function Dashboard() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   const rect = e.currentTarget.getBoundingClientRect();
-                                  // Anchor the menu's right edge to the button's right edge,
-                                  // then clamp so the 224 px popup never overflows the viewport.
+                                  // Horizontal: anchor the menu's right edge to the button's
+                                  // right edge, then clamp so the 224 px popup never
+                                  // overflows the viewport.
                                   const MENU_W = 224;
+                                  const MENU_H = 120;          // Approximate height — RequestMenu has ~2 rows max
                                   const GUTTER = 16;
                                   const x = Math.max(
                                     GUTTER,
                                     Math.min(rect.right - MENU_W, window.innerWidth - MENU_W - GUTTER)
                                   );
+                                  // Vertical: open below by default, but if the row is near
+                                  // the bottom of the viewport (last row of the week, etc.)
+                                  // flip the menu above the button so it stays on screen.
+                                  // Matches Zoho's behaviour exactly.
+                                  const spaceBelow = window.innerHeight - rect.bottom;
+                                  const y = spaceBelow >= MENU_H + GUTTER
+                                    ? rect.bottom + 6
+                                    : rect.top - MENU_H - 6;
                                   setShowRequestMenu({
                                     x,
-                                    y: rect.bottom + 6,
+                                    y,
                                     canRegularize,
                                   });
                                 }}
