@@ -76,8 +76,14 @@ const NAV = {
     getActiveTab: p => p.startsWith('/attendance/team') ? 'team' : 'mydata',
     subNav: {
       mydata: [
+        // 'Check In' sub-tab removed — was a duplicate of the check-in
+        // controls already present on the Home Overview card and on
+        // /attendance/my. Having two surfaces meant they could drift
+        // apart (the dedicated page was missing the re-check-in
+        // button) and confused users who tried to check in twice.
+        // The /attendance/checkin route is still reachable directly
+        // for anyone who has it bookmarked.
         { to: '/attendance/my',             label: 'My Attendance'  },
-        { to: '/attendance/checkin',        label: 'Check In'       },
         { to: '/attendance/regularization', label: 'Regularization' },
       ],
       team: [{ to: '/attendance/team', label: 'Team Members' }],
@@ -102,7 +108,12 @@ const NAV = {
     label: 'Leave Tracker',
     primaryTabs: [
       { key: 'mydata',   label: 'My Data',  to: '/leave-tracker/summary'  },
-      { key: 'team',     label: 'Team',     to: '/approvals'     },
+      // Team tab points to /leave-tracker/team (alias for the Approvals
+      // component). Pointing it at /approvals would put us on the
+      // Home → Team → Approvals path, which the sidebar matches as
+      // 'Home' — the user would lose their Leave Tracker context the
+      // moment they clicked Team.
+      { key: 'team',     label: 'Team',     to: '/leave-tracker/team'     },
       { key: 'holidays', label: 'Holidays', to: '/leave-tracker/holidays' },
     ],
     getActiveTab: p => {
@@ -120,7 +131,7 @@ const NAV = {
         { to: '/leave-tracker/requests', label: 'Leave Requests'       },
         { to: '/leave-tracker/comp-off', label: 'Compensatory Request' },
       ],
-      team:     [{ to: '/approvals',     label: 'Approvals' }],
+      team:     [{ to: '/leave-tracker/team', label: 'Approvals' }],
       holidays: [
         { to: '/leave-tracker/holidays', label: 'Holidays' },
         { to: '/leave-tracker/weekends', label: 'Weekends', roles: ['admin'] },

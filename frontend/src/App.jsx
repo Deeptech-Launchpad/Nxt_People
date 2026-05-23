@@ -165,7 +165,12 @@ const AppRoutes = () => {
           <Route path="leave-tracker/balance"    element={<LeaveBalance/>}/>
           <Route path="leave-tracker/requests"   element={<LeaveRequests/>}/>
           <Route path="leave-tracker/comp-off"   element={<CompOff/>}/>
-          <Route path="leave-tracker/team"       element={<LeaveTeam/>}/>
+          {/* /leave-tracker/team renders the same Approvals page as
+              /approvals, but keeping the URL under /leave-tracker/* keeps
+              the sidebar highlight on Leave Tracker instead of jumping
+              the user back to Home (which was the pre-fix behaviour).
+              Role-gated identically — only admins/managers can view it. */}
+          <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','manager']}><Approvals/></ProtectedRoute>}/>
           <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
           <Route path="leave-tracker/weekends"   element={<ProtectedRoute roles={['admin']}><Weekends/></ProtectedRoute>}/>
 
