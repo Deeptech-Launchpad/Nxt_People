@@ -1111,10 +1111,12 @@ const steps = [
   // ── notifications + feeds indexes ────────────────────────────────────────
   // Notification bell polls /api/notifications every 60s for every logged-in
   // user. Without these indexes every poll scans the whole table.
-  `CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created
-     ON notifications(recipient_id, created_at DESC)`,
+  // Schema uses employee_id + is_read (not recipient_id / read_at) — keep in
+  // sync with routes/notifications.js when refactoring.
+  `CREATE INDEX IF NOT EXISTS idx_notifications_employee_created
+     ON notifications(employee_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_notifications_unread
-     ON notifications(recipient_id, read_at) WHERE read_at IS NULL`,
+     ON notifications(employee_id, is_read) WHERE is_read = FALSE`,
   `CREATE INDEX IF NOT EXISTS idx_feeds_employee_created
      ON feeds(employee_id, created_at DESC)`,
 
@@ -1138,9 +1140,32 @@ const steps = [
       AND (check_in AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') > (date::timestamp + TIME '09:40:00')`,
 ];
 
+// Classify a step as "critical" (failure must abort the container start)
+// vs "soft" (failure logs a warning and the API still boots).
+//
+// Critical: anything that changes table shape — if these fail, the runtime
+//   code that depends on the new column / table will throw at request time.
+//   Better to fail-fast than crash on every API call.
+// Soft: CREATE INDEX (degraded query plans, not wrong results), UPDATE / INSERT
+//   data hygiene (idempotent — re-run later to converge), DROP TABLE IF EXISTS
+//   (the IF EXISTS makes it a no-op anyway).
+//
+// This rule turned a 2-bad-index migration into a full prod outage on
+// 2026-05-25 — the container's entrypoint aborts on any non-zero exit code
+// from this script, so even a single CREATE INDEX with a column-name typo
+// took the backend down. Soft failures now get a loud warning but allow boot.
+function isCriticalStep(sql) {
+  const head = sql.trim().toUpperCase().replace(/\s+/g, ' ').slice(0, 50);
+  if (head.startsWith('ALTER TABLE'))   return true;
+  if (head.startsWith('CREATE TABLE'))  return true;
+  if (head.startsWith('CREATE EXTENSION')) return true;
+  if (head.startsWith('DO $$'))         return true; // anon block — usually structural
+  return false;                                       // CREATE INDEX, UPDATE, INSERT, DROP IF EXISTS, CREATE UNIQUE INDEX
+}
+
 async function runFixes() {
   console.log('🔧 Running Nxt-People bug-fix migrations...\n');
-  let success = 0, failed = 0;
+  let success = 0, criticalFailed = 0, softFailed = 0;
 
   for (const sql of steps) {
     const preview = sql.trim().replace(/\s+/g, ' ').substring(0, 80);
@@ -1149,18 +1174,28 @@ async function runFixes() {
       console.log(`  ✅ ${preview}...`);
       success++;
     } catch (err) {
-      console.error(`  ❌ FAILED: ${preview}`);
+      const critical = isCriticalStep(sql);
+      const marker   = critical ? '❌ CRITICAL FAILED' : '⚠️  SOFT FAILED';
+      console.error(`  ${marker}: ${preview}`);
       console.error(`     ${err.message}\n`);
-      failed++;
+      if (critical) criticalFailed++; else softFailed++;
     }
   }
 
-  console.log(`\n📊 Fix migration complete: ${success} succeeded, ${failed} failed`);
-  if (failed === 0) console.log('🎉 All fixes applied successfully!');
-  else console.log('⚠️  Some fixes failed — check errors above');
+  console.log(`\n📊 Fix migration complete: ${success} succeeded, ${criticalFailed} critical failed, ${softFailed} soft failed`);
+  if (criticalFailed === 0 && softFailed === 0) {
+    console.log('🎉 All fixes applied successfully!');
+  } else if (criticalFailed === 0) {
+    console.log('⚠️  Soft failures (indexes / backfills) — API will still boot, but address these.');
+  } else {
+    console.log('💥 Critical failures (table shape) — API will likely 500 until fixed.');
+  }
 
   await pool.end();
-  process.exit(failed > 0 ? 1 : 0);
+  // Only critical (table-shape) failures abort startup. Soft failures
+  // log loudly but allow the API to come up — re-running the migration
+  // later converges the missing indexes/backfills without an outage.
+  process.exit(criticalFailed > 0 ? 1 : 0);
 }
 
 runFixes().catch(err => {
