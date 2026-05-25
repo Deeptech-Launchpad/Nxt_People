@@ -77,9 +77,14 @@ services:
       backend:
         condition: service_healthy
     ports:
-      # Map host 80 → container 80. To terminate TLS, put a system nginx /
-      # Caddy / Traefik in front and remap to a high port (e.g. "127.0.0.1:8080:80").
-      - "80:80"
+      # Bind to 127.0.0.1:3006 — the production VPS runs a system nginx (with
+      # certbot for TLS) that reverse-proxies nxtpeople.altiusnxt.tech ->
+      # http://127.0.0.1:3006. Binding to 127.0.0.1 (not 0.0.0.0) keeps the
+      # container reachable only from the host, so the public never hits the
+      # container directly without going through nginx's HTTPS termination.
+      # If you're running this without a host nginx, change to "80:80" and
+      # accept that there's no TLS until you put a reverse proxy in front.
+      - "127.0.0.1:3006:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
       interval: 30s
