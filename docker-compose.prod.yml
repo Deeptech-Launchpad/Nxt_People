@@ -86,7 +86,13 @@ services:
       # accept that there's no TLS until you put a reverse proxy in front.
       - "127.0.0.1:3006:80"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
+      # `wget --spider` is the busybox-compatible idiom (nginx:alpine ships
+      # busybox's stripped-down wget). The previous `wget -qO-` worked in
+      # full GNU wget but quietly failed to discriminate 2xx vs 5xx in
+      # busybox, leaving the container permanently marked "unhealthy" even
+      # while serving 200 OK responses correctly. --spider exits 0 on 2xx
+      # and non-zero on any other status, which is exactly what we want.
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/"]
       interval: 30s
       timeout: 5s
       retries: 3
