@@ -92,7 +92,11 @@ services:
       # busybox, leaving the container permanently marked "unhealthy" even
       # while serving 200 OK responses correctly. --spider exits 0 on 2xx
       # and non-zero on any other status, which is exactly what we want.
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost/"]
+      #
+      # 127.0.0.1 (not "localhost") — busybox wget prefers IPv6 resolution
+      # for "localhost" and the container nginx only listens on IPv4 0.0.0.0,
+      # so `localhost` would always come back with "Connection refused".
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/"]
       interval: 30s
       timeout: 5s
       retries: 3
