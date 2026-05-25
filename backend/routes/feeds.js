@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
+const logger = require('../logger');
 
 router.use(protect);
 
@@ -73,7 +74,7 @@ async function createFeedEntry(employeeId, type, title, body, icon = '📌') {
       [employeeId, type, title, body || null, icon]
     );
   } catch (err) {
-    console.error('⚠️ Feed entry failed:', err.message);
+    logger.error({ err: err.message }, 'Feed entry failed');
   }
 }
 

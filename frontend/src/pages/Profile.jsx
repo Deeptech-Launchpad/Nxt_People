@@ -63,11 +63,30 @@ export default function Profile() {
   const [editModal, setEditModal] = useState(false);
   const [pwModal, setPwModal] = useState(false);
   const [form, setForm] = useState({});
+  // Snapshot of `form` taken when the Edit modal opens — we compare on
+  // close to warn the user if they're about to lose unsaved edits.
+  const [formSnapshot, setFormSnapshot] = useState({});
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [saving, setSaving] = useState(false);
 
+  // Helper: open the modal and capture the snapshot in one step so we
+  // can never desync.
+  const openEditModal = () => {
+    setFormSnapshot(form);
+    setEditModal(true);
+  };
+  const requestCloseEdit = () => {
+    const dirty = JSON.stringify(form) !== JSON.stringify(formSnapshot);
+    if (dirty && !window.confirm('You have unsaved changes. Discard them?')) return;
+    setEditModal(false);
+  };
+
   const fileInputRef = useRef(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  // 0–100 % — drives the progress bar that overlays the avatar while a
+  // large photo uploads. Without this users saw a frozen spinner with no
+  // feedback for ~5 s on slow connections.
+  const [uploadProgress, setUploadProgress] = useState(0);
   // Cropper modal owns its own pos/zoom/areaPixels — we only track the
   // image data URL that triggers it. When cropSrc is non-null the
   // PhotoCropperModal is open.
@@ -118,10 +137,17 @@ export default function Profile() {
   const handleCropSave = async (blob) => {
     if (!blob) return;
     setUploadingPhoto(true);
+    setUploadProgress(0);
     try {
       const form = new FormData();
       form.append('photo', blob, 'profile.jpg');
-      const r = await api.post('/profile/photo', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const r = await api.post('/profile/photo', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => {
+          if (!e.total) return;
+          setUploadProgress(Math.round((e.loaded / e.total) * 100));
+        },
+      });
       toast.success('Profile picture updated');
       setUser(prev => prev ? { ...prev, photoUrl: r.data.photoUrl } : prev);
       load();
@@ -130,6 +156,7 @@ export default function Profile() {
       toast.error(err.response?.data?.message || 'Upload failed');
     } finally {
       setUploadingPhoto(false);
+      setUploadProgress(0);
     }
   };
 
@@ -246,7 +273,7 @@ export default function Profile() {
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setEditModal(true)}
+              onClick={openEditModal}
               className="w-8 h-8 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors"
               title="Edit profile"
             >
@@ -335,8 +362,11 @@ export default function Profile() {
                 </div>
               )}
               {uploadingPhoto && (
-                <div className="absolute inset-0 rounded-full bg-white/70 flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full bg-white/70 flex flex-col items-center justify-center">
                   <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  {uploadProgress > 0 && (
+                    <span className="text-[10px] font-semibold text-blue-600 mt-1">{uploadProgress}%</span>
+                  )}
                 </div>
               )}
             </div>
@@ -552,7 +582,7 @@ export default function Profile() {
                 </p>
               </div>
               <button
-                onClick={() => setEditModal(false)}
+                onClick={requestCloseEdit}
                 className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
               >
                 <X size={16} />
@@ -625,7 +655,7 @@ export default function Profile() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setEditModal(false)}
+                  onClick={requestCloseEdit}
                   className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50"
                 >
                   Cancel

@@ -349,7 +349,15 @@ export default function Chat() {
                       <p className="text-[13px] whitespace-pre-wrap break-words">{m.content}</p>
                       <p className={`text-[10px] mt-0.5 ${isMe ? 'text-blue-100' : 'text-slate-400'}`}>
                         {fmtTime(m.createdAt)}
-                        {isMe && m.readAt && <span className="ml-1">· Read</span>}
+                        {isMe && (() => {
+                          // 3-state delivery indicator on outgoing messages.
+                          //   m.id starts with 'tmp-' → optimistic, not yet ACKed → "Sending"
+                          //   m.readAt set                                       → "Read"
+                          //   otherwise                                          → "Delivered"
+                          if (String(m.id || '').startsWith('tmp-')) return <span className="ml-1">· Sending…</span>;
+                          if (m.readAt) return <span className="ml-1">✓✓ Read</span>;
+                          return <span className="ml-1">✓ Delivered</span>;
+                        })()}
                       </p>
                     </div>
                   </div>

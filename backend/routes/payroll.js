@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const logger = require('../logger');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
@@ -91,22 +92,32 @@ router.post('/accrue', authorize('admin'), async (req, res) => {
 
     // Batch the accrual: one UPDATE + one bulk INSERT per leave type instead
     // of 6 round-trips per employee. At 150 active employees that's 6 queries
-    // total instead of ~900. INSERT uses unnest() so a single parameterised
-    // statement covers every employee.
-    const empRes = await pool.query("SELECT id FROM employees WHERE status='active'");
-    const empIds = empRes.rows.map(r => r.id);
-    const credited = empIds.length;
+    // total instead of ~900.
+    //
+    // SCALING NOTE: we used to SELECT all employee IDs into Node memory then
+    // pass them as a UUID[] parameter. At 10k+ employees that's a 320 KB
+    // parameter array PER query (×6 queries) and an Out-of-Memory risk on
+    // smaller containers. Now both the UPDATE and INSERT run their own
+    // SELECT inside PG (set-based, no round-trip), and we just COUNT
+    // affected rows for the response payload.
+    const countRes = await pool.query(
+      "SELECT COUNT(*)::int AS n FROM employees WHERE status='active' AND deleted_at IS NULL"
+    );
+    const credited = countRes.rows[0]?.n || 0;
 
     const accrueLeaveType = async (column, code, days, reason) => {
-      if (!days || days <= 0 || empIds.length === 0) return;
+      if (!days || days <= 0 || credited === 0) return;
       await pool.query(
-        `UPDATE employees SET ${column} = COALESCE(${column},0) + $1 WHERE id = ANY($2::uuid[])`,
-        [days, empIds]
+        `UPDATE employees
+            SET ${column} = COALESCE(${column}, 0) + $1
+          WHERE status='active' AND deleted_at IS NULL`,
+        [days]
       );
       await pool.query(
         `INSERT INTO leave_accrual_log (employee_id, leave_type, days_added, reason)
-         SELECT unnest($1::uuid[]), $2, $3, $4`,
-        [empIds, code, days, reason]
+         SELECT id, $1, $2, $3 FROM employees
+          WHERE status='active' AND deleted_at IS NULL`,
+        [code, days, reason]
       );
     };
 
@@ -928,7 +939,7 @@ router.put('/admin/payslips/:id/lock', authorize('admin'), logAuditWrapper('LOCK
     res.json({ success: true });
 
     // Fire-and-forget email — don't block the response on SMTP latency.
-    sendLockEmail(req.params.id).catch(err => console.error('[payroll] lock email failed:', err.message));
+    sendLockEmail(req.params.id).catch(err => logger.error({ err: err.message }, '[payroll] lock email failed'));
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ success: false, message: err.message });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus } from 'lucide-react';
 import api from '../utils/api';
+import { PhotoAvatar } from '../components/ui';
 
 export default function NewHires() {
   const [employees, setEmployees] = useState([]);
@@ -39,8 +40,13 @@ export default function NewHires() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           {employees.map(e => (
             <div key={e._id} className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:shadow-md transition-all text-center">
-              <img src={`https://ui-avatars.com/api/?name=${e.firstName}+${e.lastName}&background=d1fae5&color=065f46&size=56`}
-                className="w-14 h-14 rounded-full mx-auto mb-3 border-2 border-white shadow" alt={e.firstName}/>
+              <PhotoAvatar
+                photoUrl={e.photoUrl}
+                firstName={e.firstName}
+                lastName={e.lastName}
+                className="w-14 h-14 mx-auto mb-3 border-2 border-white shadow"
+                textClassName="text-sm"
+              />
               <p className="text-[12.5px] font-semibold text-slate-800 truncate">{e.firstName} {e.lastName}</p>
               <p className="text-[11px] text-slate-500 truncate mt-0.5">{e.designation || '—'}</p>
               <p className="text-[10.5px] text-slate-400 truncate">{e.department || '—'}</p>

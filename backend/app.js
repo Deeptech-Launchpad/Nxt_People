@@ -90,6 +90,26 @@ const authLimiter = rateLimit({
   skip: () => process.env.NODE_ENV !== 'production' || process.env.RATE_LIMIT_DISABLED === 'true',
 });
 
+// ── Mutating-method limiter — defence against a logged-in client (or stolen
+// token) hammering POST/PUT/PATCH/DELETE endpoints. Generous limit so it
+// doesn't trip normal bulk-form use, but cuts off runaway scripts. GETs are
+// left unlimited; reads scale better and are protected upstream by nginx.
+const mutatingLimiter = rateLimit({
+  windowMs: 60 * 1000,           // per minute
+  max: 120,                      // 120 writes/min/IP — well above any human pace
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    if (process.env.NODE_ENV !== 'production' || process.env.RATE_LIMIT_DISABLED === 'true') return true;
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return true;
+    // /api/auth and /api/external have their own (tighter) limiters; skip here to avoid double-billing.
+    if (req.path.startsWith('/api/auth/') || req.path.startsWith('/api/external')) return true;
+    return false;
+  },
+  message: { success: false, message: 'Too many write requests. Slow down and try again in a minute.' },
+});
+app.use(mutatingLimiter);
+
 // ── Routes ─────────────────────────────────────────────────────────────────────
 app.use('/api/auth',             authLimiter, require('./routes/auth'));
 app.use('/api/mfa',              require('./routes/mfa'));
@@ -133,7 +153,8 @@ app.use('/api/roster',           require('./routes/roster'));
 app.use('/api/payroll',          require('./routes/payroll'));
 app.use('/api/payslips',         require('./routes/payslips'));
 app.use('/api/encashments',      require('./routes/encashments'));
-app.use('/api/messages',         require('./routes/messages'));
+// /api/messages removed — superseded by /api/chat (chat_dm_threads / chat_dm_messages).
+// The legacy chat_conversations/chat_messages tables are no longer read by the UI.
 app.use('/api/projects',         require('./routes/projects'));
 app.use('/api/tasks',            require('./routes/tasks'));
 app.use('/api/departments',      require('./routes/departments'));

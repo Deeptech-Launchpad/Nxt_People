@@ -229,16 +229,18 @@ const NAV = {
 // Active-state is now decided by the parent (SubNav) so we can pick a
 // single best-match — preventing the case where `/payroll/setup` lit up
 // both "Payroll Report" (/payroll) and "Salary Setup" (/payroll/setup).
-const SubNavLink = ({ to, label, isActive }) => (
-  <NavLink to={to}
-    className={`h-full flex items-center px-1 border-b-2 text-[14px] whitespace-nowrap transition-all duration-150 mt-[2px] tracking-[-0.01em]
-      ${isActive
-        ? 'border-[#1a73e8] text-[#1a73e8] font-bold'
-        : 'border-transparent text-slate-500 font-semibold hover:text-slate-800 hover:border-slate-300'
-      }`}>
-    {label}
-  </NavLink>
-);
+const SubNavLink = React.memo(function SubNavLink({ to, label, isActive }) {
+  return (
+    <NavLink to={to}
+      className={`h-full flex items-center px-1 border-b-2 text-[14px] whitespace-nowrap transition-all duration-150 mt-[2px] tracking-[-0.01em]
+        ${isActive
+          ? 'border-[#1a73e8] text-[#1a73e8] font-bold'
+          : 'border-transparent text-slate-500 font-semibold hover:text-slate-800 hover:border-slate-300'
+        }`}>
+      {label}
+    </NavLink>
+  );
+});
 
 /* ── SubNav (with overflow "More" dropdown) ──────────────────────── */
 /** When the sub-nav has too many tabs to fit on one line, this component
@@ -421,6 +423,17 @@ export default function Topbar() {
   useEffect(() => {
     if (notificationTick > 0) loadNotifications();
   }, [notificationTick, loadNotifications]);
+
+  // ── Document-title unread indicator ──────────────────────────────────────
+  // Mirror the badge state into the browser tab title so users who have
+  // NxtPeople in a background tab still notice incoming chats / notifs.
+  // Prefix the existing title rather than overwriting it so per-page titles
+  // (set elsewhere) keep working — restore on cleanup just in case.
+  useEffect(() => {
+    const total = (unreadCount || 0) + (chatUnread || 0);
+    const base  = document.title.replace(/^\(\d+\)\s/, '');
+    document.title = total > 0 ? `(${total}) ${base}` : base;
+  }, [unreadCount, chatUnread]);
 
   useEffect(() => {
     const h = e => {
@@ -677,6 +690,19 @@ export default function Topbar() {
                   <button onClick={() => { navigate('/settings'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50">Settings</button>
                   <div className="border-t border-slate-100 mt-1 pt-1">
                     <button onClick={logout} className="w-full text-left px-4 py-2.5 text-[13px] text-red-500 hover:bg-red-50 font-medium">Sign Out</button>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('Sign out from all devices? You will be logged out everywhere — laptops, phones, every browser.')) return;
+                        try {
+                          const r = await api.post('/auth/logout-everywhere');
+                          alert(r.data.message || 'Signed out from all devices.');
+                        } catch (_) { /* server bumped revoked_at — local session is dead anyway */ }
+                        logout();
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-[12px] text-slate-500 hover:bg-slate-50"
+                    >
+                      Sign out from all devices
+                    </button>
                   </div>
                 </div>
               </div>

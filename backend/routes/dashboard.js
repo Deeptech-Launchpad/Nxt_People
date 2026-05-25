@@ -14,7 +14,7 @@ router.get('/stats', async (req, res) => {
     const weekStart = weekStartDate.toLocaleDateString('en-CA');
 
     const totalEmployeesRes = await pool.query(
-      "SELECT COUNT(*) FROM employees WHERE status = 'active'"
+      "SELECT COUNT(*) FROM employees WHERE status = 'active' AND deleted_at IS NULL"
     );
     const totalEmployees = parseInt(totalEmployeesRes.rows[0].count, 10);
 
@@ -100,7 +100,7 @@ router.get('/stats', async (req, res) => {
       `SELECT first_name as "firstName", last_name as "lastName", department, joining_date as "joiningDate",
        EXTRACT(YEAR FROM AGE(CURRENT_DATE, joining_date))::int as "years"
        FROM employees
-       WHERE status='active' AND joining_date IS NOT NULL
+       WHERE status='active' AND deleted_at IS NULL AND joining_date IS NOT NULL
        AND EXTRACT(MONTH FROM joining_date) = EXTRACT(MONTH FROM CURRENT_DATE)
        AND EXTRACT(DAY FROM joining_date) >= EXTRACT(DAY FROM CURRENT_DATE)
        AND EXTRACT(YEAR FROM joining_date) < EXTRACT(YEAR FROM CURRENT_DATE)
@@ -114,7 +114,7 @@ router.get('/stats', async (req, res) => {
        COUNT(CASE WHEN a.status = 'absent' OR a.id IS NULL THEN 1 END) as absent
        FROM employees e
        LEFT JOIN attendance a ON e.id = a.employee_id AND a.date = $1::date
-       WHERE e.status = 'active' AND e.department IS NOT NULL
+       WHERE e.status = 'active' AND e.deleted_at IS NULL AND e.department IS NOT NULL
        GROUP BY e.department ORDER BY present DESC LIMIT 8`,
       [today]
     );

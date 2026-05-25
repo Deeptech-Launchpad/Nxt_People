@@ -255,6 +255,37 @@ export default function Settings() {
             <div>
               <h3 className="font-display font-semibold text-slate-800 mb-4">Security Settings</h3>
               <div className="space-y-4">
+                <div className="bg-white rounded-xl p-4 border border-slate-200">
+                  <p className="font-medium text-slate-700 text-sm">Require MFA for these roles</p>
+                  <p className="text-slate-400 text-xs mt-1 mb-3">
+                    Users in the selected roles will be forced through MFA enrolment on next login.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {['admin', 'manager', 'hr', 'employee'].map(r => {
+                      const list = Array.isArray(settings?.mfaRequiredRoles) ? settings.mfaRequiredRoles : [];
+                      const on = list.includes(r);
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setSettings(s => ({
+                            ...s,
+                            mfaRequiredRoles: on
+                              ? list.filter(x => x !== r)
+                              : [...list, r],
+                          }))}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                            on
+                              ? 'bg-brand-600 text-white border-brand-600'
+                              : 'bg-white text-slate-600 border-slate-200 hover:border-brand-400'
+                          }`}
+                        >
+                          {r.charAt(0).toUpperCase() + r.slice(1)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
                   <p className="font-medium text-slate-700 text-sm">JWT Token Expiry</p>
                   <p className="text-slate-400 text-xs mt-1">Current: 7 days — configure in .env file (JWT_EXPIRE)</p>
@@ -265,7 +296,7 @@ export default function Settings() {
                 </div>
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
                   <p className="font-medium text-slate-700 text-sm">Role-Based Access</p>
-                  <p className="text-slate-400 text-xs mt-1">Admin · Manager · Employee — 3 role levels configured</p>
+                  <p className="text-slate-400 text-xs mt-1">Admin · Manager · HR · Employee — 4 role levels configured</p>
                 </div>
               </div>
             </div>

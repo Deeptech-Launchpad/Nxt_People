@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
+const logger = require('../logger');
 const path = require('path');
 const { protect, authorize } = require('../middleware/auth');
 const { nextIdForCompany } = require('../utils/employeeId');
@@ -25,13 +26,24 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+// Allowed extensions for ANY upload through this endpoint. Documents are
+// almost always images or PDFs; anything else hits the fileFilter rejection.
+const ALLOWED_DOC_EXTS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp']);
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadDir)
   },
   filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-    cb(null, uniqueSuffix + path.extname(file.originalname))
+    // crypto.randomBytes(16) → 32 hex chars. Replaces Date.now()+Math.random()
+    // which collided whenever two concurrent uploads landed in the same
+    // millisecond AND Math.random() picked the same int (rare but a
+    // documented production incident class). Also lock the saved extension
+    // to ALLOWED_DOC_EXTS so a double-extension trick can never write
+    // anything else to disk.
+    const rawExt = path.extname(file.originalname).toLowerCase();
+    const ext = ALLOWED_DOC_EXTS.has(rawExt) ? rawExt : '.bin';
+    cb(null, crypto.randomBytes(16).toString('hex') + ext);
   }
 });
 // 5 MB per file, plus an explicit field whitelist so a malicious client
@@ -55,6 +67,16 @@ const upload = multer({
   limits: {
     fileSize:  5 * 1024 * 1024,   // 5 MB per file
     files:     30,                 // hard upper bound across all fields
+  },
+  fileFilter: (req, file, cb) => {
+    // First-line defence — reject before write. The filename() callback
+    // forces a safe extension as belt-and-braces, but this lets us return
+    // a clear error to the client instead of silently saving a .bin.
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_DOC_EXTS.has(ext)) {
+      return cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', `Unsupported file type: ${ext || 'unknown'}`));
+    }
+    cb(null, true);
   },
 });
 
@@ -262,10 +284,10 @@ router.post('/generate-link', async (req, res) => {
       if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
         await transporter.sendMail(mailOptions);
       } else {
-        console.warn('SMTP credentials not found in environment. Email not sent, returning link only.');
+        logger.warn('SMTP credentials not found in environment. Email not sent, returning link only.');
       }
     } catch (mailErr) {
-      console.error('Failed to send email:', mailErr);
+      logger.error({ err: mailErr?.message }, 'Failed to send registration email');
       return res.status(500).json({ success: false, message: 'Failed to send preboard email. Check SMTP settings.' });
     }
 

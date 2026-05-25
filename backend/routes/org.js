@@ -21,7 +21,7 @@ router.get('/birthdays', async (req, res) => {
        email, designation, department, photo_url as "photoUrl", phone,
        date_of_birth as "dateOfBirth"
        FROM employees
-       WHERE status = 'active'
+       WHERE status = 'active' AND deleted_at IS NULL
          AND date_of_birth IS NOT NULL
          AND EXTRACT(MONTH FROM date_of_birth) = $1
        ORDER BY EXTRACT(DAY FROM date_of_birth) ASC`,
@@ -43,7 +43,7 @@ router.get('/new-hires', async (req, res) => {
        email, designation, department, photo_url as "photoUrl",
        join_date as "joinDate"
        FROM employees
-       WHERE status = 'active'
+       WHERE status = 'active' AND deleted_at IS NULL
          AND join_date >= CURRENT_DATE - INTERVAL '${days} days'
        ORDER BY join_date DESC`
     );
@@ -63,7 +63,7 @@ router.get('/departments', async (req, res) => {
         `SELECT d.id as "_id", d.name, d.code, d.head_id as "headId",
          COUNT(e.id) as "employeeCount"
          FROM departments d
-         LEFT JOIN employees e ON e.department_id = d.id AND e.status = 'active'
+         LEFT JOIN employees e ON e.department_id = d.id AND e.status = 'active' AND e.deleted_at IS NULL
          GROUP BY d.id, d.name, d.code, d.head_id
          ORDER BY d.name ASC`
       );
@@ -71,7 +71,7 @@ router.get('/departments', async (req, res) => {
       // Fallback: aggregate from employees.department column
       r = await pool.query(
         `SELECT department as name, COUNT(*) as "employeeCount"
-         FROM employees WHERE status='active' AND department IS NOT NULL
+         FROM employees WHERE status='active' AND deleted_at IS NULL AND department IS NOT NULL
          GROUP BY department ORDER BY department ASC`
       );
       r.rows = r.rows.map((row, i) => ({ _id: i + 1, name: row.name, employeeCount: row.employeeCount }));
@@ -90,7 +90,7 @@ router.get('/departments/:id/employees', async (req, res) => {
              first_name as "firstName", last_name as "lastName",
              email, designation, department, photo_url as "photoUrl", status
              FROM employees
-             WHERE status = 'active'`;
+             WHERE status = 'active' AND deleted_at IS NULL`;
     const params = [];
 
     // Try by department_id first, fall back to name matching
@@ -129,7 +129,7 @@ router.get('/employee-tree', async (req, res) => {
       `SELECT id, employee_id as "employeeId", first_name as "firstName",
        last_name as "lastName", designation, department, photo_url as "photoUrl",
        reporting_manager_id as "managerId"
-       FROM employees WHERE status = 'active' ORDER BY id`
+       FROM employees WHERE status = 'active' AND deleted_at IS NULL ORDER BY id`
     );
     const all = r.rows;
     const map = {};
@@ -167,8 +167,8 @@ router.get('/employee-tree', async (req, res) => {
 router.get('/info', async (req, res) => {
   try {
     const [empCount, deptCount] = await Promise.all([
-      pool.query("SELECT COUNT(*) FROM employees WHERE status='active'"),
-      pool.query("SELECT COUNT(DISTINCT department) FROM employees WHERE status='active'"),
+      pool.query("SELECT COUNT(*) FROM employees WHERE status='active' AND deleted_at IS NULL"),
+      pool.query("SELECT COUNT(DISTINCT department) FROM employees WHERE status='active' AND deleted_at IS NULL"),
     ]);
     res.json({
       success: true,

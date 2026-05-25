@@ -238,7 +238,17 @@ export default function App() {
         <WeekendRulesProvider>
           <AttendanceProvider>
             <ChatProvider>
-              <Toaster position="bottom-right" toastOptions={{ duration: 4000, style: { fontSize: '13px', fontWeight: 600 } }}/>
+              <Toaster
+                position="bottom-right"
+                toastOptions={{
+                  duration: 4000,
+                  style: { fontSize: '13px', fontWeight: 600 },
+                  // Errors deserve more dwell time — 4s isn't enough to read
+                  // a stack-trace-style message before it disappears.
+                  error: { duration: 7000 },
+                  success: { duration: 3500 },
+                }}
+              />
               <AppRoutes/>
             </ChatProvider>
           </AttendanceProvider>

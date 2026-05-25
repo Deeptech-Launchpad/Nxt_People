@@ -1075,6 +1075,67 @@ const steps = [
      ON chat_dm_messages(thread_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_chat_dm_messages_unread
      ON chat_dm_messages(thread_id, sender_id, read_at) WHERE read_at IS NULL`,
+
+  // ── Soft-delete column for employees ─────────────────────────────────────
+  // ON DELETE CASCADE on employees wipes attendance, leaves, payslips, etc.
+  // From here on, the DELETE endpoint sets deleted_at = NOW() instead of
+  // actually deleting the row. Common SELECTs filter `deleted_at IS NULL`.
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+  `CREATE INDEX IF NOT EXISTS idx_employees_active ON employees(id) WHERE deleted_at IS NULL`,
+
+  // ── MFA per-role enforcement ─────────────────────────────────────────────
+  // settings.mfa_required_roles is a JSONB array of role strings.
+  // If a logging-in user's role appears in this list and they haven't set up
+  // MFA yet, the login flow returns code='MFA_SETUP_REQUIRED' so the UI can
+  // force them through enrolment. Empty/null = no enforcement (default).
+  `ALTER TABLE settings ADD COLUMN IF NOT EXISTS mfa_required_roles JSONB DEFAULT '[]'::jsonb`,
+
+  // ── Logout-everywhere support ────────────────────────────────────────────
+  // tokens_revoked_at — any refresh token issued before this timestamp is
+  // rejected on use. Lets a user kill every active session in one click,
+  // without us having to enumerate per-device refresh tokens. Cheap and
+  // ironclad: each verify just compares iat to this column.
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS tokens_revoked_at TIMESTAMPTZ`,
+
+  // ── audit_log indexes ────────────────────────────────────────────────────
+  // /api/audit always filters by created_at DESC and frequently by
+  // actor_id / resource / action. Without these indexes COUNT(*) and the
+  // paged SELECT both fall back to full table scans — fine at 10k rows,
+  // unusable at 1M. Partial index on the BRIN-friendly created_at gives us
+  // fast ORDER BY + LIMIT, the others speed up the WHERE filters.
+  `CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_audit_log_actor      ON audit_log(actor_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_audit_log_resource   ON audit_log(resource, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_audit_log_action     ON audit_log(action, created_at DESC)`,
+
+  // ── notifications + feeds indexes ────────────────────────────────────────
+  // Notification bell polls /api/notifications every 60s for every logged-in
+  // user. Without these indexes every poll scans the whole table.
+  `CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created
+     ON notifications(recipient_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_unread
+     ON notifications(recipient_id, read_at) WHERE read_at IS NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_feeds_employee_created
+     ON feeds(employee_id, created_at DESC)`,
+
+  // ── lateMinutes backfill ─────────────────────────────────────────────────
+  // Old attendance rows have late_minutes=0 because the column was filled in
+  // wrong (UTC vs IST). Recompute for any row that has a check_in past the
+  // shift's grace-cutoff. We approximate the standard "9:30 start, 10 min
+  // grace" cutoff as 09:40 IST; rows with check_in (in IST) past that and
+  // late_minutes still 0 get recomputed. Idempotent: rows already correct
+  // don't move. Runs once per migration; subsequent runs are no-ops because
+  // late_minutes is no longer 0 after the first pass.
+  `UPDATE attendance
+      SET late_minutes = GREATEST(0,
+            EXTRACT(EPOCH FROM (
+              (check_in AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')
+              - (date::timestamp + TIME '09:40:00')
+            )) / 60
+          )::int
+    WHERE check_in IS NOT NULL
+      AND COALESCE(late_minutes, 0) = 0
+      AND (check_in AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') > (date::timestamp + TIME '09:40:00')`,
 ];
 
 async function runFixes() {

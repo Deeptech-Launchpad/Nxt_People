@@ -85,4 +85,67 @@ async function isNonWorkingDay(date = new Date()) {
   }
 }
 
-module.exports = { isNonWorkingDay, ruleMatchesDate };
+/**
+ * Counts working days in [startDate, endDate] inclusive, honouring
+ * weekend_rules and the holidays table. Used by leave apply so the
+ * total_days figure matches what the company actually considers a
+ * working day — not a hardcoded Mon-Fri.
+ *
+ * A day is a working day if:
+ *   - No holidays row exists OR the holidays row has type='working_day'
+ *   - AND no active weekend_rule matches it (unless overridden above)
+ */
+async function countWorkingDays(startDate, endDate) {
+  const start = atMidnight(new Date(startDate));
+  const end   = atMidnight(new Date(endDate));
+  if (end < start) return 0;
+
+  const startYmd = start.toISOString().slice(0, 10);
+  const endYmd   = end.toISOString().slice(0, 10);
+
+  let rules = [];
+  let holidayMap = new Map();
+  try {
+    const [rulesRes, holRes] = await Promise.all([
+      pool.query(
+        `SELECT days_of_week, weeks_of_month, interval_weeks, start_date, end_type, end_date, end_count, is_active
+         FROM weekend_rules WHERE is_active = TRUE`
+      ),
+      pool.query(
+        `SELECT date::text as ymd, type FROM holidays WHERE date BETWEEN $1::date AND $2::date`,
+        [startYmd, endYmd]
+      ),
+    ]);
+    rules = rulesRes.rows;
+    holRes.rows.forEach(h => holidayMap.set(h.ymd, h.type));
+  } catch (_) {
+    // Tables missing → fall back to "weekday only" so we still return something sane.
+    let count = 0;
+    const cur = new Date(start);
+    while (cur <= end) {
+      const d = cur.getDay();
+      if (d !== 0 && d !== 6) count++;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return count;
+  }
+
+  let count = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const ymd = cur.toISOString().slice(0, 10);
+    const holType = holidayMap.get(ymd);
+    let isWorkingDay;
+    if (holType !== undefined) {
+      isWorkingDay = holType === 'working_day';
+    } else {
+      const isWeekend = rules.some(rule => ruleMatchesDate(rule, cur));
+      isWorkingDay = !isWeekend;
+    }
+    if (isWorkingDay) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+module.exports = { isNonWorkingDay, ruleMatchesDate, countWorkingDays };

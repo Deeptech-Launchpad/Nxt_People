@@ -1,5 +1,26 @@
 const nodemailer = require('nodemailer');
 
+// Minimal HTML escape — used for every template variable that gets
+// interpolated into the email body. Without this, a candidate name
+// containing `<script>` (or even just `<` from `Smith <CEO>`) renders
+// as HTML in the recipient's email client. We deliberately don't depend
+// on a library here; the template engine touches only 4 character
+// classes and the surface is tiny.
+const escapeHtml = (s) => String(s ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+// URL guard for hrefs — only allow http/https/mailto schemes so a
+// caller-controlled `registrationLink` can't be `javascript:alert(1)`.
+// Falls back to '#' which renders the button safely as a no-op.
+const safeUrl = (u) => {
+  const s = String(u ?? '').trim();
+  return /^(https?:|mailto:)/i.test(s) ? s : '#';
+};
+
 const createTransporter = () => {
   return nodemailer.createTransport({
     service: process.env.EMAIL_SERVICE || 'gmail',
@@ -18,6 +39,20 @@ const sendOnboardingEmail = async ({ to, candidateName, dueDate, registrationLin
   const dueDateStr = dueDate
     ? new Date(dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
     : null;
+
+  // Pre-escape every caller-supplied variable. Defence in depth — these
+  // values come from HR's admin form today, but the same template is reused
+  // by self-onboarding flows and an attacker-controlled name field would
+  // otherwise execute as HTML in the recipient's inbox.
+  const safeCandidate = escapeHtml(candidateName || 'Candidate');
+  const safeCompany   = escapeHtml(companyName  || 'AltiusNxt');
+  const safeHrName    = escapeHtml(hrName       || 'HR Team');
+  const safeHrEmail   = escapeHtml(hrEmail      || 'hr@company.com');
+  const safeHrPhone   = escapeHtml(hrPhone || '');
+  const safeDueDate   = escapeHtml(dueDateStr   || '');
+  const safeLink      = safeUrl(registrationLink);
+  const safeLinkLabel = escapeHtml(safeLink);
+  const safeMailto    = safeUrl(`mailto:${hrEmail || 'hr@company.com'}`);
 
   const html = `
 <!DOCTYPE html>
@@ -68,16 +103,16 @@ const sendOnboardingEmail = async ({ to, candidateName, dueDate, registrationLin
 
     <!-- Body -->
     <div class="body">
-      <p class="greeting">Dear ${candidateName || 'Candidate'},</p>
-      <p class="company-tag">Greetings from ${companyName || 'AltiusNxt'}!</p>
+      <p class="greeting">Dear ${safeCandidate},</p>
+      <p class="company-tag">Greetings from ${safeCompany}!</p>
 
       <p>We're excited to have you join our team. As part of the onboarding process, we kindly request you to <strong>complete your employee registration</strong> by providing the necessary details through the secure link below.</p>
 
       <!-- CTA Button -->
       <div class="cta-box">
         <p>Click the button below to begin your onboarding process</p>
-        <a href="${registrationLink}" class="cta-btn">Start Onboarding &rarr;</a>
-        <p style="margin-top:12px; font-size:12px; color:#94a3b8;">Or copy this link: <a href="${registrationLink}" style="color:#9b1c1c; word-break:break-all;">${registrationLink}</a></p>
+        <a href="${safeLink}" class="cta-btn">Start Onboarding &rarr;</a>
+        <p style="margin-top:12px; font-size:12px; color:#94a3b8;">Or copy this link: <a href="${safeLink}" style="color:#9b1c1c; word-break:break-all;">${safeLinkLabel}</a></p>
       </div>
 
       <!-- Important Notes -->
@@ -85,13 +120,13 @@ const sendOnboardingEmail = async ({ to, candidateName, dueDate, registrationLin
         <h4>Important Notes</h4>
         <ul>
           <li>This link is secure and intended only for your use.</li>
-          ${dueDateStr ? `<li>Kindly complete the process <strong>on or before ${dueDateStr}</strong>.</li>` : ''}
+          ${safeDueDate ? `<li>Kindly complete the process <strong>on or before ${safeDueDate}</strong>.</li>` : ''}
           <li>Keep your documents ready before starting (ID proof, educational certificates, bank details, etc.).</li>
           <li>Fill in all required information accurately to avoid delays in your joining process.</li>
         </ul>
       </div>
 
-      ${dueDateStr ? `<div class="deadline">⏰ Deadline: Please complete registration by <strong>${dueDateStr}</strong></div>` : ''}
+      ${safeDueDate ? `<div class="deadline">⏰ Deadline: Please complete registration by <strong>${safeDueDate}</strong></div>` : ''}
 
       <!-- Documents to keep ready -->
       <p style="font-weight:600; color:#1e293b; margin-bottom:8px;">Please keep the following documents ready for upload:</p>
@@ -110,20 +145,20 @@ const sendOnboardingEmail = async ({ to, candidateName, dueDate, registrationLin
 
       <hr class="divider"/>
 
-      <p class="contact">If you face any issues while completing the form, please reach out to us at <a href="mailto:${hrEmail || 'hr@company.com'}">${hrEmail || 'hr@company.com'}</a>${hrPhone ? ` or call <strong>${hrPhone}</strong>` : ''}.</p>
+      <p class="contact">If you face any issues while completing the form, please reach out to us at <a href="${safeMailto}">${safeHrEmail}</a>${safeHrPhone ? ` or call <strong>${safeHrPhone}</strong>` : ''}.</p>
 
-      <p style="margin-top:16px;">We look forward to welcoming you to <strong>${companyName || 'our team'}</strong> and wish you a successful journey with us.</p>
+      <p style="margin-top:16px;">We look forward to welcoming you to <strong>${safeCompany}</strong> and wish you a successful journey with us.</p>
 
       <p style="margin-top:20px; color:#1e293b;">
         Best regards,<br/>
-        <strong>${hrName || 'HR Team'}</strong><br/>
-        <span style="color:#9b1c1c;">${companyName || 'AltiusNxt'}</span>
+        <strong>${safeHrName}</strong><br/>
+        <span style="color:#9b1c1c;">${safeCompany}</span>
       </p>
     </div>
 
     <!-- Footer -->
     <div class="footer">
-      <p>This is an automated onboarding invitation sent by <strong>${companyName || 'AltiusNxt'} HR Team</strong>.</p>
+      <p>This is an automated onboarding invitation sent by <strong>${safeCompany} HR Team</strong>.</p>
       <p style="margin-top:4px;">Please do not reply to this email. For assistance, contact your HR representative.</p>
     </div>
   </div>
@@ -131,10 +166,18 @@ const sendOnboardingEmail = async ({ to, candidateName, dueDate, registrationLin
 </html>
   `;
 
+  // Header-safe versions of the display name + subject. CR/LF in either
+  // would be interpreted as header separators and could inject Bcc.
+  const headerSafeCompany = String(companyName || 'AltiusNxt').replace(/[\r\n"<>]+/g, ' ').slice(0, 80);
+  const subject = `Complete Your Employee Onboarding Process – ${headerSafeCompany}`.replace(/[\r\n]+/g, ' ').slice(0, 998);
+  const recipients = sanitizeRecipients(to);
+  if (recipients.length === 0) {
+    throw new Error('sendOnboardingEmail: no valid recipient addresses after sanitisation');
+  }
   await transporter.sendMail({
-    from: `"${companyName || 'AltiusNxt'} HR" <${process.env.EMAIL_USER}>`,
-    to,
-    subject: `Complete Your Employee Onboarding Process – ${companyName || 'AltiusNxt'}`,
+    from: `"${headerSafeCompany} HR" <${process.env.EMAIL_USER}>`,
+    to: recipients,
+    subject,
     html,
   });
 };
@@ -142,13 +185,37 @@ const sendOnboardingEmail = async ({ to, candidateName, dueDate, registrationLin
 /**
  * Generic transactional sender. Used by holiday notifications and other
  * one-off broadcasts. `to` may be a single email or an array.
+ *
+ * Header-injection guard:
+ *   - If a caller hands us "bob@x.com\nBcc: attacker@evil.com" as a string
+ *     element, the raw newline would be interpreted as the start of a new
+ *     SMTP header. Joining the array with ", " (the old code) made that a
+ *     valid-looking comma-separated list with an embedded CR/LF.
+ *   - Defense: validate every address against a simple RFC-ish regex, drop
+ *     anything that fails, and hand nodemailer the *array* — its address
+ *     parser already CRLF-escapes per RFC. Refuse to send if no addresses
+ *     remain so we never silently broadcast a deliverable email to nobody.
  */
+const ADDR_RE = /^[^\s,;<>"'()\\[\]@]+@[^\s,;<>"'()\\[\]@]+\.[^\s,;<>"'()\\[\]@]+$/;
+const sanitizeRecipients = (to) => {
+  const list = Array.isArray(to) ? to : [to];
+  return list
+    .map(a => (typeof a === 'string' ? a.trim() : ''))
+    .filter(a => a && !/[\r\n]/.test(a) && ADDR_RE.test(a));
+};
+
 const sendMail = async ({ to, subject, text, html }) => {
   const transporter = createTransporter();
+  const recipients = sanitizeRecipients(to);
+  if (recipients.length === 0) {
+    throw new Error('sendMail: no valid recipient addresses after sanitisation');
+  }
+  // Subject must not contain CR/LF either — same injection vector via Subject.
+  const safeSubject = String(subject || '').replace(/[\r\n]+/g, ' ').slice(0, 998);
   await transporter.sendMail({
     from: `"${process.env.COMPANY_NAME || 'HR Team'}" <${process.env.EMAIL_USER}>`,
-    to: Array.isArray(to) ? to.join(', ') : to,
-    subject,
+    to: recipients, // pass the array — nodemailer handles separator + escaping
+    subject: safeSubject,
     text,
     html: html || `<pre style="font-family:sans-serif;font-size:14px;">${(text || '').replace(/</g, '&lt;')}</pre>`,
   });

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const logger = require('../logger');
 router.use(protect);
 
 // Shared projection — every read endpoint returns the same shape.
@@ -116,7 +117,7 @@ router.post('/', authorize('admin'), async (req, res) => {
         ['New Announcement', title, req.user._id]
       );
     } catch (err) {
-      console.warn('[announcements] bulk notification insert failed:', err.message);
+      logger.warn({ err: err.message }, '[announcements] bulk notification insert failed');
     }
 
     res.status(201).json({ success: true, data: result.rows[0] });

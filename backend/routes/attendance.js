@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const logger = require('../logger');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -42,6 +43,11 @@ router.post('/checkin', async (req, res) => {
     // GPS is validated against settings — not required by default
     const today = todayStr();
 
+    // Pre-flight existence check — used purely to keep the early "already
+    // checked in" 400 response, AND to decide whether to compute late time
+    // off the existing row's check_in (so a re-check-in after auto-checkout
+    // doesn't get re-tagged as late from a second SELECT later). The real
+    // race-safe write happens later via UPSERT (ON CONFLICT DO UPDATE).
     const existingRes = await pool.query(
       'SELECT * FROM attendance WHERE employee_id = $1 AND date = $2::date',
       [req.user._id, today]
@@ -143,32 +149,47 @@ router.post('/checkin', async (req, res) => {
 
     const locLabel = location || (latitude ? `GPS (${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)})` : 'Office');
 
-    let record;
-    if (existing) {
-      const up = await pool.query(
-        `UPDATE attendance
-         SET check_in=$1, check_out=NULL, status=$2, late_minutes=$3,
-             check_in_location=$4, check_in_latitude=$5, check_in_longitude=$6,
-             shift_id=$7, updated_at=NOW()
-         WHERE id=$8
-         RETURNING id as "_id", check_in as "checkIn", check_out as "checkOut",
-                   working_hours as "workingHours", status, late_minutes as "lateMinutes"`,
-        [now, status, lateMinutes, locLabel, latitude||null, longitude||null,
-         shift?.id||null, existing.id]
-      );
-      record = up.rows[0];
-    } else {
-      const ins = await pool.query(
-        `INSERT INTO attendance (employee_id, date, check_in, status, late_minutes,
-         check_in_location, check_in_latitude, check_in_longitude, shift_id)
-         VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9)
-         RETURNING id as "_id", check_in as "checkIn", check_out as "checkOut",
-                   working_hours as "workingHours", status, late_minutes as "lateMinutes"`,
-        [req.user._id, today, now, status, lateMinutes, locLabel,
-         latitude||null, longitude||null, shift?.id||null]
-      );
-      record = ins.rows[0];
+    // ── Race-safe UPSERT ──────────────────────────────────────────────────
+    // Two concurrent check-in requests (rapid double-tap, two devices)
+    // both passed the early SELECT-and-400 guard above and used to race on
+    // INSERT/UPDATE: one INSERT would 500 with a unique-constraint
+    // violation; UPDATE-after-update could clobber an already-clean row.
+    // ON CONFLICT (employee_id, date) DO UPDATE collapses both paths into
+    // one atomic statement.
+    //
+    // The WHERE clause on the conflict branch is the safety belt: only
+    // overwrite if the existing row already has check_out set (i.e.,
+    // user closed the day and is re-checking-in). If a concurrent peer
+    // checked in microseconds earlier, the WHERE fails, RETURNING is
+    // empty, and we surface the "already checked in" error instead of
+    // silently double-writing.
+    const upRes = await pool.query(
+      `INSERT INTO attendance
+         (employee_id, date, check_in, status, late_minutes,
+          check_in_location, check_in_latitude, check_in_longitude, shift_id)
+       VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (employee_id, date) DO UPDATE
+         SET check_in           = EXCLUDED.check_in,
+             check_out          = NULL,
+             status             = EXCLUDED.status,
+             late_minutes       = EXCLUDED.late_minutes,
+             check_in_location  = EXCLUDED.check_in_location,
+             check_in_latitude  = EXCLUDED.check_in_latitude,
+             check_in_longitude = EXCLUDED.check_in_longitude,
+             shift_id           = EXCLUDED.shift_id,
+             updated_at         = NOW()
+         WHERE attendance.check_out IS NOT NULL
+       RETURNING id as "_id", check_in as "checkIn", check_out as "checkOut",
+                 working_hours as "workingHours", status, late_minutes as "lateMinutes"`,
+      [req.user._id, today, now, status, lateMinutes, locLabel,
+       latitude || null, longitude || null, shift?.id || null]
+    );
+    if (upRes.rows.length === 0) {
+      // Conflict + WHERE rejected = someone else just checked in for this
+      // employee+date in the gap between our SELECT and our UPSERT.
+      return res.status(409).json({ success: false, message: 'Already checked in today' });
     }
+    const record = upRes.rows[0];
 
     // ── Notify Manager (if late) & Feed Entry ──
     try {
@@ -193,7 +214,7 @@ router.post('/checkin', async (req, res) => {
           );
         }
       }
-    } catch (e) { console.error('Notify/Feed error:', e.message); }
+    } catch (e) { logger.error({ err: e.message }, '[attendance] notify/feed soft-fail'); }
 
     const lateMsg = lateMinutes > 0
       ? `Late by ${Math.floor(lateMinutes/60)}h ${lateMinutes%60}m`
@@ -270,15 +291,22 @@ router.post('/checkout', async (req, res) => {
       }
     }
 
+    // Race-safe: only write check_out if it's still NULL. Two concurrent
+    // checkout requests both passed the SELECT-and-400 guard above; one
+    // will succeed and one will return a 409 instead of double-writing
+    // working_hours (which used to overstate the day).
     const up = await pool.query(
       `UPDATE attendance
        SET check_out=$1, check_out_location=$2, check_out_latitude=$3, check_out_longitude=$4,
            working_hours=$5, status=$6, updated_at=NOW()
-       WHERE id=$7
+       WHERE id=$7 AND check_out IS NULL
        RETURNING id as "_id", check_in as "checkIn", check_out as "checkOut",
                  working_hours as "workingHours", status, late_minutes as "lateMinutes"`,
       [now, location, latitude||null, longitude||null, workingHours, status, record.id]
     );
+    if (up.rows.length === 0) {
+      return res.status(409).json({ success: false, message: 'Already checked out' });
+    }
 
     // ── Feed Entry ──
     try {

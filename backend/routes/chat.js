@@ -149,7 +149,7 @@ router.get('/search', async (req, res) => {
                    OR (requester_id = e.id AND recipient_id = $1)
                 LIMIT 1) AS "connectionStatus"
          FROM employees e
-        WHERE e.status = 'active' AND e.id <> $1
+        WHERE e.status = 'active' AND e.deleted_at IS NULL AND e.id <> $1
           AND (LOWER(e.first_name) LIKE $2
             OR LOWER(e.last_name)  LIKE $2
             OR LOWER(e.email)      LIKE $2
@@ -197,7 +197,9 @@ router.post('/connect/:userId', async (req, res) => {
       from: { id: me, firstName: req.user.firstName, lastName: req.user.lastName, employeeId: req.user.employeeId },
     });
     const fromName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'A colleague';
-    createNotification(peer, 'chat',
+    // Await so a DB failure surfaces in logs (was previously a silent
+    // fire-and-forget that drifted unread counts when /notifications failed).
+    await createNotification(peer, 'chat',
       `${fromName} wants to chat`,
       `${fromName} sent you a connection request.`,
       `/chat`);
@@ -232,7 +234,7 @@ router.post('/connect/:userId/accept', async (req, res) => {
 
     chatHub.send(peer, { type: 'connection-accepted', by: { id: me, firstName: req.user.firstName, lastName: req.user.lastName } });
     const acceptName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'A colleague';
-    createNotification(peer, 'chat',
+    await createNotification(peer, 'chat',
       `${acceptName} accepted your request`,
       `You can now message ${acceptName}.`,
       `/chat?user=${me}`);
@@ -363,7 +365,7 @@ router.post('/threads/:userId/messages', async (req, res) => {
     // messages from one peer doesn't spam the dropdown.
     const senderName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'A colleague';
     const preview = content.length > 80 ? content.slice(0, 80) + '…' : content;
-    createNotification(peer, 'chat',
+    await createNotification(peer, 'chat',
       `New message from ${senderName}`,
       preview,
       `/chat?user=${me}`);

@@ -25,7 +25,8 @@ const SELECT_COLS = `
   office_longitude as "officeLongitude",
   gps_radius_meters as "gpsRadiusMeters",
   require_gps as "requireGps",
-  require_manager_approval_before_lock as "requireManagerApprovalBeforeLock"
+  require_manager_approval_before_lock as "requireManagerApprovalBeforeLock",
+  mfa_required_roles as "mfaRequiredRoles"
 `;
 
 router.get('/', async (req, res) => {
@@ -48,8 +49,15 @@ router.put('/', authorize('admin'), async (req, res) => {
       leavePolicy,
       leaveAccrualEnabled, casualAccrualPerMonth, sickAccrualPerMonth, earnedAccrualPerMonth,
       officeLatitude, officeLongitude, gpsRadiusMeters, requireGps,
-      requireManagerApprovalBeforeLock
+      requireManagerApprovalBeforeLock,
+      mfaRequiredRoles
     } = req.body;
+
+    // Whitelist role strings — never trust caller-supplied JSONB.
+    const ALLOWED_ROLES = new Set(['admin', 'manager', 'hr', 'employee']);
+    const safeMfaRoles = Array.isArray(mfaRequiredRoles)
+      ? mfaRequiredRoles.filter(r => typeof r === 'string' && ALLOWED_ROLES.has(r))
+      : undefined;
 
     let result = await pool.query('SELECT id FROM settings LIMIT 1');
     if (result.rows.length === 0) {
@@ -79,8 +87,9 @@ router.put('/', authorize('admin'), async (req, res) => {
         gps_radius_meters = COALESCE($17, gps_radius_meters),
         require_gps = COALESCE($18, require_gps),
         require_manager_approval_before_lock = COALESCE($19, require_manager_approval_before_lock),
+        mfa_required_roles = COALESCE($20, mfa_required_roles),
         updated_at = NOW()
-      WHERE id = $20
+      WHERE id = $21
       RETURNING ${SELECT_COLS}
     `, [
       companyName, companyEmail, timezone,
@@ -91,6 +100,7 @@ router.put('/', authorize('admin'), async (req, res) => {
       leaveAccrualEnabled, casualAccrualPerMonth, sickAccrualPerMonth, earnedAccrualPerMonth,
       officeLatitude ?? null, officeLongitude ?? null, gpsRadiusMeters, requireGps,
       requireManagerApprovalBeforeLock === undefined ? null : !!requireManagerApprovalBeforeLock,
+      safeMfaRoles ? JSON.stringify(safeMfaRoles) : null,
       id
     ]);
 

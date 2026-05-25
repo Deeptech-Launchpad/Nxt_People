@@ -13,6 +13,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
+const logger = require('../logger');
 
 router.use(protect);
 
@@ -30,7 +31,7 @@ router.get('/space', async (req, res) => {
       // 1. Strength
       pool.query(
         `SELECT COUNT(*)::int AS n FROM employees e
-          WHERE e.status = 'active' ${inDept}`,
+          WHERE e.status = 'active' AND e.deleted_at IS NULL ${inDept}`,
         dept ? [dept] : []
       ),
       // 2. Availability — today's attendance for departmentmates
@@ -41,7 +42,7 @@ router.get('/space', async (req, res) => {
             SUM(CASE WHEN a.check_in IS NULL THEN 1 ELSE 0 END)::int     AS "yetToCheckIn"
            FROM employees e
       LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
-          WHERE e.status = 'active' ${dept ? 'AND LOWER(TRIM(e.department)) = LOWER(TRIM($1))' : ''}`,
+          WHERE e.status = 'active' AND e.deleted_at IS NULL ${dept ? 'AND LOWER(TRIM(e.department)) = LOWER(TRIM($1))' : ''}`,
         dept ? [dept] : []
       ),
       // 3. Location diversity — work_location → count, top 5
@@ -49,7 +50,7 @@ router.get('/space', async (req, res) => {
         `SELECT COALESCE(NULLIF(work_location, ''), 'Unassigned') AS location,
                 COUNT(*)::int AS n
            FROM employees
-          WHERE status = 'active' ${dept ? 'AND LOWER(TRIM(department)) = LOWER(TRIM($1))' : ''}
+          WHERE status = 'active' AND deleted_at IS NULL ${dept ? 'AND LOWER(TRIM(department)) = LOWER(TRIM($1))' : ''}
        GROUP BY location
        ORDER BY n DESC LIMIT 5`,
         dept ? [dept] : []
@@ -62,7 +63,7 @@ router.get('/space', async (req, res) => {
                 a.check_in AS "checkIn"
            FROM attendance a JOIN employees e ON e.id = a.employee_id
           WHERE a.date = CURRENT_DATE AND a.check_in IS NOT NULL
-            AND e.status = 'active' ${dept ? 'AND LOWER(TRIM(e.department)) = LOWER(TRIM($1))' : ''}
+            AND e.status = 'active' AND e.deleted_at IS NULL ${dept ? 'AND LOWER(TRIM(e.department)) = LOWER(TRIM($1))' : ''}
        ORDER BY a.check_in DESC LIMIT 5`,
         dept ? [dept] : []
       ),
@@ -75,7 +76,7 @@ router.get('/space', async (req, res) => {
                 designation, photo_url AS "photoUrl",
                 joining_date AS "joinDate"
            FROM employees
-          WHERE status = 'active'
+          WHERE status = 'active' AND deleted_at IS NULL
             AND joining_date >= CURRENT_DATE - INTERVAL '15 days'
             ${dept ? 'AND LOWER(TRIM(department)) = LOWER(TRIM($1))' : ''}
        ORDER BY joining_date DESC LIMIT 10`,
@@ -87,7 +88,7 @@ router.get('/space', async (req, res) => {
                 first_name AS "firstName", last_name AS "lastName",
                 photo_url AS "photoUrl", date_of_birth AS "dateOfBirth"
            FROM employees
-          WHERE status = 'active'
+          WHERE status = 'active' AND deleted_at IS NULL
             AND date_of_birth IS NOT NULL
             AND EXTRACT(MONTH FROM date_of_birth) = EXTRACT(MONTH FROM CURRENT_DATE)
             AND EXTRACT(DAY   FROM date_of_birth) = EXTRACT(DAY   FROM CURRENT_DATE)
@@ -117,8 +118,8 @@ router.get('/space', async (req, res) => {
     // Explicit log so the real SQL/JS error appears in docker logs.
     // pino-http only captures the response status, not the JSON body,
     // so the previous 500 looked like "failed with status code 500"
-    // with no detail. console.error lands in the container's stdout.
-    console.error('[/api/team/space] failed:', err.message, '\n', err.stack);
+    // with no detail. logger.error lands in the container's stdout as JSON.
+    logger.error({ err: err.message, stack: err.stack }, '[/api/team/space] failed');
     res.status(500).json({ success: false, message: err.message, stack: err.stack });
   }
 });

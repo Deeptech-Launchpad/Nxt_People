@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { protect, authorize } = require('../middleware/auth');
 const { sendOnboardingEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
+const logger = require('../logger');
 
 router.use(protect);
 
@@ -62,10 +63,16 @@ router.get('/metadata', async (req, res) => {
 // GET all employees
 router.get('/', async (req, res) => {
   try {
-    const { department, role, designation, status, search, page = 1, limit = 20 } = req.query;
+    const { department, role, designation, status, search, page = 1, limit = 20, includeDeleted } = req.query;
     let query = 'WHERE 1=1';
     let params = [];
     let paramIndex = 1;
+
+    // Soft-delete: hide archived employees unless the caller is an admin who
+    // explicitly asks for them (e.g. an "Archived" tab in Employee Master).
+    if (!(includeDeleted === 'true' && req.user.role === 'admin')) {
+      query += ' AND e.deleted_at IS NULL';
+    }
 
     // Managers can only see their direct reports — never the full org.
     // Admins (and the elevated 'hr' role if used) see everyone.
@@ -298,6 +305,11 @@ router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
       }
     }
 
+    // ⚠️ DO NOT interpolate caller-supplied strings as column names below.
+    // Every `updates.push(...)` line uses a hardcoded snake_case column literal
+    // and parameterises the VALUE only ($1, $2, ...). Treat the block as a
+    // closed allowlist — adding a new field means adding a new literal line
+    // here, never pulling the column name from req.body.
     let updates = [];
     let params = [];
     let i = 1;
@@ -420,23 +432,39 @@ router.post('/send-onboarding', authorize('admin', 'manager'), async (req, res) 
 
     res.json({ success: true, message: `Onboarding email sent to ${email}` });
   } catch (err) {
-    console.error('Onboarding email error:', err);
+    logger.error({ err: err?.message }, 'Onboarding email failed');
     res.status(500).json({ success: false, message: err.message || 'Failed to send email' });
   }
 });
 
-// DELETE employee
+// DELETE employee — soft-delete. ON DELETE CASCADE would wipe attendance,
+// leaves, payslips, audit trail, etc. Instead, mark the row deleted_at = NOW()
+// and rely on SELECT-side filters to hide it. Hard delete is intentionally
+// removed; admins who *really* want to purge can do so directly in the DB
+// after reviewing what CASCADEs.
 router.delete('/:id', authorize('admin'), async (req, res) => {
   try {
-    await pool.query('DELETE FROM employees WHERE id = $1', [req.params.id]);
+    const r = await pool.query(
+      `UPDATE employees
+          SET deleted_at = NOW(),
+              status = 'inactive',
+              registration_status = 'deleted',
+              updated_at = NOW()
+        WHERE id = $1 AND deleted_at IS NULL
+        RETURNING id`,
+      [req.params.id]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Employee not found or already deleted' });
+    }
 
     await logAudit(req, {
-      action: 'DELETE',
+      action: 'SOFT_DELETE',
       resource: 'Employee',
       resourceId: req.params.id
     });
 
-    res.json({ success: true, message: 'Employee deleted' });
+    res.json({ success: true, message: 'Employee archived' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

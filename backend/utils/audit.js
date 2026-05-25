@@ -1,4 +1,5 @@
 const pool = require('../db');
+const logger = require('../logger');
 
 /**
  * Log an action to the audit_log table.
@@ -34,7 +35,7 @@ async function logAudit(req, { action, resource, resourceId, changes }) {
       ]
     );
   } catch (err) {
-    console.error('Failed to write audit log:', err.message);
+    logger.error({ err: err.message, action, resource, resourceId }, 'Failed to write audit log');
   }
 }
 

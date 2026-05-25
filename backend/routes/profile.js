@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { protect } = require('../middleware/auth');
 router.use(protect);
 
@@ -15,19 +16,35 @@ const PROFILE_PHOTO_MAX_MB = 10;
 const photosDir = path.join(__dirname, '..', 'uploads', 'photos');
 if (!fs.existsSync(photosDir)) fs.mkdirSync(photosDir, { recursive: true });
 
+// Strict allowlist — anything outside this set is rejected at fileFilter,
+// and the saved filename is locked to ONLY this extension. Defends against
+// "image.jpg.php" double-extension tricks: even if Apache (or a future
+// proxy) is misconfigured to map .php in /uploads, we never write that
+// extension to disk.
+const ALLOWED_PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+
 const photoStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, photosDir),
   filename:    (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-    cb(null, `${req.user._id}-${Date.now()}${ext}`);
+    // Re-check against the allowlist inside filename() so a future change
+    // to fileFilter can't accidentally let a bad ext through to disk.
+    const rawExt = path.extname(file.originalname).toLowerCase();
+    const ext = ALLOWED_PHOTO_EXTS.has(rawExt) ? rawExt : '.jpg';
+    // crypto.randomBytes prevents the Date.now() millisecond-collision case
+    // where two uploads in the same ms clobbered each other.
+    const rand = crypto.randomBytes(8).toString('hex');
+    cb(null, `${req.user._id}-${rand}${ext}`);
   },
 });
 const photoUpload = multer({
   storage: photoStorage,
   limits:  { fileSize: PROFILE_PHOTO_MAX_MB * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-    cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
+    // path.extname returns ONLY the final extension, so "image.jpg.php"
+    // already resolves to ".php" — which fails this allowlist. Mimetype
+    // is a secondary signal we don't rely on alone (easily spoofed).
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, ALLOWED_PHOTO_EXTS.has(ext));
   },
 });
 
@@ -158,6 +175,15 @@ router.get('/', async (req, res) => {
 // and reaches the DB only via /api/employees/:id (admin/manager-gated).
 // Locked fields in the request body are silently ignored — frontend already
 // hides them, this is the defense-in-depth backstop.
+// Hard allowlist of columns this endpoint is permitted to touch. Used as a
+// runtime assertion inside set() — defence-in-depth so a future PR that
+// accidentally passes a caller-supplied column name throws here instead of
+// reaching the SQL builder. Keep in sync with the set(...) calls below.
+const PROFILE_UPDATABLE_COLS = new Set([
+  'phone', 'address',
+  'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
+]);
+
 router.put('/', async (req, res) => {
   try {
     const {
@@ -168,7 +194,15 @@ router.put('/', async (req, res) => {
     const updates = [];
     const params = [];
     let i = 1;
-    const set = (col, val) => { updates.push(`${col} = $${i++}`); params.push(val); };
+    const set = (col, val) => {
+      if (!PROFILE_UPDATABLE_COLS.has(col)) {
+        // This is a programmer error, not a user error — log + throw so it
+        // surfaces in tests instead of silently building bad SQL.
+        throw new Error(`[profile] column not in allowlist: ${col}`);
+      }
+      updates.push(`${col} = $${i++}`);
+      params.push(val);
+    };
 
     if (phone !== undefined)                    set('phone', phone);
     if (address !== undefined)                  set('address', address);

@@ -93,6 +93,37 @@ const server = http.createServer(app);
 chatWs.attach(server);
 server.listen(PORT, () => logger.info({ port: PORT }, 'Server listening (HTTP + WebSocket)'));
 
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+// Docker sends SIGTERM and waits up to `stop_grace_period` (10s default)
+// before SIGKILL. Without this handler, in-flight HTTP requests are
+// dropped mid-response and the PG pool is yanked away without releasing
+// active clients. Order matters:
+//   1. Stop accepting new connections (server.close)
+//   2. Let in-flight requests drain
+//   3. Close the DB pool so Node can exit cleanly
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, 'Shutdown signal received — draining');
+
+  // Hard ceiling: if shutdown hangs, force-exit before Docker sends SIGKILL.
+  const forceTimer = setTimeout(() => {
+    logger.warn('Graceful shutdown timed out — forcing exit');
+    process.exit(1);
+  }, 8000);
+  forceTimer.unref();
+
+  server.close((err) => {
+    if (err) logger.warn({ err: err.message }, 'HTTP server close error');
+    pool.end()
+      .then(() => { logger.info('DB pool drained — exiting cleanly'); process.exit(0); })
+      .catch((e) => { logger.error({ err: e.message }, 'DB pool drain failed'); process.exit(1); });
+  });
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
+
 
 // ================= CRON JOBS =================
 // Every cron below must explicitly pin its timezone. node-cron defaults
@@ -351,8 +382,35 @@ cron.schedule('30 2 * * *', async () => {
     logger.info('Running nightly Zoho employee sync');
     const stats = await runEmployeeSync('cron');
     logger.info({ stats }, 'Nightly Zoho sync complete');
+
+    // Surface partial failures to admins. Previously these only landed in
+    // stdout — silent in production. If any record failed, raise a
+    // notification on each admin so HR can fix the Zoho records.
+    if (stats?.errors?.length > 0) {
+      try {
+        const { createNotification } = require('./routes/notifications');
+        const admins = await pool.query(`SELECT id FROM employees WHERE role='admin' AND status='active'`);
+        const sample = stats.errors.slice(0, 3).map(e => `${e.email}: ${e.message}`).join('; ');
+        const body =
+          `${stats.errors.length} record(s) failed during last night's Zoho sync. ` +
+          `First few: ${sample}${stats.errors.length > 3 ? ` …and ${stats.errors.length - 3} more.` : ''}`;
+        for (const a of admins.rows) {
+          await createNotification(a.id, 'system', 'Zoho Sync — Partial Failure', body, '/admin/zoho');
+        }
+      } catch (e) { logger.error({ err: e.message }, 'Failed to notify admins about Zoho sync errors'); }
+    }
   } catch (err) {
     logger.error({ err }, 'Nightly Zoho sync failed');
+    // Whole-sync failure (auth, network, etc.) — also notify admins.
+    try {
+      const { createNotification } = require('./routes/notifications');
+      const admins = await pool.query(`SELECT id FROM employees WHERE role='admin' AND status='active'`);
+      for (const a of admins.rows) {
+        await createNotification(a.id, 'system', 'Zoho Sync Failed',
+          `Last night's Zoho sync did not complete: ${err.message}`,
+          '/admin/zoho');
+      }
+    } catch (_) {}
   }
 }, cronOpts);
 

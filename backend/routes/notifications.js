@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
+const logger = require('../logger');
 // Borrow the chat WebSocket hub for real-time delivery — same persistent
 // socket every logged-in user already has open, no extra connection cost.
 const chatHub = require('../ws-chat');
@@ -74,7 +75,7 @@ module.exports.createNotification = async (employeeId, type, title, message, lin
     try { chatHub.send(employeeId, { type: 'notification', notification }); } catch (_) {}
     return notification;
   } catch (err) {
-    console.error('Notification error:', err.message);
+    logger.error({ err: err.message }, 'createNotification failed');
     return null;
   }
 };

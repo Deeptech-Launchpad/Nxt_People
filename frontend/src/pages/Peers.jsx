@@ -3,6 +3,7 @@ import { Search, Phone, MessageSquare, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { PhotoAvatar } from '../components/ui';
 
 /* ── Peers — colleagues who report to the same manager as you.
  *  Zoho shows your reporting manager at the top + "Members N" on the
@@ -112,10 +113,12 @@ export default function Peers() {
             const telHref   = phoneNum ? `tel:${phoneNum}` : null;
             return (
               <div key={e._id} className="bg-white rounded-lg border border-slate-200 p-4 text-center shadow-sm hover:shadow-md transition-all">
-                <img
-                  src={e.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(e.firstName || '?')}+${encodeURIComponent(e.lastName || '')}&background=e0e7ff&color=4f46e5&size=64`}
-                  className="w-14 h-14 rounded-full mx-auto mb-3 border-2 border-white shadow object-cover"
-                  alt={e.firstName}
+                <PhotoAvatar
+                  photoUrl={e.photoUrl}
+                  firstName={e.firstName}
+                  lastName={e.lastName}
+                  className="w-14 h-14 mx-auto mb-3 border-2 border-white shadow"
+                  textClassName="text-sm"
                 />
                 <p className="text-[12.5px] font-semibold text-slate-800 truncate">{e.firstName} {e.lastName}</p>
                 <p className="text-[11px] text-slate-500 truncate mt-0.5">{e.designation || '—'}</p>

@@ -1,9 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const { body, validationResult } = require('express-validator');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { createNotification } = require('./notifications');
 const { logAudit } = require('../utils/audit');
+const { countWorkingDays } = require('../utils/workingDays');
+const logger = require('../logger');
 
 router.use(protect);
 
@@ -23,9 +26,17 @@ const LEAVE_BALANCE_COLUMN = Object.freeze({
 const VALID_BALANCE_COLUMNS = new Set(Object.values(LEAVE_BALANCE_COLUMN));
 
 // ── GET my leaves ──────────────────────────────────────────────────────────────
+// Pagination contract: page (1-indexed) + limit (default 50, clamped to 200).
+// Response includes { data, total, page, limit } so the client can show
+// "Page 1 of N" without a separate count call. Without this the endpoint
+// would return every leave ever filed once an employee racks up years of history.
 router.get('/my', async (req, res) => {
   try {
     const { status, year } = req.query;
+    const page  = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const offset = (page - 1) * limit;
+
     let query = 'WHERE l.employee_id = $1';
     let params = [req.user._id];
     let idx = 2;
@@ -36,28 +47,42 @@ router.get('/my', async (req, res) => {
       params.push(new Date(year, 0, 1), new Date(year, 11, 31));
     }
 
-    const result = await pool.query(
-      `SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate",
-       l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
-       l.rejection_reason as "rejectionReason", l.is_half_day as "isHalfDay",
-       l.half_day_type as "halfDayType", l.created_at as "createdAt",
-       json_build_object('firstName', a.first_name, 'lastName', a.last_name) as "approvedBy"
-       FROM leaves l
-       LEFT JOIN employees a ON l.approved_by = a.id
-       ${query}
-       ORDER BY l.created_at DESC`,
-      params
-    );
-    res.json({ success: true, data: result.rows });
+    // Run COUNT + paged SELECT in parallel — COUNT is on the same WHERE so
+    // PG plans both queries against the same index.
+    const [countRes, result] = await Promise.all([
+      pool.query(`SELECT COUNT(*)::int AS n FROM leaves l ${query}`, params),
+      pool.query(
+        `SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate",
+         l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
+         l.rejection_reason as "rejectionReason", l.is_half_day as "isHalfDay",
+         l.half_day_type as "halfDayType", l.created_at as "createdAt",
+         json_build_object('firstName', a.first_name, 'lastName', a.last_name) as "approvedBy"
+         FROM leaves l
+         LEFT JOIN employees a ON l.approved_by = a.id
+         ${query}
+         ORDER BY l.created_at DESC
+         LIMIT $${idx++} OFFSET $${idx++}`,
+        [...params, limit, offset]
+      ),
+    ]);
+    res.json({ success: true, data: result.rows, total: countRes.rows[0]?.n || 0, page, limit });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // ── GET all leaves (admin/manager) ────────────────────────────────────────────
+// Real pagination — was returning `total: result.rows.length` (just the page
+// size), and capping at 1000 when limit='all', which meant large orgs could
+// never see their tail. Now: COUNT(*) over the same WHERE for true total,
+// limit clamped to 200, no "all" shortcut.
 router.get('/', authorize('admin', 'manager'), async (req, res) => {
   try {
-    const { status, department, employeeId, page = 1, limit = 20, startDate, endDate } = req.query;
+    const { status, department, employeeId, startDate, endDate } = req.query;
+    const page  = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+
     let query = 'WHERE 1=1';
     let params = [];
     let idx = 1;
@@ -68,58 +93,100 @@ router.get('/', authorize('admin', 'manager'), async (req, res) => {
     if (startDate)  { query += ` AND l.end_date >= $${idx++}`;        params.push(startDate); }
     if (endDate)    { query += ` AND l.start_date <= $${idx++}`;      params.push(endDate); }
 
-    const isAll = limit === 'all';
-    const limitNum = isAll ? 1000 : Number(limit);
-    const offsetNum = isAll ? 0 : (Number(page) - 1) * limitNum;
+    const [countRes, result] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*)::int AS n
+           FROM leaves l
+           JOIN employees e ON l.employee_id = e.id
+          ${query}`,
+        params
+      ),
+      pool.query(
+        `SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate",
+         l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
+         l.rejection_reason as "rejectionReason", l.is_half_day as "isHalfDay",
+         l.half_day_type as "halfDayType", l.created_at as "createdAt",
+         json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
+           'department', e.department, 'employeeId', e.employee_id) as employee,
+         json_build_object('firstName', a.first_name, 'lastName', a.last_name) as "approvedBy"
+         FROM leaves l
+         JOIN employees e ON l.employee_id = e.id
+         LEFT JOIN employees a ON l.approved_by = a.id
+         ${query}
+         ORDER BY l.start_date DESC
+         LIMIT $${idx++} OFFSET $${idx++}`,
+        [...params, limit, offset]
+      ),
+    ]);
 
-    const result = await pool.query(
-      `SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate",
-       l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
-       l.rejection_reason as "rejectionReason", l.is_half_day as "isHalfDay",
-       l.half_day_type as "halfDayType", l.created_at as "createdAt",
-       json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
-         'department', e.department, 'employeeId', e.employee_id) as employee,
-       json_build_object('firstName', a.first_name, 'lastName', a.last_name) as "approvedBy"
-       FROM leaves l
-       JOIN employees e ON l.employee_id = e.id
-       LEFT JOIN employees a ON l.approved_by = a.id
-       ${query}
-       ORDER BY l.start_date DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      [...params, limitNum, offsetNum]
-    );
-
-    res.json({ success: true, data: result.rows, total: result.rows.length });
+    res.json({ success: true, data: result.rows, total: countRes.rows[0]?.n || 0, page, limit });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // ── POST apply leave ───────────────────────────────────────────────────────────
-router.post('/', async (req, res) => {
+router.post('/', [
+  body('leaveType').isString().trim().notEmpty(),
+  body('startDate').isISO8601().withMessage('startDate must be YYYY-MM-DD'),
+  body('endDate').isISO8601().withMessage('endDate must be YYYY-MM-DD'),
+  body('reason').isString().trim().isLength({ min: 3, max: 500 }).withMessage('Reason must be 3–500 characters'),
+  body('isHalfDay').optional().isBoolean(),
+  body('halfDayType').optional({ nullable: true }).isIn(['first_half', 'second_half', null, '']),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
   try {
     const { leaveType, startDate, endDate, reason, isHalfDay, halfDayType } = req.body;
 
     if (!VALID_LEAVE_TYPES.includes(leaveType)) {
       return res.status(400).json({ success: false, message: `Invalid leave type. Must be one of: ${VALID_LEAVE_TYPES.join(', ')}` });
     }
-
-    const start = new Date(startDate);
-    const end   = new Date(endDate);
-
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'Start date and end date are required' });
+    }
+    // Anchor input dates to local midnight so a YYYY-MM-DD string isn't
+    // shifted into the previous day by JS's UTC-by-default Date constructor.
+    const start = new Date(`${String(startDate).slice(0, 10)}T00:00:00`);
+    const end   = new Date(`${String(endDate).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid date format' });
+    }
     if (start > end) {
       return res.status(400).json({ success: false, message: 'Start date cannot be after end date' });
     }
-
-    // Count working days
-    let count = 0;
-    const current = new Date(start);
-    while (current <= end) {
-      const day = current.getDay();
-      if (day !== 0 && day !== 6) count++;
-      current.setDate(current.getDate() + 1);
+    // No back-dated leave. HR can still record historical leaves directly via
+    // admin endpoints — but employees can't quietly apply for last year.
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (start < today) {
+      return res.status(400).json({ success: false, message: 'Cannot apply for leave in the past' });
     }
-    const totalDays = isHalfDay ? 0.5 : count;
+
+    // Overlap check — refuse if any non-rejected leave already covers any day in [start, end].
+    const overlap = await pool.query(
+      `SELECT id, start_date, end_date FROM leaves
+        WHERE employee_id = $1
+          AND status IN ('pending', 'pending_approval', 'approved')
+          AND start_date <= $3::date AND end_date >= $2::date
+        LIMIT 1`,
+      [req.user._id, start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)]
+    );
+    if (overlap.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'You already have a leave request covering one or more of these dates.'
+      });
+    }
+
+    // Honour weekend_rules + holidays (no more hardcoded Sat/Sun).
+    const workingDays = await countWorkingDays(start, end);
+    const totalDays = isHalfDay ? 0.5 : workingDays;
+    if (totalDays <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selected range has no working days (all weekends/holidays).'
+      });
+    }
 
     // Check balance from employees table (legacy)
     const empRes = await pool.query(
@@ -138,19 +205,24 @@ router.post('/', async (req, res) => {
     }
 
     // ── Phase 3: Decrement leave_balances.available on Apply ──
+    // Surface errors: if the ledger update fails, fail the request so the
+    // user retries rather than getting a leave row without a balance debit.
     if (leaveType !== 'unpaid') {
-      try {
-        const year = new Date(startDate).getFullYear();
-        const ltRes = await pool.query(`SELECT id FROM leave_types WHERE code=$1`, [leaveType]);
-        if (ltRes.rows[0]) {
-          await pool.query(
-            `UPDATE leave_balances
+      const year = start.getFullYear();
+      const ltRes = await pool.query(`SELECT id FROM leave_types WHERE code=$1`, [leaveType]);
+      if (ltRes.rows[0]) {
+        const updRes = await pool.query(
+          `UPDATE leave_balances
              SET available = available - $1
-             WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
-            [totalDays, req.user._id, ltRes.rows[0].id, year]
-          );
-        }
-      } catch (err) { console.error('Balance decrement error:', err); }
+           WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4
+           RETURNING id`,
+          [totalDays, req.user._id, ltRes.rows[0].id, year]
+        );
+        // updRes.rows.length === 0 just means no ledger row exists yet for
+        // this year — that's fine, the legacy columns are authoritative.
+        // A DB error would have thrown and bubbled to the 500 handler below.
+        void updRes;
+      }
     }
 
     const ins = await pool.query(
@@ -182,7 +254,7 @@ router.post('/', async (req, res) => {
           '/approvals'
         );
       }
-    } catch (e) { console.error('Notify/Feed error:', e.message); }
+    } catch (e) { logger.error({ err: e.message }, '[leaves] notify/feed soft-fail'); }
 
     res.status(201).json({ success: true, data: ins.rows[0], message: 'Leave applied successfully' });
   } catch (err) {
@@ -255,6 +327,10 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
       // either lose days without getting their leave, or get it without
       // their balance debited. Wrap in a single transaction so it's
       // either all-or-nothing.
+      // Pool-client lifecycle: release MUST run on every exit path. The
+      // previous shape had release() in both the success path and the catch
+      // — if catch's ROLLBACK succeeded but release() then threw, the
+      // connection would leak. finally guarantees one release per acquire.
       const client = await pool.connect();
       let up;
       try {
@@ -285,10 +361,10 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
         await client.query('COMMIT');
       } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
-        client.release();
         throw err;
+      } finally {
+        client.release();
       }
-      client.release();
 
       // Soft side-effects — kept outside the txn so a notif/feed glitch
       // doesn't roll back a successful approval. Each is independently safe.
@@ -297,7 +373,7 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
         '/leave-tracker/summary'
       );
       try { await pool.query(`INSERT INTO feeds (employee_id,type,title,body,icon) VALUES ($1,'leave_approved','Leave Approved ✓',$2,'✅')`, [leave.employee_id, `Your ${leaveLabel} leave from ${startLabel} has been approved.`]); }
-      catch (err) { console.warn('[leaves] feed insert (approved) failed:', err.message); }
+      catch (err) { logger.warn({ err: err.message }, '[leaves] feed insert (approved) failed'); }
       await logAudit(req, { action: 'APPROVE', resource: 'Leave', resourceId: req.params.id, changes: { status: 'approved' } });
       return res.json({ success: true, data: up.rows[0], message: 'Leave approved.' });
     }
@@ -334,17 +410,17 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
         await client.query('COMMIT');
       } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
-        client.release();
         throw err;
+      } finally {
+        client.release();
       }
-      client.release();
 
       await createNotification(leave.employee_id, 'leave', 'Leave Rejected',
         `Your ${leaveLabel} leave from ${startLabel} was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`,
         '/leave-tracker/summary'
       );
       try { await pool.query(`INSERT INTO feeds (employee_id,type,title,body,icon) VALUES ($1,'leave_rejected','Leave Rejected',$2,'❌')`, [leave.employee_id, `Your ${leaveLabel} leave from ${startLabel} was rejected.`]); }
-      catch (err) { console.warn('[leaves] feed insert (rejected) failed:', err.message); }
+      catch (err) { logger.warn({ err: err.message }, '[leaves] feed insert (rejected) failed'); }
       await logAudit(req, { action: 'REJECT', resource: 'Leave', resourceId: req.params.id, changes: { status: 'rejected', rejectionReason } });
       return res.json({ success: true, data: up.rows[0], message: 'Leave rejected.' });
     }
@@ -356,31 +432,65 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
 
 // ── DELETE cancel leave ────────────────────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
+  // Single try/finally so client.release() runs on every exit path, including
+  // the early-return cases where we previously had to remember to release()
+  // before the return statement. finally is the canonical pattern here.
+  const client = await pool.connect();
   try {
-    const leaveRes = await pool.query(
-      'SELECT status, leave_type, start_date, end_date FROM leaves WHERE id=$1 AND employee_id=$2',
+    const leaveRes = await client.query(
+      'SELECT status, leave_type, start_date, end_date, total_days FROM leaves WHERE id=$1 AND employee_id=$2',
       [req.params.id, req.user._id]
     );
-    if (leaveRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Leave not found' });
-    if (leaveRes.rows[0].status === 'approved') {
+    if (leaveRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Leave not found' });
+    }
+    const leave = leaveRes.rows[0];
+    if (leave.status === 'approved') {
       return res.status(400).json({ success: false, message: 'Cannot cancel approved leave' });
     }
-    await pool.query('DELETE FROM leaves WHERE id=$1', [req.params.id]);
+
+    // Atomic refund-and-delete: apply debited leave_balances.available, so
+    // cancellation has to credit it back. If we delete the leave without
+    // refunding, the user's available balance silently drifts down.
+    try {
+      await client.query('BEGIN');
+      if (leave.leave_type !== 'unpaid' && leave.total_days > 0) {
+        const year = new Date(leave.start_date).getFullYear();
+        const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [leave.leave_type]);
+        if (ltRes.rows[0]) {
+          await client.query(
+            `UPDATE leave_balances
+                SET available = available + $1
+              WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
+            [leave.total_days, req.user._id, ltRes.rows[0].id, year]
+          );
+        }
+      }
+      await client.query('DELETE FROM leaves WHERE id=$1', [req.params.id]);
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw txErr;
+    }
+
     // Audit trail for cancellations — was missing entirely before.
     await logAudit(req, {
       action: 'CANCEL',
       resource: 'Leave',
       resourceId: req.params.id,
       changes: {
-        prior_status: leaveRes.rows[0].status,
-        leave_type:   leaveRes.rows[0].leave_type,
-        start_date:   leaveRes.rows[0].start_date,
-        end_date:     leaveRes.rows[0].end_date,
+        prior_status: leave.status,
+        leave_type:   leave.leave_type,
+        start_date:   leave.start_date,
+        end_date:     leave.end_date,
+        refunded_days: leave.leave_type !== 'unpaid' ? leave.total_days : 0,
       },
     });
     res.json({ success: true, message: 'Leave cancelled' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
   }
 });
 

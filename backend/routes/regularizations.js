@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { body, validationResult } = require('express-validator');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { createNotification } = require('./notifications');
@@ -37,10 +38,23 @@ router.get('/pending', authorize('admin', 'manager'), async (req, res) => {
 });
 
 // POST submit request
-router.post('/', async (req, res) => {
+router.post('/', [
+  body('date').isISO8601().withMessage('Date must be YYYY-MM-DD'),
+  body('reason').isString().trim().isLength({ min: 3, max: 500 }).withMessage('Reason must be 3–500 characters'),
+  body('checkIn').optional({ nullable: true }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('checkIn must be HH:MM'),
+  body('checkOut').optional({ nullable: true }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('checkOut must be HH:MM'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
   try {
     const { date, checkIn, checkOut, reason } = req.body;
-    if (!date || !reason) return res.status(400).json({ success: false, message: 'Date and reason are required' });
+    // No back-fill more than 90 days old, and no future dates.
+    const d = new Date(`${date}T00:00:00`);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const ninetyAgo = new Date(today); ninetyAgo.setDate(ninetyAgo.getDate() - 90);
+    if (d > today) return res.status(400).json({ success: false, message: 'Cannot regularize a future date' });
+    if (d < ninetyAgo) return res.status(400).json({ success: false, message: 'Cannot regularize older than 90 days' });
+
     const result = await pool.query(
       `INSERT INTO attendance_regularizations (employee_id, date, check_in, check_out, reason)
        VALUES ($1, $2, $3, $4, $5) RETURNING id as "_id", date, check_in as "checkIn", check_out as "checkOut", reason, status, created_at as "createdAt"`,

@@ -18,6 +18,10 @@ export const AttendanceProvider = ({ children }) => {
   const [loading, setLoading]         = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [elapsed, setElapsed]         = useState(0);      // seconds elapsed
+  // loadError lets consumers (Dashboard, MyAttendance) render a banner
+  // when /attendance/today fails — previously the call silently dropped
+  // to `record=null` and the UI showed stale state with no signal.
+  const [loadError, setLoadError]     = useState(null);
   const timerRef = useRef(null);
 
   /* ── Start/restart the live timer ─────────────────────────────── */
@@ -46,6 +50,7 @@ export const AttendanceProvider = ({ children }) => {
         return; 
       }
 
+      setLoadError(null);
       api.get('/attendance/today')
         .then(r => {
           const rec = r.data.data;
@@ -64,9 +69,13 @@ export const AttendanceProvider = ({ children }) => {
             stopTimer();
           }
         })
-        .catch(() => {
+        .catch((err) => {
           setRecord(null);
           setElapsed(0);
+          // Surface the failure so consumers can render a "couldn't load
+          // today's attendance — try refresh" banner instead of pretending
+          // the user simply hasn't checked in.
+          setLoadError(err?.response?.data?.message || err?.message || 'Failed to load attendance');
         })
         .finally(() => setLoading(false));
 
@@ -150,7 +159,7 @@ export const AttendanceProvider = ({ children }) => {
   return (
     <AttendanceContext.Provider value={{
       record, loading, actionLoading, elapsed, isCheckedIn, isCheckedOut,
-      timerDisplay, hrs, mins, secs,
+      timerDisplay, hrs, mins, secs, loadError,
       checkIn, checkOut, setRecord,
     }}>
       {children}

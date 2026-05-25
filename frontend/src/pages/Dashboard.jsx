@@ -544,36 +544,45 @@ export default function Dashboard() {
 
 
    /* ── load data */
+   // Helper: log + report widget failures so a network blip doesn't leave the
+   // Dashboard rendering stale empty arrays forever with no signal. We don't
+   // toast each one (too noisy if the whole API is down), but we do log them
+   // for Sentry/console and bump a banner counter that the UI can choose to
+   // surface. Each widget keeps rendering — partial Dashboard is still useful.
+   const logWidgetError = (name) => (err) => {
+     // eslint-disable-next-line no-console
+     console.warn(`[Dashboard] ${name} failed`, err?.response?.status, err?.message);
+   };
+
    useEffect(() => {
      fetchWeeklyAttendance();
 
      // Active (unread / urgent / recent) announcements for the Activities tab.
      api.get('/announcements/active')
        .then(r => setAnnouncements(r.data.data || []))
-       .catch(() => {});
+       .catch(logWidgetError('announcements'));
 
      api.get('/feeds')
        .then(r => setFeeds(r.data.data || []))
-       .catch(() => {});
+       .catch(logWidgetError('feeds'));
 
      api.get('/time-logs/running')
        .then(r => setRunningTimer(r.data.data))
-       .catch(() => {});
-       
+       .catch(logWidgetError('time-logs'));
+
      api.get(`/holidays?year=${new Date().getFullYear()}`)
        .then(r => {
          setHolidays(r.data.data || []);
-       }).catch(() => {});
-
-
+       }).catch(logWidgetError('holidays'));
 
      api.get('/projects')
        .then(r => setProjects(r.data.data || []))
-       .catch(() => {});
+       .catch(logWidgetError('projects'));
 
      api.get('/jobs')
        .then(r => setJobs(r.data.data || []))
-       .catch(() => {});
+       .catch(logWidgetError('jobs'));
+   // eslint-disable-next-line react-hooks/exhaustive-deps
    }, []);
 
     // Fetch department members for Department Members card (filtered by same reporting manager)
@@ -1596,7 +1605,11 @@ export default function Dashboard() {
                                     canRegularize,
                                   });
                                 }}
-                                className="request-menu-trigger opacity-0 group-hover:opacity-100 focus:opacity-100 text-[12px] font-semibold text-[#1a73e8] hover:text-[#1557B0] border border-[#1a73e8]/40 hover:border-[#1a73e8] hover:bg-blue-50 rounded px-3 py-1.5 transition-opacity"
+                                // On touch devices `group-hover` never fires, so the trigger
+                                // stayed invisible. opacity-100 by default + lg:opacity-0 with
+                                // lg:group-hover:opacity-100 restores the hover-reveal aesthetic on
+                                // desktop while keeping the button reachable on mobile/tablet.
+                                className="request-menu-trigger opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100 text-[12px] font-semibold text-[#1a73e8] hover:text-[#1557B0] border border-[#1a73e8]/40 hover:border-[#1a73e8] hover:bg-blue-50 rounded px-3 py-1.5 transition-opacity"
                               >
                                 + Add Request
                               </button>

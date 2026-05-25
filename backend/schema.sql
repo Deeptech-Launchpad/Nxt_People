@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS settings (
   -- late_after_minutes = minutes since midnight (e.g., 570 = 09:30 AM)
   late_after_minutes INT DEFAULT 570,
   half_day_hours INT DEFAULT 4,
+  -- JSONB list of role strings ("admin","manager","hr","employee") for whom
+  -- MFA is mandatory. Empty array = optional for everyone.
+  mfa_required_roles JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -69,6 +72,14 @@ CREATE TABLE IF NOT EXISTS employees (
   approved_by UUID REFERENCES employees(id),
   approved_at TIMESTAMP,
   rejection_reason TEXT,
+  -- Soft-delete tombstone. NULL = active employee. When HR "deletes" an
+  -- employee we set this to NOW() so the row (and all its CASCADE-linked
+  -- attendance/leaves/payslips) stays intact for audit.
+  deleted_at TIMESTAMPTZ,
+  -- Bumped by the logout-everywhere endpoint. Any refresh-token whose iat
+  -- is earlier than this is rejected at use — kills every active device
+  -- in one update without needing per-device session enumeration.
+  tokens_revoked_at TIMESTAMPTZ,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const pool = require('../db');
 const bcrypt = require('bcryptjs');
+const logger = require('../logger');
 
 // Per-API-key rate limit. Prevents a leaked key from being used to
 // hammer the bulk-upsert endpoint into a denial of service. Keyed on
@@ -41,6 +42,25 @@ const validateApiKey = async (req, res, next) => {
 };
 router.use(validateApiKey);
 
+/**
+ * Scope check helper. Resources can be requested with either of:
+ *   - "<resource>"          → legacy form, read-only
+ *   - "<resource>:read"     → explicit read
+ *   - "<resource>:write"    → explicit write (implies read)
+ *
+ * This keeps existing connections with `["employees"]` working as read-only
+ * while letting admins grant write access by switching to `["employees:write"]`
+ * without a schema change.
+ */
+function hasScope(conn, resource, mode /* 'read' | 'write' */) {
+  const list = Array.isArray(conn.allowed_data_types) ? conn.allowed_data_types : [];
+  if (mode === 'read') {
+    return list.includes(resource) || list.includes(`${resource}:read`) || list.includes(`${resource}:write`);
+  }
+  // write
+  return list.includes(`${resource}:write`);
+}
+
 // Hard cap on bulk-upsert array size. One sync call should not be able to
 // kick off thousands of sequential queries from one HTTP request.
 const MAX_BULK_RECORDS = 500;
@@ -66,13 +86,13 @@ const auditExternal = (req, action, resource, details) => {
       req.ip || null,
       req.get('user-agent')?.substring(0, 500) || null,
     ]
-  ).catch(err => console.error('AUDIT WRITE FAILED (external)', { action, resource, error: err.message }));
+  ).catch(err => logger.error({ action, resource, err: err.message }, 'AUDIT WRITE FAILED (external)'));
 };
 
 router.get('/employees', async (req, res) => {
   try {
-    if (!req.apiConnection.allowed_data_types.includes('employees')) {
-      return res.status(403).json({ success: false, message: 'This connection does not have access to employees data.' });
+    if (!hasScope(req.apiConnection, 'employees', 'read')) {
+      return res.status(403).json({ success: false, message: 'This connection does not have read access to employees data.' });
     }
     let query = `WHERE registration_status = 'active' AND status = 'active'`;
     let params = [];
@@ -88,8 +108,8 @@ router.get('/employees', async (req, res) => {
 
 router.post('/employees', async (req, res) => {
   try {
-    if (!req.apiConnection.allowed_data_types.includes('employees')) {
-      return res.status(403).json({ success: false, message: 'This connection does not have write access to employees data.' });
+    if (!hasScope(req.apiConnection, 'employees', 'write')) {
+      return res.status(403).json({ success: false, message: 'This connection does not have write access to employees data. Required scope: "employees:write".' });
     }
     const records = Array.isArray(req.body) ? req.body : [req.body];
     // Reject oversized payloads up-front. Without this cap a single call
@@ -130,6 +150,9 @@ router.post('/employees', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   try {
+    if (!hasScope(req.apiConnection, 'auth', 'write')) {
+      return res.status(403).json({ success: false, message: 'This connection does not have permission to authenticate users. Required scope: "auth:write".' });
+    }
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password are required.' });
 

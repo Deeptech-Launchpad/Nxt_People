@@ -9,6 +9,7 @@
 // (reading '_Promise')" — a confusing error that bubbled up as a generic
 // 500 on every DELETE.
 const pool = require('../db');
+const logger = require('../logger');
 
 const audit = (action, resource) => (req, res, next) => {
   const originalJson = res.json.bind(res);
@@ -42,12 +43,11 @@ const audit = (action, resource) => (req, res, next) => {
           req.get('user-agent')?.substring(0, 500) || null,
         ]
       ).catch(err => {
-        console.error('AUDIT WRITE FAILED', {
-          timestamp: new Date().toISOString(),
+        logger.error({
           actor: req.user.email,
           action, resource, resourceId,
-          error: err.message,
-        });
+          err: err.message,
+        }, 'AUDIT WRITE FAILED');
         if (global.Sentry?.captureException) {
           global.Sentry.captureException(err, { tags: { audit: 'write_failed', action, resource } });
         }

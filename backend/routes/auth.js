@@ -8,6 +8,7 @@ const { protect } = require('../middleware/auth');
 const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const { verifyMfaCode, issueMfaTicket, consumeMfaTicket } = require('./mfa');
+const logger = require('../logger');
 
 // `ipKeyGenerator` normalises IPv6 addresses to their /64 prefix so an
 // attacker can't rotate through addresses in their own subnet to bypass
@@ -64,8 +65,32 @@ const checkEmailLimiter = rateLimit({
 
 // Access token: short-lived (15 min by default)
 const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, {
-  expiresIn: process.env.JWT_ACCESS_EXPIRE || '15m',
+  expiresIn: clampAccessExpiry(process.env.JWT_ACCESS_EXPIRE) || '15m',
 });
+
+// Clamp the configured access-token TTL to a sane window. Without this,
+// JWT_ACCESS_EXPIRE='10y' or '999d' would silently produce tokens that
+// effectively never expire — defeating the whole point of having a short
+// access token paired with a rotating refresh token. We accept values up
+// to 60 minutes and fall back to the default for anything outside that.
+function clampAccessExpiry(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  const m = s.match(/^(\d+)\s*(s|m|h|d|y)?$/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  const unit = m[2] || 's';
+  const seconds =
+      unit === 's' ? n
+    : unit === 'm' ? n * 60
+    : unit === 'h' ? n * 3600
+    : unit === 'd' ? n * 86400
+    : unit === 'y' ? n * 86400 * 365
+    : n;
+  // Hard cap: 60 minutes. Anything above that is rejected; caller uses default.
+  if (seconds < 60 || seconds > 3600) return null;
+  return s;
+}
 
 // Refresh token: long-lived crypto random token stored as SHA-256 hash in DB
 const generateRefreshToken = async (employeeId, req) => {
@@ -219,7 +244,7 @@ router.post('/login', loginLimiter, [
     const { email, password } = req.body;
 
     const result = await pool.query(
-      `SELECT id as "_id", password, registration_status, has_accepted, rejection_reason, mfa_enabled AS "mfaEnabled", first_name AS "firstName", last_name AS "lastName", email, role, department, designation, company, division, employee_id AS "employeeId", photo_url AS "photoUrl"
+      `SELECT id as "_id", password, registration_status, has_accepted, rejection_reason, mfa_enabled AS "mfaEnabled", first_name AS "firstName", last_name AS "lastName", email, role, department, designation, company, division, employee_id AS "employeeId", photo_url AS "photoUrl", deleted_at
        FROM employees WHERE email = $1`,
       [email]
     );
@@ -233,6 +258,12 @@ router.post('/login', loginLimiter, [
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
+    // Soft-deleted employees can't log in. Same generic message as bad creds
+    // so an attacker can't enumerate who's been archived.
+    if (employee.deleted_at) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
     if (employee.registration_status === 'pending') {
       return res.status(403).json({ success: false, message: 'Your account is pending approval.', status: 'pending' });
     }
@@ -241,6 +272,27 @@ router.post('/login', loginLimiter, [
     }
     if (employee.registration_status === 'approved' && !employee.has_accepted) {
       return res.status(403).json({ success: false, message: 'Please accept the terms to continue.', status: 'approved' });
+    }
+
+    // MFA per-role enforcement: if this user's role is in the global
+    // mfa_required_roles list and they haven't set up MFA, force enrolment
+    // before issuing a session. Empty/null list = optional for everyone.
+    if (!employee.mfaEnabled) {
+      try {
+        const sRes = await pool.query(`SELECT mfa_required_roles FROM settings LIMIT 1`);
+        const requiredRoles = sRes.rows[0]?.mfa_required_roles;
+        const list = Array.isArray(requiredRoles) ? requiredRoles : [];
+        if (list.includes(employee.role)) {
+          // Give the client enough to start enrolment but don't issue real tokens.
+          const mfaTicket = issueMfaTicket(employee._id);
+          return res.json({
+            success: true,
+            requiresMfaSetup: true,
+            mfaTicket,
+            message: 'Your role requires MFA. Set it up to continue.',
+          });
+        }
+      } catch (_) { /* settings table missing or column missing — fall through */ }
     }
 
     // MFA gate: if the user has MFA enabled, don't hand out a session yet.
@@ -403,7 +455,7 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
       });
     } catch (emailErr) {
       // Log the failure but do NOT expose it to the caller
-      console.error('❌ Password reset email delivery failed:', emailErr.message);
+      logger.error({ err: emailErr.message }, 'Password reset email delivery failed');
     }
 
     res.json({ success: true, message: genericMsg });
@@ -445,6 +497,17 @@ router.put('/reset-password/:token', async (req, res) => {
 });
 
 // @POST /api/auth/refresh — exchange a valid refresh token for a new access token
+//
+// Refresh-token theft detection:
+//   When the original token was issued, we stored the requesting user-agent.
+//   If the user-agent on refresh differs significantly (different browser
+//   family entirely), the token is most likely being replayed from a stolen
+//   copy. We revoke the token, bump tokens_revoked_at on the employee (kills
+//   every other active session too), and refuse the refresh.
+//   We do NOT bind to IP — mobile clients legitimately roam between cellular
+//   and Wi-Fi, and corporate egress IPs change. User-agent is sticky per
+//   device family, so a desktop-Chrome token presenting as iOS-Safari is a
+//   clear theft signal.
 router.post('/refresh', async (req, res) => {
   try {
     const { refreshToken } = req.body;
@@ -453,7 +516,7 @@ router.post('/refresh', async (req, res) => {
     const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
     const result = await pool.query(
-      `SELECT rt.id, rt.employee_id, e.registration_status
+      `SELECT rt.id, rt.employee_id, rt.user_agent, e.registration_status
        FROM refresh_tokens rt
        JOIN employees e ON rt.employee_id = e.id
        WHERE rt.token_hash = $1 AND rt.expires_at > NOW() AND rt.revoked_at IS NULL`,
@@ -464,10 +527,39 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid or expired refresh token' });
     }
 
-    const { id: tokenId, employee_id: employeeId, registration_status } = result.rows[0];
+    const { id: tokenId, employee_id: employeeId, user_agent: storedUA, registration_status } = result.rows[0];
 
     if (registration_status !== 'active') {
       return res.status(403).json({ success: false, message: 'Account is not active' });
+    }
+
+    // UA family check. We compare the broad browser+OS family, not the full
+    // UA string (which version-bumps weekly).
+    const uaFamily = (ua) => {
+      const s = String(ua || '').toLowerCase();
+      let browser = 'other';
+      if (s.includes('firefox/'))                       browser = 'firefox';
+      else if (s.includes('edg/'))                      browser = 'edge';
+      else if (s.includes('chrome/') && !s.includes('edg/')) browser = 'chrome';
+      else if (s.includes('safari/') && !s.includes('chrome/')) browser = 'safari';
+      let os = 'other';
+      if (s.includes('windows'))         os = 'windows';
+      else if (s.includes('mac os'))     os = 'macos';
+      else if (s.includes('linux'))      os = 'linux';
+      else if (s.includes('android'))    os = 'android';
+      else if (s.includes('iphone') || s.includes('ipad') || s.includes('ios')) os = 'ios';
+      return `${browser}/${os}`;
+    };
+    const requestUA = req.get('user-agent') || '';
+    if (storedUA && uaFamily(storedUA) !== uaFamily(requestUA)) {
+      // Likely token theft → kill this token AND every other live session.
+      await pool.query(`UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1`, [tokenId]);
+      await pool.query(`UPDATE employees SET tokens_revoked_at = NOW() WHERE id = $1`, [employeeId]);
+      return res.status(401).json({
+        success: false,
+        code: 'TOKEN_REUSE_DETECTED',
+        message: 'Session signature mismatch. Please sign in again.',
+      });
     }
 
     // Rotate: revoke old token, issue new pair
@@ -510,6 +602,35 @@ router.get('/sessions', protect, async (req, res) => {
       [req.user._id]
     );
     res.json({ success: true, data: r.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// @POST /api/auth/logout-everywhere — kill every active session for the user
+// Two writes, both must succeed:
+//   1. Revoke every active refresh_token row → future /refresh requests fail.
+//   2. Bump employees.tokens_revoked_at = NOW() → live access tokens (still
+//      valid for up to 15 min) are rejected by the `protect` middleware on
+//      their next API hit.
+// Returns the count of sessions killed so the UI can show "Signed out from N devices".
+router.post('/logout-everywhere', protect, async (req, res) => {
+  try {
+    const revRes = await pool.query(
+      `UPDATE refresh_tokens SET revoked_at = NOW()
+        WHERE employee_id = $1 AND revoked_at IS NULL
+        RETURNING id`,
+      [req.user._id]
+    );
+    await pool.query(
+      `UPDATE employees SET tokens_revoked_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [req.user._id]
+    );
+    res.json({
+      success: true,
+      message: `Signed out from ${revRes.rows.length} session(s).`,
+      sessionsRevoked: revRes.rows.length,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
