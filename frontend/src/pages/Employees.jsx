@@ -3,6 +3,7 @@ import { Plus, Search, Edit2, Trash2, X, ChevronLeft, ChevronRight, Mail, Send, 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { isFullAccess, roleLabel } from '../utils/roles';
 import AppAccessPicker from '../components/AppAccessPicker';
 
 // Options will be fetched dynamically from the database
@@ -12,7 +13,7 @@ const initForm = {
   role:'employee', department:'', designation:'', company:'',
   joiningDate: new Date().toISOString().split('T')[0],
   monthlyCTC:'', basicSalary:'',
-  casualLeave:'', sickLeave:'', earnedLeave:'',
+  casualLeave:'',
   reportingManagerId:'', approvingAuthorityId:'',
   // Personal
   nickName:'', dateOfBirth:'', gender:'', maritalStatus:'', bloodGroup:'', nationality:'',
@@ -48,7 +49,7 @@ const statusMeta = (s) => STATUS_OPTIONS.find(o => o.value === s) || STATUS_OPTI
 
 export default function Employees() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = isFullAccess(user);
   const [employees, setEmployees] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -131,7 +132,7 @@ export default function Employees() {
   // Role is a fixed enum — admin needs to be able to assign these three even
   // when no current employee has the role (e.g. after a fresh Zoho sync where
   // everyone defaults to "employee"). Don't override from metadata.
-  const roles = ['admin', 'manager', 'employee'];
+  const roles = ['super_admin', 'hr', 'manager', 'employee'];
   // `managers` is the leadership-filtered list (Heads / Leads / Managers) used
   // for the Reporting Person dropdown. Replaces the old `allEmployees` list
   // which let admin pick any employee as a manager.
@@ -226,8 +227,6 @@ export default function Employees() {
       monthlyCTC:  get('monthlyCTC',  'monthly_ctc'),
       basicSalary: get('basicSalary', 'basic_salary'),
       casualLeave: full.casualLeave ?? full.casual_leave ?? '',
-      sickLeave:   full.sickLeave   ?? full.sick_leave   ?? '',
-      earnedLeave: full.earnedLeave ?? full.earned_leave ?? '',
       // Personal
       nickName:      get('nickName',      'nick_name'),
       dateOfBirth:  (get('dateOfBirth',   'date_of_birth') || '').split?.('T')[0] || '',
@@ -420,8 +419,8 @@ export default function Employees() {
       {/* Current vs Ex Employees tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
         {[
-          { key: 'active',   label: 'Current Employees' },
-          { key: 'inactive', label: 'Ex Employees'      },
+          { key: 'active',   label: 'Active Employees' },
+          { key: 'inactive', label: 'Inactive Employees'      },
         ].map(t => (
           <button key={t.key}
             onClick={() => { setStatusFilter(t.key); setPage(1); }}
@@ -445,7 +444,7 @@ export default function Employees() {
               <option value="">All Designations</option>{designations.map(d=><option key={d}>{d}</option>)}
             </select>
             <select value={roleFilter} onChange={e=>{setRoleFilter(e.target.value);setPage(1)}} className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-brand-400">
-              <option value="">All Roles</option>{roles.map(r=><option key={r} className="capitalize">{r}</option>)}
+              <option value="">All Roles</option>{roles.map(r=><option key={r} value={r}>{roleLabel(r)}</option>)}
             </select>
           </div>
           {isAdmin && (
@@ -513,7 +512,7 @@ export default function Employees() {
                       </td>
                       <td className="px-5 py-3.5 text-sm text-slate-500 font-mono">{emp.employeeId}</td>
                       <td className="px-5 py-3.5 text-sm text-slate-600">{emp.department}</td>
-                      <td className="px-5 py-3.5"><span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${roleColors[emp.role]}`}>{emp.role}</span></td>
+                      <td className="px-5 py-3.5"><span className={`px-2.5 py-1 rounded-full text-xs font-medium ${roleColors[emp.role]}`}>{roleLabel(emp.role)}</span></td>
                       <td className="px-5 py-3.5 text-sm text-slate-600">{emp.designation}</td>
                       <td className="px-5 py-3.5 text-sm text-slate-500">
                         {statusFilter === 'inactive'
@@ -523,9 +522,12 @@ export default function Employees() {
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
                           <button onClick={()=>openView(emp._id)} title="View" className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"><Eye size={14}/></button>
+                          {/* Edit / status / delete are employee-management actions — HR / Super Admin only. */}
+                          {isAdmin && (<>
                           <button onClick={()=>openEdit(emp)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg bg-brand-50 text-brand-600 hover:bg-brand-100 transition-colors"><Edit2 size={14}/></button>
                           <button onClick={()=>openStatus(emp)} title="Update employment status (notice period / exit / blacklist)" className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors text-[15px] font-bold">⚑</button>
                           <button onClick={()=>handleDelete(emp._id)} title="Delete" className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"><Trash2 size={14}/></button>
+                          </>)}
                         </div>
                       </td>
                     </tr>
@@ -648,7 +650,7 @@ export default function Employees() {
                  <div>
                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Role</label>
                    <select value={form.role} onChange={e=>setForm({...form,role:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
-                     {roles.map(r=><option key={r} className="capitalize">{r}</option>)}
+                     {roles.map(r=><option key={r} value={r}>{roleLabel(r)}</option>)}
                    </select>
                  </div>
                </div>
@@ -689,20 +691,6 @@ export default function Employees() {
                    <input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
                  </div>
                </div>
-               {/* Payroll */}
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Payroll (optional)</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Monthly CTC (₹)</label>
-                    <input type="number" value={form.monthlyCTC} onChange={e=>setForm({...form,monthlyCTC:e.target.value})} placeholder="e.g. 50000" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Basic Salary (₹)</label>
-                    <input type="number" value={form.basicSalary} onChange={e=>setForm({...form,basicSalary:e.target.value})} placeholder="e.g. 25000" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
-                  </div>
-                </div>
-              </div>
               {/* Personal */}
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Personal</p>
@@ -762,44 +750,6 @@ export default function Employees() {
                   <div className="col-span-2">
                     <label className="block text-xs font-medium text-slate-600 mb-1.5">Permanent Address</label>
                     <textarea rows={2} value={form.permanentAddress} onChange={e=>setForm({...form,permanentAddress:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none"/>
-                  </div>
-                </div>
-              </div>
-
-              {/* Identity (PII) */}
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Identity (PII)</p>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">PAN Number</label>
-                    <input value={form.panNumber} onChange={e=>setForm({...form,panNumber:e.target.value.toUpperCase()})} placeholder="ABCDE1234F" maxLength={10} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400"/>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Aadhaar Number</label>
-                    <input value={form.aadhaarNumber} onChange={e=>setForm({...form,aadhaarNumber:e.target.value})} placeholder="1234 5678 9012" maxLength={14} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400"/>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">UAN Number</label>
-                    <input value={form.uanNumber} onChange={e=>setForm({...form,uanNumber:e.target.value})} maxLength={12} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400"/>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bank */}
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Bank</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Bank Name</label>
-                    <input value={form.bankName} onChange={e=>setForm({...form,bankName:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">IFSC Code</label>
-                    <input value={form.bankIfsc} onChange={e=>setForm({...form,bankIfsc:e.target.value.toUpperCase()})} placeholder="HDFC0001234" maxLength={11} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400"/>
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Account Number</label>
-                    <input value={form.bankAccount} onChange={e=>setForm({...form,bankAccount:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-brand-400"/>
                   </div>
                 </div>
               </div>
@@ -893,7 +843,7 @@ export default function Employees() {
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Leave Balance (days)</p>
                 <div className="grid grid-cols-3 gap-3">
-                  {[['casualLeave','Casual'],['sickLeave','Sick'],['earnedLeave','Earned']].map(([f,l])=>(
+                  {[['casualLeave','Casual']].map(([f,l])=>(
                     <div key={f}>
                       <label className="block text-xs font-medium text-slate-600 mb-1.5">{l}</label>
                       <input type="number" value={form[f]} onChange={e=>setForm({...form,[f]:e.target.value})} min={0} max={365} step={0.5} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
@@ -1024,7 +974,7 @@ export default function Employees() {
                       <div><span className="block text-slate-400 text-xs font-medium mb-0.5">Email</span><span className="text-slate-800 break-all">{viewEmpData.email}</span></div>
                       <div><span className="block text-slate-400 text-xs font-medium mb-0.5">Department</span><span className="text-slate-800">{viewEmpData.department || '—'}</span></div>
                       <div><span className="block text-slate-400 text-xs font-medium mb-0.5">Designation</span><span className="text-slate-800">{viewEmpData.designation || '—'}</span></div>
-                      <div><span className="block text-slate-400 text-xs font-medium mb-0.5">Role</span><span className="text-slate-800 capitalize">{viewEmpData.role}</span></div>
+                      <div><span className="block text-slate-400 text-xs font-medium mb-0.5">Role</span><span className="text-slate-800">{roleLabel(viewEmpData.role)}</span></div>
                       <div><span className="block text-slate-400 text-xs font-medium mb-0.5">Joining Date</span><span className="text-slate-800">{viewEmpData.joiningDate ? new Date(viewEmpData.joiningDate).toLocaleDateString() : '—'}</span></div>
                       <div><span className="block text-slate-400 text-xs font-medium mb-0.5">Company</span><span className="text-slate-800">{viewEmpData.company || '—'}</span></div>
                       <div><span className="block text-slate-400 text-xs font-medium mb-0.5">Division</span><span className="text-slate-800">{viewEmpData.division || '—'}</span></div>
@@ -1160,7 +1110,7 @@ export default function Employees() {
               )}
               <p className="text-[11.5px] text-slate-500">
                 All new employees are imported with role <strong>Employee</strong>. Use the Edit button on
-                any row to promote someone to <strong>Manager</strong> or <strong>Admin</strong>.
+                any row to promote someone to <strong>Team Lead</strong> or <strong>Admin</strong>.
               </p>
             </div>
             <div className="p-4 border-t border-slate-100 flex justify-end">

@@ -1,6 +1,6 @@
 # Nxt People — Enterprise HR & Attendance Management System
 
-A full-stack HR platform inspired by Zoho People. Covers attendance, leave, timesheets, shifts, holidays, performance, payroll reports, projects/tasks, onboarding, exit, announcements, chat, and  a third-party API gateway.
+A full-stack HR platform inspired by Zoho People. Covers attendance, leave, timesheets, shifts, holidays, performance, payroll reports, projects/tasks, onboarding, exit, announcements, chat, and a third-party API gateway.
 
 Built with React 18 + Vite, Node.js + Express, PostgreSQL.
 

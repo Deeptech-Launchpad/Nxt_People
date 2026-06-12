@@ -3,6 +3,7 @@ import { Plus, DollarSign, X, Check, Trash2, FileText, Upload } from 'lucide-rea
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
+import { isApprover } from '../../utils/roles';
 
 const STATUS_TABS = ['All', 'Pending', 'Approved', 'Rejected'];
 const STATUS_COLOR = {
@@ -14,7 +15,7 @@ const CLAIM_TYPES = ['Medical', 'Travel', 'Food', 'Equipment', 'Internet', 'Othe
 
 export default function Compensation() {
   const { user } = useAuth();
-  const isAdmin = ['admin', 'manager'].includes(user?.role);
+  const isAdmin = isApprover(user);
 
   const [view, setView]     = useState('My Claims');
   const [tab, setTab]       = useState('All');

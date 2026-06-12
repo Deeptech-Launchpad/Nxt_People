@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess } = require('../utils/roles');
 
 router.use(protect);
 
@@ -29,7 +30,7 @@ router.get('/', async (req, res) => {
   try {
     const { fy, employeeId } = req.query;
     const { fromYear, fromMonth, toYear, toMonth } = parseFY(fy);
-    const empId = req.user.role === 'admin' && employeeId ? employeeId : req.user._id;
+    const empId = isFullAccess(req.user.role) && employeeId ? employeeId : req.user._id;
 
     const r = await pool.query(
       `SELECT id as "_id", month, year, gross_pay as "grossPay",
@@ -64,7 +65,7 @@ router.get('/fy-list', async (req, res) => {
 });
 
 // POST /api/payslips  — create / upsert payslip (admin only)
-router.post('/', authorize('admin'), async (req, res) => {
+router.post('/', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const { employeeId, month, year, grossPay, reimbursements, deductions, takeHome, payslipUrl, taxWorksheetUrl } = req.body;
     if (!employeeId || !month || !year) {

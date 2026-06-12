@@ -3,6 +3,7 @@ const router = express.Router();
 const logger = require('../logger');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess } = require('../utils/roles');
 
 router.use(protect);
 
@@ -30,6 +31,24 @@ router.get('/today', async (req, res) => {
       const wh = parseFloat(row.workingHours);
       row.workingHours = isFinite(wh) ? wh : 0;
     }
+    res.json({ success: true, data: row });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET attendance for a specific date (used by Regularization autofill) ────────
+// Works for all roles: employee, manager, admin — always for the logged-in user.
+router.get('/by-date', async (req, res) => {
+  try {
+    const { date } = req.query;
+    if (!date) return res.status(400).json({ success: false, message: 'date query param required (YYYY-MM-DD)' });
+    const result = await pool.query(
+      `SELECT check_in as "checkIn", check_out as "checkOut", status
+       FROM attendance WHERE employee_id = $1 AND date = $2::date`,
+      [req.user._id, date]
+    );
+    const row = result.rows[0] || null;
     res.json({ success: true, data: row });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -89,11 +108,11 @@ router.post('/checkin', async (req, res) => {
 
     if (settings.office_latitude && settings.office_longitude && latitude && longitude) {
       const R = 6371000;
-      const φ1 = latitude * Math.PI / 180;
-      const φ2 = settings.office_latitude * Math.PI / 180;
-      const Δφ = (settings.office_latitude - latitude) * Math.PI / 180;
-      const Δλ = (settings.office_longitude - longitude) * Math.PI / 180;
-      const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+      const lat1Rad = latitude * Math.PI / 180;
+      const lat2Rad = settings.office_latitude * Math.PI / 180;
+      const dLat = (settings.office_latitude - latitude) * Math.PI / 180;
+      const dLon = (settings.office_longitude - longitude) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1Rad)*Math.cos(lat2Rad)*Math.sin(dLon/2)**2;
       const distance = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
       const radius = settings.gps_radius_meters || 200;
       withinRange = distance <= radius;
@@ -445,7 +464,7 @@ router.get('/my', async (req, res) => {
 });
 
 // ── GET team attendance ───────────────────────────────────────────────────────
-router.get('/team', authorize('admin', 'manager'), async (req, res) => {
+router.get('/team', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const { date, department, employeeId } = req.query;
     const targetDate = date || todayStr();
@@ -538,7 +557,7 @@ router.get('/summary', async (req, res) => {
       end   = toDateStr(new Date(y, m + 1, 0));
     }
 
-    const empId = req.user.role === 'admin' && employeeId ? employeeId : req.user._id;
+    const empId = isFullAccess(req.user.role) && employeeId ? employeeId : req.user._id;
 
     // Pull attendance + holidays + settings + weekend_rules in parallel.
     // settings.working_days is the simplest weekend source; if weekend_rules
@@ -668,7 +687,7 @@ router.get('/export', async (req, res) => {
     if (!startDate || !endDate) {
       return res.status(400).json({ success: false, message: 'startDate and endDate required (YYYY-MM-DD)' });
     }
-    const empId = req.user.role === 'admin' && employeeId ? employeeId : req.user._id;
+    const empId = isFullAccess(req.user.role) && employeeId ? employeeId : req.user._id;
 
     const r = await pool.query(
       `SELECT e.employee_id AS "employeeId",
@@ -736,6 +755,85 @@ router.get('/holidays', async (req, res) => {
     res.json({ success: true, data: r.rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── Attendance location logs ────────────────────────────────────────────────
+// Additive history of where each check-in / check-out happened. POSTed by the
+// client right after a successful check-in/out (never blocks that flow), and
+// listed back on the Location page. The existing check-in/out endpoints above
+// are untouched.
+
+// Log a captured location for the signed-in user.
+router.post('/location', async (req, res) => {
+  try {
+    const { type, latitude, longitude, accuracy, location, permissionStatus } = req.body;
+    if (!['checkin', 'checkout'].includes(type)) {
+      return res.status(400).json({ success: false, message: 'Invalid type — use checkin or checkout' });
+    }
+    const r = await pool.query(
+      `INSERT INTO attendance_location_logs
+         (employee_id, type, latitude, longitude, accuracy, location_label, permission_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [req.user._id, type,
+       latitude ?? null, longitude ?? null, accuracy ?? null,
+       location || null, permissionStatus || null]
+    );
+    res.json({ success: true, id: r.rows[0].id });
+  } catch (err) {
+    logger.error({ err: err.message }, '[attendance] location log failed');
+    res.status(500).json({ success: false, message: 'Failed to log location' });
+  }
+});
+
+// Location history. Scope: HR / Super Admin see everyone (optionally filtered by
+// employeeId); Employees and Team Leads see only their own records.
+router.get('/location', async (req, res) => {
+  try {
+    const { employeeId, startDate, endDate, type } = req.query;
+    const full = isFullAccess(req.user.role);
+    const page  = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit, 10) || 30);
+    const offset = (page - 1) * limit;
+
+    const where = [];
+    const params = [];
+    let idx = 1;
+
+    if (full) {
+      if (employeeId) { where.push(`l.employee_id = $${idx++}`); params.push(employeeId); }
+    } else {
+      where.push(`l.employee_id = $${idx++}`); params.push(req.user._id);
+    }
+    if (type && ['checkin', 'checkout'].includes(type)) { where.push(`l.type = $${idx++}`); params.push(type); }
+    if (startDate) { where.push(`l.captured_at >= $${idx++}::date`); params.push(startDate); }
+    if (endDate)   { where.push(`l.captured_at < ($${idx++}::date + INTERVAL '1 day')`); params.push(endDate); }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const totalRes = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM attendance_location_logs l ${whereSql}`, params
+    );
+    const total = totalRes.rows[0].n;
+
+    const dataRes = await pool.query(
+      `SELECT l.id as "_id", l.type, l.latitude, l.longitude, l.accuracy,
+              l.location_label as "locationLabel", l.permission_status as "permissionStatus",
+              l.captured_at as "capturedAt",
+              json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
+                'department', e.department, 'employeeId', e.employee_id) as employee
+         FROM attendance_location_logs l
+         JOIN employees e ON l.employee_id = e.id
+         ${whereSql}
+         ORDER BY l.captured_at DESC
+         LIMIT $${idx++} OFFSET $${idx++}`,
+      [...params, limit, offset]
+    );
+
+    res.json({ success: true, data: dataRes.rows, total, page, limit, scope: full ? 'all' : 'self' });
+  } catch (err) {
+    logger.error({ err: err.message }, '[attendance] location history failed');
+    res.status(500).json({ success: false, message: 'Failed to load location history' });
   }
 });
 

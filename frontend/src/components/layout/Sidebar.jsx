@@ -1,14 +1,15 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { isApprover, isFullAccess } from '../../utils/roles';
 import {
   Home, CalendarCheck, Clock, CalendarDays, Trophy,
-  LayoutGrid, PieChart, Users
+  LayoutGrid, PieChart, Users, AppWindow, Briefcase
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { to: '/',                         icon: Home,         label: 'Home',         end: true,
-    matches: p => p === '/' || ['/dashboard','/calendar','/team-space','/team/','/organization','/org-chart','/dept-tree','/announcements','/policies','/birthdays','/new-hires','/directory','/companies','/profile','/approvals','/employees','/registrations','/chat','/exit','/api-connections','/settings'].some(x => p.startsWith(x)) },
+    matches: p => p === '/' || ['/dashboard','/calendar','/team-space','/team/','/organization','/org-chart','/dept-tree','/announcements','/policies','/birthdays','/new-hires','/directory','/companies','/profile','/approvals','/employees','/registrations','/chat','/exit','/settings'].some(x => p.startsWith(x)) },
   { to: '/attendance/my',            icon: CalendarCheck,label: 'Attendance',
     matches: p => p.startsWith('/attendance') },
   { to: '/time-tracker/timelogs',    icon: Clock,        label: 'Time\nTracker',
@@ -21,7 +22,13 @@ const NAV_ITEMS = [
   { to: '/performance/goals',        icon: Trophy,       label: 'Performance',
     matches: p => p.startsWith('/performance'), disabled: true },
   { to: '/more-services/files',      icon: LayoutGrid,   label: 'More\nServices',
-    matches: p => p.startsWith('/more-services') || p.startsWith('/documents') },
+    matches: p => (p.startsWith('/more-services') && !p.startsWith('/more-services/operations')) || p.startsWith('/documents') },
+  // Operations workspace — relocated here from the More Services top tabs.
+  // Super Admin / HR only (the page + its routes are already role-gated).
+  { to: '/more-services/operations', icon: Briefcase,    label: 'Operations', roles: ['super_admin', 'hr'],
+    matches: p => p.startsWith('/more-services/operations') },
+  { to: '/my-apps',                  icon: AppWindow,    label: 'NXT\nApps',
+    matches: p => p.startsWith('/my-apps') || p.startsWith('/api-connections') },
 ];
 
 const labelStyle = {
@@ -76,7 +83,10 @@ const NavItem = ({ item }) => {
 export default function Sidebar() {
   const { user } = useAuth();
   const location = useLocation();
-  const canSeeReports = user?.role === 'admin' || user?.role === 'manager';
+  const canSeeReports = isApprover(user);
+  // Employee management (the admin Employees page) is HR / Super Admin only —
+  // Team Leads view their team via Team Space / Org Chart, not this page.
+  const canManageEmployees = isFullAccess(user);
 
   // Reports icon should also highlight on /daily-attendance, /payroll,
   // /shifts, /shift-roster — they all live under the Reports section.
@@ -87,11 +97,13 @@ export default function Sidebar() {
     <aside className="fixed top-0 left-0 h-screen w-[72px] bg-[#1a2040] flex flex-col z-50 shadow-xl">
       {/* Main nav — HOME is the first item, flush to the top of the sidebar. */}
       <nav className="flex-1 flex flex-col overflow-y-auto scrollbar-none py-1">
-        {NAV_ITEMS.map(item => <NavItem key={item.to} item={item}/>)}
+        {NAV_ITEMS.filter(item => !item.roles || item.roles.includes(user?.role)).map(item => <NavItem key={item.to} item={item}/>)}
 
-        {/* Admin/Manager sections appended to the scrolling nav to prevent them taking fixed bottom space */}
-        {canSeeReports && (
+        {/* Admin sections appended to the scrolling nav. Employees = HR/Super
+            Admin only; Reports = any approver (incl. Team Leads). */}
+        {(canManageEmployees || canSeeReports) && (
           <div className="flex flex-col border-t border-white/10 mt-1 pt-1">
+            {canManageEmployees && (
             <NavLink to="/employees"
               className={({ isActive }) =>
                 `group relative flex flex-col items-center justify-center gap-1 w-full py-2 transition-all duration-150`
@@ -109,7 +121,9 @@ export default function Sidebar() {
                 );
               }}
             </NavLink>
+            )}
 
+            {canSeeReports && (
             <NavLink to="/reports"
               className="group relative flex flex-col items-center justify-center gap-1 w-full py-2 transition-all duration-150"
             >
@@ -118,6 +132,7 @@ export default function Sidebar() {
               </div>
               <span style={labelStyle} className={isReportsActive ? 'text-white' : 'text-white/70 group-hover:text-white'}>Reports</span>
             </NavLink>
+            )}
         </div>
         )}
       </nav>

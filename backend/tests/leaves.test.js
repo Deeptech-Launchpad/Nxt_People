@@ -2,7 +2,7 @@ const request = require('supertest');
 const app     = require('../app');
 const { pool } = require('../db');
 
-const ADMIN_EMAIL    = 'admin@nxtpeople.com';
+const ADMIN_EMAIL    = 'balaji@altiusnxt.com';
 const ADMIN_PASSWORD = 'password123';
 
 let adminToken  = '';

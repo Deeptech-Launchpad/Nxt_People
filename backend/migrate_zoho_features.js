@@ -47,15 +47,15 @@ const migrations = [
   )`,
 
   // Seed default leave types
-  `INSERT INTO leave_types (name, code, icon, color, max_days_per_year, carry_forward)
+  `INSERT INTO leave_types (name, code, icon, color, max_days_per_year, carry_forward, is_active)
    VALUES
-     ('Casual Leave',           'casual',  '🏖', '#1a73e8', 12, false),
-     ('Sick Leave',             'sick',    '🤒', '#e53935', 10, false),
-     ('Earned Leave',           'earned',  '⭐', '#34a853', 15, true),
-     ('Leave Without Pay',      'unpaid',  '💼', '#f5a623', 999, false),
-     ('Compensatory Off',       'compoff', '⚖', '#8b5cf6', 0,  false),
-     ('Permission',             'permission','🕐','#0097a7',0,  false)
-   ON CONFLICT (code) DO NOTHING`,
+     ('Casual Leave',           'casual',  '🏖', '#1a73e8', 12, false, true),
+     ('Sick Leave',             'sick',    '🤒', '#e53935', 10, false, false),
+     ('Earned Leave',           'earned',  '⭐', '#34a853', 15, true, false),
+     ('Leave Without Pay',      'unpaid',  '💼', '#f5a623', 999, false, true),
+     ('Compensatory Off',       'compoff', '⚖', '#8b5cf6', 0,  false, true),
+     ('Permission',             'permission','🕐','#0097a7',0,  false, true)
+   ON CONFLICT (code) DO UPDATE SET is_active = EXCLUDED.is_active`,
 
   // ── LEAVE BALANCES ──────────────────────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS leave_balances (

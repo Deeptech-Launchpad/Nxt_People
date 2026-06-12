@@ -3,8 +3,16 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
+const { createLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
+const { sendMail } = require('../utils/mailer');
+const logger = require('../logger');
 router.use(protect);
+
+// Regularizations use the SAME hierarchy approval engine as leaves
+// (utils/leaveApproval.js + the shared approval_levels table, request_type='regularization').
+const REG_LEVELS_JSON = approvalLevelsJson('regularization', 'r');
 
 // GET my regularization requests
 router.get('/my', async (req, res) => {
@@ -12,7 +20,8 @@ router.get('/my', async (req, res) => {
     const result = await pool.query(
       `SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
        r.reason, r.status, r.rejection_reason as "rejectionReason", r.created_at as "createdAt",
-       json_build_object('firstName', m.first_name, 'lastName', m.last_name) as "approvedBy"
+       json_build_object('firstName', m.first_name, 'lastName', m.last_name) as "approvedBy",
+       ${REG_LEVELS_JSON} as "approvalLevels"
        FROM attendance_regularizations r
        LEFT JOIN employees m ON r.approved_by = m.id
        WHERE r.employee_id = $1 ORDER BY r.created_at DESC`,
@@ -22,16 +31,30 @@ router.get('/my', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// GET all pending (admin/manager)
-router.get('/pending', authorize('admin', 'manager'), async (req, res) => {
+// GET pending regularizations for the current approver (hierarchy-scoped).
+router.get('/pending', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
+    // Full-access sees the whole pending queue; everyone else sees regularizations
+    // where they are an assigned approver of a still-pending hierarchy level.
+    const full = isFullAccess(req.user.role);
     const result = await pool.query(
       `SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
        r.reason, r.status, r.created_at as "createdAt",
-       json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'employeeId', e.employee_id, 'department', e.department) as employee
+       json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'employeeId', e.employee_id, 'department', e.department) as employee,
+       ${REG_LEVELS_JSON} as "approvalLevels",
+       ($2::boolean OR EXISTS (
+          SELECT 1 FROM approval_levels x
+           WHERE x.request_type = 'regularization' AND x.request_id = r.id AND x.approver_id = $1 AND x.status = 'pending'
+       )) as "canAct"
        FROM attendance_regularizations r
        JOIN employees e ON r.employee_id = e.id
-       WHERE r.status = 'pending' ORDER BY r.date DESC`
+       WHERE r.status = 'pending'
+         AND ($2::boolean OR EXISTS (
+              SELECT 1 FROM approval_levels x
+               WHERE x.request_type = 'regularization' AND x.request_id = r.id AND x.approver_id = $1 AND x.status = 'pending'
+         ))
+       ORDER BY r.date DESC`,
+      [req.user._id, full]
     );
     res.json({ success: true, data: result.rows });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -60,65 +83,145 @@ router.post('/', [
        VALUES ($1, $2, $3, $4, $5) RETURNING id as "_id", date, check_in as "checkIn", check_out as "checkOut", reason, status, created_at as "createdAt"`,
       [req.user._id, date, checkIn || null, checkOut || null, reason]
     );
-    res.status(201).json({ success: true, data: result.rows[0] });
+    const reg = result.rows[0];
+
+    // ── Build the hierarchy approval chain + notify all levels immediately ──
+    // Same engine and pattern as leave requests.
+    let levels = [];
+    try { levels = await createLevels(pool, 'regularization', reg._id, req.user._id); }
+    catch (e) { logger.error({ err: e.message }, '[regularizations] createLevels soft-fail'); }
+
+    try {
+      const empName = `${req.user.firstName} ${req.user.lastName}`;
+      const dateLabel = new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const approverIds = levels.map(l => l.approverId).filter(Boolean);
+      let approvers = [];
+      if (approverIds.length > 0) {
+        const r = await pool.query(`SELECT id, email, first_name AS "firstName" FROM employees WHERE id = ANY($1::uuid[])`, [approverIds]);
+        approvers = r.rows;
+      } else {
+        const r = await pool.query(
+          `SELECT id, email, first_name AS "firstName" FROM employees
+            WHERE role IN ('super_admin','hr') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+        );
+        approvers = r.rows;
+      }
+
+      await Promise.all(approvers.map(a => createNotification(
+        a.id, 'approval', 'Regularization Approval Required',
+        `${empName} requested an attendance regularization for ${dateLabel}.`,
+        '/approvals'
+      ).catch(err => logger.warn({ err: err.message }, '[regularizations] notify approver failed'))));
+
+      await Promise.all(approvers.filter(a => a.email).map(a => sendMail({
+        to: a.email,
+        subject: `Regularization approval required — ${empName}`,
+        text: `${empName} requested an attendance regularization for ${dateLabel}. Reason: ${reason}. Review it in NXT People → Approvals.`,
+        html: `<p>Hi ${a.firstName || 'there'},</p>
+               <p><strong>${empName}</strong> has requested an <strong>attendance regularization</strong>.</p>
+               <ul>
+                 <li><strong>Date:</strong> ${dateLabel}</li>
+                 ${checkIn ? `<li><strong>Check-in:</strong> ${checkIn}</li>` : ''}
+                 ${checkOut ? `<li><strong>Check-out:</strong> ${checkOut}</li>` : ''}
+                 <li><strong>Reason:</strong> ${reason}</li>
+               </ul>
+               <p>Please review it in <strong>NXT People → Approvals</strong>.</p>`,
+      }).catch(err => logger.warn({ err: err.message }, '[regularizations] approver email failed'))));
+    } catch (e) { logger.error({ err: e.message }, '[regularizations] notify soft-fail'); }
+
+    res.status(201).json({ success: true, data: reg });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// PUT approve/reject
-// Atomic by design: marking the regularization approved AND patching the
-// attendance row must commit together. Previously two separate pool.query
-// calls — a crash between them left the regularization "approved" while
-// the actual attendance row stayed unchanged, silently losing the fix.
-router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
+// PUT approve/reject — hierarchy-based, identical engine to leaves.
+// The attendance patch runs only on FULL approval (all levels approved) and is
+// atomic with the status update.
+router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
+  const { action, rejectionReason } = req.body;
+  if (!['approved', 'rejected'].includes(action)) {
+    return res.status(400).json({ success: false, message: 'Invalid action. Use: approved or rejected' });
+  }
+
   const client = await pool.connect();
   try {
-    const { action, rejectionReason } = req.body;
-    const regRes = await client.query('SELECT * FROM attendance_regularizations WHERE id = $1', [req.params.id]);
-    const reg = regRes.rows[0];
-    if (!reg) { client.release(); return res.status(404).json({ success: false, message: 'Request not found' }); }
+    await client.query('BEGIN');
 
-    // Block self-approval — managers can't approve their own regularization.
-    if (reg.employee_id === req.user._id && req.user.role !== 'admin') {
-      client.release();
-      return res.status(403).json({ success: false, message: 'You cannot approve or reject your own regularization request.' });
+    const regRes = await client.query(`SELECT * FROM attendance_regularizations WHERE id = $1 FOR UPDATE`, [req.params.id]);
+    const reg = regRes.rows[0];
+    if (!reg) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Request not found' }); }
+
+    if (String(reg.employee_id) === String(req.user._id)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, message: 'You cannot act on your own regularization request.' });
+    }
+    if (reg.status !== 'pending') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: `This request has already been ${reg.status}.` });
+    }
+    if (!(await canUserAct(client, 'regularization', reg.id, req.user))) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, message: 'You are not an approver for this request.' });
     }
 
-    const status = action === 'approved' ? 'approved' : 'rejected';
-
-    await client.query('BEGIN');
-    await client.query(
-      `UPDATE attendance_regularizations SET status=$1, approved_by=$2, approved_at=NOW(), rejection_reason=$3, updated_at=NOW() WHERE id=$4`,
-      [status, req.user._id, rejectionReason || null, req.params.id]
-    );
+    const dateLabel = new Date(reg.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
     if (action === 'approved') {
-      const exists = await client.query('SELECT id FROM attendance WHERE employee_id=$1 AND date=$2', [reg.employee_id, reg.date]);
-      if (exists.rows.length > 0) {
+      const result = await applyApproval(client, 'regularization', reg.id, req.user);
+      if (!result.ok) { await client.query('ROLLBACK'); return res.status(403).json({ success: false, message: result.message }); }
+
+      if (result.allApproved) {
+        // Final approval — patch attendance (UNCHANGED logic) + mark approved.
+        const exists = await client.query('SELECT id FROM attendance WHERE employee_id=$1 AND date=$2', [reg.employee_id, reg.date]);
+        if (exists.rows.length > 0) {
+          await client.query(
+            `UPDATE attendance SET check_in = CASE WHEN $1::time IS NOT NULL THEN ($2::date + $1::time)::timestamp ELSE check_in END,
+             check_out = CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp ELSE check_out END, updated_at=NOW() WHERE employee_id=$4 AND date=$2`,
+            [reg.check_in, reg.date, reg.check_out, reg.employee_id]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO attendance (employee_id, date, check_in, check_out, status) VALUES ($1,$2,
+             CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp END,
+             CASE WHEN $4::time IS NOT NULL THEN ($2::date + $4::time)::timestamp END, 'present')`,
+            [reg.employee_id, reg.date, reg.check_in, reg.check_out]
+          );
+        }
         await client.query(
-          `UPDATE attendance SET check_in = CASE WHEN $1::time IS NOT NULL THEN ($2::date + $1::time)::timestamp ELSE check_in END,
-           check_out = CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp ELSE check_out END, updated_at=NOW() WHERE employee_id=$4 AND date=$2`,
-          [reg.check_in, reg.date, reg.check_out, reg.employee_id]
+          // Optional approver comment reuses rejection_reason; COALESCE keeps any earlier note.
+          `UPDATE attendance_regularizations SET status='approved', approved_by=$1, approved_at=NOW(), rejection_reason=COALESCE($2, rejection_reason), updated_at=NOW() WHERE id=$3`,
+          [req.user._id, rejectionReason || null, reg.id]
         );
       } else {
         await client.query(
-          `INSERT INTO attendance (employee_id, date, check_in, check_out, status) VALUES ($1,$2,
-           CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp END,
-           CASE WHEN $4::time IS NOT NULL THEN ($2::date + $4::time)::timestamp END, 'present')`,
-          [reg.employee_id, reg.date, reg.check_in, reg.check_out]
+          `UPDATE attendance_regularizations SET rejection_reason=COALESCE($1, rejection_reason), updated_at=NOW() WHERE id=$2`,
+          [rejectionReason || null, reg.id]
         );
       }
+      await client.query('COMMIT');
+
+      if (result.allApproved) {
+        await createNotification(reg.employee_id, 'info', 'Regularization Approved ✓',
+          `Your attendance regularization for ${dateLabel} has been approved.`, '/attendance/my');
+      }
+      return res.json({
+        success: true,
+        status: result.status,
+        message: result.allApproved ? 'Regularization approved.' : 'Your approval has been recorded. Awaiting the remaining level(s).',
+      });
     }
+
+    // Reject — any single rejection rejects the whole request.
+    const result = await applyRejection(client, 'regularization', reg.id, req.user);
+    if (!result.ok) { await client.query('ROLLBACK'); return res.status(403).json({ success: false, message: result.message }); }
+    await client.query(
+      `UPDATE attendance_regularizations SET status='rejected', approved_by=$1, approved_at=NOW(), rejection_reason=$2, updated_at=NOW() WHERE id=$3`,
+      [req.user._id, rejectionReason || null, reg.id]
+    );
     await client.query('COMMIT');
 
-    // Soft side-effect outside the txn — notification glitch shouldn't undo
-    // a successful approval.
-    const notifTitle = action === 'approved' ? 'Regularization Approved ✓' : 'Regularization Rejected';
-    const notifMsg = action === 'approved'
-      ? `Your attendance regularization for ${new Date(reg.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} has been approved.`
-      : `Your regularization for ${new Date(reg.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} was rejected.`;
-    await createNotification(reg.employee_id, 'info', notifTitle, notifMsg, '/attendance/my');
-
-    res.json({ success: true, message: `Regularization ${action}` });
+    await createNotification(reg.employee_id, 'info', 'Regularization Rejected',
+      `Your regularization for ${dateLabel} was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`, '/attendance/my');
+    return res.json({ success: true, status: 'rejected', message: 'Regularization rejected.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ success: false, message: err.message });

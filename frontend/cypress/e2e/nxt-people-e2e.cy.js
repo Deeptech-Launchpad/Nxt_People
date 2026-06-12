@@ -35,7 +35,7 @@ describe('Nxt-People — primary journeys', () => {
 
     it('forgot-password shows the check-your-inbox confirmation', () => {
       cy.visit('/login');
-      cy.get('input[type="email"]').type('admin@nxtpeople.com');
+      cy.get('input[type="email"]').type('balaji@altiusnxt.com');
       cy.contains('button', 'Continue').click();
       cy.get('input[type="password"]', { timeout: TIMEOUT }).should('be.visible');
       cy.contains(/forgot/i).click();
@@ -47,7 +47,7 @@ describe('Nxt-People — primary journeys', () => {
     // is brittle due to the multi-step wizard + axios interceptor timing.
     // The API-login path inside cy.loginAs covers the same surface.
     it.skip('logs in via the UI as admin', () => {
-      cy.loginViaUi('admin@nxtpeople.com', 'password123');
+      cy.loginViaUi('balaji@altiusnxt.com', 'password123');
       cy.contains(/my space/i, { timeout: TIMEOUT }).should('be.visible');
     });
 

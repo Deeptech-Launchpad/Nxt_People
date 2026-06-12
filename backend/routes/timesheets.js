@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { reportsScope, canActOnEmployee } = require('../utils/roles');
 
 router.use(protect);
 
@@ -12,21 +13,22 @@ router.get('/my', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.get('/', authorize('admin', 'manager'), async (req, res) => {
+router.get('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const { status } = req.query;
-    let query = '';
     let params = [];
-    if (status) {
-      query = 'WHERE t.status = $1';
-      params.push(status);
-    }
+    let conds = [];
+    if (status) { params.push(status); conds.push(`t.status = $${params.length}`); }
+    // Full-access sees all timesheets; managers only their direct reports'.
+    const scope = reportsScope(req.user, 'e', params.length + 1);
+    if (scope.clause) { conds.push(scope.clause.replace(/^ AND /, '')); params.push(...scope.params); }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const result = await pool.query(`
       SELECT t.id as "_id", t.week_start_date as "weekStartDate", t.week_end_date as "weekEndDate", t.total_hours as "totalHours", t.status, t.rejection_reason as "rejectionReason", t.notes,
       json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'department', e.department) as employee
       FROM timesheets t
       JOIN employees e ON t.employee_id = e.id
-      ${query}
+      ${where}
       ORDER BY t.created_at DESC
     `, params);
     res.json({ success: true, data: result.rows });
@@ -66,15 +68,23 @@ router.put('/:id/submit', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const { action, rejectionReason } = req.body;
 
     // Bug #15 fix: prevent self-approval — manager cannot approve their own timesheet
-    const ownerRes = await pool.query('SELECT employee_id FROM timesheets WHERE id = $1', [req.params.id]);
+    const ownerRes = await pool.query(
+      `SELECT t.employee_id, e.reporting_manager_id, e.approving_authority_id
+         FROM timesheets t JOIN employees e ON t.employee_id = e.id WHERE t.id = $1`,
+      [req.params.id]
+    );
     if (ownerRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Timesheet not found' });
     if (ownerRes.rows[0].employee_id === req.user._id) {
       return res.status(403).json({ success: false, message: 'You cannot approve your own timesheet' });
+    }
+    // Managers may only act on their direct reports; full-access on anyone.
+    if (!canActOnEmployee(req.user, ownerRes.rows[0])) {
+      return res.status(403).json({ success: false, message: 'You can only act on your direct reports’ timesheets.' });
     }
 
     const status = action === 'approved' ? 'approved' : 'rejected';

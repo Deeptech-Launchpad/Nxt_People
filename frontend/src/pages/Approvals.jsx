@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, Clock, Home, X, RefreshCw, Gift, Search } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import LeaveDetailModal from '../components/LeaveDetailModal';
+
+const LEAVE_TYPE_LABELS = {
+  casual:   'Casual Leave',
+  comp_off: 'Compensatory Off',
+  unpaid:   'Leave Without Pay',
+  permission: 'Permission'
+};
 
 // localStorage key for the "last-seen count per tab" persistence. Bump
 // the v1 suffix if we ever change the shape of the saved value.
@@ -26,8 +34,7 @@ export default function Approvals() {
   // re-appears with the delta.
   const [seenCounts, setSeenCounts] = useState(() => loadSeen());
   const [searchFilter, setSearchFilter] = useState('');
-  const [rejectModal, setRejectModal] = useState(null);
-  const [rejectReason, setRejectReason] = useState('');
+  const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
   const [actionLoading, setActionLoading] = useState('');
 
   // When the user clicks a tab, mark its current count as "seen" and
@@ -77,15 +84,14 @@ export default function Approvals() {
     try {
       await api.put(`/${endpoint}/${id}/action`, { action: act, rejectionReason: reason });
       toast.success(`${act.charAt(0).toUpperCase() + act.slice(1)} successfully`);
-      setRejectModal(null); setRejectReason(''); load();
+      load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setActionLoading(''); }
   };
 
   const leaveTypeColors = {
     casual: 'bg-blue-50 text-blue-700',
-    sick: 'bg-red-50 text-red-700',
-    earned: 'bg-emerald-50 text-emerald-700',
+    comp_off: 'bg-green-50 text-green-700',
     unpaid: 'bg-slate-50 text-slate-600'
   };
 
@@ -99,10 +105,19 @@ export default function Approvals() {
     ['compoff', 'Comp-Off', data.compOffs?.length],
   ];
 
-  const ActionBtns = ({ endpoint, id, type, isManager, isApprovingAuthority, status }) => {
-    // If request is already processed or user is just a Reporting Authority
-    if ((status && status !== 'pending') || (isManager && !isApprovingAuthority)) {
-      const displayStatus = (status && status !== 'pending') ? status : 'Pending';
+  const ActionBtns = ({ endpoint, id, type, canActLeave, status }) => {
+    let canAct = false;
+    if (endpoint === 'leaves' || endpoint === 'regularizations') {
+      // Hierarchy-based: the server decides whether the current user may act on
+      // this request's approval levels (per-level "top not first" gate enforced
+      // at action time). Same engine for leaves and regularizations.
+      canAct = status === 'pending' && !!canActLeave;
+    } else {
+      canAct = (status === 'pending' || status === 'submitted');
+    }
+
+    if (!canAct) {
+      const displayStatus = status || 'Pending';
       const statusColor = displayStatus === 'approved' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : 
                           displayStatus === 'rejected' ? 'text-red-600 bg-red-50 border-red-200' :
                           'text-slate-500 bg-slate-50 border-slate-200';
@@ -115,15 +130,15 @@ export default function Approvals() {
       );
     }
 
-    // Approving Authority OR both roles — show Approve/Reject
+    // Show Approve/Reject buttons
     return (
       <div className="flex items-center gap-2 flex-shrink-0">
         <button onClick={() => action(endpoint, id, 'approved')} disabled={!!actionLoading}
           className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
           <CheckCircle size={13} /> Approve
         </button>
-        <button onClick={() => { setRejectModal({ id, type, endpoint }); setRejectReason(''); }}
-          className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+        <button onClick={() => action(endpoint, id, 'rejected')} disabled={!!actionLoading}
+          className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
           <XCircle size={13} /> Reject
         </button>
       </div>
@@ -218,11 +233,11 @@ export default function Approvals() {
                            <p className="font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
                            <span className="text-xs text-slate-400">{l.employee?.employeeId}</span>
                            <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
-                           {l.isManager && !l.isApprovingAuthority && (
-                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
-                               Forwarded to Approver
-                             </span>
-                           )}
+                           {l.status === 'pending' && l.approvalLevels?.length > 0 && (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
+                                {l.approvalLevels.filter(a => a.status === 'approved').length} of {l.approvalLevels.length} level{l.approvalLevels.length !== 1 ? 's' : ''} approved
+                              </span>
+                            )}
                          </div>
                          <p className="text-sm text-slate-500 mt-1 capitalize">
                            {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
@@ -234,14 +249,12 @@ export default function Approvals() {
                         <p className="text-xs text-slate-400 mt-1">{l.reason}</p>
                       </div>
                      </div>
-                     <ActionBtns 
-                       endpoint="leaves" 
-                       id={l._id} 
-                       type="Leave" 
-                       isManager={l.isManager}
-                       isApprovingAuthority={l.isApprovingAuthority}
-                       status={l.status}
-                     />
+                     <div className="flex items-center gap-2 flex-shrink-0">
+                       <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                         <Eye size={13} /> View
+                       </button>
+                       <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                     </div>
                    </div>
                 ))
             )}
@@ -272,14 +285,12 @@ export default function Approvals() {
                         <p className="text-xs text-slate-400 mt-1">{l.reason}</p>
                       </div>
                      </div>
-                     <ActionBtns 
-                       endpoint="leaves" 
-                       id={l._id} 
-                       type="Leave" 
-                       isManager={l.isManager}
-                       isApprovingAuthority={l.isApprovingAuthority}
-                       status={l.status}
-                     />
+                     <div className="flex items-center gap-2 flex-shrink-0">
+                       <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                         <Eye size={13} /> View
+                       </button>
+                       <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                     </div>
                    </div>
                 ))
             )}
@@ -293,7 +304,7 @@ export default function Approvals() {
                     <div className="flex items-start gap-4">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
                         {l.leaveType?.[0]?.toUpperCase()}
-                      </div>
+                         </div>
                        <div>
                          <div className="flex items-center gap-2 flex-wrap">
                            <p className="font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
@@ -308,16 +319,19 @@ export default function Approvals() {
                           {new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(l.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                         <p className="text-xs text-slate-400 mt-1">{l.reason}</p>
+                        {l.rejectionReason && (
+                          <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2.5 py-1.5 mt-2 font-medium w-fit">
+                            Rejection Reason: {l.rejectionReason}
+                          </p>
+                        )}
                       </div>
                      </div>
-                     <ActionBtns 
-                       endpoint="leaves" 
-                       id={l._id} 
-                       type="Leave" 
-                       isManager={l.isManager}
-                       isApprovingAuthority={l.isApprovingAuthority}
-                       status={l.status}
-                     />
+                     <div className="flex items-center gap-2 flex-shrink-0">
+                       <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                         <Eye size={13} /> View
+                       </button>
+                       <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                     </div>
                    </div>
                 ))
             )}
@@ -373,7 +387,12 @@ export default function Approvals() {
                         <p className="text-xs text-slate-400 mt-0.5 max-w-xs">{r.reason}</p>
                       </div>
                     </div>
-                    <ActionBtns endpoint="regularizations" id={r._id} type="Regularization" />
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button onClick={() => setDetailLeave(r)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                        <Eye size={13} /> View
+                      </button>
+                      <ActionBtns endpoint="regularizations" id={r._id} type="Regularization" canActLeave={r.canAct} status={r.status} />
+                    </div>
                   </div>
                 ))
             )}
@@ -439,28 +458,25 @@ export default function Approvals() {
         )}
       </div>
 
-      {/* Reject modal */}
-      {rejectModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-display font-semibold text-slate-800">Reject {rejectModal.type}</h3>
-              <button onClick={() => setRejectModal(null)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"><X size={16} /></button>
-            </div>
-            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
-              placeholder="Reason for rejection (optional)..."
-              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none mb-4" />
-            <div className="flex gap-3">
-              <button onClick={() => setRejectModal(null)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">Cancel</button>
-              <button onClick={() => action(rejectModal.endpoint, rejectModal.id, 'rejected', rejectReason)}
-                disabled={!!actionLoading}
-                className="flex-1 bg-red-500 hover:bg-red-400 text-white py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60">
-                Confirm Reject
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Leave details + approval timeline modal */}
+      {detailLeave && (() => {
+        // One modal for both request kinds — leaves vs regularizations are
+        // distinguished by the presence of a leaveType, routing actions to the
+        // correct endpoint (no workflow change). The optional comment typed in
+        // the modal footer is forwarded as rejectionReason on approve OR reject.
+        const isReg = !detailLeave.leaveType;
+        const endpoint = isReg ? 'regularizations' : 'leaves';
+        return (
+          <LeaveDetailModal
+            leave={detailLeave}
+            kind={isReg ? 'regularization' : 'leave'}
+            onClose={() => setDetailLeave(null)}
+            canAct={detailLeave.status === 'pending' && !!detailLeave.canAct}
+            onApprove={(x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'approved', comment); }}
+            onReject={(x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'rejected', comment); }}
+          />
+        );
+      })()}
     </div>
   );
 }

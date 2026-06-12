@@ -15,9 +15,9 @@
  */
 
 const SEEDED = {
-  admin:    { email: 'admin@nxtpeople.com',   password: 'password123' },
-  manager:  { email: 'sarah@nxtpeople.com',   password: 'password123' },
-  employee: { email: 'michael@nxtpeople.com', password: 'password123' },
+  admin:    { email: 'balaji@altiusnxt.com',  password: 'password123' },
+  manager:  { email: 'sanjana@altiusnxt.com', password: 'password123' },
+  employee: { email: 'saranya@altiusnxt.com', password: 'password123' },
 };
 
 Cypress.Commands.add('loginAs', (role) => {

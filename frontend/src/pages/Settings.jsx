@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Save, Building2, Clock, Calendar, Shield, MapPin, RefreshCw, TrendingUp, Repeat, Wallet } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import { roleLabel } from '../utils/roles';
 import WeekendRulesEditor from '../components/WeekendRulesEditor';
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -142,7 +143,7 @@ export default function Settings() {
             <div>
               <h3 className="font-display font-semibold text-slate-800 mb-4">Annual Leave Quota</h3>
               <div className="space-y-4 max-w-xs">
-                {[['casualLeave','Casual Leave'],['sickLeave','Sick Leave'],['earnedLeave','Earned Leave']].map(([key,label])=>(
+                {[['casualLeave','Casual Leave']].map(([key,label])=>(
                   <div key={key}>
                     <label className="block text-xs font-medium text-slate-600 mb-1.5">{label} (days/year)</label>
                     <input type="number" value={settings?.leavePolicy?.[key]||0} onChange={e=>setSettings({...settings,leavePolicy:{...settings.leavePolicy,[key]:parseInt(e.target.value)}})} min={0} max={60}
@@ -165,7 +166,7 @@ export default function Settings() {
                     <p className="text-xs text-slate-400">Credit leave automatically when "Run Accrual" is triggered</p>
                   </div>
                 </label>
-                {[['casualAccrualPerMonth','Casual Leave per Month (days)'],['sickAccrualPerMonth','Sick Leave per Month (days)'],['earnedAccrualPerMonth','Earned Leave per Month (days)']].map(([key,label])=>(
+                {[['casualAccrualPerMonth','Casual Leave per Month (days)']].map(([key,label])=>(
                   <div key={key}>
                     <label className="block text-xs font-medium text-slate-600 mb-1.5">{label}</label>
                     <input type="number" value={settings?.[key]??''} onChange={e=>setSettings({...settings,[key]:parseFloat(e.target.value)||0})} min={0} max={5} step={0.25}
@@ -173,7 +174,7 @@ export default function Settings() {
                   </div>
                 ))}
                 <div className="bg-brand-50 border border-brand-100 rounded-xl p-3 text-xs text-brand-700">
-                  💡 Standard: Casual 1/month, Sick 0.83/month (10/yr), Earned 1.25/month (15/yr)
+                  💡 Standard: Casual 1/month
                 </div>
               </div>
             </div>
@@ -261,7 +262,7 @@ export default function Settings() {
                     Users in the selected roles will be forced through MFA enrolment on next login.
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {['admin', 'manager', 'hr', 'employee'].map(r => {
+                    {['super_admin', 'hr', 'manager', 'employee'].map(r => {
                       const list = Array.isArray(settings?.mfaRequiredRoles) ? settings.mfaRequiredRoles : [];
                       const on = list.includes(r);
                       return (
@@ -280,7 +281,7 @@ export default function Settings() {
                               : 'bg-white text-slate-600 border-slate-200 hover:border-brand-400'
                           }`}
                         >
-                          {r.charAt(0).toUpperCase() + r.slice(1)}
+                          {roleLabel(r)}
                         </button>
                       );
                     })}
@@ -296,7 +297,7 @@ export default function Settings() {
                 </div>
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
                   <p className="font-medium text-slate-700 text-sm">Role-Based Access</p>
-                  <p className="text-slate-400 text-xs mt-1">Admin · Manager · HR · Employee — 4 role levels configured</p>
+                  <p className="text-slate-400 text-xs mt-1">Super Admin · HR · Team Lead · Employee — 4 role levels configured</p>
                 </div>
               </div>
             </div>

@@ -78,7 +78,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // ── POST create project ───────────────────────────────────────────────────────
-router.post('/', authorize('admin', 'manager'), audit('CREATE', 'project'), async (req, res) => {
+router.post('/', authorize('super_admin', 'hr', 'manager'), audit('CREATE', 'project'), async (req, res) => {
   try {
     const { name, description, status = 'active', priority = 'medium', startDate, dueDate, memberIds = [] } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Project name is required' });
@@ -110,7 +110,7 @@ router.post('/', authorize('admin', 'manager'), audit('CREATE', 'project'), asyn
 });
 
 // ── PUT update project ────────────────────────────────────────────────────────
-router.put('/:id', authorize('admin', 'manager'), audit('UPDATE', 'project'), async (req, res) => {
+router.put('/:id', authorize('super_admin', 'hr', 'manager'), audit('UPDATE', 'project'), async (req, res) => {
   try {
     const { name, description, status, priority, startDate, dueDate } = req.body;
     const r = await pool.query(
@@ -131,7 +131,7 @@ router.put('/:id', authorize('admin', 'manager'), audit('UPDATE', 'project'), as
 });
 
 // ── POST add member ───────────────────────────────────────────────────────────
-router.post('/:id/members', authorize('admin', 'manager'), async (req, res) => {
+router.post('/:id/members', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const { employeeId, role = 'member' } = req.body;
     await pool.query(
@@ -143,7 +143,7 @@ router.post('/:id/members', authorize('admin', 'manager'), async (req, res) => {
 });
 
 // ── DELETE remove member ──────────────────────────────────────────────────────
-router.delete('/:id/members/:empId', authorize('admin', 'manager'), async (req, res) => {
+router.delete('/:id/members/:empId', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     await pool.query(
       `DELETE FROM project_members WHERE project_id = $1 AND employee_id = $2`,
@@ -154,7 +154,7 @@ router.delete('/:id/members/:empId', authorize('admin', 'manager'), async (req, 
 });
 
 // ── DELETE project ────────────────────────────────────────────────────────────
-router.delete('/:id', authorize('admin'), audit('DELETE', 'project'), async (req, res) => {
+router.delete('/:id', authorize('super_admin', 'hr'), audit('DELETE', 'project'), async (req, res) => {
   try {
     await pool.query('DELETE FROM projects WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Project deleted' });

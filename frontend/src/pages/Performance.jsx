@@ -3,6 +3,7 @@ import { Plus, X, Star, ChevronRight, Edit3, Trash2, Send, CheckCircle } from 'l
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { isFullAccess, isApprover } from '../utils/roles';
 
 const STATUS_STYLE = { draft: 'bg-slate-100 text-slate-600', submitted: 'bg-blue-100 text-blue-700', completed: 'bg-emerald-100 text-emerald-700' };
 const RATING_LABELS = { 1: 'Poor', 2: 'Below Average', 3: 'Average', 4: 'Good', 5: 'Excellent' };
@@ -39,7 +40,7 @@ export default function Performance() {
 
   useEffect(load, []);
   useEffect(() => {
-    if (user?.role !== 'employee') api.get('/employees?limit=200').then(r => setEmployees(r.data.data || [])).catch(() => {});
+    if (isApprover(user)) api.get('/employees?limit=200').then(r => setEmployees(r.data.data || [])).catch(() => {});
   }, [user]);
 
   const openReview = (review) => {
@@ -105,7 +106,7 @@ export default function Performance() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs px-3 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[selectedDetail.status]}`}>{selectedDetail.status}</span>
-                  {user?.role !== 'employee' && !editMode && <button onClick={() => setEditMode(true)} className="flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-xl text-xs font-medium"><Edit3 size={13}/> Edit</button>}
+                  {isApprover(user) && !editMode && <button onClick={() => setEditMode(true)} className="flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-xl text-xs font-medium"><Edit3 size={13}/> Edit</button>}
                 </div>
               </div>
 
@@ -198,7 +199,7 @@ export default function Performance() {
           <h2 className="font-display font-bold text-slate-800 text-xl">Performance Reviews</h2>
           <p className="text-slate-400 text-sm mt-0.5">{reviews.length} review cycle{reviews.length !== 1 ? 's' : ''}</p>
         </div>
-        {user?.role !== 'employee' && (
+        {isApprover(user) && (
           <button onClick={() => setCreateModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm shadow-brand-500/25">
             <Plus size={16}/> Create Review
           </button>
@@ -218,7 +219,7 @@ export default function Performance() {
             <div key={r._id} onClick={() => openReview(r)} className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer p-5 group">
               <div className="flex items-start justify-between mb-3">
                 <span className={`text-xs px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[r.status]}`}>{r.status}</span>
-                {user?.role === 'admin' && (
+                {isFullAccess(user) && (
                   <button onClick={e => { e.stopPropagation(); handleDelete(r._id); }} className="w-7 h-7 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all">
                     <Trash2 size={13}/>
                   </button>

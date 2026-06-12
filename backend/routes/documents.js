@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess, isManager } = require('../utils/roles');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -23,16 +24,27 @@ const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 }, fileFil
   cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
 }});
 
-// Admin/manager can act on anyone's documents; employees can act only on
-// their own. Used by GET, POST, and DELETE — folded into one helper so the
-// rule stays consistent (the previous bug was missing checks on POST/DELETE).
-const isPrivileged = (req) => req.user.role === 'admin' || req.user.role === 'manager';
-const ownsFolder   = (req) => req.user._id === req.params.employeeId;
+// Full-access (Super Admin / HR) can act on anyone's documents; a manager only
+// on their direct reports'; employees only on their own. Used by GET, POST, and
+// DELETE — folded into one helper so the rule stays consistent (the previous
+// bug was missing checks on POST/DELETE).
+const ownsFolder = (req) => req.user._id === req.params.employeeId;
+async function isPrivilegedFor(req, employeeId) {
+  if (isFullAccess(req.user.role)) return true;
+  if (isManager(req.user.role)) {
+    const r = await pool.query(
+      `SELECT 1 FROM employees WHERE id = $1 AND (reporting_manager_id = $2 OR approving_authority_id = $2)`,
+      [employeeId, req.user._id]
+    );
+    return r.rows.length > 0;
+  }
+  return false;
+}
 
 // GET documents for an employee
 router.get('/:employeeId', async (req, res) => {
   try {
-    if (!isPrivileged(req) && !ownsFolder(req)) {
+    if (!ownsFolder(req) && !(await isPrivilegedFor(req, req.params.employeeId))) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
     // LEFT JOIN on uploaded_by so legacy onboarding rows (which were inserted
@@ -59,7 +71,7 @@ router.get('/:employeeId', async (req, res) => {
 // into anyone else's document folder.
 router.post('/:employeeId', upload.single('file'), async (req, res) => {
   try {
-    if (!isPrivileged(req) && !ownsFolder(req)) {
+    if (!ownsFolder(req) && !(await isPrivilegedFor(req, req.params.employeeId))) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
     const { name, type = 'other' } = req.body;
@@ -84,7 +96,7 @@ router.delete('/:employeeId/:docId', async (req, res) => {
     );
     if (!doc.rows[0]) return res.status(404).json({ success: false, message: 'Not found' });
     const isUploader = doc.rows[0].uploaded_by && doc.rows[0].uploaded_by === req.user._id;
-    if (!isPrivileged(req) && !isUploader) {
+    if (!isUploader && !(await isPrivilegedFor(req, req.params.employeeId))) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
     // Delete physical file

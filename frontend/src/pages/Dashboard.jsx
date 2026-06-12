@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { isFullAccess } from '../utils/roles';
 import { useAttendance } from '../context/AttendanceContext';
 import { useWeekendRules } from '../context/WeekendRulesContext';
 import { useNavigate } from 'react-router-dom';
@@ -15,7 +16,7 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import PhotoCropperModal from '../components/PhotoCropperModal';
 
-/* ── Greeting helper ─────────────────────────────────────────────────── */
+/* ─ Greeting helper ─ */
 function getGreeting() {
   const h = new Date().getHours();
   if (h < 12) return 'Good Morning';
@@ -63,7 +64,7 @@ function AnimatedTimeOfDayIcon({ size = 48 }) {
   const isNight = m < 5 * 60 || m >= 17 * 60 + 30;
   const color = getTimeOfDayColor();
 
-  // ── Night: crescent moon with twinkling stars ──────────────────────
+  // ─ Night: crescent moon with twinkling stars ─
   if (isNight) {
     const stars = [
       { cx: 14, cy: 18, r: 0.9 },
@@ -73,7 +74,7 @@ function AnimatedTimeOfDayIcon({ size = 48 }) {
       { cx: 18, cy: 30, r: 0.6 },
     ];
     return (
-      <div className="relative text-indigo-300" style={{ width: size, height: size }}>
+      <div className="relative text-indigo-300 no-dark-inherit" style={{ width: size, height: size }}>
         <svg viewBox="0 0 64 64" width={size} height={size}>
           <defs>
             <radialGradient id="nxt-moon-glow" cx="50%" cy="50%" r="50%">
@@ -103,9 +104,9 @@ function AnimatedTimeOfDayIcon({ size = 48 }) {
     );
   }
 
-  // ── Day: warm golden gradient sun + two drifting clouds + rays + halo.
+  // ─ Day: warm golden gradient sun + two drifting clouds + rays + halo.
   return (
-    <div className={`relative ${color}`} style={{ width: size, height: size }}>
+    <div className={`relative ${color} no-dark-inherit`} style={{ width: size, height: size }}>
       <svg viewBox="0 0 64 64" width={size} height={size} className="absolute inset-0">
         <defs>
           <radialGradient id="nxt-sun-halo" cx="50%" cy="50%" r="50%">
@@ -249,7 +250,7 @@ function getCurrentWeek(workingDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], holid
     return week;
   }
 
- /* ── Format hours decimal to HH:MM ─────────────────────────────────────── */
+ /* ─ Format hours decimal to HH:MM ─ */
  function fmtHHMM(hours) {
    if (!hours && hours !== 0) return '00:00';
    const h = Math.floor(hours);
@@ -257,7 +258,7 @@ function getCurrentWeek(workingDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], holid
    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
  }
 
-/* ── Resolve a person's presence for today.
+/* ─ Resolve a person's presence for today.
  *    Accepts either the new `presence` field from the API or falls back to
  *    the legacy `isCheckedIn` boolean (which couldn't distinguish "Out"
  *    from "Yet to check-in"). */
@@ -277,7 +278,7 @@ const PresenceLabel = ({ person }) => {
   return <span className={`text-[11px] font-medium ${PRESENCE_COLOR[p]}`}>{PRESENCE_LABEL[p]}</span>;
 };
 
-/* ── Tab button ──────────────────────────────────────────────────────── */
+/* ─ Tab button ─ */
 const Tab = ({ active, onClick, children }) => (
   <button
     onClick={onClick}
@@ -291,7 +292,7 @@ const Tab = ({ active, onClick, children }) => (
   </button>
 );
 
-/* ── Feed card ───────────────────────────────────────────────────────── */
+/* ─ Feed card ─ */
 const FeedCard = ({ icon, children }) => (
   <div className="bg-white rounded border border-slate-200 p-4 flex items-start gap-3.5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] hover:shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-shadow">
     {icon && (
@@ -303,7 +304,7 @@ const FeedCard = ({ icon, children }) => (
   </div>
 );
 
-/* ── Add Request menu (used by the Attendance Weekly Log rows).
+/* ─ Add Request menu (used by the Attendance Weekly Log rows).
  *    `canRegularize` is true only for today + past days where the user
  *    actually checked in — matches Zoho's behaviour.
  *
@@ -398,12 +399,12 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('activities');
   const [feedTab, setFeedTab] = useState('All');
 
-  /* ── Dropdown state ── */
+  /* ─ Dropdown state ─ */
   const [showPayrollMore, setShowPayrollMore] = useState(false);
   const [showRequestMenu, setShowRequestMenu] = useState(null);
   const payrollMoreRef = useRef();
 
-  /* ── Close dropdowns on outside click ──
+  /* ─ Close dropdowns on outside click ─
    *   `showRequestMenu` must be in the dep list — without it the handler
    *   captured a stale `null` and the popup never closed. */
   useEffect(() => {
@@ -434,19 +435,20 @@ export default function Dashboard() {
    /* Feeds data */
    const [feeds, setFeeds] = useState([]);
 
-   /* ── Full profile (fetched lazily when Profile tab is opened) */
+   /* ─ Full profile (fetched lazily when Profile tab is opened) */
    const [profileData, setProfileData] = useState(null);
    const [profileLoading, setProfileLoading] = useState(false);
 
-   /* ── Leave state */
+   /* ─ Leave state */
    const [leaveModal, setLeaveModal] = useState(false);
    const [leaveForm, setLeaveForm] = useState({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '' });
+   const [leaveCards, setLeaveCards] = useState([]);   // all active leave types + balances
 
-   /* ── Time Log state */
+   /* ─ Time Log state */
    const [timeLogForm, setTimeLogForm] = useState({ projectId: '', jobId: '', description: '', hours: '', billable: true });
    const [runningTimer, setRunningTimer] = useState(null);
 
-   /* ── Payslips state */
+   /* ─ Payslips state */
    const [payslips, setPayslips] = useState([]);
    const [payslipFY, setPayslipFY] = useState(() => {
      const now = new Date();
@@ -457,12 +459,12 @@ export default function Dashboard() {
     const [fyList, setFyList] = useState([]);
     const [payslipsLoading, setPayslipsLoading] = useState(false);
 
-    /* ── Department members state ── */
+    /* ─ Department members state ─ */
     const [deptMembers, setDeptMembers] = useState([]);
     const [loadingDeptMembers, setLoadingDeptMembers] = useState(false);
     const [showMembersModal, setShowMembersModal] = useState(false);
 
-    /* ── Avatar lightbox state ── Clicking your photo in the profile
+    /* ─ Avatar lightbox state ─ Clicking your photo in the profile
        card opens a Zoho-style preview. Change Image now opens the OS
        file picker inline rather than navigating away to /profile. */
     const [avatarOpen, setAvatarOpen] = useState(false);
@@ -526,14 +528,14 @@ export default function Dashboard() {
       }
     };
 
-    /* ── Approvals state ── */
+    /* ─ Approvals state ─ */
     const [pendingApprovals, setPendingApprovals] = useState([]);
     const [loadingApprovals, setLoadingApprovals] = useState(false);
     
-    /* ── Manager / dept-members (from full profile or user token) */
+    /* ─ Manager / dept-members (from full profile or user token) */
     const manager = profileData?.manager || (user?.manager && typeof user.manager === 'object' ? user.manager : null);
 
-  /* ── load full profile on mount — needed for left-panel Reporting Manager too */
+  /* ─ load full profile on mount — needed for left-panel Reporting Manager too */
   useEffect(() => {
     setProfileLoading(true);
     api.get('/profile')
@@ -543,7 +545,7 @@ export default function Dashboard() {
   }, []);
 
 
-   /* ── load data */
+   /* ─ load data */
    // Helper: log + report widget failures so a network blip doesn't leave the
    // Dashboard rendering stale empty arrays forever with no signal. We don't
    // toast each one (too noisy if the whole API is down), but we do log them
@@ -585,34 +587,18 @@ export default function Dashboard() {
    // eslint-disable-next-line react-hooks/exhaustive-deps
    }, []);
 
-    // Fetch department members for Department Members card (filtered by same reporting manager)
+    // Department Members = everyone in the same department as the logged-in user
+    // (self excluded), sourced from the role-open org directory so it's complete
+    // for every role — not just the viewer's direct reports.
     const fetchDeptMembers = () => {
       if (!profileData?.department) return;
       setLoadingDeptMembers(true);
-      api.get(`/employees?department=${encodeURIComponent(profileData.department)}&limit=100`)
+      const myId = user?._id || profileData?.id;
+      api.get('/org/directory')
         .then(r => {
-          let members = r.data.data || [];
-          const myManagerId = profileData?.manager?.id || profileData?.manager?._id;
-          const myId = user?._id || profileData?.id;
-
-          if (myManagerId && profileData?.designation) {
-             // Standard employee: same manager and same designation
-             members = members.filter(m => 
-               m.reportingManagerId === myManagerId && 
-               m.designation === profileData.designation && 
-               m._id !== myId
-             );
-          } else if (myManagerId) {
-             members = members.filter(m => m.reportingManagerId === myManagerId && m._id !== myId);
-          } else {
-             // Fallback if no manager: check if I am a manager with direct reports!
-             const myReports = r.data.data.filter(m => m.reportingManagerId === myId);
-             if (myReports.length > 0) {
-                 members = myReports; // Show direct reports instead
-             } else {
-                 members = members.filter(m => m.designation === profileData?.designation && m._id !== myId);
-             }
-          }
+          const members = (r.data.data || []).filter(m =>
+            m.department === profileData.department && String(m._id) !== String(myId)
+          );
           setDeptMembers(members);
         })
         .catch(() => setDeptMembers([]))
@@ -625,7 +611,7 @@ export default function Dashboard() {
       }
     }, [profileData?.department, profileData?.manager]);
 
-   /* ── load payslips when tab is active or FY changes */
+   /* ─ load payslips when tab is active or FY changes */
   useEffect(() => {
     if (activeTab !== 'payslips') return;
     setPayslipsLoading(true);
@@ -638,7 +624,7 @@ export default function Dashboard() {
     }).catch(() => {}).finally(() => setPayslipsLoading(false));
    }, [activeTab, payslipFY]);
 
-   /* ── load pending approvals when tab is active */
+   /* ─ load pending approvals when tab is active */
    useEffect(() => {
      if (activeTab !== 'approvals') return;
      setLoadingApprovals(true);
@@ -648,6 +634,14 @@ export default function Dashboard() {
        .finally(() => setLoadingApprovals(false));
    }, [activeTab]);
 
+   /* ─ load all leave-type balances for the Leave tab (same source as
+        Leave Tracker → Leave Summary, so every configured type shows). */
+   useEffect(() => {
+     api.get('/leaves/balance')
+       .then(r => setLeaveCards(r.data.data || []))
+       .catch(() => setLeaveCards([]));
+   }, []);
+
    // Fetch weekly attendance (used by Work Schedule widget)
    const fetchWeeklyAttendance = () => {
      const now = new Date();
@@ -656,7 +650,7 @@ export default function Dashboard() {
        .catch(() => setWeeklyAttendance([]));
    };
 
-   /* ── check-in / check-out */
+   /* ─ check-in / check-out */
    const handleCheckIn = async () => {
      await checkIn('Office');
      fetchWeeklyAttendance();
@@ -693,18 +687,18 @@ export default function Dashboard() {
     } finally { setActionLoading(false); }
   };
 
-  /* ── computed ── */
+  /* ─ computed ─ */
   // hrs, mins, secs come directly from AttendanceContext
 
 
-  /* ── shift info from user.shift */
+  /* ─ shift info from user.shift */
   const shift = user?.shift;
   const shiftName = shift?.name || 'General Shift';
   const shiftTime = (shift?.start_time && shift?.end_time)
     ? `${shift.start_time} - ${shift.end_time}`
     : '9:30 AM - 6:00 PM';
 
-  /* ── week range display */
+  /* ─ week range display */
   const now = new Date();
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - now.getDay() + 1);
@@ -712,13 +706,13 @@ export default function Dashboard() {
   weekEnd.setDate(weekStart.getDate() + 6);
   const weekRange = `${weekStart.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })} - ${weekEnd.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })}`;
 
-  /* ── tabs ── */
-  const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance', 'Time Logs', 'Payslips'];
+  /* ─ tabs ─ */
+  const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance', 'Time Logs'];
 
   return (
     <div className="flex flex-col relative w-full min-h-full font-sans bg-[#f2f3f7]">
 
-      {/* ── Hero Banner ──────────────────────────────────────────────── */}
+      {/* ─ Hero Banner ─ */}
       <div
         className="w-full h-[200px] relative flex-shrink-0"
         style={{
@@ -737,7 +731,7 @@ export default function Dashboard() {
             <ExternalLink size={12} /> Access my payroll
           </button>
 
-          {/* ··· Payroll more menu */}
+          {/* ─ Payroll more menu */}
           <div className="relative" ref={payrollMoreRef}>
             <button
               onClick={() => setShowPayrollMore(v => !v)}
@@ -753,19 +747,21 @@ export default function Dashboard() {
                 >
                   <UserIcon size={14} className="text-slate-400" /> View Profile
                 </button>
-                <button
-                  onClick={() => { navigate('/settings'); setShowPayrollMore(false); }}
-                  className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                >
-                  <Settings size={14} className="text-slate-400" /> Personal Preferences
-                </button>
+                {isFullAccess(user) && (
+                  <button
+                    onClick={() => { navigate('/settings'); setShowPayrollMore(false); }}
+                    className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                  >
+                    <Settings size={14} className="text-slate-400" /> Settings
+                  </button>
+                )}
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* ── Main content (overlaps banner by ~80px) ───────────────────── */}
+      {/* ─ Main content (overlaps banner by ~80px) ─ */}
       <div className="relative z-10 w-full px-6 -mt-[80px] pb-12">
         {/* Removed the 1200px cap — on wide monitors the right side was
             sitting empty. Let the row stretch with the parent so the
@@ -887,42 +883,13 @@ export default function Dashboard() {
                   <div className="min-w-0 flex-1">
                     <p className="text-[12px] font-bold text-slate-700">Reporting Manager</p>
                     <p className="text-[11.5px] text-slate-600 truncate">
-                      {(manager || profileData?.manager).employeeId} – {(manager || profileData?.manager).firstName}
+                      {(manager || profileData?.manager).employeeId} - {(manager || profileData?.manager).firstName}
                     </p>
                     <PresenceLabel person={manager || profileData?.manager} />
                   </div>
                 </div>
               ) : (
                 <p className="text-[12px] text-slate-400 italic">No manager assigned</p>
-              )}
-            </div>
-
-            {/* Approving Authority Card */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-              <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Approving Authority</h3>
-              {profileData?.approvingAuthority?.id ? (
-                <div className="flex items-center gap-3">
-                  <div className="relative flex-shrink-0">
-                    <img
-                      src={`https://ui-avatars.com/api/?name=${profileData.approvingAuthority.firstName}+${profileData.approvingAuthority.lastName}&background=fff1e6&color=ea580c&size=44`}
-                      className="w-12 h-12 rounded-lg border border-slate-100"
-                      alt="approving authority"
-                    />
-                    <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-white rounded-full ${PRESENCE_DOT[presenceOf(profileData.approvingAuthority)] || 'bg-slate-300'}`} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[12px] font-bold text-slate-700">Approving Authority</p>
-                    <p className="text-[11.5px] text-slate-600 truncate">
-                      {profileData.approvingAuthority.employeeId} – {profileData.approvingAuthority.firstName}
-                    </p>
-                    <PresenceLabel person={profileData.approvingAuthority} />
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-[12px] text-slate-400 italic mb-2">No approving authority assigned</p>
-                  <p className="text-[11px] text-blue-600">Contact HR to assign an approving authority</p>
-                </div>
               )}
             </div>
 
@@ -991,8 +958,8 @@ export default function Dashboard() {
             {/* Tab body */}
             <div className="flex-1 bg-[#f8f9fc] overflow-y-auto p-6 space-y-4">
 
-              {/* ── Activities tab ──────────────────────────────────── */}
-              {/* ── Activities tab ──────────────────────────────────── */}
+              {/* ─ Activities tab ─ */}
+              {/* ─ Activities tab ─ */}
               {activeTab === 'activities' && (
                 <div className="flex flex-col gap-4">
                   {/* Good Morning Banner */}
@@ -1001,7 +968,7 @@ export default function Dashboard() {
                       stays fixed in the right slot, only its tint + dots
                       adapt. Card stays light enough to keep dark text legible
                       around the clock. */}
-                  <div className={`bg-gradient-to-r ${getTimeOfDaySky()} rounded-xl border border-slate-200 p-5 flex items-center gap-5 shadow-sm transition-colors duration-500`}>
+                  <div className={`greeting-banner bg-gradient-to-r ${getTimeOfDaySky()} rounded-xl border border-slate-200 p-5 flex items-center gap-5 shadow-sm transition-colors duration-500`}>
                     {/* Branding — real AltiusNxt logo. File lives at
                         frontend/public/altius-logo.png so Vite serves it
                         from the root and no import is needed. */}
@@ -1028,7 +995,7 @@ export default function Dashboard() {
                     <AnimatedTimeOfDayIcon size={96} />
                   </div>
 
-                  {/* ── Announcements card — surfaces unread + urgent + recent ── */}
+                  {/* ─ Announcements card — surfaces unread + urgent + recent ─ */}
                   {announcements.length > 0 && (
                     <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
                       <div className="flex items-center justify-between mb-5">
@@ -1249,7 +1216,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* ── Feeds tab ────────────────────────────────────────── */}
+              {/* ─ Feeds tab ─ */}
               {activeTab === 'feeds' && (
                 <div className="space-y-4">
                   <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
@@ -1323,7 +1290,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* ── Profile tab ──────────────────────────────────────── */}
+              {/* ─ Profile tab ─ */}
               {activeTab === 'profile' && (
                 profileLoading ? (
                   <div className="flex flex-col items-center justify-center py-20 animate-pulse">
@@ -1364,7 +1331,7 @@ export default function Dashboard() {
                 )
               )}
 
-              {/* ── Approvals tab ────────────────────────────────────── */}
+              {/* ─ Approvals tab ─ */}
               {activeTab === 'approvals' && (
                 loadingApprovals ? (
                   <div className="flex justify-center py-14">
@@ -1413,33 +1380,37 @@ export default function Dashboard() {
                 )
               )}
 
-              {/* ── Leave tab ────────────────────────────────────────── */}
-              {activeTab === 'leave' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {[
-                    { name: 'Casual Leave', code: 'casual', available: '12', color: 'text-emerald-500', bg: 'bg-emerald-50', icon: '☀️' },
-                    { name: 'Sick Leave', code: 'sick', available: '10', color: 'text-rose-500', bg: 'bg-rose-50', icon: '🤒' },
-                    { name: 'Earned Leave', code: 'earned', available: '15', color: 'text-indigo-500', bg: 'bg-indigo-50', icon: '🏖️' },
-                  ].map(l => (
-                    <div key={l.name} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
-                      <div className={`absolute top-0 right-0 w-16 h-16 ${l.bg} rounded-bl-full flex items-center justify-center pl-4 pb-4 opacity-50`}>
-                        <span className="text-2xl">{l.icon}</span>
+              {/* ─ Leave tab — all configured leave types (same source as Leave
+                   Tracker → Leave Summary; clean local icons override any
+                   mojibake-stored backend icon). ─ */}
+              {activeTab === 'leave' && (() => {
+                const L_ICON = { casual: '☀️', comp_off: '⭐', unpaid: '📋', permission: '🔑', sick: '🏥', earned: '💼' };
+                const L_BG   = { casual: 'bg-amber-50', comp_off: 'bg-green-50', unpaid: 'bg-gray-50', permission: 'bg-purple-50', sick: 'bg-red-50', earned: 'bg-blue-50' };
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {leaveCards.length === 0 ? (
+                      <p className="text-[13px] text-slate-400 italic col-span-full">No leave types configured.</p>
+                    ) : leaveCards.map(l => (
+                      <div key={l.code} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+                        <div className={`absolute top-0 right-0 w-16 h-16 ${L_BG[l.code] || 'bg-slate-50'} rounded-bl-full flex items-center justify-center pl-4 pb-4 opacity-50`}>
+                          <span className="text-2xl">{L_ICON[l.code] || '📋'}</span>
+                        </div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">{l.name}</p>
+                        <h4 className="text-[28px] font-bold text-emerald-500 tracking-tighter">{l.available === null || l.available === undefined ? '—' : l.available}</h4>
+                        <p className="text-[11px] text-slate-400 font-medium">Available</p>
+                        <button
+                          onClick={() => { setLeaveForm({...leaveForm, type: l.code}); setLeaveModal(true); }}
+                          className="mt-4 w-full bg-slate-50 hover:bg-slate-100 text-slate-600 text-[12px] font-bold py-1.5 rounded-lg border border-slate-200 transition-all"
+                        >
+                          Apply
+                        </button>
                       </div>
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">{l.name}</p>
-                      <h4 className={`text-[28px] font-bold ${l.color} tracking-tighter`}>{l.available}</h4>
-                      <p className="text-[11px] text-slate-400 font-medium">Days Available</p>
-                      <button
-                        onClick={() => { setLeaveForm({...leaveForm, type: l.code}); setLeaveModal(true); }}
-                        className="mt-4 w-full bg-slate-50 hover:bg-slate-100 text-slate-600 text-[12px] font-bold py-1.5 rounded-lg border border-slate-200 transition-all"
-                      >
-                        Apply
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                );
+              })()}
 
-              {/* ── Attendance tab — Zoho-style weekly log ────────────── */}
+              {/* ─ Attendance tab — Zoho-style weekly log ─ */}
               {activeTab === 'attendance' && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -1622,7 +1593,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* ── Time Logs tab ────────────────────────────────────── */}
+              {/* ─ Time Logs tab ─ */}
               {activeTab === 'timelogs' && (
                 <div className="space-y-4">
                   <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
@@ -1676,7 +1647,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* ── Payslips tab ─────────────────────────────────────── */}
+              {/* ─ Payslips tab ─ */}
               {activeTab === 'payslips' && (() => {
                 const fmtINR = (n) => n != null
                   ? `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -1748,7 +1719,7 @@ export default function Dashboard() {
                   </div>
                 );
               })()}
-              {/* ── end of payslips tab */}
+              {/* ─ end of payslips tab */}
             </div>
           </div>
         </div>
@@ -1771,8 +1742,6 @@ export default function Dashboard() {
                     <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Leave type <span className="text-red-500">*</span></label>
                     <select value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type: e.target.value})} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500">
                       <option value="casual">Casual Leave</option>
-                      <option value="sick">Sick Leave</option>
-                      <option value="earned">Earned Leave</option>
                       <option value="unpaid">Leave Without Pay</option>
                       <option value="comp_off">Compensatory Off</option>
                       <option value="permission">Permission</option>
@@ -1885,7 +1854,7 @@ export default function Dashboard() {
          </div>
        )}
 
-       {/* ── Avatar lightbox (Zoho-People style) ──────────────────────────
+       {/* ─ Avatar lightbox (Zoho-People style) ─
         *  Triggered by clicking the profile photo above the check-in
         *  timer. Shows a large preview + a "Change Image" button which
         *  navigates to the Profile page where the cropper / upload UI
