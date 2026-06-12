@@ -7,6 +7,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
+import { requestLocation } from '../utils/geoPermission';
 
 const AttendanceContext = createContext();
 
@@ -82,26 +83,35 @@ export const AttendanceProvider = ({ children }) => {
       return () => stopTimer();
     }, [user?._id]); // Re-fetch when user changes
 
-  /* ── GPS helper ─────────────────────────────────────────────────── */
-  const getPosition = () => new Promise((resolve, reject) => {
-    if (!navigator.geolocation) return reject(new Error('Geolocation not supported'));
-    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
-  });
+  /* ── Additive location log ──────────────────────────────────────────
+     Records where the check-in/out happened to the location-history table.
+     Fire-and-forget: a failure here must NEVER break the attendance flow. */
+  const logLocation = (type, coords, permissionStatus) => {
+    api.post('/attendance/location', {
+      type,
+      latitude:  coords?.latitude  ?? null,
+      longitude: coords?.longitude ?? null,
+      accuracy:  coords?.accuracy  ?? null,
+      location: 'Office',
+      permissionStatus,
+    }).catch(() => { /* additive — ignore */ });
+  };
 
   /* ── Check In ─────────────────────────────────────────────────── */
    const checkIn = async () => {
      setActionLoading(true);
      try {
-       let coords = { latitude: null, longitude: null };
-       try {
-         const pos = await getPosition();
-         coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-       } catch (_) {
-         // GPS optional — backend will warn if required
-       }
-       const r = await api.post('/attendance/checkin', { location: 'Office', ...coords });
+       // App-level consent + GPS capture (Allow Always / This Time / Deny).
+       // GPS stays optional for check-in itself — backend warns if required.
+       const { coords, permissionStatus } = await requestLocation();
+       const r = await api.post('/attendance/checkin', {
+         location: 'Office',
+         latitude:  coords?.latitude  ?? null,
+         longitude: coords?.longitude ?? null,
+       });
        const rec = r.data.data;
        setRecord(rec);
+       logLocation('checkin', coords, permissionStatus);
 
        // Include any previously worked hours today (cumulative timer)
        const prevHours = parseFloat(rec.workingHours || 0);
@@ -127,14 +137,15 @@ export const AttendanceProvider = ({ children }) => {
   const checkOut = async () => {
     setActionLoading(true);
     try {
-      let coords = { latitude: null, longitude: null };
-      try {
-        const pos = await getPosition();
-        coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      } catch (_) {}
-      const r = await api.post('/attendance/checkout', { location: 'Office', ...coords });
+      const { coords, permissionStatus } = await requestLocation();
+      const r = await api.post('/attendance/checkout', {
+        location: 'Office',
+        latitude:  coords?.latitude  ?? null,
+        longitude: coords?.longitude ?? null,
+      });
       const rec = r.data.data;
       setRecord(rec);
+      logLocation('checkout', coords, permissionStatus);
       stopTimer();
       // Set elapsed to total worked hours
       const prev = parseFloat(rec.workingHours || 0);

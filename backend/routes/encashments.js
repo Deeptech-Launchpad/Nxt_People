@@ -2,13 +2,12 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess, reportsScope, canActOnEmployee } = require('../utils/roles');
 const { audit } = require('../middleware/audit');
 
 // Whitelist map — column names come from code, never from user input
 const ENCASHMENT_COL = {
-  earned: 'earned_leave',
   casual: 'casual_leave',
-  sick:   'sick_leave',
 };
 
 router.use(protect);
@@ -25,14 +24,16 @@ router.get('/my', async (req, res) => {
 });
 
 // GET all pending encashments (admin/manager)
-router.get('/pending', authorize('admin', 'manager'), async (req, res) => {
+router.get('/pending', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
+    // Full-access sees the whole org queue; managers only their direct reports.
+    const scope = reportsScope(req.user, 'e', 1);
     const result = await pool.query(`
       SELECT l.*, json_build_object('firstName', e.first_name, 'lastName', e.last_name, 'department', e.department) as employee
       FROM leave_encashments l
       JOIN employees e ON l.employee_id = e.id
-      WHERE l.status = 'pending'
-    `);
+      WHERE l.status = 'pending'${scope.clause}
+    `, scope.params);
     res.json({ success: true, data: result.rows });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -72,16 +73,26 @@ router.post('/', audit('CREATE', 'encashment'), async (req, res) => {
 });
 
 // PUT approve/reject
-router.put('/:id/action', authorize('admin', 'manager'), audit('ACTION', 'encashment'), async (req, res) => {
+router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), audit('ACTION', 'encashment'), async (req, res) => {
   try {
     const { action, reason } = req.body;
     const status = action === 'approve' ? 'approved' : 'rejected';
 
-    const reqRes = await pool.query('SELECT * FROM leave_encashments WHERE id = $1', [req.params.id]);
+    const reqRes = await pool.query(
+      `SELECT l.*, e.reporting_manager_id, e.approving_authority_id
+         FROM leave_encashments l JOIN employees e ON l.employee_id = e.id WHERE l.id = $1`,
+      [req.params.id]
+    );
     const encashReq = reqRes.rows[0];
     if (!encashReq || encashReq.status !== 'pending') {
       return res.status(400).json({ success: false, message: 'Invalid or already processed request' });
     }
+
+    // Block self-approval (full-access exempt); managers only their direct reports.
+    if (encashReq.employee_id === req.user._id && !isFullAccess(req.user.role))
+      return res.status(403).json({ success: false, message: 'You cannot act on your own encashment request.' });
+    if (!canActOnEmployee(req.user, encashReq))
+      return res.status(403).json({ success: false, message: 'You can only act on your direct reports’ requests.' });
 
     if (status === 'approved') {
       // Use whitelist map — column name is from code, not user input

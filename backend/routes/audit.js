@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 
-router.use(protect, authorize('admin'));
+router.use(protect, authorize('super_admin', 'hr'));
 
 // GET /api/audit — paginated audit log with filters
 router.get('/', async (req, res) => {

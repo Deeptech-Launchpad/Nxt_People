@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import SmartChat from '../SmartChat';
+import GeoPermissionModal from '../GeoPermissionModal';
 import { MessageSquare, Users, Moon, Sun, Volume2, VolumeX, Search } from 'lucide-react';
 
 export default function Layout() {
@@ -94,6 +95,9 @@ export default function Layout() {
       </div>
 
       <SmartChat open={smartChatOpen} onClose={() => setSmartChatOpen(false)} />
+
+      {/* App-level location consent prompt (used by the attendance check-in/out flow) */}
+      <GeoPermissionModal />
     </div>
   );
 }

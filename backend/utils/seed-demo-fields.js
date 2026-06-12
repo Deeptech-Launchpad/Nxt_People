@@ -32,7 +32,7 @@ const SAMPLE = [
     `SELECT id, first_name, last_name, employee_id
        FROM employees
       WHERE status = 'active'
-        AND role <> 'admin'
+        AND role <> 'super_admin'
       ORDER BY first_name, last_name
       LIMIT 5`
   );

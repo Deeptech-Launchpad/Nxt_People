@@ -56,7 +56,7 @@ export default function AppAccessPicker({ apps, selected, onChange, loading, com
     return (
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[12px] text-slate-500 flex items-center gap-2">
         <AppWindow size={14} className="text-slate-400" />
-        No internal apps registered yet. Add one in <strong className="font-semibold">More Services → Apps</strong>.
+        No internal apps registered yet. Add one in <strong className="font-semibold">NXT Apps</strong>.
       </div>
     );
   }

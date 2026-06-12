@@ -3,13 +3,14 @@ const router = express.Router();
 const logger = require('../logger');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess, reportsScope } = require('../utils/roles');
 const { logAudit } = require('../utils/audit');
 const { ruleMatchesDate } = require('../utils/workingDays');
 const { sendMail } = require('../utils/mailer');
 router.use(protect);
 
 // GET payroll report for a month
-router.get('/', authorize('admin', 'manager'), async (req, res) => {
+router.get('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const { month, year } = req.query;
     const m = parseInt(month) || new Date().getMonth() + 1;
@@ -46,10 +47,10 @@ router.get('/', authorize('admin', 'manager'), async (req, res) => {
          AND l.start_date <= $2 AND l.end_date >= $1) as approved_leave_days
        FROM employees e
        LEFT JOIN attendance a ON e.id = a.employee_id AND a.date BETWEEN $1::date AND $2::date
-       WHERE e.status = 'active'
+       WHERE e.status = 'active'${reportsScope(req.user, 'e', 3).clause}
        GROUP BY e.id, e.first_name, e.last_name, e.employee_id, e.department, e.designation, e.basic_salary, e.monthly_ctc
        ORDER BY e.first_name`,
-      [startDate, endDate]
+      [startDate, endDate, ...reportsScope(req.user, 'e', 3).params]
     );
 
     const rows = r.rows.map(emp => {
@@ -84,7 +85,7 @@ router.get('/', authorize('admin', 'manager'), async (req, res) => {
 });
 
 // GET leave accrual — run monthly accrual
-router.post('/accrue', authorize('admin'), async (req, res) => {
+router.post('/accrue', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const settingsRes = await pool.query('SELECT * FROM settings LIMIT 1');
     const s = settingsRes.rows[0];
@@ -122,8 +123,6 @@ router.post('/accrue', authorize('admin'), async (req, res) => {
     };
 
     await accrueLeaveType('casual_leave', 'casual', s.casual_accrual_per_month, 'Monthly accrual');
-    await accrueLeaveType('sick_leave',   'sick',   s.sick_accrual_per_month,   'Monthly accrual');
-    await accrueLeaveType('earned_leave', 'earned', s.earned_accrual_per_month, 'Monthly accrual');
     await logAudit(req, {
       action: 'ACCRUE_LEAVE',
       resource: 'Payroll',
@@ -195,7 +194,7 @@ function withTotals(row) {
 // GET /api/payroll/admin/employees — list all active employees with their
 // current salary structure. Employees who don't have a structure yet show
 // up with structure: null so the admin can spot them and click "Set up".
-router.get('/admin/employees', authorize('admin'), async (req, res) => {
+router.get('/admin/employees', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT
@@ -247,7 +246,7 @@ router.get('/admin/employees', authorize('admin'), async (req, res) => {
 // GET /api/payroll/admin/employees/:id/structure — full current structure +
 // the last 5 historical rows for audit context. Returns 200 with structure
 // null if the employee has never had one set up.
-router.get('/admin/employees/:id/structure', authorize('admin'), async (req, res) => {
+router.get('/admin/employees/:id/structure', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const current = await pool.query(
       `SELECT ${STRUCT_COLS} FROM salary_structures
@@ -278,7 +277,7 @@ router.get('/admin/employees/:id/structure', authorize('admin'), async (req, res
 // end up with two open rows (the partial unique index would catch that
 // too, but the txn keeps the error message clean).
 router.put('/admin/employees/:id/structure',
-  authorize('admin'),
+  authorize('super_admin', 'hr'),
   logAuditWrapper('UPDATE', 'salary_structure'),
   async (req, res) => {
     const client = await pool.connect();
@@ -601,7 +600,7 @@ async function adjustmentsFor(client, employeeId, month, year) {
 // without a structure (admin needs to set them up first). Skips
 // employees who already have a payslip for the month (use force=true
 // to overwrite drafts; locked/paid slips are never touched).
-router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN', 'payroll'), async (req, res) => {
+router.post('/admin/run-month', authorize('super_admin', 'hr'), logAuditWrapper('PAYROLL_RUN', 'payroll'), async (req, res) => {
   const client = await pool.connect();
   try {
     const month = Number(req.body.month) || (new Date().getMonth() + 1);
@@ -783,7 +782,7 @@ router.post('/admin/run-month', authorize('admin'), logAuditWrapper('PAYROLL_RUN
 
 // GET /api/payroll/admin/payslips?month=X&year=Y — list payslips for a
 // period. Joins employee + designation/department for display.
-router.get('/admin/payslips', authorize('admin', 'manager'), async (req, res) => {
+router.get('/admin/payslips', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const month = req.query.month ? Number(req.query.month) : null;
     const year  = req.query.year  ? Number(req.query.year)  : null;
@@ -791,6 +790,9 @@ router.get('/admin/payslips', authorize('admin', 'manager'), async (req, res) =>
     const params = [];
     if (month) { params.push(month); where.push(`p.pay_month = $${params.length}`); }
     if (year)  { params.push(year);  where.push(`p.pay_year  = $${params.length}`); }
+    // Full-access sees all payslips; managers only their direct reports'.
+    const scope = reportsScope(req.user, 'e', params.length + 1);
+    if (scope.clause) { where.push(scope.clause.replace(/^ AND /, '')); params.push(...scope.params); }
     const wsql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const r = await pool.query(
       `SELECT p.id, p.pay_month AS "payMonth", p.pay_year AS "payYear",
@@ -822,20 +824,27 @@ router.get('/admin/payslips', authorize('admin', 'manager'), async (req, res) =>
 
 // GET /api/payroll/admin/payslips/:id — full payslip details. Same
 // payload shape used to render the admin viewer + the PDF.
-router.get('/admin/payslips/:id', authorize('admin', 'manager'), async (req, res) => {
+router.get('/admin/payslips/:id', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT p.*,
               e.employee_id AS "employeeCode",
               e.first_name AS "firstName", e.last_name AS "lastName",
               e.email, e.department, e.designation, e.company, e.joining_date,
-              e.bank_name, e.bank_account, e.bank_ifsc, e.pan_number, e.uan_number
+              e.bank_name, e.bank_account, e.bank_ifsc, e.pan_number, e.uan_number,
+              e.reporting_manager_id, e.approving_authority_id
          FROM payroll_payslips p
          JOIN employees e ON p.employee_id = e.id
         WHERE p.id = $1`,
       [req.params.id]
     );
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Payslip not found' });
+    // Managers may only view their direct reports' payslips; full-access any.
+    if (!isFullAccess(req.user.role)
+        && String(r.rows[0].reporting_manager_id) !== String(req.user._id)
+        && String(r.rows[0].approving_authority_id) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'You can only view your direct reports’ payslips.' });
+    }
     res.json({ success: true, data: r.rows[0] });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -853,14 +862,20 @@ router.get('/admin/payslips/:id', authorize('admin', 'manager'), async (req, res
 // HTML body the employee would receive on lock. Lets admin sanity-check
 // before clicking Lock (after which the email is fire-and-forget and a
 // mistake means re-sending an apology + correction slip).
-router.get('/admin/payslips/:id/preview-email', authorize('admin', 'manager'), async (req, res) => {
+router.get('/admin/payslips/:id/preview-email', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const r = await pool.query(
-      `SELECT p.*, e.first_name, e.last_name FROM payroll_payslips p
+      `SELECT p.*, e.first_name, e.last_name, e.reporting_manager_id, e.approving_authority_id
+         FROM payroll_payslips p
          JOIN employees e ON p.employee_id = e.id WHERE p.id = $1`,
       [req.params.id]
     );
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Payslip not found' });
+    if (!isFullAccess(req.user.role)
+        && String(r.rows[0].reporting_manager_id) !== String(req.user._id)
+        && String(r.rows[0].approving_authority_id) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'You can only view your direct reports’ payslips.' });
+    }
     const html = buildLockEmailHtml(r.rows[0]);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     // Wrap in a minimal document so it renders correctly when shown in an iframe.
@@ -868,7 +883,7 @@ router.get('/admin/payslips/:id/preview-email', authorize('admin', 'manager'), a
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/admin/payslips/:id/lock', authorize('admin'), logAuditWrapper('LOCK', 'payslip'), async (req, res) => {
+router.put('/admin/payslips/:id/lock', authorize('super_admin', 'hr'), logAuditWrapper('LOCK', 'payslip'), async (req, res) => {
   const client = await pool.connect();
   try {
     // Optional manager-approval gate — settings.require_manager_approval_before_lock
@@ -1049,7 +1064,7 @@ async function sendLockEmail(payslipId) {
 }
 
 // PUT /api/payroll/admin/payslips/:id/mark-paid — admin records payment.
-router.put('/admin/payslips/:id/mark-paid', authorize('admin'), logAuditWrapper('PAID', 'payslip'), async (req, res) => {
+router.put('/admin/payslips/:id/mark-paid', authorize('super_admin', 'hr'), logAuditWrapper('PAID', 'payslip'), async (req, res) => {
   try {
     const r = await pool.query(
       `UPDATE payroll_payslips SET status='paid', paid_at=NOW()
@@ -1064,7 +1079,7 @@ router.put('/admin/payslips/:id/mark-paid', authorize('admin'), logAuditWrapper(
 });
 
 // DELETE /api/payroll/admin/payslips/:id — only drafts can be deleted.
-router.delete('/admin/payslips/:id', authorize('admin'), logAuditWrapper('DELETE', 'payslip'), async (req, res) => {
+router.delete('/admin/payslips/:id', authorize('super_admin', 'hr'), logAuditWrapper('DELETE', 'payslip'), async (req, res) => {
   try {
     const r = await pool.query(
       `DELETE FROM payroll_payslips WHERE id=$1 AND status='draft' RETURNING id`,
@@ -1118,15 +1133,15 @@ router.get('/my/:id', async (req, res) => {
 });
 
 // GET /api/payroll/team — manager: payroll summary for direct reports.
-router.get('/team', authorize('admin', 'manager'), async (req, res) => {
+router.get('/team', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const month = Number(req.query.month) || (new Date().getMonth() + 1);
     const year  = Number(req.query.year)  || new Date().getFullYear();
-    // Direct reports OR (for admin) all employees
-    const filterClause = req.user.role === 'admin'
+    // Direct reports OR (for full-access: Super Admin / HR) all employees
+    const filterClause = isFullAccess(req.user.role)
       ? `WHERE e.status = 'active'`
       : `WHERE e.reporting_manager_id = $1 AND e.status = 'active'`;
-    const filterParams = req.user.role === 'admin' ? [] : [req.user._id];
+    const filterParams = isFullAccess(req.user.role) ? [] : [req.user._id];
 
     const team = await pool.query(
       `SELECT e.id AS "_id", e.employee_id AS "employeeId",
@@ -1295,18 +1310,24 @@ function streamPayslipPdf(res, p) {
 }
 
 // GET /api/payroll/admin/payslips/:id/pdf — admin: any employee
-router.get('/admin/payslips/:id/pdf', authorize('admin', 'manager'), async (req, res) => {
+router.get('/admin/payslips/:id/pdf', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT p.*,
               e.employee_id AS "employeeCode", e.first_name AS "firstName", e.last_name AS "lastName",
               e.email, e.department, e.designation,
-              e.bank_name, e.bank_account, e.bank_ifsc, e.pan_number, e.uan_number
+              e.bank_name, e.bank_account, e.bank_ifsc, e.pan_number, e.uan_number,
+              e.reporting_manager_id, e.approving_authority_id
          FROM payroll_payslips p
          JOIN employees e ON p.employee_id = e.id
         WHERE p.id = $1`, [req.params.id]
     );
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Payslip not found' });
+    if (!isFullAccess(req.user.role)
+        && String(r.rows[0].reporting_manager_id) !== String(req.user._id)
+        && String(r.rows[0].approving_authority_id) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'You can only download your direct reports’ payslips.' });
+    }
     streamPayslipPdf(res, { ...r.rows[0], payMonth: r.rows[0].pay_month, payYear: r.rows[0].pay_year });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -1338,7 +1359,7 @@ const multer = require('multer');
 const xlsx = require('xlsx');
 const bulkUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-router.get('/admin/structure-template', authorize('admin'), (req, res) => {
+router.get('/admin/structure-template', authorize('super_admin', 'hr'), (req, res) => {
   const wb = xlsx.utils.book_new();
   const data = [{
     'Employee ID':       'ANXT2600149',
@@ -1368,7 +1389,7 @@ router.get('/admin/structure-template', authorize('admin'), (req, res) => {
 // Each row creates a new versioned row (closes any existing open one)
 // using the same upsert flow as the single-employee editor.
 router.post('/admin/bulk-upload',
-  authorize('admin'),
+  authorize('super_admin', 'hr'),
   logAuditWrapper('BULK_UPLOAD', 'salary_structure'),
   bulkUpload.single('file'),
   async (req, res) => {
@@ -1506,7 +1527,7 @@ router.post('/declarations', logAuditWrapper('SUBMIT', 'tax_declaration'), async
 });
 
 // GET /api/payroll/admin/declarations?status=submitted — admin: review queue
-router.get('/admin/declarations', authorize('admin'), async (req, res) => {
+router.get('/admin/declarations', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const status = req.query.status || 'submitted';
     const fy = req.query.fy || currentFY();
@@ -1533,7 +1554,7 @@ router.get('/admin/declarations', authorize('admin'), async (req, res) => {
 });
 
 // PUT /api/payroll/admin/declarations/:id/action — approve / reject
-router.put('/admin/declarations/:id/action', authorize('admin'),
+router.put('/admin/declarations/:id/action', authorize('super_admin', 'hr'),
   logAuditWrapper('ACTION', 'tax_declaration'),
   async (req, res) => {
     try {
@@ -1579,7 +1600,7 @@ function sendCsv(res, filename, header, rows) {
   res.end();
 }
 
-router.get('/admin/reports/:type', authorize('admin'), async (req, res) => {
+router.get('/admin/reports/:type', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const type = req.params.type;                // pf | esi | tds | pt
     const month = Number(req.query.month) || (new Date().getMonth() + 1);
@@ -1631,15 +1652,15 @@ router.get('/admin/reports/:type', authorize('admin'), async (req, res) => {
 // PUT /api/payroll/admin/payslips/:id/approve — manager (or admin) signs off
 // on a draft. The slip stays draft (admin still needs to lock it for the
 // employee to see), but approvedByManagerAt tells admin it's been reviewed.
-router.put('/payslips/:id/approve', authorize('admin', 'manager'),
+router.put('/payslips/:id/approve', authorize('super_admin', 'hr', 'manager'),
   logAuditWrapper('APPROVE', 'payslip'),
   async (req, res) => {
     try {
-      // Manager: only their direct reports. Admin: anyone.
-      const where = req.user.role === 'admin'
+      // Manager: only their direct reports. Full-access (Super Admin / HR): anyone.
+      const where = isFullAccess(req.user.role)
         ? `p.id = $1 AND p.status = 'draft'`
         : `p.id = $1 AND p.status = 'draft' AND e.reporting_manager_id = $2`;
-      const params = req.user.role === 'admin' ? [req.params.id] : [req.params.id, req.user._id];
+      const params = isFullAccess(req.user.role) ? [req.params.id] : [req.params.id, req.user._id];
       const r = await pool.query(
         `UPDATE payroll_payslips p
             SET approved_by_manager_id = $${params.length + 1},
@@ -1660,7 +1681,7 @@ router.put('/payslips/:id/approve', authorize('admin', 'manager'),
 // slip with a corrected one. The original is marked superseded_by; the
 // new slip carries supersedes pointing back. Both remain visible in
 // history but only the corrected one is "active" for compliance.
-router.post('/admin/payslips/:id/correct', authorize('admin'),
+router.post('/admin/payslips/:id/correct', authorize('super_admin', 'hr'),
   logAuditWrapper('CORRECT', 'payslip'),
   async (req, res) => {
     const client = await pool.connect();
@@ -1767,7 +1788,7 @@ router.post('/admin/payslips/:id/correct', authorize('admin'),
 /* ── Adjustments (one-off per-month line items) ──────────────────────── */
 
 // GET /api/payroll/admin/adjustments?month=&year=
-router.get('/admin/adjustments', authorize('admin'), async (req, res) => {
+router.get('/admin/adjustments', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const month = req.query.month ? Number(req.query.month) : null;
     const year  = req.query.year  ? Number(req.query.year)  : null;
@@ -1791,7 +1812,7 @@ router.get('/admin/adjustments', authorize('admin'), async (req, res) => {
 });
 
 // POST /api/payroll/admin/adjustments
-router.post('/admin/adjustments', authorize('admin'),
+router.post('/admin/adjustments', authorize('super_admin', 'hr'),
   logAuditWrapper('CREATE', 'payroll_adjustment'),
   async (req, res) => {
     try {
@@ -1817,7 +1838,7 @@ router.post('/admin/adjustments', authorize('admin'),
 // DELETE /api/payroll/admin/adjustments/:id — only if no payslip has been
 // generated for that employee/month yet (admin can otherwise correct via
 // the supersede flow).
-router.delete('/admin/adjustments/:id', authorize('admin'),
+router.delete('/admin/adjustments/:id', authorize('super_admin', 'hr'),
   logAuditWrapper('DELETE', 'payroll_adjustment'),
   async (req, res) => {
     try {
@@ -1830,7 +1851,7 @@ router.delete('/admin/adjustments/:id', authorize('admin'),
 
 /* ── Loans / advances ─────────────────────────────────────────────────── */
 
-router.get('/admin/loans', authorize('admin'), async (req, res) => {
+router.get('/admin/loans', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const status = req.query.status || null;
     const where = [], params = [];
@@ -1854,7 +1875,7 @@ router.get('/admin/loans', authorize('admin'), async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.post('/admin/loans', authorize('admin'),
+router.post('/admin/loans', authorize('super_admin', 'hr'),
   logAuditWrapper('CREATE', 'payroll_loan'),
   async (req, res) => {
     try {
@@ -1874,7 +1895,7 @@ router.post('/admin/loans', authorize('admin'),
   }
 );
 
-router.put('/admin/loans/:id', authorize('admin'),
+router.put('/admin/loans/:id', authorize('super_admin', 'hr'),
   logAuditWrapper('UPDATE', 'payroll_loan'),
   async (req, res) => {
     try {
@@ -1894,7 +1915,7 @@ router.put('/admin/loans/:id', authorize('admin'),
   }
 );
 
-router.delete('/admin/loans/:id', authorize('admin'),
+router.delete('/admin/loans/:id', authorize('super_admin', 'hr'),
   logAuditWrapper('DELETE', 'payroll_loan'),
   async (req, res) => {
     try {
@@ -1917,7 +1938,7 @@ router.delete('/admin/loans/:id', authorize('admin'),
 // downloading. Returns counts so the UI can confirm with the admin if any
 // slips have already been exported to the bank (re-download is a real
 // double-payment risk).
-router.get('/admin/reports/neft/status', authorize('admin'), async (req, res) => {
+router.get('/admin/reports/neft/status', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const month = Number(req.query.month) || (new Date().getMonth() + 1);
     const year  = Number(req.query.year)  || new Date().getFullYear();
@@ -1950,7 +1971,7 @@ router.get('/admin/reports/neft/status', authorize('admin'), async (req, res) =>
 // warning if any slip is already marked exported (preventing accidental
 // re-upload to the bank). After streaming the CSV, payslips are stamped
 // payment_exported_at so the next call surfaces the warning.
-router.get('/admin/reports/neft', authorize('admin'), async (req, res) => {
+router.get('/admin/reports/neft', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const month = Number(req.query.month) || (new Date().getMonth() + 1);
     const year  = Number(req.query.year)  || new Date().getFullYear();
@@ -2022,7 +2043,7 @@ router.get('/admin/reports/neft', authorize('admin'), async (req, res) => {
 /* ── Tax slabs viewer ─────────────────────────────────────────────────── */
 
 // GET /api/payroll/admin/tax-slabs?fy=2026-27 — both regimes side-by-side
-router.get('/admin/tax-slabs', authorize('admin'), async (req, res) => {
+router.get('/admin/tax-slabs', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const fy = req.query.fy || currentFY();
     const r = await pool.query(

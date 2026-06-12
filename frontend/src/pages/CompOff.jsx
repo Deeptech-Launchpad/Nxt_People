@@ -3,6 +3,7 @@ import { Plus, X, CheckCircle, XCircle, Gift, Send, AlertTriangle } from 'lucide
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { isApprover } from '../utils/roles';
 
 const STATUS_STYLE = { pending: 'bg-amber-100 text-amber-700', approved: 'bg-emerald-100 text-emerald-700', rejected: 'bg-red-100 text-red-700' };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -24,7 +25,7 @@ export default function CompOff() {
   const load = () => {
     setLoading(true);
     const calls = [api.get('/comp-off/my')];
-    if (user?.role !== 'employee') calls.push(api.get('/comp-off/pending'));
+    if (isApprover(user)) calls.push(api.get('/comp-off/pending'));
     Promise.all(calls).then(([myRes, pendingRes]) => {
       setMyRequests(myRes.data.data || []);
       setBalance(myRes.data.balance || 0);
@@ -91,7 +92,7 @@ export default function CompOff() {
             <Plus size={16} /> Apply Comp-Off
           </button>
         </div>
-        {user?.role !== 'employee' && (
+        {isApprover(user) && (
           <div className="flex border-b border-slate-100">
             {[['my', 'My Requests'], ['pending', `Team Pending (${pending.length})`]].map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)} className={`px-6 py-3.5 text-sm font-medium border-b-2 transition-colors ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{label}</button>

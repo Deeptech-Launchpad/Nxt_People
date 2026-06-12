@@ -8,7 +8,17 @@ const { protect } = require('../middleware/auth');
 const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const { verifyMfaCode, issueMfaTicket, consumeMfaTicket } = require('./mfa');
+const { verifyGoogleIdToken } = require('../utils/google-auth');
 const logger = require('../logger');
+
+// Google Sign-In configuration. The OAuth Client ID must match the one the
+// frontend uses (VITE_GOOGLE_CLIENT_ID). Only Google accounts on these
+// company domains are accepted; defaults to altiusnxt.com when unset.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const ALLOWED_GOOGLE_DOMAINS = (process.env.GOOGLE_ALLOWED_DOMAINS || process.env.COMPANY_EMAIL_DOMAIN || 'altiusnxt.com')
+  .split(',')
+  .map(d => d.trim().toLowerCase().replace(/^@/, ''))
+  .filter(Boolean);
 
 // `ipKeyGenerator` normalises IPv6 addresses to their /64 prefix so an
 // attacker can't rotate through addresses in their own subnet to bypass
@@ -61,6 +71,19 @@ const checkEmailLimiter = rateLimit({
   keyGenerator: ipPlusEmail,
   skip: skipRateLimit,
   message: { success: false, message: 'Too many requests. Try again later.' },
+});
+
+// Per-IP brute-force protection on Google Sign-In (the body carries a Google
+// credential, not an email, so we key by IP only).
+const googleLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req, res) => ipKeyGenerator(req, res),
+  skip: skipRateLimit,
+  message: { success: false, message: 'Too many sign-in attempts. Try again in 15 minutes.' },
 });
 
 // Access token: short-lived (15 min by default)
@@ -310,6 +333,112 @@ router.post('/login', loginLimiter, [
     delete employee.has_accepted;
     delete employee.rejection_reason;
     delete employee.mfaEnabled;
+
+    res.json({ success: true, token, refreshToken, data: employee });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// @POST /api/auth/google — Google Sign-In with official company accounts only.
+//
+// Flow: the browser obtains a Google ID token via Google Identity Services and
+// posts it here as `credential`. We verify the token's signature against
+// Google's keys, require a verified email on an allowed company domain, then
+// match it to an employee record. On success we issue the SAME session as the
+// password login, so role-based access control (re-resolved from the DB on
+// every request by the `protect` middleware) applies identically.
+//
+// Access is denied when: Google Sign-In isn't configured, the token is invalid,
+// the email isn't verified, the domain isn't a company domain, or no employee
+// record exists for that email.
+router.post('/google', googleLimiter, async (req, res) => {
+  try {
+    if (!GOOGLE_CLIENT_ID) {
+      return res.status(503).json({ success: false, message: 'Google Sign-In is not configured on this server.' });
+    }
+
+    const { credential } = req.body;
+    if (!credential) {
+      return res.status(400).json({ success: false, message: 'Missing Google credential.' });
+    }
+
+    // 1. Verify the Google ID token (signature, audience, issuer, expiry).
+    let payload;
+    try {
+      payload = await verifyGoogleIdToken(credential, GOOGLE_CLIENT_ID);
+    } catch (e) {
+      logger.warn({ err: e.message }, 'Google credential verification failed');
+      return res.status(401).json({ success: false, message: 'Google sign-in could not be verified. Please try again.' });
+    }
+
+    const email = String(payload.email || '').toLowerCase();
+    if (!email || payload.email_verified !== true) {
+      return res.status(403).json({ success: false, message: 'Your Google email is not verified.' });
+    }
+
+    // 2. Enforce the company domain — only official company Google accounts.
+    const domain = email.split('@')[1] || '';
+    if (!ALLOWED_GOOGLE_DOMAINS.includes(domain)) {
+      return res.status(403).json({
+        success: false,
+        message: `Access denied. Please sign in with your company Google account (@${ALLOWED_GOOGLE_DOMAINS[0]}).`,
+      });
+    }
+
+    // 3. Match the verified email to an employee record.
+    const result = await pool.query(
+      `SELECT id as "_id", registration_status, has_accepted, rejection_reason, mfa_enabled AS "mfaEnabled",
+              first_name AS "firstName", last_name AS "lastName", email, role, department, designation,
+              company, division, employee_id AS "employeeId", photo_url AS "photoUrl", deleted_at
+         FROM employees WHERE email = $1`,
+      [email]
+    );
+
+    if (result.rows.length === 0 || result.rows[0].deleted_at) {
+      return res.status(403).json({
+        success: false,
+        message: 'No active employee account is linked to this Google email. Please contact HR.',
+      });
+    }
+
+    const employee = result.rows[0];
+
+    // 4. Same account-state gates as the password login.
+    if (employee.registration_status === 'pending') {
+      return res.status(403).json({ success: false, message: 'Your account is pending approval.', status: 'pending' });
+    }
+    if (employee.registration_status === 'rejected') {
+      return res.status(403).json({ success: false, message: 'Your registration was not approved.', status: 'rejected', reason: employee.rejection_reason });
+    }
+    if (employee.registration_status === 'approved' && !employee.has_accepted) {
+      return res.status(403).json({ success: false, message: 'Please accept the terms to continue.', status: 'approved' });
+    }
+
+    // 5. Honour the same MFA policy as password login.
+    if (!employee.mfaEnabled) {
+      try {
+        const sRes = await pool.query(`SELECT mfa_required_roles FROM settings LIMIT 1`);
+        const list = Array.isArray(sRes.rows[0]?.mfa_required_roles) ? sRes.rows[0].mfa_required_roles : [];
+        if (list.includes(employee.role)) {
+          const mfaTicket = issueMfaTicket(employee._id);
+          return res.json({ success: true, requiresMfaSetup: true, mfaTicket, message: 'Your role requires MFA. Set it up to continue.' });
+        }
+      } catch (_) { /* settings missing — fall through */ }
+    }
+    if (employee.mfaEnabled) {
+      const mfaTicket = issueMfaTicket(employee._id);
+      return res.json({ success: true, requiresMfa: true, mfaTicket });
+    }
+
+    // 6. Issue the standard session — RBAC is enforced from here by `protect`.
+    const token = signToken(employee._id);
+    const refreshToken = await generateRefreshToken(employee._id, req);
+    delete employee.registration_status;
+    delete employee.has_accepted;
+    delete employee.rejection_reason;
+    delete employee.mfaEnabled;
+    delete employee.deleted_at;
 
     res.json({ success: true, token, refreshToken, data: employee });
   } catch (err) {

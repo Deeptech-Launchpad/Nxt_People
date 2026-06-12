@@ -10,7 +10,7 @@ function Avatar({ size = 36, photoUrl, photoBroken, onPhotoError }) {
   const showPhoto = photoUrl && !photoBroken;
   return (
     <div
-      className="rounded border border-slate-200 bg-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden text-slate-400"
+      className="rounded border border-slate-200 dark:border-[#374151] bg-slate-100 dark:bg-[#2d3748] flex items-center justify-center flex-shrink-0 overflow-hidden text-slate-400 dark:text-slate-500"
       style={{ width: size, height: size }}
     >
       {showPhoto
@@ -38,54 +38,61 @@ function HoverPopup({ emp, totalMembers, directReports, anchorRect, onMouseEnter
   const navigate = useNavigate();
   // Position the popup just below the anchor card.
   const style = anchorRect
-    ? { top: anchorRect.bottom + 4, left: anchorRect.left, position: 'fixed' }
+    ? { top: anchorRect.bottom + 6, left: anchorRect.left, position: 'fixed' }
     : null;
   if (!style) return null;
 
-  // Action buttons:
-  //  • View  → full employee profile page
-  //  • Chat  → /chat?user=:id (in-app real-time chat; sends a connection
-  //            request automatically if not yet connected)
-  //  • Video → disabled (no integrated video service yet)
-  //  • Phone → OS dialler via tel:
-  const goView    = () => navigate(`/employees/${emp._id}`);
-  const goChat    = () => navigate(`/chat?user=${emp._id}`);
-  const phoneNum  = emp.phone || emp.workPhone || null;
-  const telHref   = phoneNum  ? `tel:${phoneNum}` : null;
-  const btnBase   = 'w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center';
-  const btnOff    = 'w-8 h-8 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center cursor-not-allowed';
+  const goView   = () => navigate(`/employees/${emp._id}`);
+  const goChat   = () => navigate(`/chat?user=${emp._id}`);
+  const phoneNum = emp.phone || emp.workPhone || null;
+  const telHref  = phoneNum ? `tel:${phoneNum}` : null;
+
+  const btnBase = 'w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center transition-colors';
+  const btnOff  = 'w-8 h-8 rounded-full bg-slate-100 dark:bg-[#374151] text-slate-400 dark:text-slate-500 flex items-center justify-center cursor-not-allowed';
 
   return (
     <div
       style={style}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      className="z-40 w-[280px] bg-white border border-slate-200 rounded-lg shadow-xl p-3"
+      className="z-[9999] w-[280px] bg-white dark:bg-[#1e2538] border border-slate-200 dark:border-[#374151] rounded-xl shadow-2xl p-4 transition-none"
     >
+      {/* Employee info row */}
       <div className="flex items-start gap-3">
         <Avatar photoUrl={emp.photoUrl} size={42} />
         <div className="min-w-0 flex-1">
-          <p className="text-[12.5px] font-bold text-slate-800 truncate">
-            {emp.employeeId && <span className="text-slate-400 font-mono mr-1">{emp.employeeId}</span>}
-            <span className="text-slate-400">-</span> {emp.firstName} {emp.lastName}
+          <p className="text-[12.5px] font-bold text-slate-800 dark:text-slate-100 truncate leading-snug">
+            {emp.employeeId && (
+              <span className="text-slate-400 dark:text-slate-400 font-mono mr-1 text-[11px]">{emp.employeeId}</span>
+            )}
+            <span className="text-slate-400 dark:text-slate-500 mr-1">·</span>
+            {emp.firstName} {emp.lastName}
           </p>
           {emp.email && (
-            <p className="text-[11.5px] text-blue-600 truncate mt-0.5">{emp.email}</p>
+            <p className="text-[11px] text-blue-500 dark:text-blue-400 truncate mt-0.5">{emp.email}</p>
           )}
-          <p className="text-[11px] text-slate-500 mt-0.5">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
             {emp.designation || emp.role || 'Employee'}
           </p>
           {emp.department && (
-            <p className="text-[11px] text-slate-500">{emp.department}</p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">{emp.department}</p>
           )}
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 text-[11.5px]">
-        <span>Total Members <strong className="ml-1 text-slate-800">{totalMembers}</strong></span>
-        <span>Direct reports <strong className="ml-1 text-slate-800">{directReports}</strong></span>
+      {/* Stats row */}
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-[#374151] text-[11.5px] text-slate-500 dark:text-slate-400">
+        <span>
+          Total Members{' '}
+          <strong className="ml-1 text-slate-700 dark:text-slate-200 font-bold">{totalMembers}</strong>
+        </span>
+        <span>
+          Direct reports{' '}
+          <strong className="ml-1 text-slate-700 dark:text-slate-200 font-bold">{directReports}</strong>
+        </span>
       </div>
 
+      {/* Action buttons */}
       <div className="flex items-center justify-start gap-2 mt-3">
         <button type="button" onClick={goView} title="View profile" className={btnBase}>
           <Eye size={13} />
@@ -135,6 +142,8 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
   };
   useEffect(() => () => clearTimeout(hoverTimer.current), []);
 
+  const isDark = document.documentElement.classList.contains('dark');
+
   if (mini) {
     return (
       <div className="flex items-center">
@@ -142,9 +151,10 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
           type="button"
           onClick={onToggle}
           title={`${emp.firstName} ${emp.lastName}${emp.designation ? ' · ' + emp.designation : ''}`}
-          className="bg-white p-0.5 transition-all hover:shadow-sm"
+          className="p-0.5 transition-all hover:shadow-sm"
           style={{
-            borderColor: isExpanded ? '#0088FF' : '#e2e8f0',
+            background: isDark ? '#1f2937' : '#ffffff',
+            borderColor: isExpanded ? '#0088FF' : (isDark ? '#374151' : '#e2e8f0'),
             borderWidth: isExpanded ? 1.5 : 1,
             borderStyle: 'solid',
             borderRadius: 6,
@@ -176,16 +186,18 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
       className="rounded-md p-2.5 flex items-center gap-3 text-left transition-shadow hover:shadow-sm"
       style={{
         width: 280,
-        background: isExpanded ? '#eff6ff' : '#ffffff',
-        borderColor: isExpanded ? '#0088FF' : '#e2e8f0',
+        background: isExpanded
+          ? (isDark ? '#1e3a5f' : '#eff6ff')
+          : (isDark ? '#1f2937' : '#ffffff'),
+        borderColor: isExpanded ? '#0088FF' : (isDark ? '#374151' : '#e2e8f0'),
         borderWidth: isExpanded ? 1.5 : 1,
         borderStyle: 'solid',
       }}
     >
       <Avatar photoUrl={emp.photoUrl} photoBroken={photoBroken} onPhotoError={() => setPhotoBroken(true)} size={36} />
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-bold text-slate-800 truncate leading-tight">{emp.firstName} {emp.lastName}</p>
-        <p className="text-[11px] text-slate-500 truncate mt-0.5">{emp.designation || emp.role || 'Employee'}</p>
+        <p className="text-[13px] font-bold text-slate-800 dark:text-slate-100 truncate leading-tight">{emp.firstName} {emp.lastName}</p>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{emp.designation || emp.role || 'Employee'}</p>
       </div>
       {totalCount > 0 && (
         <span
@@ -341,7 +353,10 @@ export default function OrgChart() {
   const [selectedEmp, setSelectedEmp] = useState(null);
 
   useEffect(() => {
-    api.get('/employees?limit=200&status=active')
+    // Role-open org directory (basic, non-sensitive fields) so the Employee Tree
+    // and Department Tree render the FULL org for every role. Sensitive data and
+    // edit actions remain behind their own RBAC guards.
+    api.get('/org/directory')
        .then(r => setEmployees(r.data.data || []))
        .catch(console.error)
        .finally(() => setLoading(false));
@@ -457,7 +472,7 @@ export default function OrgChart() {
     return (
       <div className="bg-white min-h-[calc(100vh-120px)] border-t border-slate-200">
         <div className="flex h-full relative">
-          <div className="w-[380px] p-8 border-r border-slate-100 flex flex-col gap-3">
+          <div className="w-[380px] p-8 border-r border-slate-100 flex flex-col gap-3 dark:bg-[#111827] dark:border-[#374151]">
             {deptsList.map(dept => {
               const isActive = (activeDept?.name) === dept.name;
               return (
@@ -469,13 +484,13 @@ export default function OrgChart() {
                   }`}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 flex items-center justify-center text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-100 rounded">
+                    <div className="w-10 h-10 flex items-center justify-center text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-100 rounded dark:bg-[#1f2937] dark:border-[#374151] dark:text-slate-300">
                       {dept.prefix}
                     </div>
                     <span className="text-[13px] font-bold text-slate-800">{dept.name}</span>
                   </div>
                   <div className={`text-[12px] font-bold px-2.5 py-0.5 rounded border ${
-                    isActive ? 'bg-[#3b82f6] text-white border-[#3b82f6]' : 'bg-white text-slate-500 border-slate-200'
+                    isActive ? 'bg-[#3b82f6] text-white border-[#3b82f6]' : 'bg-white text-slate-500 border-slate-200 dark:bg-[#1f2937] dark:text-slate-300 dark:border-[#374151]'
                   }`}>
                     {dept.count}
                   </div>
@@ -561,12 +576,14 @@ export default function OrgChart() {
                     onClick={() => setSelectedEmp(emp._id)}
                     onMouseEnter={handleEnter}
                     onMouseLeave={() => setHover(null)}
-                    className="flex items-center gap-4 p-2 rounded-lg bg-white hover:shadow-sm transition-all text-left"
+                    className="flex items-center gap-4 p-2 rounded-lg hover:shadow-sm transition-all text-left"
                     style={{
                       borderWidth: isSel ? 1.5 : 1,
                       borderStyle: 'solid',
-                      borderColor: isSel ? '#0088FF' : '#e2e8f0',
-                      background: isSel ? '#eff6ff' : '#ffffff',
+                      borderColor: isSel ? '#0088FF' : (document.documentElement.classList.contains('dark') ? '#374151' : '#e2e8f0'),
+                      background: isSel
+                        ? (document.documentElement.classList.contains('dark') ? '#1e3a5f' : '#eff6ff')
+                        : (document.documentElement.classList.contains('dark') ? '#1f2937' : '#ffffff'),
                     }}
                   >
                     <Avatar photoUrl={emp.photoUrl} size={40} />
@@ -600,9 +617,9 @@ export default function OrgChart() {
 
   /* ── Employee Tree Render — column-based ─────────────────────────────── */
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[calc(100vh-10rem)]">
-      <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white z-10 rounded-t-xl">
-        <p className="text-[13px] text-slate-500">
+    <div className="bg-white dark:bg-[#1f2937] rounded-xl shadow-sm border border-slate-200 dark:border-[#374151] flex flex-col h-[calc(100vh-10rem)]">
+      <div className="p-4 border-b border-slate-100 dark:border-[#374151] flex justify-between items-center bg-white dark:bg-[#1f2937] z-10 rounded-t-xl">
+        <p className="text-[13px] text-slate-500 dark:text-slate-400">
           Click a card to expand their direct reports. Hover for contact info.
         </p>
         <div className="relative">
@@ -612,7 +629,7 @@ export default function OrgChart() {
             placeholder="Search by name, designation, dept..."
             value={searchTerm}
             onChange={e => { setSearchTerm(e.target.value); setSelectedPath([]); }}
-            className="pl-9 pr-4 py-1.5 border border-slate-200 rounded text-sm w-72 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all bg-white"
+            className="pl-9 pr-4 py-1.5 border border-slate-200 dark:border-[#374151] rounded text-sm w-72 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all bg-white dark:bg-[#111827] text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
           />
         </div>
       </div>
@@ -683,7 +700,7 @@ export default function OrgChart() {
                         parentPitch={parentPitch}
                         parentHalf={parentHalf}
                         onToggle={(empId) => handleToggle(depth, empId)}
-                        onHoverChange={setHovered}
+                        onHoverChange={setHover}
                       />
                     )
                   )}

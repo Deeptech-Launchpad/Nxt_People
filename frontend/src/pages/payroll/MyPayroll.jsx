@@ -1,124 +1,59 @@
 /**
- * Employee → My Payroll
- * Shows every locked / paid payslip in reverse chronological order. The
- * current-FY YTD summary sits up top. Clicking a row opens the same
- * visual payslip used in the admin modal, scoped to /my so an employee
- * can only ever see their own slips.
+ * Employee → My Payroll / Payslips
+ * Shows the Financial Year filter and payslip table — identical to the
+ * original Payslips tab on the Home → Overview page.
  */
-import React, { useEffect, useState, useMemo } from 'react';
-import { Wallet, TrendingUp, Calendar, Download, ChevronRight, FileText, PieChart } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { FileText, Filter } from 'lucide-react';
 import api from '../../utils/api';
-import toast from 'react-hot-toast';
-import { MONTH_NAMES, SHORT_MONTHS, fmtINR, fmtINRshort, StatusPill, StatCard } from './_shared';
-import { PayslipBody } from './PayrollRun';
 
-/**
- * Lightweight conic-gradient donut — no chart library needed.
- * Receives [{label, value, color}, ...] and renders a donut with a
- * legend stacked beside it. Slices smaller than 0.5% are merged into
- * "Other" so the legend stays readable.
- */
-function Donut({ slices, total, centerLabel, centerValue }) {
-  const nonZero = slices.filter(s => s.value > 0);
-  const sum = nonZero.reduce((s, x) => s + x.value, 0) || 1;
-  let running = 0;
-  const stops = nonZero.map(s => {
-    const start = (running / sum) * 360;
-    running += s.value;
-    const end = (running / sum) * 360;
-    return `${s.color} ${start}deg ${end}deg`;
-  }).join(', ');
-
-  return (
-    <div className="flex items-center gap-6 flex-wrap">
-      <div className="relative">
-        <div
-          className="w-44 h-44 rounded-full"
-          style={{ background: `conic-gradient(${stops || '#e2e8f0 0deg 360deg'})` }}
-        />
-        <div className="absolute inset-0 m-auto w-28 h-28 rounded-full bg-white flex flex-col items-center justify-center shadow-inner">
-          <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{centerLabel}</p>
-          <p className="text-[16px] font-bold text-slate-800 mt-0.5">{centerValue}</p>
-        </div>
-      </div>
-      <div className="flex-1 min-w-[180px] space-y-1.5">
-        {nonZero.map(s => {
-          const pct = ((s.value / sum) * 100).toFixed(1);
-          return (
-            <div key={s.label} className="flex items-center justify-between text-[12.5px]">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} />
-                <span className="text-slate-700">{s.label}</span>
-              </div>
-              <div className="text-right">
-                <span className="font-bold text-slate-800">{fmtINR(s.value)}</span>
-                <span className="ml-2 text-slate-400">{pct}%</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+/* Compute the current FY string, e.g. "2026-27" */
+function currentFY() {
+  const now = new Date();
+  const m = now.getMonth() + 1;
+  const y = now.getFullYear();
+  return m >= 4 ? `${y}-${String(y + 1).slice(2)}` : `${y - 1}-${String(y).slice(2)}`;
 }
+
+/* Generate current FY and previous two FYs dynamically, e.g. ["2024-25", "2025-26", "2026-27"] */
+function getFYList() {
+  const now = new Date();
+  const m = now.getMonth() + 1;
+  const y = now.getFullYear();
+  const currentStart = m >= 4 ? y : y - 1;
+
+  const list = [];
+  for (let i = 2; i >= 0; i--) {
+    const start = currentStart - i;
+    const end = start + 1;
+    list.push(`${start}-${String(end).slice(2)}`);
+  }
+  return list;
+}
+
+const fmtINR = (n) =>
+  n != null
+    ? `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '—';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function MyPayroll() {
   const [payslips, setPayslips] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [selected, setSelected] = useState(null);
-  const [detail, setDetail]     = useState(null);
+  const [payslipFY, setPayslipFY] = useState(currentFY);
+  const [loading, setLoading] = useState(false);
+
+  const fyList = getFYList();
 
   useEffect(() => {
     setLoading(true);
-    api.get('/payroll/my')
-      .then(r => setPayslips(r.data.data || []))
-      .catch(err => toast.error(err.response?.data?.message || 'Failed to load'))
+    api.get('/payslips?fy=' + payslipFY)
+      .then((p) => {
+        setPayslips(p.data.data || []);
+      })
+      .catch(() => { })
       .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    if (!selected) return setDetail(null);
-    api.get(`/payroll/my/${selected.id}`)
-      .then(r => setDetail(r.data.data))
-      .catch(err => toast.error(err.response?.data?.message || 'Failed'));
-  }, [selected]);
-
-  const downloadPdf = async (id) => {
-    try {
-      const r = await api.get(`/payroll/my/${id}/pdf`, { responseType: 'blob' });
-      const objectUrl = URL.createObjectURL(r.data);
-      const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = `payslip-${id}.pdf`;
-      a.click();
-      URL.revokeObjectURL(objectUrl);
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'PDF download failed');
-    }
-  };
-
-  // YTD totals for the current FY (Apr–Mar). Reuses the listing data
-  // we already fetched — no extra round-trip.
-  const ytd = useMemo(() => {
-    const today = new Date();
-    const fyStartYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
-    const inFy = (p) => {
-      // April of fyStartYear → March of fyStartYear+1
-      if (p.payYear === fyStartYear   && p.payMonth >= 4)  return true;
-      if (p.payYear === fyStartYear+1 && p.payMonth <= 3)  return true;
-      return false;
-    };
-    const fySlips = payslips.filter(inFy);
-    const gross = fySlips.reduce((s, p) => s + Number(p.grossEarnings || 0), 0);
-    const ded   = fySlips.reduce((s, p) => s + Number(p.totalDeductions || 0), 0);
-    const net   = fySlips.reduce((s, p) => s + Number(p.netPay || 0), 0);
-    return {
-      months: fySlips.length, gross, ded, net,
-      fyLabel: `FY ${fyStartYear}-${String((fyStartYear + 1) % 100).padStart(2, '0')}`,
-    };
-  }, [payslips]);
-
-  const latest = payslips[0];
+  }, [payslipFY]);
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-5">
@@ -126,137 +61,84 @@ export default function MyPayroll() {
       <div>
         <h1 className="text-[20px] font-bold text-slate-800">My Payroll</h1>
         <p className="text-[13px] text-slate-500 mt-1">
-          Your monthly payslips. Click any row to see the full breakdown or download as PDF.
+          Your monthly payslips filtered by Financial Year.
         </p>
       </div>
 
-      {/* Hero — latest month if any */}
-      {latest && (
-        <div className="bg-gradient-to-br from-[#1a2040] via-[#243064] to-[#2d3578] text-white rounded-2xl p-6 relative overflow-hidden">
-          <div className="absolute -right-10 -top-10 opacity-10">
-            <Wallet size={180} strokeWidth={1} />
-          </div>
-          <div className="relative">
-            <p className="text-[11.5px] uppercase tracking-wider text-blue-200 font-bold">Latest payslip</p>
-            <p className="text-[14px] text-blue-100 mt-1">{MONTH_NAMES[latest.payMonth]} {latest.payYear}</p>
-            <p className="text-[36px] font-bold mt-2">{fmtINR(latest.netPay)}</p>
-            <p className="text-[12.5px] text-blue-200">
-              Gross {fmtINR(latest.grossEarnings)} − Deductions {fmtINR(latest.totalDeductions)}
-            </p>
-            <div className="mt-4 flex items-center gap-2">
-              <button
-                onClick={() => setSelected(latest)}
-                className="bg-white/15 hover:bg-white/25 text-white text-[12px] font-semibold px-3 py-1.5 rounded-lg"
-              >View details</button>
-              <button
-                onClick={() => downloadPdf(latest.id)}
-                className="flex items-center gap-1.5 bg-white text-blue-700 text-[12px] font-semibold px-3 py-1.5 rounded-lg"
-              ><Download size={13} /> Download PDF</button>
-            </div>
-          </div>
+      {/* Financial Year Filter + Table */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* FY filter bar */}
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-3">
+          <Filter size={14} className="text-[#1a73e8]" />
+          <span className="text-[13px] font-semibold text-slate-700">Financial Year :</span>
+          <select
+            value={payslipFY}
+            onChange={e => setPayslipFY(e.target.value)}
+            className="border border-slate-200 rounded px-2 py-1 text-[12.5px] font-bold text-[#1a73e8] outline-none focus:border-blue-300 bg-white"
+          >
+            {(fyList.length > 0 ? fyList : [payslipFY]).map(fy => (
+              <option key={fy} value={fy}>Financial Year : {fy.replace('-', '–')}</option>
+            ))}
+          </select>
         </div>
-      )}
 
-      {/* Salary breakdown donut — uses the detailed payslip if loaded, else
-          falls back to the listing-level totals for the latest slip. */}
-      {latest && (
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <PieChart size={16} className="text-indigo-500" />
-            <h3 className="text-[14px] font-bold text-slate-800">Salary Breakdown · {MONTH_NAMES[latest.payMonth]} {latest.payYear}</h3>
-          </div>
-          <Donut
-            centerLabel="Net"
-            centerValue={fmtINRshort(latest.netPay)}
-            slices={[
-              { label: 'Take-home',  value: Number(latest.netPay),       color: '#10b981' },
-              { label: 'Deductions', value: Number(latest.totalDeductions), color: '#f43f5e' },
-            ]}
-          />
-        </div>
-      )}
-
-      {/* YTD strip */}
-      {ytd.months > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label={`${ytd.fyLabel} · Months`} value={`${ytd.months} slip${ytd.months > 1 ? 's' : ''}`} icon={Calendar} />
-          <StatCard label="Gross (YTD)"      value={fmtINRshort(ytd.gross)} color="text-slate-700" hint={fmtINR(ytd.gross)} />
-          <StatCard label="Deductions (YTD)" value={fmtINRshort(ytd.ded)}   color="text-rose-700" hint={fmtINR(ytd.ded)} />
-          <StatCard label="Take-home (YTD)"  value={fmtINRshort(ytd.net)}   color="text-emerald-700" hint={fmtINR(ytd.net)} icon={TrendingUp} />
-        </div>
-      )}
-
-      {/* History */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="text-[14px] font-bold text-slate-800">All Payslips</h3>
-          <p className="text-[11.5px] text-slate-500">{payslips.length} total</p>
-        </div>
+        {/* Body */}
         {loading ? (
-          <div className="py-10 text-center text-slate-400">Loading…</div>
+          <div className="flex justify-center py-12">
+            <div className="w-6 h-6 border-[3px] border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
+          </div>
         ) : payslips.length === 0 ? (
-          <div className="py-12 text-center text-slate-400">
-            <FileText size={32} className="mx-auto text-slate-300 mb-2" />
-            <p>No payslips yet.</p>
-            <p className="text-[11.5px] mt-1">You'll see them here once HR runs payroll and locks the month.</p>
+          <div className="p-14 text-center">
+            <FileText size={28} className="text-slate-200 mx-auto mb-3" />
+            <p className="text-[13px] font-semibold text-slate-500">
+              No payslips found for FY {payslipFY.replace('-', '–')}
+            </p>
+            <p className="text-[12px] text-slate-400 mt-1">Payslips will appear once generated by HR.</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {payslips.map(p => (
-              <button
-                key={p.id}
-                onClick={() => setSelected(p)}
-                className="w-full px-4 py-3 hover:bg-slate-50 flex items-center justify-between text-left transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-700 flex flex-col items-center justify-center flex-shrink-0">
-                    <span className="text-[9px] font-bold uppercase">{SHORT_MONTHS[p.payMonth]}</span>
-                    <span className="text-[12px] font-bold leading-none">{String(p.payYear).slice(2)}</span>
-                  </div>
-                  <div>
-                    <p className="text-[13.5px] font-bold text-slate-800">{MONTH_NAMES[p.payMonth]} {p.payYear}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <StatusPill status={p.status} />
-                      {p.lockedAt && <p className="text-[11px] text-slate-400">Locked {new Date(p.lockedAt).toLocaleDateString('en-GB')}</p>}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="text-[15px] font-bold text-emerald-700">{fmtINR(p.netPay)}</p>
-                    <p className="text-[11px] text-slate-400">Gross {fmtINR(p.grossEarnings)}</p>
-                  </div>
-                  <ChevronRight size={16} className="text-slate-300" />
-                </div>
-              </button>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  {['Month', 'Gross Pay', 'Reimbursements', 'Deductions', 'Take Home', 'Payslips', 'Tax Worksheet'].map(h => (
+                    <th
+                      key={h}
+                      className="px-5 py-3 text-left text-[11.5px] font-semibold text-slate-500 uppercase tracking-wider"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {payslips.map(p => (
+                  <tr key={p._id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-5 py-3.5">
+                      <span className="text-[13px] font-semibold text-[#1a73e8]">
+                        {MONTHS[(p.month || 1) - 1]} {p.year}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-[13px] text-slate-700">{fmtINR(p.grossPay)}</td>
+                    <td className="px-5 py-3.5 text-[13px] text-slate-700">{fmtINR(p.reimbursements)}</td>
+                    <td className="px-5 py-3.5 text-[13px] text-slate-700">{fmtINR(p.deductions)}</td>
+                    <td className="px-5 py-3.5 text-[13.5px] font-bold text-slate-800">{fmtINR(p.takeHome)}</td>
+                    <td className="px-5 py-3.5">
+                      {p.payslipUrl
+                        ? <a href={p.payslipUrl} target="_blank" rel="noreferrer" className="text-[13px] font-semibold text-[#1a73e8] hover:underline">View</a>
+                        : <span className="text-[12.5px] text-slate-400">—</span>}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {p.taxWorksheetUrl
+                        ? <a href={p.taxWorksheetUrl} target="_blank" rel="noreferrer" className="text-[13px] font-semibold text-[#1a73e8] hover:underline">View</a>
+                        : <span className="text-[12.5px] text-slate-400">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
-
-      {/* Detail modal */}
-      {selected && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl max-h-[92vh] overflow-hidden flex flex-col">
-            <div className="bg-gradient-to-r from-[#1a2040] to-[#2d3578] text-white px-6 py-5 flex items-start justify-between">
-              <div>
-                <p className="text-[11.5px] uppercase tracking-wider text-blue-200 font-bold">Payslip</p>
-                <p className="text-[20px] font-bold mt-1">{MONTH_NAMES[selected.payMonth]} {selected.payYear}</p>
-                <p className="text-[12px] text-blue-100 mt-0.5">Status: <StatusPill status={selected.status} /></p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => downloadPdf(selected.id)} className="flex items-center gap-1.5 bg-white text-blue-700 text-[12px] font-semibold px-3 py-1.5 rounded-lg">
-                  <Download size={13} /> PDF
-                </button>
-                <button onClick={() => setSelected(null)} className="w-8 h-8 rounded-lg bg-white/15 hover:bg-white/25 flex items-center justify-center">✕</button>
-              </div>
-            </div>
-            <div className="overflow-y-auto p-6">
-              {detail ? <PayslipBody p={detail} /> : <div className="py-10 text-center text-slate-400">Loading…</div>}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

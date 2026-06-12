@@ -4,6 +4,7 @@ const pool = require('../db');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess } = require('../utils/roles');
 const { sendOnboardingEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const logger = require('../logger');
@@ -35,14 +36,14 @@ router.get('/metadata', async (req, res) => {
     const managersResult = await pool.query(
       `SELECT id as "_id", first_name as "firstName", last_name as "lastName", email, designation 
        FROM employees 
-       WHERE status = 'active' 
-       AND (role IN ('admin', 'manager', 'hr') OR designation ILIKE '%Lead%' OR designation ILIKE '%Manager%' OR designation ILIKE '%Head%') 
+       WHERE status = 'active'
+       AND (role IN ('super_admin', 'manager', 'hr') OR designation ILIKE '%Lead%' OR designation ILIKE '%Manager%' OR designation ILIKE '%Head%')
        ORDER BY first_name ASC`
     );
 
     // Add approving authorities list (managers who can approve leaves)
     const approvingAuthoritiesResult = await pool.query(
-      'SELECT id as "_id", first_name as "firstName", last_name as "lastName", email, designation FROM employees WHERE (role = \'admin\' OR role = \'manager\' OR role = \'hr\') AND status = \'active\' ORDER BY first_name ASC'
+      'SELECT id as "_id", first_name as "firstName", last_name as "lastName", email, designation FROM employees WHERE (role = \'super_admin\' OR role = \'manager\' OR role = \'hr\') AND status = \'active\' ORDER BY first_name ASC'
     );
 
     res.json({
@@ -70,7 +71,7 @@ router.get('/', async (req, res) => {
 
     // Soft-delete: hide archived employees unless the caller is an admin who
     // explicitly asks for them (e.g. an "Archived" tab in Employee Master).
-    if (!(includeDeleted === 'true' && req.user.role === 'admin')) {
+    if (!(includeDeleted === 'true' && isFullAccess(req.user.role))) {
       query += ' AND e.deleted_at IS NULL';
     }
 
@@ -224,8 +225,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST create employee
-router.post('/', authorize('admin', 'manager'), async (req, res) => {
+// POST create employee — full-access only (managers have no employee CRUD)
+router.post('/', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     let { firstName, lastName, email, password, phone, role, department, designation, company, division, joiningDate, monthlyCTC, basicSalary, casualLeave, sickLeave, earnedLeave, reportingManagerId, approvingAuthorityId, employeeId: providedId } = req.body;
     let hashedPassword = null;
@@ -276,8 +277,8 @@ router.post('/', authorize('admin', 'manager'), async (req, res) => {
 });
 
 
-// PUT update employee
-router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
+// PUT update employee — full-access only (managers have no employee CRUD)
+router.put('/:id', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const {
       firstName, lastName, email, phone, role, department, designation, company, division,
@@ -395,8 +396,8 @@ router.put('/:id', authorize('admin', 'manager'), async (req, res) => {
   }
 });
 
-// POST send onboarding email
-router.post('/send-onboarding', authorize('admin', 'manager'), async (req, res) => {
+// POST send onboarding email — full-access only (onboarding = HR function)
+router.post('/send-onboarding', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const { email, candidateName, dueDate } = req.body;
     if (!email) return res.status(400).json({ success: false, message: 'Candidate email is required' });
@@ -442,7 +443,7 @@ router.post('/send-onboarding', authorize('admin', 'manager'), async (req, res) 
 // and rely on SELECT-side filters to hide it. Hard delete is intentionally
 // removed; admins who *really* want to purge can do so directly in the DB
 // after reviewing what CASCADEs.
-router.delete('/:id', authorize('admin'), async (req, res) => {
+router.delete('/:id', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const r = await pool.query(
       `UPDATE employees
@@ -478,7 +479,7 @@ router.delete('/:id', authorize('admin'), async (req, res) => {
 
 // GET /api/employees/:id/app-access — all user-facing apps with this
 // employee's current access status. One query, no N+1.
-router.get('/:id/app-access', authorize('admin'), async (req, res) => {
+router.get('/:id/app-access', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const r = await pool.query(`
       SELECT a.id, a.name, a.description,
@@ -499,7 +500,7 @@ router.get('/:id/app-access', authorize('admin'), async (req, res) => {
 // PUT /api/employees/:id/app-access — sync this employee's access list
 // to match `apiConnectionIds` exactly: grant new ones, revoke removed ones.
 // Idempotent. Used by Approve modal (post-approve) and Edit modal (post-save).
-router.put('/:id/app-access', authorize('admin'), async (req, res) => {
+router.put('/:id/app-access', authorize('super_admin', 'hr'), async (req, res) => {
   const client = await pool.connect();
   try {
     const wanted = Array.isArray(req.body?.apiConnectionIds) ? req.body.apiConnectionIds : [];

@@ -3,6 +3,7 @@ import { Plus, Plane, X, Check, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
+import { isApprover } from '../../utils/roles';
 
 const STATUS_COLOR = {
   pending:  'bg-amber-100 text-amber-700',
@@ -14,7 +15,7 @@ const VIEW_TABS = ['My Requests', 'All (Admin)'];
 
 export default function Travel() {
   const { user } = useAuth();
-  const isAdmin = ['admin', 'manager'].includes(user?.role);
+  const isAdmin = isApprover(user);
 
   const [view, setView]         = useState('My Requests');
   const [requests, setRequests] = useState([]);

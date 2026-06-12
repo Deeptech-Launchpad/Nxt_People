@@ -12,6 +12,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess, reportsScope, canActOnEmployee } = require('../utils/roles');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -59,8 +60,8 @@ const SELECT_ALL = `
          ) AS employee
     FROM compensation_claims c
     JOIN employees e ON c.employee_id = e.id
-   ORDER BY c.created_at DESC
-`;
+   WHERE 1=1`;
+// (caller appends an optional direct-reports scope, then ORDER BY)
 
 router.get('/my', async (req, res) => {
   try {
@@ -69,9 +70,11 @@ router.get('/my', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.get('/', authorize('admin', 'manager'), async (_req, res) => {
+router.get('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
-    const r = await pool.query(SELECT_ALL);
+    // Full-access sees all claims; managers only their direct reports'.
+    const scope = reportsScope(req.user, 'e', 1);
+    const r = await pool.query(`${SELECT_ALL}${scope.clause} ORDER BY c.created_at DESC`, scope.params);
     res.json({ success: true, data: r.rows });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -98,7 +101,7 @@ router.post('/', upload.single('receipt'), async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const { action, rejectionReason } = req.body;
     if (!['approve', 'reject'].includes(action)) {
@@ -106,11 +109,19 @@ router.put('/:id/action', authorize('admin', 'manager'), async (req, res) => {
     }
 
     // Block self-approval — a manager cannot approve their own claim.
-    // Admins are exempt as the final authority.
-    const own = await pool.query(`SELECT employee_id FROM compensation_claims WHERE id = $1`, [req.params.id]);
+    // Full-access (Super Admin / HR) is exempt as the final authority.
+    const own = await pool.query(
+      `SELECT c.employee_id, e.reporting_manager_id, e.approving_authority_id
+         FROM compensation_claims c JOIN employees e ON c.employee_id = e.id WHERE c.id = $1`,
+      [req.params.id]
+    );
     if (own.rows.length === 0) return res.status(404).json({ success: false, message: 'Claim not found' });
-    if (String(own.rows[0].employee_id) === String(req.user._id) && req.user.role !== 'admin') {
+    if (String(own.rows[0].employee_id) === String(req.user._id) && !isFullAccess(req.user.role)) {
       return res.status(403).json({ success: false, message: 'You cannot approve or reject your own claim.' });
+    }
+    // Managers may only act on their direct reports; full-access on anyone.
+    if (!canActOnEmployee(req.user, own.rows[0])) {
+      return res.status(403).json({ success: false, message: 'You can only act on your direct reports’ claims.' });
     }
 
     const status = action === 'approve' ? 'approved' : 'rejected';

@@ -12,14 +12,14 @@
  * of how the database was originally bootstrapped.
  */
 const bcrypt = require('bcryptjs');
-const pool   = require('../db');
+const pool = require('../db');
 
 const PASSWORD = 'password123';
 
 const USERS = [
-  { email: 'admin@nxtpeople.com',   role: 'admin',    firstName: 'Test', lastName: 'Admin',    employeeId: 'NXT-TEST-ADM' },
-  { email: 'sarah@nxtpeople.com',   role: 'manager',  firstName: 'Test', lastName: 'Manager',  employeeId: 'NXT-TEST-MGR' },
-  { email: 'michael@nxtpeople.com', role: 'employee', firstName: 'Test', lastName: 'Employee', employeeId: 'NXT-TEST-EMP' },
+  { email: 'balaji@altiusnxt.com', role: 'super_admin', firstName: 'Test', lastName: 'Admin', employeeId: 'NXT-TEST-ADM' },
+  { email: 'sanjana@altiusnxt.com', role: 'manager', firstName: 'Test', lastName: 'Manager', employeeId: 'NXT-TEST-MGR' },
+  { email: 'saranya@altiusnxt.com', role: 'employee', firstName: 'Test', lastName: 'Employee', employeeId: 'NXT-TEST-EMP' },
 ];
 
 (async () => {

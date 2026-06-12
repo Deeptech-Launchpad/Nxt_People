@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess, reportsScope, canActOnEmployee } = require('../utils/roles');
 const { audit } = require('../middleware/audit');
 const { createNotification } = require('./notifications');
 router.use(protect);
@@ -21,12 +22,15 @@ router.get('/my', async (req, res) => {
 });
 
 // GET pending (admin/manager)
-router.get('/pending', authorize('admin', 'manager'), async (req, res) => {
+router.get('/pending', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
+    // Full-access sees the whole org queue; managers only their direct reports.
+    const scope = reportsScope(req.user, 'e', 1);
     const r = await pool.query(
       `SELECT c.id as "_id", c.worked_date as "workedDate", c.reason, c.days_earned as "daysEarned", c.status, c.created_at as "createdAt",
        json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'department', e.department) as employee
-       FROM comp_offs c JOIN employees e ON c.employee_id = e.id WHERE c.status = 'pending' ORDER BY c.worked_date DESC`
+       FROM comp_offs c JOIN employees e ON c.employee_id = e.id WHERE c.status = 'pending'${scope.clause} ORDER BY c.worked_date DESC`,
+      scope.params
     );
     res.json({ success: true, data: r.rows });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -47,17 +51,26 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
 });
 
 // PUT approve/reject
-router.put('/:id/action', authorize('admin', 'manager'), audit('ACTION', 'comp_off'), async (req, res) => {
+router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), audit('ACTION', 'comp_off'), async (req, res) => {
   try {
     const { action, rejectionReason } = req.body;
-    const existing = await pool.query('SELECT * FROM comp_offs WHERE id=$1', [req.params.id]);
+    const existing = await pool.query(
+      `SELECT c.*, e.reporting_manager_id, e.approving_authority_id
+         FROM comp_offs c JOIN employees e ON c.employee_id = e.id WHERE c.id=$1`,
+      [req.params.id]
+    );
     const co = existing.rows[0];
     if (!co) return res.status(404).json({ success: false, message: 'Not found' });
 
     // Block self-approval — a manager cannot approve their own comp-off.
-    // Admins are exempt because they're the final authority.
-    if (co.employee_id === req.user._id && req.user.role !== 'admin') {
+    // Full-access (Super Admin / HR) is exempt as the final authority.
+    if (co.employee_id === req.user._id && !isFullAccess(req.user.role)) {
       return res.status(403).json({ success: false, message: 'You cannot approve or reject your own comp-off request.' });
+    }
+
+    // Managers may only act on their direct reports; full-access on anyone.
+    if (!canActOnEmployee(req.user, co)) {
+      return res.status(403).json({ success: false, message: 'You can only act on your direct reports’ requests.' });
     }
 
     const status = action === 'approved' ? 'approved' : 'rejected';

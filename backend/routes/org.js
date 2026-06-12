@@ -123,6 +123,30 @@ router.get('/departments/:id/employees', async (req, res) => {
 //                            on each card — e.g. "Karthick · 35" means his
 //                            entire org has 35 people under him)
 //   • children             = nested tree
+// ── GET /api/org/directory ────────────────────────────────────────────────
+// Flat list of active employees with BASIC, non-sensitive directory fields
+// only. Open to every authenticated role (protect-only, no scoping) so the
+// Employee/Department Tree and the "Department Members" card render the full
+// org for everyone. Deliberately excludes salary/CTC/documents/leave/personal
+// records — viewing the directory grants no access to sensitive data, which
+// stays behind its own RBAC guards (profile pages, payroll, documents, edits).
+router.get('/directory', async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id as "_id", employee_id as "employeeId",
+              first_name as "firstName", last_name as "lastName",
+              designation, department, photo_url as "photoUrl",
+              email, phone, reporting_manager_id as "reportingManagerId"
+         FROM employees
+        WHERE status = 'active' AND deleted_at IS NULL
+        ORDER BY first_name ASC`
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.get('/employee-tree', async (req, res) => {
   try {
     const r = await pool.query(

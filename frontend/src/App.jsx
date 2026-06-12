@@ -17,6 +17,7 @@ const CheckInOut      = lazy(() => import('./pages/attendance/CheckInOut'));
 const MyAttendance    = lazy(() => import('./pages/attendance/MyAttendance'));
 const TeamAttendance  = lazy(() => import('./pages/attendance/TeamAttendance'));
 const Regularization  = lazy(() => import('./pages/attendance/Regularization'));
+const AttendanceLocation = lazy(() => import('./pages/attendance/AttendanceLocation'));
 const Employees       = lazy(() => import('./pages/Employees'));
 const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'));
 const Approvals       = lazy(() => import('./pages/Approvals'));
@@ -90,6 +91,8 @@ const SkillMatrix      = lazy(() => import('./pages/performance/SkillMatrix'));
 const Travel       = lazy(() => import('./pages/moreservices/Travel'));
 const Compensation = lazy(() => import('./pages/moreservices/Compensation'));
 const HRLetters    = lazy(() => import('./pages/moreservices/HRLetters'));
+const Operations       = lazy(() => import('./pages/moreservices/Operations'));
+const LeaveTrackerAdmin = lazy(() => import('./pages/moreservices/LeaveTrackerAdmin'));
 
 /* ── Loaders & Guards ──────────────────────────────────────────────── */
 const PageLoader = () => (
@@ -133,8 +136,8 @@ const AppRoutes = () => {
           <Route path="team/department" element={<OrgChart/>}/>
           <Route path="team/projects"   element={<TeamProjects/>}/>
           <Route path="team/peers"      element={<Peers/>}/>
-          <Route path="team/approvals"  element={<ProtectedRoute roles={['admin','manager']}><Approvals/></ProtectedRoute>}/>
-          <Route path="approvals"       element={<ProtectedRoute roles={['admin','manager']}><Approvals/></ProtectedRoute>}/>
+          <Route path="team/approvals"  element={<ProtectedRoute roles={['super_admin','hr','manager']}><Approvals/></ProtectedRoute>}/>
+          <Route path="approvals"       element={<ProtectedRoute roles={['super_admin','hr','manager']}><Approvals/></ProtectedRoute>}/>
 
           {/* ── Home / Organization ──────────────────────────────────── */}
           <Route path="organization" element={<OrgOverview/>}/>
@@ -145,14 +148,15 @@ const AppRoutes = () => {
           <Route path="birthdays"    element={<BirthdayFolks/>}/>
           <Route path="new-hires"    element={<NewHires/>}/>
           <Route path="directory"    element={<Directory/>}/>
-          <Route path="companies"    element={<ProtectedRoute roles={['admin']}><Companies/></ProtectedRoute>}/>
+          <Route path="companies"    element={<ProtectedRoute roles={['super_admin','hr']}><Companies/></ProtectedRoute>}/>
           <Route path="holidays"     element={<Holidays/>}/>
 
           {/* ── Attendance ───────────────────────────────────────────── */}
           <Route path="attendance/my"             element={<MyAttendance/>}/>
           <Route path="attendance/checkin"        element={<CheckInOut/>}/>
           <Route path="attendance/regularization" element={<Regularization/>}/>
-          <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','manager']}><TeamAttendance/></ProtectedRoute>}/>
+          <Route path="attendance/location"       element={<AttendanceLocation/>}/>
+          <Route path="attendance/team"           element={<ProtectedRoute roles={['super_admin','hr','manager']}><TeamAttendance/></ProtectedRoute>}/>
 
           {/* ── Time Tracker ─────────────────────────────────────────── */}
           <Route path="time-tracker/timelogs"    element={<TimeLogs/>}/>
@@ -170,9 +174,9 @@ const AppRoutes = () => {
               the sidebar highlight on Leave Tracker instead of jumping
               the user back to Home (which was the pre-fix behaviour).
               Role-gated identically — only admins/managers can view it. */}
-          <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','manager']}><Approvals/></ProtectedRoute>}/>
+          <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['super_admin','hr','manager']}><Approvals/></ProtectedRoute>}/>
           <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
-          <Route path="leave-tracker/weekends"   element={<ProtectedRoute roles={['admin']}><Weekends/></ProtectedRoute>}/>
+          <Route path="leave-tracker/weekends"   element={<ProtectedRoute roles={['super_admin','hr']}><Weekends/></ProtectedRoute>}/>
 
           {/* ── Performance ──────────────────────────────────────────── */}
           <Route path="performance/goals"  element={<PerformanceGoals/>}/>
@@ -181,33 +185,39 @@ const AppRoutes = () => {
 
           {/* ── More Services ────────────────────────────────────────── */}
           <Route path="more-services/files"        element={<Documents/>}/>
+          {/* Operations workspace + admin Leave Tracker — Super Admin / HR only. */}
+          <Route path="more-services/operations"               element={<ProtectedRoute roles={['super_admin','hr']}><Operations/></ProtectedRoute>}/>
+          <Route path="more-services/operations/leave-tracker" element={<ProtectedRoute roles={['super_admin','hr']}><LeaveTrackerAdmin/></ProtectedRoute>}/>
           <Route path="more-services/travel"       element={<Travel/>}/>
           <Route path="more-services/compensation" element={<Compensation/>}/>
           <Route path="more-services/hr-letters"   element={<HRLetters/>}/>
 
           {/* ── Reports / Admin ──────────────────────────────────────── */}
-          <Route path="reports"          element={<ProtectedRoute roles={['admin','manager']}><Reports/></ProtectedRoute>}/>
-          <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','manager']}><DailyAttendance/></ProtectedRoute>}/>
-          <Route path="payroll"                element={<ProtectedRoute roles={['admin','manager']}><PayrollReport/></ProtectedRoute>}/>
-          <Route path="payroll/setup"          element={<ProtectedRoute roles={['admin']}><PayrollSetup/></ProtectedRoute>}/>
-          <Route path="payroll/run"            element={<ProtectedRoute roles={['admin']}><PayrollRun/></ProtectedRoute>}/>
+          <Route path="reports"          element={<ProtectedRoute roles={['super_admin','hr','manager']}><Reports/></ProtectedRoute>}/>
+          <Route path="daily-attendance" element={<ProtectedRoute roles={['super_admin','hr','manager']}><DailyAttendance/></ProtectedRoute>}/>
+          <Route path="payroll"                element={<ProtectedRoute roles={['super_admin','hr','manager']}><PayrollReport/></ProtectedRoute>}/>
+          <Route path="payroll/setup"          element={<ProtectedRoute roles={['super_admin','hr']}><PayrollSetup/></ProtectedRoute>}/>
+          <Route path="payroll/run"            element={<ProtectedRoute roles={['super_admin','hr']}><PayrollRun/></ProtectedRoute>}/>
           <Route path="payroll/my"             element={<MyPayroll/>}/>
-          <Route path="payroll/team"           element={<ProtectedRoute roles={['admin','manager']}><TeamPayroll/></ProtectedRoute>}/>
+          <Route path="payroll/team"           element={<ProtectedRoute roles={['super_admin','hr','manager']}><TeamPayroll/></ProtectedRoute>}/>
           <Route path="payroll/tax-declaration" element={<TaxDeclaration/>}/>
-          <Route path="payroll/declarations"   element={<ProtectedRoute roles={['admin']}><DeclarationApprovals/></ProtectedRoute>}/>
-          <Route path="payroll/compliance"     element={<ProtectedRoute roles={['admin']}><ComplianceReports/></ProtectedRoute>}/>
-          <Route path="payroll/adjustments"    element={<ProtectedRoute roles={['admin']}><Adjustments/></ProtectedRoute>}/>
-          <Route path="payroll/loans"          element={<ProtectedRoute roles={['admin']}><Loans/></ProtectedRoute>}/>
-          <Route path="payroll/tax-slabs"      element={<ProtectedRoute roles={['admin']}><TaxSlabs/></ProtectedRoute>}/>
-          <Route path="employees"    element={<ProtectedRoute roles={['admin','manager']}><Employees/></ProtectedRoute>}/>
+          <Route path="payroll/declarations"   element={<ProtectedRoute roles={['super_admin','hr']}><DeclarationApprovals/></ProtectedRoute>}/>
+          <Route path="payroll/compliance"     element={<ProtectedRoute roles={['super_admin','hr']}><ComplianceReports/></ProtectedRoute>}/>
+          <Route path="payroll/adjustments"    element={<ProtectedRoute roles={['super_admin','hr']}><Adjustments/></ProtectedRoute>}/>
+          <Route path="payroll/loans"          element={<ProtectedRoute roles={['super_admin','hr']}><Loans/></ProtectedRoute>}/>
+          <Route path="payroll/tax-slabs"      element={<ProtectedRoute roles={['super_admin','hr']}><TaxSlabs/></ProtectedRoute>}/>
+          {/* Employee management — HR / Super Admin only. Team Leads view their
+              team via Team Space / Org Chart, not this admin page. */}
+          <Route path="employees"    element={<ProtectedRoute roles={['super_admin','hr']}><Employees/></ProtectedRoute>}/>
           {/* Read-only profile of any colleague — reachable from the eye
               button on the Employee/Department tree popups. Open to every
               logged-in role; the backend GET /api/employees/:id is already
               just `protect`-gated. */}
           <Route path="employees/:id" element={<EmployeeProfile/>}/>
-          <Route path="registrations"element={<ProtectedRoute roles={['admin','manager']}><Registrations/></ProtectedRoute>}/>
-          <Route path="shifts"       element={<ProtectedRoute roles={['admin']}><Shifts/></ProtectedRoute>}/>
-          <Route path="shift-roster" element={<ProtectedRoute roles={['admin','manager']}><ShiftRoster/></ProtectedRoute>}/>
+          {/* Onboarding creates employees — full-access only (no manager CRUD). */}
+          <Route path="registrations"element={<ProtectedRoute roles={['super_admin','hr']}><Registrations/></ProtectedRoute>}/>
+          <Route path="shifts"       element={<ProtectedRoute roles={['super_admin','hr']}><Shifts/></ProtectedRoute>}/>
+          <Route path="shift-roster" element={<ProtectedRoute roles={['super_admin','hr','manager']}><ShiftRoster/></ProtectedRoute>}/>
 
           {/* ── Other ────────────────────────────────────────────────── */}
           <Route path="documents"      element={<Documents/>}/>
@@ -220,9 +230,9 @@ const AppRoutes = () => {
           <Route path="leave-calendar" element={<Navigate to="/calendar" replace/>}/>
           <Route path="leave-encashment" element={<LeaveEncashment/>}/>
           <Route path="projects"       element={<Navigate to="/team/projects" replace/>}/>
-          <Route path="api-connections"element={<ProtectedRoute roles={['admin']}><ApiConnections/></ProtectedRoute>}/>
+          <Route path="api-connections"element={<ProtectedRoute roles={['super_admin','hr']}><ApiConnections/></ProtectedRoute>}/>
           <Route path="my-apps"          element={<MyApps/>}/>
-          <Route path="settings"       element={<ProtectedRoute roles={['admin']}><Settings/></ProtectedRoute>}/>
+          <Route path="settings"       element={<ProtectedRoute roles={['super_admin','hr']}><Settings/></ProtectedRoute>}/>
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace/>}/>

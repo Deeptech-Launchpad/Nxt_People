@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess, isManager } = require('../utils/roles');
 
 router.use(protect);
 
@@ -15,7 +16,7 @@ const VALID_TYPES = ['positive', 'negative', 'training', 'observation', 'reward'
 router.get('/', async (req, res) => {
   try {
     const { direction = 'received', type, employeeId } = req.query;
-    const isAdmin = ['admin', 'manager'].includes(req.user.role);
+    const isAdmin = isFullAccess(req.user.role) || isManager(req.user.role);
 
     const col = direction === 'given' ? 'from_employee_id' : 'to_employee_id';
     const empId = isAdmin && employeeId ? employeeId : req.user._id;
@@ -85,7 +86,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const r = await pool.query('SELECT from_employee_id FROM feedback WHERE id=$1', [req.params.id]);
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Not found' });
-    if (req.user.role !== 'admin' && r.rows[0].from_employee_id !== req.user._id) {
+    if (!isFullAccess(req.user.role) && r.rows[0].from_employee_id !== req.user._id) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
     await pool.query('DELETE FROM feedback WHERE id=$1', [req.params.id]);

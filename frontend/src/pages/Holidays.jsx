@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Calendar, LayoutList, CalendarDays, MoreHori
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { isFullAccess } from '../utils/roles';
 
 function parseLocalDate(dateStr) {
   if (!dateStr) return new Date();
@@ -158,7 +159,7 @@ export default function Holidays() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
         {/* Left: empty or admin buttons */}
         <div className="flex gap-2">
-          {user?.role === 'admin' && (
+          {isFullAccess(user) && (
             <>
               <button
                 onClick={() => {
@@ -293,7 +294,7 @@ export default function Holidays() {
                      <td className="px-6 py-4 text-[13px] text-slate-800">
                        <div className="flex items-center justify-between">
                          {h.name}
-                         {user?.role === 'admin' && (
+                         {isFullAccess(user) && (
                            <button onClick={() => handleDelete(h._id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
                              <Trash2 size={14} />
                            </button>
@@ -480,7 +481,7 @@ export default function Holidays() {
   );
 }
 
-/* ── Calendar view: 12 mini-month boxes in a 4x3 grid ─────────────────────
+/* ─ Calendar view: 12 mini-month boxes in a 4x3 grid ─
  * Days that have a holiday get a red background + tooltip with the name.
  * Pure read-only — clicking a day does nothing right now (add later if
  * the team wants click-to-edit behaviour). */

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { roleLabel } from '../utils/roles';
 import MfaSettingsCard from '../components/MfaSettingsCard';
 import PhotoCropperModal from '../components/PhotoCropperModal';
 
@@ -559,7 +560,7 @@ export default function Profile() {
             </div>
           </Row>
           <Row label="Account Role">
-            <span className="capitalize">{profile.role}</span>
+            <span>{roleLabel(profile.role)}</span>
             <span className="text-slate-400 text-[12px] ml-2">(contact admin to change)</span>
           </Row>
         </Section>

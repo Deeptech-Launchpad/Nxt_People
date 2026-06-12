@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2, X, Save, Repeat } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { isFullAccess } from '../utils/roles';
 import { useWeekendRules } from '../context/WeekendRulesContext';
 
 const DAY_LABELS = [
@@ -88,7 +89,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
       }));
     return [...fromHolidays, ...fromRules];
   }, [contextHolidays, contextRules]);
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = isFullAccess(user);
 
   const [rules, setRules] = useState([]);
   const [editing, setEditing] = useState(null);     // either an existing rule or a blank one

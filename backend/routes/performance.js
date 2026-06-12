@@ -2,14 +2,23 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess, isManager } = require('../utils/roles');
 router.use(protect);
 
-// GET performance reviews for current user (or all if admin)
+// GET performance reviews — full-access sees all; a manager sees their direct
+// reports' reviews plus any they authored; an employee sees only their own.
 router.get('/', async (req, res) => {
   try {
-    const isAdmin = ['admin', 'manager'].includes(req.user.role);
-    const where = isAdmin ? '' : 'WHERE pr.employee_id = $1';
-    const params = isAdmin ? [] : [req.user._id];
+    let where = '';
+    let params = [];
+    if (!isFullAccess(req.user.role)) {
+      if (isManager(req.user.role)) {
+        where = 'WHERE (e.reporting_manager_id = $1 OR e.approving_authority_id = $1 OR pr.reviewer_id = $1)';
+      } else {
+        where = 'WHERE pr.employee_id = $1';
+      }
+      params = [req.user._id];
+    }
     const r = await pool.query(
       `SELECT pr.id as "_id", pr.cycle_name as "cycleName", pr.period_start as "periodStart",
        pr.period_end as "periodEnd", pr.overall_rating as "overallRating", pr.status,
@@ -33,6 +42,7 @@ router.get('/:id', async (req, res) => {
     const [reviewRes, goalsRes] = await Promise.all([
       pool.query(
         `SELECT pr.*, e.first_name as emp_first, e.last_name as emp_last, e.department, e.designation, e.employee_id as emp_id,
+         e.reporting_manager_id, e.approving_authority_id,
          rv.first_name as rev_first, rv.last_name as rev_last
          FROM performance_reviews pr
          JOIN employees e ON pr.employee_id = e.id
@@ -43,6 +53,17 @@ router.get('/:id', async (req, res) => {
     ]);
     if (!reviewRes.rows[0]) return res.status(404).json({ success: false, message: 'Review not found' });
     const review = reviewRes.rows[0];
+
+    // Access: full-access any; otherwise the subject employee, the reviewer,
+    // or the subject's manager (direct report) may view.
+    const isSubject  = String(review.employee_id) === String(req.user._id);
+    const isReviewer = String(review.reviewer_id) === String(req.user._id);
+    const isMgr      = isManager(req.user.role) && (
+      String(review.reporting_manager_id) === String(req.user._id) ||
+      String(review.approving_authority_id) === String(req.user._id));
+    if (!isFullAccess(req.user.role) && !isSubject && !isReviewer && !isMgr) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view this review.' });
+    }
     res.json({
       success: true, data: {
         _id: review.id, cycleName: review.cycle_name, periodStart: review.period_start,
@@ -58,7 +79,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST create review (admin/manager)
-router.post('/', authorize('admin', 'manager'), async (req, res) => {
+router.post('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
     const { employeeId, cycleName, periodStart, periodEnd, goals = [] } = req.body;
     if (!employeeId || !cycleName || !periodStart || !periodEnd) return res.status(400).json({ success: false, message: 'Required fields missing' });
@@ -81,6 +102,13 @@ router.post('/', authorize('admin', 'manager'), async (req, res) => {
 // PUT update review ratings + comments (reviewer)
 router.put('/:id', async (req, res) => {
   try {
+    // Only full-access or the assigned reviewer may edit a review.
+    const owner = await pool.query('SELECT reviewer_id FROM performance_reviews WHERE id=$1', [req.params.id]);
+    if (owner.rows.length === 0) return res.status(404).json({ success: false, message: 'Review not found' });
+    if (!isFullAccess(req.user.role) && String(owner.rows[0].reviewer_id) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Only the reviewer can edit this review.' });
+    }
+
     const { overallRating, reviewerComments, employeeComments, status, goals } = req.body;
     await pool.query(
       `UPDATE performance_reviews SET overall_rating=$1, reviewer_comments=$2, employee_comments=$3, status=$4, updated_at=NOW() WHERE id=$5`,
@@ -101,7 +129,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE review (admin)
-router.delete('/:id', authorize('admin'), async (req, res) => {
+router.delete('/:id', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     await pool.query('DELETE FROM performance_reviews WHERE id=$1', [req.params.id]);
     res.json({ success: true, message: 'Deleted' });
@@ -158,7 +186,7 @@ router.put('/goals/:id', async (req, res) => {
     );
     if (own.rows.length === 0) return res.status(404).json({ success: false, message: 'Goal not found' });
     const isOwner = own.rows[0].employee_id === req.user._id;
-    const isPrivileged = ['admin', 'manager'].includes(req.user.role);
+    const isPrivileged = isFullAccess(req.user.role) || isManager(req.user.role);
     if (!isOwner && !isPrivileged) return res.status(403).json({ success: false, message: 'Forbidden' });
 
     const r = await pool.query(

@@ -3,6 +3,7 @@ import { Megaphone, Plus, Trash2, Pin, X, AlertTriangle, Info, Calendar, Bell } 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { isFullAccess } from '../utils/roles';
 
 const TYPE_CONFIG = {
   general: { label: 'General', icon: Megaphone, bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-700', badge: 'bg-slate-100 text-slate-600' },
@@ -84,7 +85,7 @@ export default function Announcements() {
           <h2 className="font-display font-bold text-slate-800 text-xl">Announcements</h2>
           <p className="text-slate-400 text-sm mt-0.5">Company-wide notices and updates</p>
         </div>
-        {user?.role === 'admin' && (
+        {isFullAccess(user) && (
           <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm shadow-brand-500/25">
             <Plus size={16} /> New Announcement
           </button>
@@ -97,7 +98,7 @@ export default function Announcements() {
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm text-center py-20">
           <Megaphone size={40} className="text-slate-200 mx-auto mb-3" />
           <p className="text-slate-400 font-medium">No announcements yet</p>
-          {user?.role === 'admin' && <p className="text-slate-300 text-sm mt-1">Post an announcement to notify all employees</p>}
+          {isFullAccess(user) && <p className="text-slate-300 text-sm mt-1">Post an announcement to notify all employees</p>}
         </div>
       ) : (
         <div className="space-y-4">
@@ -108,7 +109,7 @@ export default function Announcements() {
               <div key={a._id} className={`rounded-2xl border p-5 ${cfg.bg} ${cfg.border} relative overflow-hidden`}>
                 {a.isPinned && (
                   <div className="absolute top-0 right-0">
-                    {user?.role === 'admin' ? (
+                    {isFullAccess(user) ? (
                       <button
                         type="button"
                         onClick={() => handleTogglePin(a)}
@@ -124,7 +125,7 @@ export default function Announcements() {
                     )}
                   </div>
                 )}
-                {!a.isPinned && user?.role === 'admin' && (
+                {!a.isPinned && isFullAccess(user) && (
                   <div className="absolute top-0 right-0">
                     <button
                       type="button"
@@ -160,7 +161,7 @@ export default function Announcements() {
                       )}
                     </div>
                   </div>
-                  {user?.role === 'admin' && (
+                  {isFullAccess(user) && (
                     <button onClick={() => handleDelete(a._id)} className="flex-shrink-0 p-2 rounded-lg hover:bg-black/5 transition-colors text-slate-500 hover:text-red-500">
                       <Trash2 size={15} />
                     </button>

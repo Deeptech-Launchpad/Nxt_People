@@ -3,6 +3,7 @@ import { LogOut, CheckCircle, XCircle, Clock, Shield, AlertTriangle, X, Send, Ch
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { isFullAccess } from '../utils/roles';
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -39,7 +40,7 @@ export default function ExitManagement() {
   const load = () => {
     setLoading(true);
     const calls = [api.get('/exit/my')];
-    if (user?.role === 'admin') calls.push(api.get('/exit/all'));
+    if (isFullAccess(user)) calls.push(api.get('/exit/all'));
     Promise.all(calls).then(([myRes, allRes]) => {
       setMyExit(myRes.data.data);
       if (allRes) setAllExits(allRes.data.data || []);
@@ -141,7 +142,7 @@ export default function ExitManagement() {
       </div>
 
       {/* Admin view — all resignations */}
-      {user?.role === 'admin' && (
+      {isFullAccess(user) && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-100">
             <h3 className="font-display font-semibold text-slate-800">All Resignations</h3>

@@ -6,7 +6,7 @@ import { DollarSign, Clock, CheckCircle, XCircle } from 'lucide-react';
 export default function LeaveEncashment() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ leaveType: 'earned', days: '', reason: '' });
+  const [form, setForm] = useState({ leaveType: 'casual', days: '', reason: '' });
 
   useEffect(() => {
     loadData();
@@ -28,7 +28,7 @@ export default function LeaveEncashment() {
     try {
       await api.post('/encashments', form);
       toast.success('Encashment requested successfully');
-      setForm({ leaveType: 'earned', days: '', reason: '' });
+      setForm({ leaveType: 'casual', days: '', reason: '' });
       loadData();
     } catch (e) {
       toast.error(e.response?.data?.message || 'Failed to submit');
@@ -48,7 +48,6 @@ export default function LeaveEncashment() {
             <div>
               <label className="text-xs font-medium text-slate-600">Leave Type</label>
               <select value={form.leaveType} onChange={e=>setForm({...form, leaveType: e.target.value})} className="w-full mt-1 p-2 border rounded-lg text-sm">
-                <option value="earned">Earned Leave</option>
                 <option value="casual">Casual Leave</option>
               </select>
             </div>

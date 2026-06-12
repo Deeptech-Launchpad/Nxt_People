@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal, MessageCircle } from 'lucide-react';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
+import { isApprover, roleLabel } from '../../utils/roles';
 import api from '../../utils/api';
 
 /* ── Section detection ─────────────────────────────────────────────── */
@@ -13,8 +14,7 @@ function getSection(pathname) {
       pathname.startsWith('/wfh') || pathname.startsWith('/comp-off') ||
       pathname.startsWith('/leave-calendar') || pathname.startsWith('/leave-encashment')) return 'leavetracker';
   if (pathname.startsWith('/performance')) return 'performance';
-  if (pathname.startsWith('/more-services') || pathname.startsWith('/documents')
-    || pathname.startsWith('/my-apps') || pathname.startsWith('/api-connections')) return 'moreservices';
+  if (pathname.startsWith('/more-services') || pathname.startsWith('/documents')) return 'moreservices';
   if (pathname.startsWith('/employees') || pathname.startsWith('/registrations')) return 'employeemaster';
   if (pathname.startsWith('/reports') || pathname.startsWith('/payroll') ||
       pathname.startsWith('/shifts') || pathname.startsWith('/shift-roster') ||
@@ -71,7 +71,7 @@ const NAV = {
       // Team Attendance is admin / manager only — backend role-gates GET /api/attendance/team
       // and App.jsx blocks the route. Hiding the tab here prevents employees from clicking
       // it and getting bounced home.
-      { key: 'team',   label: 'Team',    to: '/attendance/team', roles: ['admin', 'manager'] },
+      { key: 'team',   label: 'Team',    to: '/attendance/team', roles: ['super_admin', 'hr', 'manager'] },
     ],
     getActiveTab: p => p.startsWith('/attendance/team') ? 'team' : 'mydata',
     subNav: {
@@ -85,6 +85,7 @@ const NAV = {
         // for anyone who has it bookmarked.
         { to: '/attendance/my',             label: 'My Attendance'  },
         { to: '/attendance/regularization', label: 'Regularization' },
+        { to: '/attendance/location',       label: 'Location'       },
       ],
       team: [{ to: '/attendance/team', label: 'Team Members' }],
     },
@@ -134,7 +135,7 @@ const NAV = {
       team:     [{ to: '/leave-tracker/team', label: 'Approvals' }],
       holidays: [
         { to: '/leave-tracker/holidays', label: 'Holidays' },
-        { to: '/leave-tracker/weekends', label: 'Weekends', roles: ['admin'] },
+        { to: '/leave-tracker/weekends', label: 'Weekends', roles: ['super_admin', 'hr'] },
       ],
     },
   },
@@ -156,6 +157,9 @@ const NAV = {
   moreservices: {
     label: 'More Services',
     primaryTabs: [
+      // Operations was relocated to the left sidebar rail (Sidebar.jsx). Its
+      // sub-nav + active detection below still drive the white sub-bar when the
+      // user lands on /more-services/operations from the sidebar.
       { key: 'files',        label: 'Files',               to: '/more-services/files'        },
       // Travel + Compensation are intentionally disabled — the underlying
       // workflows aren't fully built out yet. Visible so users see what's
@@ -163,31 +167,31 @@ const NAV = {
       { key: 'travel',       label: 'Travel',              to: '/more-services/travel',       disabled: true },
       { key: 'compensation', label: 'Compensation',        to: '/more-services/compensation', disabled: true },
       { key: 'hrletters',    label: 'HR Letters',          to: '/more-services/hr-letters'   },
-      { key: 'apps',         label: 'Apps',                to: '/my-apps'                    },
     ],
     getActiveTab: p => {
+      if (p.startsWith('/more-services/operations'))   return 'operations';
       if (p.startsWith('/more-services/travel'))       return 'travel';
       if (p.startsWith('/more-services/compensation')) return 'compensation';
       if (p.startsWith('/more-services/hr-letters'))   return 'hrletters';
-      if (p.startsWith('/my-apps') || p.startsWith('/api-connections')) return 'apps';
       return 'files';
     },
     subNav: {
+      operations:   [
+        { to: '/more-services/operations',               label: 'Services'      },
+        { to: '/more-services/operations/leave-tracker', label: 'Leave Tracker' },
+      ],
       files:        [{ to: '/more-services/files',        label: 'Document Storage' }],
       travel:       [{ to: '/more-services/travel',       label: 'Travel Requests'  }],
       compensation: [{ to: '/more-services/compensation', label: 'Claims'           }],
       hrletters:    [{ to: '/more-services/hr-letters',   label: 'Letter Requests'  }],
-      apps: [
-        { to: '/my-apps',         label: 'My Apps'        },
-        { to: '/api-connections', label: 'Manage Apps & API Connections', roles: ['admin'] },
-      ],
     },
   },
   employeemaster: {
     label: 'Employees',
     primaryTabs: [
-      { key: 'employees', label: 'Employees', to: '/employees' },
-      { key: 'registrations', label: 'Registrations', to: '/registrations' },
+      // Employee management is HR / Super Admin only (Team Leads excluded).
+      { key: 'employees', label: 'Employees', to: '/employees', roles: ['super_admin', 'hr'] },
+      { key: 'registrations', label: 'Registrations', to: '/registrations', roles: ['super_admin', 'hr'] },
     ],
     getActiveTab: p => p.startsWith('/registrations') ? 'registrations' : 'employees',
     subNav: {
@@ -206,20 +210,21 @@ const NAV = {
       // App.jsx ProtectedRoute on each /reports, /payroll, /shifts, /shift-roster,
       // /daily-attendance route and by Sidebar.jsx (the Reports icon is gated).
       reports: [
-        { to: '/reports',                label: 'Attendance Report', exact: true, roles: ['admin', 'manager'] },
-        { to: '/daily-attendance',       label: 'Daily Attendance',                   roles: ['admin', 'manager'] },
-        { to: '/payroll',                label: 'Payroll Report',                     roles: ['admin', 'manager'] },
-        { to: '/payroll/setup',          label: 'Salary Setup',                       roles: ['admin']             },
-        { to: '/payroll/run',            label: 'Payroll Run',                        roles: ['admin']             },
-        { to: '/payroll/team',           label: 'Team Payroll',                       roles: ['admin', 'manager'] },
-        { to: '/payroll/declarations',   label: 'Tax Declarations',                   roles: ['admin']             },
-        { to: '/payroll/compliance',     label: 'Compliance',                         roles: ['admin']             },
+        { to: '/reports',                label: 'Attendance Report', exact: true, roles: ['super_admin', 'hr', 'manager'] },
+        { to: '/daily-attendance',       label: 'Daily Attendance',                   roles: ['super_admin', 'hr', 'manager'] },
+        { to: '/payroll',                label: 'Payroll Report',                     roles: ['super_admin', 'hr', 'manager'] },
+        { to: '/payroll/setup',          label: 'Salary Setup',                       roles: ['super_admin', 'hr']             },
+        { to: '/payroll/run',            label: 'Payroll Run',                        roles: ['super_admin', 'hr']             },
+        { to: '/payroll/team',           label: 'Team Payroll',                       roles: ['super_admin', 'hr', 'manager'] },
+        { to: '/payroll/my',             label: 'Payslips' },
+        { to: '/payroll/declarations',   label: 'Tax Declarations',                   roles: ['super_admin', 'hr']             },
+        { to: '/payroll/compliance',     label: 'Compliance',                         roles: ['super_admin', 'hr']             },
         // Adjustments / Loans & Advances / Tax Slabs removed from the
         // Reports sub-nav — the underlying admin workflows still exist
         // at those routes for direct deep-linking, but they shouldn't
         // be surfaced as primary nav until the UX is finalised.
-        { to: '/shifts',                 label: 'Shifts',                             roles: ['admin']             },
-        { to: '/shift-roster',           label: 'Shift Roster',                       roles: ['admin', 'manager'] },
+        { to: '/shifts',                 label: 'Shifts',                             roles: ['super_admin', 'hr']             },
+        { to: '/shift-roster',           label: 'Shift Roster',                       roles: ['super_admin', 'hr', 'manager'] },
       ],
     },
   },
@@ -235,7 +240,7 @@ const SubNavLink = React.memo(function SubNavLink({ to, label, isActive }) {
       className={`h-full flex items-center px-1 border-b-2 text-[14px] whitespace-nowrap transition-all duration-150 mt-[2px] tracking-[-0.01em]
         ${isActive
           ? 'border-[#1a73e8] text-[#1a73e8] font-bold'
-          : 'border-transparent text-slate-500 font-semibold hover:text-slate-800 hover:border-slate-300'
+          : 'border-transparent text-slate-500 dark:text-slate-300 font-semibold hover:text-slate-800 dark:hover:text-white hover:border-slate-300 dark:hover:border-slate-500'
         }`}>
       {label}
     </NavLink>
@@ -496,8 +501,9 @@ export default function Topbar() {
                 </span>
               );
             }
+            const targetTo = (key === 'reports' && !isApprover(user)) ? '/payroll/my' : to;
             return (
-              <button key={key} onClick={() => navigate(to)}
+              <button key={key} onClick={() => navigate(targetTo)}
                 className={`h-full px-4 flex items-center text-[14px] border-b-[3px] transition-all duration-150 tracking-[-0.01em]
                   ${active ? 'border-white text-white font-bold' : 'border-transparent text-white/70 font-semibold hover:text-white'}`}>
                 {label}
@@ -517,9 +523,9 @@ export default function Topbar() {
               <Plus size={16} strokeWidth={2.5} />
             </button>
             {showQuickActions && (
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl z-50 border border-slate-100 overflow-hidden">
-                <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                  <span className="text-[12px] font-bold text-slate-700 uppercase tracking-wider">Quick Actions</span>
+              <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-[#1f2937] rounded-xl shadow-2xl z-50 border border-slate-100 dark:border-[#374151] overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-slate-100 dark:border-[#374151] bg-slate-50 dark:bg-[#111827] flex items-center justify-between">
+                  <span className="text-[12px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">Quick Actions</span>
                 </div>
                 <div className="py-1">
                   {[
@@ -532,7 +538,7 @@ export default function Topbar() {
                     <button
                       key={label}
                       onClick={() => { navigate(to); setShowQuickActions(false); }}
-                      className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+                      className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151] transition-colors"
                     >
                       {label}
                     </button>
@@ -550,8 +556,8 @@ export default function Topbar() {
               <Search size={17} />
             </button>
             {showSearch && (
-              <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-2xl z-50 border border-slate-100 overflow-hidden">
-                <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100">
+              <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-[#1f2937] rounded-xl shadow-2xl z-50 border border-slate-100 dark:border-[#374151] overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 dark:border-[#374151]">
                   <Search size={15} className="text-slate-400 flex-shrink-0" />
                   <input
                     autoFocus
@@ -566,22 +572,23 @@ export default function Topbar() {
                       }
                       if (e.key === 'Escape') setShowSearch(false);
                     }}
-                    className="flex-1 text-sm text-slate-800 outline-none placeholder:text-slate-400"
+                    className="flex-1 text-sm text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-400 bg-transparent"
                   />
-                  <button onClick={() => setShowSearch(false)} className="text-slate-400 hover:text-slate-600"><X size={14}/></button>
+                  <button onClick={() => setShowSearch(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X size={14}/></button>
                 </div>
                 <div className="py-1">
                   {[
-                    { label: 'Employees', to: '/employees' },
+                    { label: 'Employees', to: '/employees', roles: ['super_admin', 'hr'] },
                     { label: 'Attendance', to: '/attendance/my' },
                     { label: 'Leave Tracker', to: '/leave-tracker/summary' },
-                    { label: 'Reports', to: '/reports' },
+                    { label: 'Reports', to: '/reports', roles: ['super_admin', 'hr', 'manager'] },
                     { label: 'Announcements', to: '/announcements' },
-                  ].filter(item => !searchQuery || item.label.toLowerCase().includes(searchQuery.toLowerCase()))
+                  ].filter(item => (!item.roles || item.roles.includes(user?.role)))
+                   .filter(item => !searchQuery || item.label.toLowerCase().includes(searchQuery.toLowerCase()))
                    .map(({ label, to }) => (
                     <button key={label} onClick={() => { navigate(to); setShowSearch(false); }}
-                      className="w-full text-left px-4 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2">
-                      <Search size={12} className="text-slate-300" />{label}
+                      className="w-full text-left px-4 py-2 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151] transition-colors flex items-center gap-2">
+                      <Search size={12} className="text-slate-300 dark:text-slate-500" />{label}
                     </button>
                   ))}
                 </div>
@@ -628,27 +635,27 @@ export default function Topbar() {
               )}
             </button>
             {showNotifs && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-2xl z-50 border border-slate-100 overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                  <h3 className="font-semibold text-sm text-slate-800">Notifications</h3>
+              <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-[#1f2937] rounded-xl shadow-2xl z-50 border border-slate-100 dark:border-[#374151] overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 dark:border-[#374151] flex justify-between items-center bg-slate-50 dark:bg-[#111827]">
+                  <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100">Notifications</h3>
                   <div className="flex items-center gap-3">
                     {unreadCount > 0 && (
-                      <button onClick={markAllRead} className="text-[11px] text-blue-600 font-medium hover:underline flex items-center gap-1">
+                      <button onClick={markAllRead} className="text-[11px] text-blue-400 font-medium hover:underline flex items-center gap-1">
                         <CheckCircle size={11}/> Mark all read
                       </button>
                     )}
-                    <button onClick={() => setShowNotifs(false)} className="text-slate-400 hover:text-slate-600"><X size={14}/></button>
+                    <button onClick={() => setShowNotifs(false)} className="text-slate-400 hover:text-slate-300"><X size={14}/></button>
                   </div>
                 </div>
-                <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-50">
+                <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-50 dark:divide-[#374151]">
                   {notifications.length === 0 ? (
                     <div className="p-8 text-center text-slate-400 text-sm">
                       <Bell size={28} className="mx-auto mb-2 opacity-30"/>No new notifications
                     </div>
                   ) : notifications.map(n => (
                     <div key={n._id} onClick={() => handleNotifClick(n)}
-                      className={`px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors ${!n.isRead ? 'bg-blue-50/40' : ''}`}>
-                      <p className={`text-sm leading-snug ${!n.isRead ? 'font-semibold text-slate-800' : 'text-slate-600'}`}>{n.title}</p>
+                      className={`px-4 py-3 hover:bg-slate-50 dark:hover:bg-[#374151] cursor-pointer transition-colors ${!n.isRead ? 'bg-blue-50/40 dark:bg-blue-900/20' : ''}`}>
+                      <p className={`text-sm leading-snug ${!n.isRead ? 'font-semibold text-slate-800 dark:text-slate-100' : 'text-slate-600 dark:text-slate-300'}`}>{n.title}</p>
                       <p className="text-xs text-slate-400 truncate mt-0.5">{n.message}</p>
                     </div>
                   ))}
@@ -679,17 +686,17 @@ export default function Topbar() {
               )}
             </button>
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-2xl z-50 border border-slate-100 overflow-hidden">
-                <div className="px-4 py-3.5 border-b border-slate-100 bg-gradient-to-r from-blue-50 to-indigo-50">
-                  <p className="font-semibold text-[13px] text-slate-800">{user?.firstName} {user?.lastName}</p>
-                  <p className="text-[11px] text-slate-500 capitalize mt-0.5">{user?.designation || user?.role}</p>
-                  {user?.employeeId && <p className="text-[10px] text-blue-600 font-mono mt-1">{user.employeeId}</p>}
+              <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-[#1f2937] rounded-xl shadow-2xl z-50 border border-slate-100 dark:border-[#374151] overflow-hidden">
+                <div className="px-4 py-3.5 border-b border-slate-100 dark:border-[#374151] bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-[#1e3a5f] dark:to-[#1e1b4b]">
+                  <p className="font-semibold text-[13px] text-slate-800 dark:text-slate-100">{user?.firstName} {user?.lastName}</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 capitalize mt-0.5">{user?.designation || roleLabel(user?.role)}</p>
+                  {user?.employeeId && <p className="text-[10px] text-blue-400 font-mono mt-1">{user.employeeId}</p>}
                 </div>
                 <div className="py-1">
-                  <button onClick={() => { navigate('/profile'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50">My Profile</button>
-                  <button onClick={() => { navigate('/settings'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50">Settings</button>
-                  <div className="border-t border-slate-100 mt-1 pt-1">
-                    <button onClick={logout} className="w-full text-left px-4 py-2.5 text-[13px] text-red-500 hover:bg-red-50 font-medium">Sign Out</button>
+                  <button onClick={() => { navigate('/profile'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151]">My Profile</button>
+                  <button onClick={() => { navigate('/settings'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151]">Settings</button>
+                  <div className="border-t border-slate-100 dark:border-[#374151] mt-1 pt-1">
+                    <button onClick={logout} className="w-full text-left px-4 py-2.5 text-[13px] text-red-500 hover:bg-red-50 dark:hover:bg-[#450a0a] font-medium">Sign Out</button>
                     <button
                       onClick={async () => {
                         if (!window.confirm('Sign out from all devices? You will be logged out everywhere — laptops, phones, every browser.')) return;
@@ -699,7 +706,7 @@ export default function Topbar() {
                         } catch (_) { /* server bumped revoked_at — local session is dead anyway */ }
                         logout();
                       }}
-                      className="w-full text-left px-4 py-2.5 text-[12px] text-slate-500 hover:bg-slate-50"
+                      className="w-full text-left px-4 py-2.5 text-[12px] text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-[#374151]"
                     >
                       Sign out from all devices
                     </button>
@@ -712,7 +719,7 @@ export default function Topbar() {
       </div>
 
       {/* ── White sub-nav ─────────────────────────────────────────────── */}
-      <div className="h-[42px] bg-white border-b border-slate-200 flex items-center px-5 shadow-sm relative">
+      <div className="h-[42px] bg-white dark:bg-[#1a2040] border-b border-slate-200 dark:border-[#2d3748] flex items-center px-5 shadow-sm relative">
         <SubNav items={subNavItems} />
       </div>
     </div>

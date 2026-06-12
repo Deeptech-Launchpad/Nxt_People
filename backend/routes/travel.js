@@ -11,6 +11,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess, reportsScope, canActOnEmployee } = require('../utils/roles');
 const { audit } = require('../middleware/audit');
 router.use(protect);
 
@@ -40,8 +41,8 @@ const SELECT_ALL = `
          ) AS employee
     FROM travel_requests t
     JOIN employees e ON t.employee_id = e.id
-   ORDER BY t.created_at DESC
-`;
+   WHERE 1=1`;
+// (caller appends an optional direct-reports scope, then ORDER BY)
 
 router.get('/my', async (req, res) => {
   try {
@@ -50,9 +51,11 @@ router.get('/my', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.get('/', authorize('admin', 'manager'), async (_req, res) => {
+router.get('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
-    const r = await pool.query(SELECT_ALL);
+    // Full-access sees all requests; managers only their direct reports'.
+    const scope = reportsScope(req.user, 'e', 1);
+    const r = await pool.query(`${SELECT_ALL}${scope.clause} ORDER BY t.created_at DESC`, scope.params);
     res.json({ success: true, data: r.rows });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -77,12 +80,25 @@ router.post('/', audit('CREATE', 'travel_request'), async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/:id/action', authorize('admin', 'manager'), audit('ACTION', 'travel_request'), async (req, res) => {
+router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), audit('ACTION', 'travel_request'), async (req, res) => {
   try {
     const { action, rejectionReason } = req.body;
     if (!['approve', 'reject'].includes(action)) {
       return res.status(400).json({ success: false, message: 'action must be approve or reject' });
     }
+
+    // Managers may only act on their direct reports; full-access on anyone.
+    const tgt = await pool.query(
+      `SELECT t.employee_id, e.reporting_manager_id, e.approving_authority_id
+         FROM travel_requests t JOIN employees e ON t.employee_id = e.id WHERE t.id = $1`,
+      [req.params.id]
+    );
+    if (tgt.rows.length === 0) return res.status(404).json({ success: false, message: 'Request not found' });
+    if (tgt.rows[0].employee_id === req.user._id && !isFullAccess(req.user.role))
+      return res.status(403).json({ success: false, message: 'You cannot act on your own travel request.' });
+    if (!canActOnEmployee(req.user, tgt.rows[0]))
+      return res.status(403).json({ success: false, message: 'You can only act on your direct reports’ requests.' });
+
     const status = action === 'approve' ? 'approved' : 'rejected';
     const r = await pool.query(
       `UPDATE travel_requests

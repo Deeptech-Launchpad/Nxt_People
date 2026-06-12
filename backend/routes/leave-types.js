@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { isFullAccess } = require('../utils/roles');
 
 router.use(protect);
 
@@ -21,7 +22,7 @@ router.get('/', async (req, res) => {
 router.get('/balances', async (req, res) => {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
-    const empId = (req.user.role === 'admin' && req.query.employeeId)
+    const empId = (isFullAccess(req.user.role) && req.query.employeeId)
       ? req.query.employeeId : req.user._id;
 
     // Get all active leave types
@@ -70,7 +71,7 @@ router.get('/balances', async (req, res) => {
 });
 
 // POST /api/leave-types — create (admin)
-router.post('/', authorize('admin'), async (req, res) => {
+router.post('/', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const { name, code, icon, color, maxDaysPerYear, carryForward } = req.body;
     if (!name || !code) return res.status(400).json({ success: false, message: 'name and code required' });
@@ -88,7 +89,7 @@ router.post('/', authorize('admin'), async (req, res) => {
 });
 
 // PUT /api/leave-types/balances/:employeeId — admin: set balance for employee
-router.put('/balances/:employeeId', authorize('admin'), async (req, res) => {
+router.put('/balances/:employeeId', authorize('super_admin', 'hr'), async (req, res) => {
   try {
     const { leaveTypeId, available, year } = req.body;
     const y = year || new Date().getFullYear();

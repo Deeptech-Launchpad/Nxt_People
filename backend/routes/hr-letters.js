@@ -13,6 +13,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { reportsScope, canActOnEmployee } = require('../utils/roles');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -77,8 +78,8 @@ const SELECT_ALL = `
     FROM hr_letter_requests l
     JOIN employees e ON l.employee_id = e.id
     LEFT JOIN employees p ON l.processed_by = p.id
-   ORDER BY l.created_at DESC
-`;
+   WHERE 1=1`;
+// (caller appends an optional direct-reports scope, then ORDER BY)
 
 router.get('/my', async (req, res) => {
   try {
@@ -87,9 +88,11 @@ router.get('/my', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.get('/', authorize('admin', 'manager'), async (_req, res) => {
+router.get('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
-    const r = await pool.query(SELECT_ALL);
+    // Full-access sees all requests; managers only their direct reports'.
+    const scope = reportsScope(req.user, 'e', 1);
+    const r = await pool.query(`${SELECT_ALL}${scope.clause} ORDER BY l.created_at DESC`, scope.params);
     res.json({ success: true, data: r.rows });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -112,12 +115,22 @@ router.post('/', async (req, res) => {
 
 // PUT /:id/process — change status, optionally upload signed PDF.
 // Multipart body: { status, rejectionReason?, file? (signed letter PDF) }
-router.put('/:id/process', authorize('admin', 'manager'), upload.single('letter'), async (req, res) => {
+router.put('/:id/process', authorize('super_admin', 'hr', 'manager'), upload.single('letter'), async (req, res) => {
   try {
     const { status, rejectionReason } = req.body;
     if (!VALID_STATUSES.includes(status)) {
       return res.status(400).json({ success: false, message: `status must be one of: ${VALID_STATUSES.join(', ')}` });
     }
+    // Managers may only process their direct reports' requests; full-access any.
+    const tgt = await pool.query(
+      `SELECT l.employee_id, e.reporting_manager_id, e.approving_authority_id
+         FROM hr_letter_requests l JOIN employees e ON l.employee_id = e.id WHERE l.id = $1`,
+      [req.params.id]
+    );
+    if (tgt.rows.length === 0) return res.status(404).json({ success: false, message: 'Request not found' });
+    if (!canActOnEmployee(req.user, tgt.rows[0]))
+      return res.status(403).json({ success: false, message: 'You can only process your direct reports’ requests.' });
+
     const letterUrl = req.file ? `/uploads/${req.file.filename}` : null;
     const r = await pool.query(
       `UPDATE hr_letter_requests

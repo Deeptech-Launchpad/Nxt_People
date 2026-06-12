@@ -3,6 +3,7 @@ import { Plus, X, CheckCircle, XCircle, Home, Clock, Send, AlertTriangle } from 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { isApprover } from '../utils/roles';
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -26,7 +27,7 @@ export default function WFHRequests() {
   const load = () => {
     setLoading(true);
     const calls = [api.get('/wfh/my')];
-    if (user?.role !== 'employee') calls.push(api.get('/wfh/pending'));
+    if (isApprover(user)) calls.push(api.get('/wfh/pending'));
     Promise.all(calls).then(([myRes, pendingRes]) => {
       setMyRequests(myRes.data.data || []);
       if (pendingRes) setPending(pendingRes.data.data || []);
@@ -71,7 +72,7 @@ export default function WFHRequests() {
           </button>
         </div>
 
-        {user?.role !== 'employee' && (
+        {isApprover(user) && (
           <div className="flex border-b border-slate-100">
             {[['my', 'My Requests'], ['pending', `Team Pending (${pending.length})`]].map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)}

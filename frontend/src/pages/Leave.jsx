@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Calendar, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Plus, X, Calendar, Eye } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import LeaveDetailModal from '../components/LeaveDetailModal';
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -10,8 +11,14 @@ const STATUS_STYLE = {
   rejected: 'bg-red-100 text-red-700',
   cancelled: 'bg-slate-100 text-slate-500'
 };
-const LEAVE_TYPES = ['casual', 'sick', 'earned', 'unpaid'];
-const initForm = { leaveType: 'casual', startDate: '', endDate: '', reason: '', isHalfDay: false, halfDayType: 'morning' };
+const LEAVE_TYPES = ['casual', 'comp_off', 'unpaid', 'permission'];
+const LEAVE_TYPE_LABELS = {
+  casual: 'Casual Leave',
+  comp_off: 'Compensatory Off',
+  unpaid: 'Leave Without Pay',
+  permission: 'Permission'
+};
+const initForm = { leaveType: 'casual', startDate: '', endDate: '', reason: '', isHalfDay: false, halfDayType: 'first_half' };
 
 // Bug #24 fix: parse date-only strings as LOCAL time to avoid off-by-one in IST
 function parseLocalDate(dateStr) {
@@ -24,26 +31,27 @@ export default function Leave() {
   const { user } = useAuth();
   const [leaves, setLeaves] = useState([]);
   const [balance, setBalance] = useState(null);
+  const [balanceCards, setBalanceCards] = useState(null);  // raw cards for the detail modal's balance panel
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(initForm);
   const [saving, setSaving] = useState(false);
+  const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
 
   const load = () => {
     setLoading(true);
     Promise.all([
       api.get('/leaves/my'),
-      api.get(`/employees/${user._id}`)
-    ]).then(([l, e]) => {
+      api.get('/leaves/balance')
+    ]).then(([l, b]) => {
       setLeaves(l.data.data);
-      // Bug #9 fix: map the actual column names returned by the API
-      const emp = e.data.data;
-      setBalance({
-        casual: emp?.casualLeave,
-        sick: emp?.sickLeave,
-        earned: emp?.earnedLeave,
-        unpaid: emp?.unpaidLeave
+      const cards = b.data.data || [];
+      setBalanceCards(cards);
+      const balMap = {};
+      cards.forEach(c => {
+        balMap[c.code] = c.available;
       });
+      setBalance(balMap);
     }).catch(console.error).finally(() => setLoading(false));
   };
 
@@ -67,18 +75,18 @@ export default function Leave() {
 
   const leaveTypeColors = {
     casual: 'bg-blue-50 text-blue-700 border-blue-200',
-    sick: 'bg-red-50 text-red-700 border-red-200',
-    earned: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    unpaid: 'bg-slate-50 text-slate-600 border-slate-200'
+    comp_off: 'bg-green-50 text-green-700 border-green-200',
+    unpaid: 'bg-slate-50 text-slate-600 border-slate-200',
+    permission: 'bg-purple-50 text-purple-700 border-purple-200'
   };
 
   return (
     <div className="space-y-5">
       {/* Balance cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {LEAVE_TYPES.map(t => (
           <div key={t} className={`rounded-2xl p-5 border ${leaveTypeColors[t]}`}>
-            <p className="text-xs font-semibold uppercase tracking-wider mb-2 opacity-70">{t} Leave</p>
+            <p className="text-xs font-semibold uppercase tracking-wider mb-2 opacity-70">{LEAVE_TYPE_LABELS[t]}</p>
             {/* Bug #9 fix: balance is now correctly mapped from API response */}
             <p className="text-3xl font-display font-bold">{balance?.[t] === 999 ? '∞' : (balance?.[t] ?? '—')}</p>
             <p className="text-xs mt-1 opacity-60">days remaining</p>
@@ -110,12 +118,12 @@ export default function Leave() {
               return (
                 <div key={l._id} className="p-5 flex items-start justify-between gap-4 hover:bg-slate-50 transition-colors">
                   <div className="flex items-start gap-4">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${leaveTypeColors[l.leaveType]}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${leaveTypeColors[l.leaveType] || 'bg-slate-50 border-slate-200'}`}>
                       <Calendar size={18} />
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium text-slate-700 capitalize">{l.leaveType} Leave</p>
+                        <p className="font-medium text-slate-700 capitalize">{LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType}</p>
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLE[l.status]}`}>{l.status}</span>
                       </div>
                       <p className="text-sm text-slate-500 mt-1">
@@ -124,15 +132,23 @@ export default function Leave() {
                         <span className="text-slate-400 ml-1.5">({l.totalDays} day{l.totalDays !== 1 ? 's' : ''})</span>
                       </p>
                       <p className="text-sm text-slate-400 mt-0.5">{l.reason}</p>
-                      {l.rejectionReason && <p className="text-xs text-red-500 mt-1">Rejected: {l.rejectionReason}</p>}
-                      {l.approvedBy && l.status === 'approved' && <p className="text-xs text-emerald-600 mt-1">Approved by {l.approvedBy?.firstName} {l.approvedBy?.lastName}</p>}
+                      {l.rejectionReason && (
+                        <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2 py-1 mt-1.5 w-fit font-medium">
+                          Rejection Reason: {l.rejectionReason}
+                        </p>
+                      )}
                     </div>
                   </div>
-                  {l.status === 'pending' && (
-                    <button onClick={() => handleCancel(l._id)} className="flex-shrink-0 text-xs text-red-500 hover:text-red-600 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">
-                      <X size={13} /> Cancel
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                      <Eye size={13} /> View
                     </button>
-                  )}
+                    {l.status === 'pending' && (
+                      <button onClick={() => handleCancel(l._id)} className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
+                        <X size={13} /> Cancel
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -150,14 +166,14 @@ export default function Leave() {
             <form onSubmit={handleApply} className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Leave Type</label>
-                <select value={form.leaveType} onChange={e => setForm({ ...form, leaveType: e.target.value })} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 capitalize">
-                  {LEAVE_TYPES.map(t => <option key={t} className="capitalize">{t}</option>)}
+                <select value={form.leaveType} onChange={e => setForm({ ...form, leaveType: e.target.value })} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400">
+                  {LEAVE_TYPES.map(t => <option key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</option>)}
                 </select>
               </div>
               {/* Show available balance for selected leave type */}
               {balance && form.leaveType !== 'unpaid' && (
                 <p className="text-xs text-slate-500 -mt-2">
-                  Available: <span className="font-semibold text-brand-600">{balance[form.leaveType] ?? '—'} day(s)</span>
+                  Available: <span className="font-semibold text-brand-600">{balance[form.leaveType] ?? 0} day(s)</span>
                 </p>
               )}
               <div className="flex items-center gap-3">
@@ -167,7 +183,7 @@ export default function Leave() {
                 </label>
                 {form.isHalfDay && (
                   <select value={form.halfDayType} onChange={e => setForm({ ...form, halfDayType: e.target.value })} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-brand-400">
-                    <option value="morning">Morning</option><option value="afternoon">Afternoon</option>
+                    <option value="first_half">First Half</option><option value="second_half">Second Half</option>
                   </select>
                 )}
               </div>
@@ -196,6 +212,15 @@ export default function Leave() {
             </form>
           </div>
         </div>
+      )}
+
+      {detailLeave && (
+        <LeaveDetailModal
+          leave={detailLeave}
+          balance={balanceCards}
+          onClose={() => setDetailLeave(null)}
+          onCancel={(x) => { setDetailLeave(null); handleCancel(x._id); }}
+        />
       )}
     </div>
   );

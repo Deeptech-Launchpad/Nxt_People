@@ -3,6 +3,7 @@ import { FileText, Upload, Trash2, Download, File, FileImage, AlertTriangle, X, 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { isApprover } from '../utils/roles';
 
 const DOC_TYPES = ['resume', 'photo', 'offer_letter', 'id_proof', 'address_proof', 'educational', 'experience', 'payslip', 'contract', 'nda', 'other'];
 const DOC_TYPE_LABELS = {
@@ -75,7 +76,7 @@ export default function Documents({ employeeId: propEmpId }) {
     catch (err) { toast.error('Failed to delete'); }
   };
 
-  const canUpload = user?.role !== 'employee' || user?._id === empId;
+  const canUpload = isApprover(user) || user?._id === empId;
 
   // Group by canonical type. Anything with a type not in DOC_TYPES (legacy
   // onboarding rows that escaped the migration backfill, or admin-supplied

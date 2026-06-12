@@ -3,7 +3,7 @@ const app     = require('../app');
 const { pool } = require('../db');
 
 // Credentials of the seeded admin (adjust if your seed differs)
-const ADMIN_EMAIL    = 'admin@nxtpeople.com';
+const ADMIN_EMAIL    = 'balaji@altiusnxt.com';
 const ADMIN_PASSWORD = 'password123';
 
 let adminToken = '';
@@ -31,7 +31,7 @@ describe('POST /api/auth/login', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.token).toBeTruthy();
     expect(res.body.refreshToken).toBeTruthy();
-    expect(res.body.data.role).toBe('admin');
+    expect(res.body.data.role).toBe('super_admin');
   });
 
   it('returns 401 for wrong password', async () => {

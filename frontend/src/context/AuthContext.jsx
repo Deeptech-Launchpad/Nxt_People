@@ -72,6 +72,27 @@ export const AuthProvider = ({ children }) => {
     return finaliseSession(res.data);
   };
 
+  /**
+   * Google Sign-In. Exchanges a Google Identity Services `credential` (ID
+   * token) for a session. Mirrors `login`'s return shape:
+   *   - { mfaRequired: true, mfaTicket }  → finish via loginMfa()
+   *   - { mfaRequired: false, user }       → fully signed in
+   * The backend verifies the token, enforces the company domain, matches the
+   * employee, and (on success) issues the same session as a password login.
+   */
+  const loginGoogle = async (credential) => {
+    const res = await api.post('/auth/google', { credential });
+    if (res.data.requiresMfa) {
+      return { mfaRequired: true, mfaTicket: res.data.mfaTicket };
+    }
+    if (res.data.requiresMfaSetup) {
+      const err = new Error(res.data.message || 'Your role requires MFA. Sign in with email and password to set it up.');
+      err.code = 'MFA_SETUP_REQUIRED';
+      throw err;
+    }
+    return { mfaRequired: false, user: finaliseSession(res.data) };
+  };
+
   const logout = async () => {
     try {
       const refreshToken = localStorage.getItem('nxt_refresh_token');
@@ -84,7 +105,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, checkEmail, register, acceptTerms, login, loginMfa, logout, setUser }}>
+    <AuthContext.Provider value={{ user, loading, checkEmail, register, acceptTerms, login, loginMfa, loginGoogle, logout, setUser }}>
       {children}
     </AuthContext.Provider>
   );

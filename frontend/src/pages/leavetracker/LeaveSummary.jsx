@@ -3,9 +3,10 @@
  * Matches screenshot: 4 leave type cards + Apply Leave modal + Upcoming/Past holidays section
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Calendar, Plus, X, Info, ChevronDown, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Plus, X, Info, ChevronDown, AlertTriangle, Eye } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import LeaveDetailModal from '../../components/LeaveDetailModal';
 
 /* ── helpers ────────────────────────────────────────────────────────── */
 function fmtDate(s) {
@@ -272,6 +273,7 @@ const STATUS_PILL = {
 export default function LeaveSummary() {
   const [cards, setCards]           = useState([]);
   const [leaves, setLeaves]         = useState([]);
+  const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
   const [holidays, setHolidays]     = useState([]);
   const [loading, setLoading]       = useState(true);
   const [showApply, setShowApply]   = useState(false);
@@ -299,6 +301,12 @@ export default function LeaveSummary() {
   }, [dateRange.year]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleCancel = async (id) => {
+    if (!confirm('Cancel this leave request?')) return;
+    try { await api.delete(`/leaves/${id}`); toast.success('Leave cancelled'); load(); }
+    catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+  };
 
   const today = new Date();
   const bookedTotal = leaves.filter(l => l.status !== 'cancelled').reduce((s, l) => s + (l.totalDays || 0), 0);
@@ -346,9 +354,9 @@ export default function LeaveSummary() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
-        {/* ── 4 Leave Type Cards ──────────────────────────────────────── */}
+        {/* ── Leave Type Cards ──────────────────────────────────────── */}
         {loading ? (
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[1,2,3,4].map(i => (
               <div key={i} className="bg-white rounded-lg border border-gray-200 p-5 animate-pulse">
                 <div className="w-10 h-10 bg-gray-100 rounded mb-3" />
@@ -359,16 +367,17 @@ export default function LeaveSummary() {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {cards.map(card => {
-              // Permission leave is tracked in hours (matches Zoho People).
+            {cards.filter(c => ['casual', 'comp_off', 'unpaid', 'permission'].includes(c.code)).map(card => {
               // Other leave types stay in days.
-              const unit = card.code === 'permission' ? 'hrs' : '';
+              const unit = '';
               const fmt = (v) => v === null || v === undefined ? '—' : `${v}${unit ? ' ' + unit : ''}`;
               return (
                 <div key={card.code} className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow">
                   {/* Icon */}
                   <div className={`w-11 h-11 rounded flex items-center justify-center text-[22px] mb-4 ${ICON_BG[card.code] || 'bg-gray-50'}`}>
-                    {card.icon || ICON_MAP[card.code] || '📋'}
+                    {/* Prefer the local (clean UTF-8) icon map for known leave codes;
+                        the backend-stored card.icon can be mojibake-corrupted. */}
+                    {ICON_MAP[card.code] || card.icon || '📋'}
                   </div>
                   {/* Name */}
                   <p className="text-[12.5px] font-bold text-gray-600 mb-3">{card.name}</p>
@@ -434,24 +443,34 @@ export default function LeaveSummary() {
             <ChevronDown size={15} className={`text-gray-400 transition-transform ${section === 'past' ? 'rotate-180' : ''}`} />
           </button>
           {section === 'past' && (
-            <div className="divide-y divide-gray-50">
+            <div className="divide-y divide-gray-100">
               {pastLeaves.length === 0 ? (
                 <p className="px-5 py-8 text-center text-[13px] text-gray-400">No past leaves</p>
               ) : pastLeaves.map(l => (
-                <div key={l._id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
-                  <div className="text-[12px] font-semibold text-gray-600 w-[180px] flex-shrink-0">
-                    {fmtDate(l.startDate)}
+                <div key={l._id} className="px-5 py-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[13px] font-semibold text-gray-800">
+                            {{ casual: 'Casual Leave', comp_off: 'Compensatory Off', unpaid: 'Leave Without Pay', permission: 'Permission' }[l.leaveType] || l.leaveType}
+                          </span>
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full capitalize ${STATUS_PILL[l.status] || 'bg-gray-100 text-gray-500'}`}>
+                            {l.status}
+                          </span>
+                        </div>
+                        <p className="text-[12px] text-gray-500 mt-0.5">
+                          {fmtDate(l.startDate)} · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
+                        </p>
+                        {l.rejectionReason && (
+                          <p className="text-[11px] text-red-500 mt-1">Reason: {l.rejectionReason}</p>
+                        )}
+                      </div>
+                    </div>
+                    <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors flex-shrink-0">
+                      <Eye size={13} /> View
+                    </button>
                   </div>
-                  <span className="text-[12.5px] font-medium text-gray-700 capitalize">{l.leaveType?.replace('_', ' ')} Leave</span>
-                  <span className="text-[12px] text-gray-500">{l.totalDays} day{l.totalDays !== 1 ? 's' : ''}</span>
-                  <span className={`ml-auto text-[11px] font-bold px-2 py-0.5 rounded-full capitalize ${STATUS_PILL[l.status] || 'bg-gray-100 text-gray-500'}`}>
-                    {l.status}
-                  </span>
-                  {l.rejectionReason && (
-                    <span className="text-[11px] text-red-500 truncate max-w-[140px]" title={l.rejectionReason}>
-                      Reason: {l.rejectionReason}
-                    </span>
-                  )}
                 </div>
               ))}
             </div>
@@ -459,10 +478,19 @@ export default function LeaveSummary() {
         </div>
       </div>
 
+      {detailLeave && (
+        <LeaveDetailModal
+          leave={detailLeave}
+          balance={cards}
+          onClose={() => setDetailLeave(null)}
+          onCancel={(x) => { setDetailLeave(null); handleCancel(x._id); }}
+        />
+      )}
+
       {/* ── Modals ─────────────────────────────────────────────────────── */}
       {showApply && (
         <ApplyLeaveModal
-          cards={cards}
+          cards={cards.filter(c => ['casual', 'comp_off', 'unpaid', 'permission'].includes(c.code))}
           onClose={() => setShowApply(false)}
           onSubmitted={load}
         />
