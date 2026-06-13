@@ -3,7 +3,7 @@
  * Matches screenshot: 4 leave type cards + Apply Leave modal + Upcoming/Past holidays section
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Calendar, Plus, X, Info, ChevronDown, AlertTriangle, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Clock, Plus, X, Info, ChevronDown, AlertTriangle, Eye } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
@@ -42,21 +42,33 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
     isHalfDay: false,
     halfDayType: 'first_half',
     teamEmail: '',
+    startTime: '',
+    endTime: '',
   });
   const [loading, setLoading] = useState(false);
   const [workingDays, setWorkingDays] = useState(0);
 
   const selectedCard = cards.find(c => c.code === form.leaveType);
-  const insufficientBalance = selectedCard?.available !== null && workingDays > 0 && workingDays > (selectedCard?.available || 0);
+  const isPermission = form.leaveType === 'permission';
+  // Permission is hourly — derive hours from the chosen time window.
+  const permHours = (() => {
+    if (!isPermission || !form.startTime || !form.endTime) return 0;
+    const m = (t) => { const [h, mm] = t.split(':').map(Number); return (h || 0) * 60 + (mm || 0); };
+    return Math.max(0, (m(form.endTime) - m(form.startTime)) / 60);
+  })();
+  const insufficientBalance = isPermission
+    ? (permHours > 0 && permHours > (selectedCard?.available ?? 4))
+    : (selectedCard?.available !== null && workingDays > 0 && workingDays > (selectedCard?.available || 0));
 
   useEffect(() => {
+    if (isPermission) { setWorkingDays(0); return; }
     if (form.fromDate && form.toDate) {
       const days = form.isHalfDay ? 0.5 : countWorkingDays(form.fromDate, form.toDate);
       setWorkingDays(days);
     } else {
       setWorkingDays(0);
     }
-  }, [form.fromDate, form.toDate, form.isHalfDay]);
+  }, [form.fromDate, form.toDate, form.isHalfDay, isPermission]);
 
   // Close on ESC
   useEffect(() => {
@@ -67,6 +79,31 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
 
   const handleSubmit = async e => {
     e.preventDefault();
+    if (isPermission) {
+      if (!form.fromDate) return toast.error('Please select a date');
+      if (!form.startTime || !form.endTime) return toast.error('Please select start and end time');
+      if (permHours <= 0) return toast.error('End time must be after start time');
+      if (permHours > 4)  return toast.error('A single permission cannot exceed 4 hours');
+      if (!form.reason.trim()) return toast.error('Reason is required');
+      setLoading(true);
+      try {
+        await api.post('/leaves', {
+          leaveType: 'permission',
+          startDate: form.fromDate,
+          endDate: form.fromDate,
+          reason: form.reason,
+          startTime: form.startTime,
+          endTime: form.endTime,
+          teamEmail: form.teamEmail,
+        });
+        toast.success('Permission applied successfully!');
+        onSubmitted();
+        onClose();
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to apply permission');
+      } finally { setLoading(false); }
+      return;
+    }
     if (!form.fromDate) return toast.error('Please select From date');
     if (!form.toDate)   return toast.error('Please select To date');
     // Backend rejects this with a vague message — catch it client-side so
@@ -125,7 +162,7 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
             >
               {cards.map(c => (
                 <option key={c.code} value={c.code}>
-                  {c.name}{c.available !== null ? ` (${c.available} available)` : ''}
+                  {c.name}{c.code === 'permission' ? ` (${c.available ?? 0}h left this month)` : (c.available !== null ? ` (${c.available} available)` : '')}
                 </option>
               ))}
             </select>
@@ -136,52 +173,90 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
             <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded px-3 py-2">
               <AlertTriangle size={14} className="text-red-500 flex-shrink-0" />
               <p className="text-[12px] text-red-600 font-medium">
-                Insufficient balance. Available: {selectedCard?.available} days, Requested: {workingDays} days.
+                {isPermission
+                  ? `Over the monthly limit. ${selectedCard?.available ?? 0}h left this month, requested ${permHours.toFixed(2)}h.`
+                  : `Insufficient balance. Available: ${selectedCard?.available} days, Requested: ${workingDays} days.`}
               </p>
             </div>
           )}
 
-          {/* Date row */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">From *</label>
-              <input type="date" value={form.fromDate}
-                onChange={e => setForm({ ...form, fromDate: e.target.value, toDate: e.target.value })}
-                className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
-            </div>
-            <div>
-              <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">To *</label>
-              <input type="date" value={form.toDate} min={form.fromDate}
-                onChange={e => setForm({ ...form, toDate: e.target.value })}
-                className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
-            </div>
-          </div>
+          {isPermission ? (
+            <>
+              {/* Permission: single date + a start/end time window (hourly leave) */}
+              <div>
+                <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Date *</label>
+                <input type="date" value={form.fromDate}
+                  onChange={e => setForm({ ...form, fromDate: e.target.value, toDate: e.target.value })}
+                  className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Start Time *</label>
+                  <input type="time" value={form.startTime}
+                    onChange={e => setForm({ ...form, startTime: e.target.value })}
+                    className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">End Time *</label>
+                  <input type="time" value={form.endTime}
+                    onChange={e => setForm({ ...form, endTime: e.target.value })}
+                    className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
+                </div>
+              </div>
+              {permHours > 0 && (
+                <div className={`flex items-center gap-2 rounded px-3 py-2 border ${permHours > 4 ? 'bg-red-50 border-red-200' : 'bg-purple-50 border-purple-200'}`}>
+                  <Clock size={14} className={permHours > 4 ? 'text-red-500' : 'text-purple-500'} />
+                  <p className={`text-[12.5px] font-semibold ${permHours > 4 ? 'text-red-700' : 'text-purple-700'}`}>
+                    {permHours.toFixed(2)} hour{permHours !== 1 ? 's' : ''}{permHours > 4 ? ' — exceeds the 4h limit' : ` · ${Math.max(0, (selectedCard?.available ?? 4) - permHours).toFixed(2)}h would remain this month`}
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Date row */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">From *</label>
+                  <input type="date" value={form.fromDate}
+                    onChange={e => setForm({ ...form, fromDate: e.target.value, toDate: e.target.value })}
+                    className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">To *</label>
+                  <input type="date" value={form.toDate} min={form.fromDate}
+                    onChange={e => setForm({ ...form, toDate: e.target.value })}
+                    className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
+                </div>
+              </div>
 
-          {/* Working days auto-calc */}
-          {workingDays > 0 && (
-            <div className={`flex items-center gap-2 rounded px-3 py-2 border ${LEAVE_COLORS[form.leaveType] || 'bg-blue-50 border-blue-200'}`}>
-              <Calendar size={14} className="text-blue-500 flex-shrink-0" />
-              <p className="text-[12.5px] text-blue-700 font-semibold">
-                {workingDays} working day{workingDays !== 1 ? 's' : ''} selected
-                {form.fromDate !== form.toDate && ` (${fmtDate(form.fromDate)} – ${fmtDate(form.toDate)})`}
-              </p>
-            </div>
+              {/* Working days auto-calc */}
+              {workingDays > 0 && (
+                <div className={`flex items-center gap-2 rounded px-3 py-2 border ${LEAVE_COLORS[form.leaveType] || 'bg-blue-50 border-blue-200'}`}>
+                  <Calendar size={14} className="text-blue-500 flex-shrink-0" />
+                  <p className="text-[12.5px] text-blue-700 font-semibold">
+                    {workingDays} working day{workingDays !== 1 ? 's' : ''} selected
+                    {form.fromDate !== form.toDate && ` (${fmtDate(form.fromDate)} – ${fmtDate(form.toDate)})`}
+                  </p>
+                </div>
+              )}
+
+              {/* Half day toggle */}
+              <div className="flex items-center gap-3">
+                <input type="checkbox" id="halfday" checked={form.isHalfDay}
+                  onChange={e => setForm({ ...form, isHalfDay: e.target.checked })}
+                  className="w-4 h-4 rounded accent-[#1a73e8]" />
+                <label htmlFor="halfday" className="text-[13px] text-gray-700 font-medium cursor-pointer">Half Day</label>
+                {form.isHalfDay && (
+                  <select value={form.halfDayType} onChange={e => setForm({ ...form, halfDayType: e.target.value })}
+                    className="ml-2 border border-gray-200 rounded px-2 py-1 text-[12.5px] outline-none focus:border-[#1a73e8]">
+                    <option value="first_half">First Half</option>
+                    <option value="second_half">Second Half</option>
+                  </select>
+                )}
+              </div>
+            </>
           )}
-
-          {/* Half day toggle */}
-          <div className="flex items-center gap-3">
-            <input type="checkbox" id="halfday" checked={form.isHalfDay}
-              onChange={e => setForm({ ...form, isHalfDay: e.target.checked })}
-              className="w-4 h-4 rounded accent-[#1a73e8]" />
-            <label htmlFor="halfday" className="text-[13px] text-gray-700 font-medium cursor-pointer">Half Day</label>
-            {form.isHalfDay && (
-              <select value={form.halfDayType} onChange={e => setForm({ ...form, halfDayType: e.target.value })}
-                className="ml-2 border border-gray-200 rounded px-2 py-1 text-[12.5px] outline-none focus:border-[#1a73e8]">
-                <option value="first_half">First Half</option>
-                <option value="second_half">Second Half</option>
-              </select>
-            )}
-          </div>
 
           {/* Reason */}
           <div>
@@ -368,9 +443,10 @@ export default function LeaveSummary() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {cards.filter(c => ['casual', 'comp_off', 'unpaid', 'permission'].includes(c.code)).map(card => {
-              // Other leave types stay in days.
-              const unit = '';
-              const fmt = (v) => v === null || v === undefined ? '—' : `${v}${unit ? ' ' + unit : ''}`;
+              // Permission is hourly (4h/month); other leave types stay in days.
+              const isPerm = card.code === 'permission';
+              const unit = isPerm ? 'h' : '';
+              const fmt = (v) => v === null || v === undefined ? '—' : `${v}${unit}`;
               return (
                 <div key={card.code} className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow">
                   {/* Icon */}
@@ -380,7 +456,7 @@ export default function LeaveSummary() {
                     {ICON_MAP[card.code] || card.icon || '📋'}
                   </div>
                   {/* Name */}
-                  <p className="text-[12.5px] font-bold text-gray-600 mb-3">{card.name}</p>
+                  <p className="text-[12.5px] font-bold text-gray-600 mb-3">{card.name}{isPerm && <span className="ml-1 text-[10px] font-medium text-gray-400">/ 4h month</span>}</p>
                   {/* Available */}
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[12px] text-gray-500">Available</span>
@@ -388,9 +464,9 @@ export default function LeaveSummary() {
                       {fmt(card.available)}
                     </span>
                   </div>
-                  {/* Booked */}
+                  {/* Booked / Used this month */}
                   <div className="flex items-center justify-between">
-                    <span className="text-[12px] text-gray-500">Booked</span>
+                    <span className="text-[12px] text-gray-500">{isPerm ? 'Used this month' : 'Booked'}</span>
                     <span className="flex items-center gap-1 text-[12.5px] font-semibold text-gray-700">
                       {fmt(card.booked)}
                       <button className="text-gray-300 hover:text-gray-500 transition-colors">

@@ -177,6 +177,47 @@ async function applyApproval(db, requestType, requestId, user) {
 }
 
 /**
+ * Super-Admin "Approve All": approve EVERY remaining pending level in one action,
+ * regardless of where (or whether) the actor sits in the chain. The actor's own
+ * level (if any) is recorded as a direct approval; all other levels are marked
+ * on-behalf "by HR" so the timeline shows who approved on whose behalf. Mutates
+ * approval_levels inside the caller's transaction. Returns { ok, status?, message?, allApproved }.
+ */
+async function applyApproveAll(db, requestType, requestId, user) {
+  // Gate to Super Admin only — HR keeps the normal single-level flow.
+  if (user.role !== 'super_admin') {
+    return { ok: false, message: 'Only a Super Admin can approve all levels at once.' };
+  }
+  const levels = await getLevels(db, requestType, requestId);
+
+  // No hierarchy levels → nothing to cascade; treat as a full approval.
+  if (levels.length === 0) {
+    return { ok: true, status: 'approved', allApproved: true };
+  }
+
+  const ownLevel = levels.find(l => String(l.approverId) === String(user._id));
+  const toApprove = levels
+    .filter(l => l.status === 'pending')
+    .sort((a, b) => a.level - b.level);
+
+  for (const lvl of toApprove) {
+    const isOwn = !!ownLevel && lvl.level === ownLevel.level;
+    const onBehalf = !isOwn;   // covering a level the Super Admin doesn't own
+    const byHr = !isOwn;       // recorded as an HR/Super-Admin override
+    await db.query(
+      `UPDATE approval_levels
+          SET status='approved', acted_by=$1, acted_at=NOW(), on_behalf=$2, by_hr=$3
+        WHERE request_type=$4 AND request_id=$5 AND level=$6`,
+      [user._id, onBehalf, byHr, requestType, requestId, lvl.level]
+    );
+  }
+
+  const after = await getLevels(db, requestType, requestId);
+  const allApproved = after.every(l => l.status === 'approved');
+  return { ok: true, status: allApproved ? 'approved' : 'pending', allApproved };
+}
+
+/**
  * Apply a REJECTION by `user`. Any single rejection rejects the whole request.
  * Marks the relevant level rejected. Returns { ok, message? }.
  */
@@ -228,6 +269,6 @@ function approvalLevelsJson(requestTypeLiteral, reqAlias = 'l', idCol = 'id') {
 }
 
 module.exports = {
-  deriveLevels, createLevels, getLevels, canUserAct, applyApproval, applyRejection,
+  deriveLevels, createLevels, getLevels, canUserAct, applyApproval, applyApproveAll, applyRejection,
   approvalLevelsJson,
 };

@@ -11,12 +11,13 @@
  *
  * Presentation only — no workflow logic. All action props are optional:
  *   onApprove(comment) / onReject(comment)  — receive the optional comment string.
+ *   onApproveAll(comment)                   — Super-Admin only: approve every remaining level at once.
  *   onCancel()                              — owner cancels their own pending request.
  *   balance                                 — array of {code,name,available,booked}.
  *   kind                                    — 'leave' (default) | 'regularization'.
  */
 import React, { useState } from 'react';
-import { X, CheckCircle, XCircle, Calendar, Clock, FileText, User, Hash, LogIn, LogOut, Eye, ArrowLeft, MessageSquare } from 'lucide-react';
+import { X, CheckCircle, CheckCheck, XCircle, Calendar, Clock, FileText, User, Hash, LogIn, LogOut, Eye, ArrowLeft, MessageSquare } from 'lucide-react';
 import ApprovalTimeline from './ApprovalTimeline';
 
 const TYPE_LABEL = { casual: 'Casual Leave', comp_off: 'Compensatory Off', unpaid: 'Leave Without Pay', permission: 'Permission', sick: 'Sick Leave', earned: 'Earned Leave' };
@@ -44,8 +45,10 @@ function DetailRow({ icon: Icon, label, children }) {
 
 function BalanceCard({ leave, balanceCards }) {
   const card = balanceCards.find(c => c.code === leave.leaveType);
+  const isPerm = leave.leaveType === 'permission';
+  const u = isPerm ? 'h' : '';                       // hours suffix for permission
   const avail = card ? card.available : undefined;
-  const booking = leave.totalDays || 0;
+  const booking = isPerm ? (parseFloat(leave.hours) || 0) : (leave.totalDays || 0);
   const unlimited = avail === null || avail === undefined;
   const after = unlimited ? null : (avail - booking);
   const Row = ({ label, value, strong, muted }) => (
@@ -57,19 +60,20 @@ function BalanceCard({ leave, balanceCards }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[12px] font-bold text-slate-700">Leave Balance</p>
+        <p className="text-[12px] font-bold text-slate-700">{isPerm ? 'Permission Balance' : 'Leave Balance'}</p>
         <span className="text-[11px] text-slate-400">{TYPE_LABEL[leave.leaveType] || leave.leaveType}</span>
       </div>
-      <Row label="Available balance" value={unlimited ? 'Unlimited' : avail} />
-      <Row label="Current booking" value={booking} />
+      <Row label={isPerm ? 'Available this month' : 'Available balance'} value={unlimited ? 'Unlimited' : `${avail}${u}`} />
+      <Row label="Current booking" value={`${booking}${u}`} />
       <div className="border-t border-slate-100 my-1.5" />
-      <Row label="Balance after current booking" value={unlimited ? '—' : after} strong />
-      <Row label="Estimated balance (year-end)" value={unlimited ? '—' : avail} muted />
+      <Row label="Balance after current booking" value={unlimited ? '—' : `${after}${u}`} strong />
+      {!isPerm && <Row label="Estimated balance (year-end)" value={unlimited ? '—' : avail} muted />}
+      {isPerm && <Row label="Monthly allowance" value="4h" muted />}
     </div>
   );
 }
 
-export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct = false, onApprove, onReject, onCancel }) {
+export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct = false, onApprove, onApproveAll, onReject, onCancel }) {
   const [view, setView] = useState('details');   // 'details' | 'timeline'
   const [comment, setComment] = useState('');
   if (!leave) return null;
@@ -144,6 +148,14 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                     <DetailRow icon={LogIn} label="Check-in">{leave.checkIn || '—'}</DetailRow>
                     <DetailRow icon={LogOut} label="Check-out">{leave.checkOut || '—'}</DetailRow>
                   </>
+                ) : leave.leaveType === 'permission' ? (
+                  <>
+                    <DetailRow icon={Calendar} label="Date">{fmtDate(leave.startDate)}</DetailRow>
+                    <DetailRow icon={Clock} label="Time">
+                      {(leave.startTime || '').slice(0, 5) || '—'} <span className="text-slate-400">–</span> {(leave.endTime || '').slice(0, 5) || '—'}
+                    </DetailRow>
+                    <DetailRow icon={Clock} label="Duration">{leave.hours ? `${leave.hours} hour${Number(leave.hours) !== 1 ? 's' : ''}` : '—'}</DetailRow>
+                  </>
                 ) : (
                   <>
                     <DetailRow icon={Calendar} label="Dates">
@@ -202,6 +214,12 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
               {showActions && onApprove && (
                 <button onClick={() => onApprove(leave, c())} className="flex items-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors">
                   <CheckCircle size={15} /> Approve
+                </button>
+              )}
+              {/* Super-Admin only: finalise every remaining level in one click. */}
+              {showActions && onApproveAll && (
+                <button onClick={() => onApproveAll(leave, c())} className="flex items-center gap-1.5 bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors">
+                  <CheckCheck size={15} /> Approve All
                 </button>
               )}
             </div>

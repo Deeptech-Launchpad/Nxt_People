@@ -5,7 +5,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { reportsScope, isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
-const { createLevels, getLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
+const { createLevels, getLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
 const { sendMail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const { countWorkingDays } = require('../utils/workingDays');
@@ -62,6 +62,7 @@ router.get('/my', async (req, res) => {
          l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
          l.rejection_reason as "rejectionReason", l.is_half_day as "isHalfDay",
          l.half_day_type as "halfDayType", l.created_at as "createdAt",
+         l.start_time as "startTime", l.end_time as "endTime", l.hours,
          CASE WHEN rm.id IS NOT NULL THEN json_build_object('id', rm.id, 'firstName', rm.first_name, 'lastName', rm.last_name) ELSE NULL END as "reportingManager",
          CASE WHEN aa.id IS NOT NULL THEN json_build_object('id', aa.id, 'firstName', aa.first_name, 'lastName', aa.last_name) ELSE NULL END as "approvingAuthority",
          l.approved_by as "approvedById",
@@ -124,6 +125,7 @@ router.get('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
          l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
          l.rejection_reason as "rejectionReason", l.is_half_day as "isHalfDay",
          l.half_day_type as "halfDayType", l.created_at as "createdAt",
+         l.start_time as "startTime", l.end_time as "endTime", l.hours,
          json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
            'department', e.department, 'employeeId', e.employee_id) as employee,
          CASE WHEN rm.id IS NOT NULL THEN json_build_object('id', rm.id, 'firstName', rm.first_name, 'lastName', rm.last_name) ELSE NULL END as "reportingManager",
@@ -186,25 +188,64 @@ router.post('/', [
       return res.status(400).json({ success: false, message: 'Cannot apply for leave in the past' });
     }
 
-    const overlap = await pool.query(
-      `SELECT id, start_date, end_date FROM leaves
-        WHERE employee_id = $1
-          AND status IN ('pending', 'pending_approval', 'approved')
-          AND start_date <= $3::date AND end_date >= $2::date
-        LIMIT 1`,
-      [req.user._id, startDate, endDate]
-    );
-    if (overlap.rows.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'You already have a leave request covering one or more of these dates.'
-      });
+    // ── Permission = hourly leave (4h per calendar month, NO carry-forward) ──
+    // Captured as a single date + start/end time. Day-based balance machinery
+    // below is skipped for permission; the cap is enforced per calendar month.
+    const isPermission = leaveType === 'permission';
+    const endDateVal = isPermission ? startDate : endDate;   // permission is single-day
+    let permStartTime = null, permEndTime = null, permHours = 0;
+    if (isPermission) {
+      permStartTime = req.body.startTime;
+      permEndTime   = req.body.endTime;
+      if (!permStartTime || !permEndTime) {
+        return res.status(400).json({ success: false, message: 'Permission requires a start time and an end time.' });
+      }
+      const toMin = (t) => { const [h, m] = String(t).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+      const diffMin = toMin(permEndTime) - toMin(permStartTime);
+      if (diffMin <= 0) {
+        return res.status(400).json({ success: false, message: 'Permission end time must be after the start time.' });
+      }
+      permHours = Math.round((diffMin / 60) * 100) / 100;
+      if (permHours > 4) {
+        return res.status(400).json({ success: false, message: 'A single permission cannot exceed 4 hours.' });
+      }
+      // Pending + approved permission hours already used in the SAME calendar
+      // month as the requested date. No carry-forward → each month starts at 4h.
+      const usedRes = await pool.query(
+        `SELECT COALESCE(SUM(hours), 0) AS used FROM leaves
+          WHERE employee_id = $1 AND leave_type = 'permission'
+            AND status IN ('pending', 'approved')
+            AND date_trunc('month', start_date) = date_trunc('month', $2::date)`,
+        [req.user._id, startDate]
+      );
+      const usedHrs = parseFloat(usedRes.rows[0].used) || 0;
+      if (usedHrs + permHours > 4) {
+        const left = Math.max(0, 4 - usedHrs);
+        return res.status(400).json({ success: false, message: `Monthly permission limit is 4 hours. You have ${left.toFixed(2)}h remaining this month.` });
+      }
+    }
+
+    if (!isPermission) {
+      const overlap = await pool.query(
+        `SELECT id, start_date, end_date FROM leaves
+          WHERE employee_id = $1
+            AND status IN ('pending', 'pending_approval', 'approved')
+            AND start_date <= $3::date AND end_date >= $2::date
+          LIMIT 1`,
+        [req.user._id, startDate, endDate]
+      );
+      if (overlap.rows.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'You already have a leave request covering one or more of these dates.'
+        });
+      }
     }
 
     // Honour weekend_rules + holidays (no more hardcoded Sat/Sun).
-    const workingDays = await countWorkingDays(start, end);
-    const totalDays = isHalfDay ? 0.5 : workingDays;
-    if (totalDays <= 0) {
+    const workingDays = isPermission ? 0 : await countWorkingDays(start, end);
+    const totalDays = isPermission ? 0 : (isHalfDay ? 0.5 : workingDays);
+    if (!isPermission && totalDays <= 0) {
       return res.status(400).json({
         success: false,
         message: 'Selected range has no working days (all weekends/holidays).'
@@ -213,7 +254,7 @@ router.post('/', [
 
     // Check balance
     let balance = 0;
-    if (leaveType !== 'unpaid') {
+    if (!isPermission && leaveType !== 'unpaid') {
       const year = start.getFullYear();
       const dbCode = leaveType === 'comp_off' ? 'compoff' : leaveType;
       // Try to get from leave_balances table first
@@ -251,7 +292,7 @@ router.post('/', [
     }
 
     // ── Phase 3: Decrement leave_balances.available on Apply ──
-    if (leaveType !== 'unpaid') {
+    if (!isPermission && leaveType !== 'unpaid') {
       const year = start.getFullYear();
       const dbCode = leaveType === 'comp_off' ? 'compoff' : leaveType;
       const ltRes = await pool.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
@@ -268,12 +309,14 @@ router.post('/', [
     }
 
     const ins = await pool.query(
-      `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, total_days, reason, is_half_day, half_day_type)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, total_days, reason, is_half_day, half_day_type, start_time, end_time, hours)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING id as "_id", leave_type as "leaveType", start_date as "startDate",
        end_date as "endDate", total_days as "totalDays", reason, status,
-       is_half_day as "isHalfDay", half_day_type as "halfDayType", created_at as "createdAt"`,
-      [req.user._id, leaveType, startDate, endDate, totalDays, reason, isHalfDay || false, halfDayType || null]
+       is_half_day as "isHalfDay", half_day_type as "halfDayType", created_at as "createdAt",
+       start_time as "startTime", end_time as "endTime", hours`,
+      [req.user._id, leaveType, startDate, endDateVal, totalDays, reason, isHalfDay || false, halfDayType || null,
+       permStartTime, permEndTime, isPermission ? permHours : null]
     );
 
     const leaveId = ins.rows[0]._id;
@@ -351,9 +394,15 @@ router.post('/', [
 // bookkeeping lives in approval_levels (utils/leaveApproval.js); the
 // balance booking / refund here is unchanged from the previous workflow.
 router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
-  const { action, rejectionReason } = req.body;
+  const { action, rejectionReason, approveAll } = req.body;
   if (!['approved', 'rejected'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Invalid action. Use: approved or rejected' });
+  }
+  // "Approve All" is a Super-Admin-only shortcut that finalises every remaining
+  // level in one click (approving lower/higher levels on their behalf).
+  const wantApproveAll = action === 'approved' && approveAll === true;
+  if (wantApproveAll && req.user.role !== 'super_admin') {
+    return res.status(403).json({ success: false, message: 'Only a Super Admin can approve all levels at once.' });
   }
 
   const client = await pool.connect();
@@ -386,7 +435,9 @@ router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), async (req,
 
     // APPROVE
     if (action === 'approved') {
-      const result = await applyApproval(client, 'leave', leave.id, req.user);
+      const result = wantApproveAll
+        ? await applyApproveAll(client, 'leave', leave.id, req.user)
+        : await applyApproval(client, 'leave', leave.id, req.user);
       if (!result.ok) {
         await client.query('ROLLBACK');
         return res.status(403).json({ success: false, message: result.message });
@@ -655,6 +706,18 @@ router.get('/balance', async (req, res) => {
     const booked = {};
     bookedRes.rows.forEach(r => { booked[r.leave_type] = parseFloat(r.used); });
 
+    // Permission is hourly: 4h per CURRENT calendar month, no carry-forward.
+    // Used = pending + approved permission hours dated in the current month.
+    const permRes = await pool.query(
+      `SELECT COALESCE(SUM(hours), 0) AS used FROM leaves
+        WHERE employee_id = $1 AND leave_type = 'permission'
+          AND status IN ('pending', 'approved')
+          AND date_trunc('month', start_date) = date_trunc('month', CURRENT_DATE)`,
+      [targetId]
+    );
+    const permUsed = parseFloat(permRes.rows[0].used) || 0;
+    const permAvailable = Math.max(0, 4 - permUsed);
+
     // Try leave_balances table first
     let balanceRows = [];
     try {
@@ -688,12 +751,60 @@ router.get('/balance', async (req, res) => {
       },
       {
         code: 'permission', name: 'Permission', icon: '🔑', color: '#8b5cf6',
-        available: balanceRows.find(r => r.code === 'permission')?.available ?? (emp.earned_leave || 0),
-        booked: booked['permission'] || 0,
+        // Hours, not days: this month's remaining out of a 4h monthly allowance.
+        unit: 'hours', monthlyLimit: 4,
+        available: permAvailable,
+        booked: permUsed,
       },
     ];
 
     res.json({ success: true, data: cards, year });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── GET permission usage (HR/Admin monthly tracker) ───────────────────────────
+// Per-employee permission hours for a given month: approved + pending + remaining
+// out of the 4h monthly allowance. Full-access only (Super Admin / HR).
+router.get('/permission-usage', authorize('super_admin', 'hr'), async (req, res) => {
+  try {
+    const now = new Date();
+    const month = Math.min(12, Math.max(1, parseInt(req.query.month, 10) || (now.getMonth() + 1)));
+    const year  = parseInt(req.query.year, 10) || now.getFullYear();
+    const MONTHLY_LIMIT = 4;
+
+    const r = await pool.query(
+      `SELECT e.id as "_id", e.employee_id as "employeeId",
+              e.first_name as "firstName", e.last_name as "lastName",
+              e.department, e.designation,
+              COALESCE(SUM(l.hours) FILTER (WHERE l.status = 'approved'), 0) AS "approvedHours",
+              COALESCE(SUM(l.hours) FILTER (WHERE l.status = 'pending'), 0)  AS "pendingHours",
+              COUNT(l.id) FILTER (WHERE l.status IN ('approved','pending'))  AS "requests"
+         FROM employees e
+         LEFT JOIN leaves l
+           ON l.employee_id = e.id AND l.leave_type = 'permission'
+          AND EXTRACT(MONTH FROM l.start_date) = $1
+          AND EXTRACT(YEAR  FROM l.start_date) = $2
+        WHERE e.status = 'active' AND e.deleted_at IS NULL
+        GROUP BY e.id
+       HAVING COUNT(l.id) FILTER (WHERE l.status IN ('approved','pending')) > 0
+        ORDER BY "approvedHours" DESC, e.first_name ASC`,
+      [month, year]
+    );
+
+    const data = r.rows.map(row => {
+      const approved = parseFloat(row.approvedHours) || 0;
+      const pending  = parseFloat(row.pendingHours) || 0;
+      return {
+        ...row,
+        approvedHours: approved,
+        pendingHours: pending,
+        remainingHours: Math.max(0, MONTHLY_LIMIT - approved - pending),
+        requests: parseInt(row.requests, 10) || 0,
+      };
+    });
+    res.json({ success: true, data, month, year, monthlyLimit: MONTHLY_LIMIT });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -711,6 +822,7 @@ router.get('/pending-approvals', async (req, res) => {
       `SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate",
        l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
        l.rejection_reason as "rejectionReason", l.created_at as "createdAt",
+       l.start_time as "startTime", l.end_time as "endTime", l.hours,
        json_build_object(
          '_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
          'employeeId', e.employee_id, 'department', e.department, 'designation', e.designation,

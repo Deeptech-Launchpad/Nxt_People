@@ -137,7 +137,7 @@ export default function EmployeeProfile() {
         </Section>
 
         {emp.manager && emp.manager.id && (
-          <Section title="Reporting Manager">
+          <Section title="Reporting Person">
             <Row label="Name">{`${emp.manager.firstName || ''} ${emp.manager.lastName || ''}`.trim()}</Row>
             <Row label="Email">{emp.manager.email}</Row>
           </Section>

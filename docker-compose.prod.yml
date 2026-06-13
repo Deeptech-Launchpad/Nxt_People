@@ -71,7 +71,14 @@ services:
     # No `ports:` — backend is reachable only via nginx in the frontend container.
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # Baked into the Vite bundle at build time so "Sign in with Google"
+        # appears in production. Defaults live in frontend/Dockerfile; override
+        # here (or via the shell / --env-file) only if the values ever change.
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-981002835126-5cnvmt801mv858v2cvsuith9n1g5nsdh.apps.googleusercontent.com}
+        VITE_GOOGLE_HOSTED_DOMAIN: ${VITE_GOOGLE_HOSTED_DOMAIN:-altiusnxt.com}
     restart: unless-stopped
     depends_on:
       backend:

@@ -81,7 +81,7 @@ export default function TeamPayroll() {
               <tr><td colSpan={7} className="py-10 text-center text-slate-400">
                 <UserIcon size={28} className="mx-auto text-slate-300 mb-2" />
                 <p>No direct reports found.</p>
-                <p className="text-[11.5px] mt-1">Ask HR to set the reporting manager on your team members.</p>
+                <p className="text-[11.5px] mt-1">Ask HR to set the reporting person on your team members.</p>
               </td></tr>
             ) : data.rows.map(r => (
               <tr key={r._id} className="hover:bg-slate-50">

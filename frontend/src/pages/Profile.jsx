@@ -441,8 +441,8 @@ export default function Profile() {
         </Section>
 
         <Section title="Hierarchy Information">
-          <Row label="Reporting Manager">{managerName}</Row>
-          <Row label="Approving Authority">{approverName}</Row>
+          <Row label="Reporting Person">{managerName}</Row>
+          <Row label="Secondary Reporting Person">{approverName}</Row>
         </Section>
 
         <Section title="Contact Information">

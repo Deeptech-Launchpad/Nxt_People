@@ -18,7 +18,7 @@ const LEAVE_TYPE_LABELS = {
   unpaid: 'Leave Without Pay',
   permission: 'Permission'
 };
-const initForm = { leaveType: 'casual', startDate: '', endDate: '', reason: '', isHalfDay: false, halfDayType: 'first_half' };
+const initForm = { leaveType: 'casual', startDate: '', endDate: '', reason: '', isHalfDay: false, halfDayType: 'first_half', startTime: '', endTime: '' };
 
 // Bug #24 fix: parse date-only strings as LOCAL time to avoid off-by-one in IST
 function parseLocalDate(dateStr) {
@@ -60,8 +60,16 @@ export default function Leave() {
   const handleApply = async (e) => {
     e.preventDefault(); setSaving(true);
     try {
-      await api.post('/leaves', form);
-      toast.success('Leave applied successfully!');
+      const isPerm = form.leaveType === 'permission';
+      if (isPerm && (!form.startTime || !form.endTime)) {
+        setSaving(false);
+        return toast.error('Please select start and end time');
+      }
+      const payload = isPerm
+        ? { leaveType: 'permission', startDate: form.startDate, endDate: form.startDate, reason: form.reason, startTime: form.startTime, endTime: form.endTime }
+        : form;
+      await api.post('/leaves', payload);
+      toast.success(isPerm ? 'Permission applied successfully!' : 'Leave applied successfully!');
       setModal(false); setForm(initForm); load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setSaving(false); }
@@ -87,9 +95,11 @@ export default function Leave() {
         {LEAVE_TYPES.map(t => (
           <div key={t} className={`rounded-2xl p-5 border ${leaveTypeColors[t]}`}>
             <p className="text-xs font-semibold uppercase tracking-wider mb-2 opacity-70">{LEAVE_TYPE_LABELS[t]}</p>
-            {/* Bug #9 fix: balance is now correctly mapped from API response */}
-            <p className="text-3xl font-display font-bold">{balance?.[t] === 999 ? '∞' : (balance?.[t] ?? '—')}</p>
-            <p className="text-xs mt-1 opacity-60">days remaining</p>
+            {/* Permission is hourly (4h/month); other types are day-based. */}
+            <p className="text-3xl font-display font-bold">
+              {t === 'permission' ? `${balance?.permission ?? 0}h` : (balance?.[t] === 999 ? '∞' : (balance?.[t] ?? '—'))}
+            </p>
+            <p className="text-xs mt-1 opacity-60">{t === 'permission' ? 'remaining this month' : 'days remaining'}</p>
           </div>
         ))}
       </div>
@@ -173,32 +183,56 @@ export default function Leave() {
               {/* Show available balance for selected leave type */}
               {balance && form.leaveType !== 'unpaid' && (
                 <p className="text-xs text-slate-500 -mt-2">
-                  Available: <span className="font-semibold text-brand-600">{balance[form.leaveType] ?? 0} day(s)</span>
+                  {form.leaveType === 'permission'
+                    ? <>Remaining this month: <span className="font-semibold text-brand-600">{balance.permission ?? 0}h</span> of 4h</>
+                    : <>Available: <span className="font-semibold text-brand-600">{balance[form.leaveType] ?? 0} day(s)</span></>}
                 </p>
               )}
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={form.isHalfDay} onChange={e => setForm({ ...form, isHalfDay: e.target.checked })} className="w-4 h-4 rounded accent-brand-600" />
-                  <span className="text-sm text-slate-600">Half Day</span>
-                </label>
-                {form.isHalfDay && (
-                  <select value={form.halfDayType} onChange={e => setForm({ ...form, halfDayType: e.target.value })} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-brand-400">
-                    <option value="first_half">First Half</option><option value="second_half">Second Half</option>
-                  </select>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">From</label>
-                  {/* Block past-dated leave requests at the UI level. Local
-                      date in YYYY-MM-DD so the input accepts it directly. */}
-                  <input type="date" value={form.startDate} min={new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: e.target.value > form.endDate ? e.target.value : form.endDate })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">To</label>
-                  <input type="date" value={form.endDate} min={form.startDate || new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
-                </div>
-              </div>
+              {form.leaveType === 'permission' ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Date</label>
+                    <input type="date" value={form.startDate} min={new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1.5">Start Time</label>
+                      <input type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1.5">End Time</label>
+                      <input type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-purple-600 -mt-1">Permission is hourly — up to 4 hours per month, no carry-forward.</p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.isHalfDay} onChange={e => setForm({ ...form, isHalfDay: e.target.checked })} className="w-4 h-4 rounded accent-brand-600" />
+                      <span className="text-sm text-slate-600">Half Day</span>
+                    </label>
+                    {form.isHalfDay && (
+                      <select value={form.halfDayType} onChange={e => setForm({ ...form, halfDayType: e.target.value })} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-brand-400">
+                        <option value="first_half">First Half</option><option value="second_half">Second Half</option>
+                      </select>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1.5">From</label>
+                      {/* Block past-dated leave requests at the UI level. Local
+                          date in YYYY-MM-DD so the input accepts it directly. */}
+                      <input type="date" value={form.startDate} min={new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: e.target.value > form.endDate ? e.target.value : form.endDate })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1.5">To</label>
+                      <input type="date" value={form.endDate} min={form.startDate || new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                    </div>
+                  </div>
+                </>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Reason</label>
                 <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} required rows={3} placeholder="Reason for leave..." className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 resize-none" />

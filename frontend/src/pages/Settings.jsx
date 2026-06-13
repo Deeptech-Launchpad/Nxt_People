@@ -240,7 +240,7 @@ export default function Settings() {
                   <div>
                     <p className="text-sm font-medium text-slate-700">Require manager approval before lock</p>
                     <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                      When ON, an admin cannot lock a payslip until the employee's reporting manager has reviewed
+                      When ON, an admin cannot lock a payslip until the employee's reporting person has reviewed
                       and approved it. Adds a two-eyes guarantee to monthly payroll. When OFF (default), admin can lock without manager sign-off.
                     </p>
                   </div>

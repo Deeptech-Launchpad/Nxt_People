@@ -104,7 +104,7 @@ export default function Peers() {
         <div className="text-center py-16 text-slate-400 text-sm">
           {myManagerId
             ? 'No peers found — nobody else reports to your manager.'
-            : 'You have no reporting manager set, and no department colleagues to show.'}
+            : 'You have no reporting person set, and no department colleagues to show.'}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
