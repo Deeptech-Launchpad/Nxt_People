@@ -672,7 +672,7 @@ export default function Employees() {
                </div>
                <div className="grid grid-cols-2 gap-4">
                  <div>
-                   <label className="block text-xs font-medium text-slate-600 mb-1.5">Approving Authority</label>
+                   <label className="block text-xs font-medium text-slate-600 mb-1.5">Secondary Reporting Person</label>
                    <select value={form.approvingAuthorityId} onChange={e=>setForm({...form,approvingAuthorityId:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
                      <option value="">None</option>
                      {/* Use the same leadership list as Reporting Person — admin

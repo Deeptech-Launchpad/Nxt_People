@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CalendarCheck, Clock, Timer, CalendarDays, Trophy, FolderOpen, Users, Plane,
-  Wallet, CheckSquare, Smile, Mail, UserPlus, Settings, Activity, CheckCircle, Database,
+  Wallet, CheckSquare, Smile, Mail, UserPlus, Settings, Activity, CheckCircle, Database, Hourglass,
 } from 'lucide-react';
 
 /* ── Operations services grid (Super Admin / HR) ──────────────────────────
@@ -11,13 +11,18 @@ import {
  *  admin Leave Tracker. The rest are inert placeholders for UI parity.
  *  No business logic; purely navigation/display. */
 
-const FUNCTIONAL = 'leave-tracker';
+// Functional tiles → their route. Everything else is a presentational placeholder.
+const ROUTES = {
+  'leave-tracker':    '/more-services/operations/leave-tracker',
+  'permission-usage': '/more-services/operations/permission-usage',
+};
 
 const SERVICES = [
   { key: 'attendance',   label: 'Attendance',          icon: CalendarCheck, color: 'text-rose-500' },
   { key: 'shift',        label: 'Shift',               icon: Clock,         color: 'text-sky-500' },
   { key: 'time-tracker', label: 'Time Tracker',        icon: Timer,         color: 'text-amber-500' },
   { key: 'leave-tracker',label: 'Leave Tracker',       icon: CalendarDays,  color: 'text-blue-600' },
+  { key: 'permission-usage', label: 'Permission Usage', icon: Hourglass,    color: 'text-purple-600' },
   { key: 'performance',  label: 'Performance',         icon: Trophy,        color: 'text-yellow-500' },
   { key: 'files',        label: 'Files',               icon: FolderOpen,    color: 'text-indigo-500' },
   { key: 'emp-info',     label: 'Employee Information', icon: Users,         color: 'text-emerald-500' },
@@ -46,13 +51,13 @@ export default function Operations() {
       <div className="p-6">
         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
           {SERVICES.map(({ key, label, icon: Icon, color }) => {
-            const functional = key === FUNCTIONAL;
+            const functional = !!ROUTES[key];
             return (
               <button
                 key={key}
                 type="button"
-                onClick={functional ? () => navigate('/more-services/operations/leave-tracker') : undefined}
-                title={functional ? 'Open Leave Tracker' : 'View only'}
+                onClick={functional ? () => navigate(ROUTES[key]) : undefined}
+                title={functional ? `Open ${label}` : 'View only'}
                 disabled={!functional}
                 className={`group flex flex-col items-center justify-center gap-3 rounded-2xl border p-5 transition-all ${
                   functional

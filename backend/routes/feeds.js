@@ -10,23 +10,55 @@ const logger = require('../logger');
 
 router.use(protect);
 
-// GET /api/feeds?type=all|status|announcement|approval  — employee's feed
+// GET /api/feeds?type=all|announcements|approvals|shifts  — employee's feed
+//
+// The feed mirrors the employee's NOTIFICATIONS (the same events shown in the
+// bell), categorised into tabs so Feeds and Notifications stay in sync:
+//   • announcements — management announcements        (type 'announcement')
+//   • approvals     — leave/approval updates          (type 'approval' | 'leave')
+//   • shifts        — shift reminders ONLY            (type 'attendance':
+//                     Check-in / Check-out reminders) — NOT check-in/out timings
+//   • other         — everything else (late arrival, chat, system…)
+// 'all' returns every item. Each row carries a `tab` so the UI can filter
+// client-side without an extra round-trip.
+const FEED_TAB_SQL = `CASE
+        WHEN type = 'announcement'        THEN 'announcements'
+        WHEN type IN ('approval','leave') THEN 'approvals'
+        WHEN type = 'attendance'          THEN 'shifts'
+        ELSE 'other'
+      END`;
+const FEED_ICON_SQL = `CASE
+        WHEN type = 'announcement'        THEN '📢'
+        WHEN type IN ('approval','leave') THEN '✅'
+        WHEN type = 'attendance'          THEN '⏰'
+        WHEN type = 'late_arrival'        THEN '🟠'
+        WHEN type = 'chat'                THEN '💬'
+        ELSE '🔔'
+      END`;
+
 router.get('/', async (req, res) => {
   try {
-    const { type, page = 1, limit = 20 } = req.query;
+    const { type, page = 1, limit = 50 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    let where = 'WHERE f.employee_id = $1';
-    const params = [req.user._id];
-    if (type && type !== 'all') { where += ` AND f.type = $2`; params.push(type); }
+    // Map the requested tab to the underlying notification types.
+    const TAB_FILTER = {
+      announcements: ` AND type = 'announcement'`,
+      approvals:     ` AND type IN ('approval','leave')`,
+      shifts:        ` AND type = 'attendance'`,
+    };
+    const filter = (type && type !== 'all' && TAB_FILTER[type]) ? TAB_FILTER[type] : '';
 
     const r = await pool.query(
-      `SELECT f.id as "_id", f.type, f.title, f.body, f.icon, f.created_at as "createdAt"
-       FROM feeds f
-       ${where}
-       ORDER BY f.created_at DESC
-       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, parseInt(limit), offset]
+      `SELECT id as "_id", type, title, message as body, link,
+              is_read as "isRead", created_at as "createdAt",
+              ${FEED_TAB_SQL} as tab,
+              ${FEED_ICON_SQL} as icon
+       FROM notifications
+       WHERE employee_id = $1${filter}
+       ORDER BY created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [req.user._id, parseInt(limit), offset]
     );
     res.json({ success: true, data: r.rows });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }

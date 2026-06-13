@@ -267,9 +267,9 @@ function presenceOf(p) {
   if (p.presence) return p.presence;
   return p.isCheckedIn ? 'in' : 'yetToCheckIn';
 }
-const PRESENCE_LABEL = { in: 'In', out: 'Out', yetToCheckIn: 'Yet to check-in' };
-const PRESENCE_COLOR = { in: 'text-emerald-600', out: 'text-slate-500', yetToCheckIn: 'text-amber-600' };
-const PRESENCE_DOT   = { in: 'bg-emerald-500',  out: 'bg-slate-400',  yetToCheckIn: 'bg-amber-500'  };
+const PRESENCE_LABEL = { in: 'Checked In', out: 'Checked Out', onLeave: 'On Leave', yetToCheckIn: 'Yet to check-in' };
+const PRESENCE_COLOR = { in: 'text-emerald-600', out: 'text-slate-500', onLeave: 'text-violet-600', yetToCheckIn: 'text-amber-600' };
+const PRESENCE_DOT   = { in: 'bg-emerald-500',  out: 'bg-slate-400',  onLeave: 'bg-violet-500',  yetToCheckIn: 'bg-amber-500'  };
 
 /* Small inline status pill — used on the manager / approver / dept-member cards. */
 const PresenceLabel = ({ person }) => {
@@ -397,7 +397,7 @@ export default function Dashboard() {
   const { isWeekend: isWeekendByRule } = useWeekendRules();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('activities');
-  const [feedTab, setFeedTab] = useState('All');
+  const [feedTab, setFeedTab] = useState('all');
 
   /* ─ Dropdown state ─ */
   const [showPayrollMore, setShowPayrollMore] = useState(false);
@@ -441,7 +441,7 @@ export default function Dashboard() {
 
    /* ─ Leave state */
    const [leaveModal, setLeaveModal] = useState(false);
-   const [leaveForm, setLeaveForm] = useState({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '' });
+   const [leaveForm, setLeaveForm] = useState({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '', startTime: '', endTime: '' });
    const [leaveCards, setLeaveCards] = useState([]);   // all active leave types + balances
 
    /* ─ Time Log state */
@@ -869,7 +869,7 @@ export default function Dashboard() {
 
             {/* Reporting Manager Card */}
             <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-              <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Reporting Manager</h3>
+              <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Reporting Person</h3>
               {(manager || profileData?.manager) ? (
                 <div className="flex items-center gap-3">
                   <div className="relative flex-shrink-0">
@@ -881,7 +881,7 @@ export default function Dashboard() {
                     <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-white rounded-full ${PRESENCE_DOT[presenceOf(manager || profileData?.manager)] || 'bg-slate-300'}`} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[12px] font-bold text-slate-700">Reporting Manager</p>
+                    <p className="text-[12px] font-bold text-slate-700">Reporting Person</p>
                     <p className="text-[11.5px] text-slate-600 truncate">
                       {(manager || profileData?.manager).employeeId} - {(manager || profileData?.manager).firstName}
                     </p>
@@ -1242,24 +1242,26 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Feed Filters */}
+                  {/* Feed Filters — mirror the notification bell, grouped into tabs */}
                   <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1">
-                    {['All', 'Status', 'Announcements'].map(f => (
+                    {[['All', 'all'], ['Announcements', 'announcements'], ['Approvals', 'approvals'], ['Shifts', 'shifts']].map(([label, key]) => (
                       <button
-                        key={f}
-                        onClick={() => setFeedTab(f)}
+                        key={key}
+                        onClick={() => setFeedTab(key)}
                         className={`px-4 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap transition-all ${
-                          feedTab === f ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                          feedTab === key ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
                         }`}
                       >
-                        {f}
+                        {label}
                       </button>
                     ))}
                   </div>
 
-                  {/* Real Feed Cards */}
-                  {feeds.length > 0 ? (
-                    feeds.map((f, i) => (
+                  {/* Real Feed Cards — filtered to the active tab (All shows everything) */}
+                  {(() => {
+                    const shown = feedTab === 'all' ? feeds : feeds.filter(f => f.tab === feedTab);
+                    return shown.length > 0 ? (
+                    shown.map((f, i) => (
                       <FeedCard key={i}>
                         <div className="flex items-center gap-3 mb-3">
                           <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-[20px] border border-slate-100">
@@ -1286,7 +1288,8 @@ export default function Dashboard() {
                       </div>
                       <p className="text-[13.5px] font-bold text-slate-400">No activity in your feed yet</p>
                     </div>
-                  )}
+                  );
+                  })()}
                 </div>
               )}
 
@@ -1747,13 +1750,30 @@ export default function Dashboard() {
                       <option value="permission">Permission</option>
                     </select>
                   </div>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                    <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Date <span className="text-red-500">*</span></label>
-                    <div className="flex-1 flex items-center gap-3">
-                      <input type="date" value={leaveForm.fromDate} onChange={e => setLeaveForm({...leaveForm, fromDate: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
-                      <input type="date" value={leaveForm.toDate} onChange={e => setLeaveForm({...leaveForm, toDate: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
+                  {leaveForm.type === 'permission' ? (
+                    <>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                        <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Date <span className="text-red-500">*</span></label>
+                        <input type="date" value={leaveForm.fromDate} onChange={e => setLeaveForm({...leaveForm, fromDate: e.target.value, toDate: e.target.value})} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                        <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Time <span className="text-red-500">*</span></label>
+                        <div className="flex-1 flex items-center gap-3">
+                          <input type="time" value={leaveForm.startTime} onChange={e => setLeaveForm({...leaveForm, startTime: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
+                          <input type="time" value={leaveForm.endTime} onChange={e => setLeaveForm({...leaveForm, endTime: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-purple-600 sm:ml-[9.5rem]">Permission is hourly — up to 4 hours per month.</p>
+                    </>
+                  ) : (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                      <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Date <span className="text-red-500">*</span></label>
+                      <div className="flex-1 flex items-center gap-3">
+                        <input type="date" value={leaveForm.fromDate} onChange={e => setLeaveForm({...leaveForm, fromDate: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
+                        <input type="date" value={leaveForm.toDate} onChange={e => setLeaveForm({...leaveForm, toDate: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-6">
                     <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0 pt-2">Reason for leave</label>
@@ -1764,17 +1784,30 @@ export default function Dashboard() {
             </div>
             <div className="bg-white border-t border-slate-200 p-4 flex gap-3">
               <button onClick={async () => {
-                if (!leaveForm.fromDate || !leaveForm.toDate) return toast.error('Please select dates');
+                const isPerm = leaveForm.type === 'permission';
+                if (isPerm) {
+                  if (!leaveForm.fromDate) return toast.error('Please select a date');
+                  if (!leaveForm.startTime || !leaveForm.endTime) return toast.error('Please select start and end time');
+                } else if (!leaveForm.fromDate || !leaveForm.toDate) {
+                  return toast.error('Please select dates');
+                }
                 try {
-                  await api.post('/leaves', {
+                  await api.post('/leaves', isPerm ? {
+                    leaveType: 'permission',
+                    startDate: leaveForm.fromDate,
+                    endDate: leaveForm.fromDate,
+                    reason: leaveForm.reason,
+                    startTime: leaveForm.startTime,
+                    endTime: leaveForm.endTime,
+                  } : {
                     leaveType: leaveForm.type,
                     startDate: leaveForm.fromDate,
                     endDate: leaveForm.toDate,
                     reason: leaveForm.reason
                   });
-                  toast.success('Leave request submitted to reporting manager');
+                  toast.success(isPerm ? 'Permission submitted to reporting person' : 'Leave request submitted to reporting person');
                   setLeaveModal(false);
-                  setLeaveForm({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '' });
+                  setLeaveForm({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '', startTime: '', endTime: '' });
                 } catch (err) {
                   toast.error(err.response?.data?.message || 'Error applying leave');
                 }

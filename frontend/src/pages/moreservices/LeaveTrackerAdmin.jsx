@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Plus, ChevronLeft, ChevronRight, CheckCircle2, Clock, XCircle, Search, Filter,
+  ArrowLeft, Plus, ChevronLeft, ChevronRight, CheckCircle2, CheckCheck, Clock, XCircle, Search, Filter,
 } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
 import ApplyLeaveModal from '../../components/ApplyLeaveModal';
+import { useAuth } from '../../context/AuthContext';
 
 /* ── Admin Leave Tracker (Super Admin / HR) ───────────────────────────────
  *  Zoho-People-style listing of ALL org leave requests. Read-only over the
@@ -41,6 +42,8 @@ function StatusCell({ status }) {
 
 export default function LeaveTrackerAdmin() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -105,10 +108,10 @@ export default function LeaveTrackerAdmin() {
   // Approve / reject a pending request. Super Admin / HR act via the existing
   // engine's HR-override path — no workflow change. The optional comment reuses
   // rejection_reason on both actions.
-  const act = async (id, action, comment) => {
+  const act = async (id, action, comment, approveAll = false) => {
     try {
-      await api.put(`/leaves/${id}/action`, { action, rejectionReason: comment });
-      toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)} successfully`);
+      await api.put(`/leaves/${id}/action`, { action, rejectionReason: comment, approveAll });
+      toast.success(approveAll ? 'All levels approved' : `${action.charAt(0).toUpperCase() + action.slice(1)} successfully`);
       setDetail(null); setDetailBalance(null); load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
   };
@@ -205,8 +208,16 @@ export default function LeaveTrackerAdmin() {
                     {l.leaveType === 'unpaid' ? 'Unpaid' : 'Paid'}
                   </span>
                 </td>
-                <td className="px-5 py-3.5 text-[12.5px] text-slate-600">{fmt(l.startDate)} – {fmt(l.endDate)}</td>
-                <td className="px-5 py-3.5 text-[13px] text-slate-600">{l.totalDays} Day{l.totalDays !== 1 ? 's' : ''}</td>
+                <td className="px-5 py-3.5 text-[12.5px] text-slate-600">
+                  {l.leaveType === 'permission'
+                    ? `${fmt(l.startDate)} · ${(l.startTime || '').slice(0,5)}–${(l.endTime || '').slice(0,5)}`
+                    : `${fmt(l.startDate)} – ${fmt(l.endDate)}`}
+                </td>
+                <td className="px-5 py-3.5 text-[13px] text-slate-600">
+                  {l.leaveType === 'permission'
+                    ? `${l.hours ?? 0}h`
+                    : `${l.totalDays} Day${l.totalDays !== 1 ? 's' : ''}`}
+                </td>
                 <td className="px-5 py-3.5 text-[12.5px] text-slate-500">{fmt(l.createdAt)}</td>
                 <td className="px-5 py-3.5">
                   <div className="flex items-center justify-end gap-1.5">
@@ -216,6 +227,12 @@ export default function LeaveTrackerAdmin() {
                           className="flex items-center gap-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors">
                           <CheckCircle2 size={13} /> Approve
                         </button>
+                        {isSuperAdmin && (
+                          <button onClick={(e) => { e.stopPropagation(); act(l._id, 'approved', undefined, true); }}
+                            className="flex items-center gap-1 bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors">
+                            <CheckCheck size={13} /> Approve All
+                          </button>
+                        )}
                         <button onClick={(e) => { e.stopPropagation(); act(l._id, 'rejected'); }}
                           className="flex items-center gap-1 bg-rose-50 text-rose-500 hover:bg-rose-100 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors">
                           <XCircle size={13} /> Reject
@@ -256,6 +273,7 @@ export default function LeaveTrackerAdmin() {
           balance={detail.status === 'pending' ? detailBalance : undefined}
           canAct={detail.status === 'pending'}
           onApprove={(x, comment) => act(x._id, 'approved', comment)}
+          onApproveAll={isSuperAdmin && detail.status === 'pending' ? (x, comment) => act(x._id, 'approved', comment, true) : undefined}
           onReject={(x, comment) => act(x._id, 'rejected', comment)}
           onCancel={(x) => cancelLeave(x._id)}
           onClose={() => { setDetail(null); setDetailBalance(null); }}

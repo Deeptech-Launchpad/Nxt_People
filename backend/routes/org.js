@@ -133,13 +133,26 @@ router.get('/departments/:id/employees', async (req, res) => {
 router.get('/directory', async (req, res) => {
   try {
     const r = await pool.query(
-      `SELECT id as "_id", employee_id as "employeeId",
-              first_name as "firstName", last_name as "lastName",
-              designation, department, photo_url as "photoUrl",
-              email, phone, reporting_manager_id as "reportingManagerId"
-         FROM employees
-        WHERE status = 'active' AND deleted_at IS NULL
-        ORDER BY first_name ASC`
+      `SELECT e.id as "_id", e.employee_id as "employeeId",
+              e.first_name as "firstName", e.last_name as "lastName",
+              e.designation, e.department, e.photo_url as "photoUrl",
+              e.email, e.phone, e.reporting_manager_id as "reportingManagerId",
+              (a.check_in IS NOT NULL AND a.check_out IS NULL) as "isCheckedIn",
+              -- Real attendance wins; approved leave only shows when not clocked in.
+              CASE
+                WHEN a.check_in IS NOT NULL AND a.check_out IS NULL THEN 'in'
+                WHEN a.check_out IS NOT NULL THEN 'out'
+                WHEN EXISTS (
+                  SELECT 1 FROM leaves lv
+                   WHERE lv.employee_id = e.id AND lv.status = 'approved'
+                     AND lv.start_date <= CURRENT_DATE AND lv.end_date >= CURRENT_DATE
+                ) THEN 'onLeave'
+                ELSE 'yetToCheckIn'
+              END as presence
+         FROM employees e
+         LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
+        WHERE e.status = 'active' AND e.deleted_at IS NULL
+        ORDER BY e.first_name ASC`
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {

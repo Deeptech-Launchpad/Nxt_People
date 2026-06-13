@@ -108,9 +108,10 @@ router.get('/', async (req, res) => {
          'email', m.email, 'designation', m.designation,
          'isCheckedIn', (a_m.check_in IS NOT NULL AND a_m.check_out IS NULL),
          'presence', CASE
-           WHEN a_m.check_in IS NULL THEN 'yetToCheckIn'
-           WHEN a_m.check_out IS NULL THEN 'in'
-           ELSE 'out'
+           WHEN a_m.check_in IS NOT NULL AND a_m.check_out IS NULL THEN 'in'
+           WHEN a_m.check_out IS NOT NULL THEN 'out'
+           WHEN EXISTS (SELECT 1 FROM leaves lv WHERE lv.employee_id = m.id AND lv.status='approved' AND lv.start_date <= CURRENT_DATE AND lv.end_date >= CURRENT_DATE) THEN 'onLeave'
+           ELSE 'yetToCheckIn'
          END
        ) ELSE null END as manager,
        CASE WHEN aa.id IS NOT NULL THEN json_build_object(
@@ -118,9 +119,10 @@ router.get('/', async (req, res) => {
          'email', aa.email, 'designation', aa.designation,
          'isCheckedIn', (a_aa.check_in IS NOT NULL AND a_aa.check_out IS NULL),
          'presence', CASE
-           WHEN a_aa.check_in IS NULL THEN 'yetToCheckIn'
-           WHEN a_aa.check_out IS NULL THEN 'in'
-           ELSE 'out'
+           WHEN a_aa.check_in IS NOT NULL AND a_aa.check_out IS NULL THEN 'in'
+           WHEN a_aa.check_out IS NOT NULL THEN 'out'
+           WHEN EXISTS (SELECT 1 FROM leaves lv WHERE lv.employee_id = aa.id AND lv.status='approved' AND lv.start_date <= CURRENT_DATE AND lv.end_date >= CURRENT_DATE) THEN 'onLeave'
+           ELSE 'yetToCheckIn'
          END
        ) ELSE null END as "approvingAuthority"
        FROM employees e
