@@ -164,6 +164,7 @@ app.use('/api/admin',            require('./routes/admin-zoho'));
 app.use('/api/travel',           require('./routes/travel'));
 app.use('/api/compensation',     require('./routes/compensation'));
 app.use('/api/hr-letters',       require('./routes/hr-letters'));
+app.use('/api/conference',       require('./routes/conference'));
 
 // ── Health check ───────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => res.json({ status: 'OK', timestamp: new Date() }));

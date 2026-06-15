@@ -94,6 +94,7 @@ const HRLetters    = lazy(() => import('./pages/moreservices/HRLetters'));
 const Operations       = lazy(() => import('./pages/moreservices/Operations'));
 const LeaveTrackerAdmin = lazy(() => import('./pages/moreservices/LeaveTrackerAdmin'));
 const PermissionUsage = lazy(() => import('./pages/moreservices/PermissionUsage'));
+const Conference = lazy(() => import('./pages/moreservices/Conference'));
 
 /* ── Loaders & Guards ──────────────────────────────────────────────── */
 const PageLoader = () => (
@@ -190,6 +191,7 @@ const AppRoutes = () => {
           <Route path="more-services/operations"               element={<ProtectedRoute roles={['super_admin','hr']}><Operations/></ProtectedRoute>}/>
           <Route path="more-services/operations/leave-tracker" element={<ProtectedRoute roles={['super_admin','hr']}><LeaveTrackerAdmin/></ProtectedRoute>}/>
           <Route path="more-services/operations/permission-usage" element={<ProtectedRoute roles={['super_admin','hr']}><PermissionUsage/></ProtectedRoute>}/>
+          <Route path="more-services/operations/conference" element={<ProtectedRoute roles={['super_admin','hr']}><Conference/></ProtectedRoute>}/>
           <Route path="more-services/travel"       element={<Travel/>}/>
           <Route path="more-services/compensation" element={<Compensation/>}/>
           <Route path="more-services/hr-letters"   element={<HRLetters/>}/>

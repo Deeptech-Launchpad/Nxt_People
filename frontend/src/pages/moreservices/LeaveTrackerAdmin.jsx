@@ -43,7 +43,8 @@ function StatusCell({ status }) {
 export default function LeaveTrackerAdmin() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isSuperAdmin = user?.role === 'super_admin';
+  // This admin page is HR / Super Admin only (route-gated); both may Approve All.
+  const canApproveAll = ['super_admin', 'hr'].includes(user?.role);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -227,7 +228,7 @@ export default function LeaveTrackerAdmin() {
                           className="flex items-center gap-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors">
                           <CheckCircle2 size={13} /> Approve
                         </button>
-                        {isSuperAdmin && (
+                        {canApproveAll && (
                           <button onClick={(e) => { e.stopPropagation(); act(l._id, 'approved', undefined, true); }}
                             className="flex items-center gap-1 bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors">
                             <CheckCheck size={13} /> Approve All
@@ -273,7 +274,7 @@ export default function LeaveTrackerAdmin() {
           balance={detail.status === 'pending' ? detailBalance : undefined}
           canAct={detail.status === 'pending'}
           onApprove={(x, comment) => act(x._id, 'approved', comment)}
-          onApproveAll={isSuperAdmin && detail.status === 'pending' ? (x, comment) => act(x._id, 'approved', comment, true) : undefined}
+          onApproveAll={canApproveAll && detail.status === 'pending' ? (x, comment) => act(x._id, 'approved', comment, true) : undefined}
           onReject={(x, comment) => act(x._id, 'rejected', comment)}
           onCancel={(x) => cancelLeave(x._id)}
           onClose={() => { setDetail(null); setDetailBalance(null); }}

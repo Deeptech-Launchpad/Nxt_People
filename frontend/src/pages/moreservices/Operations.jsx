@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CalendarCheck, Clock, Timer, CalendarDays, Trophy, FolderOpen, Users, Plane,
-  Wallet, CheckSquare, Smile, Mail, UserPlus, Settings, Activity, CheckCircle, Database, Hourglass,
+  Wallet, CheckSquare, Smile, Mail, UserPlus, Settings, Activity, CheckCircle, Database, Hourglass, DoorOpen,
 } from 'lucide-react';
 
 /* ── Operations services grid (Super Admin / HR) ──────────────────────────
@@ -15,6 +15,7 @@ import {
 const ROUTES = {
   'leave-tracker':    '/more-services/operations/leave-tracker',
   'permission-usage': '/more-services/operations/permission-usage',
+  'conference':       '/more-services/operations/conference',
 };
 
 const SERVICES = [
@@ -23,6 +24,7 @@ const SERVICES = [
   { key: 'time-tracker', label: 'Time Tracker',        icon: Timer,         color: 'text-amber-500' },
   { key: 'leave-tracker',label: 'Leave Tracker',       icon: CalendarDays,  color: 'text-blue-600' },
   { key: 'permission-usage', label: 'Permission Usage', icon: Hourglass,    color: 'text-purple-600' },
+  { key: 'conference',   label: 'Conference',          icon: DoorOpen,      color: 'text-blue-600' },
   { key: 'performance',  label: 'Performance',         icon: Trophy,        color: 'text-yellow-500' },
   { key: 'files',        label: 'Files',               icon: FolderOpen,    color: 'text-indigo-500' },
   { key: 'emp-info',     label: 'Employee Information', icon: Users,         color: 'text-emerald-500' },

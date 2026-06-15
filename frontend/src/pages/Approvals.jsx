@@ -26,7 +26,9 @@ const saveSeen = (obj) => {
 
 export default function Approvals() {
   const { user } = useAuth();
-  const isSuperAdmin = user?.role === 'super_admin';
+  // Approve All is available to HR / Super Admin and Team Leads (managers).
+  // Managers are still scoped server-side to requests they actually approve.
+  const canApproveAll = ['super_admin', 'hr', 'manager'].includes(user?.role);
   const [data, setData] = useState({ leaves: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('leaves');
@@ -140,8 +142,8 @@ export default function Approvals() {
           className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
           <CheckCircle size={13} /> Approve
         </button>
-        {/* Super-Admin only: approve every remaining level at once (leaves). */}
-        {endpoint === 'leaves' && isSuperAdmin && (
+        {/* Approve every remaining level at once (leaves) — HR/SA + Team Leads. */}
+        {endpoint === 'leaves' && canApproveAll && (
           <button onClick={() => action(endpoint, id, 'approved', undefined, true)} disabled={!!actionLoading}
             className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
             <CheckCheck size={13} /> Approve All
@@ -483,7 +485,7 @@ export default function Approvals() {
             onClose={() => setDetailLeave(null)}
             canAct={detailLeave.status === 'pending' && !!detailLeave.canAct}
             onApprove={(x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'approved', comment); }}
-            onApproveAll={!isReg && isSuperAdmin && detailLeave.status === 'pending'
+            onApproveAll={!isReg && canApproveAll && detailLeave.status === 'pending' && !!detailLeave.canAct
               ? (x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'approved', comment, true); }
               : undefined}
             onReject={(x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'rejected', comment); }}
