@@ -71,9 +71,16 @@ function actionNote(lvl) {
   const onBehalf = lvl.onBehalf || lvl.byHr;
   const actor = lvl.actedByName
     ? `${lvl.actedByName}${lvl.actedByRole ? ` (${roleLabel(lvl.actedByRole)})` : ''}`
-    : 'another approver';
-  if (lvl.status === 'rejected') return onBehalf ? `Rejected on behalf of Level ${lvl.level} by ${actor}` : 'Rejected';
-  if (lvl.status === 'approved') return onBehalf ? `Approved on behalf of Level ${lvl.level} by ${actor}` : 'Approved';
+    : null;
+  if (lvl.status === 'rejected') {
+    // Rejections always name who rejected (even a self-rejection at this level).
+    if (onBehalf) return `Rejected on behalf of Level ${lvl.level}${actor ? ` by ${actor}` : ''}`;
+    return actor ? `Rejected by ${actor}` : 'Rejected';
+  }
+  if (lvl.status === 'approved') {
+    if (onBehalf) return `Approved on behalf of Level ${lvl.level}${actor ? ` by ${actor}` : ''}`;
+    return 'Approved';
+  }
   return 'Awaiting approval';
 }
 
@@ -90,6 +97,13 @@ export default function ApprovalTimeline({ leave, compact = false }) {
   const lastActedAt = actedTimes.length ? new Date(Math.max(...actedTimes)).toISOString() : null;
   const isResolved = overall !== 'pending';
   const totalDuration = (isResolved && lastActedAt) ? elapsedLabel(leave.createdAt, lastActedAt) : null;
+
+  // Legacy requests (filed before per-level tracking) have no approvalLevels —
+  // fall back to the actor/reason stored on the leave itself so the timeline
+  // still says who resolved it and why.
+  const ab = leave.approvedBy;
+  const legacyActor = ab && (ab.firstName || ab.lastName) ? `${ab.firstName || ''} ${ab.lastName || ''}`.trim() : null;
+  const legacyWhen = fmtDateTime(leave.approvedAt) || null;
 
   return (
     <div className="flex flex-col">
@@ -128,7 +142,17 @@ export default function ApprovalTimeline({ leave, compact = false }) {
             <div className={`relative z-10 w-8 h-8 rounded-full ${TOKENS[overall].ring} text-white flex items-center justify-center flex-shrink-0`}>
               {React.createElement(TOKENS[overall].Icon, { size: 14, strokeWidth: 2.5 })}
             </div>
-            <div className="pt-1"><StatusPill status={overall} /></div>
+            <div className="pt-1 min-w-0">
+              <StatusPill status={overall} />
+              {isResolved && legacyActor && (
+                <p className="mt-1 text-[11.5px] text-slate-500">
+                  {overall === 'rejected' ? 'Rejected' : 'Approved'} by {legacyActor}{legacyWhen ? ` · ${legacyWhen}` : ''}
+                </p>
+              )}
+              {overall === 'rejected' && leave.rejectionReason && (
+                <p className="mt-0.5 text-[11.5px] text-rose-600">Reason: {leave.rejectionReason}</p>
+              )}
+            </div>
           </div>
         ) : (
           levels.map((lvl, i) => {
@@ -165,6 +189,9 @@ export default function ApprovalTimeline({ leave, compact = false }) {
                   </div>
                   {lvl.status !== 'pending' && (
                     <p className="mt-0.5 text-[11.5px] text-slate-500">{actionNote(lvl)}</p>
+                  )}
+                  {lvl.status === 'rejected' && leave.rejectionReason && (
+                    <p className="mt-0.5 text-[11.5px] text-rose-600">Reason: {leave.rejectionReason}</p>
                   )}
                   {lvl.status !== 'pending' && elapsedLabel(leave.createdAt, lvl.actedAt) && (
                     <span className="inline-flex items-center gap-1 mt-1 text-[10.5px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">

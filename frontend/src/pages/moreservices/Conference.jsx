@@ -26,7 +26,7 @@ function BookingModal({ initial, onClose, onSaved }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.title.trim()) return toast.error('Meeting title is required');
+    if (!form.title.trim()) return toast.error('Conducted By (organizer name) is required');
     if (!form.bookingDate) return toast.error('Booking date is required');
     if (!form.startTime || !form.endTime) return toast.error('Start and end time are required');
     if (form.endTime <= form.startTime) return toast.error('End time must be after start time');
@@ -57,8 +57,8 @@ function BookingModal({ initial, onClose, onSaved }) {
         </div>
         <form onSubmit={submit} className="p-6 space-y-4">
           <div>
-            <label className="block text-[12px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Meeting Title *</label>
-            <input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Sprint planning"
+            <label className="block text-[12px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Conducted By *</label>
+            <input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Sarah"
               className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-[13.5px] focus:outline-none focus:border-blue-400" />
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -119,7 +119,7 @@ function ViewModal({ booking, onClose }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         <div className="p-6">
-          <Row label="Title">{booking.title}</Row>
+          <Row label="Conducted By">{booking.title}</Row>
           <Row label="Date">{fmtDate(booking.bookingDate)}</Row>
           <Row label="Time">{booking.startTime} – {booking.endTime}</Row>
           <Row label="Hall">{booking.hall}</Row>
@@ -195,7 +195,7 @@ export default function Conference() {
             <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
               <th className="px-5 py-3">Date</th>
               <th className="px-5 py-3">Conference Hall</th>
-              <th className="px-5 py-3">Meeting</th>
+              <th className="px-5 py-3">Conducted By</th>
               <th className="px-5 py-3">Booked By</th>
               <th className="px-5 py-3">Start</th>
               <th className="px-5 py-3">End</th>
