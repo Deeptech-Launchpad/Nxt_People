@@ -62,13 +62,18 @@ function StatusPill({ status }) {
   );
 }
 
-// The "how it was actioned" sub-label for one level. The headline name/role is
-// the ACTUAL actor (see below), so this note only states what happened — never
-// attributes the action to a different person.
+// The "how it was actioned" sub-label for one level. The headline always shows
+// the ASSIGNED hierarchy approver; this note is the ONLY place the actual actor
+// appears — and only when someone OTHER than the assigned approver acted.
+//   • self-approval (assigned approver acts on own level) → "Approved"
+//   • someone else acts on their behalf → "Approved on behalf of Level N by <Actor> (<Role>)"
 function actionNote(lvl) {
   const onBehalf = lvl.onBehalf || lvl.byHr;
-  if (lvl.status === 'rejected') return onBehalf ? `Rejected on behalf of Level ${lvl.level}` : 'Rejected';
-  if (lvl.status === 'approved') return onBehalf ? `Approved on behalf of Level ${lvl.level}` : 'Approved';
+  const actor = lvl.actedByName
+    ? `${lvl.actedByName}${lvl.actedByRole ? ` (${roleLabel(lvl.actedByRole)})` : ''}`
+    : 'another approver';
+  if (lvl.status === 'rejected') return onBehalf ? `Rejected on behalf of Level ${lvl.level} by ${actor}` : 'Rejected';
+  if (lvl.status === 'approved') return onBehalf ? `Approved on behalf of Level ${lvl.level} by ${actor}` : 'Approved';
   return 'Awaiting approval';
 }
 
@@ -130,14 +135,10 @@ export default function ApprovalTimeline({ leave, compact = false }) {
             const t = TOKENS[lvl.status] || TOKENS.pending;
             const when = fmtDateTime(lvl.actedAt);
             const isLast = i === levels.length - 1;
-            // Headline shows the ACTUAL approver: once a level is acted on, use
-            // the person who acted (actedBy*); while still pending, show the
-            // assigned approver who is expected to act. This is what makes an
-            // "Approve All" by HR/Super-Admin display the real approver on every
-            // level instead of the original hierarchy person.
-            const acted = lvl.status !== 'pending';
-            const who = acted && lvl.actedByName ? lvl.actedByName : (lvl.approverName || 'Not Assigned');
-            const whoRole = acted && lvl.actedByName ? (lvl.actedByRole || lvl.approverRole) : lvl.approverRole;
+            // Headline ALWAYS shows the assigned hierarchy approver (Level N's
+            // configured Reporting Person) — never the actor. The actual person
+            // who approved on their behalf is shown in the note below only.
+            const assignedName = lvl.approverName || 'Not Assigned';
             return (
               <div key={lvl.level} className="flex items-start gap-3 pb-4 last:pb-0 relative">
                 {/* connector */}
@@ -145,7 +146,7 @@ export default function ApprovalTimeline({ leave, compact = false }) {
                 {/* avatar */}
                 <div className="relative z-10 flex-shrink-0">
                   <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold flex items-center justify-center border border-slate-200">
-                    {initialsOf(who)}
+                    {initialsOf(assignedName)}
                   </div>
                   <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${t.ring}`} />
                 </div>
@@ -153,9 +154,9 @@ export default function ApprovalTimeline({ leave, compact = false }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
                     <span className="text-[11px] font-bold text-slate-400">LEVEL {lvl.level}</span>
-                    <span className="text-[13px] font-semibold text-slate-800 truncate">{who}</span>
-                    {whoRole && (
-                      <span className="text-[10.5px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{roleLabel(whoRole)}</span>
+                    <span className="text-[13px] font-semibold text-slate-800 truncate">{assignedName}</span>
+                    {lvl.approverRole && (
+                      <span className="text-[10.5px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{roleLabel(lvl.approverRole)}</span>
                     )}
                   </div>
                   <div className="mt-1 flex items-center flex-wrap gap-2">

@@ -182,9 +182,12 @@ async function applyApproval(db, requestType, requestId, user) {
  * approval_levels inside the caller's transaction. Returns { ok, status?, message?, allApproved }.
  */
 async function applyApproveAll(db, requestType, requestId, user) {
-  // Gate to Super Admin only — HR keeps the normal single-level flow.
-  if (user.role !== 'super_admin') {
-    return { ok: false, message: 'Only a Super Admin can approve all levels at once.' };
+  // Allowed for full-access (HR / Super Admin) AND managers (Team Leads).
+  // A manager is still scoped to requests they're an approver on — the route's
+  // canUserAct guard enforces that before this runs.
+  const full = isFullAccess(user.role);
+  if (!full && user.role !== 'manager') {
+    return { ok: false, message: 'You are not allowed to approve all levels at once.' };
   }
   const levels = await getLevels(db, requestType, requestId);
 
@@ -200,8 +203,8 @@ async function applyApproveAll(db, requestType, requestId, user) {
 
   for (const lvl of toApprove) {
     const isOwn = !!ownLevel && lvl.level === ownLevel.level;
-    const onBehalf = !isOwn;   // covering a level the Super Admin doesn't own
-    const byHr = !isOwn;       // recorded as an HR/Super-Admin override
+    const onBehalf = !isOwn;        // covering a level this user doesn't own
+    const byHr = !isOwn && full;    // HR/Super-Admin override flag — NOT for managers
     await db.query(
       `UPDATE approval_levels
           SET status='approved', acted_by=$1, acted_at=NOW(), on_behalf=$2, by_hr=$3

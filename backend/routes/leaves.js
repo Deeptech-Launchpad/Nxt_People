@@ -398,12 +398,11 @@ router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), async (req,
   if (!['approved', 'rejected'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Invalid action. Use: approved or rejected' });
   }
-  // "Approve All" is a Super-Admin-only shortcut that finalises every remaining
-  // level in one click (approving lower/higher levels on their behalf).
+  // "Approve All" finalises every remaining level in one click (approving the
+  // other levels on their behalf). Allowed for HR / Super Admin and Team Leads
+  // (managers); applyApproveAll enforces the role, and canUserAct below ensures
+  // a manager can only do this on a request they're actually an approver on.
   const wantApproveAll = action === 'approved' && approveAll === true;
-  if (wantApproveAll && req.user.role !== 'super_admin') {
-    return res.status(403).json({ success: false, message: 'Only a Super Admin can approve all levels at once.' });
-  }
 
   const client = await pool.connect();
   try {
