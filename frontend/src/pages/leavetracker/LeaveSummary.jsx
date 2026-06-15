@@ -446,7 +446,8 @@ export default function LeaveSummary() {
               // Permission is hourly (4h/month); other leave types stay in days.
               const isPerm = card.code === 'permission';
               const unit = isPerm ? 'h' : '';
-              const fmt = (v) => v === null || v === undefined ? '—' : `${v}${unit}`;
+              // Round to 2 dp so JS float math doesn't show 2.9699999999999998.
+              const fmt = (v) => (v === null || v === undefined) ? '—' : `${Math.round((v + Number.EPSILON) * 100) / 100}${unit}`;
               return (
                 <div key={card.code} className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow">
                   {/* Icon */}

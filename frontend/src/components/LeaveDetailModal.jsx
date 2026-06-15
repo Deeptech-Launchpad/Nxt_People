@@ -47,10 +47,12 @@ function BalanceCard({ leave, balanceCards }) {
   const card = balanceCards.find(c => c.code === leave.leaveType);
   const isPerm = leave.leaveType === 'permission';
   const u = isPerm ? 'h' : '';                       // hours suffix for permission
-  const avail = card ? card.available : undefined;
-  const booking = isPerm ? (parseFloat(leave.hours) || 0) : (leave.totalDays || 0);
+  // Round to 2 dp so float subtraction doesn't show 1.9399999999999997.
+  const r2 = (n) => (n === null || n === undefined) ? n : Math.round((n + Number.EPSILON) * 100) / 100;
+  const avail = card ? r2(card.available) : undefined;
+  const booking = r2(isPerm ? (parseFloat(leave.hours) || 0) : (leave.totalDays || 0));
   const unlimited = avail === null || avail === undefined;
-  const after = unlimited ? null : (avail - booking);
+  const after = unlimited ? null : r2(avail - booking);
   const Row = ({ label, value, strong, muted }) => (
     <div className="flex items-center justify-between py-1.5">
       <span className={`text-[12px] ${muted ? 'text-slate-400' : 'text-slate-500'}`}>{label}</span>

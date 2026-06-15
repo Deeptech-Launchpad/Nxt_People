@@ -62,15 +62,13 @@ function StatusPill({ status }) {
   );
 }
 
-// The "how it was actioned" sub-label for one level.
+// The "how it was actioned" sub-label for one level. The headline name/role is
+// the ACTUAL actor (see below), so this note only states what happened — never
+// attributes the action to a different person.
 function actionNote(lvl) {
-  const who = lvl.actedByName ? ` by ${lvl.actedByName}` : '';
-  if (lvl.status === 'rejected') return lvl.byHr ? `Rejected on behalf by HR${who}` : `Rejected${who}`;
-  if (lvl.status === 'approved') {
-    if (lvl.byHr) return `Approved on behalf by HR${who}`;
-    if (lvl.onBehalf) return `Approved on behalf of Level ${lvl.level}${who}`;
-    return 'Approved';
-  }
+  const onBehalf = lvl.onBehalf || lvl.byHr;
+  if (lvl.status === 'rejected') return onBehalf ? `Rejected on behalf of Level ${lvl.level}` : 'Rejected';
+  if (lvl.status === 'approved') return onBehalf ? `Approved on behalf of Level ${lvl.level}` : 'Approved';
   return 'Awaiting approval';
 }
 
@@ -132,6 +130,14 @@ export default function ApprovalTimeline({ leave, compact = false }) {
             const t = TOKENS[lvl.status] || TOKENS.pending;
             const when = fmtDateTime(lvl.actedAt);
             const isLast = i === levels.length - 1;
+            // Headline shows the ACTUAL approver: once a level is acted on, use
+            // the person who acted (actedBy*); while still pending, show the
+            // assigned approver who is expected to act. This is what makes an
+            // "Approve All" by HR/Super-Admin display the real approver on every
+            // level instead of the original hierarchy person.
+            const acted = lvl.status !== 'pending';
+            const who = acted && lvl.actedByName ? lvl.actedByName : (lvl.approverName || 'Not Assigned');
+            const whoRole = acted && lvl.actedByName ? (lvl.actedByRole || lvl.approverRole) : lvl.approverRole;
             return (
               <div key={lvl.level} className="flex items-start gap-3 pb-4 last:pb-0 relative">
                 {/* connector */}
@@ -139,7 +145,7 @@ export default function ApprovalTimeline({ leave, compact = false }) {
                 {/* avatar */}
                 <div className="relative z-10 flex-shrink-0">
                   <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold flex items-center justify-center border border-slate-200">
-                    {initialsOf(lvl.approverName)}
+                    {initialsOf(who)}
                   </div>
                   <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${t.ring}`} />
                 </div>
@@ -147,9 +153,9 @@ export default function ApprovalTimeline({ leave, compact = false }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
                     <span className="text-[11px] font-bold text-slate-400">LEVEL {lvl.level}</span>
-                    <span className="text-[13px] font-semibold text-slate-800 truncate">{lvl.approverName || 'Not Assigned'}</span>
-                    {lvl.approverRole && (
-                      <span className="text-[10.5px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{roleLabel(lvl.approverRole)}</span>
+                    <span className="text-[13px] font-semibold text-slate-800 truncate">{who}</span>
+                    {whoRole && (
+                      <span className="text-[10.5px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{roleLabel(whoRole)}</span>
                     )}
                   </div>
                   <div className="mt-1 flex items-center flex-wrap gap-2">
