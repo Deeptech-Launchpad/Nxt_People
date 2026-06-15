@@ -315,13 +315,13 @@ function RejectModal({ leave, onConfirm, onClose }) {
           <button onClick={onClose}><X size={16} className="text-gray-400" /></button>
         </div>
         <div className="p-5 space-y-4">
-          <p className="text-[13px] text-gray-600">Please provide a reason for rejection (required).</p>
+          <p className="text-[13px] text-gray-600">Add an optional comment for this rejection (not required).</p>
           <textarea rows={3} value={reason} onChange={e => setReason(e.target.value)}
-            placeholder="Rejection reason..."
+            placeholder="Optional comment…"
             className="w-full border border-gray-200 rounded px-3 py-2 text-[13px] outline-none focus:border-red-300 resize-none" />
           <div className="flex items-center justify-end gap-3">
             <button onClick={onClose} className="px-4 py-2 text-[12.5px] font-semibold text-gray-600 hover:bg-gray-50 rounded border border-gray-200">Cancel</button>
-            <button disabled={!reason.trim() || loading} onClick={async () => {
+            <button disabled={loading} onClick={async () => {
               setLoading(true);
               await onConfirm(reason);
               setLoading(false);

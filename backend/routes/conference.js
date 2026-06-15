@@ -76,7 +76,7 @@ router.get('/', async (req, res) => {
 
 // ── POST /api/conference ─ create a booking ──────────────────────────────────
 router.post('/', [
-  body('title').isString().trim().isLength({ min: 1, max: 255 }).withMessage('Meeting title is required'),
+  body('title').isString().trim().isLength({ min: 1, max: 255 }).withMessage('Conducted By (organizer name) is required'),
   body('bookingDate').isISO8601().withMessage('Valid booking date is required'),
   body('startTime').matches(/^\d{2}:\d{2}$/).withMessage('Valid start time is required'),
   body('endTime').matches(/^\d{2}:\d{2}$/).withMessage('Valid end time is required'),
