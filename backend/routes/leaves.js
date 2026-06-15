@@ -715,8 +715,10 @@ router.get('/balance', async (req, res) => {
           AND date_trunc('month', start_date) = date_trunc('month', CURRENT_DATE)`,
       [targetId]
     );
-    const permUsed = parseFloat(permRes.rows[0].used) || 0;
-    const permAvailable = Math.max(0, 4 - permUsed);
+    // Round to 2 dp so 4 - 1.03 shows 2.97, not 2.9699999999999998 (JS float).
+    const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const permUsed = round2(parseFloat(permRes.rows[0].used) || 0);
+    const permAvailable = round2(Math.max(0, 4 - permUsed));
 
     // Try leave_balances table first
     let balanceRows = [];

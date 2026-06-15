@@ -137,17 +137,15 @@ async function applyApproval(db, requestType, requestId, user) {
     return { ok: false, message: 'You are not a pending approver for this request.' };
   }
 
-  const anyLowerApproved = (lvl) => levels.some(l => l.level < lvl && l.status === 'approved');
-
   // Determine the "ceiling" level this action approves up to.
   // - An assigned approver approves their own level (+ auto-covers lower).
   // - Full-access without an own pending level finalises everything still pending.
   const ceiling = ownLevel ? ownLevel.level : maxLevel;
 
-  // Top-level-not-first guard: the highest level cannot be the first approval.
-  if (ownLevel && ownLevel.level === maxLevel && maxLevel > 1 && !anyLowerApproved(maxLevel) && !full) {
-    return { ok: false, message: 'A lower-level approver must approve first before the highest level can approve.' };
-  }
+  // NOTE: the previous "top level cannot act first" gate was removed by request —
+  // any approver (and HR / Admin / Super Admin) may approve directly; lower
+  // levels are no longer mandatory before a higher level acts. Lower pending
+  // levels are still auto-covered on-behalf below so the chain stays consistent.
 
   // A pure HR override = full-access actor who is NOT in this request's chain.
   const pureHrOverride = full && !ownLevel;
