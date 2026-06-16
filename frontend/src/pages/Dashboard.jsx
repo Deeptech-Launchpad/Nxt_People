@@ -9,7 +9,8 @@ import {
   Megaphone, Clock, ExternalLink, User as UserIcon,
   MoreHorizontal, LogIn, LogOut,
   Calendar, Star, CheckCircle,
-  MessageSquare, Briefcase, Filter, X, Activity, Settings, User, Search
+  MessageSquare, Briefcase, Filter, X, Activity, Settings, User, Search,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 import api from '../utils/api';
@@ -194,12 +195,14 @@ function AnimatedTimeOfDayIcon({ size = 48 }) {
  * back to the legacy hardcoded "1st & 3rd Sat" rule so older code paths still
  * render something reasonable.
  */
-function getCurrentWeek(workingDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], holidays = [], isWeekendFn = null) {
+function getCurrentWeek(workingDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], holidays = [], isWeekendFn = null, weekOffset = 0) {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const week = [];
     const dayOfWeek = today.getDay();
-    const sundayOffset = -dayOfWeek;
+    // weekOffset shifts the whole 7-day window by N weeks (0 = current week,
+    // -1 = previous, +1 = next) for the Attendance tab's week navigation.
+    const sundayOffset = -dayOfWeek + weekOffset * 7;
     const startOfWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() + sundayOffset);
 
     for (let i = 0; i < 7; i++) {
@@ -424,6 +427,10 @@ export default function Dashboard() {
 
   /* Attendance */
    const [weeklyAttendance, setWeeklyAttendance] = useState([]);
+   // Attendance tab — independent week navigation (0 = current, -1 = prev, +1 = next)
+   // so browsing weeks here never disturbs the current-week Work Schedule widget.
+   const [attWeekOffset, setAttWeekOffset] = useState(0);
+   const [attWeekData, setAttWeekData] = useState([]);
    const [actionLoading, setActionLoading] = useState(false);
 
   /* Dashboard data */
@@ -650,15 +657,39 @@ export default function Dashboard() {
        .catch(() => setWeeklyAttendance([]));
    };
 
+   // Fetch attendance covering the Attendance-tab's displayed week. A week can
+   // straddle a month boundary, so we load every month the week touches (same
+   // /attendance/my?month=&year= endpoint, 0-based month) and merge the rows.
+   const fetchAttWeek = (week) => {
+     if (!week || !week.length) return;
+     const months = new Map();
+     [week[0].dateObj, week[6].dateObj].forEach(d => {
+       months.set(`${d.getFullYear()}-${d.getMonth()}`, { y: d.getFullYear(), m: d.getMonth() });
+     });
+     Promise.all([...months.values()].map(({ y, m }) =>
+       api.get(`/attendance/my?month=${m}&year=${y}`).then(r => r.data.data || []).catch(() => [])
+     )).then(arrs => setAttWeekData(arrs.flat()));
+   };
+
+   // Load the displayed week's records whenever the user navigates Prev/Next.
+   // Only the dates matter here (weekend/holiday flags are applied at render),
+   // so offset is the only dependency.
+   useEffect(() => {
+     fetchAttWeek(getCurrentWeek(undefined, [], null, attWeekOffset));
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [attWeekOffset]);
+
    /* ─ check-in / check-out */
    const handleCheckIn = async () => {
      await checkIn('Office');
      fetchWeeklyAttendance();
+     fetchAttWeek(getCurrentWeek(undefined, [], null, attWeekOffset));
    };
 
    const handleCheckOut = async () => {
      await checkOut('Office');
      fetchWeeklyAttendance();
+     fetchAttWeek(getCurrentWeek(undefined, [], null, attWeekOffset));
    };
 
   const handleStartTimer = async () => {
@@ -698,13 +729,16 @@ export default function Dashboard() {
     ? `${shift.start_time} - ${shift.end_time}`
     : '9:30 AM - 6:00 PM';
 
-  /* ─ week range display */
+  /* ─ week range display (Attendance tab — offset-aware) */
   const now = new Date();
   const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - now.getDay() + 1);
+  // Same Monday-start convention as before, shifted by the navigated week offset.
+  weekStart.setDate(now.getDate() - now.getDay() + 1 + attWeekOffset * 7);
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekStart.getDate() + 6);
   const weekRange = `${weekStart.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })} - ${weekEnd.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })}`;
+  // The 7-day rows shown in the Attendance tab for the navigated week.
+  const attWeek = getCurrentWeek(user?.shift?.workingDays, holidays, isWeekendByRule, attWeekOffset);
 
   /* ─ tabs ─ */
   const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance', 'Time Logs'];
@@ -1402,7 +1436,13 @@ export default function Dashboard() {
                         <h4 className="text-[28px] font-bold text-emerald-500 tracking-tighter">{l.available === null || l.available === undefined ? '—' : l.available}</h4>
                         <p className="text-[11px] text-slate-400 font-medium">Available</p>
                         <button
-                          onClick={() => { setLeaveForm({...leaveForm, type: l.code}); setLeaveModal(true); }}
+                          onClick={() => {
+                            // Comp-Off has its own earn/claim workflow (worked date +
+                            // requested comp-off date) — send the user there instead of
+                            // the generic leave modal.
+                            if (l.code === 'comp_off') { navigate('/leave-tracker/comp-off'); return; }
+                            setLeaveForm({...leaveForm, type: l.code}); setLeaveModal(true);
+                          }}
                           className="mt-4 w-full bg-slate-50 hover:bg-slate-100 text-slate-600 text-[12px] font-bold py-1.5 rounded-lg border border-slate-200 transition-all"
                         >
                           Apply
@@ -1416,16 +1456,32 @@ export default function Dashboard() {
               {/* ─ Attendance tab — Zoho-style weekly log ─ */}
               {activeTab === 'attendance' && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                    <h3 className="text-[14px] font-bold text-slate-700">This Week</h3>
-                    <span className="text-[11px] font-bold text-[#1a73e8] bg-blue-50 px-3 py-1 rounded-full">{weekRange}</span>
+                  <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+                    <h3 className="text-[14px] font-bold text-slate-700">
+                      {attWeekOffset === 0 ? 'This Week' : attWeekOffset === -1 ? 'Last Week' : attWeekOffset === 1 ? 'Next Week' : 'Week'}
+                    </h3>
+                    {/* Previous / Next week navigation — loads that week's records. */}
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setAttWeekOffset(o => o - 1)} title="Previous week"
+                        className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700">
+                        <ChevronLeft size={15} />
+                      </button>
+                      <span className="text-[11px] font-bold text-[#1a73e8] bg-blue-50 px-3 py-1 rounded-full whitespace-nowrap">{weekRange}</span>
+                      <button onClick={() => setAttWeekOffset(o => o + 1)} title="Next week"
+                        className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700">
+                        <ChevronRight size={15} />
+                      </button>
+                      {attWeekOffset !== 0 && (
+                        <button onClick={() => setAttWeekOffset(0)} className="text-[11px] text-[#1a73e8] hover:underline font-medium ml-0.5">Today</button>
+                      )}
+                    </div>
                   </div>
                   <div>
-                    {getCurrentWeek(user?.shift?.workingDays, holidays, isWeekendByRule).map((row, i) => {
+                    {attWeek.map((row, i) => {
                       // Match the API record by *local* date — Postgres DATEs come back as
                       // UTC midnight, which is the previous day in IST, so a naive
                       // string-prefix match misses today's row.
-                      const att = weeklyAttendance.find((a) => {
+                      const att = attWeekData.find((a) => {
                         if (!a.date) return false;
                         const d = new Date(a.date);
                         const y = d.getFullYear();

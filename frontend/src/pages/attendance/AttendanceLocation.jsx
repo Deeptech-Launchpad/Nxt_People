@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   MapPin, LogIn, LogOut, ExternalLink, Filter, ChevronLeft, ChevronRight, RefreshCw, Navigation,
+  Building2, Home,
 } from 'lucide-react';
 import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
@@ -24,11 +25,12 @@ const TYPE_OPTIONS = [
   { key: 'checkout', label: 'Check-out only' },
 ];
 
-const PERMISSION_PILL = {
-  always:      { label: 'Allow Always',    cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  once:        { label: 'Allow This Time', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  denied:      { label: 'Denied',          cls: 'bg-rose-50 text-rose-600 border-rose-200' },
-  unavailable: { label: 'Unavailable',     cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+// Work Mode is derived server-side from the configured office geofence: within
+// the office radius → Office, otherwise → Work From Home. `undefined` (unknown)
+// when the office isn't configured or the log has no GPS fix.
+const WORK_MODE_PILL = {
+  office: { label: 'Office',             cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: <Building2 size={12} /> },
+  wfh:    { label: 'Work From Home',     cls: 'bg-amber-50 text-amber-700 border-amber-200',       icon: <Home size={12} /> },
 };
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -63,6 +65,9 @@ export default function AttendanceLocation() {
   // from the captured coordinates (see reverseGeocode). Generic stored labels
   // like "Office" are never shown.
   const [places, setPlaces] = useState({});
+  // Office area keyword from settings (e.g. "Saibaba Colony"). Work Mode is
+  // determined by checking whether the resolved address contains this string.
+  const [officeAreaName, setOfficeAreaName] = useState('');
 
   // Employee filter (HR / Super Admin only).
   useEffect(() => {
@@ -80,7 +85,11 @@ export default function AttendanceLocation() {
     params.set('page', page);
     params.set('limit', limit);
     api.get(`/attendance/location?${params.toString()}`)
-      .then(r => { setRows(r.data.data || []); setTotal(r.data.total || 0); })
+      .then(r => {
+        setRows(r.data.data || []);
+        setTotal(r.data.total || 0);
+        setOfficeAreaName(r.data.officeAreaName || '');
+      })
       .catch(() => { setRows([]); setTotal(0); })
       .finally(() => setLoading(false));
   }, [type, employeeId, startDate, endDate, page, limit, full]);
@@ -111,7 +120,7 @@ export default function AttendanceLocation() {
   }, [rows]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
-  const colSpan = full ? 7 : 6;
+  const colSpan = full ? 6 : 5;
 
   return (
     <div className="p-6">
@@ -167,8 +176,7 @@ export default function AttendanceLocation() {
                 {full && <th className="px-5 py-3">Employee</th>}
                 <th className="px-5 py-3">Type</th>
                 <th className="px-5 py-3">Location</th>
-                <th className="px-5 py-3">Coordinates</th>
-                <th className="px-5 py-3">Permission</th>
+                <th className="px-5 py-3">Work Mode</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -180,10 +188,14 @@ export default function AttendanceLocation() {
                   No location records yet. Locations are captured on check-in and check-out.
                 </td></tr>
               ) : rows.map(l => {
-                const lat = coordStr(l.latitude), lng = coordStr(l.longitude);
-                const perm = PERMISSION_PILL[l.permissionStatus] || PERMISSION_PILL.unavailable;
                 const ck = coordKey(l.latitude, l.longitude);
                 const place = ck ? places[ck] : undefined;   // undefined=resolving, null=unresolved
+                // Work Mode: match resolved address text against the office area keyword.
+                // 'place === undefined' means geocoding in progress — show nothing yet.
+                const wmKey = (place && officeAreaName)
+                  ? (place.toLowerCase().includes(officeAreaName.toLowerCase()) ? 'office' : 'wfh')
+                  : null;
+                const wm = wmKey ? WORK_MODE_PILL[wmKey] : null;
                 return (
                   <tr key={l._id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-5 py-3.5 text-[13px] text-slate-600">{fmtDate(l.capturedAt)}</td>
@@ -207,25 +219,13 @@ export default function AttendanceLocation() {
                       )}
                     </td>
                     <td className="px-5 py-3.5">
-                      {lat && lng ? (
-                        <a
-                          href={`https://www.google.com/maps?q=${lat},${lng}`}
-                          target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-[12.5px] text-blue-600 hover:text-blue-700 font-medium"
-                          title="View on Google Maps"
-                        >
-                          <Navigation size={12} /> {lat}, {lng}
-                          <ExternalLink size={11} className="opacity-60" />
-                        </a>
+                      {wm ? (
+                        <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${wm.cls}`}>
+                          {wm.icon} {wm.label}
+                        </span>
                       ) : (
-                        <span className="text-[12.5px] text-slate-400">No coordinates</span>
+                        <span className="text-[12.5px] text-slate-400">—</span>
                       )}
-                      {l.accuracy != null && lat && lng && (
-                        <span className="block text-[11px] text-slate-400 mt-0.5">±{Math.round(l.accuracy)} m</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${perm.cls}`}>{perm.label}</span>
                     </td>
                   </tr>
                 );

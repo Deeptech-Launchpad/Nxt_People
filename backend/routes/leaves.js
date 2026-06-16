@@ -719,6 +719,17 @@ router.get('/balance', async (req, res) => {
     const permUsed = round2(parseFloat(permRes.rows[0].used) || 0);
     const permAvailable = round2(Math.max(0, 4 - permUsed));
 
+    // Comp-Off is an earned-credit system in its own table: available =
+    // approved credits still within their 3-month validity, minus any used.
+    const coRes = await pool.query(
+      `SELECT COALESCE(SUM(days_earned - days_used), 0) AS avail
+         FROM comp_offs
+        WHERE employee_id = $1 AND status = 'approved'
+          AND (expires_at IS NULL OR expires_at >= CURRENT_DATE)`,
+      [targetId]
+    );
+    const compOffAvailable = Math.max(0, round2(parseFloat(coRes.rows[0].avail) || 0));
+
     // Try leave_balances table first
     let balanceRows = [];
     try {
@@ -742,7 +753,7 @@ router.get('/balance', async (req, res) => {
       },
       {
         code: 'comp_off', name: 'Compensatory Off', icon: '⭐', color: '#22c55e',
-        available: balanceRows.find(r => r.code === 'compoff')?.available ?? 0,
+        available: compOffAvailable,
         booked: booked['comp_off'] || 0,
       },
       {

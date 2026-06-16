@@ -28,6 +28,10 @@ async function migrate() {
         updated_at   TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // "Book for Others": the name of the employee the hall is booked for.
+    // Purely descriptive — never affects overlap/validation. NULL = booked for
+    // the logged-in user (booked_by).
+    await client.query(`ALTER TABLE conference_bookings ADD COLUMN IF NOT EXISTS booked_for VARCHAR(255)`);
     // Fast lookups for the per-hall, per-day overlap check + schedule view.
     await client.query(
       `CREATE INDEX IF NOT EXISTS idx_conf_hall_date

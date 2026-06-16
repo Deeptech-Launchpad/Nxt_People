@@ -41,6 +41,8 @@ const ORDER = [
   'migrate_announcements_schema.js',     // legacy ↔ modern column name reconciliation
   'migrate_all.js',                      // catch-all idempotent additions
   'migrate_fixes.js',                    // most recent additions (api_key_hash, announcement_reads, weekend_rules)
+  'migrate_comp_off_rules.js',           // comp_offs.comp_off_date + expires_at (3-month validity)
+  'migrate_settings_office_area.js',    // settings.office_area_name for location Work Mode keyword
   'migrate_indexes.js',                  // perf indexes — run last
 ];
 

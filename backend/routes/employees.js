@@ -12,6 +12,7 @@ const logger = require('../logger');
 router.use(protect);
 
 const { nextIdForCompany } = require('../utils/employeeId');
+const { mergeRows } = require('../utils/mergeRows');
 
 // GET next suggested employee_id — used by Confirm Registration + Add Employee
 // modals to prefill. Pass ?company=AltiusNxt for the per-company format
@@ -201,7 +202,13 @@ router.get('/:id', async (req, res) => {
     
     const empData = result.rows[0];
     const eduRes = await pool.query('SELECT * FROM employee_education WHERE employee_id = $1 ORDER BY year_of_passing DESC', [req.params.id]);
-    empData.education = eduRes.rows;
+    // Collapse partial duplicate education rows (same institute + year) so each
+    // qualification shows once — same fix as the own-Profile page.
+    empData.education = mergeRows(
+      eduRes.rows,
+      (r) => `${String(r.university_or_institution || '').trim().toLowerCase()}|${r.year_of_passing || ''}`,
+      ['highest_qualification', 'degree', 'course', 'university_or_institution', 'year_of_passing', 'percentage_or_cgpa']
+    );
     
     // employee_documents was migrated from (document_type, file_path,
     // original_name, mime_type, size) to (type, file_url, name, file_size).

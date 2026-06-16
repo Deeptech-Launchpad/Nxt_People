@@ -7,7 +7,13 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { protect } = require('../middleware/auth');
+const { mergeRows } = require('../utils/mergeRows');
 router.use(protect);
+
+// Identity of one real entry — used to collapse the partial duplicate rows the
+// Zoho sync can leave behind (same company/start-date, or same institute/year).
+const prevEmpKey = (r) => `${String(r.company || '').trim().toLowerCase()}|${r.fromDate || ''}`;
+const eduKey     = (r) => `${String(r.institute || '').trim().toLowerCase()}|${r.yearOfPassing || ''}`;
 
 const PROFILE_PHOTO_MAX_MB = 10;
 
@@ -161,8 +167,17 @@ router.get('/', async (req, res) => {
           [req.user._id]
         ),
       ]);
-      profile.education = eduRes.rows;
-      profile.previousEmployment = prevRes.rows;
+      // Merge partial duplicate rows so each real entry shows once with its
+      // most complete data (e.g. the row missing a designation is filled from
+      // its twin). Display-only — the rows stay untouched in the DB.
+      profile.education = mergeRows(
+        eduRes.rows, eduKey,
+        ['qualification', 'degree', 'course', 'institute', 'yearOfPassing', 'percentageOrCgpa']
+      );
+      profile.previousEmployment = mergeRows(
+        prevRes.rows, prevEmpKey,
+        ['company', 'designation', 'fromDate', 'toDate', 'description']
+      );
     }
     res.json({ success: true, data: profile });
   } catch (err) {
