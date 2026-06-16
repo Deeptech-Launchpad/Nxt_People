@@ -45,13 +45,29 @@ const fmt12 = (hhmm) => {
 /* ── Dynamic status ───────────────────────────────────────────────────────
  *  DB stores 'booked' | 'cancelled'. Display status is derived live from
  *  the booking date/time vs the user's current clock.
- *    Booked      — future (start hasn't arrived yet)
+ *    Booked      — start hasn't arrived yet
  *    In Progress — start ≤ now < end (on the booking day)
  *    Completed   — end has passed
  *    Cancelled   — explicitly cancelled by the booker */
 const STATUS_PILL = {
-  booked:    { label: 'Booked',    cls: 'bg-emerald-50 text-emerald-700' },
-  cancelled: { label: 'Cancelled', cls: 'bg-rose-50 text-rose-700' },
+  booked:      { label: 'Booked',      cls: 'bg-emerald-50 text-emerald-700' },
+  in_progress: { label: 'In Progress', cls: 'bg-blue-50 text-blue-700' },
+  completed:   { label: 'Completed',   cls: 'bg-slate-100 text-slate-500' },
+  cancelled:   { label: 'Cancelled',   cls: 'bg-rose-50 text-rose-700' },
+};
+
+const computeStatus = (b) => {
+  if (b.status === 'cancelled') return 'cancelled';
+  const nowDate = new Date().toLocaleDateString('en-CA');
+  const nowTime = new Date().toTimeString().slice(0, 5);
+  const bd = b.bookingDate ? b.bookingDate.slice(0, 10) : '';
+  if (!bd) return b.status || 'booked';
+  if (bd > nowDate) return 'booked';
+  if (bd < nowDate) return 'completed';
+  // same day — compare HH:MM strings
+  if (nowTime < (b.startTime || '00:00')) return 'booked';
+  if (nowTime < (b.endTime   || '23:59')) return 'in_progress';
+  return 'completed';
 };
 
 // 12-hour time selector (hour 1–12 · minute · AM/PM) that emits a 24h "HH:MM".
@@ -272,6 +288,12 @@ export default function Conference() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [viewing, setViewing] = useState(null);
+  const [, setTick] = useState(0);
+  // Re-render every 60 s so computeStatus reflects the current time automatically.
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -309,7 +331,7 @@ export default function Conference() {
             </div>
           </div>
         </div>
-        <button onClick={() => setModal({})} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-semibold">
+        <button onClick={() => setModal({ bookingDate: date })} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-semibold">
           <Plus size={15} /> Book Conference Hall
         </button>
       </div>
@@ -331,11 +353,11 @@ export default function Conference() {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
               <th className="px-5 py-3">Date</th>
-              <th className="px-5 py-3">Conference Hall</th>
-              <th className="px-5 py-3">Meeting Purpose</th>
-              <th className="px-5 py-3">Booking Details</th>
               <th className="px-5 py-3">Start</th>
               <th className="px-5 py-3">End</th>
+              <th className="px-5 py-3">Booking Details</th>
+              <th className="px-5 py-3">Conference Hall</th>
+              <th className="px-5 py-3">Meeting Purpose</th>
               <th className="px-5 py-3">Status</th>
               <th className="px-5 py-3 text-right">Actions</th>
             </tr>
@@ -346,20 +368,21 @@ export default function Conference() {
             ) : rows.length === 0 ? (
               <tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400 text-[13px]">No bookings for {fmtDate(date)}</td></tr>
             ) : rows.map(b => {
-              const pill = STATUS_PILL[b.status] || STATUS_PILL.booked;
+              const dynStatus = computeStatus(b);
+              const pill = STATUS_PILL[dynStatus] || STATUS_PILL.booked;
               return (
                 <tr key={b._id} className="hover:bg-slate-50/70">
                   <td className="px-5 py-3.5 text-[12.5px] text-slate-600">{fmtDate(b.bookingDate)}</td>
-                  <td className="px-5 py-3.5">
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">{b.hall}</span>
-                  </td>
-                  <td className="px-5 py-3.5 text-[13px] text-slate-700">{b.title}</td>
+                  <td className="px-5 py-3.5 text-[13px] text-slate-600">{fmt12(b.startTime)}</td>
+                  <td className="px-5 py-3.5 text-[13px] text-slate-600">{fmt12(b.endTime)}</td>
                   <td className="px-5 py-3.5 text-[12.5px] text-slate-700">
                     By {b.bookedBy || '—'}
                     {b.bookedFor && <span className="text-slate-500"> For {b.bookedFor}</span>}
                   </td>
-                  <td className="px-5 py-3.5 text-[13px] text-slate-600">{fmt12(b.startTime)}</td>
-                  <td className="px-5 py-3.5 text-[13px] text-slate-600">{fmt12(b.endTime)}</td>
+                  <td className="px-5 py-3.5">
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">{b.hall}</span>
+                  </td>
+                  <td className="px-5 py-3.5 text-[13px] text-slate-700">{b.title}</td>
                   <td className="px-5 py-3.5">
                     <span className={`inline-flex items-center text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${pill.cls}`}>
                       {pill.label}
