@@ -12,6 +12,13 @@ const LEAVE_TYPE_LABELS = {
   permission: 'Permission'
 };
 
+// Safe date-only formatter — never renders "Invalid Date" for a blank value.
+const fmtDay = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) => {
+  if (!d) return '—';
+  const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
+  return Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-IN', opts);
+};
+
 // localStorage key for the "last-seen count per tab" persistence. Bump
 // the v1 suffix if we ever change the shape of the saved value.
 const SEEN_KEY = 'nxt_approvals_seen_v1';
@@ -112,10 +119,10 @@ export default function Approvals() {
 
   const ActionBtns = ({ endpoint, id, type, canActLeave, status }) => {
     let canAct = false;
-    if (endpoint === 'leaves' || endpoint === 'regularizations') {
+    if (endpoint === 'leaves' || endpoint === 'regularizations' || endpoint === 'comp-off') {
       // Hierarchy-based: the server decides whether the current user may act on
       // this request's approval levels (per-level "top not first" gate enforced
-      // at action time). Same engine for leaves and regularizations.
+      // at action time). Same engine for leaves, regularizations, and comp-offs.
       canAct = status === 'pending' && !!canActLeave;
     } else {
       canAct = (status === 'pending' || status === 'submitted');
@@ -142,8 +149,8 @@ export default function Approvals() {
           className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
           <CheckCircle size={13} /> Approve
         </button>
-        {/* Approve every remaining level at once (leaves) — HR/SA + Team Leads. */}
-        {endpoint === 'leaves' && canApproveAll && (
+        {/* Approve every remaining level at once (leaves + comp-offs) — HR/SA + Team Leads. */}
+        {(endpoint === 'leaves' || endpoint === 'comp-off') && canApproveAll && (
           <button onClick={() => action(endpoint, id, 'approved', undefined, true)} disabled={!!actionLoading}
             className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
             <CheckCheck size={13} /> Approve All
@@ -453,15 +460,21 @@ export default function Approvals() {
                           <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{c.employee?.department}</span>
                         </div>
                         <p className="text-sm text-slate-500 mt-1">
-                          Worked on: {new Date(c.workedDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                          Worked on: {fmtDay(c.workedDate)}
                         </p>
+                        {c.compOffDate && (
+                          <p className="text-sm text-slate-500 mt-0.5">
+                            Comp-off requested for: <span className="font-medium text-slate-700">{fmtDay(c.compOffDate)}</span>
+                          </p>
+                        )}
                         <p className="text-xs text-slate-400 mt-0.5">
                           {c.daysEarned} day{c.daysEarned !== 1 ? 's' : ''} comp-off earned
+                          {c.expiresAt ? ` · valid till ${fmtDay(c.expiresAt, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
                         </p>
                         {c.reason && <p className="text-xs text-slate-400 mt-0.5 max-w-xs">{c.reason}</p>}
                       </div>
                     </div>
-                    <ActionBtns endpoint="comp-off" id={c._id} type="Comp-Off" />
+                    <ActionBtns endpoint="comp-off" id={c._id} type="Comp-Off" canActLeave={c.canAct} status={c.status} />
                   </div>
                 ))
             )}

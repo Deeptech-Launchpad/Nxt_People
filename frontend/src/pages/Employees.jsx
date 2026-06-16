@@ -714,14 +714,14 @@ export default function Employees() {
                     <label className="block text-xs font-medium text-slate-600 mb-1.5">Marital Status</label>
                     <select value={form.maritalStatus} onChange={e=>setForm({...form,maritalStatus:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
                       <option value="">Select...</option>
-                      {['Single','Married','Divorced','Widowed'].map(o=><option key={o}>{o}</option>)}
+                      {['Single','Married'].map(o=><option key={o}>{o}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1.5">Blood Group</label>
                     <select value={form.bloodGroup} onChange={e=>setForm({...form,bloodGroup:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
                       <option value="">Select...</option>
-                      {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(o=><option key={o}>{o}</option>)}
+                      {['A+','A-','A1+','A1-','B+','B-','AB+','AB-','A1B+','A1B-','O+','O-'].map(o=><option key={o}>{o}</option>)}
                     </select>
                   </div>
                   <div>

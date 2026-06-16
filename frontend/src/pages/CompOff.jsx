@@ -1,12 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, CheckCircle, XCircle, Gift, Send, AlertTriangle } from 'lucide-react';
+import { Plus, X, CheckCircle, XCircle, Gift, Send, CheckCheck, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { isApprover } from '../utils/roles';
+import ApprovalTimeline from '../components/ApprovalTimeline';
 
 const STATUS_STYLE = { pending: 'bg-amber-100 text-amber-700', approved: 'bg-emerald-100 text-emerald-700', rejected: 'bg-red-100 text-red-700' };
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Safe date formatter — never renders "Invalid Date" for a missing/blank value.
+const fmtDate = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) => {
+  if (!d) return '—';
+  const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
+  return Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-IN', opts);
+};
+// Local YYYY-MM-DD (no timezone shift) for the date input bounds.
+const ymd = (dt) => dt.toLocaleDateString('en-CA');
 
 export default function CompOff() {
   const { user } = useAuth();
@@ -17,10 +26,15 @@ export default function CompOff() {
   const [modal, setModal] = useState(false);
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [form, setForm] = useState({ workedDate: '', reason: '', daysEarned: 1 });
+  const [form, setForm] = useState({ workedDate: '', compOffDate: '', reason: '', daysEarned: 1 });
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
   const [tab, setTab] = useState(user?.role === 'employee' ? 'my' : 'pending');
+  const [expanded, setExpanded] = useState(null); // request id whose timeline is open
+
+  const canApproveAll = ['super_admin', 'hr', 'manager'].includes(user?.role);
+  const today = new Date();
+  const tomorrow = new Date(today.getTime() + 86400000);
 
   const load = () => {
     setLoading(true);
@@ -40,16 +54,16 @@ export default function CompOff() {
     try {
       await api.post('/comp-off', form);
       toast.success('Comp-off request submitted!');
-      setModal(false); setForm({ workedDate: '', reason: '', daysEarned: 1 }); load();
+      setModal(false); setForm({ workedDate: '', compOffDate: '', reason: '', daysEarned: 1 }); load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setSaving(false); }
   };
 
-  const handleAction = async (id, action, reason) => {
+  const handleAction = async (id, action, reason, approveAll = false) => {
     setActionLoading(id);
     try {
-      await api.put(`/comp-off/${id}/action`, { action, rejectionReason: reason });
-      toast.success(`Comp-off ${action}`);
+      await api.put(`/comp-off/${id}/action`, { action, rejectionReason: reason, approveAll });
+      toast.success(approveAll ? 'All levels approved' : `Comp-off ${action}`);
       setRejectModal(null); setRejectReason(''); load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setActionLoading(''); }
@@ -59,12 +73,12 @@ export default function CompOff() {
 
   return (
     <div className="space-y-5">
-      {/* Balance card */}
+      {/* Balance cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl p-5 text-white">
           <p className="text-indigo-200 text-sm font-medium">Available Balance</p>
           <p className="text-4xl font-display font-bold mt-1">{balance.toFixed(1)}</p>
-          <p className="text-indigo-300 text-sm mt-0.5">comp-off days</p>
+          <p className="text-indigo-300 text-sm mt-0.5">comp-off days (within validity)</p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
           <p className="text-slate-400 text-sm">Total Earned</p>
@@ -86,7 +100,7 @@ export default function CompOff() {
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
           <div>
             <h3 className="font-display font-semibold text-slate-800">Compensatory Off</h3>
-            <p className="text-slate-400 text-sm mt-0.5">Claim comp-off for working on weekends or holidays</p>
+            <p className="text-slate-400 text-sm mt-0.5">Work a weekend or holiday, earn a comp-off, use it within 3 months</p>
           </div>
           <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm shadow-brand-500/25">
             <Plus size={16} /> Apply Comp-Off
@@ -103,47 +117,79 @@ export default function CompOff() {
           <div className="divide-y divide-slate-50">
             {displayList.length === 0 ? (
               <div className="text-center py-16"><Gift size={32} className="text-slate-200 mx-auto mb-3" /><p className="text-slate-400">No comp-off requests</p></div>
-            ) : displayList.map(r => (
-              <div key={r._id} className="p-5 flex items-center justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 flex-shrink-0">
-                    <Gift size={18} />
+            ) : displayList.map(r => {
+              const canAct = r.canAct !== undefined ? r.canAct : r.status === 'pending';
+              const isExpanded = expanded === r._id;
+              const hasLevels = Array.isArray(r.approvalLevels) && r.approvalLevels.length > 0;
+              return (
+              <div key={r._id} className="p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 flex-shrink-0">
+                      <Gift size={18} />
+                    </div>
+                    <div>
+                      {tab === 'pending' && <p className="font-semibold text-slate-700 text-sm">{r.employee?.firstName} {r.employee?.lastName} <span className="text-xs text-slate-400">· {r.employee?.department}</span></p>}
+                      <p className="font-medium text-slate-700 text-sm">Worked on {fmtDate(r.workedDate, { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Comp-off requested for <span className="font-medium text-slate-700">{fmtDate(r.compOffDate)}</span></p>
+                      {r.reason && <p className="text-xs text-slate-400 mt-0.5">{r.reason} · {r.daysEarned} day{Number(r.daysEarned) !== 1 ? 's' : ''}</p>}
+                      {r.expiresAt && (
+                        <p className={`text-[11px] mt-0.5 ${r.expired ? 'text-rose-500 font-medium' : 'text-slate-400'}`}>
+                          {r.expired ? 'Expired' : 'Valid till'} {fmtDate(r.expiresAt, { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    {tab === 'pending' && <p className="font-semibold text-slate-700 text-sm">{r.employee?.firstName} {r.employee?.lastName} <span className="text-xs text-slate-400">· {r.employee?.department}</span></p>}
-                    <p className="font-medium text-slate-700 text-sm">
-                      Worked on {new Date(r.workedDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
-                      <span className="ml-2 text-xs text-slate-400">({DAYS[new Date(r.workedDate + 'T00:00:00').getDay()]})</span>
-                    </p>
-                    <p className="text-xs text-slate-400 mt-0.5">{r.reason} · {r.daysEarned} day{r.daysEarned !== 1 ? 's' : ''}</p>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[r.status]}`}>{r.status}</span>
+                    {hasLevels && (
+                      <button onClick={() => setExpanded(isExpanded ? null : r._id)} className="text-slate-400 hover:text-slate-700 p-1" title="Approval timeline">
+                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </button>
+                    )}
+                    {tab === 'pending' && r.status === 'pending' && canAct && (
+                      <>
+                        <button onClick={() => handleAction(r._id, 'approved')} disabled={!!actionLoading} className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><CheckCircle size={13} /> Approve</button>
+                        {canApproveAll && (
+                          <button onClick={() => handleAction(r._id, 'approved', undefined, true)} disabled={!!actionLoading} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><CheckCheck size={13} /> Approve All</button>
+                        )}
+                        <button onClick={() => { setRejectModal(r._id); setRejectReason(''); }} className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><XCircle size={13} /> Reject</button>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[r.status]}`}>{r.status}</span>
-                  {tab === 'pending' && r.status === 'pending' && (
-                    <>
-                      <button onClick={() => handleAction(r._id, 'approved')} disabled={!!actionLoading} className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><CheckCircle size={13} /> Approve</button>
-                      <button onClick={() => { setRejectModal(r._id); setRejectReason(''); }} className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"><XCircle size={13} /> Reject</button>
-                    </>
-                  )}
-                </div>
+                {isExpanded && hasLevels && (
+                  <div className="mt-4 pl-14">
+                    <ApprovalTimeline leave={r} />
+                  </div>
+                )}
               </div>
-            ))}
+            );})}
           </div>
         )}
       </div>
 
       {modal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 flex-shrink-0">
               <h3 className="font-display font-semibold text-slate-800 text-lg">Apply for Comp-Off</h3>
               <button onClick={() => setModal(false)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"><X size={16} /></button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Date You Worked *</label>
-                <input type="date" value={form.workedDate} onChange={e => setForm({ ...form, workedDate: e.target.value })} required max={new Date().toLocaleDateString('en-CA')} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400" />
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Worked Date (weekend / holiday) *</label>
+                <input type="date" value={form.workedDate} onChange={e => setForm({ ...form, workedDate: e.target.value })} required max={ymd(today)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400" />
+                <p className="text-[11px] text-slate-400 mt-1">Must be a Saturday, Sunday, or approved holiday you actually worked.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Reason / Work Details *</label>
+                <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} required rows={2} placeholder="What did you work on that day?" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Requested Comp-Off Date *</label>
+                <input type="date" value={form.compOffDate} onChange={e => setForm({ ...form, compOffDate: e.target.value })} required min={ymd(tomorrow)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400" />
+                <p className="text-[11px] text-slate-400 mt-1">A future working day (Mon–Fri), within 3 months of the worked date.</p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Days to Claim *</label>
@@ -151,10 +197,6 @@ export default function CompOff() {
                   <option value={0.5}>Half Day (0.5)</option>
                   <option value={1}>Full Day (1)</option>
                 </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Reason *</label>
-                <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} required rows={3} placeholder="Why did you work on this day?" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none" />
               </div>
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">Cancel</button>
@@ -171,7 +213,7 @@ export default function CompOff() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6">
             <h3 className="font-display font-semibold text-slate-800 mb-4">Reject Comp-Off</h3>
-            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3} placeholder="Reason (optional)..." className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none mb-4" />
+            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3} placeholder="Add an optional comment for this rejection (not required)..." className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none mb-4" />
             <div className="flex gap-3">
               <button onClick={() => setRejectModal(null)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">Cancel</button>
               <button onClick={() => handleAction(rejectModal, 'rejected', rejectReason)} disabled={!!actionLoading} className="flex-1 bg-red-500 hover:bg-red-400 text-white py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60">Confirm Reject</button>

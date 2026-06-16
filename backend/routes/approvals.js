@@ -9,6 +9,7 @@ router.use(protect);
 // Hierarchy approval chain as JSON for the timeline, per request type/table.
 const LEAVE_LEVELS_JSON = approvalLevelsJson('leave', 'l');
 const REG_LEVELS_JSON   = approvalLevelsJson('regularization', 'r');
+const COMPOFF_LEVELS_JSON = approvalLevelsJson('comp_off', 'c');
 
 router.get('/pending', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
   try {
@@ -81,14 +82,26 @@ router.get('/pending', authorize('super_admin', 'hr', 'manager'), async (req, re
         WHERE w.status = 'pending'${reportFilter} ORDER BY w.date DESC
       `, simpleParams),
 
+      // Comp-Offs now flow through the same hierarchy engine as leaves.
       pool.query(`
-        SELECT c.id as "_id", c.worked_date as "workedDate", c.reason,
-               c.days_earned as "daysEarned", c.status, c.created_at as "createdAt",
+        SELECT c.id as "_id", c.worked_date as "workedDate", c.comp_off_date as "compOffDate",
+               c.reason, c.days_earned as "daysEarned", c.expires_at as "expiresAt",
+               c.status, c.created_at as "createdAt",
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
-                 'department', e.department, 'employeeId', e.employee_id) as employee
+                 'department', e.department, 'employeeId', e.employee_id) as employee,
+               ${COMPOFF_LEVELS_JSON} as "approvalLevels",
+               ($2::boolean OR EXISTS (
+                  SELECT 1 FROM approval_levels x
+                   WHERE x.request_type = 'comp_off' AND x.request_id = c.id AND x.approver_id = $1 AND x.status = 'pending'
+               )) as "canAct"
         FROM comp_offs c JOIN employees e ON c.employee_id = e.id
-        WHERE c.status = 'pending'${reportFilter} ORDER BY c.worked_date DESC
-      `, simpleParams),
+        WHERE c.status = 'pending'
+          AND ($2::boolean OR EXISTS (
+               SELECT 1 FROM approval_levels x
+                WHERE x.request_type = 'comp_off' AND x.request_id = c.id AND x.approver_id = $1 AND x.status = 'pending'
+          ))
+        ORDER BY c.worked_date DESC
+      `, [userId, full]),
 
       pool.query(`
         SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate", l.end_date as "endDate",
