@@ -50,7 +50,7 @@ function BalanceCard({ leave, balanceCards }) {
   // Round to 2 dp so float subtraction doesn't show 1.9399999999999997.
   const r2 = (n) => (n === null || n === undefined) ? n : Math.round((n + Number.EPSILON) * 100) / 100;
   const avail = card ? r2(card.available) : undefined;
-  const booking = r2(isPerm ? (parseFloat(leave.hours) || 0) : (leave.totalDays || 0));
+  const booking = r2(isPerm ? (parseFloat(leave.hours) || 0) : (parseFloat(leave.totalDays ?? leave.total_days) || 0));
   const unlimited = avail === null || avail === undefined;
   const after = unlimited ? null : r2(avail - booking);
   const Row = ({ label, value, strong, muted }) => (

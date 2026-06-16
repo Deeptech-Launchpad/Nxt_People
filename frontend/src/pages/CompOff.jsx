@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, CheckCircle, XCircle, Gift, Send, CheckCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, X, CheckCircle, XCircle, Gift, Send, CheckCheck, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { isApprover } from '../utils/roles';
 import ApprovalTimeline from '../components/ApprovalTimeline';
+import CompOffDetailModal from '../components/CompOffDetailModal';
 
 const STATUS_STYLE = { pending: 'bg-amber-100 text-amber-700', approved: 'bg-emerald-100 text-emerald-700', rejected: 'bg-red-100 text-red-700' };
 
@@ -31,6 +32,7 @@ export default function CompOff() {
   const [actionLoading, setActionLoading] = useState('');
   const [tab, setTab] = useState(user?.role === 'employee' ? 'my' : 'pending');
   const [expanded, setExpanded] = useState(null); // request id whose timeline is open
+  const [viewItem, setViewItem] = useState(null); // item open in CompOffDetailModal
 
   const canApproveAll = ['super_admin', 'hr', 'manager'].includes(user?.role);
   const today = new Date();
@@ -142,6 +144,9 @@ export default function CompOff() {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className={`text-xs px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[r.status]}`}>{r.status}</span>
+                    <button onClick={() => setViewItem(r)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                      <Eye size={13} /> View
+                    </button>
                     {hasLevels && (
                       <button onClick={() => setExpanded(isExpanded ? null : r._id)} className="text-slate-400 hover:text-slate-700 p-1" title="Approval timeline">
                         {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -207,6 +212,18 @@ export default function CompOff() {
             </form>
           </div>
         </div>
+      )}
+
+      {viewItem && (
+        <CompOffDetailModal
+          item={viewItem}
+          canAct={viewItem.canAct !== undefined ? viewItem.canAct : viewItem.status === 'pending'}
+          canApproveAll={canApproveAll}
+          onClose={() => setViewItem(null)}
+          onApprove={(r) => { setViewItem(null); handleAction(r._id, 'approved'); }}
+          onApproveAll={(r) => { setViewItem(null); handleAction(r._id, 'approved', undefined, true); }}
+          onReject={(r) => { setViewItem(null); setRejectModal(r._id); setRejectReason(''); }}
+        />
       )}
 
       {rejectModal && (
