@@ -56,17 +56,38 @@ const STATUS_PILL = {
   cancelled:   { label: 'Cancelled',   cls: 'bg-rose-50 text-rose-700' },
 };
 
+const pad2 = n => String(n).padStart(2, '0');
+
 const computeStatus = (b) => {
   if (b.status === 'cancelled') return 'cancelled';
-  const nowDate = new Date().toLocaleDateString('en-CA');
-  const nowTime = new Date().toTimeString().slice(0, 5);
-  const bd = b.bookingDate ? b.bookingDate.slice(0, 10) : '';
+
+  // Use local date/time components — avoids locale and timezone string bugs.
+  const now  = new Date();
+  const nowDate = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  const nowTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+
+  // bookingDate may arrive as "YYYY-MM-DD" or as an ISO timestamp (UTC from DB server).
+  // Always derive the local calendar date to avoid off-by-one in IST / any UTC+ zone.
+  let bd = '';
+  if (b.bookingDate) {
+    const s = String(b.bookingDate);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      bd = s; // plain date string — use as-is
+    } else {
+      const d = new Date(s);
+      if (!isNaN(d)) bd = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    }
+  }
+
   if (!bd) return b.status || 'booked';
   if (bd > nowDate) return 'booked';
   if (bd < nowDate) return 'completed';
-  // same day — compare HH:MM strings
-  if (nowTime < (b.startTime || '00:00')) return 'booked';
-  if (nowTime < (b.endTime   || '23:59')) return 'in_progress';
+
+  // Same calendar day — compare HH:MM (slice to 5 in case DB returns HH:MM:SS).
+  const start = String(b.startTime || '00:00').slice(0, 5);
+  const end   = String(b.endTime   || '23:59').slice(0, 5);
+  if (nowTime < start) return 'booked';
+  if (nowTime < end)   return 'in_progress';
   return 'completed';
 };
 
