@@ -76,7 +76,12 @@ function TimeSelect12({ value, onChange }) {
   const cls = 'border border-slate-200 rounded-lg px-2 py-2.5 text-[13.5px] bg-white focus:outline-none focus:border-blue-400';
   return (
     <div className="flex items-center gap-1.5">
-      <select value={h} onChange={e => onChange(from12(e.target.value, m, mer))} className={cls}>
+      <select value={h} onChange={e => {
+        const newH = e.target.value;
+        // Hour 12 with AM = midnight — auto-flip to PM so users get 12:xx PM (noon) as expected.
+        const newMer = (newH === '12' && mer === 'AM') ? 'PM' : mer;
+        onChange(from12(newH, m, newMer));
+      }} className={cls}>
         <option value="">HH</option>
         {Array.from({ length: 12 }, (_, i) => i + 1).map(n => <option key={n} value={n}>{String(n).padStart(2, '0')}</option>)}
       </select>
