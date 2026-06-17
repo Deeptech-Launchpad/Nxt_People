@@ -22,7 +22,7 @@ router.get('/my', async (req, res) => {
 });
 
 // GET all (admin only)
-router.get('/all', authorize('super_admin', 'hr'), async (req, res) => {
+router.get('/all', authorize('admin', 'director'), async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT ex.id as "_id", ex.resignation_date as "resignationDate", ex.last_working_date as "lastWorkingDate",
@@ -60,7 +60,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT approve/reject (admin)
-router.put('/:id/action', authorize('super_admin', 'hr'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director'), async (req, res) => {
   try {
     const { action, lastWorkingDate, rejectionReason } = req.body;
     const existing = await pool.query('SELECT * FROM exit_requests WHERE id=$1', [req.params.id]);
@@ -91,7 +91,7 @@ router.put('/:id/action', authorize('super_admin', 'hr'), async (req, res) => {
 });
 
 // PUT update clearance status (admin)
-router.put('/:id/clearance', authorize('super_admin', 'hr'), async (req, res) => {
+router.put('/:id/clearance', authorize('admin', 'director'), async (req, res) => {
   try {
     const { itClearance, hrClearance, financeClearance, managerClearance, exitInterviewNotes } = req.body;
     await pool.query(

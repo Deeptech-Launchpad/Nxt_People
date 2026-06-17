@@ -44,7 +44,7 @@ export default function LeaveTrackerAdmin() {
   const navigate = useNavigate();
   const { user } = useAuth();
   // This admin page is HR / Super Admin only (route-gated); both may Approve All.
-  const canApproveAll = ['super_admin', 'hr'].includes(user?.role);
+  const canApproveAll = ['admin', 'director'].includes(user?.role);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);

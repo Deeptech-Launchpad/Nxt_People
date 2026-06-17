@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/', authorize('super_admin', 'hr'), async (req, res) => {
+router.put('/', authorize('admin', 'director'), async (req, res) => {
   try {
     const {
       companyName, companyEmail, timezone,
@@ -54,7 +54,7 @@ router.put('/', authorize('super_admin', 'hr'), async (req, res) => {
     } = req.body;
 
     // Whitelist role strings — never trust caller-supplied JSONB.
-    const ALLOWED_ROLES = new Set(['super_admin', 'manager', 'hr', 'employee']);
+    const ALLOWED_ROLES = new Set(['admin', 'manager', 'director', 'team_member']);
     const safeMfaRoles = Array.isArray(mfaRequiredRoles)
       ? mfaRequiredRoles.filter(r => typeof r === 'string' && ALLOWED_ROLES.has(r))
       : undefined;

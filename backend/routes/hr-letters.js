@@ -88,7 +88,7 @@ router.get('/my', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.get('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
+router.get('/', authorize('admin', 'director', 'manager'), async (req, res) => {
   try {
     // Full-access sees all requests; managers only their direct reports'.
     const scope = reportsScope(req.user, 'e', 1);
@@ -115,7 +115,7 @@ router.post('/', async (req, res) => {
 
 // PUT /:id/process — change status, optionally upload signed PDF.
 // Multipart body: { status, rejectionReason?, file? (signed letter PDF) }
-router.put('/:id/process', authorize('super_admin', 'hr', 'manager'), upload.single('letter'), async (req, res) => {
+router.put('/:id/process', authorize('admin', 'director', 'manager'), upload.single('letter'), async (req, res) => {
   try {
     const { status, rejectionReason } = req.body;
     if (!VALID_STATUSES.includes(status)) {

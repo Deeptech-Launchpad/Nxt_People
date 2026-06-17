@@ -4,7 +4,7 @@ const pool = require('../db');
 const crypto = require('crypto');
 const { protect, authorize } = require('../middleware/auth');
 const { encrypt, decrypt } = require('../utils/crypto-vault');
-router.use(protect, authorize('super_admin', 'hr'));
+router.use(protect, authorize('admin', 'director'));
 
 // Generate a fresh API key + its SHA-256 hash + a short prefix shown in the UI.
 const generateApiKey = () => {

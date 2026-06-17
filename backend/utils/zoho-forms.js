@@ -41,7 +41,7 @@ const { zohoApi } = require('./zoho');
 
     // Probe common form names individually.
     const candidates = [
-      'employee', 'bank_details', 'bankdetails', 'BankDetails',
+      'team_member', 'bank_details', 'bankdetails', 'BankDetails',
       'id_proofs', 'identification', 'documents', 'passport',
       'family', 'dependents', 'emergency_contact',
       'previous_employment', 'work_experience', 'employment_history',

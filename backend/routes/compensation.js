@@ -70,7 +70,7 @@ router.get('/my', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.get('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
+router.get('/', authorize('admin', 'director', 'manager'), async (req, res) => {
   try {
     // Full-access sees all claims; managers only their direct reports'.
     const scope = reportsScope(req.user, 'e', 1);
@@ -101,7 +101,7 @@ router.post('/', upload.single('receipt'), async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'manager'), async (req, res) => {
   try {
     const { action, rejectionReason } = req.body;
     if (!['approve', 'reject'].includes(action)) {

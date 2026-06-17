@@ -156,7 +156,7 @@ router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => 
         $9, $10, $11, $12, $13, $14, $15,
         $16, $17, $18, $19, $20, $21,
         $22, $23, $24, $25,
-        'pending', false, 'employee'
+        'pending', false, 'team_member'
       ) RETURNING id
     `, [
       firstName, lastName, personalEmail, mobile, gender, dateOfBirth, maritalStatus, bloodGroup,
@@ -243,7 +243,7 @@ router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => 
 // PROTECTED ROUTES (Super Admin / HR — onboarding creates employees, so it is
 // full-access only; managers have no employee CRUD)
 // ---------------------------------------------------------------------------
-router.use(protect, authorize('super_admin', 'hr'));
+router.use(protect, authorize('admin', 'director'));
 
 router.post('/generate-link', async (req, res) => {
   try {
@@ -455,7 +455,7 @@ router.get('/counts', async (req, res) => {
 
 router.put('/:id/approve', async (req, res) => {
   try {
-    const { role = 'employee', password, department } = req.body;
+    const { role = 'team_member', password, department } = req.body;
     const empRes = await pool.query('SELECT registration_status FROM employees WHERE id = $1', [req.params.id]);
     if (empRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Registration not found' });
     if (empRes.rows[0].registration_status !== 'pending') return res.status(400).json({ success: false, message: 'Only pending registrations can be approved' });

@@ -2,7 +2,7 @@
  * Zoho People sync — admin-triggered, one-way (Zoho → Nxt-People).
  *
  * Two-pass:
- *   Pass 1 — upsert every employee. New rows start with role='employee'.
+ *   Pass 1 — upsert every employee. New rows start with role='team_member'.
  *   Pass 2 — resolve "ReportingTo" → reporting_manager_id (foreign key into our table).
  *
  * Never touches: role, password, MFA settings, leave balances, attendance.
@@ -18,7 +18,7 @@ const { iterateEmployees, iteratePayroll, listEmployeeFiles, downloadFile } = re
 const fs = require('fs');
 const path = require('path');
 
-router.use(protect, authorize('super_admin', 'hr'));
+router.use(protect, authorize('admin', 'director'));
 
 /* ── Field mapping ─────────────────────────────────────────────────────────
  * Zoho's field names vary slightly across orgs. Try the standard Zoho People
@@ -330,13 +330,13 @@ async function upsertEmployee(client, mapped) {
     return 'updated';
   }
 
-  // INSERT — always role='employee'. They set their password via "Forgot password".
+  // INSERT — always role='team_member'. They set their password via "Forgot password".
   const placeholders = cols.map((c, i) => DATE_CAST_COLS.has(c) ? `$${i + 1}::date` : `$${i + 1}`).join(', ');
   const colList = cols.join(', ');
   await client.query(
     `INSERT INTO employees
        (${colList}, email, role, status, registration_status, has_accepted, accepted_at)
-     VALUES (${placeholders}, $${values.length + 1}, 'employee', $${values.length + 2}, 'active', TRUE, NOW())`,
+     VALUES (${placeholders}, $${values.length + 1}, 'team_member', $${values.length + 2}, 'active', TRUE, NOW())`,
     [...values, mapped.email, mapped.status]
   );
   return 'inserted';

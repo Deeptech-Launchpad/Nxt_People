@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS settings (
   -- late_after_minutes = minutes since midnight (e.g., 570 = 09:30 AM)
   late_after_minutes INT DEFAULT 570,
   half_day_hours INT DEFAULT 4,
-  -- JSONB list of role strings ("super_admin","manager","hr","employee") for whom
+  -- JSONB list of role strings ("admin","director","manager","team_incharge","team_member") for whom
   -- MFA is mandatory. Empty array = optional for everyone.
   mfa_required_roles JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS employees (
   email VARCHAR(255) UNIQUE NOT NULL,
   password VARCHAR(255),
   phone VARCHAR(50),
-  role VARCHAR(50) DEFAULT 'employee',
+  role VARCHAR(50) DEFAULT 'team_member',
   department VARCHAR(100),
   designation VARCHAR(100),
   company VARCHAR(255),

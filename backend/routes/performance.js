@@ -79,7 +79,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST create review (admin/manager)
-router.post('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
+router.post('/', authorize('admin', 'director', 'manager'), async (req, res) => {
   try {
     const { employeeId, cycleName, periodStart, periodEnd, goals = [] } = req.body;
     if (!employeeId || !cycleName || !periodStart || !periodEnd) return res.status(400).json({ success: false, message: 'Required fields missing' });
@@ -129,7 +129,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE review (admin)
-router.delete('/:id', authorize('super_admin', 'hr'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director'), async (req, res) => {
   try {
     await pool.query('DELETE FROM performance_reviews WHERE id=$1', [req.params.id]);
     res.json({ success: true, message: 'Deleted' });

@@ -63,7 +63,7 @@ async function ensureAdminUser() {
       const existing = await pool.query('SELECT id, role FROM employees WHERE LOWER(email) = $1', [email]);
       if (existing.rows.length > 0) {
         const row = existing.rows[0];
-        if (row.role !== 'super_admin') {
+        if (row.role !== 'admin') {
           logger.warn({ email, currentRole: row.role }, 'ADMIN_EMAIL exists with non-super_admin role — not auto-elevating. Promote manually if intended.');
         } else {
           logger.info({ email }, 'Bootstrap super admin already present');
@@ -74,7 +74,7 @@ async function ensureAdminUser() {
         `INSERT INTO employees
            (first_name, last_name, email, role, status,
             registration_status, has_accepted, accepted_at, employee_id)
-         VALUES ('Admin', '', $1, 'super_admin', 'active', 'active', TRUE, NOW(),
+         VALUES ('Admin', '', $1, 'admin', 'active', 'active', TRUE, NOW(),
                  'ADMIN-' || SUBSTRING(MD5(RANDOM()::text) FROM 1 FOR 6))`,
         [email]
       );
@@ -389,7 +389,7 @@ cron.schedule('30 2 * * *', async () => {
     if (stats?.errors?.length > 0) {
       try {
         const { createNotification } = require('./routes/notifications');
-        const admins = await pool.query(`SELECT id FROM employees WHERE role IN ('super_admin','hr') AND status='active'`);
+        const admins = await pool.query(`SELECT id FROM employees WHERE role IN ('admin','director') AND status='active'`);
         const sample = stats.errors.slice(0, 3).map(e => `${e.email}: ${e.message}`).join('; ');
         const body =
           `${stats.errors.length} record(s) failed during last night's Zoho sync. ` +
@@ -404,7 +404,7 @@ cron.schedule('30 2 * * *', async () => {
     // Whole-sync failure (auth, network, etc.) — also notify admins.
     try {
       const { createNotification } = require('./routes/notifications');
-      const admins = await pool.query(`SELECT id FROM employees WHERE role IN ('super_admin','hr') AND status='active'`);
+      const admins = await pool.query(`SELECT id FROM employees WHERE role IN ('admin','director') AND status='active'`);
       for (const a of admins.rows) {
         await createNotification(a.id, 'system', 'Zoho Sync Failed',
           `Last night's Zoho sync did not complete: ${err.message}`,

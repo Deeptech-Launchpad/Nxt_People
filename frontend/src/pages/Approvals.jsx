@@ -35,7 +35,7 @@ export default function Approvals() {
   const { user } = useAuth();
   // Approve All is available to HR / Super Admin and Team Leads (managers).
   // Managers are still scoped server-side to requests they actually approve.
-  const canApproveAll = ['super_admin', 'hr', 'manager'].includes(user?.role);
+  const canApproveAll = ['admin', 'director', 'manager'].includes(user?.role);
   const [data, setData] = useState({ leaves: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('leaves');

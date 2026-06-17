@@ -1,7 +1,7 @@
 /**
  * middleware/audit.js
  * Wraps res.json() to silently log every successful mutation to audit_log.
- * Usage: router.post('/', protect, authorize('super_admin', 'hr'), audit('CREATE', 'employee'), handler)
+ * Usage: router.post('/', protect, authorize('admin', 'director'), audit('CREATE', 'team_member'), handler)
  */
 // IMPORTANT: import the pool, then call `pool.query(...)`. Destructuring
 // `const { query } = require('../db')` unbinds the method from the pool

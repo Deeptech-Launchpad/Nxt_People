@@ -25,7 +25,7 @@ const NAV_ITEMS = [
     matches: p => (p.startsWith('/more-services') && !p.startsWith('/more-services/operations')) || p.startsWith('/documents') },
   // Operations workspace — relocated here from the More Services top tabs.
   // Super Admin / HR only (the page + its routes are already role-gated).
-  { to: '/more-services/operations', icon: Briefcase,    label: 'Operations', roles: ['super_admin', 'hr'],
+  { to: '/more-services/operations', icon: Briefcase,    label: 'Operations', roles: ['admin', 'director'],
     matches: p => p.startsWith('/more-services/operations') },
   { to: '/my-apps',                  icon: AppWindow,    label: 'NXT\nApps',
     matches: p => p.startsWith('/my-apps') || p.startsWith('/api-connections') },

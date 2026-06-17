@@ -67,7 +67,7 @@ router.get('/:id/employees', async (req, res) => {
 });
 
 // POST /api/departments — create (admin)
-router.post('/', authorize('super_admin', 'hr'), async (req, res) => {
+router.post('/', authorize('admin', 'director'), async (req, res) => {
   try {
     const { name, parentId, headId } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Name required' });
@@ -81,7 +81,7 @@ router.post('/', authorize('super_admin', 'hr'), async (req, res) => {
 });
 
 // PUT /api/departments/:id (admin)
-router.put('/:id', authorize('super_admin', 'hr'), async (req, res) => {
+router.put('/:id', authorize('admin', 'director'), async (req, res) => {
   try {
     const { name, parentId, headId } = req.body;
     const r = await pool.query(
@@ -96,7 +96,7 @@ router.put('/:id', authorize('super_admin', 'hr'), async (req, res) => {
 });
 
 // DELETE /api/departments/:id (admin)
-router.delete('/:id', authorize('super_admin', 'hr'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director'), async (req, res) => {
   try {
     await pool.query('DELETE FROM departments WHERE id=$1', [req.params.id]);
     res.json({ success: true, message: 'Department deleted' });
