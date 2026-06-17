@@ -429,7 +429,7 @@ export default function Conference() {
 
       {modal && (
         <BookingModal
-          initial={modal._id ? modal : null}
+          initial={modal._id ? modal : { bookingDate: modal.bookingDate || date }}
           onClose={() => setModal(null)}
           onSaved={() => { setModal(null); load(); }}
           onCancel={modal._id ? () => cancelBooking(modal._id) : undefined}
