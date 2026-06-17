@@ -4,6 +4,7 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import LeaveDetailModal from '../components/LeaveDetailModal';
+import CompOffDetailModal from '../components/CompOffDetailModal';
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -36,21 +37,23 @@ export default function Leave() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(initForm);
   const [saving, setSaving] = useState(false);
-  const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
+  const [detailLeave, setDetailLeave] = useState(null);
+  const [compOffs, setCompOffs] = useState([]);
+  const [viewCompOff, setViewCompOff] = useState(null);
 
   const load = () => {
     setLoading(true);
     Promise.all([
       api.get('/leaves/my'),
-      api.get('/leaves/balance')
-    ]).then(([l, b]) => {
-      setLeaves(l.data.data);
+      api.get('/leaves/balance'),
+      api.get('/comp-off/my'),
+    ]).then(([l, b, co]) => {
+      setLeaves(l.data.data || []);
+      setCompOffs(co.data.data || []);
       const cards = b.data.data || [];
       setBalanceCards(cards);
       const balMap = {};
-      cards.forEach(c => {
-        balMap[c.code] = c.available;
-      });
+      cards.forEach(c => { balMap[c.code] = c.available; });
       setBalance(balMap);
     }).catch(console.error).finally(() => setLoading(false));
   };
@@ -115,53 +118,88 @@ export default function Leave() {
 
         {loading ? <div className="flex justify-center py-12"><div className="w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" /></div> : (
           <div className="divide-y divide-slate-50">
-            {leaves.length === 0 ? (
+            {(leaves.length === 0 && compOffs.length === 0) ? (
               <div className="text-center py-16">
                 <Calendar size={40} className="text-slate-200 mx-auto mb-3" />
                 <p className="text-slate-400 font-medium">No leave requests yet</p>
                 <p className="text-slate-300 text-sm mt-1">Click "Apply Leave" to submit your first request</p>
               </div>
-            ) : leaves.map(l => {
-              // Bug #24 fix: parse dates as local time
-              const startDate = parseLocalDate(l.startDate);
-              const endDate = parseLocalDate(l.endDate);
-              return (
-                <div key={l._id} className="p-5 flex items-start justify-between gap-4 hover:bg-slate-50 transition-colors">
-                  <div className="flex items-start gap-4">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${leaveTypeColors[l.leaveType] || 'bg-slate-50 border-slate-200'}`}>
-                      <Calendar size={18} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium text-slate-700 capitalize">{LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType}</p>
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLE[l.status]}`}>{l.status}</span>
+            ) : (
+              <>
+                {/* Regular leave requests */}
+                {leaves.map(l => {
+                  const startDate = parseLocalDate(l.startDate);
+                  const endDate = parseLocalDate(l.endDate);
+                  return (
+                    <div key={l._id} className="p-5 flex items-start justify-between gap-4 hover:bg-slate-50 transition-colors">
+                      <div className="flex items-start gap-4">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${leaveTypeColors[l.leaveType] || 'bg-slate-50 border-slate-200'}`}>
+                          <Calendar size={18} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-slate-700 capitalize">{LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType}</p>
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLE[l.status]}`}>{l.status}</span>
+                          </div>
+                          <p className="text-sm text-slate-500 mt-1">
+                            {startDate?.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {l.startDate !== l.endDate && ` — ${endDate?.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                            <span className="text-slate-400 ml-1.5">({l.totalDays} day{l.totalDays !== 1 ? 's' : ''})</span>
+                          </p>
+                          <p className="text-sm text-slate-400 mt-0.5">{l.reason}</p>
+                          {l.rejectionReason && (
+                            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2 py-1 mt-1.5 w-fit font-medium">
+                              Rejection Reason: {l.rejectionReason}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-sm text-slate-500 mt-1">
-                        {startDate?.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        {l.startDate !== l.endDate && ` — ${endDate?.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}`}
-                        <span className="text-slate-400 ml-1.5">({l.totalDays} day{l.totalDays !== 1 ? 's' : ''})</span>
-                      </p>
-                      <p className="text-sm text-slate-400 mt-0.5">{l.reason}</p>
-                      {l.rejectionReason && (
-                        <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2 py-1 mt-1.5 w-fit font-medium">
-                          Rejection Reason: {l.rejectionReason}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                          <Eye size={13} /> View
+                        </button>
+                        {l.status === 'pending' && (
+                          <button onClick={() => handleCancel(l._id)} className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
+                            <X size={13} /> Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Comp-Off requests */}
+                {compOffs.map(c => (
+                  <div key={c._id} className="p-5 flex items-start justify-between gap-4 hover:bg-slate-50 transition-colors">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border bg-green-50 border-green-200 text-green-700">
+                        <Calendar size={18} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium text-slate-700">Compensatory Off</p>
+                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLE[c.status] || 'bg-slate-100 text-slate-500'}`}>{c.status}</span>
+                        </div>
+                        <p className="text-sm text-slate-500 mt-1">
+                          Comp-off for {c.compOffDate ? parseLocalDate(c.compOffDate)?.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                          <span className="text-slate-400 ml-1.5">({c.daysEarned} day{Number(c.daysEarned) !== 1 ? 's' : ''})</span>
                         </p>
-                      )}
+                        <p className="text-sm text-slate-400 mt-0.5">Worked on {c.workedDate ? parseLocalDate(c.workedDate)?.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short' }) : '—'}</p>
+                        {c.rejectionReason && (
+                          <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2 py-1 mt-1.5 w-fit font-medium">
+                            Rejection Reason: {c.rejectionReason}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button onClick={() => setViewCompOff(c)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                        <Eye size={13} /> View
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
-                      <Eye size={13} /> View
-                    </button>
-                    {l.status === 'pending' && (
-                      <button onClick={() => handleCancel(l._id)} className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
-                        <X size={13} /> Cancel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -254,6 +292,14 @@ export default function Leave() {
           balance={balanceCards}
           onClose={() => setDetailLeave(null)}
           onCancel={(x) => { setDetailLeave(null); handleCancel(x._id); }}
+        />
+      )}
+
+      {viewCompOff && (
+        <CompOffDetailModal
+          item={viewCompOff}
+          canAct={false}
+          onClose={() => setViewCompOff(null)}
         />
       )}
     </div>

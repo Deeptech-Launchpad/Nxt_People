@@ -830,10 +830,12 @@ router.get('/location', async (req, res) => {
       [...params, limit, offset]
     );
 
-    // Work Mode is determined on the frontend by matching the reverse-geocoded
-    // address against the office area keyword stored in settings.
-    const areaRes = await pool.query('SELECT office_area_name FROM settings LIMIT 1');
-    const officeAreaName = areaRes.rows[0]?.office_area_name || null;
+    // Work Mode keyword — graceful fallback if the column hasn't been migrated yet.
+    let officeAreaName = null;
+    try {
+      const areaRes = await pool.query('SELECT office_area_name FROM settings LIMIT 1');
+      officeAreaName = areaRes.rows[0]?.office_area_name || null;
+    } catch (_) { /* column not yet migrated — work mode shows "—" until migration runs */ }
 
     res.json({ success: true, data: dataRes.rows, total, page, limit, scope: full ? 'all' : 'self', officeAreaName });
   } catch (err) {
