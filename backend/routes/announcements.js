@@ -85,7 +85,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/announcements — create announcement (admin only)
-router.post('/', authorize('super_admin', 'hr'), async (req, res) => {
+router.post('/', authorize('admin', 'director'), async (req, res) => {
   try {
     const { title, body, type = 'general', isPinned = true, pinnedUntil, expiresAt } = req.body;
     if (!title || !body) return res.status(400).json({ success: false, message: 'Title and body are required' });
@@ -129,7 +129,7 @@ router.post('/', authorize('super_admin', 'hr'), async (req, res) => {
 // PUT /api/announcements/:id — update an announcement (admin only).
 // Each of title/body/type/isActive/isPinned/pinnedUntil/expiresAt is optional;
 // omitted fields keep their current value (COALESCE).
-router.put('/:id', authorize('super_admin', 'hr'), async (req, res) => {
+router.put('/:id', authorize('admin', 'director'), async (req, res) => {
   try {
     const { title, body, type, isActive, isPinned, pinnedUntil, expiresAt } = req.body;
     const result = await pool.query(
@@ -168,7 +168,7 @@ router.put('/:id', authorize('super_admin', 'hr'), async (req, res) => {
 });
 
 // DELETE /api/announcements/:id — delete (admin only)
-router.delete('/:id', authorize('super_admin', 'hr'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director'), async (req, res) => {
   try {
     await pool.query('DELETE FROM announcements WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Deleted' });

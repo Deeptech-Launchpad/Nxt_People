@@ -286,7 +286,7 @@ function AccessManager({ connection, onClose }) {
     setSaving(true);
     try {
       await api.post(`/api-connections/${connection._id}/access`, { employeeIds: ids });
-      toast.success(`Granted to ${ids.length} ${ids.length === 1 ? 'employee' : 'employees'}`);
+      toast.success(`Granted to ${ids.length} ${ids.length === 1 ? 'team_member' : 'employees'}`);
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setSaving(false); }
@@ -294,7 +294,7 @@ function AccessManager({ connection, onClose }) {
 
   const bulkRevoke = async (ids) => {
     if (ids.length === 0) return;
-    if (!window.confirm(`Revoke access for ${ids.length} ${ids.length === 1 ? 'employee' : 'employees'}? They'll be blocked from logging in immediately.`)) return;
+    if (!window.confirm(`Revoke access for ${ids.length} ${ids.length === 1 ? 'team_member' : 'employees'}? They'll be blocked from logging in immediately.`)) return;
     setSaving(true);
     try {
       const r = await api.post(`/api-connections/${connection._id}/access/revoke`, { employeeIds: ids });

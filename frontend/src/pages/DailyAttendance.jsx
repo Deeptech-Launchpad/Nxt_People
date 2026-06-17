@@ -191,7 +191,7 @@ export default function DailyAttendance() {
           <h3 className="text-[13px] font-bold text-slate-700 uppercase tracking-wider">
             Daily Attendance · {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
           </h3>
-          <span className="text-[11.5px] text-slate-500">{filtered.length} {filtered.length === 1 ? 'employee' : 'employees'}</span>
+          <span className="text-[11.5px] text-slate-500">{filtered.length} {filtered.length === 1 ? 'team_member' : 'employees'}</span>
         </div>
 
         {/* ── Tabs: Checked In vs Not Checked In ─────────────────── */}

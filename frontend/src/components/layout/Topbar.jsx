@@ -71,7 +71,7 @@ const NAV = {
       // Team Attendance is admin / manager only — backend role-gates GET /api/attendance/team
       // and App.jsx blocks the route. Hiding the tab here prevents employees from clicking
       // it and getting bounced home.
-      { key: 'team',   label: 'Team',    to: '/attendance/team', roles: ['super_admin', 'hr', 'manager'] },
+      { key: 'team',   label: 'Team',    to: '/attendance/team', roles: ['admin', 'director', 'manager'] },
     ],
     getActiveTab: p => p.startsWith('/attendance/team') ? 'team' : 'mydata',
     subNav: {
@@ -135,7 +135,7 @@ const NAV = {
       team:     [{ to: '/leave-tracker/team', label: 'Approvals' }],
       holidays: [
         { to: '/leave-tracker/holidays', label: 'Holidays' },
-        { to: '/leave-tracker/weekends', label: 'Weekends', roles: ['super_admin', 'hr'] },
+        { to: '/leave-tracker/weekends', label: 'Weekends', roles: ['admin', 'director'] },
       ],
     },
   },
@@ -190,8 +190,8 @@ const NAV = {
     label: 'Employees',
     primaryTabs: [
       // Employee management is HR / Super Admin only (Team Leads excluded).
-      { key: 'employees', label: 'Employees', to: '/employees', roles: ['super_admin', 'hr'] },
-      { key: 'registrations', label: 'Registrations', to: '/registrations', roles: ['super_admin', 'hr'] },
+      { key: 'employees', label: 'Employees', to: '/employees', roles: ['admin', 'director'] },
+      { key: 'registrations', label: 'Registrations', to: '/registrations', roles: ['admin', 'director'] },
     ],
     getActiveTab: p => p.startsWith('/registrations') ? 'registrations' : 'employees',
     subNav: {
@@ -210,21 +210,21 @@ const NAV = {
       // App.jsx ProtectedRoute on each /reports, /payroll, /shifts, /shift-roster,
       // /daily-attendance route and by Sidebar.jsx (the Reports icon is gated).
       reports: [
-        { to: '/reports',                label: 'Attendance Report', exact: true, roles: ['super_admin', 'hr', 'manager'] },
-        { to: '/daily-attendance',       label: 'Daily Attendance',                   roles: ['super_admin', 'hr', 'manager'] },
-        { to: '/payroll',                label: 'Payroll Report',                     roles: ['super_admin', 'hr', 'manager'] },
-        { to: '/payroll/setup',          label: 'Salary Setup',                       roles: ['super_admin', 'hr']             },
-        { to: '/payroll/run',            label: 'Payroll Run',                        roles: ['super_admin', 'hr']             },
-        { to: '/payroll/team',           label: 'Team Payroll',                       roles: ['super_admin', 'hr', 'manager'] },
+        { to: '/reports',                label: 'Attendance Report', exact: true, roles: ['admin', 'director', 'manager'] },
+        { to: '/daily-attendance',       label: 'Daily Attendance',                   roles: ['admin', 'director', 'manager'] },
+        { to: '/payroll',                label: 'Payroll Report',                     roles: ['admin', 'director', 'manager'] },
+        { to: '/payroll/setup',          label: 'Salary Setup',                       roles: ['admin', 'director']             },
+        { to: '/payroll/run',            label: 'Payroll Run',                        roles: ['admin', 'director']             },
+        { to: '/payroll/team',           label: 'Team Payroll',                       roles: ['admin', 'director', 'manager'] },
         { to: '/payroll/my',             label: 'Payslips' },
-        { to: '/payroll/declarations',   label: 'Tax Declarations',                   roles: ['super_admin', 'hr']             },
-        { to: '/payroll/compliance',     label: 'Compliance',                         roles: ['super_admin', 'hr']             },
+        { to: '/payroll/declarations',   label: 'Tax Declarations',                   roles: ['admin', 'director']             },
+        { to: '/payroll/compliance',     label: 'Compliance',                         roles: ['admin', 'director']             },
         // Adjustments / Loans & Advances / Tax Slabs removed from the
         // Reports sub-nav — the underlying admin workflows still exist
         // at those routes for direct deep-linking, but they shouldn't
         // be surfaced as primary nav until the UX is finalised.
-        { to: '/shifts',                 label: 'Shifts',                             roles: ['super_admin', 'hr']             },
-        { to: '/shift-roster',           label: 'Shift Roster',                       roles: ['super_admin', 'hr', 'manager'] },
+        { to: '/shifts',                 label: 'Shifts',                             roles: ['admin', 'director']             },
+        { to: '/shift-roster',           label: 'Shift Roster',                       roles: ['admin', 'director', 'manager'] },
       ],
     },
   },
@@ -578,10 +578,10 @@ export default function Topbar() {
                 </div>
                 <div className="py-1">
                   {[
-                    { label: 'Employees', to: '/employees', roles: ['super_admin', 'hr'] },
+                    { label: 'Employees', to: '/employees', roles: ['admin', 'director'] },
                     { label: 'Attendance', to: '/attendance/my' },
                     { label: 'Leave Tracker', to: '/leave-tracker/summary' },
-                    { label: 'Reports', to: '/reports', roles: ['super_admin', 'hr', 'manager'] },
+                    { label: 'Reports', to: '/reports', roles: ['admin', 'director', 'manager'] },
                     { label: 'Announcements', to: '/announcements' },
                   ].filter(item => (!item.roles || item.roles.includes(user?.role)))
                    .filter(item => !searchQuery || item.label.toLowerCase().includes(searchQuery.toLowerCase()))

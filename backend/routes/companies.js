@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/companies — create (admin only)
-router.post('/', authorize('super_admin', 'hr'), audit('CREATE', 'company'), async (req, res) => {
+router.post('/', authorize('admin', 'director'), audit('CREATE', 'company'), async (req, res) => {
   try {
     const { name, code, description } = req.body;
     const result = await pool.query('INSERT INTO companies (name, code, description) VALUES ($1, $2, $3) RETURNING id as "_id", name, code, description, is_active as "isActive"', [name, code, description]);
@@ -27,7 +27,7 @@ router.post('/', authorize('super_admin', 'hr'), audit('CREATE', 'company'), asy
 });
 
 // PUT /api/companies/:id — update (admin only)
-router.put('/:id', authorize('super_admin', 'hr'), audit('UPDATE', 'company'), async (req, res) => {
+router.put('/:id', authorize('admin', 'director'), audit('UPDATE', 'company'), async (req, res) => {
   try {
     const { name, code, description } = req.body;
     const result = await pool.query('UPDATE companies SET name = $1, code = $2, description = $3, updated_at = NOW() WHERE id = $4 RETURNING id as "_id", name, code, description, is_active as "isActive"', [name, code, description, req.params.id]);
@@ -39,7 +39,7 @@ router.put('/:id', authorize('super_admin', 'hr'), audit('UPDATE', 'company'), a
 });
 
 // DELETE /api/companies/:id — soft delete (admin only)
-router.delete('/:id', authorize('super_admin', 'hr'), audit('DELETE', 'company'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director'), audit('DELETE', 'company'), async (req, res) => {
   try {
     const result = await pool.query('UPDATE companies SET is_active = false WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Company not found' });

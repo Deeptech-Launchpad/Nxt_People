@@ -1,5 +1,5 @@
 ﻿/**
- * Promote every email listed in ADMIN_EMAIL (.env) to role='super_admin'.
+ * Promote every email listed in ADMIN_EMAIL (.env) to role='admin'.
  *
  * Why this exists: server.js bootstraps an admin row if the email is missing
  * from the employees table, but it deliberately does NOT elevate an existing
@@ -8,7 +8,7 @@
  *
  * Useful after:
  *   • npm run reset:demo wiped + Zoho re-import where your admin came in
- *     with role='employee'
+ *     with role='team_member'
  *   • Onboarding form created your account as an employee
  *   • Manual SQL is annoying to write
  *
@@ -32,13 +32,13 @@ if (adminEmails.length === 0) {
 }
 
 (async () => {
-  console.log(`Promoting these ADMIN_EMAIL accounts to role='super_admin':\n  • ${adminEmails.join('\n  • ')}\n`);
+  console.log(`Promoting these ADMIN_EMAIL accounts to role='admin':\n  • ${adminEmails.join('\n  • ')}\n`);
 
   const r = await pool.query(
     `UPDATE employees
-        SET role = 'super_admin'
+        SET role = 'admin'
       WHERE LOWER(email) = ANY($1::text[])
-        AND role <> 'super_admin'
+        AND role <> 'admin'
       RETURNING email`,
     [adminEmails]
   );
@@ -51,7 +51,7 @@ if (adminEmails.length === 0) {
   }
 
   // Sanity print — show every admin in the system after the promotion.
-  const allAdmins = await pool.query("SELECT email FROM employees WHERE role = 'super_admin' ORDER BY email");
+  const allAdmins = await pool.query("SELECT email FROM employees WHERE role = 'admin' ORDER BY email");
   console.log(`\nAll admins now: ${allAdmins.rows.length}`);
   allAdmins.rows.forEach(row => console.log(`  • ${row.email}`));
 

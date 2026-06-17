@@ -34,7 +34,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST assign shift (admin/manager)
-router.post('/assign', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
+router.post('/assign', authorize('admin', 'director', 'manager'), async (req, res) => {
   try {
     const { employeeId, shiftId, date } = req.body;
     if (!employeeId || !shiftId || !date) return res.status(400).json({ success: false, message: 'employeeId, shiftId, date required' });
@@ -49,7 +49,7 @@ router.post('/assign', authorize('super_admin', 'hr', 'manager'), async (req, re
 });
 
 // POST bulk assign (copy previous week)
-router.post('/copy-week', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
+router.post('/copy-week', authorize('admin', 'director', 'manager'), async (req, res) => {
   try {
     const { fromStart, toStart } = req.body;
     const r = await pool.query(
@@ -64,7 +64,7 @@ router.post('/copy-week', authorize('super_admin', 'hr', 'manager'), async (req,
 });
 
 // DELETE assignment
-router.delete('/:id', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director', 'manager'), async (req, res) => {
   try {
     await pool.query('DELETE FROM shift_roster WHERE id=$1', [req.params.id]);
     res.json({ success: true });

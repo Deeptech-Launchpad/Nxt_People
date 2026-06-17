@@ -22,7 +22,7 @@ export default function WFHRequests() {
   const [form, setForm] = useState({ date: new Date().toLocaleDateString('en-CA'), reason: '' });
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
-  const [tab, setTab] = useState(user?.role === 'employee' ? 'my' : 'pending');
+  const [tab, setTab] = useState(user?.role === 'team_member' ? 'my' : 'pending');
 
   const load = () => {
     setLoading(true);

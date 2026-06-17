@@ -1,5 +1,5 @@
 /* ── RBAC role migration ──────────────────────────────────────────────────
- *  Migrates the legacy 'admin' role to the strict 4-role model's 'super_admin'.
+ *  Migrates the legacy 'admin' role to the strict 4-role model's 'admin'.
  *  Safe to run multiple times (idempotent): once no 'admin' rows remain, the
  *  UPDATEs simply affect 0 rows.
  *
@@ -20,9 +20,9 @@ async function migrateRoles() {
 
     // 1. Employees: admin → super_admin
     const emp = await client.query(
-      `UPDATE employees SET role = 'super_admin' WHERE role = 'admin'`
+      `UPDATE employees SET role = 'admin' WHERE role = 'admin'`
     );
-    console.log(`✅ employees: ${emp.rowCount} 'admin' → 'super_admin'`);
+    console.log(`✅ employees: ${emp.rowCount} 'admin' → 'admin'`);
 
     // 2. Keep MFA role config consistent: replace any "admin" entry in the
     //    settings.mfa_required_roles JSONB array with "super_admin".

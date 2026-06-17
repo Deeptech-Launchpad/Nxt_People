@@ -30,7 +30,7 @@ function ApproveModal({ employee, onClose, onApproved }) {
   // Reset to defaults whenever the modal is opened for a new employee.
   // Without the key/useEffect, closing+reopening for a different employee
   // would leak the previous approval's role and password into the form.
-  const [form, setForm] = useState({ role: 'employee', department: '', password: '' });
+  const [form, setForm] = useState({ role: 'team_member', department: '', password: '' });
   const [loading, setLoading] = useState(false);
   // App access list — fetched on open so admin can pick apps in the same
   // modal instead of a second trip to the API Connections page.
@@ -39,7 +39,7 @@ function ApproveModal({ employee, onClose, onApproved }) {
   const [selectedApps, setSelectedApps] = useState(new Set());
 
   useEffect(() => {
-    setForm({ role: 'employee', department: '', password: '' });
+    setForm({ role: 'team_member', department: '', password: '' });
     setSelectedApps(new Set());
     if (!employee?._id) return;
     setAppsLoading(true);

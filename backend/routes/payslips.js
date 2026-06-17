@@ -65,7 +65,7 @@ router.get('/fy-list', async (req, res) => {
 });
 
 // POST /api/payslips  — create / upsert payslip (admin only)
-router.post('/', authorize('super_admin', 'hr'), async (req, res) => {
+router.post('/', authorize('admin', 'director'), async (req, res) => {
   try {
     const { employeeId, month, year, grossPay, reimbursements, deductions, takeHome, payslipUrl, taxWorksheetUrl } = req.body;
     if (!employeeId || !month || !year) {

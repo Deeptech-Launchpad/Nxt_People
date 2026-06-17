@@ -262,7 +262,7 @@ export default function Settings() {
                     Users in the selected roles will be forced through MFA enrolment on next login.
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {['super_admin', 'hr', 'manager', 'employee'].map(r => {
+                    {['admin', 'director', 'manager', 'team_member'].map(r => {
                       const list = Array.isArray(settings?.mfaRequiredRoles) ? settings.mfaRequiredRoles : [];
                       const on = list.includes(r);
                       return (

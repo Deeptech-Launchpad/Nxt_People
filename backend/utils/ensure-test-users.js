@@ -17,9 +17,9 @@ const pool = require('../db');
 const PASSWORD = 'password123';
 
 const USERS = [
-  { email: 'balaji@altiusnxt.com', role: 'super_admin', firstName: 'Test', lastName: 'Admin', employeeId: 'NXT-TEST-ADM' },
+  { email: 'balaji@altiusnxt.com', role: 'admin', firstName: 'Test', lastName: 'Admin', employeeId: 'NXT-TEST-ADM' },
   { email: 'sanjana@altiusnxt.com', role: 'manager', firstName: 'Test', lastName: 'Manager', employeeId: 'NXT-TEST-MGR' },
-  { email: 'saranya@altiusnxt.com', role: 'employee', firstName: 'Test', lastName: 'Employee', employeeId: 'NXT-TEST-EMP' },
+  { email: 'saranya@altiusnxt.com', role: 'team_member', firstName: 'Test', lastName: 'Employee', employeeId: 'NXT-TEST-EMP' },
 ];
 
 (async () => {

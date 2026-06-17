@@ -10,7 +10,7 @@ import AppAccessPicker from '../components/AppAccessPicker';
 
 const initForm = {
   firstName:'', lastName:'', email:'', employeeId:'', password:'', phone:'',
-  role:'employee', department:'', designation:'', company:'',
+  role:'team_member', department:'', designation:'', company:'',
   joiningDate: new Date().toISOString().split('T')[0],
   monthlyCTC:'', basicSalary:'',
   casualLeave:'',
@@ -132,7 +132,7 @@ export default function Employees() {
   // Role is a fixed enum — admin needs to be able to assign these three even
   // when no current employee has the role (e.g. after a fresh Zoho sync where
   // everyone defaults to "employee"). Don't override from metadata.
-  const roles = ['super_admin', 'hr', 'manager', 'employee'];
+  const roles = ['admin', 'director', 'manager', 'team_member'];
   // `managers` is the leadership-filtered list (Heads / Leads / Managers) used
   // for the Reporting Person dropdown. Replaces the old `allEmployees` list
   // which let admin pick any employee as a manager.
@@ -338,7 +338,7 @@ export default function Employees() {
   /**
    * Pull every employee from Zoho People. Two-pass on the server — first
    * upserts, then resolves manager links. Imported users all start as
-   * role='employee'; admin promotes them via the Edit dialog afterwards.
+   * role='team_member'; admin promotes them via the Edit dialog afterwards.
    */
   const handleZohoSync = async () => {
     if (zohoSyncing) return;
@@ -412,7 +412,13 @@ export default function Employees() {
   };
 
   const pages = Math.ceil(total / limit);
-  const roleColors = { admin:'bg-purple-100 text-purple-700', manager:'bg-brand-100 text-brand-700', employee:'bg-slate-100 text-slate-600' };
+  const roleColors = {
+    admin:'bg-purple-100 text-purple-700',
+    director:'bg-purple-100 text-purple-700',
+    manager:'bg-brand-100 text-brand-700',
+    team_incharge:'bg-brand-100 text-brand-700',
+    team_member:'bg-slate-100 text-slate-600'
+  };
 
   return (
     <div className="space-y-5">

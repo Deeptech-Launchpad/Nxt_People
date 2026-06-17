@@ -31,7 +31,7 @@ export default function Regularization() {
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
   const [detailReq, setDetailReq] = useState(null);  // request shown in the detail/timeline modal
-  const [tab, setTab] = useState(user?.role === 'employee' ? 'my' : 'pending');
+  const [tab, setTab] = useState(user?.role === 'team_member' ? 'my' : 'pending');
 
   const load = () => {
     setLoading(true);

@@ -175,16 +175,16 @@ async function ask(question) {
   );
   console.log(`  ✅ Removed ${r.rowCount} employee row(s)`);
 
-  // Make sure every surviving admin actually has role='super_admin'. The
+  // Make sure every surviving admin actually has role='admin'. The
   // bootstrap in server.js deliberately refuses to elevate an existing
   // non-super_admin row, but during a demo reset we WANT the ADMIN_EMAIL users
   // to be super admins so you can immediately log in and trigger Zoho sync.
   console.log('\nEnsuring super_admin role for ADMIN_EMAIL accounts…');
   const promote = await pool.query(
     `UPDATE employees
-        SET role = 'super_admin'
+        SET role = 'admin'
       WHERE LOWER(email) = ANY($1::text[])
-        AND role <> 'super_admin'
+        AND role <> 'admin'
       RETURNING email`,
     [adminEmails]
   );

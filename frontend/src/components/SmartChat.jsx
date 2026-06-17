@@ -111,7 +111,7 @@ export default function SmartChat({ open, onClose }) {
         ).slice(0, 8)
       : PAGES.slice(0, 6);
     const peopleResults = employees.map(e => ({
-      type: 'employee',
+      type: 'team_member',
       label: `${e.firstName} ${e.lastName}`,
       subtitle: `${e.designation || ''}${e.department ? ' · ' + e.department : ''}`.trim() || e.email,
       path: '/directory', // Directory is the only place that lists colleagues.
@@ -154,7 +154,7 @@ export default function SmartChat({ open, onClose }) {
   const sections = [
     { title: 'Quick Actions', items: results.filter(r => r.type === 'action') },
     { title: 'Pages',         items: results.filter(r => r.type === 'page')   },
-    { title: 'People',        items: results.filter(r => r.type === 'employee') },
+    { title: 'People',        items: results.filter(r => r.type === 'team_member') },
   ].filter(s => s.items.length > 0);
 
   // Stable index lookup so each rendered row knows its position in `results`.

@@ -90,7 +90,7 @@ router.get('/my', async (req, res) => {
 // size), and capping at 1000 when limit='all', which meant large orgs could
 // never see their tail. Now: COUNT(*) over the same WHERE for true total,
 // limit clamped to 200, no "all" shortcut.
-router.get('/', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
+router.get('/', authorize('admin', 'director', 'manager'), async (req, res) => {
   try {
     const { status, department, employeeId, startDate, endDate } = req.query;
     const page  = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -351,7 +351,7 @@ router.post('/', [
         // No hierarchy → route to HR / Super Admin as the fallback approvers.
         const r = await pool.query(
           `SELECT id, email, first_name AS "firstName" FROM employees
-            WHERE role IN ('super_admin','hr') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+            WHERE role IN ('admin','director') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
         );
         approvers = r.rows;
       }
@@ -393,7 +393,7 @@ router.post('/', [
 // is approved, and any rejection rejects the whole request. Per-level
 // bookkeeping lives in approval_levels (utils/leaveApproval.js); the
 // balance booking / refund here is unchanged from the previous workflow.
-router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'manager'), async (req, res) => {
   const { action, rejectionReason, approveAll } = req.body;
   if (!['approved', 'rejected'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Invalid action. Use: approved or rejected' });
@@ -539,7 +539,7 @@ router.put('/:id/action', authorize('super_admin', 'hr', 'manager'), async (req,
 // 'cancelled' (so it appears under the Cancelled filter) rather than deleted.
 // Balance is refunded exactly like a rejection. Approved leaves are left to the
 // owner-delete path's existing rule (not cancellable here).
-router.put('/:id/cancel', authorize('super_admin', 'hr'), async (req, res) => {
+router.put('/:id/cancel', authorize('admin', 'director'), async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -779,7 +779,7 @@ router.get('/balance', async (req, res) => {
 // ── GET permission usage (HR/Admin monthly tracker) ───────────────────────────
 // Per-employee permission hours for a given month: approved + pending + remaining
 // out of the 4h monthly allowance. Full-access only (Super Admin / HR).
-router.get('/permission-usage', authorize('super_admin', 'hr'), async (req, res) => {
+router.get('/permission-usage', authorize('admin', 'director'), async (req, res) => {
   try {
     const now = new Date();
     const month = Math.min(12, Math.max(1, parseInt(req.query.month, 10) || (now.getMonth() + 1)));
