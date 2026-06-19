@@ -53,6 +53,13 @@ export async function requestLocation() {
   const pref = getGeoPref();
 
   if (pref === 'denied') {
+    // User previously denied our custom modal, but their device GPS may still
+    // be on. Try to capture anyway — if it works, unblock them and use it.
+    const coords = await capturePosition();
+    if (coords) {
+      setGeoPref('always');
+      return { coords, permissionStatus: 'always' };
+    }
     return { coords: null, permissionStatus: 'denied' };
   }
   if (pref === 'always') {
