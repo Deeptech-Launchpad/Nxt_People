@@ -75,23 +75,17 @@ export default function CheckInOut() {
           <p className="text-slate-700 font-semibold">{dateStr}</p>
 
           {/* GPS Status */}
-          <div className={`flex items-center justify-center gap-2 mt-3 text-xs px-3 py-1.5 rounded-full w-fit mx-auto border ${position ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : gpsError ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+          <div className={`flex items-center justify-center gap-2 mt-3 text-xs px-3 py-1.5 rounded-full w-fit mx-auto border ${position ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : gpsLoading ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
             {gpsLoading ? (
               <><Navigation size={11} className="animate-pulse" /> Locating...</>
             ) : position ? (
-              <><MapPin size={11} /> GPS Active · ±{position.accuracy}m accuracy
-                <button onClick={refreshGps} className="ml-1 underline text-emerald-600">refresh</button>
-              </>
+              <><MapPin size={11} /> Location Ready</>
             ) : (
-              <><AlertTriangle size={11} /> {gpsError || 'No GPS'}
+              <><AlertTriangle size={11} /> Location unavailable
                 <button onClick={refreshGps} className="ml-1 underline">retry</button>
               </>
             )}
           </div>
-
-          {position && (
-            <p className="text-[10px] text-slate-400 mt-1">{position.latitude.toFixed(5)}, {position.longitude.toFixed(5)}</p>
-          )}
         </div>
       </div>
 
@@ -131,15 +125,9 @@ export default function CheckInOut() {
               </div>
             )}
 
-            {(!position && !gpsLoading && (!record?.checkIn || isCheckedIn)) && (
-              <div className="text-red-500 text-sm mt-2 mb-4 text-center font-medium bg-red-50 border border-red-100 p-3 rounded-lg">
-                Location access is required to check in or check out. Please enable GPS in your browser settings.
-              </div>
-            )}
-
             {/* Check-in button */}
             {!record?.checkIn && (
-              <button onClick={handleCheckIn} disabled={actionLoading || gpsLoading || !position}
+              <button onClick={handleCheckIn} disabled={actionLoading}
                 className="w-full bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-3 text-lg transition-all shadow-lg shadow-brand-500/30 disabled:opacity-60 mb-3 active:scale-[0.99]">
                 {gpsLoading ? (
                   <><div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span>Getting location...</span></>
@@ -153,7 +141,7 @@ export default function CheckInOut() {
 
             {/* Check-out button */}
             {isCheckedIn && (
-              <button onClick={handleCheckOut} disabled={actionLoading || gpsLoading || !position}
+              <button onClick={handleCheckOut} disabled={actionLoading}
                 className="w-full bg-gradient-to-r from-rose-500 to-rose-400 hover:from-rose-400 hover:to-rose-300 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-3 text-lg transition-all shadow-lg shadow-rose-500/25 disabled:opacity-60 active:scale-[0.99]">
                 {gpsLoading ? (
                   <><div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span>Getting location...</span></>
