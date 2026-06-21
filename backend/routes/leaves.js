@@ -6,7 +6,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { reportsScope, isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
 const { createLevels, getLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
-const { sendMail } = require('../utils/mailer');
+const { sendMail, sendLeaveApprovalEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const { countWorkingDays } = require('../utils/workingDays');
 const logger = require('../logger');
@@ -363,21 +363,26 @@ router.post('/', [
         '/approvals'
       ).catch(err => logger.warn({ err: err.message }, '[leaves] notify approver failed'))));
 
-      // Emails to all approvers (soft-fail; SMTP may be unconfigured).
-      const dateRangeLabel = `${new Date(startDate).toLocaleDateString('en-IN')} – ${new Date(endDate).toLocaleDateString('en-IN')}`;
-      await Promise.all(approvers.filter(a => a.email).map(a => sendMail({
-        to: a.email,
-        subject: `Leave approval required — ${empName}`,
-        text: `${empName} has requested ${leaveType} leave (${dateRangeLabel}, ${totalDays} day(s)). Reason: ${reason}. Review it in NXT People → Approvals.`,
-        html: `<p>Hi ${a.firstName || 'there'},</p>
-               <p><strong>${empName}</strong> has requested <strong>${leaveType}</strong> leave.</p>
-               <ul>
-                 <li><strong>Dates:</strong> ${dateRangeLabel}</li>
-                 <li><strong>Days:</strong> ${totalDays}</li>
-                 <li><strong>Reason:</strong> ${reason}</li>
-               </ul>
-               <p>Please review it in <strong>NXT People → Approvals</strong>.</p>`,
-      }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))));
+      // Emails to all approvers with direct approval link (soft-fail; SMTP may be unconfigured).
+      const baseUrl = process.env.APP_URL || 'https://nxtpeople.altiusnxt.tech';
+      const leaveTypeDisplay = leaveType === 'permission' ? 'Permission' :
+                               leaveType === 'comp_off' ? 'Compensatory Off' :
+                               leaveType.charAt(0).toUpperCase() + leaveType.slice(1) + ' Leave';
+      const approvalTab = leaveType === 'permission' ? 'permissions' : 'leaves';
+      const approvalLink = `${baseUrl}/approvals?tab=${approvalTab}`;
+
+      await Promise.all(approvers.filter(a => a.email).map(a =>
+        sendLeaveApprovalEmail({
+          to: a.email,
+          employeeName: empName,
+          leaveType: leaveTypeDisplay,
+          startDate,
+          endDate,
+          totalDays,
+          reason,
+          approvalLink,
+        }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))
+      ));
     } catch (e) { logger.error({ err: e.message }, '[leaves] notify/feed soft-fail'); }
 
     res.status(201).json({ success: true, data: ins.rows[0], message: 'Leave applied successfully' });
