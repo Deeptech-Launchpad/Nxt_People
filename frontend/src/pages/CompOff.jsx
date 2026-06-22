@@ -3,6 +3,7 @@ import { Plus, X, CheckCircle, XCircle, Gift, Send, CheckCheck, ChevronDown, Che
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import BackButton from '../components/BackButton';
 import { isApprover } from '../utils/roles';
 import ApprovalTimeline from '../components/ApprovalTimeline';
 import CompOffDetailModal from '../components/CompOffDetailModal';
@@ -75,6 +76,9 @@ export default function CompOff() {
 
   return (
     <div className="space-y-5">
+      <div className="pt-5 pb-1">
+        <BackButton to="/leave-tracker" label="Leave Tracker" />
+      </div>
       {/* Balance cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl p-5 text-white">

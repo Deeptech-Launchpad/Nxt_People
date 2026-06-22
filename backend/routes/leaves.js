@@ -6,7 +6,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { reportsScope, isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
 const { createLevels, getLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
-const { sendMail, sendLeaveApprovalEmail } = require('../utils/mailer');
+const { sendMail, sendLeaveApprovalEmail, sendLeaveStatusEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const { countWorkingDays } = require('../utils/workingDays');
 const logger = require('../logger');
@@ -488,6 +488,23 @@ router.put('/:id/action', authorize('admin', 'director', 'manager'), async (req,
         try { await pool.query(`INSERT INTO feeds (employee_id,type,title,body,icon) VALUES ($1,'leave_approved','Leave Approved ✓',$2,'✅')`, [leave.employee_id, `Your ${leaveLabel} leave from ${startLabel} has been approved.`]); }
         catch (err) { logger.warn({ err: err.message }, '[leaves] feed insert (approved) failed'); }
       }
+      try {
+        const empRes = await pool.query(
+          `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE id=$1`,
+          [leave.employee_id]
+        );
+        if (empRes.rows[0]?.email) {
+          await sendLeaveStatusEmail({
+            to: empRes.rows[0].email,
+            employeeName: empRes.rows[0].name,
+            leaveType: leaveLabel,
+            startDate: startLabel,
+            totalDays: leave.total_days,
+            status: result.allApproved ? 'approved' : 'partial',
+            approverName: result.allApproved ? null : (`${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || null),
+          });
+        }
+      } catch (e) { logger.warn({ err: e.message }, '[leaves] employee status email failed'); }
       await logAudit(req, { action: 'APPROVE', resource: 'Leave', resourceId: leave.id, changes: { allApproved: result.allApproved } });
       return res.json({
         success: true,
@@ -528,6 +545,23 @@ router.put('/:id/action', authorize('admin', 'director', 'manager'), async (req,
     );
     try { await pool.query(`INSERT INTO feeds (employee_id,type,title,body,icon) VALUES ($1,'leave_rejected','Leave Rejected',$2,'❌')`, [leave.employee_id, `Your ${leaveLabel} leave from ${startLabel} was rejected.`]); }
     catch (err) { logger.warn({ err: err.message }, '[leaves] feed insert (rejected) failed'); }
+    try {
+      const empRes = await pool.query(
+        `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE id=$1`,
+        [leave.employee_id]
+      );
+      if (empRes.rows[0]?.email) {
+        await sendLeaveStatusEmail({
+          to: empRes.rows[0].email,
+          employeeName: empRes.rows[0].name,
+          leaveType: leaveLabel,
+          startDate: startLabel,
+          totalDays: leave.total_days,
+          status: 'rejected',
+          reason: rejectionReason,
+        });
+      }
+    } catch (e) { logger.warn({ err: e.message }, '[leaves] employee rejection email failed'); }
     await logAudit(req, { action: 'REJECT', resource: 'Leave', resourceId: leave.id, changes: { status: 'rejected', rejectionReason } });
     return res.json({ success: true, status: 'rejected', message: 'Leave rejected.' });
 

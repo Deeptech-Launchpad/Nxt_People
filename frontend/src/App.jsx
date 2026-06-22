@@ -13,6 +13,7 @@ import OnboardingForm from './pages/OnboardingForm';
 
 /* ── Existing pages ─────────────────────────────────────────────────── */
 const Dashboard       = lazy(() => import('./pages/Dashboard'));
+const AttendanceLanding = lazy(() => import('./pages/attendance/AttendanceLanding'));
 const CheckInOut      = lazy(() => import('./pages/attendance/CheckInOut'));
 const MyAttendance    = lazy(() => import('./pages/attendance/MyAttendance'));
 const TeamAttendance  = lazy(() => import('./pages/attendance/TeamAttendance'));
@@ -53,6 +54,7 @@ const Holidays        = lazy(() => import('./pages/Holidays'));
 const Timesheets      = lazy(() => import('./pages/Timesheets'));
 const Leave           = lazy(() => import('./pages/Leave'));
 const Reports         = lazy(() => import('./pages/Reports'));
+const ReportsLanding  = lazy(() => import('./pages/reports/ReportsLanding'));
 const DailyAttendance = lazy(() => import('./pages/DailyAttendance'));
 const LeaveEncashment = lazy(() => import('./pages/LeaveEncashment'));
 const Weekends        = lazy(() => import('./pages/Weekends'));
@@ -73,11 +75,13 @@ const BirthdayFolks  = lazy(() => import('./pages/BirthdayFolks'));
 const NewHires       = lazy(() => import('./pages/NewHires'));
 
 /* ── New pages — Phase 5: Time Tracker ─────────────────────────────── */
+const TimeTrackerLanding = lazy(() => import('./pages/timetracker/TimeTrackerLanding'));
 const TimeLogs         = lazy(() => import('./pages/timetracker/TimeLogs'));
 const JobSchedule      = lazy(() => import('./pages/timetracker/JobSchedule'));
 const TimeTrackerProjs = lazy(() => import('./pages/timetracker/Projects'));
 
 /* ── New pages — Phase 6: Leave Tracker ────────────────────────────── */
+const LeaveTrackerLanding = lazy(() => import('./pages/leavetracker/LeaveTrackerLanding'));
 const LeaveSummary   = lazy(() => import('./pages/leavetracker/LeaveSummary'));
 const LeaveBalance   = lazy(() => import('./pages/leavetracker/LeaveBalance'));
 const LeaveRequests  = lazy(() => import('./pages/leavetracker/LeaveRequests'));
@@ -154,6 +158,7 @@ const AppRoutes = () => {
           <Route path="holidays"     element={<Holidays/>}/>
 
           {/* ── Attendance ───────────────────────────────────────────── */}
+          <Route path="attendance"                element={<AttendanceLanding/>}/>
           <Route path="attendance/my"             element={<MyAttendance/>}/>
           <Route path="attendance/checkin"        element={<CheckInOut/>}/>
           <Route path="attendance/regularization" element={<Regularization/>}/>
@@ -161,12 +166,14 @@ const AppRoutes = () => {
           <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','manager']}><TeamAttendance/></ProtectedRoute>}/>
 
           {/* ── Time Tracker ─────────────────────────────────────────── */}
+          <Route path="time-tracker"             element={<TimeTrackerLanding/>}/>
           <Route path="time-tracker/timelogs"    element={<TimeLogs/>}/>
           <Route path="time-tracker/timesheets"  element={<Timesheets/>}/>
           <Route path="time-tracker/projects"    element={<TimeTrackerProjs/>}/>
           <Route path="time-tracker/schedule"    element={<JobSchedule/>}/>
 
           {/* ── Leave Tracker ────────────────────────────────────────── */}
+          <Route path="leave-tracker"            element={<LeaveTrackerLanding/>}/>
           <Route path="leave-tracker/summary"    element={<LeaveSummary/>}/>
           <Route path="leave-tracker/balance"    element={<LeaveBalance/>}/>
           <Route path="leave-tracker/requests"   element={<LeaveRequests/>}/>
@@ -197,7 +204,8 @@ const AppRoutes = () => {
           <Route path="more-services/hr-letters"   element={<HRLetters/>}/>
 
           {/* ── Reports / Admin ──────────────────────────────────────── */}
-          <Route path="reports"          element={<ProtectedRoute roles={['admin','director','manager']}><Reports/></ProtectedRoute>}/>
+          <Route path="reports"            element={<ProtectedRoute roles={['admin','director','manager']}><ReportsLanding/></ProtectedRoute>}/>
+          <Route path="reports/attendance" element={<ProtectedRoute roles={['admin','director','manager']}><Reports/></ProtectedRoute>}/>
           <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','director','manager']}><DailyAttendance/></ProtectedRoute>}/>
           <Route path="payroll"                element={<ProtectedRoute roles={['admin','director','manager']}><PayrollReport/></ProtectedRoute>}/>
           <Route path="payroll/setup"          element={<ProtectedRoute roles={['admin','director']}><PayrollSetup/></ProtectedRoute>}/>

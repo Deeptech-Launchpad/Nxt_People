@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Calendar, LayoutList, CalendarDays, MoreHori
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import BackButton from '../components/BackButton';
 import { isFullAccess } from '../utils/roles';
 
 function parseLocalDate(dateStr) {
@@ -157,8 +158,9 @@ export default function Holidays() {
     <div className="bg-white min-h-[calc(100vh-8rem)]">
       {/* Top Toolbar */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-        {/* Left: empty or admin buttons */}
-        <div className="flex gap-2">
+        {/* Left: back nav + admin buttons */}
+        <div className="flex gap-2 items-center">
+          <BackButton to="/leave-tracker" label="Leave Tracker" />
           {isFullAccess(user) && (
             <>
               <button

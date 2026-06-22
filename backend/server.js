@@ -12,6 +12,7 @@ const pool    = require('./db');
 const logger  = require('./logger');
 const chatWs  = require('./ws-chat');
 const { isNonWorkingDay } = require('./utils/workingDays');
+const { sendCheckInReminderEmail, sendCheckOutReminderEmail } = require('./utils/mailer');
 
 // Process-level safety nets. Without these, an unhandled promise rejection
 // just prints a deprecation warning (then crashes silently in future Node
@@ -225,6 +226,14 @@ cron.schedule('0 9 * * 1-6', async () => {
       ["Don't forget to check in for the day!"]
     );
     logger.info({ sent: r.rowCount }, '9 AM Check-in reminders sent');
+    const empEmails = await pool.query(
+      `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != ''`
+    );
+    await Promise.allSettled(empEmails.rows.map(emp =>
+      sendCheckInReminderEmail({ to: emp.email, employeeName: emp.name })
+        .catch(err => logger.warn({ err: err.message, email: emp.email }, '9 AM check-in email failed'))
+    ));
+    logger.info({ emails: empEmails.rowCount }, '9 AM Check-in reminder emails sent');
   } catch (err) {
     logger.error({ err }, 'Error sending 9 AM reminders');
   }
@@ -242,6 +251,14 @@ cron.schedule('0 18 * * 1-6', async () => {
       ["It's 6 PM! Don't forget to check out before you leave."]
     );
     logger.info({ sent: r.rowCount }, '6 PM Check-out reminders sent');
+    const empEmails = await pool.query(
+      `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != ''`
+    );
+    await Promise.allSettled(empEmails.rows.map(emp =>
+      sendCheckOutReminderEmail({ to: emp.email, employeeName: emp.name })
+        .catch(err => logger.warn({ err: err.message, email: emp.email }, '6 PM check-out email failed'))
+    ));
+    logger.info({ emails: empEmails.rowCount }, '6 PM Check-out reminder emails sent');
   } catch (err) {
     logger.error({ err }, 'Error sending 6 PM reminders');
   }

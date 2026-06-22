@@ -66,76 +66,42 @@ const NAV = {
   },
   attendance: {
     label: 'Attendance',
-    primaryTabs: [
-      { key: 'mydata', label: 'My Data', to: '/attendance/my' },
-      // Team Attendance is admin / manager only — backend role-gates GET /api/attendance/team
-      // and App.jsx blocks the route. Hiding the tab here prevents employees from clicking
-      // it and getting bounced home.
-      { key: 'team',   label: 'Team',    to: '/attendance/team', roles: ['admin', 'director', 'manager'] },
-    ],
-    getActiveTab: p => p.startsWith('/attendance/team') ? 'team' : 'mydata',
-    subNav: {
-      mydata: [
-        // 'Check In' sub-tab removed — was a duplicate of the check-in
-        // controls already present on the Home Overview card and on
-        // /attendance/my. Having two surfaces meant they could drift
-        // apart (the dedicated page was missing the re-check-in
-        // button) and confused users who tried to check in twice.
-        // The /attendance/checkin route is still reachable directly
-        // for anyone who has it bookmarked.
-        { to: '/attendance/my',             label: 'My Attendance'  },
-        { to: '/attendance/regularization', label: 'Regularization' },
-        { to: '/attendance/location',       label: 'Location'       },
-      ],
-      team: [{ to: '/attendance/team', label: 'Team Members' }],
-    },
+    isLanding: true,
+    landingPath: '/attendance',
   },
   timetracker: {
     label: 'Time Tracker',
-    primaryTabs: [
-      { key: 'mydata', label: 'My Data', to: '/time-tracker/timelogs' },
-    ],
-    getActiveTab: () => 'mydata',
-    subNav: {
-      mydata: [
-        { to: '/time-tracker/timelogs',   label: 'Time Logs'    },
-        { to: '/time-tracker/timesheets', label: 'Timesheets'   },
-        { to: '/time-tracker/projects',   label: 'Projects'     },
-        { to: '/time-tracker/schedule',   label: 'Job Schedule' },
-      ],
-    },
+    isLanding: true,
+    landingPath: '/time-tracker',
   },
   leavetracker: {
     label: 'Leave Tracker',
     primaryTabs: [
       { key: 'mydata',   label: 'My Data',  to: '/leave-tracker/summary'  },
-      // Team tab points to /leave-tracker/team (alias for the Approvals
-      // component). Pointing it at /approvals would put us on the
-      // Home → Team → Approvals path, which the sidebar matches as
-      // 'Home' — the user would lose their Leave Tracker context the
-      // moment they clicked Team.
-      { key: 'team',     label: 'Team',     to: '/leave-tracker/team'     },
+      { key: 'team',     label: 'Team',     to: '/leave-tracker/team',    roles: ['admin','director','manager'] },
       { key: 'holidays', label: 'Holidays', to: '/leave-tracker/holidays' },
     ],
+    // '__landing__' signals "we're on the root /leave-tracker page" — no tab highlighted,
+    // and subNav['__landing__'] is undefined so the white sub-nav bar stays hidden.
     getActiveTab: p => {
-      if (p.startsWith('/leave-tracker/team') || p.startsWith('/approvals')) return 'team';
-      if (p.startsWith('/leave-tracker/holidays') || p.startsWith('/holidays')
-        || p.startsWith('/leave-tracker/weekends')) return 'holidays';
+      if (p === '/leave-tracker')                                              return '__landing__';
+      if (p.startsWith('/leave-tracker/team'))                                 return 'team';
+      if (p.startsWith('/leave-tracker/holidays') || p.startsWith('/leave-tracker/weekends')) return 'holidays';
       return 'mydata';
     },
     subNav: {
       mydata: [
-        // Leave Balance removed — Leave Summary already shows per-type
-        // availability counts, so the dedicated balance tab was a
-        // redundant duplicate.
-        { to: '/leave-tracker/summary',  label: 'Leave Summary'        },
-        { to: '/leave-tracker/requests', label: 'Leave Requests'       },
-        { to: '/leave-tracker/comp-off', label: 'Compensatory Request' },
+        { to: '/leave-tracker/summary',  label: 'Leave Summary'  },
+        { to: '/leave-tracker/requests', label: 'Leave Requests' },
+        { to: '/leave-tracker/comp-off', label: 'Comp-Off'       },
+        { to: '/leave-tracker/balance',  label: 'Leave Balance'  },
       ],
-      team:     [{ to: '/leave-tracker/team', label: 'Approvals' }],
+      team: [
+        { to: '/leave-tracker/team', label: 'Team Approvals', roles: ['admin','director','manager'] },
+      ],
       holidays: [
-        { to: '/leave-tracker/holidays', label: 'Holidays' },
-        { to: '/leave-tracker/weekends', label: 'Weekends', roles: ['admin', 'director'] },
+        { to: '/leave-tracker/holidays', label: 'Holidays'                                   },
+        { to: '/leave-tracker/weekends', label: 'Weekend Rules', roles: ['admin','director'] },
       ],
     },
   },
@@ -201,32 +167,8 @@ const NAV = {
   },
   reports: {
     label: 'Reports',
-    primaryTabs: [
-      { key: 'reports', label: 'Reports', to: '/reports' },
-    ],
-    getActiveTab: () => 'reports',
-    subNav: {
-      // Whole Reports section is admin / manager only — also enforced by
-      // App.jsx ProtectedRoute on each /reports, /payroll, /shifts, /shift-roster,
-      // /daily-attendance route and by Sidebar.jsx (the Reports icon is gated).
-      reports: [
-        { to: '/reports',                label: 'Attendance Report', exact: true, roles: ['admin', 'director', 'manager'] },
-        { to: '/daily-attendance',       label: 'Daily Attendance',                   roles: ['admin', 'director', 'manager'] },
-        { to: '/payroll',                label: 'Payroll Report',                     roles: ['admin', 'director', 'manager'] },
-        { to: '/payroll/setup',          label: 'Salary Setup',                       roles: ['admin', 'director']             },
-        { to: '/payroll/run',            label: 'Payroll Run',                        roles: ['admin', 'director']             },
-        { to: '/payroll/team',           label: 'Team Payroll',                       roles: ['admin', 'director', 'manager'] },
-        { to: '/payroll/my',             label: 'Payslips' },
-        { to: '/payroll/declarations',   label: 'Tax Declarations',                   roles: ['admin', 'director']             },
-        { to: '/payroll/compliance',     label: 'Compliance',                         roles: ['admin', 'director']             },
-        // Adjustments / Loans & Advances / Tax Slabs removed from the
-        // Reports sub-nav — the underlying admin workflows still exist
-        // at those routes for direct deep-linking, but they shouldn't
-        // be surfaced as primary nav until the UX is finalised.
-        { to: '/shifts',                 label: 'Shifts',                             roles: ['admin', 'director']             },
-        { to: '/shift-roster',           label: 'Shift Roster',                       roles: ['admin', 'director', 'manager'] },
-      ],
-    },
+    isLanding: true,
+    landingPath: '/reports',
   },
 };
 
@@ -474,9 +416,9 @@ export default function Topbar() {
   // Strip nav entries the current user isn't allowed to see — keeps employees
   // from seeing "Team" / "Daily Attendance" tabs that would just bounce them home.
   const canSee = (entry) => !entry.roles || entry.roles.includes(user?.role);
-  const primaryTabs  = (config.primaryTabs || []).filter(canSee);
-  const activeTab    = isHome ? homeTab : (config.getActiveTab?.(location.pathname) || primaryTabs[0]?.key);
-  const subNavItems  = (config.subNav[activeTab] || []).filter(canSee);
+  const primaryTabs  = (config?.primaryTabs || []).filter(canSee);
+  const activeTab    = isHome ? homeTab : (config?.getActiveTab?.(location.pathname) || primaryTabs[0]?.key);
+  const subNavItems  = (config?.subNav?.[activeTab] || []).filter(canSee);
 
   return (
     <div className="flex flex-col sticky top-0 z-40">
@@ -484,10 +426,11 @@ export default function Topbar() {
       <div className="h-[48px] bg-[#1a2040] flex items-center justify-between px-5 shadow-sm flex-shrink-0">
         <div className="flex items-center h-full gap-1">
           {!isHome && (
-            <span className="text-white/70 text-[13.5px] font-bold mr-3 border-r border-white/20 pr-4">
+            <span className="text-white text-[14px] font-semibold mr-3 border-r border-white/20 pr-4">
               {config.label}
             </span>
-          )}          {primaryTabs.map(({ key, label, to, disabled }) => {
+          )}
+          {!config.isLanding && primaryTabs.map(({ key, label, to, disabled }) => {
             const active = isHome ? homeTab === key : activeTab === key;
             // Disabled primary tabs (e.g. Travel / Compensation in More
             // Services) render visible but non-clickable until the
@@ -505,7 +448,7 @@ export default function Topbar() {
             return (
               <button key={key} onClick={() => navigate(targetTo)}
                 className={`h-full px-4 flex items-center text-[14px] border-b-[3px] transition-all duration-150 tracking-[-0.01em]
-                  ${active ? 'border-white text-white font-bold' : 'border-transparent text-white/70 font-semibold hover:text-white'}`}>
+                  ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`}>
                 {label}
               </button>
             );
@@ -718,10 +661,12 @@ export default function Topbar() {
         </div>
       </div>
 
-      {/* ── White sub-nav ─────────────────────────────────────────────── */}
-      <div className="h-[42px] bg-white dark:bg-[#1a2040] border-b border-slate-200 dark:border-[#2d3748] flex items-center px-5 shadow-sm relative">
-        <SubNav items={subNavItems} />
-      </div>
+      {/* ── White sub-nav — hidden on landing pages (subNavItems is empty) */}
+      {!config.isLanding && subNavItems.length > 0 && (
+        <div className="h-[42px] bg-white dark:bg-[#1a2040] border-b border-slate-200 dark:border-[#2d3748] flex items-center px-5 shadow-sm relative">
+          <SubNav items={subNavItems} />
+        </div>
+      )}
     </div>
   );
 }

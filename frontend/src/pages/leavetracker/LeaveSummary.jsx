@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Calendar, Clock, Plus, X, Info, ChevronDown, AlertTriangle, Eye } from 'lucide-react';
 import api from '../../utils/api';
+import BackButton from '../../components/BackButton';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
 
@@ -406,6 +407,7 @@ export default function LeaveSummary() {
       {/* ── Sub-header ────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-4 text-[13px] text-gray-500">
+          <BackButton to="/leave-tracker" label="Leave Tracker" />
           <span className="font-semibold text-gray-700">Leave booked this year : <span className="text-[#1a73e8]">{bookedTotal} day(s)</span></span>
           <span className="text-gray-300">|</span>
           <span>Absent : <span className="font-semibold">{absentCount}</span></span>

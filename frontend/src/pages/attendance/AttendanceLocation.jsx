@@ -15,6 +15,7 @@ import {
   Building2, Home,
 } from 'lucide-react';
 import api from '../../utils/api';
+import BackButton from '../../components/BackButton';
 import { useAuth } from '../../context/AuthContext';
 import { isFullAccess } from '../../utils/roles';
 import { reverseGeocode, coordKey } from '../../utils/reverseGeocode';
@@ -124,6 +125,9 @@ export default function AttendanceLocation() {
 
   return (
     <div className="p-6">
+      <div className="mb-3">
+        <BackButton to="/attendance" label="Attendance" />
+      </div>
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-4">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, Filter, BarChart2 } from 'lucide-react';
 import api from '../utils/api';
+import BackButton from '../components/BackButton';
 
 const DEPTS = ['All','Engineering','HR','Sales','Marketing','Finance','Design','Product'];
 const STATUS_STYLE = { present:'bg-emerald-100 text-emerald-700', late:'bg-amber-100 text-amber-700', absent:'bg-red-100 text-red-700', 'half-day':'bg-blue-100 text-blue-700', leave:'bg-purple-100 text-purple-700' };
@@ -51,6 +52,9 @@ export default function Reports() {
 
   return (
     <div className="space-y-5">
+      <div className="pt-5 pb-1">
+        <BackButton to="/reports" label="Reports" />
+      </div>
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
         <div className="flex flex-wrap gap-3 items-end">
           <div>

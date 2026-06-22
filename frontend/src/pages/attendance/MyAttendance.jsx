@@ -5,6 +5,7 @@ import {
   LogIn, LogOut, Download, Eye
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import BackButton from '../../components/BackButton';
 import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { useAttendance } from '../../context/AttendanceContext';
@@ -369,6 +370,7 @@ export default function MyAttendance() {
 
       {/* ── Top bar: shift + check-out ──────────────────────────────── */}
       <div className="bg-white border-b border-slate-200 px-5 py-2.5 flex items-center gap-4 shadow-sm">
+        <BackButton to="/attendance" label="Attendance" />
         <span className="text-[13px] font-semibold text-slate-700">{shiftLabel}</span>
         <input
           placeholder="Add notes for check-out"

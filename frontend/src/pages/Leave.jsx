@@ -3,6 +3,7 @@ import { Plus, X, Calendar, Eye } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import BackButton from '../components/BackButton';
 import LeaveDetailModal from '../components/LeaveDetailModal';
 import CompOffDetailModal from '../components/CompOffDetailModal';
 
@@ -109,7 +110,11 @@ export default function Leave() {
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
-          <h3 className="font-display font-semibold text-slate-800">My Leave Requests</h3>
+          <div className="flex items-center gap-3">
+            <BackButton to="/leave-tracker" label="Leave Tracker" />
+            <div className="w-px h-4 bg-slate-200" />
+            <h3 className="font-display font-semibold text-slate-800">My Leave Requests</h3>
+          </div>
           <button onClick={() => { setForm(initForm); setModal(true); }}
             className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm shadow-brand-500/25">
             <Plus size={16} /> Apply Leave

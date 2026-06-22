@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, X, Send, ChevronDown } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import BackButton from '../components/BackButton';
 
 const STATUS_STYLE = { draft:'bg-slate-100 text-slate-600', submitted:'bg-amber-100 text-amber-700', approved:'bg-emerald-100 text-emerald-700', rejected:'bg-red-100 text-red-700' };
 
@@ -57,6 +58,9 @@ export default function Timesheets() {
 
   return (
     <div className="space-y-5">
+      <div className="pt-5 pb-1">
+        <BackButton to="/time-tracker" label="Time Tracker" />
+      </div>
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
           <div>

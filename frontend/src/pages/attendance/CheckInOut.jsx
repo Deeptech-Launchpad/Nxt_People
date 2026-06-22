@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Clock, MapPin, CheckCircle, LogIn, LogOut, Navigation, AlertTriangle, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAttendance } from '../../context/AttendanceContext';
+import BackButton from '../../components/BackButton';
 
 function useGeolocation() {
   const [position, setPosition] = useState(null);
@@ -62,6 +63,9 @@ export default function CheckInOut() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
+      <div className="pt-5 pb-1">
+        <BackButton to="/attendance" label="Attendance" />
+      </div>
       {/* Clock card */}
       <div className="bg-white rounded-2xl p-8 border border-slate-100 shadow-sm text-center relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-brand-50/50 to-transparent pointer-events-none" />
@@ -74,28 +78,13 @@ export default function CheckInOut() {
           </div>
           <p className="text-slate-700 font-semibold">{dateStr}</p>
 
-          {/* GPS Status */}
-          <div className={`flex items-center justify-center gap-2 mt-3 text-xs px-3 py-1.5 rounded-full w-fit mx-auto border ${position ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : gpsLoading ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
-            {gpsLoading ? (
-              <><Navigation size={11} className="animate-pulse" /> Locating...</>
-            ) : position ? (
-              <><MapPin size={11} /> Location Ready</>
-            ) : (
-              <><AlertTriangle size={11} /> Location unavailable
-                <button onClick={refreshGps} className="ml-1 underline">retry</button>
-              </>
-            )}
+          {/* Work Mode Status */}
+          <div className="flex items-center justify-center gap-2 mt-3 text-xs px-3 py-1.5 rounded-full w-fit mx-auto border bg-blue-50 border-blue-200 text-blue-700">
+            <MapPin size={11} /> Work Mode: Office
           </div>
         </div>
       </div>
 
-      {/* GPS warning banner */}
-      {gpsWarning && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2 text-amber-700 text-sm">
-          <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
-          <span>Check-in recorded with location warning: {gpsWarning}</span>
-        </div>
-      )}
 
       {/* Attendance card */}
       <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
@@ -129,12 +118,10 @@ export default function CheckInOut() {
             {!record?.checkIn && (
               <button onClick={handleCheckIn} disabled={actionLoading}
                 className="w-full bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-3 text-lg transition-all shadow-lg shadow-brand-500/30 disabled:opacity-60 mb-3 active:scale-[0.99]">
-                {gpsLoading ? (
-                  <><div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span>Getting location...</span></>
-                ) : actionLoading ? (
+                {actionLoading ? (
                   <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
-                  <><LogIn size={22} /><span>Check In {position ? '📍' : ''}</span></>
+                  <><LogIn size={22} /><span>Check In</span></>
                 )}
               </button>
             )}
@@ -143,12 +130,10 @@ export default function CheckInOut() {
             {isCheckedIn && (
               <button onClick={handleCheckOut} disabled={actionLoading}
                 className="w-full bg-gradient-to-r from-rose-500 to-rose-400 hover:from-rose-400 hover:to-rose-300 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-3 text-lg transition-all shadow-lg shadow-rose-500/25 disabled:opacity-60 active:scale-[0.99]">
-                {gpsLoading ? (
-                  <><div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span>Getting location...</span></>
-                ) : actionLoading ? (
+                {actionLoading ? (
                   <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
-                  <><LogOut size={22} /><span>Check Out {position ? '📍' : ''}</span></>
+                  <><LogOut size={22} /><span>Check Out</span></>
                 )}
               </button>
             )}
@@ -174,7 +159,7 @@ export default function CheckInOut() {
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <h3 className="font-display font-semibold text-slate-800 mb-3 text-sm">Attendance Policy</h3>
         <div className="space-y-2">
-          {[['Standard Hours', '9:00 AM – 6:00 PM'], ['Grace Period', '15 minutes'], ['Late Mark', 'After 9:30 AM'], ['Half Day', 'Less than 4 hours'], ['GPS Check-In', position ? 'Active 📍' : 'Location not shared']].map(([k, v]) => (
+          {[['Standard Hours', '9:00 AM – 6:00 PM'], ['Grace Period', '15 minutes'], ['Late Mark', 'After 9:30 AM'], ['Half Day', 'Less than 4 hours'], ['Work Mode', 'Office / Work From Home']].map(([k, v]) => (
             <div key={k} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
               <span className="text-slate-500 text-xs">{k}</span>
               <span className="text-slate-700 text-xs font-medium">{v}</span>

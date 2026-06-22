@@ -432,4 +432,176 @@ const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
   });
 };
 
-module.exports = { sendOnboardingEmail, sendLeaveApprovalEmail, sendCheckOutReminderEmail, sendMail };
+/**
+ * Check-In Reminder Email — sent automatically at 9 AM each working day.
+ */
+const sendCheckInReminderEmail = async ({ to, employeeName }) => {
+  const transporter = createTransporter();
+  const safeEmployeeName = escapeHtml(employeeName || 'Employee');
+  const checkInLink = safeUrl((process.env.FRONTEND_URL || 'https://ur.altiusnxt.tech') + '/attendance/my');
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Good Morning - Check-In Reminder</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; color: #1e293b; }
+    .wrapper { max-width: 620px; margin: 32px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .header { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 32px 40px; text-align: center; color: #ffffff; }
+    .header-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .header-subtitle { font-size: 13px; opacity: 0.95; }
+    .body { padding: 36px 40px; }
+    .greeting { font-size: 16px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
+    .content { font-size: 14px; color: #475569; line-height: 1.7; margin-bottom: 20px; }
+    .cta-box { background: #eff6ff; border: 2px solid #3b82f6; border-radius: 10px; padding: 24px; margin: 24px 0; text-align: center; }
+    .cta-box-title { font-size: 14px; font-weight: 600; color: #1e40af; margin-bottom: 16px; }
+    .cta-btn { display: inline-block; background: #3b82f6; color: #ffffff !important; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 700; }
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; text-align: center; font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div style="display:inline-block; background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:8px; margin-bottom:12px;">
+        <span style="font-size:16px; font-weight:800; letter-spacing:0.5px;">NXT PEOPLE</span>
+      </div>
+      <div class="header-title">Good Morning! ☀️</div>
+      <div class="header-subtitle">Don't forget to check in for today</div>
+    </div>
+    <div class="body">
+      <p class="greeting">Hello ${safeEmployeeName},</p>
+      <p class="content">Wishing you a productive day ahead! Please remember to mark your attendance by checking in on NXT People.</p>
+      <div class="cta-box">
+        <div class="cta-box-title">Mark Your Attendance</div>
+        <a href="${checkInLink}" target="_blank" class="cta-btn">Check In Now</a>
+      </div>
+      <div class="divider"></div>
+      <p style="font-size:12px; color:#64748b;">This is an automated daily reminder from NXT People. Please do not reply to this email.</p>
+    </div>
+    <div class="footer"><strong>NXT People</strong> · Your HR Management System</div>
+  </div>
+</body>
+</html>`;
+
+  await transporter.sendMail({
+    from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
+    to: sanitizeRecipients(to),
+    subject: 'Good Morning! Please check in for the day — NXT People',
+    html,
+    text: `Good morning ${safeEmployeeName},\n\nPlease remember to check in for the day on NXT People.\n\nCheck in here: ${checkInLink}\n\nHave a productive day!\n— NXT People`,
+  });
+};
+
+/**
+ * Leave Status Email — sent to the requesting employee when their leave
+ * is approved at an intermediate level, fully approved, or rejected.
+ * status: 'partial' | 'approved' | 'rejected'
+ */
+const sendLeaveStatusEmail = async ({ to, employeeName, leaveType, startDate, totalDays, status, approverName, reason }) => {
+  const transporter = createTransporter();
+  const safeEmployeeName = escapeHtml(employeeName || 'Employee');
+  const safeLeaveType    = escapeHtml(leaveType    || 'Leave');
+  const safeStartDate    = escapeHtml(startDate    || '');
+  const safeDays         = String(Number(totalDays) || 0);
+  const safeApprover     = escapeHtml(approverName || 'your approver');
+  const safeReason       = escapeHtml(reason       || '');
+  const trackLink        = safeUrl((process.env.FRONTEND_URL || 'https://ur.altiusnxt.tech') + '/leave-tracker/summary');
+
+  const cfg = {
+    partial: {
+      gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      accentBg: '#fffbeb', border: '#fbbf24', btnColor: '#f59e0b',
+      icon: '⏳', title: 'Approval In Progress',
+      subtitle: 'Your request has been approved at one level',
+      body: `Your <strong>${safeLeaveType}</strong> leave from <strong>${safeStartDate}</strong> (${safeDays} day${Number(safeDays) !== 1 ? 's' : ''}) has been approved by ${safeApprover} and is now awaiting the next level of approval.`,
+      btnText: 'Track Status',
+    },
+    approved: {
+      gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+      accentBg: '#f0fdf4', border: '#6ee7b7', btnColor: '#10b981',
+      icon: '✅', title: 'Leave Approved',
+      subtitle: 'Your leave request has been fully approved',
+      body: `Great news! Your <strong>${safeLeaveType}</strong> leave from <strong>${safeStartDate}</strong> (${safeDays} day${Number(safeDays) !== 1 ? 's' : ''}) has been fully approved. Enjoy your time off!`,
+      btnText: 'View Leave Summary',
+    },
+    rejected: {
+      gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+      accentBg: '#fef2f2', border: '#fca5a5', btnColor: '#ef4444',
+      icon: '❌', title: 'Leave Request Rejected',
+      subtitle: 'Your leave request could not be approved',
+      body: `Your <strong>${safeLeaveType}</strong> leave from <strong>${safeStartDate}</strong> (${safeDays} day${Number(safeDays) !== 1 ? 's' : ''}) has been rejected.${safeReason ? `<br/><strong>Reason:</strong> ${safeReason}` : ''} Please contact your manager or HR for more details.`,
+      btnText: 'View Leave Tracker',
+    },
+  };
+
+  const c = cfg[status] || cfg.approved;
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>${c.title}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; color: #1e293b; }
+    .wrapper { max-width: 620px; margin: 32px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .header { background: ${c.gradient}; padding: 32px 40px; text-align: center; color: #ffffff; }
+    .header-icon { font-size: 36px; margin-bottom: 12px; }
+    .header-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .header-subtitle { font-size: 13px; opacity: 0.95; }
+    .body { padding: 36px 40px; }
+    .greeting { font-size: 16px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
+    .message-box { background: ${c.accentBg}; border: 1px solid ${c.border}; border-radius: 10px; padding: 20px; margin: 20px 0; font-size: 14px; color: #475569; line-height: 1.7; }
+    .cta-box { text-align: center; margin: 24px 0; }
+    .cta-btn { display: inline-block; background: ${c.btnColor}; color: #ffffff !important; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 700; }
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; text-align: center; font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div style="display:inline-block; background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:8px; margin-bottom:12px;">
+        <span style="font-size:16px; font-weight:800; letter-spacing:0.5px;">NXT PEOPLE</span>
+      </div>
+      <div class="header-icon">${c.icon}</div>
+      <div class="header-title">${c.title}</div>
+      <div class="header-subtitle">${c.subtitle}</div>
+    </div>
+    <div class="body">
+      <p class="greeting">Hello ${safeEmployeeName},</p>
+      <div class="message-box">${c.body}</div>
+      <div class="cta-box">
+        <a href="${trackLink}" target="_blank" class="cta-btn">${c.btnText}</a>
+      </div>
+      <div class="divider"></div>
+      <p style="font-size:12px; color:#64748b;">This is an automated notification from NXT People. Please do not reply to this email.</p>
+    </div>
+    <div class="footer"><strong>NXT People</strong> · Your HR Management System</div>
+  </div>
+</body>
+</html>`;
+
+  const plainBody = status === 'partial'
+    ? `Your ${leaveType} leave from ${startDate} (${safeDays} days) has been approved by ${approverName || 'your approver'} and is awaiting the next level.`
+    : status === 'approved'
+    ? `Your ${leaveType} leave from ${startDate} (${safeDays} days) has been fully approved.`
+    : `Your ${leaveType} leave from ${startDate} (${safeDays} days) was rejected.${reason ? ` Reason: ${reason}` : ''}`;
+
+  await transporter.sendMail({
+    from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
+    to: sanitizeRecipients(to),
+    subject: `${c.title} — ${safeLeaveType} Leave (${safeStartDate})`,
+    html,
+    text: `Hello ${safeEmployeeName},\n\n${plainBody}\n\nTrack your leave: ${trackLink}\n\n— NXT People`,
+  });
+};
+
+module.exports = { sendOnboardingEmail, sendLeaveApprovalEmail, sendCheckOutReminderEmail, sendCheckInReminderEmail, sendLeaveStatusEmail, sendMail };

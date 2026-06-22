@@ -10,11 +10,11 @@ import {
 const NAV_ITEMS = [
   { to: '/',                         icon: Home,         label: 'Home',         end: true,
     matches: p => p === '/' || ['/dashboard','/calendar','/team-space','/team/','/organization','/org-chart','/dept-tree','/announcements','/policies','/birthdays','/new-hires','/directory','/companies','/profile','/approvals','/employees','/registrations','/chat','/exit','/settings'].some(x => p.startsWith(x)) },
-  { to: '/attendance/my',            icon: CalendarCheck,label: 'Attendance',
+  { to: '/attendance',            icon: CalendarCheck,label: 'Attendance',
     matches: p => p.startsWith('/attendance') },
-  { to: '/time-tracker/timelogs',    icon: Clock,        label: 'Time\nTracker',
+  { to: '/time-tracker',    icon: Clock,        label: 'Time\nTracker',
     matches: p => p.startsWith('/time-tracker') },
-  { to: '/leave-tracker/summary',    icon: CalendarDays, label: 'Leave\nTracker',
+  { to: '/leave-tracker',    icon: CalendarDays, label: 'Leave\nTracker',
     matches: p => p.startsWith('/leave-tracker') || p === '/leave' || p.startsWith('/wfh') || p.startsWith('/comp-off') || p.startsWith('/leave-calendar') || p.startsWith('/leave-encashment') },
   // Performance is intentionally disabled — feature isn't built out yet.
   // Visible in the sidebar so users see it's planned, but the click is
@@ -33,14 +33,15 @@ const NAV_ITEMS = [
 
 const labelStyle = {
   fontFamily: "'Lato', sans-serif",
-  fontSize: '9px',
-  fontWeight: 700,
+  fontSize: '10px',
+  fontWeight: 600,
   letterSpacing: '0.02em',
-  lineHeight: '1.3',
+  lineHeight: '1.2',
   textAlign: 'center',
   whiteSpace: 'pre-line',
   padding: '0 3px',
   textTransform: 'uppercase',
+  color: 'rgba(255,255,255,0.8)',
 };
 
 const NavItem = ({ item }) => {
