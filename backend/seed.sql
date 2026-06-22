@@ -15,7 +15,7 @@ ON CONFLICT DO NOTHING;
 -- Default Users (Password is 'password123' hashed with bcrypt)
 INSERT INTO employees (id, first_name, last_name, email, password, role, department, designation, employee_id, company, division, shift_id, has_accepted) 
 VALUES
-('33333333-0000-0000-0000-000000000001', 'Admin', 'User', 'balaji@altiusnxt.com', '$2a$12$YCpeBnyT89EDfz.F6i936.nYbAdIp0M3Wc8E9nifiuNj/AIWQKeHi', 'super_admin', 'HR', 'HR Director', 'NXT1001', 'Nxt People Corp', 'HR', '22222222-0000-0000-0000-000000000000', true),
+('33333333-0000-0000-0000-000000000001', 'Admin', 'User', 'balaji@altiusnxt.com', '$2a$12$YCpeBnyT89EDfz.F6i936.nYbAdIp0M3Wc8E9nifiuNj/AIWQKeHi', 'admin', 'HR', 'HR Director', 'NXT1001', 'Nxt People Corp', 'HR', '22222222-0000-0000-0000-000000000000', true),
 ('33333333-0000-0000-0000-000000000002', 'Sarah', 'Johnson', 'sanjana@altiusnxt.com', '$2a$12$YCpeBnyT89EDfz.F6i936.nYbAdIp0M3Wc8E9nifiuNj/AIWQKeHi', 'manager', 'Engineering', 'Engineering Manager', 'NXT1002', 'Nxt People Corp', 'Engineering', '22222222-0000-0000-0000-000000000000', true),
 ('33333333-0000-0000-0000-000000000003', 'Michael', 'Chen', 'saranya@altiusnxt.com', '$2a$12$YCpeBnyT89EDfz.F6i936.nYbAdIp0M3Wc8E9nifiuNj/AIWQKeHi', 'employee', 'Engineering', 'Senior Developer', 'NXT1003', 'Nxt People Corp', 'Engineering', '22222222-0000-0000-0000-000000000000', true)
 ON CONFLICT DO NOTHING;
