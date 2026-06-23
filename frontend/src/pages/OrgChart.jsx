@@ -398,15 +398,19 @@ export default function OrgChart() {
   const extraRoots = [];
   for (const emp of employees) {
     if (reachable.has(emp._id)) continue;
-    // Walk upward until we revisit a node (cycle) or hit a dead end.
+    // Walk upward; prev tracks the last node so we know whose pointer
+    // closes the cycle — that is the erroneous upward edge to sever.
     const seen = new Set();
     let cur = emp;
+    let prev = null;
     while (cur && !reachable.has(cur._id) && !seen.has(cur._id)) {
       seen.add(cur._id);
+      prev = cur;
       cur = cur.reportingManagerId ? empMap[cur.reportingManagerId] : null;
     }
-    // cur is the cycle entry point if stopped on a seen node; else use emp.
-    const cycleHead = (cur && seen.has(cur._id)) ? cur : emp;
+    // prev's reportingManagerId is the bad upward pointer closing the cycle.
+    // Making prev the root severs that edge and restores the correct flow.
+    const cycleHead = (cur && seen.has(cur._id) && prev) ? prev : (prev || emp);
     // Sever the upward edge so navigation does not loop.
     const mgrId = cycleHead.reportingManagerId;
     if (mgrId && childrenOf[mgrId]) {
