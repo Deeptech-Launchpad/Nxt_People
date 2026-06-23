@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Copy, Trash2, RefreshCw, Users } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import BackButton from '../components/BackButton';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const SHIFT_COLORS = ['bg-brand-100 text-brand-700 border-brand-200', 'bg-emerald-100 text-emerald-700 border-emerald-200', 'bg-purple-100 text-purple-700 border-purple-200', 'bg-amber-100 text-amber-700 border-amber-200', 'bg-pink-100 text-pink-700 border-pink-200'];
@@ -94,6 +95,9 @@ export default function ShiftRoster() {
 
   return (
     <div className="space-y-5">
+      <div className="pt-5 pb-1">
+        <BackButton to="/reports" label="Reports" />
+      </div>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>

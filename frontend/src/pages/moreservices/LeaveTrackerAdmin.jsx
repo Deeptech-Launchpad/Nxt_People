@@ -131,48 +131,65 @@ export default function LeaveTrackerAdmin() {
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-h-[calc(100vh-12rem)]">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col min-h-[calc(100vh-12rem)]">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-4">
+      <div className="px-7 py-5 border-b border-slate-100 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={() => navigate('/more-services/operations')} className="text-slate-400 hover:text-slate-700 transition-colors">
-            <ArrowLeft size={18} />
+          <button onClick={() => navigate('/more-services/operations')} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <ArrowLeft size={20} />
           </button>
           <div>
-            <h2 className="text-[15px] font-bold text-slate-800">Leave Tracker</h2>
-            <p className="text-[12px] text-slate-400">All employee leave requests · {total} record{total !== 1 ? 's' : ''}</p>
+            <h2 className="text-18px font-bold text-slate-900">Leave Tracker</h2>
+            <p className="text-13px text-slate-500">All employee leave requests · {total} record{total !== 1 ? 's' : ''}</p>
           </div>
         </div>
-        <button onClick={() => setShowApply(true)} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors">
-          <Plus size={15} /> Add Request
+        <button onClick={() => setShowApply(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-14px font-semibold transition-colors shadow-sm">
+          <Plus size={16} /> Add Request
         </button>
       </div>
 
-      {/* Filters — status is a dropdown (Zoho "All Requests" style), not tabs */}
-      <div className="px-6 py-3 flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/50">
-        <span className="flex items-center gap-1 text-[12px] text-slate-400 font-medium"><Filter size={13} /> Filters</span>
-        <select value={tab} onChange={e => setTab(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-slate-700 bg-white focus:outline-none focus:border-blue-400">
-          {STATUS_OPTIONS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-        </select>
-        <select value={leaveType} onChange={e => setLeaveType(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-blue-400">
+      {/* Status Cards Grid */}
+      <div className="px-7 py-6 border-b border-slate-100 bg-slate-50">
+        <p className="text-13px font-semibold text-slate-700 mb-4">Filter by Status</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+          {STATUS_OPTIONS.map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => { setTab(opt.key); setPage(1); }}
+              className={`p-4 rounded-xl border-2 transition-all text-center ${
+                tab === opt.key
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              <p className="text-14px font-semibold">{opt.label}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Advanced Filters */}
+      <div className="px-7 py-4 flex flex-wrap items-center gap-3 border-b border-slate-100 bg-white">
+        <span className="flex items-center gap-2 text-13px text-slate-600 font-semibold"><Filter size={15} /> Advanced Filters</span>
+        <select value={leaveType} onChange={e => setLeaveType(e.target.value)} className="border border-slate-200 rounded-lg px-3.5 py-2 text-13px font-medium text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:border-blue-400 transition-colors">
           {LEAVE_TYPES.map(lt => <option key={lt.code} value={lt.code}>{lt.label}</option>)}
         </select>
-        <select value={department} onChange={e => setDepartment(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-blue-400">
+        <select value={department} onChange={e => setDepartment(e.target.value)} className="border border-slate-200 rounded-lg px-3.5 py-2 text-13px font-medium text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:border-blue-400 transition-colors">
           <option value="">All Departments</option>
           {departments.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select value={employeeId} onChange={e => setEmployeeId(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-blue-400 max-w-[200px]">
+        <select value={employeeId} onChange={e => setEmployeeId(e.target.value)} className="border border-slate-200 rounded-lg px-3.5 py-2 text-13px font-medium text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:border-blue-400 transition-colors max-w-xs">
           <option value="">All Employees</option>
           {directory.map(e => <option key={e._id} value={e._id}>{e.firstName} {e.lastName}{e.employeeId ? ` (${e.employeeId})` : ''}</option>)}
         </select>
-        <div className="flex items-center gap-1">
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} title="From" className="border border-slate-200 rounded-lg px-2 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-blue-400" />
-          <span className="text-slate-300 text-xs">–</span>
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} title="To" className="border border-slate-200 rounded-lg px-2 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-blue-400" />
+        <div className="flex items-center gap-2">
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} title="From Date" className="border border-slate-200 rounded-lg px-3 py-2 text-13px font-medium bg-white hover:border-slate-300 focus:outline-none focus:border-blue-400 transition-colors" />
+          <span className="text-slate-300 text-sm">to</span>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} title="To Date" className="border border-slate-200 rounded-lg px-3 py-2 text-13px font-medium bg-white hover:border-slate-300 focus:outline-none focus:border-blue-400 transition-colors" />
         </div>
         {(leaveType || department || employeeId || startDate || endDate) && (
           <button onClick={() => { setLeaveType(''); setDepartment(''); setEmployeeId(''); setStartDate(''); setEndDate(''); }}
-            className="text-[12px] text-blue-600 hover:text-blue-700 font-medium ml-1">Clear</button>
+            className="text-13px text-blue-600 hover:text-blue-700 font-semibold transition-colors">Clear All</button>
         )}
       </div>
 
@@ -180,69 +197,69 @@ export default function LeaveTrackerAdmin() {
       <div className="flex-1 overflow-x-auto">
         <table className="w-full text-left">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-              <th className="px-5 py-3">Status</th>
-              <th className="px-5 py-3">Employee Name</th>
-              <th className="px-5 py-3">Leave Type</th>
-              <th className="px-5 py-3">Type</th>
-              <th className="px-5 py-3">Leave Period</th>
-              <th className="px-5 py-3">Days Taken</th>
-              <th className="px-5 py-3">Date of Request</th>
-              <th className="px-5 py-3 text-right">Action</th>
+            <tr className="bg-slate-50 border-b border-slate-100 text-12px font-bold text-slate-600 uppercase tracking-wider">
+              <th className="px-6 py-4">Status</th>
+              <th className="px-6 py-4">Employee</th>
+              <th className="px-6 py-4">Leave Type</th>
+              <th className="px-6 py-4">Category</th>
+              <th className="px-6 py-4">Period</th>
+              <th className="px-6 py-4">Duration</th>
+              <th className="px-6 py-4">Requested On</th>
+              <th className="px-6 py-4 text-right">Action</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-50">
+          <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={8} className="px-5 py-16 text-center"><div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" /></td></tr>
+              <tr><td colSpan={8} className="px-6 py-16 text-center"><div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" /></td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400 text-[13px]">No leave requests found</td></tr>
+              <tr><td colSpan={8} className="px-6 py-16 text-center text-slate-400 text-14px">No leave requests found</td></tr>
             ) : visible.map(l => (
-              <tr key={l._id} className="hover:bg-slate-50/70 transition-colors cursor-pointer" onClick={() => openDetail(l)}>
-                <td className="px-5 py-3.5"><StatusCell status={l.status} /></td>
-                <td className="px-5 py-3.5">
-                  <p className="text-[13px] font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
-                  <p className="text-[11px] text-slate-400 font-mono">{l.employee?.employeeId}</p>
+              <tr key={l._id} className="hover:bg-slate-50 transition-colors cursor-pointer border-slate-50" onClick={() => openDetail(l)}>
+                <td className="px-6 py-4"><StatusCell status={l.status} /></td>
+                <td className="px-6 py-4">
+                  <p className="text-14px font-semibold text-slate-800">{l.employee?.firstName} {l.employee?.lastName}</p>
+                  <p className="text-12px text-slate-500 font-mono">{l.employee?.employeeId}</p>
                 </td>
-                <td className="px-5 py-3.5 text-[13px] text-slate-600">{TYPE_LABEL[l.leaveType] || l.leaveType}</td>
-                <td className="px-5 py-3.5">
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${l.leaveType === 'unpaid' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                <td className="px-6 py-4 text-14px font-medium text-slate-700">{TYPE_LABEL[l.leaveType] || l.leaveType}</td>
+                <td className="px-6 py-4">
+                  <span className={`text-12px font-bold px-2.5 py-1 rounded-full ${l.leaveType === 'unpaid' ? 'bg-slate-100 text-slate-700' : 'bg-emerald-50 text-emerald-700'}`}>
                     {l.leaveType === 'unpaid' ? 'Unpaid' : 'Paid'}
                   </span>
                 </td>
-                <td className="px-5 py-3.5 text-[12.5px] text-slate-600">
+                <td className="px-6 py-4 text-14px text-slate-700">
                   {l.leaveType === 'permission'
                     ? `${fmt(l.startDate)} · ${(l.startTime || '').slice(0,5)}–${(l.endTime || '').slice(0,5)}`
                     : `${fmt(l.startDate)} – ${fmt(l.endDate)}`}
                 </td>
-                <td className="px-5 py-3.5 text-[13px] text-slate-600">
+                <td className="px-6 py-4 text-14px font-semibold text-slate-700">
                   {l.leaveType === 'permission'
                     ? `${l.hours ?? 0}h`
                     : `${l.totalDays} Day${l.totalDays !== 1 ? 's' : ''}`}
                 </td>
-                <td className="px-5 py-3.5 text-[12.5px] text-slate-500">{fmt(l.createdAt)}</td>
-                <td className="px-5 py-3.5">
-                  <div className="flex items-center justify-end gap-1.5">
+                <td className="px-6 py-4 text-13px text-slate-600">{fmt(l.createdAt)}</td>
+                <td className="px-6 py-4">
+                  <div className="flex items-center justify-end gap-2">
                     {l.status === 'pending' && (
                       <>
                         <button onClick={(e) => { e.stopPropagation(); act(l._id, 'approved'); }}
-                          className="flex items-center gap-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors">
-                          <CheckCircle2 size={13} /> Approve
+                          className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-12px font-bold transition-colors">
+                          <CheckCircle2 size={14} /> Approve
                         </button>
                         {canApproveAll && (
                           <button onClick={(e) => { e.stopPropagation(); act(l._id, 'approved', undefined, true); }}
-                            className="flex items-center gap-1 bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors">
-                            <CheckCheck size={13} /> Approve All
+                            className="flex items-center gap-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-12px font-bold transition-colors">
+                            <CheckCheck size={14} /> Approve All
                           </button>
                         )}
                         <button onClick={(e) => { e.stopPropagation(); act(l._id, 'rejected'); }}
-                          className="flex items-center gap-1 bg-rose-50 text-rose-500 hover:bg-rose-100 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors">
-                          <XCircle size={13} /> Reject
+                          className="flex items-center gap-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 px-3 py-1.5 rounded-lg text-12px font-bold transition-colors">
+                          <XCircle size={14} /> Reject
                         </button>
                       </>
                     )}
                     <button onClick={(e) => { e.stopPropagation(); openDetail(l); }}
-                      className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors">
-                      View
+                      className="bg-slate-100 text-slate-700 hover:bg-slate-200 px-4 py-1.5 rounded-lg text-12px font-bold transition-colors">
+                      View Details
                     </button>
                   </div>
                 </td>
@@ -253,14 +270,14 @@ export default function LeaveTrackerAdmin() {
       </div>
 
       {/* Pagination */}
-      <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-between">
-        <p className="text-[12px] text-slate-500">
-          {total === 0 ? '0' : `${(page - 1) * limit + 1}–${Math.min(page * limit, total)}`} of {total}
+      <div className="px-7 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+        <p className="text-13px font-medium text-slate-600">
+          {total === 0 ? 'No records' : `Showing ${(page - 1) * limit + 1}–${Math.min(page * limit, total)} of ${total} requests`}
         </p>
-        <div className="flex items-center gap-2">
-          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"><ChevronLeft size={15} /></button>
-          <span className="text-[12px] text-slate-500">Page {page} / {totalPages}</span>
-          <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"><ChevronRight size={15} /></button>
+        <div className="flex items-center gap-3">
+          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-white disabled:opacity-40 disabled:text-slate-400 transition-colors" title="Previous page"><ChevronLeft size={16} /></button>
+          <span className="text-13px font-semibold text-slate-700 min-w-[120px] text-center">Page {page} of {totalPages}</span>
+          <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-white disabled:opacity-40 disabled:text-slate-400 transition-colors" title="Next page"><ChevronRight size={16} /></button>
         </div>
       </div>
 

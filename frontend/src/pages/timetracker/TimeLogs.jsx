@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import BackButton from '../../components/BackButton';
 
 function weekStart(offset = 0) {
   const d = new Date();
@@ -41,6 +42,7 @@ export default function TimeLogs() {
 
   return (
     <div className="p-6 max-w-5xl space-y-5">
+      <BackButton to="/time-tracker" label="Time Tracker" />
       {/* Week nav */}
       <div className="flex items-center gap-3">
         <button onClick={() => setWeek(w => w - 1)} className="w-7 h-7 border border-slate-200 rounded hover:bg-slate-50 flex items-center justify-center text-slate-500">

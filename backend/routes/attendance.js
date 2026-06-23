@@ -4,6 +4,7 @@ const logger = require('../logger');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
+const { sendCheckOutReminderEmail } = require('../utils/mailer');
 
 router.use(protect);
 
@@ -841,6 +842,78 @@ router.get('/location', async (req, res) => {
   } catch (err) {
     logger.error({ err: err.message }, '[attendance] location history failed');
     res.status(500).json({ success: false, message: 'Failed to load location history' });
+  }
+});
+
+// ── POST send check-out reminder email ──────────────────────────────────────────
+// Endpoint for HR/Admin to send check-out reminders to employee(s).
+// Used to remind employees to log out of Zoho and update daily production report.
+router.post('/reminder/checkout', authorize('admin', 'director'), async (req, res) => {
+  try {
+    const { employeeIds } = req.body;
+    if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'employeeIds array is required' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, email, first_name AS "firstName", last_name AS "lastName"
+       FROM employees
+       WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND status = 'active'`,
+      [employeeIds]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid employee emails found' });
+    }
+
+    const successCount = await Promise.all(
+      result.rows.map(emp =>
+        sendCheckOutReminderEmail({
+          to: emp.email,
+          employeeName: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+        })
+          .then(() => 1)
+          .catch(err => {
+            logger.warn({ err: err.message, employeeId: emp.id }, '[attendance] checkout reminder email failed');
+            return 0;
+          })
+      )
+    ).then(counts => counts.reduce((a, b) => a + b, 0));
+
+    res.json({
+      success: true,
+      message: `Check-out reminders sent to ${successCount} of ${result.rows.length} employee(s)`,
+      sent: successCount,
+      total: result.rows.length,
+    });
+  } catch (err) {
+    logger.error({ err: err.message }, '[attendance] checkout reminder endpoint failed');
+    res.status(500).json({ success: false, message: 'Failed to send reminders' });
+  }
+});
+
+// ── POST send checkout reminder to self ──────────────────────────────────────────
+// Employee can request their own check-out reminder email.
+router.post('/reminder/checkout-self', async (req, res) => {
+  try {
+    const empRes = await pool.query(
+      `SELECT email, first_name AS "firstName", last_name AS "lastName" FROM employees WHERE id = $1`,
+      [req.user._id]
+    );
+    if (!empRes.rows[0]?.email) {
+      return res.status(400).json({ success: false, message: 'No email address on file' });
+    }
+
+    const emp = empRes.rows[0];
+    await sendCheckOutReminderEmail({
+      to: emp.email,
+      employeeName: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+    });
+
+    res.json({ success: true, message: 'Check-out reminder email sent' });
+  } catch (err) {
+    logger.error({ err: err.message }, '[attendance] self checkout reminder failed');
+    res.status(500).json({ success: false, message: 'Failed to send reminder' });
   }
 });
 

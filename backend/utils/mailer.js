@@ -221,4 +221,387 @@ const sendMail = async ({ to, subject, text, html }) => {
   });
 };
 
-module.exports = { sendOnboardingEmail, sendMail };
+/**
+ * Leave Approval Email — sent to approvers with a direct approval link.
+ * Includes employee info, leave details, and a clickable approval button.
+ */
+const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, endDate, totalDays, reason, approvalLink }) => {
+  const transporter = createTransporter();
+  const dateRange = `${new Date(startDate).toLocaleDateString('en-IN')} ${endDate !== startDate ? `– ${new Date(endDate).toLocaleDateString('en-IN')}` : ''}`;
+  const safeEmployeeName = escapeHtml(employeeName || 'Employee');
+  const safeLeaveType = escapeHtml(leaveType || 'Leave');
+  const safeDateRange = escapeHtml(dateRange);
+  const safeReason = escapeHtml(reason || 'No reason provided');
+  const safeLink = safeUrl(approvalLink);
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Leave Approval Required</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; color: #1e293b; }
+    .wrapper { max-width: 620px; margin: 32px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .header { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); padding: 32px 40px; text-align: center; color: #ffffff; }
+    .header-title { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+    .header-subtitle { font-size: 14px; opacity: 0.9; }
+    .body { padding: 36px 40px; }
+    .greeting { font-size: 18px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
+    .details { background: #f8fafc; border-radius: 10px; padding: 20px; margin: 20px 0; border-left: 4px solid #3b82f6; }
+    .detail-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; margin-bottom: 12px; font-size: 14px; }
+    .detail-row:last-child { margin-bottom: 0; }
+    .detail-label { font-weight: 600; color: #475569; }
+    .detail-value { color: #1e293b; }
+    .cta-box { background: #eff6ff; border: 2px solid #3b82f6; border-radius: 10px; padding: 24px; margin: 24px 0; text-align: center; }
+    .cta-box-title { font-size: 15px; font-weight: 600; color: #1e40af; margin-bottom: 16px; }
+    .cta-btn { display: inline-block; background: #3b82f6; color: #ffffff !important; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: 0.3px; }
+    .cta-btn:hover { background: #2563eb; }
+    .alt-text { font-size: 12px; color: #64748b; margin-top: 12px; }
+    .alt-text a { color: #3b82f6; text-decoration: none; }
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; text-align: center; font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div style="display:inline-block; background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:8px; margin-bottom:16px;">
+        <span style="font-size:18px; font-weight:800; letter-spacing:0.5px;">NXT PEOPLE</span>
+      </div>
+      <div class="header-title">Leave Approval Required</div>
+      <div class="header-subtitle">Please review and approve the following request</div>
+    </div>
+
+    <div class="body">
+      <p class="greeting">Hi,</p>
+      <p style="font-size:14px; color:#475569; line-height:1.7; margin-bottom:16px;"><strong>${safeEmployeeName}</strong> has requested <strong>${safeLeaveType}</strong> leave for your review and approval.</p>
+
+      <div class="details">
+        <div class="detail-row">
+          <span class="detail-label">Employee</span>
+          <span class="detail-value">${safeEmployeeName}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Leave Type</span>
+          <span class="detail-value" style="text-transform:capitalize;">${safeLeaveType}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Duration</span>
+          <span class="detail-value">${safeDateRange} (${totalDays} day${totalDays !== 1 ? 's' : ''})</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Reason</span>
+          <span class="detail-value">${safeReason}</span>
+        </div>
+      </div>
+
+      <div class="cta-box">
+        <div class="cta-box-title">Take Action</div>
+        <a href="${safeLink}" class="cta-btn">Click Here to Approve</a>
+        <p class="alt-text">Can't click the button? Copy this link:<br/><a href="${safeLink}">${safeLink}</a></p>
+      </div>
+
+      <p style="font-size:13px; color:#475569; line-height:1.6;">You can also visit <strong>NXT People → Team → Approvals</strong> to review all pending requests and take action.</p>
+
+      <div class="divider"></div>
+      <p style="font-size:12px; color:#64748b;">This is an automated notification. Please do not reply to this email.</p>
+    </div>
+
+    <div class="footer">
+      <strong>NXT People</strong> · Your HR Management System
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+  await transporter.sendMail({
+    from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
+    to: sanitizeRecipients(to),
+    subject: `[Action Required] ${safeEmployeeName} - ${safeLeaveType} Leave Approval`,
+    html,
+    text: `Leave Approval Required\n\n${safeEmployeeName} has requested ${safeLeaveType} leave (${safeDateRange}, ${totalDays} day(s)).\n\nReason: ${safeReason}\n\nClick here to approve: ${safeLink}\n\nOr visit NXT People → Team → Approvals`,
+  });
+};
+
+/**
+ * Check-Out Reminder Email — sent to employees at end of day to remind them
+ * to log out of Zoho portal and update their daily production report.
+ */
+const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
+  const transporter = createTransporter();
+  const safeEmployeeName = escapeHtml(employeeName || 'Employee');
+  const reportLink = 'https://ur.altiusnxt.tech/login';
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Daily Reminder - Check Out & Update Report</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; color: #1e293b; }
+    .wrapper { max-width: 620px; margin: 32px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 32px 40px; text-align: center; color: #ffffff; }
+    .header-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .header-subtitle { font-size: 13px; opacity: 0.95; }
+    .body { padding: 36px 40px; }
+    .greeting { font-size: 16px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
+    .content { font-size: 14px; color: #475569; line-height: 1.7; }
+    .content p { margin-bottom: 14px; }
+    .checklist { background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 10px; padding: 20px; margin: 20px 0; }
+    .checklist-item { display: flex; gap: 12px; margin-bottom: 14px; font-size: 14px; color: #166534; }
+    .checklist-item:last-child { margin-bottom: 0; }
+    .checklist-icon { font-size: 18px; flex-shrink-0; }
+    .checklist-text { flex: 1; }
+    .cta-box { background: #ecfdf5; border: 2px solid #10b981; border-radius: 10px; padding: 24px; margin: 24px 0; text-align: center; }
+    .cta-box-title { font-size: 14px; font-weight: 600; color: #065f46; margin-bottom: 16px; }
+    .cta-btn { display: inline-block; background: #10b981; color: #ffffff !important; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 700; }
+    .cta-btn:hover { background: #059669; }
+    .note { font-size: 13px; color: #64748b; background: #f8fafc; border-radius: 8px; padding: 16px; margin: 20px 0; border-left: 4px solid #10b981; }
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; text-align: center; font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div style="display:inline-block; background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:8px; margin-bottom:12px;">
+        <span style="font-size:16px; font-weight:800; letter-spacing:0.5px;">NXT PEOPLE</span>
+      </div>
+      <div class="header-title">Daily Reminder</div>
+      <div class="header-subtitle">Time to wrap up and prepare for tomorrow</div>
+    </div>
+
+    <div class="body">
+      <p class="greeting">Hello ${safeEmployeeName},</p>
+
+      <p class="content">As you wrap up your workday, please complete the following tasks:</p>
+
+      <div class="checklist">
+        <div class="checklist-item">
+          <div class="checklist-icon">🚪</div>
+          <div class="checklist-text">
+            <strong>Log out of the Zoho Portal</strong><br/>
+            Please ensure you are logged out of your Zoho account to maintain security and privacy.
+          </div>
+        </div>
+        <div class="checklist-item">
+          <div class="checklist-icon">📝</div>
+          <div class="checklist-text">
+            <strong>Update your Daily Production Report</strong><br/>
+            Record your work, tasks completed, and any notes in the production reporting tool.
+          </div>
+        </div>
+      </div>
+
+      <div class="cta-box">
+        <div class="cta-box-title">Update Your Report</div>
+        <a href="${reportLink}" target="_blank" class="cta-btn">Click Here to Update</a>
+      </div>
+
+      <div class="note">
+        <strong>⏰ Quick Reminder:</strong> Keeping your daily reports up-to-date helps the team track progress and plan upcoming work. Thank you for your diligence!
+      </div>
+
+      <p class="content">If you have any questions or need assistance, please don't hesitate to reach out to your manager or the HR team.</p>
+
+      <div class="divider"></div>
+      <p style="font-size:12px; color:#64748b;">Wishing you a productive day!<br/>— NXT People</p>
+    </div>
+
+    <div class="footer">
+      <strong>NXT People</strong> · Your HR Management System
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+  await transporter.sendMail({
+    from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
+    to: sanitizeRecipients(to),
+    subject: 'Log-Out of Zoho Portal & Update Daily Production Report',
+    html,
+    text: `Daily Reminder\n\nHello ${safeEmployeeName},\n\nPlease remember to:\n\n1. Log out of the Zoho Portal\n2. Update your Daily Production Report\n\nUpdate your report here: ${reportLink}\n\nThank you!`,
+  });
+};
+
+/**
+ * Check-In Reminder Email — sent automatically at 9 AM each working day.
+ */
+const sendCheckInReminderEmail = async ({ to, employeeName }) => {
+  const transporter = createTransporter();
+  const safeEmployeeName = escapeHtml(employeeName || 'Employee');
+  const checkInLink = safeUrl((process.env.FRONTEND_URL || 'https://ur.altiusnxt.tech') + '/attendance/my');
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Good Morning - Check-In Reminder</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; color: #1e293b; }
+    .wrapper { max-width: 620px; margin: 32px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .header { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 32px 40px; text-align: center; color: #ffffff; }
+    .header-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .header-subtitle { font-size: 13px; opacity: 0.95; }
+    .body { padding: 36px 40px; }
+    .greeting { font-size: 16px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
+    .content { font-size: 14px; color: #475569; line-height: 1.7; margin-bottom: 20px; }
+    .cta-box { background: #eff6ff; border: 2px solid #3b82f6; border-radius: 10px; padding: 24px; margin: 24px 0; text-align: center; }
+    .cta-box-title { font-size: 14px; font-weight: 600; color: #1e40af; margin-bottom: 16px; }
+    .cta-btn { display: inline-block; background: #3b82f6; color: #ffffff !important; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 700; }
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; text-align: center; font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div style="display:inline-block; background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:8px; margin-bottom:12px;">
+        <span style="font-size:16px; font-weight:800; letter-spacing:0.5px;">NXT PEOPLE</span>
+      </div>
+      <div class="header-title">Good Morning! ☀️</div>
+      <div class="header-subtitle">Don't forget to check in for today</div>
+    </div>
+    <div class="body">
+      <p class="greeting">Hello ${safeEmployeeName},</p>
+      <p class="content">Wishing you a productive day ahead! Please remember to mark your attendance by checking in on NXT People.</p>
+      <div class="cta-box">
+        <div class="cta-box-title">Mark Your Attendance</div>
+        <a href="${checkInLink}" target="_blank" class="cta-btn">Check In Now</a>
+      </div>
+      <div class="divider"></div>
+      <p style="font-size:12px; color:#64748b;">This is an automated daily reminder from NXT People. Please do not reply to this email.</p>
+    </div>
+    <div class="footer"><strong>NXT People</strong> · Your HR Management System</div>
+  </div>
+</body>
+</html>`;
+
+  await transporter.sendMail({
+    from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
+    to: sanitizeRecipients(to),
+    subject: 'Good Morning! Please check in for the day — NXT People',
+    html,
+    text: `Good morning ${safeEmployeeName},\n\nPlease remember to check in for the day on NXT People.\n\nCheck in here: ${checkInLink}\n\nHave a productive day!\n— NXT People`,
+  });
+};
+
+/**
+ * Leave Status Email — sent to the requesting employee when their leave
+ * is approved at an intermediate level, fully approved, or rejected.
+ * status: 'partial' | 'approved' | 'rejected'
+ */
+const sendLeaveStatusEmail = async ({ to, employeeName, leaveType, startDate, totalDays, status, approverName, reason }) => {
+  const transporter = createTransporter();
+  const safeEmployeeName = escapeHtml(employeeName || 'Employee');
+  const safeLeaveType    = escapeHtml(leaveType    || 'Leave');
+  const safeStartDate    = escapeHtml(startDate    || '');
+  const safeDays         = String(Number(totalDays) || 0);
+  const safeApprover     = escapeHtml(approverName || 'your approver');
+  const safeReason       = escapeHtml(reason       || '');
+  const trackLink        = safeUrl((process.env.FRONTEND_URL || 'https://ur.altiusnxt.tech') + '/leave-tracker/summary');
+
+  const cfg = {
+    partial: {
+      gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      accentBg: '#fffbeb', border: '#fbbf24', btnColor: '#f59e0b',
+      icon: '⏳', title: 'Approval In Progress',
+      subtitle: 'Your request has been approved at one level',
+      body: `Your <strong>${safeLeaveType}</strong> leave from <strong>${safeStartDate}</strong> (${safeDays} day${Number(safeDays) !== 1 ? 's' : ''}) has been approved by ${safeApprover} and is now awaiting the next level of approval.`,
+      btnText: 'Track Status',
+    },
+    approved: {
+      gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+      accentBg: '#f0fdf4', border: '#6ee7b7', btnColor: '#10b981',
+      icon: '✅', title: 'Leave Approved',
+      subtitle: 'Your leave request has been fully approved',
+      body: `Great news! Your <strong>${safeLeaveType}</strong> leave from <strong>${safeStartDate}</strong> (${safeDays} day${Number(safeDays) !== 1 ? 's' : ''}) has been fully approved. Enjoy your time off!`,
+      btnText: 'View Leave Summary',
+    },
+    rejected: {
+      gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+      accentBg: '#fef2f2', border: '#fca5a5', btnColor: '#ef4444',
+      icon: '❌', title: 'Leave Request Rejected',
+      subtitle: 'Your leave request could not be approved',
+      body: `Your <strong>${safeLeaveType}</strong> leave from <strong>${safeStartDate}</strong> (${safeDays} day${Number(safeDays) !== 1 ? 's' : ''}) has been rejected.${safeReason ? `<br/><strong>Reason:</strong> ${safeReason}` : ''} Please contact your manager or HR for more details.`,
+      btnText: 'View Leave Tracker',
+    },
+  };
+
+  const c = cfg[status] || cfg.approved;
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>${c.title}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; color: #1e293b; }
+    .wrapper { max-width: 620px; margin: 32px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .header { background: ${c.gradient}; padding: 32px 40px; text-align: center; color: #ffffff; }
+    .header-icon { font-size: 36px; margin-bottom: 12px; }
+    .header-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .header-subtitle { font-size: 13px; opacity: 0.95; }
+    .body { padding: 36px 40px; }
+    .greeting { font-size: 16px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
+    .message-box { background: ${c.accentBg}; border: 1px solid ${c.border}; border-radius: 10px; padding: 20px; margin: 20px 0; font-size: 14px; color: #475569; line-height: 1.7; }
+    .cta-box { text-align: center; margin: 24px 0; }
+    .cta-btn { display: inline-block; background: ${c.btnColor}; color: #ffffff !important; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 700; }
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; text-align: center; font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div style="display:inline-block; background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:8px; margin-bottom:12px;">
+        <span style="font-size:16px; font-weight:800; letter-spacing:0.5px;">NXT PEOPLE</span>
+      </div>
+      <div class="header-icon">${c.icon}</div>
+      <div class="header-title">${c.title}</div>
+      <div class="header-subtitle">${c.subtitle}</div>
+    </div>
+    <div class="body">
+      <p class="greeting">Hello ${safeEmployeeName},</p>
+      <div class="message-box">${c.body}</div>
+      <div class="cta-box">
+        <a href="${trackLink}" target="_blank" class="cta-btn">${c.btnText}</a>
+      </div>
+      <div class="divider"></div>
+      <p style="font-size:12px; color:#64748b;">This is an automated notification from NXT People. Please do not reply to this email.</p>
+    </div>
+    <div class="footer"><strong>NXT People</strong> · Your HR Management System</div>
+  </div>
+</body>
+</html>`;
+
+  const plainBody = status === 'partial'
+    ? `Your ${leaveType} leave from ${startDate} (${safeDays} days) has been approved by ${approverName || 'your approver'} and is awaiting the next level.`
+    : status === 'approved'
+    ? `Your ${leaveType} leave from ${startDate} (${safeDays} days) has been fully approved.`
+    : `Your ${leaveType} leave from ${startDate} (${safeDays} days) was rejected.${reason ? ` Reason: ${reason}` : ''}`;
+
+  await transporter.sendMail({
+    from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
+    to: sanitizeRecipients(to),
+    subject: `${c.title} — ${safeLeaveType} Leave (${safeStartDate})`,
+    html,
+    text: `Hello ${safeEmployeeName},\n\n${plainBody}\n\nTrack your leave: ${trackLink}\n\n— NXT People`,
+  });
+};
+
+module.exports = { sendOnboardingEmail, sendLeaveApprovalEmail, sendCheckOutReminderEmail, sendCheckInReminderEmail, sendLeaveStatusEmail, sendMail };

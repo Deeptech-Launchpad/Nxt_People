@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import BackButton from '../../components/BackButton';
 
 /* ── Status config ────────────────────────────────────────────── */
 const STATUS = {
@@ -253,6 +254,7 @@ export default function TimeTrackerProjects() {
 
   return (
     <div className="p-6 space-y-5 max-w-6xl">
+      <BackButton to="/time-tracker" label="Time Tracker" />
       {/* Stats banner */}
       <div className="grid grid-cols-4 gap-4">
         {[

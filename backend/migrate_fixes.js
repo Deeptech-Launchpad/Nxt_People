@@ -310,6 +310,33 @@ const steps = [
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_blacklisted        BOOLEAN DEFAULT FALSE`,
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS status_applied_at     TIMESTAMPTZ`,
 
+  // ── Configurable weekend rules — Google-Calendar-style recurrence so HR
+  //    can declare which days/weeks count as weekends without touching code.
+  //    Each rule is OR'd together: a date is a weekend if ANY active rule matches.
+  //    MUST be created here (before the ALTERs below + the holidays FK) so a
+  //    fresh database has the table in place when those statements run.
+  `CREATE TABLE IF NOT EXISTS weekend_rules (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            VARCHAR(255) NOT NULL,
+    -- ['sun','mon','tue','wed','thu','fri','sat'] — which weekdays the rule applies to.
+    days_of_week    JSONB NOT NULL DEFAULT '[]',
+    -- [] or null = every week; otherwise only those weeks of the month, where
+    -- 1 = first occurrence of the weekday in the month, ..., 5 = fifth.
+    weeks_of_month  JSONB DEFAULT '[]',
+    -- How many weeks between repetitions (1 = every week, 2 = every other, etc.).
+    interval_weeks  INTEGER NOT NULL DEFAULT 1,
+    start_date      DATE NOT NULL DEFAULT CURRENT_DATE,
+    -- 'never' | 'on' | 'after' — matches the Google-Calendar UI options.
+    end_type        VARCHAR(10) NOT NULL DEFAULT 'never',
+    end_date        DATE,
+    end_count       INTEGER,
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by      UUID REFERENCES employees(id),
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_weekend_rules_active ON weekend_rules(is_active)`,
+
   // ── Weekend rule: future compensation flag ────────────────────────────────
   // When TRUE, this recurring weekend rule will later be made up for by a
   // Working Day Exception. The exception's "Select Compensated Holiday"
@@ -588,30 +615,8 @@ const steps = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_announcement_reads_employee ON announcement_reads(employee_id)`,
 
-  // ── Configurable weekend rules — Google-Calendar-style recurrence so HR
-  //    can declare which days/weeks count as weekends without touching code.
-  //    Each rule is OR'd together: a date is a weekend if ANY active rule matches.
-  `CREATE TABLE IF NOT EXISTS weekend_rules (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name            VARCHAR(255) NOT NULL,
-    -- ['sun','mon','tue','wed','thu','fri','sat'] — which weekdays the rule applies to.
-    days_of_week    JSONB NOT NULL DEFAULT '[]',
-    -- [] or null = every week; otherwise only those weeks of the month, where
-    -- 1 = first occurrence of the weekday in the month, ..., 5 = fifth.
-    weeks_of_month  JSONB DEFAULT '[]',
-    -- How many weeks between repetitions (1 = every week, 2 = every other, etc.).
-    interval_weeks  INTEGER NOT NULL DEFAULT 1,
-    start_date      DATE NOT NULL DEFAULT CURRENT_DATE,
-    -- 'never' | 'on' | 'after' — matches the Google-Calendar UI options.
-    end_type        VARCHAR(10) NOT NULL DEFAULT 'never',
-    end_date        DATE,
-    end_count       INTEGER,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    created_by      UUID REFERENCES employees(id),
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_weekend_rules_active ON weekend_rules(is_active)`,
+  // (weekend_rules table + index are created earlier, before the ALTERs that
+  //  depend on it — see the "Configurable weekend rules" block above.)
 
   // ── MFA (TOTP) — opt-in per user. Stored as base32 secret + bcrypt-hashed
   //    backup codes so a DB leak doesn't expose either. mfa_enabled flips to

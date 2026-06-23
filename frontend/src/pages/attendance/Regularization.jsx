@@ -3,6 +3,7 @@ import { Plus, X, CheckCircle, XCircle, Clock, AlertTriangle, Send, Eye } from '
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
+import BackButton from '../../components/BackButton';
 import { isApprover } from '../../utils/roles';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
 
@@ -96,6 +97,9 @@ export default function Regularization() {
 
   return (
     <div className="space-y-5">
+      <div className="pt-5 pb-1">
+        <BackButton to="/attendance" label="Attendance" />
+      </div>
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
           <div>

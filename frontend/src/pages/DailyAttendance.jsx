@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Download, Filter, RefreshCw } from 'lucide-react';
 import api from '../utils/api';
+import BackButton from '../components/BackButton';
 
 /**
  * Daily Attendance — today-focused live snapshot for admin / manager.
@@ -106,6 +107,9 @@ export default function DailyAttendance() {
 
   return (
     <div className="space-y-5">
+      <div className="pt-5 pb-1">
+        <BackButton to="/reports" label="Reports" />
+      </div>
       {/* ── Filters card ───────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
         <div className="flex flex-wrap gap-3 items-end">

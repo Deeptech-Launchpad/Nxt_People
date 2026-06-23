@@ -6,7 +6,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { reportsScope, isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
 const { createLevels, getLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
-const { sendMail } = require('../utils/mailer');
+const { sendMail, sendLeaveApprovalEmail, sendLeaveStatusEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const { countWorkingDays } = require('../utils/workingDays');
 const logger = require('../logger');
@@ -363,21 +363,26 @@ router.post('/', [
         '/approvals'
       ).catch(err => logger.warn({ err: err.message }, '[leaves] notify approver failed'))));
 
-      // Emails to all approvers (soft-fail; SMTP may be unconfigured).
-      const dateRangeLabel = `${new Date(startDate).toLocaleDateString('en-IN')} – ${new Date(endDate).toLocaleDateString('en-IN')}`;
-      await Promise.all(approvers.filter(a => a.email).map(a => sendMail({
-        to: a.email,
-        subject: `Leave approval required — ${empName}`,
-        text: `${empName} has requested ${leaveType} leave (${dateRangeLabel}, ${totalDays} day(s)). Reason: ${reason}. Review it in NXT People → Approvals.`,
-        html: `<p>Hi ${a.firstName || 'there'},</p>
-               <p><strong>${empName}</strong> has requested <strong>${leaveType}</strong> leave.</p>
-               <ul>
-                 <li><strong>Dates:</strong> ${dateRangeLabel}</li>
-                 <li><strong>Days:</strong> ${totalDays}</li>
-                 <li><strong>Reason:</strong> ${reason}</li>
-               </ul>
-               <p>Please review it in <strong>NXT People → Approvals</strong>.</p>`,
-      }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))));
+      // Emails to all approvers with direct approval link (soft-fail; SMTP may be unconfigured).
+      const baseUrl = process.env.APP_URL || 'https://nxtpeople.altiusnxt.tech';
+      const leaveTypeDisplay = leaveType === 'permission' ? 'Permission' :
+                               leaveType === 'comp_off' ? 'Compensatory Off' :
+                               leaveType.charAt(0).toUpperCase() + leaveType.slice(1) + ' Leave';
+      const approvalTab = leaveType === 'permission' ? 'permissions' : 'leaves';
+      const approvalLink = `${baseUrl}/approvals?tab=${approvalTab}`;
+
+      await Promise.all(approvers.filter(a => a.email).map(a =>
+        sendLeaveApprovalEmail({
+          to: a.email,
+          employeeName: empName,
+          leaveType: leaveTypeDisplay,
+          startDate,
+          endDate,
+          totalDays,
+          reason,
+          approvalLink,
+        }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))
+      ));
     } catch (e) { logger.error({ err: e.message }, '[leaves] notify/feed soft-fail'); }
 
     res.status(201).json({ success: true, data: ins.rows[0], message: 'Leave applied successfully' });
@@ -483,6 +488,23 @@ router.put('/:id/action', authorize('admin', 'director', 'manager'), async (req,
         try { await pool.query(`INSERT INTO feeds (employee_id,type,title,body,icon) VALUES ($1,'leave_approved','Leave Approved ✓',$2,'✅')`, [leave.employee_id, `Your ${leaveLabel} leave from ${startLabel} has been approved.`]); }
         catch (err) { logger.warn({ err: err.message }, '[leaves] feed insert (approved) failed'); }
       }
+      try {
+        const empRes = await pool.query(
+          `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE id=$1`,
+          [leave.employee_id]
+        );
+        if (empRes.rows[0]?.email) {
+          await sendLeaveStatusEmail({
+            to: empRes.rows[0].email,
+            employeeName: empRes.rows[0].name,
+            leaveType: leaveLabel,
+            startDate: startLabel,
+            totalDays: leave.total_days,
+            status: result.allApproved ? 'approved' : 'partial',
+            approverName: result.allApproved ? null : (`${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || null),
+          });
+        }
+      } catch (e) { logger.warn({ err: e.message }, '[leaves] employee status email failed'); }
       await logAudit(req, { action: 'APPROVE', resource: 'Leave', resourceId: leave.id, changes: { allApproved: result.allApproved } });
       return res.json({
         success: true,
@@ -523,6 +545,23 @@ router.put('/:id/action', authorize('admin', 'director', 'manager'), async (req,
     );
     try { await pool.query(`INSERT INTO feeds (employee_id,type,title,body,icon) VALUES ($1,'leave_rejected','Leave Rejected',$2,'❌')`, [leave.employee_id, `Your ${leaveLabel} leave from ${startLabel} was rejected.`]); }
     catch (err) { logger.warn({ err: err.message }, '[leaves] feed insert (rejected) failed'); }
+    try {
+      const empRes = await pool.query(
+        `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE id=$1`,
+        [leave.employee_id]
+      );
+      if (empRes.rows[0]?.email) {
+        await sendLeaveStatusEmail({
+          to: empRes.rows[0].email,
+          employeeName: empRes.rows[0].name,
+          leaveType: leaveLabel,
+          startDate: startLabel,
+          totalDays: leave.total_days,
+          status: 'rejected',
+          reason: rejectionReason,
+        });
+      }
+    } catch (e) { logger.warn({ err: e.message }, '[leaves] employee rejection email failed'); }
     await logAudit(req, { action: 'REJECT', resource: 'Leave', resourceId: leave.id, changes: { status: 'rejected', rejectionReason } });
     return res.json({ success: true, status: 'rejected', message: 'Leave rejected.' });
 

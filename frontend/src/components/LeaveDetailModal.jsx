@@ -36,7 +36,7 @@ function DetailRow({ icon: Icon, label, children }) {
     <div className="flex items-start gap-3 py-2.5 border-b border-slate-50 last:border-0">
       <Icon size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">{label}</p>
         <div className="text-[13px] text-slate-700 mt-0.5">{children}</div>
       </div>
     </div>
@@ -63,7 +63,7 @@ function BalanceCard({ leave, balanceCards }) {
     <div className="bg-white border border-slate-200 rounded-xl p-4">
       <div className="flex items-center justify-between mb-2">
         <p className="text-[12px] font-bold text-slate-700">{isPerm ? 'Permission Balance' : 'Leave Balance'}</p>
-        <span className="text-[11px] text-slate-400">{TYPE_LABEL[leave.leaveType] || leave.leaveType}</span>
+        <span className="text-[11px] text-slate-600">{TYPE_LABEL[leave.leaveType] || leave.leaveType}</span>
       </div>
       <Row label={isPerm ? 'Available this month' : 'Available balance'} value={unlimited ? 'Unlimited' : `${avail}${u}`} />
       <Row label="Current booking" value={`${booking}${u}`} />
@@ -136,7 +136,7 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                 {emp?.employeeId && <DetailRow icon={Hash} label="Employee ID">{emp.employeeId}</DetailRow>}
                 {empName && (
                   <DetailRow icon={User} label="Employee">
-                    {empName}{emp.department && <span className="ml-2 text-[11px] text-slate-400">{emp.department}</span>}
+                    {empName}{emp.department && <span className="ml-2 text-[11px] text-slate-600">{emp.department}</span>}
                   </DetailRow>
                 )}
                 <DetailRow icon={FileText} label={isReg ? 'Request Type' : 'Leave Type'}>
@@ -154,14 +154,14 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                   <>
                     <DetailRow icon={Calendar} label="Date">{fmtDate(leave.startDate)}</DetailRow>
                     <DetailRow icon={Clock} label="Time">
-                      {(leave.startTime || '').slice(0, 5) || '—'} <span className="text-slate-400">–</span> {(leave.endTime || '').slice(0, 5) || '—'}
+                      {(leave.startTime || '').slice(0, 5) || '—'} <span className="text-slate-600">–</span> {(leave.endTime || '').slice(0, 5) || '—'}
                     </DetailRow>
                     <DetailRow icon={Clock} label="Duration">{leave.hours ? `${leave.hours} hour${Number(leave.hours) !== 1 ? 's' : ''}` : '—'}</DetailRow>
                   </>
                 ) : (
                   <>
                     <DetailRow icon={Calendar} label="Dates">
-                      {fmtDate(leave.startDate)} <span className="text-slate-400">→</span> {fmtDate(leave.endDate)}
+                      {fmtDate(leave.startDate)} <span className="text-slate-600">→</span> {fmtDate(leave.endDate)}
                     </DetailRow>
                     <DetailRow icon={Clock} label="Duration">{leave.totalDays} day{leave.totalDays !== 1 ? 's' : ''}</DetailRow>
                   </>

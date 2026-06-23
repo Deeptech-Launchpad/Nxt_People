@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BarChart2, Download, RefreshCw, DollarSign, Clock, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import BackButton from '../components/BackButton';
 import * as XLSX from 'xlsx';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -64,6 +65,9 @@ export default function PayrollReport() {
 
   return (
     <div className="space-y-5">
+      <div className="pt-5 pb-1">
+        <BackButton to="/reports" label="Reports" />
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-display font-bold text-slate-800 text-xl">Payroll Report</h2>

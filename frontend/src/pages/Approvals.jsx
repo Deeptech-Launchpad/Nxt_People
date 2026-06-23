@@ -36,7 +36,7 @@ export default function Approvals() {
   // Approve All is available to HR / Super Admin and Team Leads (managers).
   // Managers are still scoped server-side to requests they actually approve.
   const canApproveAll = ['admin', 'director', 'manager'].includes(user?.role);
-  const [data, setData] = useState({ leaves: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], total: 0 });
+  const [data, setData] = useState({ leaves: [], permissions: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('leaves');
   // Last-seen count per tab — persisted to localStorage so the badge
@@ -64,10 +64,15 @@ export default function Approvals() {
     api.get('/approvals/pending')
       .then(res => {
         const d = res.data.data || {};
+        const allLeaves = d.leaves || [];
         const approved = (d.approvedLeaves || []).filter(l => l.status === 'approved');
         const rejected = (d.approvedLeaves || []).filter(l => l.status === 'rejected');
+        // Separate permission leaves from other leave types
+        const permissions = allLeaves.filter(l => l.leaveType === 'permission');
+        const leaves = allLeaves.filter(l => l.leaveType !== 'permission');
         setData({
-          leaves: d.leaves || [],
+          leaves,
+          permissions,
           timesheets: d.timesheets || [],
           regularizations: d.regularizations || [],
           wfhRequests: d.wfhRequests || [],
@@ -104,11 +109,13 @@ export default function Approvals() {
   const leaveTypeColors = {
     casual: 'bg-blue-50 text-blue-700',
     comp_off: 'bg-green-50 text-green-700',
-    unpaid: 'bg-slate-50 text-slate-600'
+    unpaid: 'bg-slate-50 text-slate-600',
+    permission: 'bg-purple-50 text-purple-700'
   };
 
   const TABS = [
     ['leaves', 'Leave Requests', data.leaves?.length],
+    ['permissions', 'Permissions', data.permissions?.length],
     ['approvedLeaves', 'Approved Leaves', data.approvedLeaves?.length],
     ['rejectedLeaves', 'Rejected Leaves', data.rejectedLeaves?.length],
     ['timesheets', 'Timesheets', data.timesheets?.length],
@@ -167,7 +174,7 @@ export default function Approvals() {
   const EmptyState = ({ icon: Icon, message }) => (
     <div className="text-center py-16">
       <Icon size={40} className="text-slate-200 mx-auto mb-3" />
-      <p className="text-slate-400">{message}</p>
+      <p className="text-slate-600">{message}</p>
     </div>
   );
 
@@ -178,9 +185,9 @@ export default function Approvals() {
         {[
           ['Total Pending', data.total, 'bg-amber-50 text-amber-700'],
           ['Leaves', data.leaves?.length, 'bg-blue-50 text-blue-700'],
+          ['Permissions', data.permissions?.length, 'bg-purple-50 text-purple-700'],
           ['Timesheets', data.timesheets?.length, 'bg-brand-50 text-brand-700'],
-          ['Regularizations', data.regularizations?.length, 'bg-purple-50 text-purple-700'],
-          ['WFH / Comp-Off', (data.wfhRequests?.length || 0) + (data.compOffs?.length || 0), 'bg-indigo-50 text-indigo-700'],
+          ['Regularizations', data.regularizations?.length, 'bg-slate-50 text-slate-600'],
         ].map(([l, v, c]) => (
           <div key={l} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
             <p className="text-xs text-slate-500 mb-2">{l}</p>
@@ -223,7 +230,7 @@ export default function Approvals() {
                   onChange={e => setSearchFilter(e.target.value)}
                   className="pl-8 pr-3 py-1.5 w-48 border border-slate-200 rounded-lg text-[13px] outline-none focus:border-brand-400"
                 />
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
               </div>
             )}
             <button onClick={load} className="p-2 text-slate-400 hover:text-brand-600 transition-colors">
@@ -250,22 +257,22 @@ export default function Approvals() {
                        <div>
                          <div className="flex items-center gap-2 flex-wrap">
                            <p className="font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
-                           <span className="text-xs text-slate-400">{l.employee?.employeeId}</span>
-                           <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
+                           <span className="text-xs text-slate-600">{l.employee?.employeeId}</span>
+                           <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                            {l.status === 'pending' && l.approvalLevels?.length > 0 && (
                               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
                                 {l.approvalLevels.filter(a => a.status === 'approved').length} of {l.approvalLevels.length} level{l.approvalLevels.length !== 1 ? 's' : ''} approved
                               </span>
                             )}
                          </div>
-                         <p className="text-sm text-slate-500 mt-1 capitalize">
+                         <p className="text-sm text-slate-700 mt-1 capitalize">
                            {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
                            {l.isHalfDay && <span className="ml-1 text-xs bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
                         <p className="text-sm text-slate-600 mt-0.5">
                           {new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(l.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-slate-400 mt-1">{l.reason}</p>
+                        <p className="text-xs text-slate-600 mt-1">{l.reason}</p>
                       </div>
                      </div>
                      <div className="flex items-center gap-2 flex-shrink-0">
@@ -273,6 +280,46 @@ export default function Approvals() {
                          <Eye size={13} /> View
                        </button>
                        <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                     </div>
+                   </div>
+                ))
+            )}
+
+            {/* Permissions */}
+            {tab === 'permissions' && (
+              data.permissions?.length === 0
+                ? <EmptyState icon={CheckCircle} message="No pending permission requests" />
+                : data.permissions?.map(p => (
+                  <div key={p._id} className="p-5 flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold ${leaveTypeColors[p.leaveType] || 'bg-slate-50 text-slate-600'}`}>
+                        {p.leaveType?.[0]?.toUpperCase()}
+                      </div>
+                       <div>
+                         <div className="flex items-center gap-2 flex-wrap">
+                           <p className="font-semibold text-slate-700">{p.employee?.firstName} {p.employee?.lastName}</p>
+                           <span className="text-xs text-slate-600">{p.employee?.employeeId}</span>
+                           <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{p.employee?.department}</span>
+                           {p.status === 'pending' && p.approvalLevels?.length > 0 && (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-200">
+                                {p.approvalLevels.filter(a => a.status === 'approved').length} of {p.approvalLevels.length} level{p.approvalLevels.length !== 1 ? 's' : ''} approved
+                              </span>
+                            )}
+                         </div>
+                         <p className="text-sm text-slate-500 mt-1 capitalize">
+                           Permission · {p.hours}h {p.startTime && p.endTime && `(${(p.startTime || '').slice(0,5)}–${(p.endTime || '').slice(0,5)})`}
+                         </p>
+                        <p className="text-sm text-slate-600 mt-0.5">
+                          {new Date(p.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1">{p.reason}</p>
+                      </div>
+                     </div>
+                     <div className="flex items-center gap-2 flex-shrink-0">
+                       <button onClick={() => setDetailLeave(p)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                         <Eye size={13} /> View
+                       </button>
+                       <ActionBtns endpoint="leaves" id={p._id} type="Permission" canActLeave={p.canAct} status={p.status} />
                      </div>
                    </div>
                 ))
@@ -291,17 +338,17 @@ export default function Approvals() {
                        <div>
                          <div className="flex items-center gap-2 flex-wrap">
                            <p className="font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
-                           <span className="text-xs text-slate-400">{l.employee?.employeeId}</span>
-                           <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
+                           <span className="text-xs text-slate-600">{l.employee?.employeeId}</span>
+                           <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                          </div>
-                         <p className="text-sm text-slate-500 mt-1 capitalize">
+                         <p className="text-sm text-slate-700 mt-1 capitalize">
                            {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
                            {l.isHalfDay && <span className="ml-1 text-xs bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
                         <p className="text-sm text-slate-600 mt-0.5">
                           {new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(l.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-slate-400 mt-1">{l.reason}</p>
+                        <p className="text-xs text-slate-600 mt-1">{l.reason}</p>
                       </div>
                      </div>
                      <div className="flex items-center gap-2 flex-shrink-0">
@@ -327,17 +374,17 @@ export default function Approvals() {
                        <div>
                          <div className="flex items-center gap-2 flex-wrap">
                            <p className="font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
-                           <span className="text-xs text-slate-400">{l.employee?.employeeId}</span>
-                           <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
+                           <span className="text-xs text-slate-600">{l.employee?.employeeId}</span>
+                           <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                          </div>
-                         <p className="text-sm text-slate-500 mt-1 capitalize">
+                         <p className="text-sm text-slate-700 mt-1 capitalize">
                            {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
                            {l.isHalfDay && <span className="ml-1 text-xs bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
                         <p className="text-sm text-slate-600 mt-0.5">
                           {new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(l.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-slate-400 mt-1">{l.reason}</p>
+                        <p className="text-xs text-slate-600 mt-1">{l.reason}</p>
                         {l.rejectionReason && (
                           <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2.5 py-1.5 mt-2 font-medium w-fit">
                             Rejection Reason: {l.rejectionReason}
@@ -394,7 +441,7 @@ export default function Approvals() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-slate-700">{r.employee?.firstName} {r.employee?.lastName}</p>
-                          <span className="text-xs text-slate-400">{r.employee?.employeeId}</span>
+                          <span className="text-xs text-slate-600">{r.employee?.employeeId}</span>
                           <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{r.employee?.department}</span>
                         </div>
                         <p className="text-sm text-slate-500 mt-1">
@@ -429,7 +476,7 @@ export default function Approvals() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-slate-700">{w.employee?.firstName} {w.employee?.lastName}</p>
-                          <span className="text-xs text-slate-400">{w.employee?.employeeId}</span>
+                          <span className="text-xs text-slate-600">{w.employee?.employeeId}</span>
                           <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{w.employee?.department}</span>
                         </div>
                         <p className="text-sm text-slate-500 mt-1">
@@ -456,7 +503,7 @@ export default function Approvals() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-slate-700">{c.employee?.firstName} {c.employee?.lastName}</p>
-                          <span className="text-xs text-slate-400">{c.employee?.employeeId}</span>
+                          <span className="text-xs text-slate-600">{c.employee?.employeeId}</span>
                           <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{c.employee?.department}</span>
                         </div>
                         <p className="text-sm text-slate-500 mt-1">

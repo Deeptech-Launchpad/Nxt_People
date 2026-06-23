@@ -43,6 +43,9 @@ const ORDER = [
   'migrate_fixes.js',                    // most recent additions (api_key_hash, announcement_reads, weekend_rules)
   'migrate_comp_off_rules.js',           // comp_offs.comp_off_date + expires_at (3-month validity)
   'migrate_settings_office_area.js',    // settings.office_area_name for location Work Mode keyword
+  'migrate_permission_hours.js',         // leaves.start_time/end_time/hours (Permission hourly leave)
+  'migrate_conference.js',               // conference_bookings (Operations → Conference hall booking)
+  'migrate_location_logs.js',            // attendance_location_logs (check-in/out location history)
   'migrate_rename_roles.js',             // rename roles: super_admin→admin, hr→director, employee→team_member
   'migrate_indexes.js',                  // perf indexes — run last
 ];

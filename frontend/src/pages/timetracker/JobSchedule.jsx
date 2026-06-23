@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import BackButton from '../../components/BackButton';
 
 const HOURS = Array.from({length: 9}, (_, i) => i + 9); // 9 AM – 5 PM
 const DAYS  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -9,6 +10,7 @@ export default function JobSchedule() {
 
   return (
     <div className="p-6 max-w-5xl space-y-4">
+      <BackButton to="/time-tracker" label="Time Tracker" />
       <div className="flex items-center gap-3">
         <button className="w-7 h-7 border border-slate-200 rounded hover:bg-slate-50 flex items-center justify-center text-slate-500"><ChevronLeft size={14}/></button>
         <span className="text-[13px] font-semibold text-slate-700">This Week</span>

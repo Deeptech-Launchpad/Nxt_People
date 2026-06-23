@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, X, Clock } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import BackButton from '../components/BackButton';
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const COLORS = ['#4F46E5','#0891B2','#7C3AED','#DC2626','#059669','#D97706','#DB2777'];
@@ -38,6 +39,9 @@ export default function Shifts() {
 
   return (
     <div className="space-y-5">
+      <div className="pt-5 pb-1">
+        <BackButton to="/reports" label="Reports" />
+      </div>
       <div className="flex justify-end">
         <button onClick={() => { setEditShift(null); setForm(initForm); setModal(true); }}
           className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm shadow-brand-500/25">
