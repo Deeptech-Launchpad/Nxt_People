@@ -32,7 +32,7 @@ router.get('/my', async (req, res) => {
 });
 
 // GET pending regularizations for the current approver (hierarchy-scoped).
-router.get('/pending', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.get('/pending', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
   try {
     // Full-access sees the whole pending queue; everyone else sees regularizations
     // where they are an assigned approver of a still-pending hierarchy level.
@@ -136,7 +136,7 @@ router.post('/', [
 // PUT approve/reject — hierarchy-based, identical engine to leaves.
 // The attendance patch runs only on FULL approval (all levels approved) and is
 // atomic with the status update.
-router.put('/:id/action', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
   const { action, rejectionReason } = req.body;
   if (!['approved', 'rejected'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Invalid action. Use: approved or rejected' });

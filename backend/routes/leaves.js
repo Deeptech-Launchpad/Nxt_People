@@ -90,7 +90,7 @@ router.get('/my', async (req, res) => {
 // size), and capping at 1000 when limit='all', which meant large orgs could
 // never see their tail. Now: COUNT(*) over the same WHERE for true total,
 // limit clamped to 200, no "all" shortcut.
-router.get('/', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.get('/', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
   try {
     const { status, department, employeeId, startDate, endDate } = req.query;
     const page  = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -398,7 +398,7 @@ router.post('/', [
 // is approved, and any rejection rejects the whole request. Per-level
 // bookkeeping lives in approval_levels (utils/leaveApproval.js); the
 // balance booking / refund here is unchanged from the previous workflow.
-router.put('/:id/action', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
   const { action, rejectionReason, approveAll } = req.body;
   if (!['approved', 'rejected'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Invalid action. Use: approved or rejected' });
