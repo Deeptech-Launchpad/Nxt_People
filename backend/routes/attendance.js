@@ -465,7 +465,7 @@ router.get('/my', async (req, res) => {
 });
 
 // ── GET team attendance ───────────────────────────────────────────────────────
-router.get('/team', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.get('/team', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
   try {
     const { date, department, employeeId } = req.query;
     const targetDate = date || todayStr();
