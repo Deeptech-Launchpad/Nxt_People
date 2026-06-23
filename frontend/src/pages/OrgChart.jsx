@@ -383,7 +383,20 @@ export default function OrgChart() {
     const mgr = e.reportingManagerId;
     if (mgr && empMap[mgr]) (childrenOf[mgr] = childrenOf[mgr] || []).push(e);
   }
-  const roots = employees.filter(e => !e.reportingManagerId || !empMap[e.reportingManagerId]);
+  const trueRoots = employees.filter(e => !e.reportingManagerId || !empMap[e.reportingManagerId]);
+  // Employees whose reporting chain forms a cycle have no path to a true root
+  // and are invisible in the tree. Mark everyone reachable from true roots and
+  // add any remaining employees as extra roots so they stay navigable.
+  const reachable = new Set();
+  const markReachable = (id) => {
+    if (reachable.has(id)) return;
+    reachable.add(id);
+    for (const child of (childrenOf[id] || [])) markReachable(child._id);
+  };
+  trueRoots.forEach(r => markReachable(r._id));
+  const roots = reachable.size < employees.length
+    ? [...trueRoots, ...employees.filter(e => !reachable.has(e._id))]
+    : trueRoots;
 
   /* ── Subtree size per employee (matches what Zoho's tree shows).
        Walks descendants once, memoised — so a 200-person org is still O(N).
