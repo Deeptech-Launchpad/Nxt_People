@@ -384,19 +384,38 @@ export default function OrgChart() {
     if (mgr && empMap[mgr]) (childrenOf[mgr] = childrenOf[mgr] || []).push(e);
   }
   const trueRoots = employees.filter(e => !e.reportingManagerId || !empMap[e.reportingManagerId]);
-  // Employees whose reporting chain forms a cycle have no path to a true root
-  // and are invisible in the tree. Mark everyone reachable from true roots and
-  // add any remaining employees as extra roots so they stay navigable.
+  // Some reporting_manager_id chains form cycles and are unreachable from any
+  // true root. For each such component walk upward to find the cycle entry
+  // point, sever its upward edge in childrenOf so navigation cannot loop,
+  // then add it as a single extra root so the whole subtree stays visible.
   const reachable = new Set();
-  const markReachable = (id) => {
+  const markFromRoot = (id) => {
     if (reachable.has(id)) return;
     reachable.add(id);
-    for (const child of (childrenOf[id] || [])) markReachable(child._id);
+    for (const child of (childrenOf[id] || [])) markFromRoot(child._id);
   };
-  trueRoots.forEach(r => markReachable(r._id));
-  const roots = reachable.size < employees.length
-    ? [...trueRoots, ...employees.filter(e => !reachable.has(e._id))]
-    : trueRoots;
+  trueRoots.forEach(r => markFromRoot(r._id));
+  const extraRoots = [];
+  for (const emp of employees) {
+    if (reachable.has(emp._id)) continue;
+    // Walk upward until we revisit a node (cycle) or hit a dead end.
+    const seen = new Set();
+    let cur = emp;
+    while (cur && !reachable.has(cur._id) && !seen.has(cur._id)) {
+      seen.add(cur._id);
+      cur = cur.reportingManagerId ? empMap[cur.reportingManagerId] : null;
+    }
+    // cur is the cycle entry point if stopped on a seen node; else use emp.
+    const cycleHead = (cur && seen.has(cur._id)) ? cur : emp;
+    // Sever the upward edge so navigation does not loop.
+    const mgrId = cycleHead.reportingManagerId;
+    if (mgrId && childrenOf[mgrId]) {
+      childrenOf[mgrId] = childrenOf[mgrId].filter(c => c._id !== cycleHead._id);
+    }
+    extraRoots.push(cycleHead);
+    markFromRoot(cycleHead._id);
+  }
+  const roots = extraRoots.length ? [...trueRoots, ...extraRoots] : trueRoots;
 
   /* ── Subtree size per employee (matches what Zoho's tree shows).
        Walks descendants once, memoised — so a 200-person org is still O(N).
