@@ -386,14 +386,20 @@ export default function OrgChart() {
   const roots = employees.filter(e => !e.reportingManagerId || !empMap[e.reportingManagerId]);
 
   /* ── Subtree size per employee (matches what Zoho's tree shows).
-       Walks descendants once, memoised — so a 200-person org is still O(N). */
+       Walks descendants once, memoised — so a 200-person org is still O(N).
+       computing Set guards against circular reporting_manager_id data so
+       a cycle doesn't cause an infinite recursion / blank page. */
   const subtreeSize = {};
+  const computing = new Set();
   const computeSubtree = (id) => {
     if (subtreeSize[id] != null) return subtreeSize[id];
+    if (computing.has(id)) return 0; // cycle — treat as leaf
+    computing.add(id);
     const kids = childrenOf[id] || [];
     let total = 0;
     for (const k of kids) total += 1 + computeSubtree(k._id);
     subtreeSize[id] = total;
+    computing.delete(id);
     return total;
   };
   employees.forEach(e => computeSubtree(e._id));
