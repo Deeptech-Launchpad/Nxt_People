@@ -47,6 +47,7 @@ export default function Approvals() {
   const [seenCounts, setSeenCounts] = useState(() => loadSeen());
   const [searchFilter, setSearchFilter] = useState('');
   const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
+  const [detailBalance, setDetailBalance] = useState(null); // balance cards for the detail modal
   const [actionLoading, setActionLoading] = useState('');
 
   // When the user clicks a tab, mark its current count as "seen" and
@@ -276,7 +277,13 @@ export default function Approvals() {
                       </div>
                      </div>
                      <div className="flex items-center gap-2 flex-shrink-0">
-                       <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                       <button onClick={() => {
+                         setDetailLeave(l); setDetailBalance(null);
+                         if (l.status === 'pending' && l.employee?._id) {
+                           api.get(`/leaves/balance?employeeId=${l.employee._id}&year=${new Date(l.startDate || Date.now()).getFullYear()}`)
+                             .then(r => setDetailBalance(r.data.data || [])).catch(() => setDetailBalance(null));
+                         }
+                       }} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
                          <Eye size={13} /> View
                        </button>
                        <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
@@ -316,7 +323,13 @@ export default function Approvals() {
                       </div>
                      </div>
                      <div className="flex items-center gap-2 flex-shrink-0">
-                       <button onClick={() => setDetailLeave(p)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                       <button onClick={() => {
+                         setDetailLeave(p); setDetailBalance(null);
+                         if (p.status === 'pending' && p.employee?._id) {
+                           api.get(`/leaves/balance?employeeId=${p.employee._id}&year=${new Date(p.startDate || Date.now()).getFullYear()}`)
+                             .then(r => setDetailBalance(r.data.data || [])).catch(() => setDetailBalance(null));
+                         }
+                       }} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
                          <Eye size={13} /> View
                        </button>
                        <ActionBtns endpoint="leaves" id={p._id} type="Permission" canActLeave={p.canAct} status={p.status} />
@@ -542,7 +555,8 @@ export default function Approvals() {
           <LeaveDetailModal
             leave={detailLeave}
             kind={isReg ? 'regularization' : 'leave'}
-            onClose={() => setDetailLeave(null)}
+            balance={!isReg && detailLeave.status === 'pending' ? detailBalance : undefined}
+            onClose={() => { setDetailLeave(null); setDetailBalance(null); }}
             canAct={detailLeave.status === 'pending' && !!detailLeave.canAct}
             onApprove={(x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'approved', comment); }}
             onApproveAll={!isReg && canApproveAll && detailLeave.status === 'pending' && !!detailLeave.canAct
