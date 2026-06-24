@@ -226,6 +226,13 @@ cron.schedule('0 9 * * 1-6', async () => {
       ["Don't forget to check in for the day!"]
     );
     logger.info({ sent: r.rowCount }, '9 AM Check-in reminders sent');
+    // Working-day guard before sending reminder emails.
+    // Skips on Sundays, company holidays, 1st/3rd Saturdays, or any
+    // non-working day declared in the holidays / weekend_rules tables.
+    if (await isNonWorkingDay()) {
+      logger.info('Non-working day — check-in reminder emails skipped');
+      return;
+    }
     const empEmails = await pool.query(
       `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != ''`
     );
@@ -254,6 +261,13 @@ cron.schedule('0 18 * * 1-6', async () => {
       ["It's 6 PM! Don't forget to check out before you leave."]
     );
     logger.info({ sent: r.rowCount }, '6 PM Check-out reminders sent');
+    // Working-day guard before sending reminder emails.
+    // Skips on Sundays, company holidays, 1st/3rd Saturdays, or any
+    // non-working day declared in the holidays / weekend_rules tables.
+    if (await isNonWorkingDay()) {
+      logger.info('Non-working day — check-out reminder emails skipped');
+      return;
+    }
     const empEmails = await pool.query(
       `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != ''`
     );
