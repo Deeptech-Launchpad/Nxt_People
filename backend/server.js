@@ -229,10 +229,13 @@ cron.schedule('0 9 * * 1-6', async () => {
     const empEmails = await pool.query(
       `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != ''`
     );
-    await Promise.allSettled(empEmails.rows.map(emp =>
-      sendCheckInReminderEmail({ to: emp.email, employeeName: emp.name })
-        .catch(err => logger.warn({ err: err.message, email: emp.email }, '9 AM check-in email failed'))
-    ));
+    // Send sequentially — firing all SMTP connections at once trips Gmail rate limits,
+    // causing only some employees to receive the email. Sequential sending with one
+    // connection at a time keeps the rate within Gmail's tolerance.
+    for (const emp of empEmails.rows) {
+      await sendCheckInReminderEmail({ to: emp.email, employeeName: emp.name })
+        .catch(err => logger.warn({ err: err.message, email: emp.email }, '9 AM check-in email failed'));
+    }
     logger.info({ emails: empEmails.rowCount }, '9 AM Check-in reminder emails sent');
   } catch (err) {
     logger.error({ err }, 'Error sending 9 AM reminders');
@@ -254,10 +257,11 @@ cron.schedule('0 18 * * 1-6', async () => {
     const empEmails = await pool.query(
       `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != ''`
     );
-    await Promise.allSettled(empEmails.rows.map(emp =>
-      sendCheckOutReminderEmail({ to: emp.email, employeeName: emp.name })
-        .catch(err => logger.warn({ err: err.message, email: emp.email }, '6 PM check-out email failed'))
-    ));
+    // Send sequentially — same reason as the check-in cron above.
+    for (const emp of empEmails.rows) {
+      await sendCheckOutReminderEmail({ to: emp.email, employeeName: emp.name })
+        .catch(err => logger.warn({ err: err.message, email: emp.email }, '6 PM check-out email failed'));
+    }
     logger.info({ emails: empEmails.rowCount }, '6 PM Check-out reminder emails sent');
   } catch (err) {
     logger.error({ err }, 'Error sending 6 PM reminders');
