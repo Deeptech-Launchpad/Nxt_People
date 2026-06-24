@@ -139,7 +139,7 @@ export default function Regularization() {
                   </div>
                   <div>
                     {tab === 'pending' && <p className="font-semibold text-slate-700">{r.employee?.firstName} {r.employee?.lastName} <span className="text-xs text-slate-400">({r.employee?.employeeId})</span></p>}
-                    <p className="font-medium text-slate-700 text-sm">{new Date(r.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                    <p className="font-medium text-slate-700 text-sm">{new Date(String(r.date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
                     <p className="text-xs text-slate-500 mt-0.5">
                       {r.checkIn ? `Check-in: ${r.checkIn}` : 'No check-in specified'}
                       {r.checkOut ? ` · Check-out: ${r.checkOut}` : ''}
