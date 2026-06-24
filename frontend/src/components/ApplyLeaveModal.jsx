@@ -54,7 +54,17 @@ function ApplyLeaveModal({ onClose, onSuccess, leaveTypes }) {
     return Math.max(0, (m(form.endTime) - m(form.startTime)) / 60);
   })();
   const submit = async (e) => {
-    e.preventDefault(); setSaving(true);
+    e.preventDefault();
+    if (isPermission) {
+      if (!form.startDate) { toast.error('Please select a date for the permission request.'); return; }
+      if (!form.startTime) { toast.error('Please select a start time for the permission request.'); return; }
+      if (!form.endTime)   { toast.error('Please select an end time for the permission request.'); return; }
+      if (form.endTime <= form.startTime) { toast.error('End time must be after start time.'); return; }
+    } else {
+      if (!form.startDate) { toast.error('Please select a start date.'); return; }
+      if (!form.endDate)   { toast.error('Please select an end date.'); return; }
+    }
+    setSaving(true);
     try {
       // Permission posts a single date + start/end time; the backend computes
       // hours and enforces the 4h monthly cap.
