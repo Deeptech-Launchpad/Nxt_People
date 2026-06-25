@@ -59,7 +59,17 @@ async function deriveLevels(db, employeeId) {
   };
   add(ancestors[0]);                       // Level 1 — immediate parent
   if (ancestors.length >= 2) add(ancestors[1]); // Level 2 — grandparent
-  add(ancestors[ancestors.length - 1]);    // Level 3 — top-most ancestor (root)
+
+  // Level 3 — HR & Administration role (overrides the tree root so Vellayan is no
+  // longer the L3 approver). Falls back to tree root only if no hr_admin exists.
+  const hrAdminRes = await db.query(
+    `SELECT id FROM employees WHERE role = 'hr_admin' AND COALESCE(status,'active')='active' AND deleted_at IS NULL ORDER BY created_at LIMIT 1`
+  );
+  if (hrAdminRes.rows.length > 0) {
+    add(hrAdminRes.rows[0].id);
+  } else {
+    add(ancestors[ancestors.length - 1]); // fallback: tree root
+  }
 
   // Re-number sequentially after dedup so levels are always 1..N contiguous.
   return picks.map((approverId, i) => ({ level: i + 1, approverId }));

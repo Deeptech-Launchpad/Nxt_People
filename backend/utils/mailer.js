@@ -225,7 +225,7 @@ const sendMail = async ({ to, subject, text, html }) => {
  * Leave Approval Email — sent to approvers with a direct approval link.
  * Includes employee info, leave details, and a clickable approval button.
  */
-const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, endDate, totalDays, reason, approvalLink }) => {
+const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, endDate, totalDays, reason, approvalLink, customSubject }) => {
   const transporter = createTransporter();
   const dateRange = `${new Date(startDate).toLocaleDateString('en-IN')} ${endDate !== startDate ? `– ${new Date(endDate).toLocaleDateString('en-IN')}` : ''}`;
   const safeEmployeeName = escapeHtml(employeeName || 'Employee');
@@ -321,7 +321,7 @@ const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, 
   await transporter.sendMail({
     from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
     to: sanitizeRecipients(to),
-    subject: `[Action Required] ${safeEmployeeName} - ${safeLeaveType} Leave Approval`,
+    subject: customSubject || `[Action Required] ${safeEmployeeName} - ${safeLeaveType} Leave Approval`,
     html,
     text: `Leave Approval Required\n\n${safeEmployeeName} has requested ${safeLeaveType} leave (${safeDateRange}, ${totalDays} day(s)).\n\nReason: ${safeReason}\n\nClick here to approve: ${safeLink}\n\nOr visit NXT People → Team → Approvals`,
   });
@@ -329,7 +329,7 @@ const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, 
 
 /**
  * Check-Out Reminder Email — sent to employees at end of day to remind them
- * to log out of Zoho portal and update their daily production report.
+ * to log out and update their daily production report.
  */
 const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
   const transporter = createTransporter();
@@ -387,8 +387,8 @@ const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
         <div class="checklist-item">
           <div class="checklist-icon">🚪</div>
           <div class="checklist-text">
-            <strong>Log out of the Zoho Portal</strong><br/>
-            Please ensure you are logged out of your Zoho account to maintain security and privacy.
+            <strong>Log out of the portal</strong><br/>
+            Please ensure you are logged out of your account to maintain security and privacy.
           </div>
         </div>
         <div class="checklist-item">
@@ -426,9 +426,9 @@ const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
   await transporter.sendMail({
     from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
     to: sanitizeRecipients(to),
-    subject: 'Log-Out of Zoho Portal & Update Daily Production Report',
+    subject: 'End of Day Reminder — Log Out & Update Daily Production Report',
     html,
-    text: `Daily Reminder\n\nHello ${safeEmployeeName},\n\nPlease remember to:\n\n1. Log out of the Zoho Portal\n2. Update your Daily Production Report\n\nUpdate your report here: ${reportLink}\n\nThank you!`,
+    text: `Daily Reminder\n\nHello ${safeEmployeeName},\n\nPlease remember to:\n\n1. Log out of the portal\n2. Update your Daily Production Report\n\nUpdate your report here: ${reportLink}\n\nThank you!`,
   });
 };
 

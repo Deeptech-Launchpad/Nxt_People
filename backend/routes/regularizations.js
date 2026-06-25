@@ -6,7 +6,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
 const { createLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
-const { sendMail } = require('../utils/mailer');
+const { sendLeaveApprovalEmail } = require('../utils/mailer');
 const logger = require('../logger');
 router.use(protect);
 
@@ -32,7 +32,7 @@ router.get('/my', async (req, res) => {
 });
 
 // GET pending regularizations for the current approver (hierarchy-scoped).
-router.get('/pending', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
+router.get('/pending', authorize('admin', 'director', 'hr_admin', 'business_unit_head', 'manager', 'team_incharge'), async (req, res) => {
   try {
     // Full-access sees the whole pending queue; everyone else sees regularizations
     // where they are an assigned approver of a still-pending hierarchy level.
@@ -95,37 +95,53 @@ router.post('/', [
       const empName = `${req.user.firstName} ${req.user.lastName}`;
       const dateLabel = new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
       const approverIds = levels.map(l => l.approverId).filter(Boolean);
-      let approvers = [];
+      let hierarchyApprovers = [];
       if (approverIds.length > 0) {
         const r = await pool.query(`SELECT id, email, first_name AS "firstName" FROM employees WHERE id = ANY($1::uuid[])`, [approverIds]);
-        approvers = r.rows;
+        hierarchyApprovers = r.rows;
       } else {
         const r = await pool.query(
           `SELECT id, email, first_name AS "firstName" FROM employees
-            WHERE role IN ('admin','director') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+            WHERE role IN ('admin','hr_admin') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
         );
-        approvers = r.rows;
+        hierarchyApprovers = r.rows;
       }
 
-      await Promise.all(approvers.map(a => createNotification(
+      // Broadcast: Admin + Business Unit Head + HR & Administration. Director excluded for now.
+      const broadcastRes = await pool.query(
+        `SELECT id, email, first_name AS "firstName" FROM employees
+          WHERE role IN ('admin','business_unit_head','hr_admin')
+            AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+      );
+      const BLOCKED_EMAILS = new Set(['vellayan@altiusnxt.com']);
+      const seenIds = new Set();
+      const allRecipients = [];
+      for (const a of [...hierarchyApprovers, ...broadcastRes.rows]) {
+        if (!seenIds.has(String(a.id)) && !BLOCKED_EMAILS.has((a.email || '').toLowerCase())) {
+          seenIds.add(String(a.id));
+          allRecipients.push(a);
+        }
+      }
+
+      await Promise.all(allRecipients.map(a => createNotification(
         a.id, 'approval', 'Regularization Approval Required',
         `${empName} requested an attendance regularization for ${dateLabel}.`,
         '/approvals'
       ).catch(err => logger.warn({ err: err.message }, '[regularizations] notify approver failed'))));
 
-      await Promise.all(approvers.filter(a => a.email).map(a => sendMail({
+      const baseUrl = process.env.APP_URL || 'https://nxtpeople.altiusnxt.tech';
+      const approvalLink = `${baseUrl}/approvals?tab=regularizations`;
+      const regReason = `${reason}${checkIn ? ` | Check-in: ${checkIn}` : ''}${checkOut ? ` | Check-out: ${checkOut}` : ''}`;
+      await Promise.all(allRecipients.filter(a => a.email).map(a => sendLeaveApprovalEmail({
         to: a.email,
-        subject: `Regularization approval required — ${empName}`,
-        text: `${empName} requested an attendance regularization for ${dateLabel}. Reason: ${reason}. Review it in NXT People → Approvals.`,
-        html: `<p>Hi ${a.firstName || 'there'},</p>
-               <p><strong>${empName}</strong> has requested an <strong>attendance regularization</strong>.</p>
-               <ul>
-                 <li><strong>Date:</strong> ${dateLabel}</li>
-                 ${checkIn ? `<li><strong>Check-in:</strong> ${checkIn}</li>` : ''}
-                 ${checkOut ? `<li><strong>Check-out:</strong> ${checkOut}</li>` : ''}
-                 <li><strong>Reason:</strong> ${reason}</li>
-               </ul>
-               <p>Please review it in <strong>NXT People → Approvals</strong>.</p>`,
+        employeeName: empName,
+        leaveType: 'Attendance Regularization',
+        startDate: date,
+        endDate: date,
+        totalDays: 1,
+        reason: regReason,
+        approvalLink,
+        customSubject: `[Action Required] ${empName} - Attendance Regularization`,
       }).catch(err => logger.warn({ err: err.message }, '[regularizations] approver email failed'))));
     } catch (e) { logger.error({ err: e.message }, '[regularizations] notify soft-fail'); }
 
@@ -136,7 +152,7 @@ router.post('/', [
 // PUT approve/reject — hierarchy-based, identical engine to leaves.
 // The attendance patch runs only on FULL approval (all levels approved) and is
 // atomic with the status update.
-router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'business_unit_head', 'manager', 'team_incharge'), async (req, res) => {
   const { action, rejectionReason } = req.body;
   if (!['approved', 'rejected'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Invalid action. Use: approved or rejected' });

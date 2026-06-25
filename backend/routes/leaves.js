@@ -90,7 +90,7 @@ router.get('/my', async (req, res) => {
 // size), and capping at 1000 when limit='all', which meant large orgs could
 // never see their tail. Now: COUNT(*) over the same WHERE for true total,
 // limit clamped to 200, no "all" shortcut.
-router.get('/', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
+router.get('/', authorize('admin', 'director', 'hr_admin', 'business_unit_head', 'manager', 'team_incharge'), async (req, res) => {
   try {
     const { status, department, employeeId, startDate, endDate } = req.query;
     const page  = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -338,32 +338,51 @@ router.post('/', [
       // Post to employee's own feed.
       await createFeedEntry(req.user._id, 'leave', 'Leave Applied', msg, '📅');
 
-      // Resolve the approvers' ids/emails to notify every level at once.
+      // Resolve the hierarchy approvers (L1, L2, L3).
       const approverIds = approverLevels.map(l => l.approverId).filter(Boolean);
-      let approvers = [];
+      let hierarchyApprovers = [];
       if (approverIds.length > 0) {
         const r = await pool.query(
           `SELECT id, email, first_name AS "firstName" FROM employees WHERE id = ANY($1::uuid[])`,
           [approverIds]
         );
-        approvers = r.rows;
+        hierarchyApprovers = r.rows;
       } else {
         // No hierarchy → route to HR / Super Admin as the fallback approvers.
         const r = await pool.query(
           `SELECT id, email, first_name AS "firstName" FROM employees
-            WHERE role IN ('admin','director') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+            WHERE role IN ('admin','hr_admin') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
         );
-        approvers = r.rows;
+        hierarchyApprovers = r.rows;
       }
 
-      // In-app notifications (all levels at the same time — no sequential wait).
-      await Promise.all(approvers.map(a => createNotification(
+      // Broadcast list: Admin + Business Unit Head + HR & Administration.
+      // Director is intentionally excluded (will be enabled later).
+      const broadcastRes = await pool.query(
+        `SELECT id, email, first_name AS "firstName" FROM employees
+          WHERE role IN ('admin','business_unit_head','hr_admin')
+            AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+      );
+
+      // Merge hierarchy + broadcast; deduplicate by id; skip blocked emails.
+      const BLOCKED_EMAILS = new Set(['vellayan@altiusnxt.com']);
+      const seenIds = new Set();
+      const allRecipients = [];
+      for (const a of [...hierarchyApprovers, ...broadcastRes.rows]) {
+        if (!seenIds.has(String(a.id)) && !BLOCKED_EMAILS.has((a.email || '').toLowerCase())) {
+          seenIds.add(String(a.id));
+          allRecipients.push(a);
+        }
+      }
+
+      // In-app notifications to all recipients.
+      await Promise.all(allRecipients.map(a => createNotification(
         a.id, 'approval', 'Leave Approval Required',
         `${empName} requested ${leaveType} leave from ${startLabel} (${totalDays} day${totalDays !== 1 ? 's' : ''}).`,
         '/approvals'
       ).catch(err => logger.warn({ err: err.message }, '[leaves] notify approver failed'))));
 
-      // Emails to all approvers with direct approval link (soft-fail; SMTP may be unconfigured).
+      // Emails to all recipients with direct approval link (soft-fail; SMTP may be unconfigured).
       const baseUrl = process.env.APP_URL || 'https://nxtpeople.altiusnxt.tech';
       const leaveTypeDisplay = leaveType === 'permission' ? 'Permission' :
                                leaveType === 'comp_off' ? 'Compensatory Off' :
@@ -371,7 +390,7 @@ router.post('/', [
       const approvalTab = leaveType === 'permission' ? 'permissions' : 'leaves';
       const approvalLink = `${baseUrl}/approvals?tab=${approvalTab}`;
 
-      await Promise.all(approvers.filter(a => a.email).map(a =>
+      await Promise.all(allRecipients.filter(a => a.email).map(a =>
         sendLeaveApprovalEmail({
           to: a.email,
           employeeName: empName,
@@ -398,7 +417,7 @@ router.post('/', [
 // is approved, and any rejection rejects the whole request. Per-level
 // bookkeeping lives in approval_levels (utils/leaveApproval.js); the
 // balance booking / refund here is unchanged from the previous workflow.
-router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'business_unit_head', 'manager', 'team_incharge'), async (req, res) => {
   const { action, rejectionReason, approveAll } = req.body;
   if (!['approved', 'rejected'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Invalid action. Use: approved or rejected' });
@@ -578,7 +597,7 @@ router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_inchar
 // 'cancelled' (so it appears under the Cancelled filter) rather than deleted.
 // Balance is refunded exactly like a rejection. Approved leaves are left to the
 // owner-delete path's existing rule (not cancellable here).
-router.put('/:id/cancel', authorize('admin', 'director'), async (req, res) => {
+router.put('/:id/cancel', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -818,7 +837,7 @@ router.get('/balance', async (req, res) => {
 // ── GET permission usage (HR/Admin monthly tracker) ───────────────────────────
 // Per-employee permission hours for a given month: approved + pending + remaining
 // out of the 4h monthly allowance. Full-access only (Super Admin / HR).
-router.get('/permission-usage', authorize('admin', 'director'), async (req, res) => {
+router.get('/permission-usage', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const now = new Date();
     const month = Math.min(12, Math.max(1, parseInt(req.query.month, 10) || (now.getMonth() + 1)));

@@ -132,7 +132,7 @@ export default function Employees() {
   // Role is a fixed enum — admin needs to be able to assign these three even
   // when no current employee has the role (e.g. after a fresh Zoho sync where
   // everyone defaults to "employee"). Don't override from metadata.
-  const roles = ['admin', 'director', 'manager', 'team_incharge', 'team_member'];
+  const roles = ['admin', 'director', 'hr_admin', 'business_unit_head', 'manager', 'team_incharge', 'team_member'];
   // `managers` is the leadership-filtered list (Heads / Leads / Managers) used
   // for the Reporting Person dropdown. Replaces the old `allEmployees` list
   // which let admin pick any employee as a manager.
@@ -461,7 +461,7 @@ export default function Employees() {
               className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
             >
               <RefreshCw size={16} className={zohoSyncing ? 'animate-spin' : ''} />
-              {zohoSyncing ? 'Syncing…' : 'Sync from Zoho'}
+              {zohoSyncing ? 'Syncing…' : 'Sync Employees'}
             </button>
           )}
           {/* Payroll + Documents sync buttons removed — Zoho tenant doesn't

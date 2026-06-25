@@ -1,31 +1,35 @@
 /* ── Central RBAC role model ──────────────────────────────────────────────
- *  The app enforces a 5-role model. This module is the single source of
+ *  The app enforces a 7-role model. This module is the single source of
  *  truth — every route guard and data-scoping check should go through it
  *  instead of hard-coding role strings, so the model can't drift again.
  *
- *    admin, director   → full system access (org-wide visibility + management)
- *    manager           → own data + direct-reports approvals & visibility
- *    team_incharge     → same as manager (team-lead level)
- *    team_member       → own data & requests only
+ *    admin, director        → full system access (org-wide visibility + management)
+ *    hr_admin               → HR & Administration — full access; Level 3 approver for all leaves
+ *    business_unit_head     → Business Unit Head — full access; receives all leave notifications
+ *    manager                → own data + direct-reports approvals & visibility
+ *    team_incharge          → same as manager (team-lead level)
+ *    team_member            → own data & requests only
  *
  *  Note: `req.user.role` is re-fetched from the DB on every request
  *  (see middleware/auth.js), so role changes take effect immediately.
  * ───────────────────────────────────────────────────────────────────────── */
 
 const ROLES = {
-  ADMIN:         'admin',
-  DIRECTOR:      'director',
-  MANAGER:       'manager',
-  TEAM_INCHARGE: 'team_incharge',
-  TEAM_MEMBER:   'team_member',
+  ADMIN:              'admin',
+  DIRECTOR:           'director',
+  HR_ADMIN:           'hr_admin',
+  BUSINESS_UNIT_HEAD: 'business_unit_head',
+  MANAGER:            'manager',
+  TEAM_INCHARGE:      'team_incharge',
+  TEAM_MEMBER:        'team_member',
 };
 
 // Roles that see and manage everything, org-wide.
-const FULL_ACCESS = [ROLES.ADMIN, ROLES.DIRECTOR];
+const FULL_ACCESS = [ROLES.ADMIN, ROLES.DIRECTOR, ROLES.HR_ADMIN, ROLES.BUSINESS_UNIT_HEAD];
 
 // Roles allowed past an approver route guard. Managers are further restricted
 // to their direct reports by reportsScope() at the data layer.
-const APPROVERS = [ROLES.ADMIN, ROLES.DIRECTOR, ROLES.MANAGER, ROLES.TEAM_INCHARGE];
+const APPROVERS = [ROLES.ADMIN, ROLES.DIRECTOR, ROLES.HR_ADMIN, ROLES.BUSINESS_UNIT_HEAD, ROLES.MANAGER, ROLES.TEAM_INCHARGE];
 
 const isFullAccess = (role) => FULL_ACCESS.includes(role);
 const isManager    = (role) => role === ROLES.MANAGER || role === ROLES.TEAM_INCHARGE;
