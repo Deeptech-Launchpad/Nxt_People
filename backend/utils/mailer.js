@@ -328,8 +328,8 @@ const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, 
 };
 
 /**
- * Check-Out Reminder Email — sent to employees at end of day to remind them
- * to log out and update their daily production report.
+ * Check-Out Reminder Email — sent to employees at end of day.
+ * Design matches the Check-In reminder email exactly (same blue gradient, layout, CTA style).
  */
 const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
   const transporter = createTransporter();
@@ -342,28 +342,22 @@ const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Daily Reminder - Check Out & Update Report</title>
+  <title>End-of-Day Reminder</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; color: #1e293b; }
     .wrapper { max-width: 620px; margin: 32px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
-    .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 32px 40px; text-align: center; color: #ffffff; }
+    .header { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 32px 40px; text-align: center; color: #ffffff; }
     .header-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
     .header-subtitle { font-size: 13px; opacity: 0.95; }
     .body { padding: 36px 40px; }
     .greeting { font-size: 16px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
-    .content { font-size: 14px; color: #475569; line-height: 1.7; }
-    .content p { margin-bottom: 14px; }
-    .checklist { background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 10px; padding: 20px; margin: 20px 0; }
-    .checklist-item { display: flex; gap: 12px; margin-bottom: 14px; font-size: 14px; color: #166534; }
-    .checklist-item:last-child { margin-bottom: 0; }
-    .checklist-icon { font-size: 18px; flex-shrink-0; }
-    .checklist-text { flex: 1; }
-    .cta-box { background: #ecfdf5; border: 2px solid #10b981; border-radius: 10px; padding: 24px; margin: 24px 0; text-align: center; }
-    .cta-box-title { font-size: 14px; font-weight: 600; color: #065f46; margin-bottom: 16px; }
-    .cta-btn { display: inline-block; background: #10b981; color: #ffffff !important; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 700; }
-    .cta-btn:hover { background: #059669; }
-    .note { font-size: 13px; color: #64748b; background: #f8fafc; border-radius: 8px; padding: 16px; margin: 20px 0; border-left: 4px solid #10b981; }
+    .content { font-size: 14px; color: #475569; line-height: 1.7; margin-bottom: 20px; }
+    .checklist { margin: 16px 0 20px; }
+    .checklist-item { font-size: 14px; color: #1e293b; line-height: 1.9; }
+    .cta-box { background: #eff6ff; border: 2px solid #3b82f6; border-radius: 10px; padding: 24px; margin: 24px 0; text-align: center; }
+    .cta-box-title { font-size: 14px; font-weight: 600; color: #1e40af; margin-bottom: 16px; }
+    .cta-btn { display: inline-block; background: #3b82f6; color: #ffffff !important; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 700; }
     .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
     .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; text-align: center; font-size: 12px; color: #94a3b8; }
   </style>
@@ -374,61 +368,37 @@ const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
       <div style="display:inline-block; background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:8px; margin-bottom:12px;">
         <span style="font-size:16px; font-weight:800; letter-spacing:0.5px;">NXT PEOPLE</span>
       </div>
-      <div class="header-title">Daily Reminder</div>
-      <div class="header-subtitle">Time to wrap up and prepare for tomorrow</div>
+      <div class="header-title">End-of-Day Reminder 🌆</div>
+      <div class="header-subtitle">Please complete your check-out and submit your daily report</div>
     </div>
-
     <div class="body">
       <p class="greeting">Hello ${safeEmployeeName},</p>
-
-      <p class="content">As you wrap up your workday, please complete the following tasks:</p>
-
+      <p class="content">As you complete your workday, please ensure the following actions are completed:</p>
       <div class="checklist">
-        <div class="checklist-item">
-          <div class="checklist-icon">🚪</div>
-          <div class="checklist-text">
-            <strong>Log out of the portal</strong><br/>
-            Please ensure you are logged out of your account to maintain security and privacy.
-          </div>
-        </div>
-        <div class="checklist-item">
-          <div class="checklist-icon">📝</div>
-          <div class="checklist-text">
-            <strong>Update your Daily Production Report</strong><br/>
-            Record your work, tasks completed, and any notes in the production reporting tool.
-          </div>
-        </div>
+        <p class="checklist-item">✅ <strong>Check-Out from the HRMS Portal</strong></p>
+        <p class="checklist-item">✅ <strong>Update Your Report</strong> — Click the button below</p>
+        <p class="checklist-item">✅ <strong>Record completed tasks</strong> and key updates for the day</p>
       </div>
-
       <div class="cta-box">
-        <div class="cta-box-title">Update Your Report</div>
+        <div class="cta-box-title">Submit Your Daily Production Report</div>
         <a href="${reportLink}" target="_blank" class="cta-btn">Click Here to Update</a>
       </div>
-
-      <div class="note">
-        <strong>⏰ Quick Reminder:</strong> Keeping your daily reports up-to-date helps the team track progress and plan upcoming work. Thank you for your diligence!
-      </div>
-
-      <p class="content">If you have any questions or need assistance, please don't hesitate to reach out to your manager or the HR team.</p>
-
+      <p class="content">Your daily updates help improve team visibility, productivity tracking, and work planning.</p>
+      <p class="content">Thank you for your cooperation.</p>
       <div class="divider"></div>
-      <p style="font-size:12px; color:#64748b;">Wishing you a productive day!<br/>— NXT People</p>
+      <p style="font-size:12px; color:#64748b;">This is an automated daily reminder from NXT People. Please do not reply to this email.</p>
     </div>
-
-    <div class="footer">
-      <strong>NXT People</strong> · Your HR Management System
-    </div>
+    <div class="footer"><strong>NXT People</strong> · Your HR Management System</div>
   </div>
 </body>
-</html>
-`;
+</html>`;
 
   await transporter.sendMail({
     from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
     to: sanitizeRecipients(to),
-    subject: 'End of Day Reminder — Log Out & Update Daily Production Report',
+    subject: 'ALTIUSNXT – End-of-Day Check-Out and Daily Production Report Submission',
     html,
-    text: `Daily Reminder\n\nHello ${safeEmployeeName},\n\nPlease remember to:\n\n1. Log out of the portal\n2. Update your Daily Production Report\n\nUpdate your report here: ${reportLink}\n\nThank you!`,
+    text: `Hello ${safeEmployeeName},\n\nAs you complete your workday, please ensure the following actions are completed:\n\n✅ Check-Out from the HRMS Portal\n✅ Update Your Report – Click Here to Update: ${reportLink}\n✅ Record completed tasks and key updates for the day.\n\nYour daily updates help improve team visibility, productivity tracking, and work planning.\n\nThank you for your cooperation.\n\nRegards,\nNXT People\nYour HR Management System`,
   });
 };
 
