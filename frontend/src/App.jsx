@@ -142,8 +142,8 @@ const AppRoutes = () => {
           <Route path="team/department" element={<OrgChart/>}/>
           <Route path="team/projects"   element={<TeamProjects/>}/>
           <Route path="team/peers"      element={<Peers/>}/>
-          <Route path="team/approvals"  element={<ProtectedRoute roles={['admin','director','hr_admin','business_unit_head','manager']}><Approvals/></ProtectedRoute>}/>
-          <Route path="approvals"       element={<ProtectedRoute roles={['admin','director','hr_admin','business_unit_head','manager']}><Approvals/></ProtectedRoute>}/>
+          <Route path="team/approvals"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Approvals/></ProtectedRoute>}/>
+          <Route path="approvals"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Approvals/></ProtectedRoute>}/>
 
           {/* ── Home / Organization ──────────────────────────────────── */}
           <Route path="organization" element={<OrgOverview/>}/>
@@ -163,7 +163,7 @@ const AppRoutes = () => {
           <Route path="attendance/checkin"        element={<CheckInOut/>}/>
           <Route path="attendance/regularization" element={<Regularization/>}/>
           <Route path="attendance/location"       element={<AttendanceLocation/>}/>
-          <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','business_unit_head','manager']}><TeamAttendance/></ProtectedRoute>}/>
+          <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TeamAttendance/></ProtectedRoute>}/>
 
           {/* ── Time Tracker ─────────────────────────────────────────── */}
           <Route path="time-tracker"             element={<TimeTrackerLanding/>}/>
@@ -183,7 +183,7 @@ const AppRoutes = () => {
               the sidebar highlight on Leave Tracker instead of jumping
               the user back to Home (which was the pre-fix behaviour).
               Role-gated identically — only admins/managers can view it. */}
-          <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','director','hr_admin','business_unit_head','manager']}><Approvals/></ProtectedRoute>}/>
+          <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Approvals/></ProtectedRoute>}/>
           <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
           <Route path="leave-tracker/weekends"   element={<ProtectedRoute roles={['admin','director','hr_admin']}><Weekends/></ProtectedRoute>}/>
 
@@ -229,7 +229,7 @@ const AppRoutes = () => {
           {/* Onboarding creates employees — full-access only (no manager CRUD). */}
           <Route path="registrations"element={<ProtectedRoute roles={['admin','director','hr_admin']}><Registrations/></ProtectedRoute>}/>
           <Route path="shifts"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><Shifts/></ProtectedRoute>}/>
-          <Route path="shift-roster" element={<ProtectedRoute roles={['admin','director','hr_admin','business_unit_head','manager']}><ShiftRoster/></ProtectedRoute>}/>
+          <Route path="shift-roster" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ShiftRoster/></ProtectedRoute>}/>
 
           {/* ── Other ────────────────────────────────────────────────── */}
           <Route path="documents"      element={<Documents/>}/>

@@ -132,7 +132,7 @@ export default function Employees() {
   // Role is a fixed enum — admin needs to be able to assign these three even
   // when no current employee has the role (e.g. after a fresh Zoho sync where
   // everyone defaults to "employee"). Don't override from metadata.
-  const roles = ['admin', 'director', 'hr_admin', 'business_unit_head', 'manager', 'team_incharge', 'team_member'];
+  const roles = ['admin', 'director', 'hr_admin', 'manager', 'team_incharge', 'team_member'];
   // `managers` is the leadership-filtered list (Heads / Leads / Managers) used
   // for the Reporting Person dropdown. Replaces the old `allEmployees` list
   // which let admin pick any employee as a manager.

@@ -32,7 +32,7 @@ router.get('/my', async (req, res) => {
 });
 
 // GET pending regularizations for the current approver (hierarchy-scoped).
-router.get('/pending', authorize('admin', 'director', 'hr_admin', 'business_unit_head', 'manager', 'team_incharge'), async (req, res) => {
+router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
     // Full-access sees the whole pending queue; everyone else sees regularizations
     // where they are an assigned approver of a still-pending hierarchy level.
@@ -107,10 +107,10 @@ router.post('/', [
         hierarchyApprovers = r.rows;
       }
 
-      // Broadcast: Admin + Business Unit Head + HR & Administration. Director excluded for now.
+      // Broadcast: Admin + HR & Administration + employees with designation 'Business Unit Head'. Director excluded for now.
       const broadcastRes = await pool.query(
         `SELECT id, email, first_name AS "firstName" FROM employees
-          WHERE role IN ('admin','business_unit_head','hr_admin')
+          WHERE (role IN ('admin','hr_admin') OR LOWER(designation) = 'business unit head')
             AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
       );
       const BLOCKED_EMAILS = new Set(['vellayan@altiusnxt.com']);
@@ -152,7 +152,7 @@ router.post('/', [
 // PUT approve/reject — hierarchy-based, identical engine to leaves.
 // The attendance patch runs only on FULL approval (all levels approved) and is
 // atomic with the status update.
-router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'business_unit_head', 'manager', 'team_incharge'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   const { action, rejectionReason } = req.body;
   if (!['approved', 'rejected'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Invalid action. Use: approved or rejected' });
