@@ -58,11 +58,10 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
-    # The new multi-stage Dockerfile builds with Vite and serves the static
-    # bundle via nginx on port 80. Map host 5173 → container 80 so the local
-    # dev experience (open http://localhost:5173) stays the same.
+    # Bind only to loopback so the host nginx reverse-proxy (which listens on
+    # the public interface) forwards to this container at port 3006.
     ports:
-      - "5173:80"
+      - "127.0.0.1:3006:80"
     depends_on:
       backend:
         condition: service_healthy
