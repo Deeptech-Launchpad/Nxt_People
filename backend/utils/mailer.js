@@ -335,6 +335,7 @@ const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
   const transporter = createTransporter();
   const safeEmployeeName = escapeHtml(employeeName || 'Employee');
   const reportLink = 'https://ur.altiusnxt.tech/login';
+  const checkOutLink = safeUrl((process.env.FRONTEND_URL || 'https://ur.altiusnxt.tech') + '/attendance/my');
 
   const html = `
 <!DOCTYPE html>
@@ -376,12 +377,12 @@ const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
       <p class="content">As you complete your workday, please ensure the following actions are completed:</p>
       <div class="checklist">
         <p class="checklist-item">✅ <strong>Check-Out from the HRMS Portal</strong></p>
-        <p class="checklist-item">✅ <strong>Update Your Report</strong> — Click the button below</p>
+        <p class="checklist-item">✅ <strong>Update Your Report</strong> — <a href="${reportLink}" target="_blank" style="color:#3b82f6; text-decoration:underline; font-weight:600;">Click Here to Update</a></p>
         <p class="checklist-item">✅ <strong>Record completed tasks</strong> and key updates for the day</p>
       </div>
       <div class="cta-box">
         <div class="cta-box-title">Submit Your Daily Production Report</div>
-        <a href="${reportLink}" target="_blank" class="cta-btn">Click Here to Update</a>
+        <a href="${checkOutLink}" target="_blank" class="cta-btn">Check Out Now</a>
       </div>
       <p class="content">Your daily updates help improve team visibility, productivity tracking, and work planning.</p>
       <p class="content">Thank you for your cooperation.</p>
