@@ -60,15 +60,29 @@ async function deriveLevels(db, employeeId) {
   add(ancestors[0]);                       // Level 1 — immediate parent
   if (ancestors.length >= 2) add(ancestors[1]); // Level 2 — grandparent
 
-  // Level 3 — HR & Administration role (overrides the tree root so Vellayan is no
-  // longer the L3 approver). Falls back to tree root only if no hr_admin exists.
-  const hrAdminRes = await db.query(
-    `SELECT id FROM employees WHERE role = 'hr_admin' AND COALESCE(status,'active')='active' AND deleted_at IS NULL ORDER BY created_at LIMIT 1`
+  // Level 3 — HR & Administration, but ONLY when L1 is NOT the Business Unit Head.
+  //
+  // 2-level chain (no L3): employees who report directly to the BU Head (Govind).
+  //   L1 = BU Head (Govind), L2 = Vellayan (tree root). HR & Admin is NOT added
+  //   here; HR can still approve on behalf via the existing on-behalf mechanism.
+  //
+  // Govind's own leave: ancestors = [Vellayan], so L1 = Vellayan (not BU Head) and
+  //   this block runs → hr_admin added as the second pick → renumbered to L2.
+  //   Result: L1=Vellayan, L2=HR & Administration. Correct per spec.
+  const l1DesigRes = await db.query(
+    `SELECT designation FROM employees WHERE id = $1 LIMIT 1`, [ancestors[0]]
   );
-  if (hrAdminRes.rows.length > 0) {
-    add(hrAdminRes.rows[0].id);
-  } else {
-    add(ancestors[ancestors.length - 1]); // fallback: tree root
+  const l1IsBuHead = (l1DesigRes.rows[0]?.designation || '').toLowerCase() === 'business unit head';
+
+  if (!l1IsBuHead) {
+    const hrAdminRes = await db.query(
+      `SELECT id FROM employees WHERE role = 'hr_admin' AND COALESCE(status,'active')='active' AND deleted_at IS NULL ORDER BY created_at LIMIT 1`
+    );
+    if (hrAdminRes.rows.length > 0) {
+      add(hrAdminRes.rows[0].id);
+    } else {
+      add(ancestors[ancestors.length - 1]); // fallback: tree root
+    }
   }
 
   // Re-number sequentially after dedup so levels are always 1..N contiguous.
