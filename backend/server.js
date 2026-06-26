@@ -234,7 +234,7 @@ cron.schedule('0 9 * * 1-6', async () => {
       return;
     }
     const empEmails = await pool.query(
-      `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != ''`
+      `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != '' AND LOWER(email) != 'vellayan@altiusnxt.com'`
     );
     // Send sequentially — firing all SMTP connections at once trips Gmail rate limits,
     // causing only some employees to receive the email. Sequential sending with one
@@ -269,7 +269,7 @@ cron.schedule('0 18 * * 1-6', async () => {
       return;
     }
     const empEmails = await pool.query(
-      `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != ''`
+      `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != '' AND LOWER(email) != 'vellayan@altiusnxt.com'`
     );
     // Send sequentially — same reason as the check-in cron above.
     for (const emp of empEmails.rows) {

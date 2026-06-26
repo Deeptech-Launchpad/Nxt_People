@@ -858,7 +858,7 @@ router.post('/reminder/checkout', authorize('admin', 'director'), async (req, re
     const result = await pool.query(
       `SELECT id, email, first_name AS "firstName", last_name AS "lastName"
        FROM employees
-       WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND status = 'active'`,
+       WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND status = 'active' AND LOWER(email) != 'vellayan@altiusnxt.com'`,
       [employeeIds]
     );
 
@@ -905,6 +905,9 @@ router.post('/reminder/checkout-self', async (req, res) => {
     }
 
     const emp = empRes.rows[0];
+    if ((emp.email || '').toLowerCase() === 'vellayan@altiusnxt.com') {
+      return res.json({ success: true, message: 'Check-out reminder email sent' });
+    }
     await sendCheckOutReminderEmail({
       to: emp.email,
       employeeName: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
