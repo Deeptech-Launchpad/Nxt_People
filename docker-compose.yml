@@ -8,8 +8,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
       POSTGRES_DB: nxt_people
-    ports:
-      - "5432:5432"
+    # No host port binding — backend reaches db via Docker internal network only.
+    # This avoids conflict with any host-level PostgreSQL on port 5432.
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./backend/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql
