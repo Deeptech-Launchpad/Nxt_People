@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Plus, ChevronLeft, ChevronRight, CheckCircle2, CheckCheck, Clock, XCircle, Search, Filter,
@@ -184,7 +184,7 @@ export default function LeaveTrackerAdmin() {
         </select>
         <div className="flex items-center gap-2">
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} title="From Date" className="border border-slate-200 rounded-lg px-3 py-2 text-13px font-medium bg-white hover:border-slate-300 focus:outline-none focus:border-blue-400 transition-colors" />
-          <span className="text-slate-300 text-sm">to</span>
+          <span className="text-slate-300 text-base">to</span>
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} title="To Date" className="border border-slate-200 rounded-lg px-3 py-2 text-13px font-medium bg-white hover:border-slate-300 focus:outline-none focus:border-blue-400 transition-colors" />
         </div>
         {(leaveType || department || employeeId || startDate || endDate) && (

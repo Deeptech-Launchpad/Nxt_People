@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Admin → Compliance Reports
  * Quick CSV exports of the four standard Indian payroll filings for any
  * given month. Each report pulls from locked/paid payslips only, so
@@ -105,7 +105,7 @@ export default function ComplianceReports() {
     <div className="max-w-6xl mx-auto p-6 space-y-5">
       <div>
         <h1 className="text-[20px] font-bold text-slate-800">Compliance Reports</h1>
-        <p className="text-[13px] text-slate-500 mt-1">
+        <p className="text-[15px] text-slate-500 mt-1">
           Download statutory-filing-ready CSVs. Includes only locked / paid payslips — drafts are excluded so you never file unfinalised data.
         </p>
       </div>
@@ -114,13 +114,13 @@ export default function ComplianceReports() {
       <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Calendar size={18} className="text-slate-400" />
-          <p className="text-[13px] font-bold text-slate-800">Reporting period</p>
+          <p className="text-[15px] font-bold text-slate-800">Reporting period</p>
         </div>
         <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
-          <select value={month} onChange={e => setMonth(Number(e.target.value))} className="bg-transparent text-[13px] font-semibold focus:outline-none">
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} className="bg-transparent text-[15px] font-semibold focus:outline-none">
             {MONTH_NAMES.slice(1).map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
           </select>
-          <select value={year} onChange={e => setYear(Number(e.target.value))} className="bg-transparent text-[13px] font-semibold focus:outline-none">
+          <select value={year} onChange={e => setYear(Number(e.target.value))} className="bg-transparent text-[15px] font-semibold focus:outline-none">
             {[year - 1, year, year + 1].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
@@ -138,12 +138,12 @@ export default function ComplianceReports() {
                   <Icon size={22} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-[15px] font-bold text-slate-800">{r.title}</h3>
-                  <p className="text-[12.5px] text-slate-500 mt-0.5 leading-relaxed">{r.desc}</p>
+                  <h3 className="text-[17px] font-bold text-slate-800">{r.title}</h3>
+                  <p className="text-[14px] text-slate-500 mt-0.5 leading-relaxed">{r.desc}</p>
                   <button
                     onClick={() => download(r.type)}
                     disabled={isDownloading}
-                    className={`mt-3 inline-flex items-center gap-1.5 bg-${r.accent}-50 hover:bg-${r.accent}-100 text-${r.accent}-700 text-[12px] font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60`}
+                    className={`mt-3 inline-flex items-center gap-1.5 bg-${r.accent}-50 hover:bg-${r.accent}-100 text-${r.accent}-700 text-[14px] font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60`}
                   >
                     <Download size={12} /> {isDownloading ? 'Generating…' : 'Download CSV'}
                   </button>
@@ -155,7 +155,7 @@ export default function ComplianceReports() {
       </div>
 
       {/* Footnote */}
-      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[11.5px] text-slate-500">
+      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[13px] text-slate-500">
         💡 These are register-style CSVs you can pass to your CA or upload to the respective portal. For Tamil Nadu PT, the filing date is monthly by the 15th. For PF, by the 15th. For ESI, by the 15th. TDS challan by the 7th.
       </div>
     </div>

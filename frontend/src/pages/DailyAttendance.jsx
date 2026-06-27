@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Download, Filter, RefreshCw } from 'lucide-react';
 import api from '../utils/api';
 import BackButton from '../components/BackButton';
@@ -114,7 +114,7 @@ export default function DailyAttendance() {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
         <div className="flex flex-wrap gap-3 items-end">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">Date</label>
+            <label className="block text-sm font-medium text-slate-600 mb-1.5">Date</label>
             <input
               type="date"
               value={date}
@@ -123,42 +123,42 @@ export default function DailyAttendance() {
                 const v = e.target.value > todayCA ? todayCA : e.target.value;
                 setDate(v);
               }}
-              className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
+              className="border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">Department</label>
+            <label className="block text-sm font-medium text-slate-600 mb-1.5">Department</label>
             <select
               value={department}
               onChange={(e) => setDepartment(e.target.value === 'All' ? '' : e.target.value)}
-              className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 min-w-[160px]"
+              className="border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400 min-w-[160px]"
             >
               {departments.map(d => <option key={d}>{d}</option>)}
             </select>
           </div>
           <div className="flex-1 min-w-[220px]">
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">Search</label>
+            <label className="block text-sm font-medium text-slate-600 mb-1.5">Search</label>
             <div className="relative">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Name or employee ID..."
-                className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-400"
+                className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl text-base focus:outline-none focus:border-blue-400"
               />
             </div>
           </div>
           <button
             onClick={load}
             disabled={loading}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm disabled:opacity-60"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm disabled:opacity-60"
             title="Refresh"
           >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
           <button
             onClick={exportCSV}
-            className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors border border-emerald-200"
+            className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-4 py-2.5 rounded-xl text-base font-medium transition-colors border border-emerald-200"
           >
             <Download size={15} /> Export CSV
           </button>
@@ -182,7 +182,7 @@ export default function DailyAttendance() {
                 isActive ? `ring-2 ${t.ring}` : ''
               }`}
             >
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t.label}</p>
+              <p className="text-[13px] font-semibold uppercase tracking-wider text-slate-400">{t.label}</p>
               <p className={`text-[24px] font-bold ${t.tone} mt-1`}>{t.count}</p>
             </button>
           );
@@ -192,10 +192,10 @@ export default function DailyAttendance() {
       {/* ── Table ──────────────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50/40">
-          <h3 className="text-[13px] font-bold text-slate-700 uppercase tracking-wider">
+          <h3 className="text-[15px] font-bold text-slate-700 uppercase tracking-wider">
             Daily Attendance · {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
           </h3>
-          <span className="text-[11.5px] text-slate-500">{filtered.length} {filtered.length === 1 ? 'team_member' : 'employees'}</span>
+          <span className="text-[13px] text-slate-500">{filtered.length} {filtered.length === 1 ? 'team_member' : 'employees'}</span>
         </div>
 
         {/* ── Tabs: Checked In vs Not Checked In ─────────────────── */}
@@ -209,14 +209,14 @@ export default function DailyAttendance() {
               <button
                 key={t.key}
                 onClick={() => { setTab(t.key); setSubFilter('all'); }}
-                className={`flex items-center gap-2 px-6 py-3 text-[13px] font-semibold border-b-[2.5px] transition-colors -mb-px ${
+                className={`flex items-center gap-2 px-6 py-3 text-[15px] font-semibold border-b-[2.5px] transition-colors -mb-px ${
                   active
                     ? 'border-[#1a73e8] text-[#1a73e8]'
                     : 'border-transparent text-slate-500 hover:text-slate-700'
                 }`}
               >
                 <span>{t.label}</span>
-                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${
+                <span className={`text-[13px] font-bold px-1.5 py-0.5 rounded-full ${
                   active ? 'bg-blue-100 text-[#1a73e8]' : 'bg-slate-100 text-slate-500'
                 }`}>
                   {t.count}
@@ -236,14 +236,14 @@ export default function DailyAttendance() {
               <thead>
                 <tr className="bg-slate-50">
                   {['Employee', 'Department', 'Check In', 'Check Out', 'Hours', 'Status'].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                    <th key={h} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-12 text-slate-400 text-sm">
+                    <td colSpan={6} className="text-center py-12 text-slate-400 text-base">
                       No employees match the current filters.
                     </td>
                   </tr>
@@ -253,23 +253,23 @@ export default function DailyAttendance() {
                     <tr key={r._id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-[11px] font-bold shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-[13px] font-bold shrink-0">
                             {(r.firstName?.[0] || '') + (r.lastName?.[0] || '')}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-[13px] font-semibold text-slate-700 truncate">{r.firstName} {r.lastName}</p>
-                            <p className="text-[11px] text-slate-400">{r.employeeId}{r.designation ? ` · ${r.designation}` : ''}</p>
+                            <p className="text-[15px] font-semibold text-slate-700 truncate">{r.firstName} {r.lastName}</p>
+                            <p className="text-[13px] text-slate-400">{r.employeeId}{r.designation ? ` · ${r.designation}` : ''}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-[13px] text-slate-600">{r.department || '—'}</td>
-                      <td className="px-5 py-3.5 text-[13px] text-slate-700 font-mono">{fmtTime(att?.checkIn)}</td>
-                      <td className="px-5 py-3.5 text-[13px] text-slate-700 font-mono">{fmtTime(att?.checkOut)}</td>
-                      <td className="px-5 py-3.5 text-[13px] text-slate-700">
+                      <td className="px-5 py-3.5 text-[15px] text-slate-600">{r.department || '—'}</td>
+                      <td className="px-5 py-3.5 text-[15px] text-slate-700 font-mono">{fmtTime(att?.checkIn)}</td>
+                      <td className="px-5 py-3.5 text-[15px] text-slate-700 font-mono">{fmtTime(att?.checkOut)}</td>
+                      <td className="px-5 py-3.5 text-[15px] text-slate-700">
                         {att?.workingHours ? `${Number(att.workingHours).toFixed(1)}h` : '—'}
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className={`inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${PRESENCE_PILL[r.presence].cls}`}>
+                        <span className={`inline-block text-[13px] font-semibold px-2.5 py-0.5 rounded-full ${PRESENCE_PILL[r.presence].cls}`}>
                           {PRESENCE_PILL[r.presence].label}
                         </span>
                       </td>

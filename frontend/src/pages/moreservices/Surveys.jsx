@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { ClipboardList } from 'lucide-react';
 
 const TABS = ['All', 'Pending', 'Completed', 'Expired', 'Opted Out'];
@@ -20,13 +20,13 @@ export default function Surveys() {
 
   return (
     <div className="p-6 max-w-4xl space-y-5">
-      <h2 className="text-[15px] font-bold text-slate-800">Employee Engagement — Surveys</h2>
+      <h2 className="text-[17px] font-bold text-slate-800">Employee Engagement — Surveys</h2>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-md text-[12.5px] font-medium transition-all ${tab === t ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
+            className={`px-4 py-1.5 rounded-md text-[14px] font-medium transition-all ${tab === t ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
             {t}
           </button>
         ))}
@@ -36,7 +36,7 @@ export default function Surveys() {
         {filtered.length === 0 ? (
           <div className="bg-white rounded-lg border border-slate-200 p-12 text-center shadow-sm">
             <ClipboardList size={32} className="text-slate-200 mx-auto mb-3"/>
-            <p className="text-[13px] font-semibold text-slate-500">No surveys in this category</p>
+            <p className="text-[15px] font-semibold text-slate-500">No surveys in this category</p>
           </div>
         ) : filtered.map(s => (
           <div key={s.id} className="bg-white rounded-lg border border-slate-200 p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
@@ -44,13 +44,13 @@ export default function Surveys() {
               <ClipboardList size={18} className="text-purple-500"/>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold text-slate-800">{s.title}</p>
-              <p className="text-[11.5px] text-slate-400 mt-0.5">{s.questions} questions · Deadline: {s.deadline}</p>
+              <p className="text-[15px] font-semibold text-slate-800">{s.title}</p>
+              <p className="text-[13px] text-slate-400 mt-0.5">{s.questions} questions · Deadline: {s.deadline}</p>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full capitalize ${STATUS_COLOR[s.status]}`}>{s.status}</span>
+              <span className={`text-[13px] font-semibold px-2 py-0.5 rounded-full capitalize ${STATUS_COLOR[s.status]}`}>{s.status}</span>
               {s.status === 'pending' && (
-                <button className="bg-blue-600 hover:bg-blue-700 text-white text-[11.5px] font-semibold px-3 py-1 rounded-md transition-colors">
+                <button className="bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold px-3 py-1 rounded-md transition-colors">
                   Start Survey
                 </button>
               )}

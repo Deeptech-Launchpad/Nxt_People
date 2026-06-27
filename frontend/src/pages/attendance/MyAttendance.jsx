@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   ChevronLeft, ChevronRight, Grid3X3, List, Calendar,
   ChevronDown, Filter, MoreHorizontal, RotateCcw, Minus,
@@ -72,7 +72,7 @@ const StatusPill = ({ status }) => {
   };
   const s = MAP[status] || { label: status || '—', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
   return (
-    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${s.cls}`}>
+    <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full border ${s.cls}`}>
       {s.label}
     </span>
   );
@@ -121,7 +121,7 @@ const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
       onClick={e => e.stopPropagation()}
     >
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 bg-slate-50/60">
-        <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Add Request</span>
+        <span className="text-[12px] font-bold uppercase tracking-wider text-slate-400">Add Request</span>
         <button
           onClick={onClose}
           className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition-colors"
@@ -137,10 +137,10 @@ const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
             onClick={() => { navigate(opt.path); onClose(); }}
             className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50/50 transition-colors text-left group"
           >
-            <span className="text-sm bg-slate-50 group-hover:bg-blue-100/50 w-7 h-7 flex items-center justify-center rounded-lg border border-slate-100 group-hover:border-blue-200 transition-colors">
+            <span className="text-base bg-slate-50 group-hover:bg-blue-100/50 w-7 h-7 flex items-center justify-center rounded-lg border border-slate-100 group-hover:border-blue-200 transition-colors">
               {opt.icon}
             </span>
-            <span className="text-[13px] font-semibold text-slate-700 group-hover:text-blue-700 transition-colors">
+            <span className="text-[15px] font-semibold text-slate-700 group-hover:text-blue-700 transition-colors">
               {opt.label}
             </span>
           </button>
@@ -371,18 +371,18 @@ export default function MyAttendance() {
       {/* ── Top bar: shift + check-out ──────────────────────────────── */}
       <div className="bg-white border-b border-slate-200 px-5 py-2.5 flex items-center gap-4 shadow-sm">
         <BackButton to="/attendance" label="Attendance" />
-        <span className="text-[13px] font-semibold text-slate-700">{shiftLabel}</span>
+        <span className="text-[15px] font-semibold text-slate-700">{shiftLabel}</span>
         <input
           placeholder="Add notes for check-out"
-          className="flex-1 max-w-[340px] border border-slate-200 rounded-md text-[12.5px] px-3 py-1.5 text-slate-600 placeholder:text-slate-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition"
+          className="flex-1 max-w-[340px] border border-slate-200 rounded-md text-[14px] px-3 py-1.5 text-slate-600 placeholder:text-slate-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition"
         />
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[13px] font-bold text-slate-700 font-mono">{timerDisplay}</span>
+          <span className="text-[15px] font-bold text-slate-700 font-mono">{timerDisplay}</span>
           {isCheckedIn ? (
             <button
               onClick={() => checkOut()}
               disabled={attLoading}
-              className="flex items-center gap-1.5 border-2 border-rose-500 text-rose-500 hover:bg-rose-50 text-[12.5px] font-bold px-4 py-1.5 rounded-lg transition-all disabled:opacity-60"
+              className="flex items-center gap-1.5 border-2 border-rose-500 text-rose-500 hover:bg-rose-50 text-[14px] font-bold px-4 py-1.5 rounded-lg transition-all disabled:opacity-60"
             >
               <LogOut size={14} /> Check-out
             </button>
@@ -390,7 +390,7 @@ export default function MyAttendance() {
             <button
               onClick={() => checkIn()}
               disabled={attLoading}
-              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[12.5px] font-bold px-4 py-1.5 rounded-lg transition-all disabled:opacity-60"
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[14px] font-bold px-4 py-1.5 rounded-lg transition-all disabled:opacity-60"
             >
               <LogIn size={14} /> Re-check-in
             </button>
@@ -398,7 +398,7 @@ export default function MyAttendance() {
             <button
               onClick={() => checkIn()}
               disabled={attLoading}
-              className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-800 text-white text-[12.5px] font-bold px-4 py-1.5 rounded-lg transition-all disabled:opacity-60"
+              className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-800 text-white text-[14px] font-bold px-4 py-1.5 rounded-lg transition-all disabled:opacity-60"
             >
               <LogIn size={14} /> Check-in
             </button>
@@ -424,7 +424,7 @@ export default function MyAttendance() {
         >
           <ChevronRight size={16} />
         </button>
-        <span className="text-[13px] font-semibold text-slate-700 ml-1">
+        <span className="text-[15px] font-semibold text-slate-700 ml-1">
           {fmtRange(weekStart, weekEndDate)}
         </span>
 
@@ -462,16 +462,16 @@ export default function MyAttendance() {
              {showFilter && (
                <div className="absolute right-0 mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg z-30">
                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                   <span className="text-[13px] font-bold text-slate-800">Filter</span>
+                   <span className="text-[15px] font-bold text-slate-800">Filter</span>
                    <button onClick={() => setShowFilter(false)} className="text-slate-400 hover:text-slate-700">✕</button>
                  </div>
                  <div className="p-4 space-y-3">
                    <div>
-                     <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1.5">Period</label>
+                     <label className="block text-[13px] font-medium text-slate-500 uppercase mb-1.5">Period</label>
                      <select
                        value={filterPeriod}
                        onChange={(e) => { setFilterPeriod(e.target.value); setShowFilter(false); }}
-                       className="w-full border border-slate-200 rounded px-2.5 py-1.5 text-[12.5px] focus:outline-none focus:border-blue-400"
+                       className="w-full border border-slate-200 rounded px-2.5 py-1.5 text-[14px] focus:outline-none focus:border-blue-400"
                      >
                        <option value="weekly">Weekly</option>
                        <option value="monthly">Monthly</option>
@@ -480,7 +480,7 @@ export default function MyAttendance() {
                    <div className="flex gap-2 pt-1">
                      <button
                        onClick={() => { setFilterPeriod('weekly'); setShowFilter(false); }}
-                       className="flex-1 text-[12px] font-medium text-slate-600 border border-slate-200 rounded px-3 py-1.5 hover:bg-slate-50"
+                       className="flex-1 text-[14px] font-medium text-slate-600 border border-slate-200 rounded px-3 py-1.5 hover:bg-slate-50"
                      >
                        Reset
                      </button>
@@ -531,13 +531,13 @@ export default function MyAttendance() {
                          URL.revokeObjectURL(url);
                        });
                    }}
-                   className="w-full text-left px-3 py-2 text-[12.5px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                   className="w-full text-left px-3 py-2 text-[14px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                  >
                    <Download size={13} className="text-slate-500" /> Export
                  </button>
                  <button
                    onClick={() => setShowMoreMenu(false)}
-                   className="w-full text-left px-3 py-2 text-[12.5px] text-slate-400 hover:bg-slate-50 flex items-center gap-2 cursor-not-allowed"
+                   className="w-full text-left px-3 py-2 text-[14px] text-slate-400 hover:bg-slate-50 flex items-center gap-2 cursor-not-allowed"
                    title="Audit history not enabled yet"
                  >
                    <Eye size={13} className="text-slate-400" /> Audit History
@@ -581,26 +581,26 @@ export default function MyAttendance() {
                     <div className="w-[64px] flex-shrink-0 flex items-center gap-2">
                       {isToday ? (
                         <div className="flex flex-col items-center">
-                          <span className="text-[10.5px] font-semibold text-slate-600">Today</span>
-                          <div className="w-7 h-7 rounded bg-blue-600 text-white flex items-center justify-center text-[13px] font-bold mt-1">
+                          <span className="text-[12px] font-semibold text-slate-600">Today</span>
+                          <div className="w-7 h-7 rounded bg-blue-600 text-white flex items-center justify-center text-[15px] font-bold mt-1">
                             {dayNum}
                           </div>
                         </div>
                       ) : (
                         <div className="flex flex-col items-center">
-                          <span className={`text-[10.5px] font-medium ${isWeekend ? 'text-slate-400' : 'text-slate-500'}`}>{dayName}</span>
-                          <span className={`text-[13px] font-semibold mt-0.5 ${isWeekend ? 'text-slate-400' : 'text-slate-700'}`}>{dayNum}</span>
+                          <span className={`text-[12px] font-medium ${isWeekend ? 'text-slate-400' : 'text-slate-500'}`}>{dayName}</span>
+                          <span className={`text-[15px] font-semibold mt-0.5 ${isWeekend ? 'text-slate-400' : 'text-slate-700'}`}>{dayNum}</span>
                         </div>
                       )}
                     </div>
 
                     {/* Check-in time + Late indicator */}
                     <div className="w-[80px] flex-shrink-0">
-                      <span className="text-[12.5px] text-slate-700 font-medium">
-                        {checkInStr || (isWeekend ? <span className="text-slate-300 text-[11px]">Weekend</span> : '')}
+                      <span className="text-[14px] text-slate-700 font-medium">
+                        {checkInStr || (isWeekend ? <span className="text-slate-300 text-[13px]">Weekend</span> : '')}
                       </span>
                       {record?.lateMinutes > 0 && (
-                        <div className="text-[10.5px] font-semibold" style={{ color: '#F5A623' }}>
+                        <div className="text-[12px] font-semibold" style={{ color: '#F5A623' }}>
                           Late by {fmtHHMM(record.lateMinutes / 60)}
                         </div>
                       )}
@@ -614,7 +614,7 @@ export default function MyAttendance() {
                           <div className="absolute left-[3%] right-[3%] h-[2px] bg-amber-300" style={{ top: '50%', transform: 'translateY(-50%)' }} />
                           <div className="absolute left-[3%] w-2.5 h-2.5 rounded-full bg-amber-300" style={{ top: '50%', transform: 'translate(-50%,-50%)' }} />
                           <div className="absolute right-[3%] w-2.5 h-2.5 rounded-full bg-amber-300" style={{ top: '50%', transform: 'translate(50%,-50%)' }} />
-                          <div className="absolute left-1/2 -translate-x-1/2 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 text-[10.5px] font-semibold text-amber-700 z-10">
+                          <div className="absolute left-1/2 -translate-x-1/2 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 text-[12px] font-semibold text-amber-700 z-10">
                             Weekend
                           </div>
                         </div>
@@ -638,10 +638,10 @@ export default function MyAttendance() {
                          }
                          return (
                            <>
-                             <p className={`text-[13px] font-bold ${liveOnToday ? 'text-emerald-600' : 'text-slate-700'}`}>
+                             <p className={`text-[15px] font-bold ${liveOnToday ? 'text-emerald-600' : 'text-slate-700'}`}>
                                {displayHours}
                              </p>
-                             <p className="text-[10.5px] text-slate-400 mt-0.5">{liveOnToday ? 'Hrs' : 'Hrs worked'}</p>
+                             <p className="text-[12px] text-slate-400 mt-0.5">{liveOnToday ? 'Hrs' : 'Hrs worked'}</p>
                            </>
                          );
                        })()}
@@ -666,7 +666,7 @@ export default function MyAttendance() {
                                canRegularize,
                              });
                            }}
-                           className="request-menu-trigger flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold px-2.5 py-1.5 rounded-md transition-colors shadow-sm"
+                           className="request-menu-trigger flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold px-2.5 py-1.5 rounded-md transition-colors shadow-sm"
                          >
                            Add Request
                          </button>
@@ -687,7 +687,7 @@ export default function MyAttendance() {
                     return (
                       <span
                         key={h}
-                        className="absolute text-[10px] text-slate-400 transform -translate-x-1/2"
+                        className="absolute text-[12px] text-slate-400 transform -translate-x-1/2"
                         style={{ left: `${pct}%` }}
                       >
                         {h}:30{h < 12 ? 'AM' : 'PM'}
@@ -709,7 +709,7 @@ export default function MyAttendance() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 {['Date', 'Day', 'Check In', 'Check Out', 'Hours', 'Status'].map(h => (
-                  <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                  <th key={h} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -720,15 +720,15 @@ export default function MyAttendance() {
                 const isWeekend = effectiveIsWeekend(day);
                 return (
                   <tr key={ds} className={`hover:bg-slate-50 transition-colors ${ds === todayStr ? 'bg-blue-50/30' : ''}`}>
-                    <td className="px-5 py-3 text-[12.5px] font-medium text-slate-700">
+                    <td className="px-5 py-3 text-[14px] font-medium text-slate-700">
                       {day.toLocaleDateString('en-IN', { day:'2-digit', month:'short' })}
                     </td>
-                    <td className="px-5 py-3 text-[12.5px] text-slate-500">
+                    <td className="px-5 py-3 text-[14px] text-slate-500">
                       {day.toLocaleDateString('en-US', { weekday:'short' })}
                     </td>
-                    <td className="px-5 py-3 text-[12.5px] text-slate-700">{fmtTime(r?.checkIn) || '—'}</td>
-                    <td className="px-5 py-3 text-[12.5px] text-slate-700">{fmtTime(r?.checkOut) || '—'}</td>
-                    <td className="px-5 py-3 text-[12.5px] text-slate-700">{r?.workingHours ? `${fmtHHMM(r.workingHours)} hrs` : '—'}</td>
+                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.checkIn) || '—'}</td>
+                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.checkOut) || '—'}</td>
+                    <td className="px-5 py-3 text-[14px] text-slate-700">{r?.workingHours ? `${fmtHHMM(r.workingHours)} hrs` : '—'}</td>
                     <td className="px-5 py-3">
                       {isWeekend
                         ? <StatusPill status="weekend" />
@@ -765,7 +765,7 @@ export default function MyAttendance() {
         return (
           <div className="mx-4 my-4 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-[14px] font-bold text-slate-800">{monthName}</h3>
+              <h3 className="text-[16px] font-bold text-slate-800">{monthName}</h3>
               <div className="flex items-center gap-1">
                 <button onClick={() => setWeekStart(weekOf(new Date(y, m - 1, 15)))} className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500">
                   <ChevronLeft size={15} />
@@ -778,7 +778,7 @@ export default function MyAttendance() {
             {/* Weekday header */}
             <div className="grid grid-cols-7 border-b border-slate-100">
               {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-                <div key={d} className="px-3 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{d}</div>
+                <div key={d} className="px-3 py-2 text-[13px] font-semibold text-slate-500 uppercase tracking-wide">{d}</div>
               ))}
             </div>
             {/* Date cells */}
@@ -797,17 +797,17 @@ export default function MyAttendance() {
                   const status = r.status === 'late' ? 'Present' : r.status === 'half-day' ? 'Half day' : (r.status || 'Present').replace(/^./, c => c.toUpperCase());
                   const isAbsent = r.status === 'absent';
                   pill = (
-                    <div className={`text-[11px] font-medium px-2 py-1 rounded leading-tight ${
+                    <div className={`text-[13px] font-medium px-2 py-1 rounded leading-tight ${
                       isAbsent ? 'bg-rose-50 text-rose-700 border border-rose-200'
                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                     }`}>
                       <div>{status}</div>
-                      {r.workingHours != null && <div className="text-[10px] opacity-80">{fmtHHMM(r.workingHours)} Hrs</div>}
+                      {r.workingHours != null && <div className="text-[12px] opacity-80">{fmtHHMM(r.workingHours)} Hrs</div>}
                     </div>
                   );
                 } else if (!isWknd && !isFuture && ds < todayStr) {
                   pill = (
-                    <div className="text-[11px] font-medium px-2 py-1 rounded leading-tight bg-rose-50 text-rose-700 border border-rose-200">
+                    <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-rose-50 text-rose-700 border border-rose-200">
                       Absent
                     </div>
                   );
@@ -820,7 +820,7 @@ export default function MyAttendance() {
                       isWknd ? 'bg-amber-50/30' : ''
                     }`}
                   >
-                    <div className={`text-[11.5px] font-semibold mb-1 inline-flex items-center justify-center ${
+                    <div className={`text-[13px] font-semibold mb-1 inline-flex items-center justify-center ${
                       isToday ? 'w-6 h-6 rounded-full bg-blue-600 text-white' :
                       isWknd  ? 'text-slate-400' : 'text-slate-700'
                     }`}>
@@ -842,9 +842,9 @@ export default function MyAttendance() {
           <div className="flex items-center gap-2">
             <div className="flex border border-slate-200 rounded overflow-hidden">
               <button onClick={() => { setReportTab('days'); setShowReport(true); }}
-                className={`px-3 py-1 text-[11.5px] font-semibold transition-colors ${reportTab === 'days' && showReport ? 'bg-[#1a73e8] text-white' : 'text-slate-500 hover:bg-slate-50'}`}>Days</button>
+                className={`px-3 py-1 text-[13px] font-semibold transition-colors ${reportTab === 'days' && showReport ? 'bg-[#1a73e8] text-white' : 'text-slate-500 hover:bg-slate-50'}`}>Days</button>
               <button onClick={() => { setReportTab('hours'); setShowReport(true); }}
-                className={`px-3 py-1 text-[11.5px] font-medium transition-colors ${reportTab === 'hours' && showReport ? 'bg-[#1a73e8] text-white' : 'text-slate-500 hover:bg-slate-50'}`}>Hours</button>
+                className={`px-3 py-1 text-[13px] font-medium transition-colors ${reportTab === 'hours' && showReport ? 'bg-[#1a73e8] text-white' : 'text-slate-500 hover:bg-slate-50'}`}>Hours</button>
             </div>
           </div>
 
@@ -863,8 +863,8 @@ export default function MyAttendance() {
           ].map(({ label, val, color }) => (
             <div key={label} className="flex items-center gap-2">
               <div className="w-[3px] h-[14px] rounded-full" style={{ backgroundColor: color }} />
-              <span className="text-[11.5px] text-slate-500">{label}</span>
-              <span className="text-[12px] font-bold text-slate-700">{val} {label === 'Paid leave' ? 'Day' : 'Days'}</span>
+              <span className="text-[13px] text-slate-500">{label}</span>
+              <span className="text-[14px] font-bold text-slate-700">{val} {label === 'Paid leave' ? 'Day' : 'Days'}</span>
             </div>
           ))}
         </div>
@@ -876,7 +876,7 @@ export default function MyAttendance() {
           <div className="absolute right-0 top-0 h-full w-[320px] bg-white shadow-2xl border-l border-slate-200 flex flex-col"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 className="text-[15px] font-bold text-slate-800">Attendance Report</h3>
+              <h3 className="text-[17px] font-bold text-slate-800">Attendance Report</h3>
               <button onClick={() => setShowReport(false)}
                 className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400">
                 ✕
@@ -886,7 +886,7 @@ export default function MyAttendance() {
             <div className="flex border-b border-slate-100">
               {['days', 'hours'].map(t => (
                 <button key={t} onClick={() => setReportTab(t)}
-                  className={`flex-1 py-2.5 text-[13px] font-semibold capitalize border-b-2 transition-colors
+                  className={`flex-1 py-2.5 text-[15px] font-semibold capitalize border-b-2 transition-colors
                     ${reportTab === t ? 'border-[#1a73e8] text-[#1a73e8]' : 'border-transparent text-slate-400 hover:text-slate-700'}`}>
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>
@@ -906,8 +906,8 @@ export default function MyAttendance() {
                 <div key={label} className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-50 last:border-0">
                   <div className="w-[3px] h-[18px] rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
                   <div className="flex-1">
-                    <p className="text-[13px] font-semibold text-slate-700">{label}</p>
-                    <p className="text-[12px] text-slate-500">{val}</p>
+                    <p className="text-[15px] font-semibold text-slate-700">{label}</p>
+                    <p className="text-[14px] text-slate-500">{val}</p>
                   </div>
                 </div>
               ))}

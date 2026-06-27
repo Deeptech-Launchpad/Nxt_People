@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Download, Filter, BarChart2 } from 'lucide-react';
 import api from '../utils/api';
 import BackButton from '../components/BackButton';
@@ -58,25 +58,25 @@ export default function Reports() {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
         <div className="flex flex-wrap gap-3 items-end">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">From</label>
-            <input type="date" value={filters.startDate} onChange={e=>setFilters({...filters,startDate:e.target.value})} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+            <label className="block text-sm font-medium text-slate-600 mb-1.5">From</label>
+            <input type="date" value={filters.startDate} onChange={e=>setFilters({...filters,startDate:e.target.value})} className="border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">To</label>
-            <input type="date" value={filters.endDate} onChange={e=>setFilters({...filters,endDate:e.target.value})} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"/>
+            <label className="block text-sm font-medium text-slate-600 mb-1.5">To</label>
+            <input type="date" value={filters.endDate} onChange={e=>setFilters({...filters,endDate:e.target.value})} className="border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">Department</label>
-            <select value={filters.department} onChange={e=>setFilters({...filters,department:e.target.value})} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
+            <label className="block text-sm font-medium text-slate-600 mb-1.5">Department</label>
+            <select value={filters.department} onChange={e=>setFilters({...filters,department:e.target.value})} className="border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400">
               {DEPTS.map(d=><option key={d}>{d}</option>)}
             </select>
           </div>
           <button onClick={load} disabled={loading}
-            className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm shadow-brand-500/25 disabled:opacity-60">
+            className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25 disabled:opacity-60">
             <Filter size={15}/> Apply Filters
           </button>
           <button onClick={exportCSV}
-            className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors border border-emerald-200">
+            className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-4 py-2.5 rounded-xl text-base font-medium transition-colors border border-emerald-200">
             <Download size={15}/> Export CSV
           </button>
         </div>
@@ -85,7 +85,7 @@ export default function Reports() {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="border-b border-slate-100 flex">
           {[['detail','Detailed Report'],['summary','Summary Report']].map(([id,label])=>(
-            <button key={id} onClick={()=>setTab(id)} className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${tab===id?'border-brand-600 text-brand-600':'border-transparent text-slate-500 hover:text-slate-700'}`}>{label}</button>
+            <button key={id} onClick={()=>setTab(id)} className={`px-6 py-4 text-base font-medium border-b-2 transition-colors ${tab===id?'border-brand-600 text-brand-600':'border-transparent text-slate-500 hover:text-slate-700'}`}>{label}</button>
           ))}
         </div>
 
@@ -93,45 +93,45 @@ export default function Reports() {
           <div className="overflow-x-auto">
             {tab === 'detail' ? (
               <table className="w-full">
-                <thead><tr className="bg-slate-50">{['Employee','Department','Date','Check In','Check Out','Hours','Status'].map(h=><th key={h} className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
+                <thead><tr className="bg-slate-50">{['Employee','Department','Date','Check In','Check Out','Hours','Status'].map(h=><th key={h} className="px-5 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {records.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-slate-400">No records for selected filters</td></tr> :
                   records.map((r,i) => (
                     <tr key={i} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{r.employee?.firstName?.[0]}{r.employee?.lastName?.[0]}</div>
-                          <span className="text-sm font-medium text-slate-700">{r.employee?.firstName} {r.employee?.lastName}</span>
+                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">{r.employee?.firstName?.[0]}{r.employee?.lastName?.[0]}</div>
+                          <span className="text-base font-medium text-slate-700">{r.employee?.firstName} {r.employee?.lastName}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-slate-500">{r.employee?.department}</td>
-                      <td className="px-5 py-3.5 text-sm text-slate-600">{new Date(r.date).toLocaleDateString('en-US',{day:'2-digit',month:'short',year:'numeric'})}</td>
-                      <td className="px-5 py-3.5 text-sm text-slate-700">{fmt(r.checkIn)}</td>
-                      <td className="px-5 py-3.5 text-sm text-slate-700">{fmt(r.checkOut)}</td>
-                      <td className="px-5 py-3.5 text-sm text-slate-700">{r.workingHours ? `${Number(r.workingHours).toFixed(1)}h` : '—'}</td>
-                      <td className="px-5 py-3.5"><span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${STATUS_STYLE[r.status] || 'bg-slate-100 text-slate-600'}`}>{r.status}</span></td>
+                      <td className="px-5 py-3.5 text-base text-slate-500">{r.employee?.department}</td>
+                      <td className="px-5 py-3.5 text-base text-slate-600">{new Date(r.date).toLocaleDateString('en-US',{day:'2-digit',month:'short',year:'numeric'})}</td>
+                      <td className="px-5 py-3.5 text-base text-slate-700">{fmt(r.checkIn)}</td>
+                      <td className="px-5 py-3.5 text-base text-slate-700">{fmt(r.checkOut)}</td>
+                      <td className="px-5 py-3.5 text-base text-slate-700">{r.workingHours ? `${Number(r.workingHours).toFixed(1)}h` : '—'}</td>
+                      <td className="px-5 py-3.5"><span className={`px-2.5 py-1 rounded-full text-sm font-medium capitalize ${STATUS_STYLE[r.status] || 'bg-slate-100 text-slate-600'}`}>{r.status}</span></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             ) : (
               <table className="w-full">
-                <thead><tr className="bg-slate-50">{['Employee','Department','Present','Absent','Late','Total Hours'].map(h=><th key={h} className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
+                <thead><tr className="bg-slate-50">{['Employee','Department','Present','Absent','Late','Total Hours'].map(h=><th key={h} className="px-5 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {summary.length === 0 ? <tr><td colSpan={6} className="text-center py-12 text-slate-400">No data available</td></tr> :
                   summary.map((r,i) => (
                     <tr key={i} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-xs font-bold">{r.employee?.firstName?.[0]}{r.employee?.lastName?.[0]}</div>
-                          <span className="text-sm font-medium text-slate-700">{r.employee?.firstName} {r.employee?.lastName}</span>
+                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-sm font-bold">{r.employee?.firstName?.[0]}{r.employee?.lastName?.[0]}</div>
+                          <span className="text-base font-medium text-slate-700">{r.employee?.firstName} {r.employee?.lastName}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-slate-500">{r.employee?.department}</td>
-                      <td className="px-5 py-3.5"><span className="text-sm font-medium text-emerald-600">{r.present}</span></td>
-                      <td className="px-5 py-3.5"><span className="text-sm font-medium text-red-500">{r.absent}</span></td>
-                      <td className="px-5 py-3.5"><span className="text-sm font-medium text-amber-600">{r.late}</span></td>
-                      <td className="px-5 py-3.5 text-sm font-semibold text-brand-600">{r.totalHours?.toFixed(1)}h</td>
+                      <td className="px-5 py-3.5 text-base text-slate-500">{r.employee?.department}</td>
+                      <td className="px-5 py-3.5"><span className="text-base font-medium text-emerald-600">{r.present}</span></td>
+                      <td className="px-5 py-3.5"><span className="text-base font-medium text-red-500">{r.absent}</span></td>
+                      <td className="px-5 py-3.5"><span className="text-base font-medium text-amber-600">{r.late}</span></td>
+                      <td className="px-5 py-3.5 text-base font-semibold text-brand-600">{r.totalHours?.toFixed(1)}h</td>
                     </tr>
                   ))}
                 </tbody>

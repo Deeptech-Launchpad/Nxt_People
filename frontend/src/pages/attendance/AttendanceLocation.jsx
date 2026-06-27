@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AttendanceLocation.jsx — Attendance → Location
  *
  * Location history for check-ins / check-outs. Data is captured by the browser
@@ -41,7 +41,7 @@ const coordStr = (v) => (v === null || v === undefined) ? null : Number(v).toFix
 function TypeBadge({ type }) {
   const isIn = type === 'checkin';
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1 rounded-full ${isIn ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700'}`}>
+    <span className={`inline-flex items-center gap-1.5 text-[14px] font-semibold px-2.5 py-1 rounded-full ${isIn ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700'}`}>
       {isIn ? <LogIn size={13} /> : <LogOut size={13} />}{isIn ? 'Check-in' : 'Check-out'}
     </span>
   );
@@ -136,8 +136,8 @@ export default function AttendanceLocation() {
               <MapPin size={20} />
             </div>
             <div>
-              <h2 className="text-[15px] font-bold text-slate-800">Location History</h2>
-              <p className="text-[12px] text-slate-400">
+              <h2 className="text-[17px] font-bold text-slate-800">Location History</h2>
+              <p className="text-[14px] text-slate-400">
                 {full ? 'Check-in / check-out locations across employees' : 'Your check-in / check-out locations'} · {total} record{total !== 1 ? 's' : ''}
               </p>
             </div>
@@ -149,24 +149,24 @@ export default function AttendanceLocation() {
 
         {/* Filters */}
         <div className="px-6 py-3 flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/50">
-          <span className="flex items-center gap-1 text-[12px] text-slate-400 font-medium"><Filter size={13} /> Filters</span>
-          <select value={type} onChange={e => setType(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-slate-700 bg-white focus:outline-none focus:border-blue-400">
+          <span className="flex items-center gap-1 text-[14px] text-slate-400 font-medium"><Filter size={13} /> Filters</span>
+          <select value={type} onChange={e => setType(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] font-medium text-slate-700 bg-white focus:outline-none focus:border-blue-400">
             {TYPE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
           </select>
           {full && (
-            <select value={employeeId} onChange={e => setEmployeeId(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-blue-400 max-w-[220px]">
+            <select value={employeeId} onChange={e => setEmployeeId(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] bg-white focus:outline-none focus:border-blue-400 max-w-[220px]">
               <option value="">All Employees</option>
               {directory.map(e => <option key={e._id} value={e._id}>{e.firstName} {e.lastName}{e.employeeId ? ` (${e.employeeId})` : ''}</option>)}
             </select>
           )}
           <div className="flex items-center gap-1">
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} title="From" className="border border-slate-200 rounded-lg px-2 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-blue-400" />
-            <span className="text-slate-300 text-xs">–</span>
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} title="To" className="border border-slate-200 rounded-lg px-2 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-blue-400" />
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} title="From" className="border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] bg-white focus:outline-none focus:border-blue-400" />
+            <span className="text-slate-300 text-sm">–</span>
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} title="To" className="border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] bg-white focus:outline-none focus:border-blue-400" />
           </div>
           {(type || employeeId || startDate || endDate) && (
             <button onClick={() => { setType(''); setEmployeeId(''); setStartDate(''); setEndDate(''); }}
-              className="text-[12px] text-blue-600 hover:text-blue-700 font-medium ml-1">Clear</button>
+              className="text-[14px] text-blue-600 hover:text-blue-700 font-medium ml-1">Clear</button>
           )}
         </div>
 
@@ -174,7 +174,7 @@ export default function AttendanceLocation() {
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              <tr className="bg-slate-50 border-b border-slate-100 text-[13px] font-semibold text-slate-500 uppercase tracking-wider">
                 <th className="px-5 py-3">Date</th>
                 <th className="px-5 py-3">Time</th>
                 {full && <th className="px-5 py-3">Employee</th>}
@@ -187,7 +187,7 @@ export default function AttendanceLocation() {
               {loading ? (
                 <tr><td colSpan={colSpan} className="px-5 py-16 text-center"><div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" /></td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={colSpan} className="px-5 py-16 text-center text-slate-400 text-[13px]">
+                <tr><td colSpan={colSpan} className="px-5 py-16 text-center text-slate-400 text-[15px]">
                   <MapPin size={32} className="text-slate-200 mx-auto mb-2" />
                   No location records yet. Locations are captured on check-in and check-out.
                 </td></tr>
@@ -204,16 +204,16 @@ export default function AttendanceLocation() {
                 const wm = wmKey ? WORK_MODE_PILL[wmKey] : null;
                 return (
                   <tr key={l._id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="px-5 py-3.5 text-[13px] text-slate-600">{fmtDate(l.capturedAt)}</td>
-                    <td className="px-5 py-3.5 text-[13px] text-slate-600">{fmtTime(l.capturedAt)}</td>
+                    <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmtDate(l.capturedAt)}</td>
+                    <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmtTime(l.capturedAt)}</td>
                     {full && (
                       <td className="px-5 py-3.5">
-                        <p className="text-[13px] font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
-                        <p className="text-[11px] text-slate-400 font-mono">{l.employee?.employeeId}</p>
+                        <p className="text-[15px] font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
+                        <p className="text-[13px] text-slate-400 font-mono">{l.employee?.employeeId}</p>
                       </td>
                     )}
                     <td className="px-5 py-3.5"><TypeBadge type={l.type} /></td>
-                    <td className="px-5 py-3.5 text-[13px]">
+                    <td className="px-5 py-3.5 text-[15px]">
                       {!ck ? (
                         <span className="text-slate-400">—</span>
                       ) : place === undefined ? (
@@ -226,11 +226,11 @@ export default function AttendanceLocation() {
                     </td>
                     <td className="px-5 py-3.5">
                       {wm ? (
-                        <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${wm.cls}`}>
+                        <span className={`inline-flex items-center gap-1.5 text-[13px] font-semibold px-2.5 py-1 rounded-full border ${wm.cls}`}>
                           {wm.icon} {wm.label}
                         </span>
                       ) : (
-                        <span className="text-[12.5px] text-slate-400">—</span>
+                        <span className="text-[14px] text-slate-400">—</span>
                       )}
                     </td>
                   </tr>
@@ -242,12 +242,12 @@ export default function AttendanceLocation() {
 
         {/* Pagination */}
         <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-between">
-          <p className="text-[12px] text-slate-500">
+          <p className="text-[14px] text-slate-500">
             {total === 0 ? '0' : `${(page - 1) * limit + 1}–${Math.min(page * limit, total)}`} of {total}
           </p>
           <div className="flex items-center gap-2">
             <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"><ChevronLeft size={15} /></button>
-            <span className="text-[12px] text-slate-500">Page {page} / {totalPages}</span>
+            <span className="text-[14px] text-slate-500">Page {page} / {totalPages}</span>
             <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"><ChevronRight size={15} /></button>
           </div>
         </div>

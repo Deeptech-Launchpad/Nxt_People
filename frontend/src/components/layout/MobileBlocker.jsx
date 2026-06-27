@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { Smartphone } from 'lucide-react';
 
 export default function MobileBlocker({ children }) {
@@ -37,8 +37,8 @@ export default function MobileBlocker({ children }) {
         <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mb-6">
           <Smartphone size={40} className="text-red-500" />
         </div>
-        <h1 className="text-2xl font-bold text-white mb-3 tracking-tight">Mobile Access Restricted</h1>
-        <p className="text-slate-400 text-sm max-w-[300px] leading-relaxed">
+        <h1 className="text-3xl font-bold text-white mb-3 tracking-tight">Mobile Access Restricted</h1>
+        <p className="text-slate-400 text-base max-w-[300px] leading-relaxed">
           For security and integrity reasons, accessing this portal via a mobile device is strictly prohibited. 
           Please log in using a Desktop or Laptop computer.
         </p>

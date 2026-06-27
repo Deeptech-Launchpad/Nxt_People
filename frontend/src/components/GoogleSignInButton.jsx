@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -109,13 +109,13 @@ export default function GoogleSignInButton({ onMfaRequired }) {
     <div className="mt-6">
       <div className="flex items-center gap-3 mb-4">
         <div className="flex-1 h-px bg-slate-200" />
-        <span className="text-xs text-slate-400 font-medium">or</span>
+        <span className="text-sm text-slate-400 font-medium">or</span>
         <div className="flex-1 h-px bg-slate-200" />
       </div>
       {/* Google renders its official button into this container. */}
       <div ref={btnRef} className="flex justify-center min-h-[44px]" />
       {!ready && (
-        <p className="text-center text-xs text-slate-400 mt-2">Loading Google Sign-In…</p>
+        <p className="text-center text-sm text-slate-400 mt-2">Loading Google Sign-In…</p>
       )}
     </div>
   );

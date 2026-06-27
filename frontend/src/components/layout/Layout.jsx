@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -48,7 +48,7 @@ export default function Layout() {
         </main>
 
         {/* ── Persistent bottom bar (Zoho-style) ─────────────────── */}
-        <div className="h-[30px] bg-white border-t border-slate-200 fixed bottom-0 left-[72px] right-0 z-40 flex items-center px-4 justify-between text-[11.5px] text-slate-500 shadow-sm">
+        <div className="h-[30px] bg-white border-t border-slate-200 fixed bottom-0 left-[72px] right-0 z-40 flex items-center px-4 justify-between text-[13px] text-slate-500 shadow-sm">
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate('/chat')}
@@ -65,12 +65,12 @@ export default function Layout() {
             <span className="text-slate-300">|</span>
             <button
               onClick={() => setSmartChatOpen(true)}
-              className="flex items-center gap-1.5 text-slate-400 hover:text-slate-800 transition-colors text-[11px]"
+              className="flex items-center gap-1.5 text-slate-400 hover:text-slate-800 transition-colors text-[13px]"
               title="Open Smart Chat (Ctrl+Space)"
             >
               <Search size={12} />
               <span>Here is your Smart Chat</span>
-              <kbd className="ml-1 hidden sm:inline-flex items-center gap-1 px-1.5 py-[1px] rounded border border-slate-200 bg-slate-50 text-slate-500 font-mono text-[10px]">
+              <kbd className="ml-1 hidden sm:inline-flex items-center gap-1 px-1.5 py-[1px] rounded border border-slate-200 bg-slate-50 text-slate-500 font-mono text-[12px]">
                 Ctrl + Space
               </kbd>
             </button>

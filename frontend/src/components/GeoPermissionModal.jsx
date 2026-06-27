@@ -1,4 +1,4 @@
-/**
+﻿/**
  * GeoPermissionModal — our app-level location consent prompt.
  *
  * Mounted once (in Layout). It registers an async "ask" handler with
@@ -39,7 +39,7 @@ export default function GeoPermissionModal() {
             <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
               <MapPin size={18} />
             </div>
-            <h3 className="text-[15px] font-bold text-slate-800">Share your location?</h3>
+            <h3 className="text-[17px] font-bold text-slate-800">Share your location?</h3>
           </div>
           <button onClick={() => choose('deny')} className="text-slate-400 hover:text-slate-600 transition-colors">
             <X size={18} />
@@ -47,7 +47,7 @@ export default function GeoPermissionModal() {
         </div>
 
         <div className="px-5 py-4">
-          <p className="text-[13px] text-slate-600 leading-relaxed">
+          <p className="text-[15px] text-slate-600 leading-relaxed">
             NXT People would like to record where you check in and out for attendance.
             Your location is captured only at that moment and saved to your attendance
             location history.
@@ -57,19 +57,19 @@ export default function GeoPermissionModal() {
         <div className="px-5 pb-5 space-y-2">
           <button
             onClick={() => choose('always')}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-[13px] font-semibold transition-colors"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-[15px] font-semibold transition-colors"
           >
             Allow Always
           </button>
           <button
             onClick={() => choose('once')}
-            className="w-full border border-slate-200 text-slate-700 hover:bg-slate-50 py-2.5 rounded-lg text-[13px] font-semibold transition-colors"
+            className="w-full border border-slate-200 text-slate-700 hover:bg-slate-50 py-2.5 rounded-lg text-[15px] font-semibold transition-colors"
           >
             Allow This Time
           </button>
           <button
             onClick={() => choose('deny')}
-            className="w-full text-slate-500 hover:text-slate-700 py-2 rounded-lg text-[13px] font-medium transition-colors"
+            className="w-full text-slate-500 hover:text-slate-700 py-2 rounded-lg text-[15px] font-medium transition-colors"
           >
             Deny
           </button>

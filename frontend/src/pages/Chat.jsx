@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Send, Search, UserPlus, Check, X, Clock, Circle, MessageCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -157,8 +157,8 @@ export default function Chat() {
         <div className="p-3 border-b border-slate-200">
           <div className="flex items-center gap-2 mb-2">
             <MessageCircle size={16} className="text-blue-600" />
-            <h2 className="text-[14px] font-bold text-slate-800">Chat</h2>
-            <span className={`ml-auto text-[10.5px] font-medium px-2 py-0.5 rounded-full ${
+            <h2 className="text-[16px] font-bold text-slate-800">Chat</h2>
+            <span className={`ml-auto text-[12px] font-medium px-2 py-0.5 rounded-full ${
               wsState === 'open' ? 'bg-emerald-50 text-emerald-700'
               : wsState === 'connecting' ? 'bg-amber-50 text-amber-700'
               : 'bg-slate-100 text-slate-500'
@@ -172,7 +172,7 @@ export default function Chat() {
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
               placeholder="Search colleagues to connect…"
-              className="w-full pl-8 pr-3 py-1.5 text-[12.5px] border border-slate-200 rounded-md focus:outline-none focus:border-blue-400"
+              className="w-full pl-8 pr-3 py-1.5 text-[14px] border border-slate-200 rounded-md focus:outline-none focus:border-blue-400"
             />
           </div>
         </div>
@@ -181,30 +181,30 @@ export default function Chat() {
           {/* Search results take priority when query is non-empty. */}
           {searchQ.trim() ? (
             <div className="p-2">
-              <p className="px-2 py-1 text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide">
+              <p className="px-2 py-1 text-[12px] font-semibold text-slate-400 uppercase tracking-wide">
                 {searching ? 'Searching…' : `${searchResults.length} result(s)`}
               </p>
               {searchResults.map(r => (
                 <div key={r.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-slate-50">
                   <Avatar name={`${r.firstName} ${r.lastName}`} photoUrl={r.photoUrl} size={36} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[12.5px] font-semibold text-slate-800 truncate">
+                    <p className="text-[14px] font-semibold text-slate-800 truncate">
                       {r.firstName} {r.lastName}
                     </p>
-                    <p className="text-[11px] text-slate-500 truncate">{r.designation || r.department || ''}</p>
+                    <p className="text-[13px] text-slate-500 truncate">{r.designation || r.department || ''}</p>
                   </div>
                   {r.connectionStatus === 'accepted' && (
                     <button onClick={() => startConversation(r)}
-                            className="text-[11px] font-semibold text-blue-600 hover:text-blue-700">
+                            className="text-[13px] font-semibold text-blue-600 hover:text-blue-700">
                       Message
                     </button>
                   )}
                   {r.connectionStatus === 'pending' && (
-                    <span className="text-[11px] text-amber-600 flex items-center gap-1"><Clock size={11}/>Pending</span>
+                    <span className="text-[13px] text-amber-600 flex items-center gap-1"><Clock size={11}/>Pending</span>
                   )}
                   {!r.connectionStatus && (
                     <button onClick={() => startConversation(r)}
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded">
+                            className="inline-flex items-center gap-1 text-[13px] font-semibold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded">
                       <UserPlus size={11}/> Connect
                     </button>
                   )}
@@ -216,17 +216,17 @@ export default function Chat() {
               {/* Incoming connection requests */}
               {contacts.incoming.length > 0 && (
                 <div className="p-2 border-b border-slate-100">
-                  <p className="px-2 py-1 text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide">
+                  <p className="px-2 py-1 text-[12px] font-semibold text-slate-400 uppercase tracking-wide">
                     Requests ({contacts.incoming.length})
                   </p>
                   {contacts.incoming.map(c => (
                     <div key={c.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-slate-50">
                       <Avatar name={`${c.firstName} ${c.lastName}`} photoUrl={c.photoUrl} size={36} />
                       <div className="min-w-0 flex-1">
-                        <p className="text-[12.5px] font-semibold text-slate-800 truncate">
+                        <p className="text-[14px] font-semibold text-slate-800 truncate">
                           {c.firstName} {c.lastName}
                         </p>
-                        <p className="text-[11px] text-slate-500 truncate">wants to chat</p>
+                        <p className="text-[13px] text-slate-500 truncate">wants to chat</p>
                       </div>
                       <button onClick={() => acceptConnection(c.id)} title="Accept"
                               className="w-7 h-7 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center">
@@ -244,20 +244,20 @@ export default function Chat() {
               {/* Outgoing pending requests */}
               {contacts.outgoing.length > 0 && (
                 <div className="p-2 border-b border-slate-100">
-                  <p className="px-2 py-1 text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide">
+                  <p className="px-2 py-1 text-[12px] font-semibold text-slate-400 uppercase tracking-wide">
                     Sent ({contacts.outgoing.length})
                   </p>
                   {contacts.outgoing.map(c => (
                     <div key={c.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-slate-50">
                       <Avatar name={`${c.firstName} ${c.lastName}`} photoUrl={c.photoUrl} size={36} />
                       <div className="min-w-0 flex-1">
-                        <p className="text-[12.5px] font-semibold text-slate-800 truncate">
+                        <p className="text-[14px] font-semibold text-slate-800 truncate">
                           {c.firstName} {c.lastName}
                         </p>
-                        <p className="text-[11px] text-amber-600 truncate flex items-center gap-1"><Clock size={10}/>Awaiting accept</p>
+                        <p className="text-[13px] text-amber-600 truncate flex items-center gap-1"><Clock size={10}/>Awaiting accept</p>
                       </div>
                       <button onClick={() => cancelRequest(c.id)} title="Cancel"
-                              className="text-[11px] text-slate-500 hover:text-red-600">
+                              className="text-[13px] text-slate-500 hover:text-red-600">
                         Cancel
                       </button>
                     </div>
@@ -267,11 +267,11 @@ export default function Chat() {
 
               {/* Accepted contacts */}
               <div className="p-2">
-                <p className="px-2 py-1 text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide">
+                <p className="px-2 py-1 text-[12px] font-semibold text-slate-400 uppercase tracking-wide">
                   Conversations ({contacts.accepted.length})
                 </p>
                 {contacts.accepted.length === 0 && (
-                  <p className="px-2 py-3 text-[12px] text-slate-400 italic">
+                  <p className="px-2 py-3 text-[14px] text-slate-400 italic">
                     Search above to connect with a colleague.
                   </p>
                 )}
@@ -287,15 +287,15 @@ export default function Chat() {
                     >
                       <Avatar name={`${c.firstName} ${c.lastName}`} photoUrl={c.photoUrl} online={presence[c.id]} size={36} />
                       <div className="min-w-0 flex-1">
-                        <p className="text-[12.5px] font-semibold text-slate-800 truncate">
+                        <p className="text-[14px] font-semibold text-slate-800 truncate">
                           {c.firstName} {c.lastName}
                         </p>
-                        <p className="text-[11px] text-slate-500 truncate">
+                        <p className="text-[13px] text-slate-500 truncate">
                           {typing[c.id] ? <span className="text-blue-600 italic">typing…</span> : (c.lastMessage || c.designation || '')}
                         </p>
                       </div>
                       {c.unreadCount > 0 && !isActive && (
-                        <span className="text-[10.5px] font-bold text-white bg-blue-600 px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                        <span className="text-[12px] font-bold text-white bg-blue-600 px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
                           {c.unreadCount}
                         </span>
                       )}
@@ -315,8 +315,8 @@ export default function Chat() {
             <header className="flex items-center gap-3 px-5 py-3 bg-white border-b border-slate-200">
               <Avatar name={`${activePeer.firstName} ${activePeer.lastName}`} photoUrl={activePeer.photoUrl} online={presence[activePeer.id]} size={36} />
               <div className="min-w-0">
-                <p className="text-[14px] font-bold text-slate-800 truncate">{activePeer.firstName} {activePeer.lastName}</p>
-                <p className="text-[11.5px] text-slate-500 truncate flex items-center gap-1.5">
+                <p className="text-[16px] font-bold text-slate-800 truncate">{activePeer.firstName} {activePeer.lastName}</p>
+                <p className="text-[13px] text-slate-500 truncate flex items-center gap-1.5">
                   {typing[activePeer.id] ? (
                     <span className="text-blue-600 italic">typing…</span>
                   ) : presence[activePeer.id] ? (
@@ -333,7 +333,7 @@ export default function Chat() {
                 if (item.daySep) {
                   return (
                     <div key={item.key} className="flex justify-center my-3">
-                      <span className="text-[11px] text-slate-500 bg-white border border-slate-200 px-3 py-0.5 rounded-full">
+                      <span className="text-[13px] text-slate-500 bg-white border border-slate-200 px-3 py-0.5 rounded-full">
                         {item.daySep}
                       </span>
                     </div>
@@ -346,8 +346,8 @@ export default function Chat() {
                     <div className={`max-w-[70%] px-3 py-2 rounded-2xl ${
                       isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm'
                     }`}>
-                      <p className="text-[13px] whitespace-pre-wrap break-words">{m.content}</p>
-                      <p className={`text-[10px] mt-0.5 ${isMe ? 'text-blue-100' : 'text-slate-400'}`}>
+                      <p className="text-[15px] whitespace-pre-wrap break-words">{m.content}</p>
+                      <p className={`text-[12px] mt-0.5 ${isMe ? 'text-blue-100' : 'text-slate-400'}`}>
                         {fmtTime(m.createdAt)}
                         {isMe && (() => {
                           // 3-state delivery indicator on outgoing messages.
@@ -364,7 +364,7 @@ export default function Chat() {
                 );
               })}
               {groupedMessages.length === 0 && (
-                <p className="text-center text-[12.5px] text-slate-400 italic py-10">
+                <p className="text-center text-[14px] text-slate-400 italic py-10">
                   No messages yet. Say hi 👋
                 </p>
               )}
@@ -375,7 +375,7 @@ export default function Chat() {
                 value={draft}
                 onChange={handleDraftChange}
                 placeholder={`Message ${activePeer.firstName}…`}
-                className="flex-1 px-4 py-2 text-[13px] border border-slate-200 rounded-full focus:outline-none focus:border-blue-400"
+                className="flex-1 px-4 py-2 text-[15px] border border-slate-200 rounded-full focus:outline-none focus:border-blue-400"
               />
               <button type="submit" disabled={!draft.trim()}
                       className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-full flex items-center justify-center transition-colors">
@@ -386,8 +386,8 @@ export default function Chat() {
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-400 text-center px-6">
             <MessageCircle size={48} className="mb-3 opacity-40" />
-            <p className="text-[14px] font-medium">Pick a conversation</p>
-            <p className="text-[12.5px] mt-1 max-w-xs">
+            <p className="text-[16px] font-medium">Pick a conversation</p>
+            <p className="text-[14px] mt-1 max-w-xs">
               Or search for a colleague above to send your first connection request.
             </p>
           </div>

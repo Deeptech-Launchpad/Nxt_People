@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 
@@ -15,7 +15,7 @@ export default function BackButton({ to, label = 'Back' }) {
     <button
       type="button"
       onClick={() => (to ? navigate(to) : navigate(-1))}
-      className="flex items-center gap-2 text-[13px] font-semibold text-slate-600 hover:text-blue-600 transition-colors group"
+      className="flex items-center gap-2 text-[15px] font-semibold text-slate-600 hover:text-blue-600 transition-colors group"
     >
       <ArrowLeft size={15} strokeWidth={2.2} className="flex-shrink-0 group-hover:-translate-x-0.5 transition-transform" />
       {label}

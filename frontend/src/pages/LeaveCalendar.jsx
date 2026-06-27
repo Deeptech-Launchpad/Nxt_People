@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import api from '../utils/api';
 import { useWeekendRules } from '../context/WeekendRulesContext';
@@ -147,7 +147,7 @@ export default function LeaveCalendar() {
           <button onClick={nextMonth} className="text-slate-400 hover:text-blue-600 transition-colors">
             <ChevronRight size={16} strokeWidth={3} />
           </button>
-          <h2 className="text-[13px] font-bold text-slate-800 ml-2">
+          <h2 className="text-[15px] font-bold text-slate-800 ml-2">
             {date.toLocaleString('default', { month: 'long', year: 'numeric' })}
           </h2>
         </div>
@@ -158,7 +158,7 @@ export default function LeaveCalendar() {
         {/* Days Header */}
         <div className="grid grid-cols-7 border-b border-slate-200">
           {DAYS.map(day => (
-            <div key={day} className="px-3 py-2 text-[12px] font-semibold text-slate-600 border-r border-slate-200 last:border-r-0">
+            <div key={day} className="px-3 py-2 text-[14px] font-semibold text-slate-600 border-r border-slate-200 last:border-r-0">
               {day}
             </div>
           ))}
@@ -183,7 +183,7 @@ export default function LeaveCalendar() {
                 className={`border-r border-b border-slate-200 p-2 min-h-[120px] ${isWeekend ? 'bg-[#fffdf7]' : 'bg-white'}`}
               >
                 <div className="flex items-center">
-                  <span className={`text-[12px] font-semibold flex items-center justify-center w-6 h-6 rounded-full ${
+                  <span className={`text-[14px] font-semibold flex items-center justify-center w-6 h-6 rounded-full ${
                     isCurrentDay ? 'bg-blue-500 text-white' : 'text-slate-700'
                   }`}>
                     {dayNum}
@@ -194,24 +194,24 @@ export default function LeaveCalendar() {
                   {dayEvents.map((ev, idx) => (
                     <div key={idx}>
                       {ev.type === 'holiday' && (
-                        <div className="bg-[#eef8ff] border border-[#bce0fd] text-[#1e3a8a] text-[10px] font-semibold px-2 py-1 rounded">
+                        <div className="bg-[#eef8ff] border border-[#bce0fd] text-[#1e3a8a] text-[12px] font-semibold px-2 py-1 rounded">
                           {ev.text}
                         </div>
                       )}
                       {ev.type === 'leave' && (
-                        <div className="bg-[#fff1f2] border border-[#fecdd3] text-[#be123c] text-[10px] font-semibold px-2 py-1 rounded truncate">
+                        <div className="bg-[#fff1f2] border border-[#fecdd3] text-[#be123c] text-[12px] font-semibold px-2 py-1 rounded truncate">
                           {ev.text}
                         </div>
                       )}
                       {ev.type === 'absent' && (
-                        <div className="bg-[#fef2f2] border border-[#fecaca] text-[#ef4444] text-[10px] font-semibold px-2 py-1 rounded">
+                        <div className="bg-[#fef2f2] border border-[#fecaca] text-[#ef4444] text-[12px] font-semibold px-2 py-1 rounded">
                           {ev.text}
                         </div>
                       )}
                       {ev.type === 'present' && (
-                        <div className="bg-[#eefdf5] border border-[#bbf7d0] text-[#166534] text-[10px] font-semibold px-2 py-1 rounded">
+                        <div className="bg-[#eefdf5] border border-[#bbf7d0] text-[#166534] text-[12px] font-semibold px-2 py-1 rounded">
                           <p>{ev.text}</p>
-                          {ev.hrs && <p className="text-[9px] font-medium opacity-80">{ev.hrs}</p>}
+                          {ev.hrs && <p className="text-[11px] font-medium opacity-80">{ev.hrs}</p>}
                         </div>
                       )}
                     </div>

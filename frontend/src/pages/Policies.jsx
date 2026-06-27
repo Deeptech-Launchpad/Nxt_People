@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { FileText } from 'lucide-react';
 
 const POLICIES = [
@@ -12,7 +12,7 @@ const POLICIES = [
 export default function Policies() {
   return (
     <div className="p-6 max-w-3xl">
-      <h2 className="text-[15px] font-bold text-slate-800 mb-5">Company Policies</h2>
+      <h2 className="text-[17px] font-bold text-slate-800 mb-5">Company Policies</h2>
       <div className="space-y-3">
         {POLICIES.map(p => (
           <div key={p.title} className="bg-white rounded-lg border border-slate-200 p-5 shadow-sm flex items-start gap-4 hover:shadow-md transition-shadow">
@@ -21,9 +21,9 @@ export default function Policies() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[13.5px] font-semibold text-slate-800">{p.title}</p>
-              <p className="text-[12px] text-slate-500 mt-0.5 leading-snug">{p.desc}</p>
+              <p className="text-[14px] text-slate-500 mt-0.5 leading-snug">{p.desc}</p>
             </div>
-            <p className="text-[11px] text-slate-400 flex-shrink-0">Updated {p.updated}</p>
+            <p className="text-[13px] text-slate-400 flex-shrink-0">Updated {p.updated}</p>
           </div>
         ))}
       </div>

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Admin → Loans & Advances
  * Salary advances and longer-running loans, recovered automatically from
  * the employee's monthly payslip. The run-month engine reads active loans
@@ -48,13 +48,13 @@ export default function Loans() {
           <h1 className="text-[20px] font-bold text-slate-800 flex items-center gap-2">
             <Wallet size={20} className="text-blue-500" /> Loans & Advances
           </h1>
-          <p className="text-[13px] text-slate-500 mt-1">
+          <p className="text-[15px] text-slate-500 mt-1">
             Salary advances and longer loans, auto-recovered from monthly payroll.
           </p>
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-[13px] font-semibold px-4 py-2 rounded-lg shadow-sm"
+          className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-[15px] font-semibold px-4 py-2 rounded-lg shadow-sm"
         >
           <Plus size={16} /> Issue Loan
         </button>
@@ -74,7 +74,7 @@ export default function Loans() {
           { v: 'all',    label: 'All'    },
         ].map(f => (
           <button key={f.v} onClick={() => setFilter(f.v)}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-[14px] font-semibold transition-all ${
               filter === f.v ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
             }`}>{f.label}</button>
         ))}
@@ -89,9 +89,9 @@ export default function Loans() {
             <p>No loans found.</p>
           </div>
         ) : (
-          <table className="w-full text-[13px]">
+          <table className="w-full text-[15px]">
             <thead className="bg-slate-50">
-              <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+              <tr className="text-[13px] uppercase tracking-wider text-slate-500">
                 <th className="text-left px-4 py-2.5">Employee</th>
                 <th className="text-right px-4 py-2.5">Principal</th>
                 <th className="text-right px-4 py-2.5">Recovered</th>
@@ -108,7 +108,7 @@ export default function Loans() {
                   <tr key={l.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <p className="font-bold text-slate-800">{l.firstName} {l.lastName}</p>
-                      <p className="text-[11px] text-slate-500">{l.employeeCode} · {l.department}</p>
+                      <p className="text-[13px] text-slate-500">{l.employeeCode} · {l.department}</p>
                     </td>
                     <td className="text-right px-4 py-3 font-bold">{fmtINR(l.principal)}</td>
                     <td className="text-right px-4 py-3">
@@ -122,7 +122,7 @@ export default function Loans() {
                     <td className="text-right px-4 py-3 font-bold text-rose-700">{fmtINR(l.outstanding)}</td>
                     <td className="text-right px-4 py-3">{fmtINR(l.monthlyRecovery)}</td>
                     <td className="text-center px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[13px] font-bold ${
                         l.status === 'active' ? 'bg-blue-50 text-blue-700'
                         : l.status === 'closed' ? 'bg-emerald-50 text-emerald-700'
                         : 'bg-slate-100 text-slate-600'
@@ -136,7 +136,7 @@ export default function Loans() {
                             await api.put(`/payroll/admin/loans/${l.id}`, { status: 'closed' });
                             toast.success('Closed'); load();
                           } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
-                        }} className="text-[11.5px] font-semibold text-emerald-700 hover:underline">
+                        }} className="text-[13px] font-semibold text-emerald-700 hover:underline">
                           Close
                         </button>
                       )}
@@ -181,16 +181,16 @@ function IssueModal({ onClose, onSaved, employees }) {
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-4 flex items-center justify-between">
           <div>
-            <p className="text-[11px] uppercase tracking-wider font-bold opacity-90">Issue Loan / Advance</p>
-            <p className="text-[16px] font-bold mt-0.5">Recovered monthly via payslip</p>
+            <p className="text-[13px] uppercase tracking-wider font-bold opacity-90">Issue Loan / Advance</p>
+            <p className="text-[18px] font-bold mt-0.5">Recovered monthly via payslip</p>
           </div>
           <button onClick={onClose} className="text-white/80 hover:text-white"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-3">
           <div>
-            <label className="text-[11.5px] font-bold text-slate-600 uppercase tracking-wider">Employee</label>
+            <label className="text-[13px] font-bold text-slate-600 uppercase tracking-wider">Employee</label>
             <select value={employeeId} onChange={e => setEmployeeId(e.target.value)}
-              className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px]">
+              className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[15px]">
               <option value="">— Select —</option>
               {employees.map(e => (
                 <option key={e._id} value={e._id}>{e.firstName} {e.lastName} · {e.employeeId}</option>
@@ -198,36 +198,36 @@ function IssueModal({ onClose, onSaved, employees }) {
             </select>
           </div>
           <div>
-            <label className="text-[11.5px] font-bold text-slate-600 uppercase tracking-wider">Principal Amount (₹)</label>
+            <label className="text-[13px] font-bold text-slate-600 uppercase tracking-wider">Principal Amount (₹)</label>
             <div className="mt-1 flex items-center bg-slate-50 border border-slate-200 rounded-lg px-3">
               <IndianRupee size={14} className="text-slate-400" />
               <input type="number" value={principal} onChange={e => setPrincipal(e.target.value)}
-                placeholder="50000" className="flex-1 bg-transparent py-2 text-[13px] focus:outline-none" />
+                placeholder="50000" className="flex-1 bg-transparent py-2 text-[15px] focus:outline-none" />
             </div>
           </div>
           <div>
-            <label className="text-[11.5px] font-bold text-slate-600 uppercase tracking-wider">Monthly Recovery (₹)</label>
+            <label className="text-[13px] font-bold text-slate-600 uppercase tracking-wider">Monthly Recovery (₹)</label>
             <div className="mt-1 flex items-center bg-slate-50 border border-slate-200 rounded-lg px-3">
               <IndianRupee size={14} className="text-slate-400" />
               <input type="number" value={monthly} onChange={e => setMonthly(e.target.value)}
-                placeholder="5000" className="flex-1 bg-transparent py-2 text-[13px] focus:outline-none" />
+                placeholder="5000" className="flex-1 bg-transparent py-2 text-[15px] focus:outline-none" />
             </div>
           </div>
           <div>
-            <label className="text-[11.5px] font-bold text-slate-600 uppercase tracking-wider">
+            <label className="text-[13px] font-bold text-slate-600 uppercase tracking-wider">
               <FileText size={11} className="inline mr-1" /> Notes (optional)
             </label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)}
               placeholder="Medical emergency, festival advance, etc." rows={2}
-              className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px]" />
+              className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[15px]" />
           </div>
         </div>
         <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-[13px] font-semibold text-slate-600 hover:text-slate-800">
+          <button onClick={onClose} className="px-4 py-2 text-[15px] font-semibold text-slate-600 hover:text-slate-800">
             Cancel
           </button>
           <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-[13px] font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-60">
+            className="px-4 py-2 text-[15px] font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-60">
             {saving ? 'Saving…' : 'Issue Loan'}
           </button>
         </div>

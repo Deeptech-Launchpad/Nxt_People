@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { ShieldCheck, ShieldAlert, X, Copy, Check } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -91,10 +91,10 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
         {mfaEnabled ? <ShieldCheck size={16} /> : <ShieldAlert size={16} />}
       </div>
       <div className="flex-1">
-        <p className="text-[13px] font-semibold text-slate-800">
+        <p className="text-[15px] font-semibold text-slate-800">
           Two-Factor Authentication (TOTP)
         </p>
-        <p className="text-[12px] text-slate-500 mt-0.5">
+        <p className="text-[14px] text-slate-500 mt-0.5">
           {mfaEnabled
             ? 'A 6-digit code from your authenticator app is required at every login.'
             : 'Add an extra step at login using Google Authenticator, Authy, or 1Password.'}
@@ -103,7 +103,7 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
           {mfaEnabled ? (
             <button
               onClick={() => setDisableOpen(true)}
-              className="text-[12px] font-semibold text-red-600 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-md transition-colors"
+              className="text-[14px] font-semibold text-red-600 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-md transition-colors"
             >
               Disable two-factor
             </button>
@@ -111,7 +111,7 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
             <button
               onClick={startSetup}
               disabled={busy}
-              className="text-[12px] font-semibold text-white bg-[#1a73e8] hover:bg-[#1557B0] px-3 py-1.5 rounded-md transition-colors disabled:opacity-60"
+              className="text-[14px] font-semibold text-white bg-[#1a73e8] hover:bg-[#1557B0] px-3 py-1.5 rounded-md transition-colors disabled:opacity-60"
             >
               Enable two-factor
             </button>
@@ -122,15 +122,15 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
       {/* ── Setup modal — QR + code entry ────────────────────────── */}
       {setupOpen && setupData && (
         <Modal onClose={closeSetup} title="Set up two-factor authentication">
-          <ol className="text-[13px] text-slate-700 space-y-3 list-decimal pl-5">
+          <ol className="text-[15px] text-slate-700 space-y-3 list-decimal pl-5">
             <li>Install an authenticator app (Google Authenticator, Authy, 1Password, etc.) on your phone.</li>
             <li>Scan this QR code with the app:
               <div className="mt-2 p-3 bg-white border border-slate-200 rounded-lg inline-block">
                 <img src={setupData.qrDataUrl} alt="MFA QR code" className="w-40 h-40" />
               </div>
-              <p className="text-[11px] text-slate-500 mt-2">
+              <p className="text-[13px] text-slate-500 mt-2">
                 Can't scan? Enter this secret manually:
-                <code className="ml-1 px-1.5 py-0.5 bg-slate-100 rounded font-mono text-[11px] tracking-wider break-all">
+                <code className="ml-1 px-1.5 py-0.5 bg-slate-100 rounded font-mono text-[13px] tracking-wider break-all">
                   {setupData.secret}
                 </code>
               </p>
@@ -146,12 +146,12 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
               placeholder="123456"
-              className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-[14px] font-mono tracking-widest text-center focus:outline-none focus:border-blue-500"
+              className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-[16px] font-mono tracking-widest text-center focus:outline-none focus:border-blue-500"
             />
             <button
               type="submit"
               disabled={busy || code.length !== 6}
-              className="bg-[#1a73e8] hover:bg-[#1557B0] text-white px-4 py-2 rounded-md text-[13px] font-semibold disabled:opacity-50"
+              className="bg-[#1a73e8] hover:bg-[#1557B0] text-white px-4 py-2 rounded-md text-[15px] font-semibold disabled:opacity-50"
             >
               Verify & enable
             </button>
@@ -162,14 +162,14 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
       {/* ── Backup codes display — shown ONCE after a successful enable ── */}
       {backupCodes && (
         <Modal onClose={closeSetup} title="Save your backup codes">
-          <p className="text-[12.5px] text-slate-600 mb-3">
+          <p className="text-[14px] text-slate-600 mb-3">
             Store these somewhere safe. Each code works <strong>once</strong> if you lose access to
             your authenticator app. They will not be shown again.
           </p>
           <BackupCodeList codes={backupCodes} />
           <button
             onClick={closeSetup}
-            className="mt-4 w-full bg-[#1a73e8] hover:bg-[#1557B0] text-white py-2 rounded-md text-[13px] font-semibold"
+            className="mt-4 w-full bg-[#1a73e8] hover:bg-[#1557B0] text-white py-2 rounded-md text-[15px] font-semibold"
           >
             I've saved them
           </button>
@@ -179,7 +179,7 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
       {/* ── Disable modal ─────────────────────────────────────── */}
       {disableOpen && (
         <Modal onClose={() => setDisableOpen(false)} title="Disable two-factor authentication">
-          <p className="text-[12.5px] text-slate-600 mb-3">
+          <p className="text-[14px] text-slate-600 mb-3">
             Enter your current 6-digit code or one of your backup codes to confirm.
           </p>
           <form onSubmit={submitDisable} className="space-y-3">
@@ -188,20 +188,20 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="123456 or ABCD-EFGH"
-              className="w-full border border-slate-300 rounded-md px-3 py-2 text-[14px] font-mono focus:outline-none focus:border-blue-500"
+              className="w-full border border-slate-300 rounded-md px-3 py-2 text-[16px] font-mono focus:outline-none focus:border-blue-500"
             />
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setDisableOpen(false)}
-                className="flex-1 border border-slate-200 text-slate-600 py-2 rounded-md text-[13px] font-semibold"
+                className="flex-1 border border-slate-200 text-slate-600 py-2 rounded-md text-[15px] font-semibold"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={busy}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-md text-[13px] font-semibold disabled:opacity-50"
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-md text-[15px] font-semibold disabled:opacity-50"
               >
                 Disable
               </button>
@@ -247,20 +247,20 @@ function BackupCodeList({ codes }) {
   };
   return (
     <>
-      <div className="grid grid-cols-2 gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg font-mono text-[12.5px]">
+      <div className="grid grid-cols-2 gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg font-mono text-[14px]">
         {codes.map((c) => <span key={c} className="text-slate-700">{c}</span>)}
       </div>
       <div className="flex gap-2 mt-3">
         <button
           onClick={copyAll}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 py-1.5 rounded-md text-[12px] font-semibold"
+          className="flex-1 inline-flex items-center justify-center gap-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 py-1.5 rounded-md text-[14px] font-semibold"
         >
           {copied ? <Check size={13} /> : <Copy size={13} />}
           {copied ? 'Copied' : 'Copy all'}
         </button>
         <button
           onClick={download}
-          className="flex-1 border border-slate-200 hover:bg-slate-50 text-slate-700 py-1.5 rounded-md text-[12px] font-semibold"
+          className="flex-1 border border-slate-200 hover:bg-slate-50 text-slate-700 py-1.5 rounded-md text-[14px] font-semibold"
         >
           Download .txt
         </button>

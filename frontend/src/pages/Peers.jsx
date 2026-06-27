@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Phone, MessageSquare, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
@@ -70,19 +70,19 @@ export default function Peers() {
                 <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
                   <Users size={16} className="text-slate-400"/>
                 </div>
-                <div className="text-[13px] text-slate-700">
+                <div className="text-[15px] text-slate-700">
                   Peers reporting to <span className="font-semibold text-slate-900">
                     {managerCode ? `${managerCode} — ` : ''}{managerName || 'your manager'}
                   </span>
                 </div>
               </>
             ) : (
-              <div className="text-[13px] text-slate-700">
+              <div className="text-[15px] text-slate-700">
                 Colleagues in <span className="font-semibold text-slate-900">{me.department || 'your department'}</span>
               </div>
             )}
           </div>
-          <div className="text-[12.5px] text-slate-500">
+          <div className="text-[14px] text-slate-500">
             Members <span className="ml-1 font-bold text-slate-800">{peers.length}</span>
           </div>
         </div>
@@ -92,7 +92,7 @@ export default function Peers() {
         <div className="relative flex-1 max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search peers…"
-            className="w-full pl-9 pr-4 py-2 text-[12.5px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 bg-white"/>
+            className="w-full pl-9 pr-4 py-2 text-[14px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 bg-white"/>
         </div>
       </div>
 
@@ -101,7 +101,7 @@ export default function Peers() {
           <div className="w-6 h-6 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin"/>
         </div>
       ) : peers.length === 0 ? (
-        <div className="text-center py-16 text-slate-400 text-sm">
+        <div className="text-center py-16 text-slate-400 text-base">
           {myManagerId
             ? 'No peers found — nobody else reports to your manager.'
             : 'You have no reporting person set, and no department colleagues to show.'}
@@ -118,11 +118,11 @@ export default function Peers() {
                   firstName={e.firstName}
                   lastName={e.lastName}
                   className="w-14 h-14 mx-auto mb-3 border-2 border-white shadow"
-                  textClassName="text-sm"
+                  textClassName="text-base"
                 />
-                <p className="text-[12.5px] font-semibold text-slate-800 truncate">{e.firstName} {e.lastName}</p>
-                <p className="text-[11px] text-slate-500 truncate mt-0.5">{e.designation || '—'}</p>
-                <p className="text-[10.5px] text-blue-500 truncate">{e.department || '—'}</p>
+                <p className="text-[14px] font-semibold text-slate-800 truncate">{e.firstName} {e.lastName}</p>
+                <p className="text-[13px] text-slate-500 truncate mt-0.5">{e.designation || '—'}</p>
+                <p className="text-[12px] text-blue-500 truncate">{e.department || '—'}</p>
                 <div className="flex items-center justify-center gap-3 mt-3">
                   {telHref ? (
                     <a href={telHref} title="Call" className="text-slate-400 hover:text-blue-500 transition-colors"><Phone size={13}/></a>
@@ -145,7 +145,7 @@ export default function Peers() {
             );
           })}
           {filtered.length === 0 && (
-            <div className="col-span-full text-center py-16 text-slate-400 text-sm">No peers match your search.</div>
+            <div className="col-span-full text-center py-16 text-slate-400 text-base">No peers match your search.</div>
           )}
         </div>
       )}

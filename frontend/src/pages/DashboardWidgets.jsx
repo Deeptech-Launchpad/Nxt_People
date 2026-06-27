@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { User } from 'lucide-react';
 import api from '../utils/api';
 
@@ -6,7 +6,7 @@ const Card = ({ title, children, icon: Icon, className = "" }) => (
   <div className={`bg-white rounded border border-slate-200 shadow-sm flex flex-col ${className}`}>
     <div className="px-5 py-4 flex items-center gap-2 border-b border-transparent">
       {Icon && <Icon size={14} className="text-slate-400" />}
-      <h3 className="text-[13px] font-bold text-slate-800">{title}</h3>
+      <h3 className="text-[15px] font-bold text-slate-800">{title}</h3>
     </div>
     <div className="flex-1 p-5 flex flex-col">
       {children}
@@ -15,7 +15,7 @@ const Card = ({ title, children, icon: Icon, className = "" }) => (
 );
 
 const EmptyState = ({ text }) => (
-  <div className="flex-1 flex items-center justify-center text-[12.5px] font-semibold text-slate-800">
+  <div className="flex-1 flex items-center justify-center text-[14px] font-semibold text-slate-800">
     {text}
   </div>
 );
@@ -77,8 +77,8 @@ export default function DashboardWidgets() {
                     <img src={`https://ui-avatars.com/api/?name=${e.firstName}+${e.lastName || ''}&background=f8f9fc&color=475569`} alt="avatar" className="w-full h-full object-cover" />
                   </div>
                   <div>
-                    <p className="text-[12px] font-bold text-slate-800">{e.firstName} {e.lastName}</p>
-                    <p className="text-[11px] text-slate-500">{e.designation}</p>
+                    <p className="text-[14px] font-bold text-slate-800">{e.firstName} {e.lastName}</p>
+                    <p className="text-[13px] text-slate-500">{e.designation}</p>
                   </div>
                 </div>
               ))}
@@ -98,9 +98,9 @@ export default function DashboardWidgets() {
                   <img src={`https://ui-avatars.com/api/?name=${e.firstName}+${e.lastName || ''}&background=f8f9fc&color=475569`} alt="avatar" className="w-full h-full object-cover" />
                 </div>
                 <div>
-                  <p className="text-[12px] font-semibold text-slate-500 mb-1">{e.employeeId || `EMP-${i+1}`} - {e.firstName}</p>
-                  <p className="text-[12px] text-slate-700 leading-snug">{e.designation || 'Employee'}</p>
-                  <p className="text-[11px] text-slate-400 mt-1">{e.department || 'Unassigned'}</p>
+                  <p className="text-[14px] font-semibold text-slate-500 mb-1">{e.employeeId || `EMP-${i+1}`} - {e.firstName}</p>
+                  <p className="text-[14px] text-slate-700 leading-snug">{e.designation || 'Employee'}</p>
+                  <p className="text-[13px] text-slate-400 mt-1">{e.department || 'Unassigned'}</p>
                 </div>
               </div>
             ))
@@ -124,8 +124,8 @@ export default function DashboardWidgets() {
               {announcements.map((ann, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <div className="flex-1">
-                    <p className="text-[12px] font-medium text-slate-700 leading-snug">{ann.title}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">{new Date(ann.createdAt || new Date()).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                    <p className="text-[14px] font-medium text-slate-700 leading-snug">{ann.title}</p>
+                    <p className="text-[12px] text-slate-400 mt-0.5">{new Date(ann.createdAt || new Date()).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
                   </div>
                   <div className="w-4 h-4 flex-shrink-0 mt-0.5">
                     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -151,12 +151,12 @@ export default function DashboardWidgets() {
               { name: 'Permission', sub: 'Available 47.74 Hour(s)', count: '0', color: 'border-amber-200 text-amber-500' },
             ].map((lr, i) => (
               <div key={i} className="flex items-center gap-4">
-                <div className={`w-8 h-8 rounded-full border-[3px] flex items-center justify-center text-[11px] font-bold ${lr.color}`}>
+                <div className={`w-8 h-8 rounded-full border-[3px] flex items-center justify-center text-[13px] font-bold ${lr.color}`}>
                   {lr.count}
                 </div>
                 <div>
-                  <p className="text-[12.5px] font-semibold text-slate-800">{lr.name}</p>
-                  {lr.sub && <p className="text-[10px] text-slate-500 font-medium">{lr.sub}</p>}
+                  <p className="text-[14px] font-semibold text-slate-800">{lr.name}</p>
+                  {lr.sub && <p className="text-[12px] text-slate-500 font-medium">{lr.sub}</p>}
                 </div>
               </div>
             ))}
@@ -173,10 +173,10 @@ export default function DashboardWidgets() {
                 const date = new Date(hol.date);
                 return (
                   <div key={i} className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 last:border-b-0">
-                    <p className="text-[12px] font-semibold text-slate-800">{hol.name}</p>
+                    <p className="text-[14px] font-semibold text-slate-800">{hol.name}</p>
                     <div className="text-right">
-                      <p className="text-[11px] font-bold text-slate-700">{date.toLocaleDateString('en-GB')}</p>
-                      <p className="text-[10px] text-slate-400 capitalize">{date.toLocaleDateString('en-US', { weekday: 'long' })}</p>
+                      <p className="text-[13px] font-bold text-slate-700">{date.toLocaleDateString('en-GB')}</p>
+                      <p className="text-[12px] text-slate-400 capitalize">{date.toLocaleDateString('en-US', { weekday: 'long' })}</p>
                     </div>
                   </div>
                 );

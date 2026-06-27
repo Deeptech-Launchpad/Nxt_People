@@ -1,4 +1,4 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+﻿import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Plus, Pencil, Trash2, X, Save, Repeat } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -206,15 +206,15 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
         <div>
-          <h3 className="text-[14px] font-bold text-slate-800">Weekend Rules</h3>
-          <p className="text-[12px] text-slate-500 mt-0.5">
+          <h3 className="text-[16px] font-bold text-slate-800">Weekend Rules</h3>
+          <p className="text-[14px] text-slate-500 mt-0.5">
             Define which days are weekends. Rules combine — a date is a weekend if any active rule matches.
           </p>
         </div>
         {isAdmin && (
           <button
             onClick={openNew}
-            className="flex items-center gap-1.5 bg-[#1a73e8] hover:bg-[#1557B0] text-white text-[12.5px] font-semibold px-3 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 bg-[#1a73e8] hover:bg-[#1557B0] text-white text-[14px] font-semibold px-3 py-2 rounded-lg transition-colors"
           >
             <Plus size={14} /> New Rule
           </button>
@@ -223,7 +223,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
 
       <div className="divide-y divide-slate-100">
         {rules.length === 0 && (
-          <div className="px-5 py-8 text-center text-[13px] text-slate-400">
+          <div className="px-5 py-8 text-center text-[15px] text-slate-400">
             No weekend rules configured. {isAdmin ? 'Click "New Rule" to add one.' : 'Ask an admin to add one.'}
           </div>
         )}
@@ -233,12 +233,12 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
               <Repeat size={14} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold text-slate-800 truncate">{r.name}</p>
-              <p className="text-[11.5px] text-slate-500 truncate">{summarise(r)}</p>
+              <p className="text-[15px] font-semibold text-slate-800 truncate">{r.name}</p>
+              <p className="text-[13px] text-slate-500 truncate">{summarise(r)}</p>
             </div>
             {isAdmin && (
               <>
-                <label className="inline-flex items-center gap-2 text-[11.5px] text-slate-500 cursor-pointer select-none mr-2">
+                <label className="inline-flex items-center gap-2 text-[13px] text-slate-500 cursor-pointer select-none mr-2">
                   <input
                     type="checkbox"
                     checked={r.isActive !== false}
@@ -260,7 +260,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
-              <h3 className="text-[15px] font-semibold text-slate-800">
+              <h3 className="text-[17px] font-semibold text-slate-800">
                 {editing.id ? 'Edit Rule' : 'New Weekend Rule'}
               </h3>
               <button onClick={closeEditor} className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500">
@@ -272,7 +272,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
               {/* Mode toggle — choose between recurring Weekend rule or one-off Working Day Exception */}
               {!editing.id && (
                 <div>
-                  <label className="block text-[12px] font-semibold text-slate-700 mb-2">What does this rule do?</label>
+                  <label className="block text-[14px] font-semibold text-slate-700 mb-2">What does this rule do?</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
@@ -283,8 +283,8 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                           : 'border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      <p className="text-[12.5px] font-semibold text-slate-800">Make a Weekend</p>
-                      <p className="text-[11px] text-slate-500">Recurring non-working day</p>
+                      <p className="text-[14px] font-semibold text-slate-800">Make a Weekend</p>
+                      <p className="text-[13px] text-slate-500">Recurring non-working day</p>
                     </button>
                     <button
                       type="button"
@@ -295,20 +295,20 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                           : 'border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      <p className="text-[12.5px] font-semibold text-slate-800">Working Day Exception</p>
-                      <p className="text-[11px] text-slate-500">One-off override for a single date</p>
+                      <p className="text-[14px] font-semibold text-slate-800">Working Day Exception</p>
+                      <p className="text-[13px] text-slate-500">One-off override for a single date</p>
                     </button>
                   </div>
                 </div>
               )}
 
               <div>
-                <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Name</label>
+                <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Name</label>
                 <input
                   value={editing.name}
                   onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                   placeholder={editing.mode === 'working_day' ? 'e.g. Working Saturday (project deadline)' : 'e.g. 1st & 3rd Saturdays'}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"
                 />
               </div>
 
@@ -316,23 +316,23 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
               {editing.mode === 'working_day' && (
                 <>
                   <div>
-                    <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Date</label>
+                    <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Date</label>
                     <input
                       type="date"
                       value={editing.startDate}
                       onChange={(e) => setEditing({ ...editing, startDate: e.target.value })}
-                      className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"
                     />
-                    <p className="text-[11px] text-slate-500 mt-1">
+                    <p className="text-[13px] text-slate-500 mt-1">
                       Even if this date would normally be a weekend, it'll be treated as a working day.
                     </p>
                   </div>
                   <div>
-                    <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Working Day Due to</label>
+                    <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Working Day Due to</label>
                     <select
                       value={editing.category || ''}
                       onChange={(e) => setEditing({ ...editing, category: e.target.value })}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"
                     >
                       <option value="">Select…</option>
                       <option value="additional_workload">Additional Workload</option>
@@ -342,7 +342,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Compensation Type</label>
+                    <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Compensation Type</label>
                     <div className="flex gap-2">
                       {[
                         { v: 'future', label: 'Future Compensation', desc: 'Employees get a future day off' },
@@ -350,7 +350,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                       ].map(o => (
                         <label
                           key={o.v}
-                          className={`flex-1 px-3 py-2 rounded-lg border text-[11.5px] cursor-pointer ${editing.compensationType === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                          className={`flex-1 px-3 py-2 rounded-lg border text-[13px] cursor-pointer ${editing.compensationType === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
                         >
                           <input
                             type="radio"
@@ -360,14 +360,14 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                             onChange={() => setEditing({ ...editing, compensationType: o.v })}
                           />
                           <p className="font-semibold">{o.label}</p>
-                          <p className="text-[10.5px] mt-0.5 opacity-70">{o.desc}</p>
+                          <p className="text-[12px] mt-0.5 opacity-70">{o.desc}</p>
                         </label>
                       ))}
                     </div>
                   </div>
                   {editing.compensationType === 'past' && (
                     <div>
-                      <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1.5">
                         Select Compensated Source
                         <span className="text-slate-400 font-normal ml-1">(holiday OR weekend rule marked Future Compensation = Yes)</span>
                       </label>
@@ -394,30 +394,30 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                             startDate: autoDate,
                           });
                         }}
-                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"
                       >
                         <option value="">Select…</option>
                         {compensatorySources.map(s => (
                           <option key={`${s.kind}:${s.id}`} value={`${s.kind}:${s.id}`}>{s.label}</option>
                         ))}
                       </select>
-                      <p className="text-[11px] text-slate-500 mt-1">
+                      <p className="text-[13px] text-slate-500 mt-1">
                         Picking a <strong>holiday</strong> auto-fills the Date above. <strong>Weekend rules</strong> keep your typed date (you pick the specific occurrence).
                       </p>
                       {compensatorySources.length === 0 && (
-                        <p className="text-[11px] text-amber-600 mt-1">
+                        <p className="text-[13px] text-amber-600 mt-1">
                           No compensatory sources yet. Create a Holiday OR a Weekend Rule with <strong>Future Compensation = Yes</strong> first.
                         </p>
                       )}
                     </div>
                   )}
                   <div>
-                    <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Description (optional)</label>
+                    <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Description (optional)</label>
                     <input
                       value={editing.description || ''}
                       onChange={(e) => setEditing({ ...editing, description: e.target.value })}
                       placeholder="Why is this a working day?"
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"
                     />
                   </div>
                 </>
@@ -427,19 +427,19 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
               {editing.mode !== 'working_day' && (<>
 
               <div className="flex items-center gap-3">
-                <label className="text-[12.5px] text-slate-600">Repeat every</label>
+                <label className="text-[14px] text-slate-600">Repeat every</label>
                 <input
                   type="number"
                   min={1}
                   value={editing.intervalWeeks}
                   onChange={(e) => setEditing({ ...editing, intervalWeeks: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                  className="w-16 border border-slate-200 rounded-lg px-2 py-1.5 text-[13px] text-center focus:outline-none focus:border-blue-400"
+                  className="w-16 border border-slate-200 rounded-lg px-2 py-1.5 text-[15px] text-center focus:outline-none focus:border-blue-400"
                 />
-                <span className="text-[12.5px] text-slate-600">week(s)</span>
+                <span className="text-[14px] text-slate-600">week(s)</span>
               </div>
 
               <div>
-                <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Repeat on</label>
+                <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Repeat on</label>
                 <div className="flex items-center gap-1.5">
                   {DAY_LABELS.map(d => {
                     const active = editing.daysOfWeek.includes(d.key);
@@ -448,7 +448,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                         key={d.key}
                         type="button"
                         onClick={() => toggleDay(d.key)}
-                        className={`w-8 h-8 rounded-full text-[12px] font-bold transition-colors ${
+                        className={`w-8 h-8 rounded-full text-[14px] font-bold transition-colors ${
                           active
                             ? 'bg-[#1a73e8] text-white'
                             : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
@@ -462,7 +462,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
               </div>
 
               <div>
-                <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">
+                <label className="block text-[13px] font-medium text-slate-600 mb-1.5">
                   Only on these weeks of the month <span className="text-slate-400 font-normal">(optional — leave blank for every week)</span>
                 </label>
                 <div className="flex items-center gap-1.5">
@@ -473,7 +473,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                         key={n}
                         type="button"
                         onClick={() => toggleWeek(n)}
-                        className={`px-3 h-8 rounded-full text-[11.5px] font-bold transition-colors ${
+                        className={`px-3 h-8 rounded-full text-[13px] font-bold transition-colors ${
                           active
                             ? 'bg-amber-500 text-white'
                             : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
@@ -487,7 +487,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
               </div>
 
               <div>
-                <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Start date</label>
+                <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Start date</label>
                 <input
                   type="date"
                   value={editing.startDate}
@@ -501,13 +501,13 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                       endDate: isOneOff ? newStart : editing.endDate,
                     });
                   }}
-                  className="border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"
                 />
               </div>
 
               <div>
-                <label className="block text-[12px] font-semibold text-slate-700 mb-1">When should this rule stop?</label>
-                <p className="text-[11px] text-slate-500 mb-2">Pick one of the four options below.</p>
+                <label className="block text-[14px] font-semibold text-slate-700 mb-1">When should this rule stop?</label>
+                <p className="text-[13px] text-slate-500 mb-2">Pick one of the four options below.</p>
 
                 {/* The four "Ends" modes map onto two backend fields (endType + endDate/endCount).
                  *  Mode "Does not repeat" is encoded as endType='on' with endDate forced to startDate. */}
@@ -543,8 +543,8 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                       onChange={() => setMode('once')}
                     />
                     <div>
-                      <p className="text-[13px] font-semibold text-slate-800">Does not repeat</p>
-                      <p className="text-[11.5px] text-slate-500">
+                      <p className="text-[15px] font-semibold text-slate-800">Does not repeat</p>
+                      <p className="text-[13px] text-slate-500">
                         Marks only the start date as a weekend — fires once and stops.
                       </p>
                     </div>
@@ -565,8 +565,8 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                       onChange={() => setMode('never')}
                     />
                     <div>
-                      <p className="text-[13px] font-semibold text-slate-800">Never expires</p>
-                      <p className="text-[11.5px] text-slate-500">The rule keeps running forever.</p>
+                      <p className="text-[15px] font-semibold text-slate-800">Never expires</p>
+                      <p className="text-[13px] text-slate-500">The rule keeps running forever.</p>
                     </div>
                   </label>
 
@@ -585,8 +585,8 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                       onChange={() => setMode('on')}
                     />
                     <div className="flex-1">
-                      <p className="text-[13px] font-semibold text-slate-800">Stop on a specific date</p>
-                      <p className="text-[11.5px] text-slate-500 mb-1.5">
+                      <p className="text-[15px] font-semibold text-slate-800">Stop on a specific date</p>
+                      <p className="text-[13px] text-slate-500 mb-1.5">
                         After this date, the rule no longer applies.
                       </p>
                       <input
@@ -594,7 +594,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                         value={editing.endDate || ''}
                         disabled={mode !== 'on'}
                         onChange={(e) => setEditing({ ...editing, endDate: e.target.value })}
-                        className="border border-slate-200 rounded-lg px-2 py-1 text-[12.5px] disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        className="border border-slate-200 rounded-lg px-2 py-1 text-[14px] disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
                       />
                     </div>
                   </label>
@@ -614,21 +614,21 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                       onChange={() => setMode('after')}
                     />
                     <div className="flex-1">
-                      <p className="text-[13px] font-semibold text-slate-800">Stop after a number of times</p>
-                      <p className="text-[11.5px] text-slate-500 mb-1.5">
+                      <p className="text-[15px] font-semibold text-slate-800">Stop after a number of times</p>
+                      <p className="text-[13px] text-slate-500 mb-1.5">
                         e.g. "stop after the 12th time it fires."
                       </p>
                       <div className="flex items-center gap-2">
-                        <span className="text-[12.5px] text-slate-500">After</span>
+                        <span className="text-[14px] text-slate-500">After</span>
                         <input
                           type="number"
                           min={1}
                           value={editing.endCount || 1}
                           disabled={mode !== 'after'}
                           onChange={(e) => setEditing({ ...editing, endCount: parseInt(e.target.value, 10) })}
-                          className="w-20 border border-slate-200 rounded-lg px-2 py-1 text-[12.5px] disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
+                          className="w-20 border border-slate-200 rounded-lg px-2 py-1 text-[14px] disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
                         />
-                        <span className="text-[12.5px] text-slate-500">time(s)</span>
+                        <span className="text-[14px] text-slate-500">time(s)</span>
                       </div>
                     </div>
                   </label>
@@ -641,7 +641,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                   later be made up for by a Working Day Exception. The exception's
                   dropdown picks the rule up from this flag. */}
               <div>
-                <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Future Compensation?</label>
+                <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Future Compensation?</label>
                 <div className="flex gap-2">
                   {[
                     { v: false, label: 'No',  desc: 'No make-up working day needed.' },
@@ -649,7 +649,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                   ].map(o => (
                     <label
                       key={String(o.v)}
-                      className={`flex-1 px-3 py-2 rounded-lg border text-[11.5px] cursor-pointer ${editing.isCompensatory === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                      className={`flex-1 px-3 py-2 rounded-lg border text-[13px] cursor-pointer ${editing.isCompensatory === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
                     >
                       <input
                         type="radio"
@@ -659,7 +659,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                         onChange={() => setEditing({ ...editing, isCompensatory: o.v })}
                       />
                       <p className="font-semibold">{o.label}</p>
-                      <p className="text-[10.5px] mt-0.5 opacity-70">{o.desc}</p>
+                      <p className="text-[12px] mt-0.5 opacity-70">{o.desc}</p>
                     </label>
                   ))}
                 </div>
@@ -672,14 +672,14 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
             <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2 shrink-0 bg-white">
               <button
                 onClick={closeEditor}
-                className="border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[12.5px] font-semibold hover:bg-slate-50"
+                className="border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[14px] font-semibold hover:bg-slate-50"
               >
                 Cancel
               </button>
               <button
                 onClick={save}
                 disabled={saving}
-                className="flex items-center gap-1.5 bg-[#1a73e8] hover:bg-[#1557B0] text-white px-4 py-2 rounded-lg text-[12.5px] font-semibold transition-colors disabled:opacity-60"
+                className="flex items-center gap-1.5 bg-[#1a73e8] hover:bg-[#1557B0] text-white px-4 py-2 rounded-lg text-[14px] font-semibold transition-colors disabled:opacity-60"
               >
                 <Save size={13} /> {saving ? 'Saving…' : 'Save Rule'}
               </button>

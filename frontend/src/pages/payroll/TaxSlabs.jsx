@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Admin → Tax Slabs (read-only viewer)
  * Side-by-side view of the old- vs new-regime income-tax slabs that
  * the TDS engine uses for monthly deductions. Editing the slabs is
@@ -27,13 +27,13 @@ export default function TaxSlabs() {
   const SlabTable = ({ title, rows, palette }) => (
     <div className={`rounded-2xl border-2 ${palette.border} bg-white overflow-hidden`}>
       <div className={`px-5 py-4 ${palette.headerBg}`}>
-        <p className={`text-[11px] uppercase tracking-wider font-bold ${palette.headerLabel}`}>{palette.tag}</p>
+        <p className={`text-[13px] uppercase tracking-wider font-bold ${palette.headerLabel}`}>{palette.tag}</p>
         <p className={`text-[18px] font-bold ${palette.headerText} mt-0.5`}>{title}</p>
-        <p className={`text-[12px] ${palette.headerSub} mt-1`}>{palette.subtitle}</p>
+        <p className={`text-[14px] ${palette.headerSub} mt-1`}>{palette.subtitle}</p>
       </div>
-      <table className="w-full text-[13px]">
+      <table className="w-full text-[15px]">
         <thead className={palette.thBg}>
-          <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+          <tr className="text-[13px] uppercase tracking-wider text-slate-500">
             <th className="text-left px-4 py-2.5">Income Bracket</th>
             <th className="text-right px-4 py-2.5">Rate</th>
           </tr>
@@ -49,7 +49,7 @@ export default function TaxSlabs() {
                 </p>
               </td>
               <td className="text-right px-4 py-3">
-                <span className={`px-2.5 py-1 rounded-full text-[12px] font-bold ${
+                <span className={`px-2.5 py-1 rounded-full text-[14px] font-bold ${
                   Number(r.ratePercent) === 0 ? 'bg-emerald-50 text-emerald-700'
                   : Number(r.ratePercent) >= 30 ? 'bg-rose-50 text-rose-700'
                   : 'bg-amber-50 text-amber-700'
@@ -71,12 +71,12 @@ export default function TaxSlabs() {
           <h1 className="text-[20px] font-bold text-slate-800 flex items-center gap-2">
             <Scale size={20} className="text-indigo-500" /> Income Tax Slabs
           </h1>
-          <p className="text-[13px] text-slate-500 mt-1">
+          <p className="text-[15px] text-slate-500 mt-1">
             The slab tables used to compute monthly TDS for each employee.
           </p>
         </div>
         <select value={fy} onChange={e => setFy(e.target.value)}
-          className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-semibold">
+          className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-[15px] font-semibold">
           <option value="2026-27">FY 2026-27</option>
           <option value="2025-26">FY 2025-26</option>
           <option value="2024-25">FY 2024-25</option>
@@ -85,7 +85,7 @@ export default function TaxSlabs() {
 
       <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 flex items-start gap-3">
         <Info size={16} className="text-indigo-500 flex-shrink-0 mt-0.5" />
-        <div className="text-[12.5px] text-indigo-900 leading-relaxed">
+        <div className="text-[14px] text-indigo-900 leading-relaxed">
           <strong>How TDS works:</strong> the engine projects the employee's annual gross from their current monthly
           pay, subtracts the standard deduction (₹50K) and any approved declaration exemptions, then applies the
           relevant slab table below. The annual tax (plus 4% health & education cess) is divided by 12 and deducted
@@ -129,7 +129,7 @@ export default function TaxSlabs() {
         </div>
       )}
 
-      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[11.5px] text-slate-500 flex items-start gap-2">
+      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[13px] text-slate-500 flex items-start gap-2">
         <Calculator size={14} className="flex-shrink-0 mt-0.5" />
         <div>
           <strong>Section 87A rebate:</strong> employees with taxable income up to ₹5L (old regime) or ₹7L (new regime)

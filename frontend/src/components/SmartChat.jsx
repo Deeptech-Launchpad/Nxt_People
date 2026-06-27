@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, X, Home, CalendarCheck, Clock, CalendarDays, Trophy,
@@ -178,9 +178,9 @@ export default function SmartChat({ open, onClose }) {
             onChange={(e) => { setQuery(e.target.value); setActiveIdx(0); }}
             onKeyDown={onKeyDown}
             placeholder="Search pages, people, or actions…"
-            className="flex-1 outline-none text-[14px] text-slate-800 placeholder:text-slate-400 bg-transparent"
+            className="flex-1 outline-none text-[16px] text-slate-800 placeholder:text-slate-400 bg-transparent"
           />
-          {loading && <span className="text-[11px] text-slate-400">searching…</span>}
+          {loading && <span className="text-[13px] text-slate-400">searching…</span>}
           <button
             onClick={onClose}
             className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100"
@@ -193,14 +193,14 @@ export default function SmartChat({ open, onClose }) {
         {/* Results */}
         <div className="max-h-[60vh] overflow-y-auto py-2">
           {sections.length === 0 && (
-            <div className="px-4 py-8 text-center text-[13px] text-slate-400">
+            <div className="px-4 py-8 text-center text-[15px] text-slate-400">
               No matches for &ldquo;{query}&rdquo;.
             </div>
           )}
 
           {sections.map((s) => (
             <div key={s.title} className="mb-2">
-              <div className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <div className="px-4 py-1.5 text-[12px] font-bold uppercase tracking-wider text-slate-400">
                 {s.title}
               </div>
               {s.items.map((item) => {
@@ -222,16 +222,16 @@ export default function SmartChat({ open, onClose }) {
                       <Icon size={14} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-semibold truncate">{item.label}</p>
+                      <p className="text-[15px] font-semibold truncate">{item.label}</p>
                       {item.subtitle && (
-                        <p className="text-[11.5px] text-slate-400 truncate">{item.subtitle}</p>
+                        <p className="text-[13px] text-slate-400 truncate">{item.subtitle}</p>
                       )}
                     </div>
                     {item.badge && (
-                      <span className="text-[10px] font-bold uppercase text-slate-400">{item.badge}</span>
+                      <span className="text-[12px] font-bold uppercase text-slate-400">{item.badge}</span>
                     )}
                     {item.employeeId && (
-                      <span className="text-[10.5px] text-slate-400 font-mono">{item.employeeId}</span>
+                      <span className="text-[12px] text-slate-400 font-mono">{item.employeeId}</span>
                     )}
                   </button>
                 );
@@ -241,7 +241,7 @@ export default function SmartChat({ open, onClose }) {
         </div>
 
         {/* Footer hints */}
-        <div className="border-t border-slate-100 px-4 py-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-50">
+        <div className="border-t border-slate-100 px-4 py-2 flex items-center justify-between text-[13px] text-slate-500 bg-slate-50">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1"><ChevronUp size={11}/><ChevronDown size={11}/> Navigate</span>
             <span className="flex items-center gap-1"><CornerDownLeft size={11}/> Open</span>

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+﻿import React, { useState, useCallback } from 'react';
 import { X, Save } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 
@@ -70,8 +70,8 @@ export default function PhotoCropperModal({ src, uploading, onSave, onCancel }) 
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <h3 className="text-[15px] font-semibold text-slate-800">Position your photo</h3>
-            <p className="text-[11.5px] text-slate-500 mt-0.5">Drag to move · scroll or use the slider to zoom</p>
+            <h3 className="text-[17px] font-semibold text-slate-800">Position your photo</h3>
+            <p className="text-[13px] text-slate-500 mt-0.5">Drag to move · scroll or use the slider to zoom</p>
           </div>
           <button
             onClick={onCancel}
@@ -97,7 +97,7 @@ export default function PhotoCropperModal({ src, uploading, onSave, onCancel }) 
         </div>
 
         <div className="px-5 py-3 border-t border-slate-100">
-          <label className="text-[11px] font-medium text-slate-500 block mb-1">Zoom</label>
+          <label className="text-[13px] font-medium text-slate-500 block mb-1">Zoom</label>
           <input
             type="range"
             min={1}
@@ -113,14 +113,14 @@ export default function PhotoCropperModal({ src, uploading, onSave, onCancel }) 
           <button
             onClick={onCancel}
             disabled={uploading}
-            className="border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-slate-50 disabled:opacity-60"
+            className="border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[15px] font-semibold hover:bg-slate-50 disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={uploading || !areaPixels}
-            className="bg-[#1a73e8] hover:bg-[#1557B0] text-white px-4 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-60 flex items-center gap-1.5"
+            className="bg-[#1a73e8] hover:bg-[#1557B0] text-white px-4 py-2 rounded-lg text-[15px] font-semibold disabled:opacity-60 flex items-center gap-1.5"
           >
             <Save size={13} /> {uploading ? 'Saving…' : 'Save photo'}
           </button>

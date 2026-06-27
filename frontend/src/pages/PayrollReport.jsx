@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { BarChart2, Download, RefreshCw, DollarSign, Clock, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -71,19 +71,19 @@ export default function PayrollReport() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-display font-bold text-slate-800 text-xl">Payroll Report</h2>
-          <p className="text-slate-400 text-sm mt-0.5">LOP-based salary calculation for {MONTHS[month-1]} {year}</p>
+          <p className="text-slate-400 text-base mt-0.5">LOP-based salary calculation for {MONTHS[month-1]} {year}</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <select value={month} onChange={e => setMonth(+e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400">
+          <select value={month} onChange={e => setMonth(+e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-base focus:outline-none focus:border-brand-400">
             {MONTHS.map((m, i) => <option key={m} value={i+1}>{m}</option>)}
           </select>
-          <select value={year} onChange={e => setYear(+e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400">
+          <select value={year} onChange={e => setYear(+e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-base focus:outline-none focus:border-brand-400">
             {[2023,2024,2025,2026].map(y => <option key={y}>{y}</option>)}
           </select>
-          <button onClick={runAccrual} disabled={accruing} className="flex items-center gap-2 border border-emerald-200 text-emerald-600 hover:bg-emerald-50 px-3 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50">
+          <button onClick={runAccrual} disabled={accruing} className="flex items-center gap-2 border border-emerald-200 text-emerald-600 hover:bg-emerald-50 px-3 py-2 rounded-xl text-base font-medium transition-colors disabled:opacity-50">
             <RefreshCw size={14} className={accruing ? 'animate-spin' : ''}/> Run Accrual
           </button>
-          <button onClick={exportXLSX} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm shadow-brand-500/25">
+          <button onClick={exportXLSX} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
             <Download size={14}/> Export XLSX
           </button>
         </div>
@@ -98,8 +98,8 @@ export default function PayrollReport() {
         ].map(c => (
           <div key={c.label} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
             <div className={`w-9 h-9 ${c.bg} rounded-xl flex items-center justify-center mb-3`}><c.icon size={16} className={c.color}/></div>
-            <p className="text-2xl font-display font-bold text-slate-800">{c.value}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{c.label}</p>
+            <p className="text-3xl font-display font-bold text-slate-800">{c.value}</p>
+            <p className="text-sm text-slate-400 mt-0.5">{c.label}</p>
           </div>
         ))}
       </div>
@@ -109,11 +109,11 @@ export default function PayrollReport() {
           {loading ? (
             <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin"/></div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full text-base">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
                   {COLS.map(([key, label]) => (
-                    <th key={key} onClick={() => toggleSort(key)} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-brand-600 whitespace-nowrap select-none">
+                    <th key={key} onClick={() => toggleSort(key)} className="px-4 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-brand-600 whitespace-nowrap select-none">
                       <span className="flex items-center gap-1">{label}<SI k={key}/></span>
                     </th>
                   ))}
@@ -122,8 +122,8 @@ export default function PayrollReport() {
               <tbody className="divide-y divide-slate-50">
                 {sorted.map(r => (
                   <tr key={r._id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3"><p className="font-medium text-slate-800">{r.firstName} {r.lastName}</p><p className="text-xs text-slate-400">{r.employeeId}</p></td>
-                    <td className="px-4 py-3 text-slate-600 text-xs">{r.department || '—'}</td>
+                    <td className="px-4 py-3"><p className="font-medium text-slate-800">{r.firstName} {r.lastName}</p><p className="text-sm text-slate-400">{r.employeeId}</p></td>
+                    <td className="px-4 py-3 text-slate-600 text-sm">{r.department || '—'}</td>
                     <td className="px-4 py-3 font-semibold text-emerald-600">{r.presentDays}</td>
                     <td className="px-4 py-3 text-blue-600">{r.approvedLeaveDays}</td>
                     <td className="px-4 py-3"><span className={`font-semibold ${r.lopDays > 0 ? 'text-red-500' : 'text-slate-300'}`}>{r.lopDays}</span></td>
@@ -137,7 +137,7 @@ export default function PayrollReport() {
             </table>
           )}
         </div>
-        <div className="p-4 border-t border-slate-100 text-xs text-slate-400 flex justify-between">
+        <div className="p-4 border-t border-slate-100 text-sm text-slate-400 flex justify-between">
           <span>{data.length} employees · LOP = Working Days − (Present + Leave)</span>
           <span>Set CTC in employee record to see net pay</span>
         </div>

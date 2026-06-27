@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { Megaphone, Plus, Trash2, Pin, X, AlertTriangle, Info, Calendar, Bell } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -83,10 +83,10 @@ export default function Announcements() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display font-bold text-slate-800 text-xl">Announcements</h2>
-          <p className="text-slate-400 text-sm mt-0.5">Company-wide notices and updates</p>
+          <p className="text-slate-400 text-base mt-0.5">Company-wide notices and updates</p>
         </div>
         {isFullAccess(user) && (
-          <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm shadow-brand-500/25">
+          <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
             <Plus size={16} /> New Announcement
           </button>
         )}
@@ -98,7 +98,7 @@ export default function Announcements() {
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm text-center py-20">
           <Megaphone size={40} className="text-slate-200 mx-auto mb-3" />
           <p className="text-slate-400 font-medium">No announcements yet</p>
-          {isFullAccess(user) && <p className="text-slate-300 text-sm mt-1">Post an announcement to notify all employees</p>}
+          {isFullAccess(user) && <p className="text-slate-300 text-base mt-1">Post an announcement to notify all employees</p>}
         </div>
       ) : (
         <div className="space-y-4">
@@ -114,12 +114,12 @@ export default function Announcements() {
                         type="button"
                         onClick={() => handleTogglePin(a)}
                         title="Click to unpin"
-                        className="bg-brand-500 hover:bg-brand-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 transition-colors"
+                        className="bg-brand-500 hover:bg-brand-600 text-white text-[12px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 transition-colors"
                       >
                         <Pin size={10} /> Pinned
                       </button>
                     ) : (
-                      <div className="bg-brand-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1">
+                      <div className="bg-brand-500 text-white text-[12px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1">
                         <Pin size={10} /> Pinned
                       </div>
                     )}
@@ -131,7 +131,7 @@ export default function Announcements() {
                       type="button"
                       onClick={() => handleTogglePin(a)}
                       title="Click to pin"
-                      className="bg-slate-100 hover:bg-brand-50 text-slate-500 hover:text-brand-600 text-[10px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 transition-colors"
+                      className="bg-slate-100 hover:bg-brand-50 text-slate-500 hover:text-brand-600 text-[12px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 transition-colors"
                     >
                       <Pin size={10} /> Pin
                     </button>
@@ -143,11 +143,11 @@ export default function Announcements() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <h3 className={`font-display font-bold text-base ${cfg.text}`}>{a.title}</h3>
-                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
+                      <h3 className={`font-display font-bold text-lg ${cfg.text}`}>{a.title}</h3>
+                      <span className={`text-[12px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
                     </div>
-                    <p className={`text-sm leading-relaxed ${cfg.text} opacity-80`}>{a.body}</p>
-                    <div className="flex items-center gap-3 mt-3 text-xs opacity-60 flex-wrap">
+                    <p className={`text-base leading-relaxed ${cfg.text} opacity-80`}>{a.body}</p>
+                    <div className="flex items-center gap-3 mt-3 text-sm opacity-60 flex-wrap">
                       <span>Posted by {a.postedBy?.firstName} {a.postedBy?.lastName}</span>
                       <span>·</span>
                       <span>{timeAgo(a.createdAt)}</span>
@@ -177,25 +177,25 @@ export default function Announcements() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <h3 className="font-display font-semibold text-slate-800 text-lg">Post Announcement</h3>
+              <h3 className="font-display font-semibold text-slate-800 text-xl">Post Announcement</h3>
               <button onClick={() => setModal(false)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"><X size={16} /></button>
             </div>
             <form onSubmit={handleCreate} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Title *</label>
+                <label className="block text-sm font-medium text-slate-600 mb-1.5">Title *</label>
                 <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required
-                  placeholder="Announcement title..." className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400" />
+                  placeholder="Announcement title..." className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Message *</label>
+                <label className="block text-sm font-medium text-slate-600 mb-1.5">Message *</label>
                 <textarea value={form.body} onChange={e => setForm({ ...form, body: e.target.value })} required rows={4}
-                  placeholder="Write your announcement..." className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400 resize-none" />
+                  placeholder="Write your announcement..." className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Type</label>
+                  <label className="block text-sm font-medium text-slate-600 mb-1.5">Type</label>
                   <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400">
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400">
                     {Object.entries(TYPE_CONFIG).map(([v, c]) => <option key={v} value={v}>{c.label}</option>)}
                   </select>
                 </div>
@@ -205,15 +205,15 @@ export default function Announcements() {
                       onChange={e => setForm({ ...form, isPinned: e.target.checked, pinnedUntil: e.target.checked ? form.pinnedUntil : '' })}
                       className="w-4 h-4 accent-brand-600" />
                     <div>
-                      <p className="text-sm font-medium text-slate-700">Pin to top</p>
-                      <p className="text-xs text-slate-400">Show above others</p>
+                      <p className="text-base font-medium text-slate-700">Pin to top</p>
+                      <p className="text-sm text-slate-400">Show above others</p>
                     </div>
                   </label>
                 </div>
               </div>
               {form.isPinned && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                  <label className="block text-sm font-medium text-slate-600 mb-1.5">
                     Keep pinned until <span className="text-slate-400 font-normal">(optional)</span>
                   </label>
                   <input
@@ -221,16 +221,16 @@ export default function Announcements() {
                     value={form.pinnedUntil}
                     min={new Date().toISOString().slice(0, 10)}
                     onChange={e => setForm({ ...form, pinnedUntil: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-400"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"
                   />
-                  <p className="text-[11px] text-slate-400 mt-1">
+                  <p className="text-[13px] text-slate-400 mt-1">
                     Leave blank to pin indefinitely. The pin badge disappears automatically once this date passes — the announcement itself stays visible.
                   </p>
                 </div>
               )}
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60">
+                <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50">Cancel</button>
+                <button type="submit" disabled={saving} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60">
                   {saving ? 'Posting...' : 'Post Announcement'}
                 </button>
               </div>

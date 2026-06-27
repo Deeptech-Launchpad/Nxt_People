@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Payroll Run + Admin Payslips Viewer
  *
  * Single page that does two things admins care about:
@@ -152,7 +152,7 @@ export default function PayrollRun() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-[20px] font-bold text-slate-800">Payroll · Run & Payslips</h1>
-          <p className="text-[13px] text-slate-500 mt-1">
+          <p className="text-[15px] text-slate-500 mt-1">
             Generate, review, lock, and pay employee salaries for any month.
           </p>
         </div>
@@ -161,7 +161,7 @@ export default function PayrollRun() {
           <button
             onClick={() => runPayroll(false)}
             disabled={running}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg text-[13px] font-semibold shadow hover:shadow-md transition-all disabled:opacity-60"
+            className="flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg text-[15px] font-semibold shadow hover:shadow-md transition-all disabled:opacity-60"
           >
             <Play size={14} /> {running ? 'Running…' : 'Run Payroll'}
           </button>
@@ -188,7 +188,7 @@ export default function PayrollRun() {
               placeholder="Search name / ID / dept"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-[13px] focus:outline-none focus:border-blue-400"
+              className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-[15px] focus:outline-none focus:border-blue-400"
             />
           </div>
           <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-0.5">
@@ -196,22 +196,22 @@ export default function PayrollRun() {
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                className={`px-2.5 py-1 text-[11.5px] font-semibold rounded transition-colors capitalize ${
+                className={`px-2.5 py-1 text-[13px] font-semibold rounded transition-colors capitalize ${
                   statusFilter === s ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >{s}</button>
             ))}
           </div>
         </div>
-        <button onClick={load} className="flex items-center gap-1.5 text-[12px] text-slate-600 hover:text-slate-800 border border-slate-200 px-2.5 py-1.5 rounded-lg">
+        <button onClick={load} className="flex items-center gap-1.5 text-[14px] text-slate-600 hover:text-slate-800 border border-slate-200 px-2.5 py-1.5 rounded-lg">
           <RefreshCw size={12} /> Refresh
         </button>
       </div>
 
       {/* Table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <table className="w-full text-left text-[13px]">
-          <thead className="bg-slate-50 text-[11.5px] font-bold text-slate-600 uppercase tracking-wider">
+        <table className="w-full text-left text-[15px]">
+          <thead className="bg-slate-50 text-[13px] font-bold text-slate-600 uppercase tracking-wider">
             <tr>
               <th className="px-4 py-2.5">Employee</th>
               <th className="px-4 py-2.5">Designation</th>
@@ -231,23 +231,23 @@ export default function PayrollRun() {
                 <div className="flex flex-col items-center gap-2">
                   <FileText size={32} className="text-slate-300" />
                   <p>No payslips for {MONTH_NAMES[month]} {year}.</p>
-                  <p className="text-[11.5px]">Click "Run Payroll" above to generate them.</p>
+                  <p className="text-[13px]">Click "Run Payroll" above to generate them.</p>
                 </div>
               </td></tr>
             ) : filtered.map(p => (
               <tr key={p.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <div className="font-semibold text-slate-800">{p.firstName} {p.lastName}</div>
-                  <div className="text-[11px] text-slate-400 font-mono">{p.employeeCode}</div>
+                  <div className="text-[13px] text-slate-400 font-mono">{p.employeeCode}</div>
                 </td>
                 <td className="px-4 py-3 text-slate-600">
                   <div>{p.designation || '—'}</div>
-                  <div className="text-[11px] text-slate-400">{p.department || ''}</div>
+                  <div className="text-[13px] text-slate-400">{p.department || ''}</div>
                 </td>
                 <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtINR(p.grossEarnings)}</td>
                 <td className="px-4 py-3 text-right font-medium text-red-600">{fmtINR(p.totalDeductions)}</td>
                 <td className="px-4 py-3 text-right font-bold text-emerald-700">{fmtINR(p.netPay)}</td>
-                <td className="px-4 py-3 text-[12px]">
+                <td className="px-4 py-3 text-[14px]">
                   {Number(p.lopDays) > 0 ? (
                     <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
                       <AlertCircle size={11} /> {Number(p.lopDays)}d
@@ -279,7 +279,7 @@ export default function PayrollRun() {
 
       {/* Force-rerun hint */}
       {stats.draft > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3 text-[12.5px]">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3 text-[14px]">
           <Filter size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
             <p className="font-semibold text-amber-800">{stats.draft} draft payslip{stats.draft > 1 ? 's' : ''} pending</p>
@@ -288,7 +288,7 @@ export default function PayrollRun() {
           <button
             onClick={() => runPayroll(true)}
             disabled={running}
-            className="flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white text-[11.5px] font-bold px-2.5 py-1.5 rounded disabled:opacity-60"
+            className="flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white text-[13px] font-bold px-2.5 py-1.5 rounded disabled:opacity-60"
           >
             <RefreshCw size={11} /> Force Re-run
           </button>
@@ -312,10 +312,10 @@ function PeriodPicker({ month, year, onChange }) {
   const years = [year - 1, year, year + 1];
   return (
     <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1.5">
-      <select value={month} onChange={e => onChange(Number(e.target.value), year)} className="bg-transparent text-[13px] font-semibold focus:outline-none">
+      <select value={month} onChange={e => onChange(Number(e.target.value), year)} className="bg-transparent text-[15px] font-semibold focus:outline-none">
         {MONTH_NAMES.slice(1).map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
       </select>
-      <select value={year} onChange={e => onChange(month, Number(e.target.value))} className="bg-transparent text-[13px] font-semibold focus:outline-none">
+      <select value={year} onChange={e => onChange(month, Number(e.target.value))} className="bg-transparent text-[15px] font-semibold focus:outline-none">
         {years.map(y => <option key={y} value={y}>{y}</option>)}
       </select>
     </div>
@@ -356,18 +356,18 @@ export function PayslipModal({ id, onClose, adminScope = false }) {
         {/* Hero header — same colour identity as the PDF for consistency */}
         <div className="bg-gradient-to-r from-[#1a2040] to-[#2d3578] text-white px-6 py-5 flex items-start justify-between">
           <div>
-            <p className="text-[11.5px] uppercase tracking-wider text-blue-200 font-bold">Payslip</p>
+            <p className="text-[13px] uppercase tracking-wider text-blue-200 font-bold">Payslip</p>
             <p className="text-[20px] font-bold mt-1">
               {data ? `${MONTH_NAMES[data.pay_month]} ${data.pay_year}` : 'Loading…'}
             </p>
             {data && (
-              <p className="text-[12px] text-blue-100 mt-0.5">
+              <p className="text-[14px] text-blue-100 mt-0.5">
                 {data.firstName} {data.lastName} <span className="text-blue-300 font-mono ml-1">{data.employeeCode}</span>
               </p>
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={downloadPdf} className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-[12px] font-semibold px-3 py-1.5 rounded-lg">
+            <button onClick={downloadPdf} className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-[14px] font-semibold px-3 py-1.5 rounded-lg">
               <Download size={13} /> PDF
             </button>
             <button onClick={onClose} className="w-8 h-8 rounded-lg bg-white/15 hover:bg-white/25 flex items-center justify-center">✕</button>
@@ -404,7 +404,7 @@ export function PayslipBody({ p }) {
   return (
     <div className="space-y-4">
       {/* Employee block */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[12.5px]">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[14px]">
         <KV label="Designation"  value={p.designation} />
         <KV label="Department"   value={p.department} />
         <KV label="PAN"          value={p.pan_number} />
@@ -424,8 +424,8 @@ export function PayslipBody({ p }) {
       {/* Net pay */}
       <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border border-blue-200 rounded-xl px-5 py-4 flex items-center justify-between">
         <div>
-          <p className="text-[10.5px] font-bold uppercase tracking-wider text-blue-700">Net Pay</p>
-          <p className="text-[11px] text-blue-500 mt-0.5">Amount credited to bank</p>
+          <p className="text-[12px] font-bold uppercase tracking-wider text-blue-700">Net Pay</p>
+          <p className="text-[13px] text-blue-500 mt-0.5">Amount credited to bank</p>
         </div>
         <p className="text-[26px] font-bold text-blue-800">{fmtINR(p.net_pay)}</p>
       </div>
@@ -448,15 +448,15 @@ function Block({ title, tint, rows, total }) {
     : { head: 'bg-rose-50 text-rose-800', amt: 'text-rose-700' };
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden">
-      <div className={`px-4 py-2 text-[11.5px] font-bold uppercase tracking-wider ${palette.head}`}>{title}</div>
+      <div className={`px-4 py-2 text-[13px] font-bold uppercase tracking-wider ${palette.head}`}>{title}</div>
       <div className="divide-y divide-slate-100">
         {rows.map(([label, amt]) => (
-          <div key={label} className="px-4 py-2 flex items-center justify-between text-[12.5px]">
+          <div key={label} className="px-4 py-2 flex items-center justify-between text-[14px]">
             <span className="text-slate-600">{label}</span>
             <span className={`font-semibold ${palette.amt}`}>{fmtINR(amt)}</span>
           </div>
         ))}
-        <div className="px-4 py-2.5 flex items-center justify-between text-[13px] bg-slate-50 font-bold text-slate-800">
+        <div className="px-4 py-2.5 flex items-center justify-between text-[15px] bg-slate-50 font-bold text-slate-800">
           <span>Total</span>
           <span className={palette.amt}>{fmtINR(total)}</span>
         </div>

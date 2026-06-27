@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { Briefcase, CheckCircle, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -38,7 +38,7 @@ export default function Projects() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Briefcase className="text-brand-500" /> Projects & Tasks</h1>
+        <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-2"><Briefcase className="text-brand-500" /> Projects & Tasks</h1>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -46,12 +46,12 @@ export default function Projects() {
           <h3 className="font-semibold mb-4 text-slate-800 flex items-center gap-2"><Plus size={18}/> New Project</h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-xs font-medium text-slate-600">Project Name</label>
-              <input required value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full mt-1 p-2 border rounded-lg text-sm" />
+              <label className="text-sm font-medium text-slate-600">Project Name</label>
+              <input required value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full mt-1 p-2 border rounded-lg text-base" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600">Description</label>
-              <textarea required value={form.description} onChange={e=>setForm({...form, description: e.target.value})} className="w-full mt-1 p-2 border rounded-lg text-sm" rows="3"></textarea>
+              <label className="text-sm font-medium text-slate-600">Description</label>
+              <textarea required value={form.description} onChange={e=>setForm({...form, description: e.target.value})} className="w-full mt-1 p-2 border rounded-lg text-base" rows="3"></textarea>
             </div>
             <button className="w-full bg-brand-600 text-white py-2 rounded-lg font-medium hover:bg-brand-500 transition">Create Project</button>
           </form>
@@ -62,9 +62,9 @@ export default function Projects() {
             <div key={p.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-slate-800">{p.name}</h3>
-                <p className="text-sm text-slate-500 mt-1">{p.description}</p>
+                <p className="text-base text-slate-500 mt-1">{p.description}</p>
               </div>
-              <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1"><CheckCircle size={12}/> Active</span>
+              <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1"><CheckCircle size={12}/> Active</span>
             </div>
           ))}
           {!loading && projects.length === 0 && <p className="text-slate-500 text-center p-6 border border-dashed rounded-xl">No projects found. Create one to get started.</p>}

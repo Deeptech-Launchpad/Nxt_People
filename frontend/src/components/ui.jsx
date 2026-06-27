@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 // Modal
 export const Modal = ({ open, onClose, title, children, size = 'lg' }) => {
@@ -8,7 +8,7 @@ export const Modal = ({ open, onClose, title, children, size = 'lg' }) => {
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`modal w-full ${sizes[size]}`}>
         <div className="modal-header">
-          <h3 className="text-lg font-display font-bold text-slate-900">{title}</h3>
+          <h3 className="text-xl font-display font-bold text-slate-900">{title}</h3>
           <button onClick={onClose} className="btn-ghost p-1.5 rounded-lg">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -36,7 +36,7 @@ export const PageLoader = () => (
   <div className="flex items-center justify-center min-h-[400px]">
     <div className="text-center">
       <Spinner size="xl" className="mx-auto mb-4" />
-      <p className="text-slate-500 text-sm">Loading...</p>
+      <p className="text-slate-500 text-base">Loading...</p>
     </div>
   </div>
 );
@@ -52,7 +52,7 @@ export const EmptyState = ({ icon, title, subtitle, action }) => (
       )}
     </div>
     <h3 className="font-display font-bold text-slate-700 mb-1">{title}</h3>
-    {subtitle && <p className="text-slate-500 text-sm max-w-xs">{subtitle}</p>}
+    {subtitle && <p className="text-slate-500 text-base max-w-xs">{subtitle}</p>}
     {action && <div className="mt-4">{action}</div>}
   </div>
 );
@@ -73,9 +73,9 @@ export const StatCard = ({ label, value, icon, color = 'brand', trend, sub }) =>
         {icon}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
-        <p className="text-2xl font-display font-bold text-slate-900 mt-0.5">{value ?? '—'}</p>
-        {sub && <p className="text-xs text-slate-500 mt-0.5">{sub}</p>}
+        <p className="text-sm font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
+        <p className="text-3xl font-display font-bold text-slate-900 mt-0.5">{value ?? '—'}</p>
+        {sub && <p className="text-sm text-slate-500 mt-0.5">{sub}</p>}
       </div>
     </div>
   );
@@ -90,7 +90,7 @@ export const Alert = ({ type = 'info', message, onClose }) => {
     warning: 'bg-amber-50 text-amber-800 border-amber-200',
   };
   return (
-    <div className={`flex items-start gap-3 p-4 rounded-xl border text-sm ${styles[type]} animate-slide-in`}>
+    <div className={`flex items-start gap-3 p-4 rounded-xl border text-base ${styles[type]} animate-slide-in`}>
       <span className="flex-1">{message}</span>
       {onClose && (
         <button onClick={onClose} className="opacity-60 hover:opacity-100">
@@ -111,7 +111,7 @@ export const Pagination = ({ page, pages, onPage }) => {
       <button disabled={page === 1} onClick={() => onPage(page - 1)} className="btn-secondary btn-sm disabled:opacity-40">←</button>
       {Array.from({ length: pages }, (_, i) => i + 1).map(p => (
         <button key={p} onClick={() => onPage(p)}
-          className={`w-8 h-8 text-sm rounded-lg font-medium transition-all ${p === page ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
+          className={`w-8 h-8 text-base rounded-lg font-medium transition-all ${p === page ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
           {p}
         </button>
       ))}
@@ -137,7 +137,7 @@ export const FormField = ({ label, required, children, error }) => (
   <div>
     <label className="label">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>
     {children}
-    {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
+    {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
   </div>
 );
 
@@ -153,7 +153,7 @@ export const Select = ({ value, onChange, options, placeholder, className = '' }
 
 // Avatar — initials-only (legacy callers)
 export const Avatar = ({ name, size = 'md' }) => {
-  const sizes = { sm: 'w-7 h-7 text-xs', md: 'w-9 h-9 text-sm', lg: 'w-12 h-12 text-base' };
+  const sizes = { sm: 'w-7 h-7 text-sm', md: 'w-9 h-9 text-base', lg: 'w-12 h-12 text-lg' };
   const initials = name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
   return (
     <div className={`rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold flex-shrink-0 ${sizes[size]}`}>
@@ -168,7 +168,7 @@ export const Avatar = ({ name, size = 'md' }) => {
 // can't reach ui-avatars (private network deployments, CSP rules, etc.).
 // className lets the caller control size/border/etc. without us having to
 // enumerate every variant.
-export const PhotoAvatar = ({ photoUrl, firstName, lastName, name, className = 'w-9 h-9', textClassName = 'text-xs' }) => {
+export const PhotoAvatar = ({ photoUrl, firstName, lastName, name, className = 'w-9 h-9', textClassName = 'text-sm' }) => {
   const display = name || `${firstName || ''} ${lastName || ''}`.trim();
   const initials = display
     ? display.split(/\s+/).filter(Boolean).map(p => p[0]).join('').slice(0, 2).toUpperCase()

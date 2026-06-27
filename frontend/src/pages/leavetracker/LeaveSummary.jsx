@@ -1,4 +1,4 @@
-/**
+﻿/**
  * LeaveSummary.jsx — Leave Tracker / Leave Summary
  * Matches screenshot: 4 leave type cards + Apply Leave modal + Upcoming/Past holidays section
  */
@@ -146,7 +146,7 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-          <h2 className="text-[15px] font-bold text-[#1a2040]">Apply Leave</h2>
+          <h2 className="text-[17px] font-bold text-[#1a2040]">Apply Leave</h2>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
             <X size={16} />
           </button>
@@ -155,7 +155,7 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {/* Leave Type */}
           <div>
-            <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Leave Type *</label>
+            <label className="block text-[14px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Leave Type *</label>
             <select
               value={form.leaveType}
               onChange={e => setForm({ ...form, leaveType: e.target.value })}
@@ -173,7 +173,7 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
           {insufficientBalance && (
             <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded px-3 py-2">
               <AlertTriangle size={14} className="text-red-500 flex-shrink-0" />
-              <p className="text-[12px] text-red-600 font-medium">
+              <p className="text-[14px] text-red-600 font-medium">
                 {isPermission
                   ? `Over the monthly limit. ${selectedCard?.available ?? 0}h left this month, requested ${permHours.toFixed(2)}h.`
                   : `Insufficient balance. Available: ${selectedCard?.available} days, Requested: ${workingDays} days.`}
@@ -185,20 +185,20 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
             <>
               {/* Permission: single date + a start/end time window (hourly leave) */}
               <div>
-                <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Date *</label>
+                <label className="block text-[14px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Date *</label>
                 <input type="date" value={form.fromDate}
                   onChange={e => setForm({ ...form, fromDate: e.target.value, toDate: e.target.value })}
                   className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Start Time *</label>
+                  <label className="block text-[14px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Start Time *</label>
                   <input type="time" value={form.startTime}
                     onChange={e => setForm({ ...form, startTime: e.target.value })}
                     className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
                 </div>
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">End Time *</label>
+                  <label className="block text-[14px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">End Time *</label>
                   <input type="time" value={form.endTime}
                     onChange={e => setForm({ ...form, endTime: e.target.value })}
                     className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
@@ -207,7 +207,7 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
               {permHours > 0 && (
                 <div className={`flex items-center gap-2 rounded px-3 py-2 border ${permHours > 4 ? 'bg-red-50 border-red-200' : 'bg-purple-50 border-purple-200'}`}>
                   <Clock size={14} className={permHours > 4 ? 'text-red-500' : 'text-purple-500'} />
-                  <p className={`text-[12.5px] font-semibold ${permHours > 4 ? 'text-red-700' : 'text-purple-700'}`}>
+                  <p className={`text-[14px] font-semibold ${permHours > 4 ? 'text-red-700' : 'text-purple-700'}`}>
                     {permHours.toFixed(2)} hour{permHours !== 1 ? 's' : ''}{permHours > 4 ? ' — exceeds the 4h limit' : ` · ${Math.max(0, (selectedCard?.available ?? 4) - permHours).toFixed(2)}h would remain this month`}
                   </p>
                 </div>
@@ -218,13 +218,13 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
               {/* Date row */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">From *</label>
+                  <label className="block text-[14px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">From *</label>
                   <input type="date" value={form.fromDate}
                     onChange={e => setForm({ ...form, fromDate: e.target.value, toDate: e.target.value })}
                     className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
                 </div>
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">To *</label>
+                  <label className="block text-[14px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">To *</label>
                   <input type="date" value={form.toDate} min={form.fromDate}
                     onChange={e => setForm({ ...form, toDate: e.target.value })}
                     className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
@@ -235,7 +235,7 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
               {workingDays > 0 && (
                 <div className={`flex items-center gap-2 rounded px-3 py-2 border ${LEAVE_COLORS[form.leaveType] || 'bg-blue-50 border-blue-200'}`}>
                   <Calendar size={14} className="text-blue-500 flex-shrink-0" />
-                  <p className="text-[12.5px] text-blue-700 font-semibold">
+                  <p className="text-[14px] text-blue-700 font-semibold">
                     {workingDays} working day{workingDays !== 1 ? 's' : ''} selected
                     {form.fromDate !== form.toDate && ` (${fmtDate(form.fromDate)} – ${fmtDate(form.toDate)})`}
                   </p>
@@ -247,10 +247,10 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
                 <input type="checkbox" id="halfday" checked={form.isHalfDay}
                   onChange={e => setForm({ ...form, isHalfDay: e.target.checked })}
                   className="w-4 h-4 rounded accent-[#1a73e8]" />
-                <label htmlFor="halfday" className="text-[13px] text-gray-700 font-medium cursor-pointer">Half Day</label>
+                <label htmlFor="halfday" className="text-[15px] text-gray-700 font-medium cursor-pointer">Half Day</label>
                 {form.isHalfDay && (
                   <select value={form.halfDayType} onChange={e => setForm({ ...form, halfDayType: e.target.value })}
-                    className="ml-2 border border-gray-200 rounded px-2 py-1 text-[12.5px] outline-none focus:border-[#1a73e8]">
+                    className="ml-2 border border-gray-200 rounded px-2 py-1 text-[14px] outline-none focus:border-[#1a73e8]">
                     <option value="first_half">First Half</option>
                     <option value="second_half">Second Half</option>
                   </select>
@@ -261,7 +261,7 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
 
           {/* Reason */}
           <div>
-            <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Reason *</label>
+            <label className="block text-[14px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Reason *</label>
             <textarea
               rows={3}
               value={form.reason}
@@ -273,7 +273,7 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
 
           {/* Team Notification Email (optional) */}
           <div>
-            <label className="block text-[12px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Notify Team (optional)</label>
+            <label className="block text-[14px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Notify Team (optional)</label>
             <input type="email" value={form.teamEmail}
               onChange={e => setForm({ ...form, teamEmail: e.target.value })}
               placeholder="team@company.com"
@@ -283,11 +283,11 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
             <button type="button" onClick={onClose}
-              className="px-5 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-50 rounded border border-gray-200 transition">
+              className="px-5 py-2 text-[15px] font-semibold text-gray-600 hover:bg-gray-50 rounded border border-gray-200 transition">
               Cancel
             </button>
             <button type="submit" disabled={loading || insufficientBalance}
-              className="px-5 py-2 text-[13px] font-bold bg-[#1a73e8] hover:bg-[#1557b0] text-white rounded transition disabled:opacity-50 flex items-center gap-2">
+              className="px-5 py-2 text-[15px] font-bold bg-[#1a73e8] hover:bg-[#1557b0] text-white rounded transition disabled:opacity-50 flex items-center gap-2">
               {loading && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
               Apply Leave
             </button>
@@ -312,21 +312,21 @@ function RejectModal({ leave, onConfirm, onClose }) {
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-sm">
         <div className="flex items-center justify-between px-5 py-4 border-b">
-          <h3 className="text-[14px] font-bold text-[#1a2040]">Reject Leave</h3>
+          <h3 className="text-[16px] font-bold text-[#1a2040]">Reject Leave</h3>
           <button onClick={onClose}><X size={16} className="text-gray-400" /></button>
         </div>
         <div className="p-5 space-y-4">
-          <p className="text-[13px] text-gray-600">Add an optional comment for this rejection (not required).</p>
+          <p className="text-[15px] text-gray-600">Add an optional comment for this rejection (not required).</p>
           <textarea rows={3} value={reason} onChange={e => setReason(e.target.value)}
             placeholder="Optional comment…"
-            className="w-full border border-gray-200 rounded px-3 py-2 text-[13px] outline-none focus:border-red-300 resize-none" />
+            className="w-full border border-gray-200 rounded px-3 py-2 text-[15px] outline-none focus:border-red-300 resize-none" />
           <div className="flex items-center justify-end gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-[12.5px] font-semibold text-gray-600 hover:bg-gray-50 rounded border border-gray-200">Cancel</button>
+            <button onClick={onClose} className="px-4 py-2 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 rounded border border-gray-200">Cancel</button>
             <button disabled={loading} onClick={async () => {
               setLoading(true);
               await onConfirm(reason);
               setLoading(false);
-            }} className="px-4 py-2 text-[12.5px] font-bold bg-[#E53935] hover:bg-red-700 text-white rounded disabled:opacity-50 flex items-center gap-2">
+            }} className="px-4 py-2 text-[14px] font-bold bg-[#E53935] hover:bg-red-700 text-white rounded disabled:opacity-50 flex items-center gap-2">
               {loading && <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
               Reject
             </button>
@@ -406,7 +406,7 @@ export default function LeaveSummary() {
     <div className="flex flex-col h-full font-sans bg-[#f4f5f7]">
       {/* ── Sub-header ────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-4 text-[13px] text-gray-500">
+        <div className="flex items-center gap-4 text-[15px] text-gray-500">
           <BackButton to="/leave-tracker" label="Leave Tracker" />
           <span className="font-semibold text-gray-700">Leave booked this year : <span className="text-[#1a73e8]">{bookedTotal} day(s)</span></span>
           <span className="text-gray-300">|</span>
@@ -414,7 +414,7 @@ export default function LeaveSummary() {
         </div>
         <div className="flex items-center gap-3">
           {/* Date range nav */}
-          <div className="flex items-center gap-2 border border-gray-200 rounded px-2 py-1.5 text-[13px] text-gray-600">
+          <div className="flex items-center gap-2 border border-gray-200 rounded px-2 py-1.5 text-[15px] text-gray-600">
             <button onClick={() => setDateRange(prev => ({ year: prev.year - 1, label: `01/01/${prev.year - 1} - 31/12/${prev.year - 1}` }))}
               className="hover:text-blue-600 transition-colors"><ChevronLeft size={14} /></button>
             <Calendar size={13} className="text-gray-400" />
@@ -424,7 +424,7 @@ export default function LeaveSummary() {
           </div>
           {/* Apply button */}
           <button onClick={() => setShowApply(true)}
-            className="flex items-center gap-1.5 bg-[#1a73e8] hover:bg-[#1557b0] text-white text-[13px] font-bold px-4 py-2 rounded transition-colors shadow-sm">
+            className="flex items-center gap-1.5 bg-[#1a73e8] hover:bg-[#1557b0] text-white text-[15px] font-bold px-4 py-2 rounded transition-colors shadow-sm">
             Apply Leave
           </button>
         </div>
@@ -459,18 +459,18 @@ export default function LeaveSummary() {
                     {ICON_MAP[card.code] || card.icon || '📋'}
                   </div>
                   {/* Name */}
-                  <p className="text-[12.5px] font-bold text-gray-600 mb-3">{card.name}{isPerm && <span className="ml-1 text-[10px] font-medium text-gray-400">/ 4h month</span>}</p>
+                  <p className="text-[14px] font-bold text-gray-600 mb-3">{card.name}{isPerm && <span className="ml-1 text-[12px] font-medium text-gray-400">/ 4h month</span>}</p>
                   {/* Available */}
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[12px] text-gray-500">Available</span>
-                    <span className="text-[13px] font-bold text-[#34a853]">
+                    <span className="text-[14px] text-gray-500">Available</span>
+                    <span className="text-[15px] font-bold text-[#34a853]">
                       {fmt(card.available)}
                     </span>
                   </div>
                   {/* Booked / Used this month */}
                   <div className="flex items-center justify-between">
-                    <span className="text-[12px] text-gray-500">{isPerm ? 'Used this month' : 'Booked'}</span>
-                    <span className="flex items-center gap-1 text-[12.5px] font-semibold text-gray-700">
+                    <span className="text-[14px] text-gray-500">{isPerm ? 'Used this month' : 'Booked'}</span>
+                    <span className="flex items-center gap-1 text-[14px] font-semibold text-gray-700">
                       {fmt(card.booked)}
                       <button className="text-gray-300 hover:text-gray-500 transition-colors">
                         <Info size={11} />
@@ -489,23 +489,23 @@ export default function LeaveSummary() {
             onClick={() => setSection(s => s === 'upcoming' ? 'none' : 'upcoming')}
             className="w-full flex items-center justify-between px-5 py-3.5 border-b border-gray-100 hover:bg-gray-50 transition-colors"
           >
-            <span className="text-[13px] font-bold text-gray-700">Upcoming Leaves &amp; Holidays</span>
+            <span className="text-[15px] font-bold text-gray-700">Upcoming Leaves &amp; Holidays</span>
             <ChevronDown size={15} className={`text-gray-400 transition-transform ${section === 'upcoming' ? 'rotate-180' : ''}`} />
           </button>
           {section === 'upcoming' && (
             <div className="divide-y divide-gray-50">
               {upcomingHolidays.length === 0 ? (
-                <p className="px-5 py-8 text-center text-[13px] text-gray-400">No upcoming holidays</p>
+                <p className="px-5 py-8 text-center text-[15px] text-gray-400">No upcoming holidays</p>
               ) : upcomingHolidays.map((h, i) => (
                 <div key={i} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
-                  <div className="text-[12px] font-semibold text-gray-600 w-[180px] flex-shrink-0">
+                  <div className="text-[14px] font-semibold text-gray-600 w-[180px] flex-shrink-0">
                     {fmtDateLong(h.date)}
                   </div>
                   <div className="flex items-center gap-2 text-gray-500">
                     <Calendar size={13} className="text-gray-400" />
-                    <span className="text-[12.5px] font-medium text-gray-700">{h.name}</span>
+                    <span className="text-[14px] font-medium text-gray-700">{h.name}</span>
                   </div>
-                  <span className="text-[12px] text-gray-500 ml-auto">{h.description || h.name + ' Holiday'}</span>
+                  <span className="text-[14px] text-gray-500 ml-auto">{h.description || h.name + ' Holiday'}</span>
                 </div>
               ))}
             </div>
@@ -518,35 +518,35 @@ export default function LeaveSummary() {
             onClick={() => setSection(s => s === 'past' ? 'none' : 'past')}
             className="w-full flex items-center justify-between px-5 py-3.5 border-b border-gray-100 hover:bg-gray-50 transition-colors"
           >
-            <span className="text-[13px] font-bold text-gray-700">Past Leaves &amp; Holidays</span>
+            <span className="text-[15px] font-bold text-gray-700">Past Leaves &amp; Holidays</span>
             <ChevronDown size={15} className={`text-gray-400 transition-transform ${section === 'past' ? 'rotate-180' : ''}`} />
           </button>
           {section === 'past' && (
             <div className="divide-y divide-gray-100">
               {pastLeaves.length === 0 ? (
-                <p className="px-5 py-8 text-center text-[13px] text-gray-400">No past leaves</p>
+                <p className="px-5 py-8 text-center text-[15px] text-gray-400">No past leaves</p>
               ) : pastLeaves.map(l => (
                 <div key={l._id} className="px-5 py-4 hover:bg-gray-50 transition-colors">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[13px] font-semibold text-gray-800">
+                          <span className="text-[15px] font-semibold text-gray-800">
                             {{ casual: 'Casual Leave', comp_off: 'Compensatory Off', unpaid: 'Leave Without Pay', permission: 'Permission' }[l.leaveType] || l.leaveType}
                           </span>
-                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full capitalize ${STATUS_PILL[l.status] || 'bg-gray-100 text-gray-500'}`}>
+                          <span className={`text-[13px] font-bold px-2 py-0.5 rounded-full capitalize ${STATUS_PILL[l.status] || 'bg-gray-100 text-gray-500'}`}>
                             {l.status}
                           </span>
                         </div>
-                        <p className="text-[12px] text-gray-500 mt-0.5">
+                        <p className="text-[14px] text-gray-500 mt-0.5">
                           {fmtDate(l.startDate)} · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
                         </p>
                         {l.rejectionReason && (
-                          <p className="text-[11px] text-red-500 mt-1">Reason: {l.rejectionReason}</p>
+                          <p className="text-[13px] text-red-500 mt-1">Reason: {l.rejectionReason}</p>
                         )}
                       </div>
                     </div>
-                    <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-[12px] font-semibold transition-colors flex-shrink-0">
+                    <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-[14px] font-semibold transition-colors flex-shrink-0">
                       <Eye size={13} /> View
                     </button>
                   </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { X, CheckCircle, CheckCheck, XCircle, Gift } from 'lucide-react';
 import ApprovalTimeline from './ApprovalTimeline';
 
@@ -14,8 +14,8 @@ const fmtShort = (d) => { if (!d) return '—'; const dt = new Date(String(d).sl
 function Row({ label, children }) {
   return (
     <div className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 w-32 flex-shrink-0 pt-0.5">{label}</span>
-      <span className="text-[13px] text-slate-700">{children}</span>
+      <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-400 w-32 flex-shrink-0 pt-0.5">{label}</span>
+      <span className="text-[15px] text-slate-700">{children}</span>
     </div>
   );
 }
@@ -36,16 +36,16 @@ export default function CompOffDetailModal({ item, canAct, canApproveAll, onClos
             </div>
             <div>
               {item.employee && (
-                <p className="font-semibold text-slate-800 text-sm">
+                <p className="font-semibold text-slate-800 text-base">
                   {item.employee.firstName} {item.employee.lastName}
-                  {item.employee.department && <span className="text-xs text-slate-400 font-normal ml-1.5">· {item.employee.department}</span>}
+                  {item.employee.department && <span className="text-sm text-slate-400 font-normal ml-1.5">· {item.employee.department}</span>}
                 </p>
               )}
-              <p className="text-xs text-slate-500">Compensatory Off Request</p>
+              <p className="text-sm text-slate-500">Compensatory Off Request</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`text-xs px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[item.status] || STATUS_STYLE.pending}`}>{item.status}</span>
+            <span className={`text-sm px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[item.status] || STATUS_STYLE.pending}`}>{item.status}</span>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
           </div>
         </div>
@@ -68,7 +68,7 @@ export default function CompOffDetailModal({ item, canAct, canApproveAll, onClos
           {/* Approval Timeline */}
           {hasLevels && (
             <div className="mt-3 pt-3 border-t border-slate-100">
-              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Approval Timeline</p>
+              <p className="text-[13px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Approval Timeline</p>
               <ApprovalTimeline leave={item} />
             </div>
           )}
@@ -77,20 +77,20 @@ export default function CompOffDetailModal({ item, canAct, canApproveAll, onClos
         {/* Footer */}
         <div className="px-5 pb-5 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
           {!showActions && (
-            <button onClick={onClose} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[13px] font-medium">Close</button>
+            <button onClick={onClose} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[15px] font-medium">Close</button>
           )}
           {showActions && onReject && (
-            <button onClick={() => onReject(item)} className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-medium">
+            <button onClick={() => onReject(item)} className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium">
               <XCircle size={13} /> Reject
             </button>
           )}
           {showActions && canApproveAll && onApproveAll && (
-            <button onClick={() => onApproveAll(item)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-medium">
+            <button onClick={() => onApproveAll(item)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium">
               <CheckCheck size={13} /> Approve All
             </button>
           )}
           {showActions && onApprove && (
-            <button onClick={() => onApprove(item)} className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-medium">
+            <button onClick={() => onApprove(item)} className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-sm font-medium">
               <CheckCircle size={13} /> Approve
             </button>
           )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -143,7 +143,7 @@ export default function Approvals() {
                           'text-slate-500 bg-slate-50 border-slate-200';
       return (
         <div className="flex-shrink-0">
-          <span className={`text-[11px] font-medium px-3 py-1.5 rounded-lg border capitalize ${statusColor}`}>
+          <span className={`text-[13px] font-medium px-3 py-1.5 rounded-lg border capitalize ${statusColor}`}>
             {displayStatus}
           </span>
         </div>
@@ -154,18 +154,18 @@ export default function Approvals() {
     return (
       <div className="flex items-center gap-2 flex-shrink-0">
         <button onClick={() => action(endpoint, id, 'approved')} disabled={!!actionLoading}
-          className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+          className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
           <CheckCircle size={13} /> Approve
         </button>
         {/* Approve every remaining level at once (leaves + comp-offs) — HR/SA + Team Leads. */}
         {(endpoint === 'leaves' || endpoint === 'comp-off') && canApproveAll && (
           <button onClick={() => action(endpoint, id, 'approved', undefined, true)} disabled={!!actionLoading}
-            className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+            className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
             <CheckCheck size={13} /> Approve All
           </button>
         )}
         <button onClick={() => action(endpoint, id, 'rejected')} disabled={!!actionLoading}
-          className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+          className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
           <XCircle size={13} /> Reject
         </button>
       </div>
@@ -191,8 +191,8 @@ export default function Approvals() {
           ['Regularizations', data.regularizations?.length, 'bg-slate-50 text-slate-600'],
         ].map(([l, v, c]) => (
           <div key={l} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
-            <p className="text-xs text-slate-500 mb-2">{l}</p>
-            <p className={`text-3xl font-display font-bold px-3 py-1 rounded-lg w-fit ${c}`}>{v ?? 0}</p>
+            <p className="text-sm text-slate-500 mb-2">{l}</p>
+            <p className={`text-4xl font-display font-bold px-3 py-1 rounded-lg w-fit ${c}`}>{v ?? 0}</p>
           </div>
         ))}
       </div>
@@ -211,10 +211,10 @@ export default function Approvals() {
             const showBadge   = currentCount > 0 && currentCount > seen;
             return (
               <button key={id} onClick={() => { setTab(id); markTabSeen(id, currentCount); setSearchFilter(''); }}
-                className={`flex items-center gap-2 px-5 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                className={`flex items-center gap-2 px-5 py-4 text-base font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                 {label}
                 {showBadge && (
-                  <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold ${tab === id ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className={`w-5 h-5 rounded-full text-sm flex items-center justify-center font-bold ${tab === id ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
                     {currentCount}
                   </span>
                 )}
@@ -229,7 +229,7 @@ export default function Approvals() {
                   placeholder="Filter by name..."
                   value={searchFilter}
                   onChange={e => setSearchFilter(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 w-48 border border-slate-200 rounded-lg text-[13px] outline-none focus:border-brand-400"
+                  className="pl-8 pr-3 py-1.5 w-48 border border-slate-200 rounded-lg text-[15px] outline-none focus:border-brand-400"
                 />
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
               </div>
@@ -252,28 +252,28 @@ export default function Approvals() {
                 : data.leaves?.map(l => (
                   <div key={l._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
                         {l.leaveType?.[0]?.toUpperCase()}
                       </div>
                        <div>
                          <div className="flex items-center gap-2 flex-wrap">
                            <p className="font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
-                           <span className="text-xs text-slate-600">{l.employee?.employeeId}</span>
-                           <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
+                           <span className="text-sm text-slate-600">{l.employee?.employeeId}</span>
+                           <span className="text-sm bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                            {l.status === 'pending' && l.approvalLevels?.length > 0 && (
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
+                              <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
                                 {l.approvalLevels.filter(a => a.status === 'approved').length} of {l.approvalLevels.length} level{l.approvalLevels.length !== 1 ? 's' : ''} approved
                               </span>
                             )}
                          </div>
-                         <p className="text-sm text-slate-700 mt-1 capitalize">
+                         <p className="text-base text-slate-700 mt-1 capitalize">
                            {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
-                           {l.isHalfDay && <span className="ml-1 text-xs bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
+                           {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
-                        <p className="text-sm text-slate-600 mt-0.5">
+                        <p className="text-base text-slate-600 mt-0.5">
                           {new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(l.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-slate-600 mt-1">{l.reason}</p>
+                        <p className="text-sm text-slate-600 mt-1">{l.reason}</p>
                       </div>
                      </div>
                      <div className="flex items-center gap-2 flex-shrink-0">
@@ -283,7 +283,7 @@ export default function Approvals() {
                            api.get(`/leaves/balance?employeeId=${l.employee._id}&year=${new Date(l.startDate || Date.now()).getFullYear()}`)
                              .then(r => setDetailBalance(r.data.data || [])).catch(() => setDetailBalance(null));
                          }
-                       }} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                       }} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                          <Eye size={13} /> View
                        </button>
                        <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
@@ -299,27 +299,27 @@ export default function Approvals() {
                 : data.permissions?.map(p => (
                   <div key={p._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold ${leaveTypeColors[p.leaveType] || 'bg-slate-50 text-slate-600'}`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[p.leaveType] || 'bg-slate-50 text-slate-600'}`}>
                         {p.leaveType?.[0]?.toUpperCase()}
                       </div>
                        <div>
                          <div className="flex items-center gap-2 flex-wrap">
                            <p className="font-semibold text-slate-700">{p.employee?.firstName} {p.employee?.lastName}</p>
-                           <span className="text-xs text-slate-600">{p.employee?.employeeId}</span>
-                           <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{p.employee?.department}</span>
+                           <span className="text-sm text-slate-600">{p.employee?.employeeId}</span>
+                           <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{p.employee?.department}</span>
                            {p.status === 'pending' && p.approvalLevels?.length > 0 && (
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-200">
+                              <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-200">
                                 {p.approvalLevels.filter(a => a.status === 'approved').length} of {p.approvalLevels.length} level{p.approvalLevels.length !== 1 ? 's' : ''} approved
                               </span>
                             )}
                          </div>
-                         <p className="text-sm text-slate-500 mt-1 capitalize">
+                         <p className="text-base text-slate-500 mt-1 capitalize">
                            Permission · {p.hours}h {p.startTime && p.endTime && `(${(p.startTime || '').slice(0,5)}–${(p.endTime || '').slice(0,5)})`}
                          </p>
-                        <p className="text-sm text-slate-600 mt-0.5">
+                        <p className="text-base text-slate-600 mt-0.5">
                           {new Date(p.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-slate-400 mt-1">{p.reason}</p>
+                        <p className="text-sm text-slate-400 mt-1">{p.reason}</p>
                       </div>
                      </div>
                      <div className="flex items-center gap-2 flex-shrink-0">
@@ -329,7 +329,7 @@ export default function Approvals() {
                            api.get(`/leaves/balance?employeeId=${p.employee._id}&year=${new Date(p.startDate || Date.now()).getFullYear()}`)
                              .then(r => setDetailBalance(r.data.data || [])).catch(() => setDetailBalance(null));
                          }
-                       }} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                       }} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                          <Eye size={13} /> View
                        </button>
                        <ActionBtns endpoint="leaves" id={p._id} type="Permission" canActLeave={p.canAct} status={p.status} />
@@ -345,27 +345,27 @@ export default function Approvals() {
                 : data.approvedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).map(l => (
                   <div key={l._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
                         {l.leaveType?.[0]?.toUpperCase()}
                       </div>
                        <div>
                          <div className="flex items-center gap-2 flex-wrap">
                            <p className="font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
-                           <span className="text-xs text-slate-600">{l.employee?.employeeId}</span>
-                           <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
+                           <span className="text-sm text-slate-600">{l.employee?.employeeId}</span>
+                           <span className="text-sm bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                          </div>
-                         <p className="text-sm text-slate-700 mt-1 capitalize">
+                         <p className="text-base text-slate-700 mt-1 capitalize">
                            {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
-                           {l.isHalfDay && <span className="ml-1 text-xs bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
+                           {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
-                        <p className="text-sm text-slate-600 mt-0.5">
+                        <p className="text-base text-slate-600 mt-0.5">
                           {new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(l.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-slate-600 mt-1">{l.reason}</p>
+                        <p className="text-sm text-slate-600 mt-1">{l.reason}</p>
                       </div>
                      </div>
                      <div className="flex items-center gap-2 flex-shrink-0">
-                       <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                       <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                          <Eye size={13} /> View
                        </button>
                        <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
@@ -381,32 +381,32 @@ export default function Approvals() {
                 : data.rejectedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).map(l => (
                   <div key={l._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
                         {l.leaveType?.[0]?.toUpperCase()}
                          </div>
                        <div>
                          <div className="flex items-center gap-2 flex-wrap">
                            <p className="font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
-                           <span className="text-xs text-slate-600">{l.employee?.employeeId}</span>
-                           <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
+                           <span className="text-sm text-slate-600">{l.employee?.employeeId}</span>
+                           <span className="text-sm bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                          </div>
-                         <p className="text-sm text-slate-700 mt-1 capitalize">
+                         <p className="text-base text-slate-700 mt-1 capitalize">
                            {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
-                           {l.isHalfDay && <span className="ml-1 text-xs bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
+                           {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
-                        <p className="text-sm text-slate-600 mt-0.5">
+                        <p className="text-base text-slate-600 mt-0.5">
                           {new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(l.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-slate-600 mt-1">{l.reason}</p>
+                        <p className="text-sm text-slate-600 mt-1">{l.reason}</p>
                         {l.rejectionReason && (
-                          <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2.5 py-1.5 mt-2 font-medium w-fit">
+                          <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-2.5 py-1.5 mt-2 font-medium w-fit">
                             Rejection Reason: {l.rejectionReason}
                           </p>
                         )}
                       </div>
                      </div>
                      <div className="flex items-center gap-2 flex-shrink-0">
-                       <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                       <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                          <Eye size={13} /> View
                        </button>
                        <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
@@ -422,18 +422,18 @@ export default function Approvals() {
                 : data.timesheets?.map(ts => (
                   <div key={ts._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center text-brand-600 font-display font-bold text-sm flex-shrink-0">
+                      <div className="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center text-brand-600 font-display font-bold text-base flex-shrink-0">
                         {ts.totalHours?.toFixed(0)}h
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-slate-700">{ts.employee?.firstName} {ts.employee?.lastName}</p>
-                          <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{ts.employee?.department}</span>
+                          <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{ts.employee?.department}</span>
                         </div>
-                        <p className="text-sm text-slate-500 mt-1">
+                        <p className="text-base text-slate-500 mt-1">
                           {new Date(ts.weekStartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(ts.weekEndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-slate-400 mt-1">{ts.totalHours?.toFixed(1)} total hours{ts.notes ? ` · ${ts.notes}` : ''}</p>
+                        <p className="text-sm text-slate-400 mt-1">{ts.totalHours?.toFixed(1)} total hours{ts.notes ? ` · ${ts.notes}` : ''}</p>
                       </div>
                     </div>
                     <ActionBtns endpoint="timesheets" id={ts._id} type="Timesheet" />
@@ -454,20 +454,20 @@ export default function Approvals() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-slate-700">{r.employee?.firstName} {r.employee?.lastName}</p>
-                          <span className="text-xs text-slate-600">{r.employee?.employeeId}</span>
-                          <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{r.employee?.department}</span>
+                          <span className="text-sm text-slate-600">{r.employee?.employeeId}</span>
+                          <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{r.employee?.department}</span>
                         </div>
-                        <p className="text-sm text-slate-500 mt-1">
+                        <p className="text-base text-slate-500 mt-1">
                           {new Date(r.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-slate-400 mt-0.5">
+                        <p className="text-sm text-slate-400 mt-0.5">
                           {r.checkIn ? `In: ${r.checkIn}` : ''}{r.checkIn && r.checkOut ? ' · ' : ''}{r.checkOut ? `Out: ${r.checkOut}` : ''}
                         </p>
-                        <p className="text-xs text-slate-400 mt-0.5 max-w-xs">{r.reason}</p>
+                        <p className="text-sm text-slate-400 mt-0.5 max-w-xs">{r.reason}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <button onClick={() => setDetailLeave(r)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+                      <button onClick={() => setDetailLeave(r)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                         <Eye size={13} /> View
                       </button>
                       <ActionBtns endpoint="regularizations" id={r._id} type="Regularization" canActLeave={r.canAct} status={r.status} />
@@ -489,13 +489,13 @@ export default function Approvals() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-slate-700">{w.employee?.firstName} {w.employee?.lastName}</p>
-                          <span className="text-xs text-slate-600">{w.employee?.employeeId}</span>
-                          <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{w.employee?.department}</span>
+                          <span className="text-sm text-slate-600">{w.employee?.employeeId}</span>
+                          <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{w.employee?.department}</span>
                         </div>
-                        <p className="text-sm text-slate-500 mt-1">
+                        <p className="text-base text-slate-500 mt-1">
                           {new Date(w.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-slate-400 mt-0.5 max-w-xs">{w.reason}</p>
+                        <p className="text-sm text-slate-400 mt-0.5 max-w-xs">{w.reason}</p>
                       </div>
                     </div>
                     <ActionBtns endpoint="wfh" id={w._id} type="WFH" />
@@ -516,22 +516,22 @@ export default function Approvals() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-slate-700">{c.employee?.firstName} {c.employee?.lastName}</p>
-                          <span className="text-xs text-slate-600">{c.employee?.employeeId}</span>
-                          <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{c.employee?.department}</span>
+                          <span className="text-sm text-slate-600">{c.employee?.employeeId}</span>
+                          <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{c.employee?.department}</span>
                         </div>
-                        <p className="text-sm text-slate-500 mt-1">
+                        <p className="text-base text-slate-500 mt-1">
                           Worked on: {fmtDay(c.workedDate)}
                         </p>
                         {c.compOffDate && (
-                          <p className="text-sm text-slate-500 mt-0.5">
+                          <p className="text-base text-slate-500 mt-0.5">
                             Comp-off requested for: <span className="font-medium text-slate-700">{fmtDay(c.compOffDate)}</span>
                           </p>
                         )}
-                        <p className="text-xs text-slate-400 mt-0.5">
+                        <p className="text-sm text-slate-400 mt-0.5">
                           {c.daysEarned} day{c.daysEarned !== 1 ? 's' : ''} comp-off earned
                           {c.expiresAt ? ` · valid till ${fmtDay(c.expiresAt, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
                         </p>
-                        {c.reason && <p className="text-xs text-slate-400 mt-0.5 max-w-xs">{c.reason}</p>}
+                        {c.reason && <p className="text-sm text-slate-400 mt-0.5 max-w-xs">{c.reason}</p>}
                       </div>
                     </div>
                     <ActionBtns endpoint="comp-off" id={c._id} type="Comp-Off" canActLeave={c.canAct} status={c.status} />

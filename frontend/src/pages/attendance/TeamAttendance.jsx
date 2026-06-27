@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Search, Phone, ChevronDown, Filter } from 'lucide-react';
 import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
@@ -63,11 +63,11 @@ export default function TeamAttendance() {
 
           {/* Info */}
           <div className="flex-1 min-w-0">
-            <p className="text-[12.5px] font-semibold text-slate-800 truncate">
+            <p className="text-[14px] font-semibold text-slate-800 truncate">
               {person.employeeId && <span className="text-slate-500 font-normal">{person.employeeId} - </span>}
               {person.firstName} {person.lastName}
             </p>
-            <p className="text-[11px] text-slate-500 mt-0.5">
+            <p className="text-[13px] text-slate-500 mt-0.5">
               {person.department || 'No Department'}, {/* location mock */ 'Coimbatore'}
             </p>
           </div>
@@ -80,11 +80,11 @@ export default function TeamAttendance() {
 
         {/* Shift info */}
         <div className="mt-2.5 pl-[52px]">
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[13px] text-slate-500">
             General Shift · 9:30 AM - 6:00 PM
           </p>
           {att?.checkIn && (
-            <p className="text-[11px] text-slate-400 mt-0.5">
+            <p className="text-[13px] text-slate-400 mt-0.5">
               In: {fmtTime(att.checkIn)}
               {att.checkOut && <> · Out: {fmtTime(att.checkOut)}</>}
             </p>
@@ -98,8 +98,8 @@ export default function TeamAttendance() {
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-3">
         <div className={`w-2 h-2 rounded-full ${statusColor}`} />
-        <h3 className="text-[13px] font-semibold text-slate-700">{title}</h3>
-        <span className="ml-auto text-[12px] font-bold text-slate-500">{count}</span>
+        <h3 className="text-[15px] font-semibold text-slate-700">{title}</h3>
+        <span className="ml-auto text-[14px] font-bold text-slate-500">{count}</span>
       </div>
       <div className="space-y-2.5">
         {people.map(p => <MemberCard key={p._id} person={p} />)}
@@ -111,7 +111,7 @@ export default function TeamAttendance() {
     <div className="min-h-screen bg-[#f2f3f7] pb-10">
       {/* Header */}
       <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-4 shadow-sm sticky top-0 z-30">
-        <h2 className="text-[14px] font-bold text-slate-800 border-b-2 border-blue-500 pb-[10px] -mb-3">
+        <h2 className="text-[16px] font-bold text-slate-800 border-b-2 border-blue-500 pb-[10px] -mb-3">
           Team Members
         </h2>
         <div className="ml-auto flex items-center gap-2">
@@ -130,7 +130,7 @@ export default function TeamAttendance() {
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               placeholder="Search members..."
-              className="w-full pl-9 pr-4 py-2 text-[12.5px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition bg-white"
+              className="w-full pl-9 pr-4 py-2 text-[14px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition bg-white"
             />
           </div>
           <input
@@ -142,9 +142,9 @@ export default function TeamAttendance() {
               const today = new Date().toLocaleDateString('en-CA');
               setDate(e.target.value > today ? today : e.target.value);
             }}
-            className="border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] focus:outline-none focus:border-blue-400 bg-white text-slate-600"
+            className="border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400 bg-white text-slate-600"
           />
-          <button className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] text-slate-600 hover:bg-slate-50 bg-white transition-colors">
+          <button className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-3 py-2 text-[14px] text-slate-600 hover:bg-slate-50 bg-white transition-colors">
             <Filter size={13} /> Filter
           </button>
         </div>
@@ -166,7 +166,7 @@ export default function TeamAttendance() {
             )}
             {filtered.length === 0 && (
               <div className="text-center py-16 text-slate-400">
-                <p className="text-[13px]">No team members found</p>
+                <p className="text-[15px]">No team members found</p>
               </div>
             )}
           </div>

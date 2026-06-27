@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { Pencil, X, Eye, EyeOff, Save, Key, Camera, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
@@ -16,8 +16,8 @@ const fmtDate = (iso) =>
 /** Single field row — label on the left, value on the right (Zoho style). */
 const Row = ({ label, children }) => (
   <div className="grid grid-cols-[160px_1fr] gap-4 items-start py-3 border-b border-slate-100 last:border-b-0">
-    <span className="text-[13px] text-slate-500">{label}</span>
-    <span className="text-[13px] text-slate-800 font-medium break-words">
+    <span className="text-[15px] text-slate-500">{label}</span>
+    <span className="text-[15px] text-slate-800 font-medium break-words">
       {children == null || children === '' ? <span className="text-slate-300">-</span> : children}
     </span>
   </div>
@@ -26,7 +26,7 @@ const Row = ({ label, children }) => (
 /** Card section with title + a 2-column grid of rows. */
 const Section = ({ title, children }) => (
   <section className="bg-white border border-slate-200 rounded-md">
-    <h3 className="px-6 py-4 text-[15px] font-bold text-slate-800 border-b border-slate-100">
+    <h3 className="px-6 py-4 text-[17px] font-bold text-slate-800 border-b border-slate-100">
       {title}
     </h3>
     <div className="px-6 py-1 grid grid-cols-1 md:grid-cols-2 md:gap-x-12">
@@ -260,7 +260,7 @@ export default function Profile() {
               {profile.photoUrl ? (
                 <img src={profile.photoUrl} alt="" className="w-9 h-9 rounded-full object-cover" />
               ) : (
-                <div className="w-9 h-9 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[12px] font-bold">
+                <div className="w-9 h-9 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[14px] font-bold">
                   {initials}
                 </div>
               )}
@@ -268,7 +268,7 @@ export default function Profile() {
                 <Camera size={13} />
               </div>
             </button>
-            <h1 className="text-[15px] font-semibold text-slate-800">
+            <h1 className="text-[17px] font-semibold text-slate-800">
               {profile.employeeId} <span className="text-slate-400 font-normal">-</span> {fullName}
             </h1>
           </div>
@@ -339,7 +339,7 @@ export default function Profile() {
 
         {/* Profile Picture — available to every role (employee / manager / admin) */}
         <section className="bg-white border border-slate-200 rounded-md">
-          <h3 className="px-6 py-4 text-[15px] font-bold text-slate-800 border-b border-slate-100">
+          <h3 className="px-6 py-4 text-[17px] font-bold text-slate-800 border-b border-slate-100">
             Profile Picture
           </h3>
           <div className="px-6 py-5 flex items-center gap-5">
@@ -366,22 +366,22 @@ export default function Profile() {
                 <div className="absolute inset-0 rounded-full bg-white/70 flex flex-col items-center justify-center">
                   <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                   {uploadProgress > 0 && (
-                    <span className="text-[10px] font-semibold text-blue-600 mt-1">{uploadProgress}%</span>
+                    <span className="text-[12px] font-semibold text-blue-600 mt-1">{uploadProgress}%</span>
                   )}
                 </div>
               )}
             </div>
             <div className="flex-1">
-              <p className="text-[13px] text-slate-600 mb-1">
+              <p className="text-[15px] text-slate-600 mb-1">
                 Add a photo so your colleagues can recognise you across the app.
               </p>
-              <p className="text-[11.5px] text-slate-400 mb-3">JPG, PNG, WebP or GIF — up to 5 MB.</p>
+              <p className="text-[13px] text-slate-400 mb-3">JPG, PNG, WebP or GIF — up to 5 MB.</p>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={triggerPhotoPicker}
                   disabled={uploadingPhoto}
-                  className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-white bg-[#1a73e8] hover:bg-[#1557B0] px-3 py-1.5 rounded-md transition-colors disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-white bg-[#1a73e8] hover:bg-[#1557B0] px-3 py-1.5 rounded-md transition-colors disabled:opacity-60"
                 >
                   <Camera size={13} /> {profile.photoUrl ? 'Change photo' : 'Upload photo'}
                 </button>
@@ -390,7 +390,7 @@ export default function Profile() {
                     type="button"
                     onClick={handlePhotoRemove}
                     disabled={uploadingPhoto}
-                    className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 hover:bg-red-50/60 px-3 py-1.5 rounded-md transition-colors disabled:opacity-60"
+                    className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 hover:bg-red-50/60 px-3 py-1.5 rounded-md transition-colors disabled:opacity-60"
                   >
                     <Trash2 size={13} /> Remove
                   </button>
@@ -409,7 +409,7 @@ export default function Profile() {
           <Row label="Nickname">{profile.nickName}</Row>
           <Row label="Status">
             {profile.status ? (
-              <span className={`inline-block px-2 py-0.5 rounded text-[11.5px] font-semibold ${
+              <span className={`inline-block px-2 py-0.5 rounded text-[13px] font-semibold ${
                 profile.status === 'active'
                   ? 'bg-emerald-50 text-emerald-700'
                   : 'bg-slate-100 text-slate-600'
@@ -499,7 +499,7 @@ export default function Profile() {
         {/* Education — synced from Zoho's "Education Details" tabular section.
             One card per row so multiple degrees show cleanly. */}
         <section className="bg-white border border-slate-200 rounded-md">
-          <h3 className="px-6 py-4 text-[15px] font-bold text-slate-800 border-b border-slate-100">
+          <h3 className="px-6 py-4 text-[17px] font-bold text-slate-800 border-b border-slate-100">
             Education
           </h3>
           {profile.education && profile.education.length > 0 ? (
@@ -516,7 +516,7 @@ export default function Profile() {
               ))}
             </div>
           ) : (
-            <p className="px-6 py-5 text-[13px] text-slate-400 italic">
+            <p className="px-6 py-5 text-[15px] text-slate-400 italic">
               No education records yet. Add a row under <span className="font-medium">Education Details</span> in Zoho People.
             </p>
           )}
@@ -524,7 +524,7 @@ export default function Profile() {
 
         {/* Previous Employment — synced from Zoho's "Work experience" tabular section. */}
         <section className="bg-white border border-slate-200 rounded-md">
-          <h3 className="px-6 py-4 text-[15px] font-bold text-slate-800 border-b border-slate-100">
+          <h3 className="px-6 py-4 text-[17px] font-bold text-slate-800 border-b border-slate-100">
             Previous Employment
           </h3>
           {profile.previousEmployment && profile.previousEmployment.length > 0 ? (
@@ -540,7 +540,7 @@ export default function Profile() {
               ))}
             </div>
           ) : (
-            <p className="px-6 py-5 text-[13px] text-slate-400 italic">
+            <p className="px-6 py-5 text-[15px] text-slate-400 italic">
               No previous employment records yet. Add a row under <span className="font-medium">Work experience</span> in Zoho People.
             </p>
           )}
@@ -553,7 +553,7 @@ export default function Profile() {
               <button
                 type="button"
                 onClick={() => setPwModal(true)}
-                className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#1a73e8] hover:text-[#1557B0]"
+                className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-[#1a73e8] hover:text-[#1557B0]"
               >
                 <Key size={12} /> Change
               </button>
@@ -561,7 +561,7 @@ export default function Profile() {
           </Row>
           <Row label="Account Role">
             <span>{roleLabel(profile.role)}</span>
-            <span className="text-slate-400 text-[12px] ml-2">(contact admin to change)</span>
+            <span className="text-slate-400 text-[14px] ml-2">(contact admin to change)</span>
           </Row>
         </Section>
 
@@ -577,8 +577,8 @@ export default function Profile() {
           <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100 flex-shrink-0">
               <div>
-                <h3 className="font-semibold text-slate-800 text-lg">Edit Profile</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <h3 className="font-semibold text-slate-800 text-xl">Edit Profile</h3>
+                <p className="text-sm text-slate-500 mt-0.5">
                   Work info, role, and email are managed by HR — contact admin to change those.
                 </p>
               </div>
@@ -593,56 +593,56 @@ export default function Profile() {
 
               {/* Alternative Phone */}
               <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Alternative Phone Number</p>
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Alternative Phone Number</p>
                 <input
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400"
                   placeholder="+91 98765 43210"
                 />
-                <p className="text-[11px] text-slate-400 mt-1.5">A reachable personal number — work phone is set by HR.</p>
+                <p className="text-[13px] text-slate-400 mt-1.5">A reachable personal number — work phone is set by HR.</p>
               </div>
 
               {/* Current Address */}
               <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Current Address</p>
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Current Address</p>
                 <textarea
                   value={form.address}
                   onChange={(e) => setForm({ ...form, address: e.target.value })}
                   rows={2}
                   placeholder="Where you currently live..."
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 resize-none"
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400 resize-none"
                 />
               </div>
 
               {/* Emergency Contact */}
               <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Emergency Contact</p>
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Emergency Contact</p>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Contact Name</label>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Contact Name</label>
                     <input
                       value={form.emergencyContactName}
                       onChange={(e) => setForm({ ...form, emergencyContactName: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400"
                       placeholder="Name"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Phone</label>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Phone</label>
                     <input
                       value={form.emergencyContactPhone}
                       onChange={(e) => setForm({ ...form, emergencyContactPhone: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400"
                       placeholder="+91 ..."
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Relationship</label>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Relationship</label>
                     <select
                       value={form.emergencyContactRelation}
                       onChange={(e) => setForm({ ...form, emergencyContactRelation: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400"
                     >
                       <option value="">Select...</option>
                       {['Spouse', 'Parent', 'Sibling', 'Child', 'Friend', 'Other'].map((r) => (
@@ -657,14 +657,14 @@ export default function Profile() {
                 <button
                   type="button"
                   onClick={requestCloseEdit}
-                  className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50"
+                  className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 bg-[#1a73e8] hover:bg-[#1557B0] text-white py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="flex-1 bg-[#1a73e8] hover:bg-[#1557B0] text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   <Save size={14} />
                   {saving ? 'Saving...' : 'Save Changes'}
@@ -680,7 +680,7 @@ export default function Profile() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-800 text-lg">Change Password</h3>
+              <h3 className="font-semibold text-slate-800 text-xl">Change Password</h3>
               <button
                 onClick={() => setPwModal(false)}
                 className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
@@ -695,13 +695,13 @@ export default function Profile() {
                 ['Confirm New Password', 'confirmPassword'],
               ].map(([label, key]) => (
                 <div key={key}>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">{label}</label>
+                  <label className="block text-sm font-medium text-slate-600 mb-1.5">{label}</label>
                   <input
                     type="password"
                     value={pwForm[key]}
                     onChange={(e) => setPwForm({ ...pwForm, [key]: e.target.value })}
                     required
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400"
                   />
                 </div>
               ))}
@@ -709,14 +709,14 @@ export default function Profile() {
                 <button
                   type="button"
                   onClick={() => setPwModal(false)}
-                  className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50"
+                  className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 bg-[#1a73e8] hover:bg-[#1557B0] text-white py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
+                  className="flex-1 bg-[#1a73e8] hover:bg-[#1557B0] text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60"
                 >
                   {saving ? 'Updating...' : 'Update Password'}
                 </button>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { User, Search, Eye, MessageSquare, Video, Phone } from 'lucide-react';
 import api from '../utils/api';
@@ -61,27 +61,27 @@ function HoverPopup({ emp, totalMembers, directReports, anchorRect, onMouseEnter
       <div className="flex items-start gap-3">
         <Avatar photoUrl={emp.photoUrl} size={42} />
         <div className="min-w-0 flex-1">
-          <p className="text-[12.5px] font-bold text-slate-800 dark:text-slate-100 truncate leading-snug">
+          <p className="text-[14px] font-bold text-slate-800 dark:text-slate-100 truncate leading-snug">
             {emp.employeeId && (
-              <span className="text-slate-400 dark:text-slate-400 font-mono mr-1 text-[11px]">{emp.employeeId}</span>
+              <span className="text-slate-400 dark:text-slate-400 font-mono mr-1 text-[13px]">{emp.employeeId}</span>
             )}
             <span className="text-slate-400 dark:text-slate-500 mr-1">·</span>
             {emp.firstName} {emp.lastName}
           </p>
           {emp.email && (
-            <p className="text-[11px] text-blue-500 dark:text-blue-400 truncate mt-0.5">{emp.email}</p>
+            <p className="text-[13px] text-blue-500 dark:text-blue-400 truncate mt-0.5">{emp.email}</p>
           )}
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+          <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
             {emp.designation || emp.role || 'Employee'}
           </p>
           {emp.department && (
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">{emp.department}</p>
+            <p className="text-[13px] text-slate-400 dark:text-slate-500">{emp.department}</p>
           )}
         </div>
       </div>
 
       {/* Stats row */}
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-[#374151] text-[11.5px] text-slate-500 dark:text-slate-400">
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-[#374151] text-[13px] text-slate-500 dark:text-slate-400">
         <span>
           Total Members{' '}
           <strong className="ml-1 text-slate-700 dark:text-slate-200 font-bold">{totalMembers}</strong>
@@ -167,7 +167,7 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
             onClick={(e) => { e.stopPropagation(); onToggle(); }}
             onMouseDown={(e) => e.stopPropagation()}
             title={isExpanded ? 'Collapse' : 'Expand'}
-            className="ml-1 text-[10.5px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+            className="ml-1 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
           >
             {totalCount}
           </span>
@@ -196,15 +196,15 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
     >
       <Avatar photoUrl={emp.photoUrl} photoBroken={photoBroken} onPhotoError={() => setPhotoBroken(true)} size={36} />
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-bold text-slate-800 dark:text-slate-100 truncate leading-tight">{emp.firstName} {emp.lastName}</p>
-        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{emp.designation || emp.role || 'Employee'}</p>
+        <p className="text-[15px] font-bold text-slate-800 dark:text-slate-100 truncate leading-tight">{emp.firstName} {emp.lastName}</p>
+        <p className="text-[13px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{emp.designation || emp.role || 'Employee'}</p>
       </div>
       {totalCount > 0 && (
         <span
           onClick={(e) => { e.stopPropagation(); onToggle(); }}
           onMouseDown={(e) => e.stopPropagation()}
           title={isExpanded ? 'Collapse this team' : 'Expand this team'}
-          className="ml-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded flex-shrink-0 cursor-pointer transition-colors"
+          className="ml-1 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded flex-shrink-0 cursor-pointer transition-colors"
         >
           {totalCount}
         </span>
@@ -525,12 +525,12 @@ export default function OrgChart() {
                   }`}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 flex items-center justify-center text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-100 rounded dark:bg-[#1f2937] dark:border-[#374151] dark:text-slate-300">
+                    <div className="w-10 h-10 flex items-center justify-center text-[14px] font-bold text-slate-700 bg-slate-50 border border-slate-100 rounded dark:bg-[#1f2937] dark:border-[#374151] dark:text-slate-300">
                       {dept.prefix}
                     </div>
-                    <span className="text-[13px] font-bold text-slate-800">{dept.name}</span>
+                    <span className="text-[15px] font-bold text-slate-800">{dept.name}</span>
                   </div>
-                  <div className={`text-[12px] font-bold px-2.5 py-0.5 rounded border ${
+                  <div className={`text-[14px] font-bold px-2.5 py-0.5 rounded border ${
                     isActive ? 'bg-[#3b82f6] text-white border-[#3b82f6]' : 'bg-white text-slate-500 border-slate-200 dark:bg-[#1f2937] dark:text-slate-300 dark:border-[#374151]'
                   }`}>
                     {dept.count}
@@ -629,8 +629,8 @@ export default function OrgChart() {
                   >
                     <Avatar photoUrl={emp.photoUrl} size={40} />
                     <div>
-                      <p className="text-[13px] font-bold text-slate-800">{emp.firstName} {emp.lastName}</p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">{emp.designation || 'Employee'}</p>
+                      <p className="text-[15px] font-bold text-slate-800">{emp.firstName} {emp.lastName}</p>
+                      <p className="text-[13px] text-slate-400 mt-0.5">{emp.designation || 'Employee'}</p>
                     </div>
                   </button>
                 );
@@ -660,7 +660,7 @@ export default function OrgChart() {
   return (
     <div className="bg-white dark:bg-[#1f2937] rounded-xl shadow-sm border border-slate-200 dark:border-[#374151] flex flex-col h-[calc(100vh-10rem)]">
       <div className="p-4 border-b border-slate-100 dark:border-[#374151] flex justify-between items-center bg-white dark:bg-[#1f2937] z-10 rounded-t-xl">
-        <p className="text-[13px] text-slate-500 dark:text-slate-400">
+        <p className="text-[15px] text-slate-500 dark:text-slate-400">
           Click a card to expand their direct reports. Hover for contact info.
         </p>
         <div className="relative">
@@ -670,7 +670,7 @@ export default function OrgChart() {
             placeholder="Search by name, designation, dept..."
             value={searchTerm}
             onChange={e => { setSearchTerm(e.target.value); setSelectedPath([]); }}
-            className="pl-9 pr-4 py-1.5 border border-slate-200 dark:border-[#374151] rounded text-sm w-72 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all bg-white dark:bg-[#111827] text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+            className="pl-9 pr-4 py-1.5 border border-slate-200 dark:border-[#374151] rounded text-base w-72 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all bg-white dark:bg-[#111827] text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
           />
         </div>
       </div>
@@ -708,7 +708,7 @@ export default function OrgChart() {
                       gap: isAncestor ? MINI_GAP : FULL_GAP,
                     }}>
                       {colEmps.length === 0 ? (
-                        <p className="text-[12px] text-slate-400 italic">No employees</p>
+                        <p className="text-[14px] text-slate-400 italic">No employees</p>
                       ) : (
                         colEmps.map(emp => (
                           <EmployeeCard
@@ -726,7 +726,7 @@ export default function OrgChart() {
                     </div>
                   ) : (
                     colEmps.length === 0 ? (
-                      <p className="text-[12px] text-slate-400 italic px-4 py-2">No reports</p>
+                      <p className="text-[14px] text-slate-400 italic px-4 py-2">No reports</p>
                     ) : (
                       // Both mini ancestor columns AND the full active/child
                       // columns route through ChildrenColumn so the spine +

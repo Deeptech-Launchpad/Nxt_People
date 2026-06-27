@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+﻿import React, { useRef, useState } from 'react';
 import { X, Check, ChevronRight, Briefcase } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -119,8 +119,8 @@ function PresetDialog({ date, onClose, onCustom, onSaved, isWeekend }) {
       <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl">
         <div className="flex items-start justify-between px-5 py-4 border-b border-slate-100">
           <div>
-            <h3 className="text-[15px] font-semibold text-slate-800">Edit this date</h3>
-            <p className="text-[12px] text-slate-500 mt-0.5">
+            <h3 className="text-[17px] font-semibold text-slate-800">Edit this date</h3>
+            <p className="text-[14px] text-slate-500 mt-0.5">
               {date.toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'long', year:'numeric' })}
               {isWeekend && <span className="ml-2 text-amber-600 font-semibold">· currently a weekend</span>}
             </p>
@@ -132,7 +132,7 @@ function PresetDialog({ date, onClose, onCustom, onSaved, isWeekend }) {
 
         <div className="py-2">
           {/* Weekend presets */}
-          <p className="px-5 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Make this a weekend</p>
+          <p className="px-5 pt-1 pb-1 text-[12px] font-bold uppercase tracking-wider text-slate-400">Make this a weekend</p>
           {presets.map((p) => (
             <button
               key={p.key}
@@ -141,11 +141,11 @@ function PresetDialog({ date, onClose, onCustom, onSaved, isWeekend }) {
               className="w-full flex items-center gap-3 px-5 py-3 hover:bg-blue-50/50 text-left transition-colors disabled:opacity-50"
             >
               <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
-                {saving === p.key ? <span className="text-[10px]">…</span> : <Check size={13} />}
+                {saving === p.key ? <span className="text-[12px]">…</span> : <Check size={13} />}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[13.5px] font-semibold text-slate-800">{p.label}</p>
-                <p className="text-[11.5px] text-slate-500">{p.hint}</p>
+                <p className="text-[13px] text-slate-500">{p.hint}</p>
               </div>
             </button>
           ))}
@@ -154,18 +154,18 @@ function PresetDialog({ date, onClose, onCustom, onSaved, isWeekend }) {
           {isWeekend && (
             <>
               <div className="border-t border-slate-100 my-1" />
-              <p className="px-5 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Or make it a working day</p>
+              <p className="px-5 pt-1 pb-1 text-[12px] font-bold uppercase tracking-wider text-slate-400">Or make it a working day</p>
               <button
                 onClick={addWorkingDayException}
                 disabled={saving !== null}
                 className="w-full flex items-center gap-3 px-5 py-3 hover:bg-emerald-50/50 text-left transition-colors disabled:opacity-50"
               >
                 <div className="w-7 h-7 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                  {saving === 'working_day' ? <span className="text-[10px]">…</span> : <Briefcase size={13} />}
+                  {saving === 'working_day' ? <span className="text-[12px]">…</span> : <Briefcase size={13} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[13.5px] font-semibold text-slate-800">Working Day Exception</p>
-                  <p className="text-[11.5px] text-slate-500">Override the weekend rule for just this date</p>
+                  <p className="text-[13px] text-slate-500">Override the weekend rule for just this date</p>
                 </div>
               </button>
             </>
@@ -180,7 +180,7 @@ function PresetDialog({ date, onClose, onCustom, onSaved, isWeekend }) {
             </div>
             <div className="flex-1">
               <p className="text-[13.5px] font-semibold text-slate-800">Custom…</p>
-              <p className="text-[11.5px] text-slate-500">Pick weekdays, intervals, end date — or create a working-day exception</p>
+              <p className="text-[13px] text-slate-500">Pick weekdays, intervals, end date — or create a working-day exception</p>
             </div>
           </button>
         </div>
@@ -225,25 +225,25 @@ function CalendarPreview({ onDayClick }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
       <div className="flex items-center justify-between mb-1">
-        <h3 className="text-[14px] font-bold text-slate-800">Preview</h3>
+        <h3 className="text-[16px] font-bold text-slate-800">Preview</h3>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => shiftMonth(-1)} title="Previous month"
             className="w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500">‹</button>
           <button type="button" onClick={goToday} title="Today"
-            className="text-[11px] font-semibold text-slate-600 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50 min-w-[80px] text-center">
+            className="text-[13px] font-semibold text-slate-600 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50 min-w-[80px] text-center">
             {viewMonth.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
           </button>
           <button type="button" onClick={() => shiftMonth(1)} title="Next month"
             className="w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500">›</button>
         </div>
       </div>
-      <p className="text-[11.5px] text-slate-500 mb-4">
+      <p className="text-[13px] text-slate-500 mb-4">
         Click any date to mark it as a weekend. Amber = weekend by current rules.
       </p>
 
       <div className="grid grid-cols-7 gap-1.5 text-center">
         {['S','M','T','W','T','F','S'].map((d, i) => (
-          <div key={i} className="text-[10px] font-bold text-slate-400 uppercase pb-1">{d}</div>
+          <div key={i} className="text-[12px] font-bold text-slate-400 uppercase pb-1">{d}</div>
         ))}
         {cells.map((d, i) => {
           const isToday = d.getTime() === today.getTime();
@@ -255,7 +255,7 @@ function CalendarPreview({ onDayClick }) {
               key={i}
               onClick={() => onDayClick?.(d)}
               title={`${d.toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short', year:'numeric' })}`}
-              className={`aspect-square flex items-center justify-center text-[12px] rounded-md border transition-all hover:ring-2 hover:ring-blue-300 hover:border-blue-300 ${
+              className={`aspect-square flex items-center justify-center text-[14px] rounded-md border transition-all hover:ring-2 hover:ring-blue-300 hover:border-blue-300 ${
                 isToday
                   ? 'bg-[#1a73e8] text-white border-[#1a73e8] font-bold'
                   : isWknd
@@ -297,7 +297,7 @@ export default function Weekends() {
     <div className="max-w-6xl mx-auto p-6 space-y-5">
       <div>
         <h1 className="text-[20px] font-bold text-slate-800">Weekend Configuration</h1>
-        <p className="text-[13px] text-slate-500 mt-1">
+        <p className="text-[15px] text-slate-500 mt-1">
           Manage which days count as weekends across attendance, leave, and reports.
           Rules combine — a date is a weekend if any active rule matches it.
         </p>

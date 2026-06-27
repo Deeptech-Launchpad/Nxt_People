@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BirthdayFolks.jsx — Organization / Birthday Folks Page
  * Matches screenshot: date-badged photo cards grid (6 across), month navigation, filter dropdown
  */
@@ -80,7 +80,7 @@ export default function BirthdayFolks() {
           <select
             value={filter}
             onChange={e => setFilter(e.target.value)}
-            className="appearance-none border border-gray-200 rounded px-3 py-1.5 pr-7 text-[13px] font-semibold text-gray-700 bg-white outline-none focus:border-blue-400 cursor-pointer"
+            className="appearance-none border border-gray-200 rounded px-3 py-1.5 pr-7 text-[15px] font-semibold text-gray-700 bg-white outline-none focus:border-blue-400 cursor-pointer"
           >
             <option value="current">Current Month</option>
             <option value="all">All Months</option>
@@ -100,7 +100,7 @@ export default function BirthdayFolks() {
           <button onClick={nextMonth} className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500 transition-colors">
             <ChevronRight size={15} />
           </button>
-          <span className="text-[13px] font-bold text-gray-800 min-w-[110px] text-center">
+          <span className="text-[15px] font-bold text-gray-800 min-w-[110px] text-center">
             {MONTHS[month]} - {year}
           </span>
         </div>
@@ -114,7 +114,7 @@ export default function BirthdayFolks() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search name, ID..."
-              className="border border-gray-200 rounded px-3 py-1.5 text-[12.5px] w-48 outline-none focus:border-blue-400"
+              className="border border-gray-200 rounded px-3 py-1.5 text-[14px] w-48 outline-none focus:border-blue-400"
               onBlur={() => { if (!search) setShowSearch(false); }}
             />
           )}
@@ -141,10 +141,10 @@ export default function BirthdayFolks() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="w-16 h-16 bg-pink-50 rounded-full flex items-center justify-center mb-4">
-              <span className="text-3xl">🎂</span>
+              <span className="text-4xl">🎂</span>
             </div>
-            <p className="text-[14px] font-bold text-gray-500">No birthdays in {MONTHS[month]}</p>
-            <p className="text-[12.5px] text-gray-400 mt-1">Navigate to other months to find upcoming birthdays</p>
+            <p className="text-[16px] font-bold text-gray-500">No birthdays in {MONTHS[month]}</p>
+            <p className="text-[14px] text-gray-400 mt-1">Navigate to other months to find upcoming birthdays</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -169,8 +169,8 @@ export default function BirthdayFolks() {
                     <div className={`absolute top-0 left-0 flex flex-col items-center justify-center w-[46px] h-[50px] z-10
                       ${isTodayBday ? 'bg-pink-500 text-white' : 'bg-gray-800 text-white'}`}
                       style={{ borderBottomRightRadius: '8px' }}>
-                      <span className="text-[15px] font-black leading-tight">{day}</span>
-                      <span className="text-[9px] font-bold uppercase leading-tight">{mon}</span>
+                      <span className="text-[17px] font-black leading-tight">{day}</span>
+                      <span className="text-[11px] font-bold uppercase leading-tight">{mon}</span>
                     </div>
                   )}
 
@@ -201,19 +201,19 @@ export default function BirthdayFolks() {
 
                     {/* Info */}
                     <div className="text-center">
-                      <p className="text-[11.5px] font-bold text-gray-700 leading-tight">
+                      <p className="text-[13px] font-bold text-gray-700 leading-tight">
                         {empId} - {firstName} {lastName}
                       </p>
-                      <p className="text-[10.5px] text-gray-400 mt-0.5 truncate">{emp.email || emp.workEmail || ''}</p>
-                      <p className="text-[10.5px] text-gray-500 mt-0.5 leading-tight truncate">{emp.designation || emp.role}</p>
-                      <p className="text-[10px] text-gray-400 truncate">{emp.department}</p>
+                      <p className="text-[12px] text-gray-400 mt-0.5 truncate">{emp.email || emp.workEmail || ''}</p>
+                      <p className="text-[12px] text-gray-500 mt-0.5 leading-tight truncate">{emp.designation || emp.role}</p>
+                      <p className="text-[12px] text-gray-400 truncate">{emp.department}</p>
                     </div>
                   </div>
 
                   {/* Today badge */}
                   {isTodayBday && (
                     <div className="bg-pink-50 border-t border-pink-100 px-2 py-1 text-center">
-                      <span className="text-[10.5px] font-bold text-pink-500">🎂 Birthday Today!</span>
+                      <span className="text-[12px] font-bold text-pink-500">🎂 Birthday Today!</span>
                     </div>
                   )}
                 </div>

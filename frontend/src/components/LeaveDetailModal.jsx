@@ -1,4 +1,4 @@
-/**
+﻿/**
  * LeaveDetailModal — request detail popup (leave OR regularization).
  *
  * Layout (Zoho-style):
@@ -36,8 +36,8 @@ function DetailRow({ icon: Icon, label, children }) {
     <div className="flex items-start gap-3 py-2.5 border-b border-slate-50 last:border-0">
       <Icon size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">{label}</p>
-        <div className="text-[13px] text-slate-700 mt-0.5">{children}</div>
+        <p className="text-[13px] font-semibold uppercase tracking-wide text-slate-600">{label}</p>
+        <div className="text-[15px] text-slate-700 mt-0.5">{children}</div>
       </div>
     </div>
   );
@@ -55,15 +55,15 @@ function BalanceCard({ leave, balanceCards }) {
   const after = unlimited ? null : r2(avail - booking);
   const Row = ({ label, value, strong, muted }) => (
     <div className="flex items-center justify-between py-1.5">
-      <span className={`text-[12px] ${muted ? 'text-slate-400' : 'text-slate-500'}`}>{label}</span>
-      <span className={`text-[15px] ${strong ? 'font-bold text-blue-600' : muted ? 'font-medium text-slate-400' : 'font-semibold text-slate-700'}`}>{value}</span>
+      <span className={`text-[14px] ${muted ? 'text-slate-400' : 'text-slate-500'}`}>{label}</span>
+      <span className={`text-[17px] ${strong ? 'font-bold text-blue-600' : muted ? 'font-medium text-slate-400' : 'font-semibold text-slate-700'}`}>{value}</span>
     </div>
   );
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[12px] font-bold text-slate-700">{isPerm ? 'Permission Balance' : 'Leave Balance'}</p>
-        <span className="text-[11px] text-slate-600">{TYPE_LABEL[leave.leaveType] || leave.leaveType}</span>
+        <p className="text-[14px] font-bold text-slate-700">{isPerm ? 'Permission Balance' : 'Leave Balance'}</p>
+        <span className="text-[13px] text-slate-600">{TYPE_LABEL[leave.leaveType] || leave.leaveType}</span>
       </div>
       <Row label={isPerm ? 'Available this month' : 'Available balance'} value={unlimited ? 'Unlimited' : `${avail}${u}`} />
       <Row label="Current booking" value={`${booking}${u}`} />
@@ -100,19 +100,19 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 text-[13px] font-bold flex items-center justify-center flex-shrink-0">
+            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 text-[15px] font-bold flex items-center justify-center flex-shrink-0">
               {initialsOf(empName || 'Leave')}
             </div>
             <div className="min-w-0">
-              <h3 className="text-[15px] font-bold text-slate-800 truncate">{empName || 'Leave Request'}</h3>
-              <p className="text-[12px] text-slate-400 truncate">{emp?.employeeId ? `${emp.employeeId} · ` : ''}{typeLabel}</p>
+              <h3 className="text-[17px] font-bold text-slate-800 truncate">{empName || 'Leave Request'}</h3>
+              <p className="text-[14px] text-slate-400 truncate">{emp?.employeeId ? `${emp.employeeId} · ` : ''}{typeLabel}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border capitalize ${STATUS_PILL[status] || STATUS_PILL.pending}`}>{status}</span>
+            <span className={`text-[13px] font-semibold px-2.5 py-1 rounded-full border capitalize ${STATUS_PILL[status] || STATUS_PILL.pending}`}>{status}</span>
             <button
               onClick={() => setView(v => v === 'timeline' ? 'details' : 'timeline')}
-              className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors"
+              className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-[14px] font-semibold transition-colors"
             >
               {view === 'timeline' ? <><ArrowLeft size={13} /> Details</> : <><Eye size={13} /> View</>}
             </button>
@@ -124,24 +124,24 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
         <div className="overflow-y-auto flex-1">
           {view === 'timeline' ? (
             <div className="p-6">
-              <h4 className="text-[13px] font-bold text-slate-700 mb-3">Approval Timeline</h4>
+              <h4 className="text-[15px] font-bold text-slate-700 mb-3">Approval Timeline</h4>
               <ApprovalTimeline leave={leave} />
             </div>
           ) : (
             <div className={`grid grid-cols-1 ${showBalance ? 'md:grid-cols-2' : ''} gap-0`}>
               {/* Details */}
               <div className={`p-6 ${showBalance ? 'md:border-r border-slate-100' : ''}`}>
-                <h4 className="text-[13px] font-bold text-slate-700 mb-3">{isReg ? 'Regularization Details' : 'Leave Details'}</h4>
+                <h4 className="text-[15px] font-bold text-slate-700 mb-3">{isReg ? 'Regularization Details' : 'Leave Details'}</h4>
 
                 {emp?.employeeId && <DetailRow icon={Hash} label="Employee ID">{emp.employeeId}</DetailRow>}
                 {empName && (
                   <DetailRow icon={User} label="Employee">
-                    {empName}{emp.department && <span className="ml-2 text-[11px] text-slate-600">{emp.department}</span>}
+                    {empName}{emp.department && <span className="ml-2 text-[13px] text-slate-600">{emp.department}</span>}
                   </DetailRow>
                 )}
                 <DetailRow icon={FileText} label={isReg ? 'Request Type' : 'Leave Type'}>
                   {typeLabel}
-                  {!isReg && leave.isHalfDay && <span className="ml-2 text-[11px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">Half Day</span>}
+                  {!isReg && leave.isHalfDay && <span className="ml-2 text-[13px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">Half Day</span>}
                 </DetailRow>
 
                 {isReg ? (
@@ -195,32 +195,32 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                 onChange={e => setComment(e.target.value)}
                 rows={2}
                 placeholder="Add an optional comment (visible in the request history)…"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400 resize-none"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400 resize-none"
               />
             )}
             <div className="flex items-center justify-end gap-2">
               {/* The dismiss button doubles as Cancel Leave when a cancel handler
                   is provided — cancelling marks the request 'cancelled'. */}
               {showCancel ? (
-                <button onClick={() => onCancel(leave)} className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors">
+                <button onClick={() => onCancel(leave)} className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors">
                   <XCircle size={15} /> Cancel Leave
                 </button>
               ) : (
-                <button onClick={onClose} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors">Close</button>
+                <button onClick={onClose} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[15px] font-medium transition-colors">Close</button>
               )}
               {showActions && onReject && (
-                <button onClick={() => onReject(leave, c())} className="flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors">
+                <button onClick={() => onReject(leave, c())} className="flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors">
                   <XCircle size={15} /> Reject
                 </button>
               )}
               {showActions && onApprove && (
-                <button onClick={() => onApprove(leave, c())} className="flex items-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors">
+                <button onClick={() => onApprove(leave, c())} className="flex items-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors">
                   <CheckCircle size={15} /> Approve
                 </button>
               )}
               {/* Super-Admin only: finalise every remaining level in one click. */}
               {showActions && onApproveAll && (
-                <button onClick={() => onApproveAll(leave, c())} className="flex items-center gap-1.5 bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors">
+                <button onClick={() => onApproveAll(leave, c())} className="flex items-center gap-1.5 bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors">
                   <CheckCheck size={15} /> Approve All
                 </button>
               )}

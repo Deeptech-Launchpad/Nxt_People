@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   Plus, Search, Briefcase, Users, CheckSquare, Clock,
   X, ChevronRight, Loader2, FolderOpen,
@@ -24,7 +24,7 @@ const COLORS = [
 const StatusBadge = ({ status }) => {
   const s = STATUS[status] || STATUS.active;
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${s.bg} ${s.text}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[13px] font-semibold ${s.bg} ${s.text}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
       {s.label}
     </span>
@@ -68,7 +68,7 @@ function ProjectModal({ onClose, onSaved }) {
             <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
               <Briefcase size={15} className="text-blue-600" />
             </div>
-            <h2 className="text-[15px] font-bold text-slate-800">New Project</h2>
+            <h2 className="text-[17px] font-bold text-slate-800">New Project</h2>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors">
             <X size={16} />
@@ -78,42 +78,42 @@ function ProjectModal({ onClose, onSaved }) {
         <form onSubmit={submit} className="p-6 space-y-4">
           {/* Name */}
           <div>
-            <label className="block text-[11.5px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            <label className="block text-[13px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               Project Name <span className="text-rose-500">*</span>
             </label>
             <input
               value={form.name} onChange={e => handle('name', e.target.value)}
               placeholder="e.g. Website Redesign"
-              className="w-full px-3 py-2 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              className="w-full px-3 py-2 text-[15px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             />
           </div>
 
           {/* Description */}
           <div>
-            <label className="block text-[11.5px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            <label className="block text-[13px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               <AlignLeft size={11} className="inline mr-1" /> Description
             </label>
             <textarea
               value={form.description} onChange={e => handle('description', e.target.value)}
               placeholder="Brief description of the project…"
               rows={3}
-              className="w-full px-3 py-2 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none"
+              className="w-full px-3 py-2 text-[15px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none"
             />
           </div>
 
           {/* Status + Priority */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11.5px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
+              <label className="block text-[13px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
               <select value={form.status} onChange={e => handle('status', e.target.value)}
-                className="w-full px-3 py-2 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 bg-white">
+                className="w-full px-3 py-2 text-[15px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 bg-white">
                 {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[11.5px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Priority</label>
+              <label className="block text-[13px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Priority</label>
               <select value={form.priority} onChange={e => handle('priority', e.target.value)}
-                className="w-full px-3 py-2 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 bg-white">
+                className="w-full px-3 py-2 text-[15px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 bg-white">
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -124,21 +124,21 @@ function ProjectModal({ onClose, onSaved }) {
 
           {/* Due Date */}
           <div>
-            <label className="block text-[11.5px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            <label className="block text-[13px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               <Calendar size={11} className="inline mr-1" /> Due Date
             </label>
             <input type="date" value={form.dueDate} onChange={e => handle('dueDate', e.target.value)}
-              className="w-full px-3 py-2 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400" />
+              className="w-full px-3 py-2 text-[15px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400" />
           </div>
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-2 pt-2">
             <button type="button" onClick={onClose}
-              className="px-4 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+              className="px-4 py-2 text-[15px] font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
               Cancel
             </button>
             <button type="submit" disabled={saving}
-              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold rounded-lg transition-colors flex items-center gap-2 disabled:opacity-60">
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[15px] font-semibold rounded-lg transition-colors flex items-center gap-2 disabled:opacity-60">
               {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
               Create Project
             </button>
@@ -170,7 +170,7 @@ function ProjectCard({ project, onView }) {
         {/* Top row */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0 shadow-sm"
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-[15px] font-bold flex-shrink-0 shadow-sm"
               style={{ background: color }}>
               {initials}
             </div>
@@ -179,7 +179,7 @@ function ProjectCard({ project, onView }) {
                 {project.name}
               </h3>
               {project.description && (
-                <p className="text-[11.5px] text-slate-400 truncate mt-0.5">{project.description}</p>
+                <p className="text-[13px] text-slate-400 truncate mt-0.5">{project.description}</p>
               )}
             </div>
           </div>
@@ -187,7 +187,7 @@ function ProjectCard({ project, onView }) {
         </div>
 
         {/* Stats row */}
-        <div className="flex items-center gap-4 text-[11.5px] text-slate-500 mb-4">
+        <div className="flex items-center gap-4 text-[13px] text-slate-500 mb-4">
           <span className="flex items-center gap-1">
             <Users size={11} className="text-slate-400" />
             {project.memberCount || 0} member{project.memberCount !== 1 ? 's' : ''}
@@ -208,8 +208,8 @@ function ProjectCard({ project, onView }) {
         {project.estimatedHours > 0 && (
           <div>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[10.5px] text-slate-400 font-medium">Progress</span>
-              <span className="text-[10.5px] font-bold text-slate-600">{progress}%</span>
+              <span className="text-[12px] text-slate-400 font-medium">Progress</span>
+              <span className="text-[12px] font-bold text-slate-600">{progress}%</span>
             </div>
             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
               <div
@@ -269,7 +269,7 @@ export default function TimeTrackerProjects() {
             </div>
             <div>
               <p className={`text-[22px] font-bold leading-none ${color}`}>{val}</p>
-              <p className="text-[11px] text-slate-400 mt-1 font-medium">{label}</p>
+              <p className="text-[13px] text-slate-400 mt-1 font-medium">{label}</p>
             </div>
           </div>
         ))}
@@ -282,7 +282,7 @@ export default function TimeTrackerProjects() {
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search projects…"
-            className="w-full pl-9 pr-4 py-2 text-[12.5px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 bg-white"
+            className="w-full pl-9 pr-4 py-2 text-[14px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 bg-white"
           />
         </div>
 
@@ -290,14 +290,14 @@ export default function TimeTrackerProjects() {
         <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
           {[['all','All'],['active','Active'],['completed','Done'],['on_hold','On Hold']].map(([k,l]) => (
             <button key={k} onClick={() => setFilter(k)}
-              className={`px-3 py-1.5 text-[12px] font-medium rounded-md transition-all ${filterStatus === k ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+              className={`px-3 py-1.5 text-[14px] font-medium rounded-md transition-all ${filterStatus === k ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
               {l}
             </button>
           ))}
         </div>
 
         <button onClick={() => setShowModal(true)}
-          className="ml-auto flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold px-4 py-2 rounded-lg transition-colors shadow-sm">
+          className="ml-auto flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[14px] font-semibold px-4 py-2 rounded-lg transition-colors shadow-sm">
           <Plus size={14} /> New Project
         </button>
       </div>
@@ -312,10 +312,10 @@ export default function TimeTrackerProjects() {
           <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-4">
             <FolderOpen size={28} className="text-slate-300" />
           </div>
-          <p className="text-[14px] font-semibold text-slate-500">
+          <p className="text-[16px] font-semibold text-slate-500">
             {search ? 'No projects match your search' : 'No projects yet'}
           </p>
-          <p className="text-[12.5px] text-slate-400 mt-1">
+          <p className="text-[14px] text-slate-400 mt-1">
             {search ? 'Try a different keyword' : 'Click "New Project" to get started'}
           </p>
         </div>

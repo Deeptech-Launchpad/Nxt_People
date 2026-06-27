@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import api from '../../utils/api';
 
 const SKILLS = ['JavaScript', 'React', 'Node.js', 'PostgreSQL', 'Python', 'Communication', 'Leadership'];
@@ -20,13 +20,13 @@ export default function SkillMatrix() {
 
   return (
     <div className="p-6 max-w-6xl">
-      <h2 className="text-[15px] font-bold text-slate-800 mb-5">Skill Set Matrix</h2>
+      <h2 className="text-[17px] font-bold text-slate-800 mb-5">Skill Set Matrix</h2>
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-auto">
         <table className="w-full min-w-max">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-600 uppercase w-48 sticky left-0 bg-slate-50">Employee</th>
-              {SKILLS.map(s => <th key={s} className="px-4 py-3 text-[11px] font-semibold text-slate-500 text-center min-w-[110px]">{s}</th>)}
+              <th className="px-4 py-3 text-left text-[13px] font-semibold text-slate-600 uppercase w-48 sticky left-0 bg-slate-50">Employee</th>
+              {SKILLS.map(s => <th key={s} className="px-4 py-3 text-[13px] font-semibold text-slate-500 text-center min-w-[110px]">{s}</th>)}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -37,8 +37,8 @@ export default function SkillMatrix() {
                     <img src={`https://ui-avatars.com/api/?name=${e.firstName}+${e.lastName}&size=28&background=e0e7ff&color=4f46e5`}
                       className="w-7 h-7 rounded-full flex-shrink-0" alt={e.firstName}/>
                     <div className="min-w-0">
-                      <p className="text-[12px] font-semibold text-slate-800 truncate">{e.firstName} {e.lastName}</p>
-                      <p className="text-[10.5px] text-slate-400 truncate">{e.designation || '—'}</p>
+                      <p className="text-[14px] font-semibold text-slate-800 truncate">{e.firstName} {e.lastName}</p>
+                      <p className="text-[12px] text-slate-400 truncate">{e.designation || '—'}</p>
                     </div>
                   </div>
                 </td>
@@ -46,7 +46,7 @@ export default function SkillMatrix() {
                   const level = LEVELS[Math.floor(Math.random() * 4)];
                   return (
                     <td key={s} className="px-4 py-3 text-center">
-                      {level && <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${LEVEL_COLOR[level]}`}>{level}</span>}
+                      {level && <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full ${LEVEL_COLOR[level]}`}>{level}</span>}
                     </td>
                   );
                 })}
@@ -55,7 +55,7 @@ export default function SkillMatrix() {
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] text-slate-400 mt-3">* Skill levels shown are for demonstration. Actual skill data requires employee self-assessment.</p>
+      <p className="text-[13px] text-slate-400 mt-3">* Skill levels shown are for demonstration. Actual skill data requires employee self-assessment.</p>
     </div>
   );
 }

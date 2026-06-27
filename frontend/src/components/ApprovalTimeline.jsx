@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ApprovalTimeline
  * A clean, vertical, hierarchy-based approval timeline for a leave request.
  *
@@ -56,7 +56,7 @@ function StatusPill({ status }) {
   const t = TOKENS[status] || TOKENS.pending;
   const { Icon } = t;
   return (
-    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${t.soft}`}>
+    <span className={`inline-flex items-center gap-1 text-[13px] font-semibold px-2 py-0.5 rounded-full border ${t.soft}`}>
       <Icon size={11} strokeWidth={2.5} /> {t.label}
     </span>
   );
@@ -110,15 +110,15 @@ export default function ApprovalTimeline({ leave, compact = false }) {
       {/* Summary header — Total Duration + Status (Zoho-style) */}
       <div className="flex items-stretch gap-3 pb-4 mb-1">
         <div className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3">
-          <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Total Duration</p>
-          <p className="mt-1 text-[15px] font-bold text-slate-800">{totalDuration || (overall === 'pending' ? 'In progress' : '—')}</p>
-          <p className="text-[10.5px] text-slate-400 mt-0.5">Submitted to {isResolved ? 'Completed' : 'now'}</p>
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Total Duration</p>
+          <p className="mt-1 text-[17px] font-bold text-slate-800">{totalDuration || (overall === 'pending' ? 'In progress' : '—')}</p>
+          <p className="text-[12px] text-slate-400 mt-0.5">Submitted to {isResolved ? 'Completed' : 'now'}</p>
         </div>
         <div className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3">
-          <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
           <div className="mt-1"><StatusPill status={overall} /></div>
           {levels.length > 0 && (
-            <p className="text-[10.5px] text-slate-400 mt-1.5">{approvedCount} of {levels.length} level{levels.length !== 1 ? 's' : ''}</p>
+            <p className="text-[12px] text-slate-400 mt-1.5">{approvedCount} of {levels.length} level{levels.length !== 1 ? 's' : ''}</p>
           )}
         </div>
       </div>
@@ -131,8 +131,8 @@ export default function ApprovalTimeline({ leave, compact = false }) {
             <Rocket size={14} />
           </div>
           <div className="min-w-0 pt-1">
-            <p className="text-[13px] font-semibold text-slate-700">Request Submitted</p>
-            <p className="text-[11.5px] text-slate-400">{fmtDateTime(leave.createdAt) || 'Submitted'}</p>
+            <p className="text-[15px] font-semibold text-slate-700">Request Submitted</p>
+            <p className="text-[13px] text-slate-400">{fmtDateTime(leave.createdAt) || 'Submitted'}</p>
           </div>
           {(levels.length > 0) && <span className="absolute left-4 top-8 bottom-0 w-px bg-slate-200" />}
         </div>
@@ -145,12 +145,12 @@ export default function ApprovalTimeline({ leave, compact = false }) {
             <div className="pt-1 min-w-0">
               <StatusPill status={overall} />
               {isResolved && legacyActor && (
-                <p className="mt-1 text-[11.5px] text-slate-500">
+                <p className="mt-1 text-[13px] text-slate-500">
                   {overall === 'rejected' ? 'Rejected' : 'Approved'} by {legacyActor}{legacyWhen ? ` · ${legacyWhen}` : ''}
                 </p>
               )}
               {overall === 'rejected' && leave.rejectionReason && (
-                <p className="mt-0.5 text-[11.5px] text-rose-600">Reason: {leave.rejectionReason}</p>
+                <p className="mt-0.5 text-[13px] text-rose-600">Reason: {leave.rejectionReason}</p>
               )}
             </div>
           </div>
@@ -169,7 +169,7 @@ export default function ApprovalTimeline({ leave, compact = false }) {
                 {!isLast && <span className="absolute left-4 top-9 bottom-0 w-px bg-slate-200" />}
                 {/* avatar */}
                 <div className="relative z-10 flex-shrink-0">
-                  <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold flex items-center justify-center border border-slate-200">
+                  <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 text-[13px] font-bold flex items-center justify-center border border-slate-200">
                     {initialsOf(assignedName)}
                   </div>
                   <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${t.ring}`} />
@@ -177,24 +177,24 @@ export default function ApprovalTimeline({ leave, compact = false }) {
                 {/* details */}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
-                    <span className="text-[11px] font-bold text-slate-400">LEVEL {lvl.level}</span>
-                    <span className="text-[13px] font-semibold text-slate-800 truncate">{assignedName}</span>
+                    <span className="text-[13px] font-bold text-slate-400">LEVEL {lvl.level}</span>
+                    <span className="text-[15px] font-semibold text-slate-800 truncate">{assignedName}</span>
                     {lvl.approverRole && (
-                      <span className="text-[10.5px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{roleLabel(lvl.approverRole)}</span>
+                      <span className="text-[12px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{roleLabel(lvl.approverRole)}</span>
                     )}
                   </div>
                   <div className="mt-1 flex items-center flex-wrap gap-2">
                     <StatusPill status={lvl.status} />
-                    {when && <span className="text-[11.5px] text-slate-400">{when}</span>}
+                    {when && <span className="text-[13px] text-slate-400">{when}</span>}
                   </div>
                   {lvl.status !== 'pending' && (
-                    <p className="mt-0.5 text-[11.5px] text-slate-500">{actionNote(lvl)}</p>
+                    <p className="mt-0.5 text-[13px] text-slate-500">{actionNote(lvl)}</p>
                   )}
                   {lvl.status === 'rejected' && leave.rejectionReason && (
-                    <p className="mt-0.5 text-[11.5px] text-rose-600">Reason: {leave.rejectionReason}</p>
+                    <p className="mt-0.5 text-[13px] text-rose-600">Reason: {leave.rejectionReason}</p>
                   )}
                   {lvl.status !== 'pending' && elapsedLabel(leave.createdAt, lvl.actedAt) && (
-                    <span className="inline-flex items-center gap-1 mt-1 text-[10.5px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                    <span className="inline-flex items-center gap-1 mt-1 text-[12px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                       <Clock size={10} /> Acted in {elapsedLabel(leave.createdAt, lvl.actedAt)}
                     </span>
                   )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -79,35 +79,35 @@ function ApplyLeaveModal({ onClose, onSuccess, leaveTypes }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-        <h3 className="text-[15px] font-bold text-slate-800 mb-4">{isPermission ? 'Apply Permission' : 'Apply Leave'}</h3>
+        <h3 className="text-[17px] font-bold text-slate-800 mb-4">{isPermission ? 'Apply Permission' : 'Apply Leave'}</h3>
         <form onSubmit={submit} className="space-y-3">
-          <select value={form.leaveType} onChange={e => set('leaveType', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400">
+          <select value={form.leaveType} onChange={e => set('leaveType', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400">
             {(leaveTypes || []).map(lt => <option key={lt.code} value={lt.code}>{lt.name}{lt.code === 'permission' ? ` (${lt.available ?? 0}h left this month)` : (lt.available != null ? ` (${lt.available} avail.)` : '')}</option>)}
           </select>
           {isPermission ? (
             <>
-              <div><label className="text-[11px] text-slate-500">Date</label><input type="date" required value={form.startDate} onChange={e => set('startDate', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"/></div>
+              <div><label className="text-[13px] text-slate-500">Date</label><input type="date" required value={form.startDate} onChange={e => set('startDate', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="text-[11px] text-slate-500">Start time</label><input type="time" required value={form.startTime} onChange={e => set('startTime', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"/></div>
-                <div><label className="text-[11px] text-slate-500">End time</label><input type="time" required value={form.endTime} onChange={e => set('endTime', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"/></div>
+                <div><label className="text-[13px] text-slate-500">Start time</label><input type="time" required value={form.startTime} onChange={e => set('startTime', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
+                <div><label className="text-[13px] text-slate-500">End time</label><input type="time" required value={form.endTime} onChange={e => set('endTime', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
               </div>
-              {permHours > 0 && <p className={`text-[12px] font-medium ${permHours > 4 ? 'text-red-600' : 'text-purple-600'}`}>{permHours.toFixed(2)}h{permHours > 4 ? ' — exceeds the 4h limit' : ''}</p>}
+              {permHours > 0 && <p className={`text-[14px] font-medium ${permHours > 4 ? 'text-red-600' : 'text-purple-600'}`}>{permHours.toFixed(2)}h{permHours > 4 ? ' — exceeds the 4h limit' : ''}</p>}
             </>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="text-[11px] text-slate-500">From</label><input type="date" required value={form.startDate} onChange={e => set('startDate', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"/></div>
-                <div><label className="text-[11px] text-slate-500">To</label><input type="date" required value={form.endDate} onChange={e => set('endDate', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400"/></div>
+                <div><label className="text-[13px] text-slate-500">From</label><input type="date" required value={form.startDate} onChange={e => set('startDate', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
+                <div><label className="text-[13px] text-slate-500">To</label><input type="date" required value={form.endDate} onChange={e => set('endDate', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
               </div>
-              <label className="flex items-center gap-2 text-[13px] text-slate-600 cursor-pointer">
+              <label className="flex items-center gap-2 text-[15px] text-slate-600 cursor-pointer">
                 <input type="checkbox" checked={form.isHalfDay} onChange={e => set('isHalfDay', e.target.checked)} className="rounded"/> Half Day
               </label>
             </>
           )}
-          <textarea required rows={3} placeholder="Reason" value={form.reason} onChange={e => set('reason', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400 resize-none"/>
+          <textarea required rows={3} placeholder="Reason" value={form.reason} onChange={e => set('reason', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400 resize-none"/>
           <div className="flex gap-2 pt-1">
-            <button type="submit" disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2 text-[13px] font-semibold disabled:opacity-60">{saving ? 'Submitting…' : 'Submit'}</button>
-            <button type="button" onClick={onClose} className="flex-1 border border-slate-200 rounded-lg py-2 text-[13px] text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button type="submit" disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2 text-[15px] font-semibold disabled:opacity-60">{saving ? 'Submitting…' : 'Submit'}</button>
+            <button type="button" onClick={onClose} className="flex-1 border border-slate-200 rounded-lg py-2 text-[15px] text-slate-600 hover:bg-slate-50">Cancel</button>
           </div>
         </form>
       </div>

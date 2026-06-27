@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Employee → My Apps
  * Tile launcher of all internal websites the logged-in employee has been
  * granted access to. Click a tile → opens the app's URL in a new tab.
@@ -40,7 +40,7 @@ export default function MyApps() {
         <h1 className="text-[22px] font-bold text-slate-800 flex items-center gap-2">
           <AppWindow size={22} className="text-indigo-500" /> My Apps
         </h1>
-        <p className="text-[13px] text-slate-500 mt-1 max-w-2xl">
+        <p className="text-[15px] text-slate-500 mt-1 max-w-2xl">
           Your launcher for internal company websites. Only apps you have access to appear here — ask HR if something's missing.
         </p>
       </div>
@@ -50,8 +50,8 @@ export default function MyApps() {
       ) : apps.length === 0 ? (
         <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl py-16 text-center">
           <Inbox size={40} className="mx-auto text-slate-300 mb-3" />
-          <p className="text-[14px] font-semibold text-slate-700">No apps yet</p>
-          <p className="text-[12px] text-slate-500 mt-1 max-w-md mx-auto">
+          <p className="text-[16px] font-semibold text-slate-700">No apps yet</p>
+          <p className="text-[14px] text-slate-500 mt-1 max-w-md mx-auto">
             You haven't been granted access to any internal apps. If you think this is a mistake, please reach out to HR.
           </p>
         </div>
@@ -70,10 +70,10 @@ export default function MyApps() {
               <div className="p-4">
                 <h3 className="text-[14.5px] font-bold text-slate-800">{app.name}</h3>
                 {app.description && (
-                  <p className="text-[11.5px] text-slate-500 mt-1 leading-relaxed line-clamp-2">{app.description}</p>
+                  <p className="text-[13px] text-slate-500 mt-1 leading-relaxed line-clamp-2">{app.description}</p>
                 )}
                 {app.websiteUrl && (
-                  <p className="text-[10.5px] text-slate-400 mt-2 truncate font-mono">{app.websiteUrl.replace(/^https?:\/\//, '')}</p>
+                  <p className="text-[12px] text-slate-400 mt-2 truncate font-mono">{app.websiteUrl.replace(/^https?:\/\//, '')}</p>
                 )}
               </div>
             </a>

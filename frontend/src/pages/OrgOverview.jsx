@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarCheck, Clock, CalendarDays, Trophy, FileText, Plane, DollarSign, CheckSquare, Users, FileCheck, MapPin, Link2 } from 'lucide-react';
 import api from '../utils/api';
@@ -18,7 +18,7 @@ const SERVICE_TILES = [
 
 const Tab = ({ active, onClick, children }) => (
   <button onClick={onClick}
-    className={`py-3 px-1 text-[13px] font-medium border-b-2 transition-all whitespace-nowrap
+    className={`py-3 px-1 text-[15px] font-medium border-b-2 transition-all whitespace-nowrap
       ${active ? 'border-blue-500 text-blue-600 font-semibold' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
     {children}
   </button>
@@ -51,7 +51,7 @@ export default function OrgOverview() {
                   <div className={`w-12 h-12 rounded-xl ${color} flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform`}>
                     <Icon size={22} className="text-white"/>
                   </div>
-                  <span className="text-[11.5px] font-medium text-slate-600 text-center leading-snug">{label}</span>
+                  <span className="text-[13px] font-medium text-slate-600 text-center leading-snug">{label}</span>
                 </button>
               ))}
             </div>
@@ -60,16 +60,16 @@ export default function OrgOverview() {
           {tab === 'location' && (
             <div className="flex flex-col items-center py-12 text-center">
               <MapPin size={36} className="text-slate-300 mb-3"/>
-              <p className="text-[13px] font-semibold text-slate-500">Office Location</p>
-              <p className="text-[12px] text-slate-400 mt-1">Configure office location in Settings</p>
+              <p className="text-[15px] font-semibold text-slate-500">Office Location</p>
+              <p className="text-[14px] text-slate-400 mt-1">Configure office location in Settings</p>
             </div>
           )}
 
           {tab === 'quicklinks' && (
             <div className="flex flex-col items-center py-12 text-center">
               <Link2 size={36} className="text-slate-300 mb-3"/>
-              <p className="text-[13px] font-semibold text-slate-500">No Quick Links</p>
-              <p className="text-[12px] text-slate-400 mt-1">Quick links can be added by your admin</p>
+              <p className="text-[15px] font-semibold text-slate-500">No Quick Links</p>
+              <p className="text-[14px] text-slate-400 mt-1">Quick links can be added by your admin</p>
             </div>
           )}
         </div>
@@ -86,7 +86,7 @@ export default function OrgOverview() {
           ].map(({ label, val, color }) => (
             <div key={label} className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm text-center">
               <p className={`text-[22px] font-bold ${color}`}>{val ?? '—'}</p>
-              <p className="text-[11.5px] text-slate-500 mt-1">{label}</p>
+              <p className="text-[13px] text-slate-500 mt-1">{label}</p>
             </div>
           ))}
         </div>

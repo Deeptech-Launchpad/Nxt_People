@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Payroll → Salary Setup (admin only)
  *
  * Phase 1 of the payroll module. Admin sees a table of active employees
@@ -124,8 +124,8 @@ function StructureModal({ employee, onClose, onSaved }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
           <div>
-            <h3 className="text-[15px] font-bold text-slate-800">Salary Structure</h3>
-            <p className="text-[12px] text-slate-500 mt-0.5">
+            <h3 className="text-[17px] font-bold text-slate-800">Salary Structure</h3>
+            <p className="text-[14px] text-slate-500 mt-0.5">
               {employee.firstName} {employee.lastName}
               {employee.employeeId && <span className="font-mono text-slate-400 ml-2">{employee.employeeId}</span>}
             </p>
@@ -135,7 +135,7 @@ function StructureModal({ employee, onClose, onSaved }) {
               <button
                 type="button"
                 onClick={() => setShowHistory(s => !s)}
-                className="flex items-center gap-1.5 text-[12px] text-slate-600 hover:text-slate-800 border border-slate-200 px-2.5 py-1.5 rounded-lg"
+                className="flex items-center gap-1.5 text-[14px] text-slate-600 hover:text-slate-800 border border-slate-200 px-2.5 py-1.5 rounded-lg"
                 title="Show last 5 revisions"
               >
                 <History size={13} /> History ({history.length})
@@ -157,7 +157,7 @@ function StructureModal({ employee, onClose, onSaved }) {
 
               {/* Earnings column */}
               <div>
-                <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-3">Monthly Earnings</p>
+                <p className="text-[13px] font-bold text-emerald-700 uppercase tracking-wider mb-3">Monthly Earnings</p>
                 <div className="space-y-3">
                   {EARNINGS.map(c => (
                     <FieldRow key={c.key} label={c.label} hint={c.hint} value={form[c.key]} onChange={v => set(c.key, v)} />
@@ -167,24 +167,24 @@ function StructureModal({ employee, onClose, onSaved }) {
 
               {/* Deductions column */}
               <div>
-                <p className="text-[11px] font-bold text-red-700 uppercase tracking-wider mb-3">Monthly Deductions</p>
+                <p className="text-[13px] font-bold text-red-700 uppercase tracking-wider mb-3">Monthly Deductions</p>
                 <div className="space-y-3">
                   {DEDUCTIONS.map(c => (
                     <FieldRow key={c.key} label={c.label} hint={c.hint} value={form[c.key]} onChange={v => set(c.key, v)} />
                   ))}
                 </div>
 
-                <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mt-6 mb-3">Employer Contribution</p>
+                <p className="text-[13px] font-bold text-slate-600 uppercase tracking-wider mt-6 mb-3">Employer Contribution</p>
                 <div className="space-y-3">
                   {EMPLOYER_CONTRIBS.map(c => (
                     <FieldRow key={c.key} label={c.label} hint={c.hint} value={form[c.key]} onChange={v => set(c.key, v)} />
                   ))}
                 </div>
 
-                <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mt-6 mb-3">Eligibility</p>
+                <p className="text-[13px] font-bold text-slate-600 uppercase tracking-wider mt-6 mb-3">Eligibility</p>
                 <div className="space-y-2">
                   {FLAGS.map(f => (
-                    <label key={f.key} className="flex items-center gap-2 text-[13px] text-slate-700 cursor-pointer select-none">
+                    <label key={f.key} className="flex items-center gap-2 text-[15px] text-slate-700 cursor-pointer select-none">
                       <input type="checkbox" checked={!!form[f.key]} onChange={e => set(f.key, e.target.checked)} className="rounded" />
                       {f.label}
                     </label>
@@ -194,13 +194,13 @@ function StructureModal({ employee, onClose, onSaved }) {
 
               {/* Notes — full width */}
               <div className="md:col-span-2">
-                <label className="block text-[11.5px] font-medium text-slate-600 mb-1.5">Notes (optional)</label>
+                <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Notes (optional)</label>
                 <textarea
                   rows={2}
                   value={form.notes}
                   onChange={e => set('notes', e.target.value)}
                   placeholder="e.g. Effective from next payroll cycle, post-appraisal hike, etc."
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:border-blue-400 resize-none"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400 resize-none"
                 />
               </div>
 
@@ -215,8 +215,8 @@ function StructureModal({ employee, onClose, onSaved }) {
               {/* History (lazy) */}
               {showHistory && history.length > 0 && (
                 <div className="md:col-span-2 border-t border-slate-100 pt-4">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Recent Changes</p>
-                  <div className="space-y-2 text-[12px]">
+                  <p className="text-[13px] font-bold text-slate-500 uppercase tracking-wider mb-2">Recent Changes</p>
+                  <div className="space-y-2 text-[14px]">
                     {history.map(h => (
                       <div key={h.id} className="flex items-center justify-between bg-slate-50 rounded px-3 py-2">
                         <div className="text-slate-600">
@@ -234,13 +234,13 @@ function StructureModal({ employee, onClose, onSaved }) {
           )}
 
           <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-slate-100">
-            <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-lg text-[13px] text-slate-600 hover:bg-slate-50">
+            <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-lg text-[15px] text-slate-600 hover:bg-slate-50">
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving || loading}
-              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-60"
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[15px] font-semibold disabled:opacity-60"
             >
               {saving ? 'Saving…' : 'Save Structure'}
             </button>
@@ -254,7 +254,7 @@ function StructureModal({ employee, onClose, onSaved }) {
 function FieldRow({ label, hint, value, onChange }) {
   return (
     <div>
-      <label className="flex items-center justify-between text-[12px] text-slate-600 mb-1">
+      <label className="flex items-center justify-between text-[14px] text-slate-600 mb-1">
         <span>{label}</span>
         {hint && (
           <span title={hint} className="text-slate-300 hover:text-slate-500 cursor-help">
@@ -270,7 +270,7 @@ function FieldRow({ label, hint, value, onChange }) {
           step="0.01"
           value={value || 0}
           onChange={e => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
-          className="w-full pl-7 pr-3 py-1.5 border border-slate-200 rounded-lg text-[13px] focus:outline-none focus:border-blue-400 text-right"
+          className="w-full pl-7 pr-3 py-1.5 border border-slate-200 rounded-lg text-[15px] focus:outline-none focus:border-blue-400 text-right"
         />
       </div>
     </div>
@@ -280,8 +280,8 @@ function FieldRow({ label, hint, value, onChange }) {
 function Totals({ label, value, color, emphasis }) {
   return (
     <div>
-      <p className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className={`text-[15px] font-bold ${color} ${emphasis ? 'text-[16px]' : ''}`}>{fmtINR(value)}</p>
+      <p className="text-[12px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className={`text-[17px] font-bold ${color} ${emphasis ? 'text-[18px]' : ''}`}>{fmtINR(value)}</p>
     </div>
   );
 }
@@ -330,7 +330,7 @@ export default function PayrollSetup() {
       {/* Header */}
       <div>
         <h1 className="text-[20px] font-bold text-slate-800">Payroll · Salary Setup</h1>
-        <p className="text-[13px] text-slate-500 mt-1">
+        <p className="text-[15px] text-slate-500 mt-1">
           Define the monthly salary structure for each employee. Components feed the payslip generation in Phase 2.
         </p>
       </div>
@@ -352,12 +352,12 @@ export default function PayrollSetup() {
             placeholder="Search by name / ID / role / dept"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-[13px] focus:outline-none focus:border-blue-400"
+            className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-[15px] focus:outline-none focus:border-blue-400"
           />
         </div>
         <div className="flex items-center gap-2">
           <BulkUpload onDone={load} />
-          <p className="text-[11.5px] text-slate-500 ml-2">
+          <p className="text-[13px] text-slate-500 ml-2">
             Showing {filtered.length} of {employees.length}
           </p>
         </div>
@@ -365,8 +365,8 @@ export default function PayrollSetup() {
 
       {/* Table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <table className="w-full text-left text-[13px]">
-          <thead className="bg-slate-50 text-[11.5px] font-bold text-slate-600 uppercase tracking-wider">
+        <table className="w-full text-left text-[15px]">
+          <thead className="bg-slate-50 text-[13px] font-bold text-slate-600 uppercase tracking-wider">
             <tr>
               <th className="px-4 py-2.5">Employee</th>
               <th className="px-4 py-2.5">Designation</th>
@@ -384,14 +384,14 @@ export default function PayrollSetup() {
               <tr key={emp._id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <div className="font-semibold text-slate-800">{emp.firstName} {emp.lastName}</div>
-                  <div className="text-[11px] text-slate-400 font-mono">{emp.employeeId}</div>
+                  <div className="text-[13px] text-slate-400 font-mono">{emp.employeeId}</div>
                 </td>
                 <td className="px-4 py-3 text-slate-600">
                   <div>{emp.designation || '—'}</div>
-                  <div className="text-[11px] text-slate-400">{emp.department || ''}</div>
+                  <div className="text-[13px] text-slate-400">{emp.department || ''}</div>
                 </td>
                 <td className="px-4 py-3 text-right font-medium text-slate-700">
-                  {emp.structure ? fmtINR(emp.structure.monthlyGross) : <span className="text-amber-600 text-[11.5px]">Not set up</span>}
+                  {emp.structure ? fmtINR(emp.structure.monthlyGross) : <span className="text-amber-600 text-[13px]">Not set up</span>}
                 </td>
                 <td className="px-4 py-3 text-right font-semibold text-blue-700">
                   {emp.structure ? fmtINR(emp.structure.ctcAnnual) : '—'}
@@ -399,7 +399,7 @@ export default function PayrollSetup() {
                 <td className="px-4 py-3 text-right">
                   <button
                     onClick={() => setEditing(emp)}
-                    className="inline-flex items-center gap-1 text-[12px] font-semibold text-blue-600 hover:text-blue-800"
+                    className="inline-flex items-center gap-1 text-[14px] font-semibold text-blue-600 hover:text-blue-800"
                   >
                     <Pencil size={12} /> Edit
                   </button>
@@ -424,8 +424,8 @@ export default function PayrollSetup() {
 function StatCard({ label, value, color = 'text-slate-800', small }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
-      <p className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className={`mt-1 font-bold ${color} ${small ? 'text-[15px]' : 'text-[20px]'}`}>{value}</p>
+      <p className="text-[12px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className={`mt-1 font-bold ${color} ${small ? 'text-[17px]' : 'text-[20px]'}`}>{value}</p>
     </div>
   );
 }
@@ -477,32 +477,32 @@ function BulkUpload({ onDone }) {
     <>
       <button onClick={downloadTemplate}
         title="Download xlsx template"
-        className="flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold">
+        className="flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-2.5 py-1.5 rounded-lg text-[14px] font-semibold">
         <Download size={12} /> Template
       </button>
       <button onClick={() => fileRef.current?.click()}
         disabled={uploading}
         title="Upload a filled template — each row updates one employee's structure"
-        className="flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-60">
+        className="flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-2.5 py-1.5 rounded-lg text-[14px] font-semibold disabled:opacity-60">
         <Upload size={12} /> {uploading ? 'Uploading…' : 'Bulk Upload'}
       </button>
       <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} className="hidden" />
       {result && (
         <div className="absolute z-50 right-6 top-32 bg-white border border-slate-200 rounded-xl shadow-2xl p-4 w-80">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[13px] font-bold text-slate-800 flex items-center gap-2">
+            <p className="text-[15px] font-bold text-slate-800 flex items-center gap-2">
               <FileSpreadsheet size={14} className="text-emerald-600" /> Upload summary
             </p>
             <button onClick={() => setResult(null)} className="text-slate-400 hover:text-slate-600">✕</button>
           </div>
-          <div className="space-y-1 text-[12.5px]">
+          <div className="space-y-1 text-[14px]">
             <Line k="Processed"      v={result.processed} />
             <Line k="Succeeded"      v={result.succeeded} c="text-emerald-700" />
             <Line k="Not found"      v={result.notFound?.length || 0} c={result.notFound?.length ? 'text-amber-700' : 'text-slate-500'} />
             <Line k="Errors"         v={result.failed?.length || 0} c={result.failed?.length ? 'text-rose-700' : 'text-slate-500'} />
           </div>
           {result.notFound?.length > 0 && (
-            <details className="mt-2 text-[11px] text-slate-500">
+            <details className="mt-2 text-[13px] text-slate-500">
               <summary className="cursor-pointer">Show missing IDs ({result.notFound.length})</summary>
               <p className="font-mono mt-1 break-words">{result.notFound.join(', ')}</p>
             </details>

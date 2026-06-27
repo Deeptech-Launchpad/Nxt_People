@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mail, Phone, MessageSquare, Video } from 'lucide-react';
 import api from '../utils/api';
@@ -13,8 +13,8 @@ const fmtDate = (iso) =>
 
 const Row = ({ label, children }) => (
   <div className="grid grid-cols-[160px_1fr] gap-4 items-start py-3 border-b border-slate-100 last:border-b-0">
-    <span className="text-[13px] text-slate-500">{label}</span>
-    <span className="text-[13px] text-slate-800 font-medium break-words">
+    <span className="text-[15px] text-slate-500">{label}</span>
+    <span className="text-[15px] text-slate-800 font-medium break-words">
       {children == null || children === '' ? <span className="text-slate-300">-</span> : children}
     </span>
   </div>
@@ -22,7 +22,7 @@ const Row = ({ label, children }) => (
 
 const Section = ({ title, children }) => (
   <section className="bg-white border border-slate-200 rounded-md">
-    <h3 className="px-6 py-4 text-[15px] font-bold text-slate-800 border-b border-slate-100">
+    <h3 className="px-6 py-4 text-[17px] font-bold text-slate-800 border-b border-slate-100">
       {title}
     </h3>
     <div className="px-6 py-1 grid grid-cols-1 md:grid-cols-2 md:gap-x-12">
@@ -60,7 +60,7 @@ export default function EmployeeProfile() {
   if (notFound || !emp) {
     return (
       <div className="bg-[#f5f6f8] min-h-screen p-6">
-        <button onClick={() => navigate(-1)} className="text-blue-600 text-sm flex items-center gap-1 mb-4">
+        <button onClick={() => navigate(-1)} className="text-blue-600 text-base flex items-center gap-1 mb-4">
           <ArrowLeft size={14}/> Back
         </button>
         <p className="text-slate-500">Employee not found.</p>
@@ -81,10 +81,10 @@ export default function EmployeeProfile() {
       {/* Sticky header */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
-          <button onClick={() => navigate(-1)} className="text-slate-500 hover:text-slate-800 flex items-center gap-1 text-sm">
+          <button onClick={() => navigate(-1)} className="text-slate-500 hover:text-slate-800 flex items-center gap-1 text-base">
             <ArrowLeft size={15}/> Back
           </button>
-          <h1 className="text-[15px] font-semibold text-slate-800">
+          <h1 className="text-[17px] font-semibold text-slate-800">
             {emp.employeeId} <span className="text-slate-400 font-normal">-</span> {fullName}
           </h1>
           <div className="w-12" />
@@ -103,12 +103,12 @@ export default function EmployeeProfile() {
           )}
           <div className="flex-1 min-w-0">
             <p className="text-[18px] font-bold text-slate-800 truncate">{fullName}</p>
-            <p className="text-[13px] text-slate-500 truncate">{emp.designation || 'Employee'}</p>
+            <p className="text-[15px] text-slate-500 truncate">{emp.designation || 'Employee'}</p>
             {emp.email && (
-              <p className="text-[12.5px] text-blue-600 truncate mt-0.5">{emp.email}</p>
+              <p className="text-[14px] text-blue-600 truncate mt-0.5">{emp.email}</p>
             )}
             {emp.status && (
-              <span className={`mt-2 inline-block px-2 py-0.5 rounded text-[11.5px] font-semibold ${
+              <span className={`mt-2 inline-block px-2 py-0.5 rounded text-[13px] font-semibold ${
                 emp.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
               }`}>
                 {emp.status}

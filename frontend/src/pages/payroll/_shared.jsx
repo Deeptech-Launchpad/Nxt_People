@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tiny shared utilities for the payroll pages — kept in one file so
  * the rupee formatting, month names, and status palette stay consistent
  * across every screen (admin run, payslip viewer, my payroll, team, etc.).
@@ -36,7 +36,7 @@ export function StatusPill({ status }) {
   };
   const s = map[status] || map.draft;
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${s.bg} ${s.fg}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[13px] font-bold ${s.bg} ${s.fg}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${
         status === 'paid' ? 'bg-emerald-500' : status === 'locked' ? 'bg-blue-500' : 'bg-slate-400'
       }`} />
@@ -62,9 +62,9 @@ export function StatCard({ label, value, hint, color = 'text-slate-800', icon: I
           <Icon size={64} strokeWidth={1.2} />
         </div>
       )}
-      <p className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 relative">{label}</p>
+      <p className="text-[12px] font-bold uppercase tracking-wider text-slate-400 relative">{label}</p>
       <p className={`mt-1 text-[20px] font-bold relative ${color}`}>{value}</p>
-      {hint && <p className="text-[11px] text-slate-400 mt-0.5 relative">{hint}</p>}
+      {hint && <p className="text-[13px] text-slate-400 mt-0.5 relative">{hint}</p>}
     </div>
   );
 }

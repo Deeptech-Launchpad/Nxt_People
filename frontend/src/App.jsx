@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+﻿import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -105,7 +105,7 @@ const PageLoader = () => (
   <div className="min-h-[60vh] flex items-center justify-center">
     <div className="flex flex-col items-center gap-3">
       <div className="w-8 h-8 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin"/>
-      <span className="text-slate-400 text-sm">Loading…</span>
+      <span className="text-slate-400 text-base">Loading…</span>
     </div>
   </div>
 );

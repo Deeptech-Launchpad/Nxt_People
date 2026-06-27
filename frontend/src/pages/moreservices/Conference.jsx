@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Calendar, DoorOpen, Eye, Pencil, X, AlertTriangle } from 'lucide-react';
 import api from '../../utils/api';
@@ -164,16 +164,16 @@ function BookingModal({ initial, onClose, onSaved, onCancel }) {
     } finally { setSaving(false); }
   };
 
-  const label = 'block text-[12px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide';
+  const label = 'block text-[14px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide';
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h3 className="text-[15px] font-bold text-slate-800">{editing ? 'Edit Booking' : 'Book Conference Hall'}</h3>
+          <h3 className="text-[17px] font-bold text-slate-800">{editing ? 'Edit Booking' : 'Book Conference Hall'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         {error && (
-          <div className="mx-6 mt-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-[12.5px] text-rose-700">
+          <div className="mx-6 mt-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-[14px] text-rose-700">
             <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
@@ -185,7 +185,7 @@ function BookingModal({ initial, onClose, onSaved, onCancel }) {
             <div className="flex gap-3">
               {[['me', 'Book for Me'], ['others', 'Book for Others']].map(([m, txt]) => (
                 <button key={m} type="button" onClick={() => chooseMode(m)}
-                  className={`flex-1 px-4 py-2.5 rounded-xl border-2 text-[13px] font-semibold transition-all ${
+                  className={`flex-1 px-4 py-2.5 rounded-xl border-2 text-[15px] font-semibold transition-all ${
                     mode === m
                       ? 'border-blue-500 bg-blue-50 text-blue-700'
                       : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'
@@ -247,17 +247,17 @@ function BookingModal({ initial, onClose, onSaved, onCancel }) {
             <div>
               {editing && onCancel && (
                 <button type="button" onClick={onCancel}
-                  className="border border-rose-200 text-rose-600 hover:bg-rose-50 px-4 py-2 rounded-lg text-[13px] font-medium">
+                  className="border border-rose-200 text-rose-600 hover:bg-rose-50 px-4 py-2 rounded-lg text-[15px] font-medium">
                   Cancel Meeting
                 </button>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={clearForm} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[13px] font-medium">Clear</button>
+              <button type="button" onClick={clearForm} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[15px] font-medium">Clear</button>
               {!editing && (
-                <button type="button" onClick={onClose} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[13px] font-medium">Cancel</button>
+                <button type="button" onClick={onClose} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[15px] font-medium">Cancel</button>
               )}
-              <button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-60">
+              <button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-[15px] font-semibold disabled:opacity-60">
                 {saving ? 'Saving…' : (editing ? 'Update' : 'Book')}
               </button>
             </div>
@@ -271,15 +271,15 @@ function BookingModal({ initial, onClose, onSaved, onCancel }) {
 function ViewModal({ booking, onClose }) {
   const Row = ({ label, children }) => (
     <div className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 w-32 flex-shrink-0">{label}</span>
-      <span className="text-[13px] text-slate-700">{children}</span>
+      <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-400 w-32 flex-shrink-0">{label}</span>
+      <span className="text-[15px] text-slate-700">{children}</span>
     </div>
   );
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h3 className="text-[15px] font-bold text-slate-800">Booking Details</h3>
+          <h3 className="text-[17px] font-bold text-slate-800">Booking Details</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         <div className="p-6">
@@ -352,12 +352,12 @@ export default function Conference() {
           <div className="flex items-center gap-2">
             <DoorOpen size={18} className="text-blue-600" />
             <div>
-              <h2 className="text-[15px] font-bold text-slate-800">Conference</h2>
-              <p className="text-[12px] text-slate-400">Book conference halls and manage meeting schedules</p>
+              <h2 className="text-[17px] font-bold text-slate-800">Conference</h2>
+              <p className="text-[14px] text-slate-400">Book conference halls and manage meeting schedules</p>
             </div>
           </div>
         </div>
-        <button onClick={() => setModal({ bookingDate: date })} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-semibold">
+        <button onClick={() => setModal({ bookingDate: date })} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[15px] font-semibold">
           <Plus size={15} /> Book Conference Hall
         </button>
       </div>
@@ -365,11 +365,11 @@ export default function Conference() {
       {/* Date filter */}
       <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
         <Calendar size={14} className="text-slate-400" />
-        <span className="text-[12px] text-slate-500 font-medium">Schedule for</span>
+        <span className="text-[14px] text-slate-500 font-medium">Schedule for</span>
         <input type="date" value={date} onChange={e => setDate(e.target.value)}
-          className="border border-slate-200 rounded-lg px-3 py-1.5 text-[12.5px] bg-white focus:outline-none focus:border-blue-400" />
+          className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] bg-white focus:outline-none focus:border-blue-400" />
         {date !== todayStr() && (
-          <button onClick={() => setDate(todayStr())} className="text-[12px] text-blue-600 hover:text-blue-700 font-medium">Today</button>
+          <button onClick={() => setDate(todayStr())} className="text-[14px] text-blue-600 hover:text-blue-700 font-medium">Today</button>
         )}
       </div>
 
@@ -377,7 +377,7 @@ export default function Conference() {
       <div className="flex-1 overflow-x-auto">
         <table className="w-full text-left">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+            <tr className="bg-slate-50 border-b border-slate-100 text-[13px] font-semibold text-slate-500 uppercase tracking-wider">
               <th className="px-5 py-3">Date</th>
               <th className="px-5 py-3">Start</th>
               <th className="px-5 py-3">End</th>
@@ -392,25 +392,25 @@ export default function Conference() {
             {loading ? (
               <tr><td colSpan={8} className="px-5 py-16 text-center"><div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" /></td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400 text-[13px]">No bookings for {fmtDate(date)}</td></tr>
+              <tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400 text-[15px]">No bookings for {fmtDate(date)}</td></tr>
             ) : rows.map(b => {
               const dynStatus = computeStatus(b);
               const pill = STATUS_PILL[dynStatus] || STATUS_PILL.booked;
               return (
                 <tr key={b._id} className="hover:bg-slate-50/70">
-                  <td className="px-5 py-3.5 text-[12.5px] text-slate-600">{fmtDate(b.bookingDate)}</td>
-                  <td className="px-5 py-3.5 text-[13px] text-slate-600">{fmt12(b.startTime)}</td>
-                  <td className="px-5 py-3.5 text-[13px] text-slate-600">{fmt12(b.endTime)}</td>
-                  <td className="px-5 py-3.5 text-[12.5px] text-slate-700">
+                  <td className="px-5 py-3.5 text-[14px] text-slate-600">{fmtDate(b.bookingDate)}</td>
+                  <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmt12(b.startTime)}</td>
+                  <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmt12(b.endTime)}</td>
+                  <td className="px-5 py-3.5 text-[14px] text-slate-700">
                     By {b.bookedBy || '—'}
                     {b.bookedFor && <span className="text-slate-500"> For {b.bookedFor}</span>}
                   </td>
                   <td className="px-5 py-3.5">
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">{b.hall}</span>
+                    <span className="text-[13px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">{b.hall}</span>
                   </td>
-                  <td className="px-5 py-3.5 text-[13px] text-slate-700">{b.title}</td>
+                  <td className="px-5 py-3.5 text-[15px] text-slate-700">{b.title}</td>
                   <td className="px-5 py-3.5">
-                    <span className={`inline-flex items-center text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${pill.cls}`}>
+                    <span className={`inline-flex items-center text-[13px] font-semibold px-2.5 py-0.5 rounded-full ${pill.cls}`}>
                       {pill.label}
                     </span>
                   </td>

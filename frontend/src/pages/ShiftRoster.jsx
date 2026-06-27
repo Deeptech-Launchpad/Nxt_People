@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Copy, Trash2, RefreshCw, Users } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -102,14 +102,14 @@ export default function ShiftRoster() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-display font-bold text-slate-800 text-xl">Shift Roster</h2>
-          <p className="text-slate-400 text-sm mt-0.5">Weekly shift assignment planner</p>
+          <p className="text-slate-400 text-base mt-0.5">Weekly shift assignment planner</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-400">
+          <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-base focus:outline-none focus:border-brand-400">
             <option value="">All Departments</option>
             {departments.map(d => <option key={d}>{d}</option>)}
           </select>
-          <button onClick={copyWeek} disabled={copying} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50">
+          <button onClick={copyWeek} disabled={copying} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-2 rounded-xl text-base font-medium transition-colors disabled:opacity-50">
             {copying ? <RefreshCw size={14} className="animate-spin" /> : <Copy size={14} />} Copy Prev Week
           </button>
         </div>
@@ -118,7 +118,7 @@ export default function ShiftRoster() {
       {/* Shift legend */}
       <div className="flex flex-wrap gap-3">
         {shifts.map(s => (
-          <div key={s.id} className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border font-medium ${shiftColorMap[s.id]}`}>
+          <div key={s.id} className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border font-medium ${shiftColorMap[s.id]}`}>
             <span>{s.name}</span>
             <span className="opacity-70">{s.start_time?.substring(0,5)}–{s.end_time?.substring(0,5)}</span>
           </div>
@@ -133,7 +133,7 @@ export default function ShiftRoster() {
           </button>
           <div className="text-center">
             <p className="font-display font-semibold text-slate-800">{weekLabel}</p>
-            {isCurrentWeek && <span className="text-xs bg-brand-100 text-brand-600 px-2 py-0.5 rounded-full font-medium">Current Week</span>}
+            {isCurrentWeek && <span className="text-sm bg-brand-100 text-brand-600 px-2 py-0.5 rounded-full font-medium">Current Week</span>}
           </div>
           <button onClick={nextWeek} className="w-9 h-9 flex items-center justify-center rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors">
             <ChevronRight size={16} />
@@ -146,17 +146,17 @@ export default function ShiftRoster() {
           <div className="text-center py-16"><Users size={32} className="text-slate-200 mx-auto mb-3" /><p className="text-slate-400">No employees to display</p></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-base">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-44 sticky left-0 bg-slate-50 z-10">Employee</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider w-44 sticky left-0 bg-slate-50 z-10">Employee</th>
                   {weekDates.map((d, i) => {
                     const isToday = d.toLocaleDateString('en-CA') === new Date().toLocaleDateString('en-CA');
                     const isWeekend = i >= 5;
                     return (
-                      <th key={i} className={`px-2 py-3 text-center text-xs font-semibold uppercase tracking-wider min-w-[120px] ${isToday ? 'text-brand-600 bg-brand-50' : isWeekend ? 'text-slate-300' : 'text-slate-500'}`}>
+                      <th key={i} className={`px-2 py-3 text-center text-sm font-semibold uppercase tracking-wider min-w-[120px] ${isToday ? 'text-brand-600 bg-brand-50' : isWeekend ? 'text-slate-300' : 'text-slate-500'}`}>
                         <div>{DAYS[i]}</div>
-                        <div className={`text-[11px] font-normal ${isToday ? 'text-brand-500' : 'opacity-60'}`}>{d.getDate()}</div>
+                        <div className={`text-[13px] font-normal ${isToday ? 'text-brand-500' : 'opacity-60'}`}>{d.getDate()}</div>
                       </th>
                     );
                   })}
@@ -167,9 +167,9 @@ export default function ShiftRoster() {
                   <tr key={emp._id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-4 py-3 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100">
                       <div>
-                        <p className="font-medium text-slate-700 text-sm">{emp.firstName} {emp.lastName}</p>
-                        <p className="text-xs text-slate-400">{emp.department}</p>
-                        {emp.shiftName && <p className="text-[10px] text-brand-500 mt-0.5">Default: {emp.shiftName}</p>}
+                        <p className="font-medium text-slate-700 text-base">{emp.firstName} {emp.lastName}</p>
+                        <p className="text-sm text-slate-400">{emp.department}</p>
+                        {emp.shiftName && <p className="text-[12px] text-brand-500 mt-0.5">Default: {emp.shiftName}</p>}
                       </div>
                     </td>
                     {weekDates.map((d, i) => {
@@ -179,7 +179,7 @@ export default function ShiftRoster() {
                       return (
                         <td key={i} className={`px-2 py-2 text-center align-middle ${isWeekend ? 'bg-slate-50/50' : ''}`}>
                           {assignment ? (
-                            <div className={`relative group/cell inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border font-medium ${shiftColorMap[assignment.shift?.id] || SHIFT_COLORS[0]}`}>
+                            <div className={`relative group/cell inline-flex items-center gap-1.5 text-sm px-2.5 py-1.5 rounded-xl border font-medium ${shiftColorMap[assignment.shift?.id] || SHIFT_COLORS[0]}`}>
                               <span>{assignment.shift?.name}</span>
                               <button onClick={() => removeAssignment(assignment._id)}
                                 className="opacity-0 group-hover/cell:opacity-100 transition-opacity w-4 h-4 rounded-full bg-black/10 hover:bg-black/20 flex items-center justify-center">
@@ -188,7 +188,7 @@ export default function ShiftRoster() {
                             </div>
                           ) : (
                             <select onChange={e => { if (e.target.value) assignShift(emp._id, ds, e.target.value); e.target.value = ''; }}
-                              className="text-xs border border-dashed border-slate-200 rounded-xl px-2 py-1.5 text-slate-300 hover:border-brand-300 hover:text-brand-500 transition-colors cursor-pointer focus:outline-none bg-transparent"
+                              className="text-sm border border-dashed border-slate-200 rounded-xl px-2 py-1.5 text-slate-300 hover:border-brand-300 hover:text-brand-500 transition-colors cursor-pointer focus:outline-none bg-transparent"
                               defaultValue="">
                               <option value="" disabled>+ Assign</option>
                               {shifts.map(s => <option key={s.id} value={s.id}>{s.name} ({s.start_time?.substring(0,5)})</option>)}

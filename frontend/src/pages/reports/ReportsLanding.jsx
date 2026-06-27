@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BarChart2, CalendarCheck, DollarSign, Settings, Play,
@@ -33,8 +33,8 @@ export default function ReportsLanding() {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 min-h-[calc(100vh-12rem)]">
       <div className="px-6 py-5 border-b border-slate-100">
-        <h2 className="text-[16px] font-semibold text-slate-900">Reports</h2>
-        <p className="text-[13px] text-slate-500 mt-1">Attendance, payroll, shifts, and compliance reports.</p>
+        <h2 className="text-[18px] font-semibold text-slate-900">Reports</h2>
+        <p className="text-[15px] text-slate-500 mt-1">Attendance, payroll, shifts, and compliance reports.</p>
       </div>
 
       <div className="p-6">
@@ -50,10 +50,10 @@ export default function ReportsLanding() {
               <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-100">
                 <Icon size={24} className={color} strokeWidth={1.8} />
               </div>
-              <span className="text-[12px] font-semibold text-center leading-tight text-slate-900">
+              <span className="text-[14px] font-semibold text-center leading-tight text-slate-900">
                 {label}
               </span>
-              <span className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide">Open</span>
+              <span className="text-[12px] font-semibold text-blue-700 uppercase tracking-wide">Open</span>
             </button>
           ))}
         </div>

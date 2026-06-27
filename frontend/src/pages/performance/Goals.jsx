@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Star, CheckCircle, Clock, Target, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
@@ -87,16 +87,16 @@ export default function PerformanceGoals() {
           <div key={label} className="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
             <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center mb-3`}><Icon size={17} className={color}/></div>
             <p className={`text-[26px] font-bold ${color}`}>{val}</p>
-            <p className="text-[12px] text-slate-500 mt-1">{label}</p>
+            <p className="text-[14px] text-slate-500 mt-1">{label}</p>
           </div>
         ))}
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h3 className="text-[13px] font-bold text-slate-800">My Goals</h3>
+          <h3 className="text-[15px] font-bold text-slate-800">My Goals</h3>
           <button onClick={() => setShowForm(s => !s)}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold px-3.5 py-1.5 rounded-md transition-colors">
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[14px] font-semibold px-3.5 py-1.5 rounded-md transition-colors">
             <Plus size={13}/> {showForm ? 'Close' : 'Add Goal'}
           </button>
         </div>
@@ -106,13 +106,13 @@ export default function PerformanceGoals() {
             <input placeholder="Goal title…" value={form.title}
               onChange={e => setForm({ ...form, title: e.target.value })}
               onKeyDown={e => e.key === 'Enter' && handleAdd()}
-              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] focus:outline-none focus:border-blue-400 bg-white"/>
+              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400 bg-white"/>
             <input placeholder="Target / KPI…" value={form.target}
               onChange={e => setForm({ ...form, target: e.target.value })}
               onKeyDown={e => e.key === 'Enter' && handleAdd()}
-              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-[12.5px] focus:outline-none focus:border-blue-400 bg-white"/>
+              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400 bg-white"/>
             <button onClick={handleAdd} disabled={saving}
-              className="bg-blue-600 text-white text-[12.5px] font-semibold px-3.5 py-2 rounded-md hover:bg-blue-700 disabled:opacity-60">
+              className="bg-blue-600 text-white text-[14px] font-semibold px-3.5 py-2 rounded-md hover:bg-blue-700 disabled:opacity-60">
               {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
@@ -120,23 +120,23 @@ export default function PerformanceGoals() {
 
         <div className="divide-y divide-slate-50">
           {loading ? (
-            <div className="px-5 py-10 text-center text-[13px] text-slate-400">Loading…</div>
+            <div className="px-5 py-10 text-center text-[15px] text-slate-400">Loading…</div>
           ) : goals.length === 0 ? (
-            <div className="px-5 py-10 text-center text-[13px] text-slate-400">No goals yet. Click "Add Goal" to set your first one.</div>
+            <div className="px-5 py-10 text-center text-[15px] text-slate-400">No goals yet. Click "Add Goal" to set your first one.</div>
           ) : goals.map(g => (
             <div key={g._id} className="px-5 py-4 flex items-start gap-4 hover:bg-slate-50 transition-colors">
               <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
                 <Target size={16} className="text-blue-500"/>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-slate-800">{g.title}</p>
-                {g.target && <p className="text-[11.5px] text-blue-600 mt-0.5">Target: {g.target}</p>}
-                {g.dueDate && <p className="text-[11px] text-slate-400 mt-0.5">Due: {new Date(g.dueDate).toLocaleDateString('en-IN')}</p>}
+                <p className="text-[15px] font-semibold text-slate-800">{g.title}</p>
+                {g.target && <p className="text-[13px] text-blue-600 mt-0.5">Target: {g.target}</p>}
+                {g.dueDate && <p className="text-[13px] text-slate-400 mt-0.5">Due: {new Date(g.dueDate).toLocaleDateString('en-IN')}</p>}
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
                 <select value={g.status}
                   onChange={e => handleStatus(g._id, e.target.value)}
-                  className={`text-[11px] font-semibold px-2 py-1 rounded-full border-0 cursor-pointer ${STATUS_MAP[g.status]?.cls || ''}`}>
+                  className={`text-[13px] font-semibold px-2 py-1 rounded-full border-0 cursor-pointer ${STATUS_MAP[g.status]?.cls || ''}`}>
                   {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_MAP[s].label}</option>)}
                 </select>
                 <div className="flex gap-0.5">

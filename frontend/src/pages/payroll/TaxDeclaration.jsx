@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Employee → Tax Declaration
  * Once-a-year form for old-regime exemptions (HRA rent, 80C, 80D, etc.).
  * Submitted → admin reviews → approved/rejected. After approval the
@@ -77,7 +77,7 @@ export default function TaxDeclaration() {
       {/* Header */}
       <div>
         <h1 className="text-[20px] font-bold text-slate-800">Tax Declaration · {fy}</h1>
-        <p className="text-[13px] text-slate-500 mt-1">
+        <p className="text-[15px] text-slate-500 mt-1">
           Declare your investments and rent to reduce TDS. Submit once a year — HR approves and the values feed your monthly payslip from the next run.
         </p>
       </div>
@@ -96,12 +96,12 @@ export default function TaxDeclaration() {
                 ? <AlertCircle size={18} className="text-rose-600" />
                 : <Info size={18} className="text-blue-600" />}
             <div>
-              <p className="text-[13px] font-bold text-slate-800">
+              <p className="text-[15px] font-bold text-slate-800">
                 {existing.status === 'approved' ? 'Approved by HR'
                  : existing.status === 'rejected' ? 'Returned for revision'
                  : 'Awaiting HR review'}
               </p>
-              <p className="text-[11.5px] text-slate-600 mt-0.5">
+              <p className="text-[13px] text-slate-600 mt-0.5">
                 {existing.status === 'rejected'
                   ? (existing.rejectionReason || 'Reason not provided — please contact HR')
                   : `Last updated ${new Date(existing.updatedAt).toLocaleDateString('en-GB')}`}
@@ -115,7 +115,7 @@ export default function TaxDeclaration() {
       <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         {/* Regime */}
         <div className="px-5 py-4 border-b border-slate-100">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">Tax regime</p>
+          <p className="text-[13px] font-bold uppercase tracking-wider text-slate-500 mb-2">Tax regime</p>
           <div className="grid grid-cols-2 gap-2">
             {[
               { v: 'new',  title: 'New regime', desc: 'Lower slabs, no exemptions (default).' },
@@ -127,8 +127,8 @@ export default function TaxDeclaration() {
                 } ${locked ? 'opacity-60 pointer-events-none' : ''}`}>
                 <input type="radio" name="regime" value={o.v} checked={form.regime === o.v}
                        onChange={() => setForm(f => ({ ...f, regime: o.v }))} className="hidden" />
-                <p className="text-[13px] font-bold text-slate-800">{o.title}</p>
-                <p className="text-[11.5px] text-slate-500 mt-0.5">{o.desc}</p>
+                <p className="text-[15px] font-bold text-slate-800">{o.title}</p>
+                <p className="text-[13px] text-slate-500 mt-0.5">{o.desc}</p>
               </label>
             ))}
           </div>
@@ -136,13 +136,13 @@ export default function TaxDeclaration() {
 
         {/* Old-regime fields — disabled if new is selected */}
         <div className={`px-5 py-4 ${form.regime !== 'old' ? 'opacity-40 pointer-events-none' : ''}`}>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-3">Annual exemption amounts</p>
+          <p className="text-[13px] font-bold uppercase tracking-wider text-slate-500 mb-3">Annual exemption amounts</p>
           <div className="space-y-3">
             {OLD_REGIME_FIELDS.map(f => (
               <div key={f.key} className="grid grid-cols-[1fr_180px] gap-3 items-center">
                 <div>
-                  <p className="text-[12.5px] font-semibold text-slate-700">{f.label}</p>
-                  <p className="text-[11px] text-slate-400">{f.hint}</p>
+                  <p className="text-[14px] font-semibold text-slate-700">{f.label}</p>
+                  <p className="text-[13px] text-slate-400">{f.hint}</p>
                 </div>
                 <div className="relative">
                   <IndianRupee size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -153,7 +153,7 @@ export default function TaxDeclaration() {
                     value={form[f.key] || 0}
                     onChange={e => setForm(s => ({ ...s, [f.key]: e.target.value === '' ? 0 : Number(e.target.value) }))}
                     disabled={locked}
-                    className="w-full pl-7 pr-3 py-1.5 border border-slate-200 rounded-lg text-[13px] focus:outline-none focus:border-blue-400 text-right disabled:bg-slate-50"
+                    className="w-full pl-7 pr-3 py-1.5 border border-slate-200 rounded-lg text-[15px] focus:outline-none focus:border-blue-400 text-right disabled:bg-slate-50"
                   />
                 </div>
               </div>
@@ -164,20 +164,20 @@ export default function TaxDeclaration() {
         {/* Total + submit */}
         <div className="bg-gradient-to-r from-slate-50 to-blue-50 border-t border-slate-100 px-5 py-4 flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total claimed</p>
+            <p className="text-[13px] font-bold uppercase tracking-wider text-slate-500">Total claimed</p>
             <p className="text-[20px] font-bold text-blue-700 mt-0.5">{fmtINR(form.regime === 'old' ? total : 0)}</p>
-            {form.regime === 'new' && <p className="text-[11px] text-slate-400">No exemptions under new regime</p>}
+            {form.regime === 'new' && <p className="text-[13px] text-slate-400">No exemptions under new regime</p>}
           </div>
           <button type="submit"
                   disabled={saving || locked || loading}
-                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-60">
+                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[15px] font-semibold disabled:opacity-60">
             <Save size={13} /> {saving ? 'Submitting…' : existing ? 'Resubmit' : 'Submit Declaration'}
           </button>
         </div>
       </form>
 
       {/* Note about new regime */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3 text-[12px]">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3 text-[14px]">
         <Info size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
         <div className="text-amber-800">
           <p className="font-semibold">Choose carefully</p>

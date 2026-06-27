@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import api from '../../utils/api';
 
 const LEAVE_TYPES = ['casual', 'comp_off', 'unpaid'];
@@ -32,16 +32,16 @@ export default function LeaveBalance() {
 
   return (
     <div className="p-6 max-w-3xl">
-      <h2 className="text-[15px] font-bold text-slate-800 mb-5">Leave Balance</h2>
+      <h2 className="text-[17px] font-bold text-slate-800 mb-5">Leave Balance</h2>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {LEAVE_TYPES.map(t => {
           const val = balance?.[t];
           const isUnlimited = val === null && t === 'unpaid';
           return (
             <div key={t} className={`rounded-xl p-6 bg-gradient-to-br ${COLORS[t]} text-white shadow-lg`}>
-              <p className="text-[11px] font-semibold uppercase tracking-wider opacity-80 mb-3">{LEAVE_TYPE_LABELS[t]}</p>
+              <p className="text-[13px] font-semibold uppercase tracking-wider opacity-80 mb-3">{LEAVE_TYPE_LABELS[t]}</p>
               <p className="text-[40px] font-bold leading-none">{isUnlimited ? '∞' : (val ?? '—')}</p>
-              <p className="text-[13px] opacity-80 mt-2">days remaining</p>
+              <p className="text-[15px] opacity-80 mt-2">days remaining</p>
             </div>
           );
         })}

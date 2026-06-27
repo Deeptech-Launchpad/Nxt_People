@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AppAccessPicker — controlled multi-select of "user-facing apps" the
  * admin can grant to one employee. Used in two places:
  *
@@ -46,7 +46,7 @@ export default function AppAccessPicker({ apps, selected, onChange, loading, com
 
   if (loading) {
     return (
-      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[12px] text-slate-400 text-center">
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[14px] text-slate-400 text-center">
         Loading apps…
       </div>
     );
@@ -54,7 +54,7 @@ export default function AppAccessPicker({ apps, selected, onChange, loading, com
 
   if (apps.length === 0) {
     return (
-      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[12px] text-slate-500 flex items-center gap-2">
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[14px] text-slate-500 flex items-center gap-2">
         <AppWindow size={14} className="text-slate-400" />
         No internal apps registered yet. Add one in <strong className="font-semibold">NXT Apps</strong>.
       </div>
@@ -66,15 +66,15 @@ export default function AppAccessPicker({ apps, selected, onChange, loading, com
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] text-slate-500">
+        <p className="text-[13px] text-slate-500">
           <strong className="text-slate-700">{selected.size}</strong> of {apps.length} selected
         </p>
         <div className="flex items-center gap-2">
           <button type="button" onClick={selectAll}
-            className="text-[11px] font-semibold text-blue-700 hover:underline">Select all</button>
+            className="text-[13px] font-semibold text-blue-700 hover:underline">Select all</button>
           <span className="text-slate-300">·</span>
           <button type="button" onClick={selectNone}
-            className="text-[11px] font-semibold text-slate-500 hover:text-slate-700 hover:underline">Clear</button>
+            className="text-[13px] font-semibold text-slate-500 hover:text-slate-700 hover:underline">Clear</button>
         </div>
       </div>
 
@@ -96,9 +96,9 @@ export default function AppAccessPicker({ apps, selected, onChange, loading, com
                 <Icon name={app.icon} size={15} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className={`text-[12.5px] font-bold truncate ${checked ? 'text-blue-900' : 'text-slate-800'}`}>{app.name}</p>
+                <p className={`text-[14px] font-bold truncate ${checked ? 'text-blue-900' : 'text-slate-800'}`}>{app.name}</p>
                 {app.description && !compact && (
-                  <p className="text-[10.5px] text-slate-500 truncate">{app.description}</p>
+                  <p className="text-[12px] text-slate-500 truncate">{app.description}</p>
                 )}
               </div>
               <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${

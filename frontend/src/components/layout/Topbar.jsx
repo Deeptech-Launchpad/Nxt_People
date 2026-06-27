@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal, MessageCircle } from 'lucide-react';
 import { useChat } from '../../context/ChatContext';
@@ -179,7 +179,7 @@ const NAV = {
 const SubNavLink = React.memo(function SubNavLink({ to, label, isActive }) {
   return (
     <NavLink to={to}
-      className={`h-full flex items-center px-1 border-b-2 text-[14px] whitespace-nowrap transition-all duration-150 mt-[2px] tracking-[-0.01em]
+      className={`h-full flex items-center px-1 border-b-2 text-[16px] whitespace-nowrap transition-all duration-150 mt-[2px] tracking-[-0.01em]
         ${isActive
           ? 'border-[#1a73e8] text-[#1a73e8] font-bold'
           : 'border-transparent text-slate-500 dark:text-slate-300 font-semibold hover:text-slate-800 dark:hover:text-white hover:border-slate-300 dark:hover:border-slate-500'
@@ -282,7 +282,7 @@ function SubNav({ items }) {
         style={{ position: 'fixed', top: '-9999px', left: '-9999px', visibility: 'hidden' }}
       >
         {items.map(item => (
-          <span key={`m-${item.to}`} className="text-[14px] font-semibold whitespace-nowrap px-1">{item.label}</span>
+          <span key={`m-${item.to}`} className="text-[16px] font-semibold whitespace-nowrap px-1">{item.label}</span>
         ))}
       </div>
 
@@ -310,7 +310,7 @@ function SubNav({ items }) {
             <div className="absolute right-0 top-[36px] bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 min-w-[200px] z-50">
               {finalOverflow.map(item => (
                 <NavLink key={item.to} to={item.to} onClick={() => setShowMore(false)}
-                  className={`flex items-center px-4 py-2 text-[13px] transition-colors
+                  className={`flex items-center px-4 py-2 text-[15px] transition-colors
                     ${item === activeItem
                       ? 'text-[#1a73e8] font-bold bg-blue-50/50'
                       : 'text-slate-600 font-semibold hover:text-slate-900 hover:bg-slate-50'
@@ -426,7 +426,7 @@ export default function Topbar() {
       <div className="h-[48px] bg-[#1a2040] flex items-center justify-between px-5 shadow-sm flex-shrink-0">
         <div className="flex items-center h-full gap-1">
           {!isHome && (
-            <span className="text-white text-[14px] font-semibold mr-3 border-r border-white/20 pr-4">
+            <span className="text-white text-[16px] font-semibold mr-3 border-r border-white/20 pr-4">
               {config.label}
             </span>
           )}
@@ -439,7 +439,7 @@ export default function Topbar() {
             if (disabled) {
               return (
                 <span key={key} title="Coming soon"
-                  className="h-full px-4 flex items-center text-[14px] border-b-[3px] border-transparent text-white/30 font-semibold cursor-not-allowed">
+                  className="h-full px-4 flex items-center text-[16px] border-b-[3px] border-transparent text-white/30 font-semibold cursor-not-allowed">
                   {label}
                 </span>
               );
@@ -447,7 +447,7 @@ export default function Topbar() {
             const targetTo = (key === 'reports' && !isApprover(user)) ? '/payroll/my' : to;
             return (
               <button key={key} onClick={() => navigate(targetTo)}
-                className={`h-full px-4 flex items-center text-[14px] border-b-[3px] transition-all duration-150 tracking-[-0.01em]
+                className={`h-full px-4 flex items-center text-[16px] border-b-[3px] transition-all duration-150 tracking-[-0.01em]
                   ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`}>
                 {label}
               </button>
@@ -468,7 +468,7 @@ export default function Topbar() {
             {showQuickActions && (
               <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-[#1f2937] rounded-xl shadow-2xl z-50 border border-slate-100 dark:border-[#374151] overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-slate-100 dark:border-[#374151] bg-slate-50 dark:bg-[#111827] flex items-center justify-between">
-                  <span className="text-[12px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">Quick Actions</span>
+                  <span className="text-[14px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">Quick Actions</span>
                 </div>
                 <div className="py-1">
                   {[
@@ -481,7 +481,7 @@ export default function Topbar() {
                     <button
                       key={label}
                       onClick={() => { navigate(to); setShowQuickActions(false); }}
-                      className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151] transition-colors"
+                      className="w-full text-left px-4 py-2.5 text-[15px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151] transition-colors"
                     >
                       {label}
                     </button>
@@ -515,7 +515,7 @@ export default function Topbar() {
                       }
                       if (e.key === 'Escape') setShowSearch(false);
                     }}
-                    className="flex-1 text-sm text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-400 bg-transparent"
+                    className="flex-1 text-base text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-400 bg-transparent"
                   />
                   <button onClick={() => setShowSearch(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X size={14}/></button>
                 </div>
@@ -530,7 +530,7 @@ export default function Topbar() {
                    .filter(item => !searchQuery || item.label.toLowerCase().includes(searchQuery.toLowerCase()))
                    .map(({ label, to }) => (
                     <button key={label} onClick={() => { navigate(to); setShowSearch(false); }}
-                      className="w-full text-left px-4 py-2 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151] transition-colors flex items-center gap-2">
+                      className="w-full text-left px-4 py-2 text-[15px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151] transition-colors flex items-center gap-2">
                       <Search size={12} className="text-slate-300 dark:text-slate-500" />{label}
                     </button>
                   ))}
@@ -580,10 +580,10 @@ export default function Topbar() {
             {showNotifs && (
               <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-[#1f2937] rounded-xl shadow-2xl z-50 border border-slate-100 dark:border-[#374151] overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 dark:border-[#374151] flex justify-between items-center bg-slate-50 dark:bg-[#111827]">
-                  <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100">Notifications</h3>
+                  <h3 className="font-semibold text-base text-slate-800 dark:text-slate-100">Notifications</h3>
                   <div className="flex items-center gap-3">
                     {unreadCount > 0 && (
-                      <button onClick={markAllRead} className="text-[11px] text-blue-400 font-medium hover:underline flex items-center gap-1">
+                      <button onClick={markAllRead} className="text-[13px] text-blue-400 font-medium hover:underline flex items-center gap-1">
                         <CheckCircle size={11}/> Mark all read
                       </button>
                     )}
@@ -592,14 +592,14 @@ export default function Topbar() {
                 </div>
                 <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-50 dark:divide-[#374151]">
                   {notifications.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400 text-sm">
+                    <div className="p-8 text-center text-slate-400 text-base">
                       <Bell size={28} className="mx-auto mb-2 opacity-30"/>No new notifications
                     </div>
                   ) : notifications.map(n => (
                     <div key={n._id} onClick={() => handleNotifClick(n)}
                       className={`px-4 py-3 hover:bg-slate-50 dark:hover:bg-[#374151] cursor-pointer transition-colors ${!n.isRead ? 'bg-blue-50/40 dark:bg-blue-900/20' : ''}`}>
-                      <p className={`text-sm leading-snug ${!n.isRead ? 'font-semibold text-slate-800 dark:text-slate-100' : 'text-slate-600 dark:text-slate-300'}`}>{n.title}</p>
-                      <p className="text-xs text-slate-400 truncate mt-0.5">{n.message}</p>
+                      <p className={`text-base leading-snug ${!n.isRead ? 'font-semibold text-slate-800 dark:text-slate-100' : 'text-slate-600 dark:text-slate-300'}`}>{n.title}</p>
+                      <p className="text-sm text-slate-400 truncate mt-0.5">{n.message}</p>
                     </div>
                   ))}
                 </div>
@@ -623,7 +623,7 @@ export default function Topbar() {
                   className="w-8 h-8 rounded-full object-cover ring-2 ring-white/20"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-bold text-white ring-2 ring-white/20">
+                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[13px] font-bold text-white ring-2 ring-white/20">
                   {user?.firstName?.[0] || 'U'}{user?.lastName?.[0] || ''}
                 </div>
               )}
@@ -631,15 +631,15 @@ export default function Topbar() {
             {showUserMenu && (
               <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-[#1f2937] rounded-xl shadow-2xl z-50 border border-slate-100 dark:border-[#374151] overflow-hidden">
                 <div className="px-4 py-3.5 border-b border-slate-100 dark:border-[#374151] bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-[#1e3a5f] dark:to-[#1e1b4b]">
-                  <p className="font-semibold text-[13px] text-slate-800 dark:text-slate-100">{user?.firstName} {user?.lastName}</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 capitalize mt-0.5">{user?.designation || roleLabel(user?.role)}</p>
-                  {user?.employeeId && <p className="text-[10px] text-blue-400 font-mono mt-1">{user.employeeId}</p>}
+                  <p className="font-semibold text-[15px] text-slate-800 dark:text-slate-100">{user?.firstName} {user?.lastName}</p>
+                  <p className="text-[13px] text-slate-500 dark:text-slate-400 capitalize mt-0.5">{user?.designation || roleLabel(user?.role)}</p>
+                  {user?.employeeId && <p className="text-[12px] text-blue-400 font-mono mt-1">{user.employeeId}</p>}
                 </div>
                 <div className="py-1">
-                  <button onClick={() => { navigate('/profile'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151]">My Profile</button>
-                  <button onClick={() => { navigate('/settings'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151]">Settings</button>
+                  <button onClick={() => { navigate('/profile'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[15px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151]">My Profile</button>
+                  <button onClick={() => { navigate('/settings'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[15px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151]">Settings</button>
                   <div className="border-t border-slate-100 dark:border-[#374151] mt-1 pt-1">
-                    <button onClick={logout} className="w-full text-left px-4 py-2.5 text-[13px] text-red-500 hover:bg-red-50 dark:hover:bg-[#450a0a] font-medium">Sign Out</button>
+                    <button onClick={logout} className="w-full text-left px-4 py-2.5 text-[15px] text-red-500 hover:bg-red-50 dark:hover:bg-[#450a0a] font-medium">Sign Out</button>
                     <button
                       onClick={async () => {
                         if (!window.confirm('Sign out from all devices? You will be logged out everywhere — laptops, phones, every browser.')) return;
@@ -649,7 +649,7 @@ export default function Topbar() {
                         } catch (_) { /* server bumped revoked_at — local session is dead anyway */ }
                         logout();
                       }}
-                      className="w-full text-left px-4 py-2.5 text-[12px] text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-[#374151]"
+                      className="w-full text-left px-4 py-2.5 text-[14px] text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-[#374151]"
                     >
                       Sign out from all devices
                     </button>

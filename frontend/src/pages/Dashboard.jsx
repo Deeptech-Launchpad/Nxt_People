@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { isFullAccess } from '../utils/roles';
 import { useAttendance } from '../context/AttendanceContext';
@@ -278,14 +278,14 @@ const PRESENCE_DOT   = { in: 'bg-emerald-500',  out: 'bg-slate-400',  onLeave: '
 const PresenceLabel = ({ person }) => {
   const p = presenceOf(person);
   if (!p) return null;
-  return <span className={`text-[11px] font-medium ${PRESENCE_COLOR[p]}`}>{PRESENCE_LABEL[p]}</span>;
+  return <span className={`text-[13px] font-medium ${PRESENCE_COLOR[p]}`}>{PRESENCE_LABEL[p]}</span>;
 };
 
 /* ─ Tab button ─ */
 const Tab = ({ active, onClick, children }) => (
   <button
     onClick={onClick}
-    className={`py-3.5 px-1 text-[13px] font-medium border-b-[2.5px] transition-all whitespace-nowrap mt-[2px] cursor-pointer
+    className={`py-3.5 px-1 text-[15px] font-medium border-b-[2.5px] transition-all whitespace-nowrap mt-[2px] cursor-pointer
       ${active
         ? 'border-[#3b82f6] text-[#1a1d35] font-semibold'
         : 'border-transparent text-[#777] hover:text-[#333]'
@@ -362,7 +362,7 @@ const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
     >
       {/* Header with close button — gives users an explicit way out */}
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 bg-slate-50/60">
-        <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Add Request</span>
+        <span className="text-[12px] font-bold uppercase tracking-wider text-slate-400">Add Request</span>
         <button
           onClick={onClose}
           className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition-colors"
@@ -378,8 +378,8 @@ const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
             onClick={() => { navigate(opt.path); onClose(); }}
             className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50/50 transition-colors text-left group"
           >
-            <span className="text-sm bg-slate-50 group-hover:bg-blue-100/50 w-7 h-7 flex items-center justify-center rounded-lg border border-slate-100 group-hover:border-blue-200 transition-colors">{opt.icon}</span>
-            <span className="text-[13px] font-semibold text-slate-700 group-hover:text-blue-700 transition-colors">{opt.label}</span>
+            <span className="text-base bg-slate-50 group-hover:bg-blue-100/50 w-7 h-7 flex items-center justify-center rounded-lg border border-slate-100 group-hover:border-blue-200 transition-colors">{opt.icon}</span>
+            <span className="text-[15px] font-semibold text-slate-700 group-hover:text-blue-700 transition-colors">{opt.label}</span>
           </button>
         ))}
       </div>
@@ -760,7 +760,7 @@ export default function Dashboard() {
           {/* Access My Payroll */}
           <button
             onClick={() => navigate('/payroll/my')}
-            className="bg-white/90 backdrop-blur-sm hover:bg-white text-slate-700 text-[12px] font-semibold px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all shadow-sm border border-white/80"
+            className="bg-white/90 backdrop-blur-sm hover:bg-white text-slate-700 text-[14px] font-semibold px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all shadow-sm border border-white/80"
           >
             <ExternalLink size={12} /> Access my payroll
           </button>
@@ -777,14 +777,14 @@ export default function Dashboard() {
               <div className="absolute right-0 top-9 w-52 bg-white rounded-xl shadow-2xl z-50 border border-slate-100 overflow-hidden py-1">
                 <button
                   onClick={() => { navigate('/profile'); setShowPayrollMore(false); }}
-                  className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                  className="w-full text-left px-4 py-2.5 text-[15px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                 >
                   <UserIcon size={14} className="text-slate-400" /> View Profile
                 </button>
                 {isFullAccess(user) && (
                   <button
                     onClick={() => { navigate('/settings'); setShowPayrollMore(false); }}
-                    className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                    className="w-full text-left px-4 py-2.5 text-[15px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                   >
                     <Settings size={14} className="text-slate-400" /> Settings
                   </button>
@@ -826,15 +826,15 @@ export default function Dashboard() {
 
               <div className="mt-2 px-4">
                 {/* Employee ID on top */}
-                <p className="text-[11px] font-semibold text-slate-500 tracking-wider">
+                <p className="text-[13px] font-semibold text-slate-500 tracking-wider">
                   {user?.employeeId || 'ANXT260001'}
                 </p>
                 {/* Full name */}
-                <h2 className="text-[15px] font-bold text-slate-800 tracking-tight mt-0.5">
+                <h2 className="text-[17px] font-bold text-slate-800 tracking-tight mt-0.5">
                   {user?.firstName} {user?.lastName}
                 </h2>
                 {/* Designation */}
-                <p className="text-[12px] text-slate-500 mt-0.5">
+                <p className="text-[14px] text-slate-500 mt-0.5">
                   {user?.designation || 'Employee'}
                 </p>
               </div>
@@ -842,7 +842,7 @@ export default function Dashboard() {
               {/* Status + timer – Zoho clean style */}
               <div className="mt-4 flex flex-col items-center gap-2">
                 {/* Status badge */}
-                <span className={`text-[12px] font-bold px-3 py-0.5 rounded ${
+                <span className={`text-[14px] font-bold px-3 py-0.5 rounded ${
                   isCheckedOut
                     ? 'text-rose-600'
                     : isCheckedIn
@@ -870,7 +870,7 @@ export default function Dashboard() {
                   <button
                     onClick={handleCheckIn}
                     disabled={attActionLoading}
-                    className="w-full bg-slate-700 hover:bg-slate-800 text-white text-[13px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
+                    className="w-full bg-slate-700 hover:bg-slate-800 text-white text-[15px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
                   >
                     <LogIn size={15} /> Check-in
                   </button>
@@ -879,20 +879,20 @@ export default function Dashboard() {
                   <button
                     onClick={handleCheckOut}
                     disabled={attActionLoading}
-                    className="w-full border-2 border-rose-500 text-rose-500 hover:bg-rose-50 text-[13px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                    className="w-full border-2 border-rose-500 text-rose-500 hover:bg-rose-50 text-[15px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
                   >
                     <LogOut size={15} /> Check-out
                   </button>
                 )}
                 {isCheckedOut && record?.checkOut && (
                   <div className="space-y-2">
-                    <p className="text-[11px] text-slate-400 font-medium">
+                    <p className="text-[13px] text-slate-400 font-medium">
                       Checked out at <span className="text-slate-600 font-bold">{new Date(record.checkOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                     </p>
                     <button
                       onClick={handleCheckIn}
                       disabled={attActionLoading}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[15px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2"
                     >
                       <LogIn size={15} /> Re-check-in
                     </button>
@@ -903,7 +903,7 @@ export default function Dashboard() {
 
             {/* Reporting Manager Card */}
             <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-              <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Reporting Person</h3>
+              <h3 className="text-[13px] font-bold text-slate-500 uppercase tracking-wider mb-3">Reporting Person</h3>
               {(manager || profileData?.manager) ? (
                 <div className="flex items-center gap-3">
                   <div className="relative flex-shrink-0">
@@ -915,29 +915,29 @@ export default function Dashboard() {
                     <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-white rounded-full ${PRESENCE_DOT[presenceOf(manager || profileData?.manager)] || 'bg-slate-300'}`} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[12px] font-bold text-slate-700">Reporting Person</p>
-                    <p className="text-[11.5px] text-slate-600 truncate">
+                    <p className="text-[14px] font-bold text-slate-700">Reporting Person</p>
+                    <p className="text-[13px] text-slate-600 truncate">
                       {(manager || profileData?.manager).employeeId} - {(manager || profileData?.manager).firstName}
                     </p>
                     <PresenceLabel person={manager || profileData?.manager} />
                   </div>
                 </div>
               ) : (
-                <p className="text-[12px] text-slate-400 italic">No manager assigned</p>
+                <p className="text-[14px] text-slate-400 italic">No manager assigned</p>
               )}
             </div>
 
              {/* Department Members */}
              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-               <h3 className="text-[12px] font-bold text-slate-800 mb-4">Department Members</h3>
+               <h3 className="text-[14px] font-bold text-slate-800 mb-4">Department Members</h3>
                <div className="flex flex-col overflow-hidden">
                  {loadingDeptMembers ? (
                    <div className="flex items-center gap-2">
                      <div className="w-6 h-6 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin" />
-                     <span className="text-[10px] text-slate-500">Loading...</span>
+                     <span className="text-[12px] text-slate-500">Loading...</span>
                    </div>
                  ) : deptMembers.length === 0 ? (
-                   <span className="text-[10px] text-slate-500 italic">No team members found</span>
+                   <span className="text-[12px] text-slate-500 italic">No team members found</span>
                  ) : (
                    <>
                      {deptMembers.slice(0, 3).map((member, idx) => (
@@ -952,7 +952,7 @@ export default function Dashboard() {
                            </div>
                          </div>
                          <div className="min-w-0 flex-1 pt-0.5">
-                           <p className="text-[12px] font-medium text-slate-700 truncate">{member.employeeId} - {member.firstName}</p>
+                           <p className="text-[14px] font-medium text-slate-700 truncate">{member.employeeId} - {member.firstName}</p>
                            <PresenceLabel person={member} />
                          </div>
                        </div>
@@ -960,7 +960,7 @@ export default function Dashboard() {
                      {deptMembers.length > 3 && (
                        <button 
                          onClick={() => setShowMembersModal(true)} 
-                         className="text-[12px] font-bold text-blue-600 hover:text-blue-700 mt-2 text-left transition-colors"
+                         className="text-[14px] font-bold text-blue-600 hover:text-blue-700 mt-2 text-left transition-colors"
                        >
                          +{deptMembers.length - 3} More
                        </button>
@@ -1038,8 +1038,8 @@ export default function Dashboard() {
                             <Megaphone size={16} />
                           </div>
                           <div>
-                            <h4 className="text-[14px] font-bold text-slate-800">Announcements</h4>
-                            <p className="text-[12px] text-slate-500">
+                            <h4 className="text-[16px] font-bold text-slate-800">Announcements</h4>
+                            <p className="text-[14px] text-slate-500">
                               {announcements.filter(a => !a.isRead).length > 0
                                 ? `${announcements.filter(a => !a.isRead).length} new`
                                 : 'You’re all caught up'}
@@ -1048,7 +1048,7 @@ export default function Dashboard() {
                         </div>
                         <button
                           onClick={() => navigate('/announcements')}
-                          className="text-[12.5px] font-bold text-[#1a73e8] hover:text-[#1557B0] transition-colors"
+                          className="text-[14px] font-bold text-[#1a73e8] hover:text-[#1557B0] transition-colors"
                         >
                           View all
                         </button>
@@ -1090,18 +1090,18 @@ export default function Dashboard() {
                               }`} />
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <p className={`text-[13px] truncate ${a.isRead ? 'font-semibold text-slate-700' : 'font-bold text-slate-900'}`}>
+                                  <p className={`text-[15px] truncate ${a.isRead ? 'font-semibold text-slate-700' : 'font-bold text-slate-900'}`}>
                                     {a.title}
                                   </p>
                                   {isUrgent && (
-                                    <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">URGENT</span>
+                                    <span className="text-[12px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">URGENT</span>
                                   )}
                                   {!a.isRead && !isUrgent && (
-                                    <span className="text-[10px] font-bold text-[#1a73e8] bg-blue-100 px-1.5 py-0.5 rounded">NEW</span>
+                                    <span className="text-[12px] font-bold text-[#1a73e8] bg-blue-100 px-1.5 py-0.5 rounded">NEW</span>
                                   )}
                                 </div>
-                                <p className="text-[12px] text-slate-500 mt-0.5 line-clamp-1">{a.body}</p>
-                                <p className="text-[11px] text-slate-400 mt-1">
+                                <p className="text-[14px] text-slate-500 mt-0.5 line-clamp-1">{a.body}</p>
+                                <p className="text-[13px] text-slate-400 mt-1">
                                   {a.postedBy?.firstName} {a.postedBy?.lastName} · {ago}
                                 </p>
                               </div>
@@ -1119,8 +1119,8 @@ export default function Dashboard() {
                          <Clock size={16} />
                        </div>
                         <div>
-                          <h4 className="text-[14px] font-bold text-slate-800">Work Schedule</h4>
-                          <p className="text-[12px] text-slate-500">
+                          <h4 className="text-[16px] font-bold text-slate-800">Work Schedule</h4>
+                          <p className="text-[14px] text-slate-500">
                             {getCurrentWeek(user?.shift?.workingDays, holidays, isWeekendByRule).length > 0 
                               ? `${getCurrentWeek(user?.shift?.workingDays, holidays, isWeekendByRule)[0].dateObj.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })} - ${getCurrentWeek(user?.shift?.workingDays, holidays, isWeekendByRule)[6].dateObj.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })}`
                               : ''
@@ -1132,8 +1132,8 @@ export default function Dashboard() {
                      <div className="relative">
                        {/* Shift Bar */}
                        <div className="h-14 bg-[#D6E8FF] border-l-[3px] border-[#1a73e8] flex flex-col justify-center px-4 rounded-r-md">
-                         <p className="text-[13px] font-bold text-[#1a73e8]">{shiftName}</p>
-                         <p className="text-[11.5px] font-semibold text-[#1a73e8]/80">{shiftTime}</p>
+                         <p className="text-[15px] font-bold text-[#1a73e8]">{shiftName}</p>
+                         <p className="text-[13px] font-semibold text-[#1a73e8]/80">{shiftTime}</p>
                        </div>
 
                         <div className="grid grid-cols-7 mt-8 relative">
@@ -1184,14 +1184,14 @@ export default function Dashboard() {
                                 className="flex flex-col items-center relative z-10"
                               >
                                 <div className={`w-[7px] h-[7px] rounded-full mb-3 ${isToday ? 'bg-[#1a73e8] ring-4 ring-[#D6E8FF]' : 'bg-slate-300'}`}></div>
-                                <p className="text-[12.5px] font-medium text-slate-500">
+                                <p className="text-[14px] font-medium text-slate-500">
                                   {day.day} <span className={`font-bold ml-0.5 ${isToday ? 'bg-[#1a73e8] text-white px-1.5 py-0.5 rounded' : 'text-slate-800'}`}>{day.dateNum}</span>
                                 </p>
                                 {label && (
-                                  <p className={`text-[11px] font-bold mt-1 ${labelColor}`}>{label}</p>
+                                  <p className={`text-[13px] font-bold mt-1 ${labelColor}`}>{label}</p>
                                 )}
                                 {!isWeekend && !isFuture && (
-                                  <p className="text-[11px] text-slate-800 font-medium mt-0.5">
+                                  <p className="text-[13px] text-slate-800 font-medium mt-0.5">
                                     {isToday && isCheckedIn
                                       ? `${timerDisplay} Hrs`
                                       : record?.workingHours !== undefined
@@ -1213,7 +1213,7 @@ export default function Dashboard() {
                       <div className="w-8 h-8 rounded-full bg-cyan-50 flex items-center justify-center text-cyan-500">
                         <Calendar size={16} />
                       </div>
-                      <h4 className="text-[14px] font-bold text-slate-800">Upcoming Holidays</h4>
+                      <h4 className="text-[16px] font-bold text-slate-800">Upcoming Holidays</h4>
                     </div>
                     
                     <div className="flex gap-4 overflow-hidden pb-2">
@@ -1223,7 +1223,7 @@ export default function Dashboard() {
                         const upcoming = holidays.filter(h => new Date(h.date) >= today);
                         
                         if (upcoming.length === 0) {
-                          return <p className="text-[13px] text-slate-400 italic py-2">No upcoming holidays</p>;
+                          return <p className="text-[15px] text-slate-400 italic py-2">No upcoming holidays</p>;
                         }
                         
                         return (
@@ -1232,14 +1232,14 @@ export default function Dashboard() {
                               const hd = new Date(h.date);
                               return (
                                 <div key={i} className="flex-1 min-w-[180px] border border-slate-200 rounded-lg p-3 hover:border-slate-300 transition-colors cursor-pointer">
-                                  <p className="text-[13px] font-bold text-slate-800">{h.name}</p>
-                                  <p className="text-[11.5px] text-slate-500 mt-1.5">
+                                  <p className="text-[15px] font-bold text-slate-800">{h.name}</p>
+                                  <p className="text-[13px] text-slate-500 mt-1.5">
                                     {hd.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}, {hd.toLocaleDateString('en-US', { weekday: 'long' })}
                                   </p>
                                 </div>
                               );
                             })}
-                            <button onClick={() => navigate('/leave-tracker/holidays')} className="text-[12.5px] font-bold text-[#1a73e8] hover:text-[#1557B0] flex items-center px-2 shrink-0 transition-colors">
+                            <button onClick={() => navigate('/leave-tracker/holidays')} className="text-[14px] font-bold text-[#1a73e8] hover:text-[#1557B0] flex items-center px-2 shrink-0 transition-colors">
                               View all
                             </button>
                           </>
@@ -1268,7 +1268,7 @@ export default function Dashboard() {
                             <button className="hover:text-indigo-600 transition-colors"><Star size={18}/></button>
                             <button className="hover:text-indigo-600 transition-colors"><MessageSquare size={18}/></button>
                           </div>
-                          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-1.5 rounded-lg text-[13px] font-bold shadow-lg shadow-indigo-900/10 transition-all">
+                          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-1.5 rounded-lg text-[15px] font-bold shadow-lg shadow-indigo-900/10 transition-all">
                             Post
                           </button>
                         </div>
@@ -1282,7 +1282,7 @@ export default function Dashboard() {
                       <button
                         key={key}
                         onClick={() => setFeedTab(key)}
-                        className={`px-4 py-1.5 rounded-full text-[12px] font-bold whitespace-nowrap transition-all ${
+                        className={`px-4 py-1.5 rounded-full text-[14px] font-bold whitespace-nowrap transition-all ${
                           feedTab === key ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
                         }`}
                       >
@@ -1303,7 +1303,7 @@ export default function Dashboard() {
                           </div>
                           <div>
                             <p className="text-[13.5px] font-bold text-slate-800">{f.title}</p>
-                            <p className="text-[11px] text-slate-400 font-medium">
+                            <p className="text-[13px] text-slate-400 font-medium">
                               {new Date(f.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {f.type?.toUpperCase() || 'UPDATE'}
                             </p>
                           </div>
@@ -1338,8 +1338,8 @@ export default function Dashboard() {
                   <div className="space-y-3">
                     <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                       <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                        <h3 className="text-[12px] font-bold text-slate-700 uppercase tracking-wider">Basic Information</h3>
-                        <button className="text-[11px] text-blue-600 font-bold hover:underline" onClick={() => navigate('/profile')}>Edit Full Profile</button>
+                        <h3 className="text-[14px] font-bold text-slate-700 uppercase tracking-wider">Basic Information</h3>
+                        <button className="text-[13px] text-blue-600 font-bold hover:underline" onClick={() => navigate('/profile')}>Edit Full Profile</button>
                       </div>
                       <div className="grid grid-cols-2 divide-x divide-slate-50">
                         {[
@@ -1351,17 +1351,17 @@ export default function Dashboard() {
                           { label: 'Company',       val: profileData?.company },
                         ].map(({ label, val }) => (
                           <div key={label} className="px-5 py-3 border-b border-slate-50">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</span>
-                            <p className="text-[13px] font-semibold text-slate-800">{val || '-'}</p>
+                            <span className="text-[12px] font-bold text-slate-400 uppercase tracking-widest">{label}</span>
+                            <p className="text-[15px] font-semibold text-slate-800">{val || '-'}</p>
                           </div>
                         ))}
                       </div>
                     </div>
                     {profileData?.shift?.name && (
                       <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
-                        <h3 className="text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">Shift</h3>
-                        <p className="text-[13px] font-semibold text-slate-800">{profileData.shift.name}</p>
-                        <p className="text-[11.5px] text-slate-500 mt-0.5">{profileData.shift.startTime} – {profileData.shift.endTime}</p>
+                        <h3 className="text-[14px] font-bold text-slate-700 uppercase tracking-wider mb-2">Shift</h3>
+                        <p className="text-[15px] font-semibold text-slate-800">{profileData.shift.name}</p>
+                        <p className="text-[13px] text-slate-500 mt-0.5">{profileData.shift.startTime} – {profileData.shift.endTime}</p>
                       </div>
                     )}
                   </div>
@@ -1377,8 +1377,8 @@ export default function Dashboard() {
                 ) : pendingApprovals.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-14 text-center">
                     <CheckCircle size={32} className="text-slate-200 mb-3"/>
-                    <p className="text-[13px] font-semibold text-slate-500">No pending approvals</p>
-                    <p className="text-[12px] text-slate-400 mt-1">Leave and WFH requests you need to approve will appear here</p>
+                    <p className="text-[15px] font-semibold text-slate-500">No pending approvals</p>
+                    <p className="text-[14px] text-slate-400 mt-1">Leave and WFH requests you need to approve will appear here</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1393,13 +1393,13 @@ export default function Dashboard() {
                             )}
                           </div>
                           <div>
-                            <p className="text-[13px] font-bold text-slate-800">
+                            <p className="text-[15px] font-bold text-slate-800">
                               {approval.employee?.firstName} {approval.employee?.lastName}
                             </p>
-                            <p className="text-[12px] text-slate-500 capitalize">
+                            <p className="text-[14px] text-slate-500 capitalize">
                               {approval.leaveType} Leave • {approval.totalDays} Day(s)
                             </p>
-                            <p className="text-[11px] text-slate-400 mt-0.5">
+                            <p className="text-[13px] text-slate-400 mt-0.5">
                               {new Date(approval.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                               {approval.startDate !== approval.endDate && ` - ${new Date(approval.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
                             </p>
@@ -1407,7 +1407,7 @@ export default function Dashboard() {
                         </div>
                         <button 
                           onClick={() => navigate('/leave-tracker/requests')} 
-                          className="text-[12px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors whitespace-nowrap ml-4"
+                          className="text-[14px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors whitespace-nowrap ml-4"
                         >
                           Review
                         </button>
@@ -1426,15 +1426,15 @@ export default function Dashboard() {
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {leaveCards.length === 0 ? (
-                      <p className="text-[13px] text-slate-400 italic col-span-full">No leave types configured.</p>
+                      <p className="text-[15px] text-slate-400 italic col-span-full">No leave types configured.</p>
                     ) : leaveCards.map(l => (
                       <div key={l.code} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
                         <div className={`absolute top-0 right-0 w-16 h-16 ${L_BG[l.code] || 'bg-slate-50'} rounded-bl-full flex items-center justify-center pl-4 pb-4 opacity-50`}>
-                          <span className="text-2xl">{L_ICON[l.code] || '📋'}</span>
+                          <span className="text-3xl">{L_ICON[l.code] || '📋'}</span>
                         </div>
-                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">{l.name}</p>
+                        <p className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mb-1">{l.name}</p>
                         <h4 className="text-[28px] font-bold text-emerald-500 tracking-tighter">{l.available === null || l.available === undefined ? '—' : l.available}</h4>
-                        <p className="text-[11px] text-slate-400 font-medium">Available</p>
+                        <p className="text-[13px] text-slate-400 font-medium">Available</p>
                         <button
                           onClick={() => {
                             // Comp-Off has its own earn/claim workflow (worked date +
@@ -1443,7 +1443,7 @@ export default function Dashboard() {
                             if (l.code === 'comp_off') { navigate('/leave-tracker/comp-off'); return; }
                             setLeaveForm({...leaveForm, type: l.code}); setLeaveModal(true);
                           }}
-                          className="mt-4 w-full bg-slate-50 hover:bg-slate-100 text-slate-600 text-[12px] font-bold py-1.5 rounded-lg border border-slate-200 transition-all"
+                          className="mt-4 w-full bg-slate-50 hover:bg-slate-100 text-slate-600 text-[14px] font-bold py-1.5 rounded-lg border border-slate-200 transition-all"
                         >
                           Apply
                         </button>
@@ -1457,7 +1457,7 @@ export default function Dashboard() {
               {activeTab === 'attendance' && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-                    <h3 className="text-[14px] font-bold text-slate-700">
+                    <h3 className="text-[16px] font-bold text-slate-700">
                       {attWeekOffset === 0 ? 'This Week' : attWeekOffset === -1 ? 'Last Week' : attWeekOffset === 1 ? 'Next Week' : 'Week'}
                     </h3>
                     {/* Previous / Next week navigation — loads that week's records. */}
@@ -1466,13 +1466,13 @@ export default function Dashboard() {
                         className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700">
                         <ChevronLeft size={15} />
                       </button>
-                      <span className="text-[11px] font-bold text-[#1a73e8] bg-blue-50 px-3 py-1 rounded-full whitespace-nowrap">{weekRange}</span>
+                      <span className="text-[13px] font-bold text-[#1a73e8] bg-blue-50 px-3 py-1 rounded-full whitespace-nowrap">{weekRange}</span>
                       <button onClick={() => setAttWeekOffset(o => o + 1)} title="Next week"
                         className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700">
                         <ChevronRight size={15} />
                       </button>
                       {attWeekOffset !== 0 && (
-                        <button onClick={() => setAttWeekOffset(0)} className="text-[11px] text-[#1a73e8] hover:underline font-medium ml-0.5">Today</button>
+                        <button onClick={() => setAttWeekOffset(0)} className="text-[13px] text-[#1a73e8] hover:underline font-medium ml-0.5">Today</button>
                       )}
                     </div>
                   </div>
@@ -1518,16 +1518,16 @@ export default function Dashboard() {
                         >
                           {/* Day + date label */}
                           <div className="w-[70px] flex-shrink-0 flex flex-col justify-center">
-                            <p className={`text-[13px] font-semibold ${isWeekend ? 'text-amber-500' : 'text-slate-700'}`}>
+                            <p className={`text-[15px] font-semibold ${isWeekend ? 'text-amber-500' : 'text-slate-700'}`}>
                               {row.day}
                             </p>
                             {isToday ? (
-                              <span className="text-[14px] font-bold text-white bg-[#1a73e8] px-1.5 py-0.5 rounded mt-1 inline-block w-fit">
+                              <span className="text-[16px] font-bold text-white bg-[#1a73e8] px-1.5 py-0.5 rounded mt-1 inline-block w-fit">
                                 {row.dateNum}
                               </span>
                             ) : (
-                              <p className={`text-[14px] font-bold mt-1 ${isWeekend ? 'text-amber-500' : 'text-slate-700'}`}>
-                                {row.dateNum} <span className="text-[11px] font-medium text-slate-400">{row.dateObj.toLocaleDateString('en-US', { month: 'short' })}</span>
+                              <p className={`text-[16px] font-bold mt-1 ${isWeekend ? 'text-amber-500' : 'text-slate-700'}`}>
+                                {row.dateNum} <span className="text-[13px] font-medium text-slate-400">{row.dateObj.toLocaleDateString('en-US', { month: 'short' })}</span>
                               </p>
                             )}
                           </div>
@@ -1535,11 +1535,11 @@ export default function Dashboard() {
                           {/* Wide shift bar */}
                           <div className="flex-1 bg-[#E8F0FE] border-l-[3px] border-[#1a73e8] rounded-r px-4 py-3 flex flex-col justify-center min-w-0">
                             <p className="text-[13.5px] font-semibold text-slate-800 truncate">{shiftName}</p>
-                            <p className="text-[11.5px] text-slate-500 truncate">{shiftTime}</p>
+                            <p className="text-[13px] text-slate-500 truncate">{shiftTime}</p>
                           </div>
 
                           {/* Punch info + status text */}
-                          <div className="w-[280px] flex-shrink-0 flex flex-col justify-center text-[13px]">
+                          <div className="w-[280px] flex-shrink-0 flex flex-col justify-center text-[15px]">
                             {(() => {
                               // Compute the status badge ("Present" / "Half-day" / "Absent")
                               // for non-weekend, non-future rows that have a real record OR
@@ -1565,7 +1565,7 @@ export default function Dashboard() {
                                 return (
                                   <>
                                     <p className="text-slate-600">No check-in - No check-out</p>
-                                    <p className="text-[12px] font-semibold text-amber-500 mt-1">Weekend</p>
+                                    <p className="text-[14px] font-semibold text-amber-500 mt-1">Weekend</p>
                                   </>
                                 );
                               }
@@ -1584,7 +1584,7 @@ export default function Dashboard() {
                                       )}
                                     </p>
                                     {statusLabel && (
-                                      <p className={`text-[12px] font-semibold mt-1 ${statusColor}`}>{statusLabel}</p>
+                                      <p className={`text-[14px] font-semibold mt-1 ${statusColor}`}>{statusLabel}</p>
                                     )}
                                   </>
                                 );
@@ -1601,7 +1601,7 @@ export default function Dashboard() {
                                       <span className="text-slate-400 mx-1">·</span>
                                       <span className="font-semibold text-slate-700">{timerDisplay} Hrs</span>
                                     </p>
-                                    <p className="text-[12px] font-semibold text-emerald-600 mt-1">Present</p>
+                                    <p className="text-[14px] font-semibold text-emerald-600 mt-1">Present</p>
                                   </>
                                 );
                               }
@@ -1609,7 +1609,7 @@ export default function Dashboard() {
                                 return (
                                   <>
                                     <p className="text-slate-400">No check-in - No check-out</p>
-                                    <p className="text-[12px] font-semibold text-rose-500 mt-1">Absent</p>
+                                    <p className="text-[14px] font-semibold text-rose-500 mt-1">Absent</p>
                                   </>
                                 );
                               }
@@ -1639,7 +1639,7 @@ export default function Dashboard() {
                                 // stayed invisible. opacity-100 by default + lg:opacity-0 with
                                 // lg:group-hover:opacity-100 restores the hover-reveal aesthetic on
                                 // desktop while keeping the button reachable on mobile/tablet.
-                                className="request-menu-trigger opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100 text-[12px] font-semibold text-[#1a73e8] hover:text-[#1557B0] border border-[#1a73e8]/40 hover:border-[#1a73e8] hover:bg-blue-50 rounded px-3 py-1.5 transition-opacity"
+                                className="request-menu-trigger opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100 text-[14px] font-semibold text-[#1a73e8] hover:text-[#1557B0] border border-[#1a73e8]/40 hover:border-[#1a73e8] hover:bg-blue-50 rounded px-3 py-1.5 transition-opacity"
                               >
                                 + Add Request
                               </button>
@@ -1657,27 +1657,27 @@ export default function Dashboard() {
                 <div className="space-y-4">
                   <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
                     <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-[15px] font-bold text-slate-800">Track Work Time</h3>
-                      <button className="text-indigo-600 text-[12px] font-bold hover:underline">View All Logs</button>
+                      <h3 className="text-[17px] font-bold text-slate-800">Track Work Time</h3>
+                      <button className="text-indigo-600 text-[14px] font-bold hover:underline">View All Logs</button>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
                       <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Project</label>
+                        <label className="text-[13px] font-bold text-slate-400 uppercase tracking-widest">Project</label>
                         <select 
                           value={timeLogForm.projectId}
                           onChange={e => setTimeLogForm({...timeLogForm, projectId: e.target.value})}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[14px] text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-100 transition-all appearance-none"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[16px] text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-100 transition-all appearance-none"
                         >
                           <option value="">Select Project</option>
                           {projects.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Job Name</label>
+                        <label className="text-[13px] font-bold text-slate-400 uppercase tracking-widest">Job Name</label>
                         <select 
                           value={timeLogForm.jobId}
                           onChange={e => setTimeLogForm({...timeLogForm, jobId: e.target.value})}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[14px] text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-100 transition-all appearance-none"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[16px] text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-100 transition-all appearance-none"
                         >
                           <option value="">Select Job</option>
                           {jobs.map(j => <option key={j._id} value={j._id}>{j.name}</option>)}
@@ -1716,11 +1716,11 @@ export default function Dashboard() {
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-3">
                       <Filter size={14} className="text-[#1a73e8]" />
-                      <span className="text-[13px] font-semibold text-slate-700">Financial Year :</span>
+                      <span className="text-[15px] font-semibold text-slate-700">Financial Year :</span>
                       <select
                         value={payslipFY}
                         onChange={e => setPayslipFY(e.target.value)}
-                        className="border border-slate-200 rounded px-2 py-1 text-[12.5px] font-bold text-[#1a73e8] outline-none focus:border-blue-300 bg-white"
+                        className="border border-slate-200 rounded px-2 py-1 text-[14px] font-bold text-[#1a73e8] outline-none focus:border-blue-300 bg-white"
                       >
                         {(fyList.length > 0 ? fyList : [payslipFY]).map(fy => (
                           <option key={fy} value={fy}>Financial Year : {fy.replace('-', '–')} ▾</option>
@@ -1734,8 +1734,8 @@ export default function Dashboard() {
                     ) : payslips.length === 0 ? (
                       <div className="p-14 text-center">
                         <Briefcase size={28} className="text-slate-200 mx-auto mb-3" />
-                        <p className="text-[13px] font-semibold text-slate-500">No payslips found for FY {payslipFY.replace('-', '–')}</p>
-                        <p className="text-[12px] text-slate-400 mt-1">Payslips will appear once generated by HR.</p>
+                        <p className="text-[15px] font-semibold text-slate-500">No payslips found for FY {payslipFY.replace('-', '–')}</p>
+                        <p className="text-[14px] text-slate-400 mt-1">Payslips will appear once generated by HR.</p>
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
@@ -1743,7 +1743,7 @@ export default function Dashboard() {
                           <thead>
                             <tr className="border-b border-slate-100">
                               {['Month','Gross Pay','Reimbursements','Deductions','Take Home','Payslips','Tax Worksheet'].map(h => (
-                                <th key={h} className="px-5 py-3 text-left text-[11.5px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                                <th key={h} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
                               ))}
                             </tr>
                           </thead>
@@ -1751,23 +1751,23 @@ export default function Dashboard() {
                             {payslips.map(p => (
                               <tr key={p._id} className="hover:bg-slate-50 transition-colors">
                                 <td className="px-5 py-3.5">
-                                  <button className="text-[13px] font-semibold text-[#1a73e8] hover:underline">
+                                  <button className="text-[15px] font-semibold text-[#1a73e8] hover:underline">
                                     {MONTHS[(p.month || 1) - 1]} {p.year}
                                   </button>
                                 </td>
-                                <td className="px-5 py-3.5 text-[13px] text-slate-700">{fmtINR(p.grossPay)}</td>
-                                <td className="px-5 py-3.5 text-[13px] text-slate-700">{fmtINR(p.reimbursements)}</td>
-                                <td className="px-5 py-3.5 text-[13px] text-slate-700">{fmtINR(p.deductions)}</td>
+                                <td className="px-5 py-3.5 text-[15px] text-slate-700">{fmtINR(p.grossPay)}</td>
+                                <td className="px-5 py-3.5 text-[15px] text-slate-700">{fmtINR(p.reimbursements)}</td>
+                                <td className="px-5 py-3.5 text-[15px] text-slate-700">{fmtINR(p.deductions)}</td>
                                 <td className="px-5 py-3.5 text-[13.5px] font-bold text-slate-800">{fmtINR(p.takeHome)}</td>
                                 <td className="px-5 py-3.5">
                                   {p.payslipUrl
-                                    ? <a href={p.payslipUrl} target="_blank" rel="noreferrer" className="text-[13px] font-semibold text-[#1a73e8] hover:underline">View</a>
-                                    : <span className="text-[12.5px] text-slate-400">—</span>}
+                                    ? <a href={p.payslipUrl} target="_blank" rel="noreferrer" className="text-[15px] font-semibold text-[#1a73e8] hover:underline">View</a>
+                                    : <span className="text-[14px] text-slate-400">—</span>}
                                 </td>
                                 <td className="px-5 py-3.5">
                                   {p.taxWorksheetUrl
-                                    ? <a href={p.taxWorksheetUrl} target="_blank" rel="noreferrer" className="text-[13px] font-semibold text-[#1a73e8] hover:underline">View</a>
-                                    : <span className="text-[12.5px] text-slate-400">—</span>}
+                                    ? <a href={p.taxWorksheetUrl} target="_blank" rel="noreferrer" className="text-[15px] font-semibold text-[#1a73e8] hover:underline">View</a>
+                                    : <span className="text-[14px] text-slate-400">—</span>}
                                 </td>
                               </tr>
                             ))}
@@ -1788,18 +1788,18 @@ export default function Dashboard() {
         <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-[#f8f9fc] rounded-md w-full max-w-[800px] shadow-xl flex flex-col max-h-[90vh]">
             <div className="bg-white flex items-center justify-between p-4 border-b border-slate-200">
-              <h3 className="font-semibold text-slate-800 text-[15px]">Apply Leave</h3>
+              <h3 className="font-semibold text-slate-800 text-[17px]">Apply Leave</h3>
               <button onClick={() => setLeaveModal(false)} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 hover:bg-slate-200 text-slate-500"><X size={14}/></button>
             </div>
             <div className="p-6 overflow-y-auto flex-1">
               <div className="bg-white border border-slate-200 shadow-sm p-0 rounded-sm">
                 <div className="p-4 border-b border-slate-100">
-                  <h4 className="text-[13px] font-bold text-slate-800">Leave</h4>
+                  <h4 className="text-[15px] font-bold text-slate-800">Leave</h4>
                 </div>
                 <div className="p-6 space-y-5">
                   <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                    <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Leave type <span className="text-red-500">*</span></label>
-                    <select value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type: e.target.value})} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500">
+                    <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Leave type <span className="text-red-500">*</span></label>
+                    <select value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type: e.target.value})} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500">
                       <option value="casual">Casual Leave</option>
                       <option value="unpaid">Leave Without Pay</option>
                       <option value="comp_off">Compensatory Off</option>
@@ -1809,31 +1809,31 @@ export default function Dashboard() {
                   {leaveForm.type === 'permission' ? (
                     <>
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                        <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Date <span className="text-red-500">*</span></label>
-                        <input type="date" value={leaveForm.fromDate} onChange={e => setLeaveForm({...leaveForm, fromDate: e.target.value, toDate: e.target.value})} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
+                        <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Date <span className="text-red-500">*</span></label>
+                        <input type="date" value={leaveForm.fromDate} onChange={e => setLeaveForm({...leaveForm, fromDate: e.target.value, toDate: e.target.value})} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500" />
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                        <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Time <span className="text-red-500">*</span></label>
+                        <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Time <span className="text-red-500">*</span></label>
                         <div className="flex-1 flex items-center gap-3">
-                          <input type="time" value={leaveForm.startTime} onChange={e => setLeaveForm({...leaveForm, startTime: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
-                          <input type="time" value={leaveForm.endTime} onChange={e => setLeaveForm({...leaveForm, endTime: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
+                          <input type="time" value={leaveForm.startTime} onChange={e => setLeaveForm({...leaveForm, startTime: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500" />
+                          <input type="time" value={leaveForm.endTime} onChange={e => setLeaveForm({...leaveForm, endTime: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500" />
                         </div>
                       </div>
-                      <p className="text-[11px] text-purple-600 sm:ml-[9.5rem]">Permission is hourly — up to 4 hours per month.</p>
+                      <p className="text-[13px] text-purple-600 sm:ml-[9.5rem]">Permission is hourly — up to 4 hours per month.</p>
                     </>
                   ) : (
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                      <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Date <span className="text-red-500">*</span></label>
+                      <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Date <span className="text-red-500">*</span></label>
                       <div className="flex-1 flex items-center gap-3">
-                        <input type="date" value={leaveForm.fromDate} onChange={e => setLeaveForm({...leaveForm, fromDate: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
-                        <input type="date" value={leaveForm.toDate} onChange={e => setLeaveForm({...leaveForm, toDate: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500" />
+                        <input type="date" value={leaveForm.fromDate} onChange={e => setLeaveForm({...leaveForm, fromDate: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500" />
+                        <input type="date" value={leaveForm.toDate} onChange={e => setLeaveForm({...leaveForm, toDate: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500" />
                       </div>
                     </div>
                   )}
 
                   <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-6">
-                    <label className="text-[12px] font-medium text-slate-600 sm:w-32 flex-shrink-0 pt-2">Reason for leave</label>
-                    <textarea value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})} rows={3} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[13px] focus:outline-none focus:border-blue-500 resize-none" />
+                    <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0 pt-2">Reason for leave</label>
+                    <textarea value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})} rows={3} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500 resize-none" />
                   </div>
                 </div>
               </div>
@@ -1867,8 +1867,8 @@ export default function Dashboard() {
                 } catch (err) {
                   toast.error(err.response?.data?.message || 'Error applying leave');
                 }
-              }} className="bg-[#1a73e8] hover:bg-blue-600 text-white px-5 py-2 text-[13px] font-bold rounded shadow-sm transition-colors">Submit</button>
-              <button onClick={() => setLeaveModal(false)} className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-5 py-2 text-[13px] font-bold rounded shadow-sm transition-colors">Cancel</button>
+              }} className="bg-[#1a73e8] hover:bg-blue-600 text-white px-5 py-2 text-[15px] font-bold rounded shadow-sm transition-colors">Submit</button>
+              <button onClick={() => setLeaveModal(false)} className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-5 py-2 text-[15px] font-bold rounded shadow-sm transition-colors">Cancel</button>
             </div>
 </div>
          </div>
@@ -1889,7 +1889,7 @@ export default function Dashboard() {
          <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4">
            <div className="bg-white rounded-xl w-full max-w-[500px] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
              <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50">
-               <h3 className="text-[14px] font-bold text-slate-800">Department Members</h3>
+               <h3 className="text-[16px] font-bold text-slate-800">Department Members</h3>
                <button onClick={() => setShowMembersModal(false)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors">
                  <X size={16}/>
                </button>
@@ -1903,7 +1903,7 @@ export default function Dashboard() {
                    value={showMembersModal === true ? '' : showMembersModal} // Just using a local inline state pattern or I should just use the actual state
                    onChange={e => setShowMembersModal(e.target.value || true)}
                    placeholder="Search Employee" 
-                   className="w-full pl-9 pr-4 py-2 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                   className="w-full pl-9 pr-4 py-2 text-[15px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                  />
                  {typeof showMembersModal === 'string' && showMembersModal !== '' && (
                    <button onClick={() => setShowMembersModal(true)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -1929,13 +1929,13 @@ export default function Dashboard() {
                        </div>
                      </div>
                      <div className="min-w-0 flex-1 pt-0.5">
-                       <p className="text-[13px] font-medium text-slate-700 truncate">{member.employeeId} - {member.firstName}</p>
+                       <p className="text-[15px] font-medium text-slate-700 truncate">{member.employeeId} - {member.firstName}</p>
                        <PresenceLabel person={member} />
                      </div>
                    </div>
                  ))}
                  {deptMembers.filter(m => typeof showMembersModal === 'string' ? `${m.firstName} ${m.lastName} ${m.employeeId}`.toLowerCase().includes(showMembersModal.toLowerCase()) : true).length === 0 && (
-                   <p className="text-center text-slate-500 text-[13px] py-4">No employees found matching your search.</p>
+                   <p className="text-center text-slate-500 text-[15px] py-4">No employees found matching your search.</p>
                  )}
                </div>
              </div>
@@ -1975,7 +1975,7 @@ export default function Dashboard() {
                    : <UserIcon size={120} strokeWidth={1} className="text-slate-300" />
                  }
                </div>
-               <p className="text-[13px] font-semibold text-slate-700">
+               <p className="text-[15px] font-semibold text-slate-700">
                  {user?.employeeId} <span className="text-slate-400 font-normal">-</span> {user?.firstName} {user?.lastName}
                </p>
                {/* Open the OS file picker — the chosen file flows into
@@ -1985,7 +1985,7 @@ export default function Dashboard() {
                  type="button"
                  onClick={() => photoFileRef.current?.click()}
                  disabled={photoUploading}
-                 className="mt-5 w-full border border-blue-500 text-blue-600 hover:bg-blue-50 font-semibold py-2.5 rounded-lg text-[13px] transition-colors disabled:opacity-60"
+                 className="mt-5 w-full border border-blue-500 text-blue-600 hover:bg-blue-50 font-semibold py-2.5 rounded-lg text-[15px] transition-colors disabled:opacity-60"
                >
                  {photoUploading ? 'Uploading…' : '✎ Change Image'}
                </button>
