@@ -1,0 +1,114 @@
+# Production Docker Compose.
+#
+# Differences from docker-compose.yml (the dev/seed setup):
+#   • DB and backend are NOT port-exposed to the host — only the frontend
+#     container's nginx listens on 80, and proxies /api/ + /uploads/ to
+#     backend over the internal Docker network.
+#   • seed.sql is NOT mounted — production uses ADMIN_EMAIL bootstrap.
+#   • Secrets come from backend/.env (env_file), not inline defaults.
+#   • Migrations run automatically on backend startup via docker-entrypoint.sh.
+#   • All services restart unless explicitly stopped.
+#
+# Bring up:
+#   docker compose -f docker-compose.prod.yml --env-file backend/.env up -d --build
+#
+# Logs:
+#   docker compose -f docker-compose.prod.yml logs -f
+#
+# Shut down (data preserved):
+#   docker compose -f docker-compose.prod.yml down
+#
+# Shut down AND wipe DB volume (destructive):
+#   docker compose -f docker-compose.prod.yml down -v
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-nxt_people}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Schema only — no demo seed in production. migrate.js handles the rest.
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-nxt_people}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    # No `ports:` — DB is reachable only via the Docker network.
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override .env values that must match the compose network layout.
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: 5432
+      PORT: 5000
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Uploaded files survive container rebuilds. Back this up.
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      # A slow first-boot migration (large DB, many ALTER TABLEs) used to trip
+      # the 3-retry / 60s ceiling and the container got marked unhealthy
+      # before migrate.js finished. Doubled retries + a 90s start_period gives
+      # migrations up to ~5 minutes of grace before docker restarts the box.
+      retries: 6
+      start_period: 90s
+    # No `ports:` — backend is reachable only via nginx in the frontend container.
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the Vite bundle at build time so "Sign in with Google"
+        # appears in production. Defaults live in frontend/Dockerfile; override
+        # here (or via the shell / --env-file) only if the values ever change.
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-981002835126-5cnvmt801mv858v2cvsuith9n1g5nsdh.apps.googleusercontent.com}
+        VITE_GOOGLE_HOSTED_DOMAIN: ${VITE_GOOGLE_HOSTED_DOMAIN:-altiusnxt.com}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      # Bind to 127.0.0.1:3006 — the production VPS runs a system nginx (with
+      # certbot for TLS) that reverse-proxies nxtpeople.altiusnxt.tech ->
+      # http://127.0.0.1:3006. Binding to 127.0.0.1 (not 0.0.0.0) keeps the
+      # container reachable only from the host, so the public never hits the
+      # container directly without going through nginx's HTTPS termination.
+      # If you're running this without a host nginx, change to "80:80" and
+      # accept that there's no TLS until you put a reverse proxy in front.
+      - "127.0.0.1:3006:80"
+    healthcheck:
+      # `wget --spider` is the busybox-compatible idiom (nginx:alpine ships
+      # busybox's stripped-down wget). The previous `wget -qO-` worked in
+      # full GNU wget but quietly failed to discriminate 2xx vs 5xx in
+      # busybox, leaving the container permanently marked "unhealthy" even
+      # while serving 200 OK responses correctly. --spider exits 0 on 2xx
+      # and non-zero on any other status, which is exactly what we want.
+      #
+      # 127.0.0.1 (not "localhost") — busybox wget prefers IPv6 resolution
+      # for "localhost" and the container nginx only listens on IPv4 0.0.0.0,
+      # so `localhost` would always come back with "Connection refused".
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  pgdata:
+  uploads:

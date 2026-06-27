@@ -1,0 +1,460 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── FORCE Lato font globally (Zoho People style) ───────────────────── */
+*, *::before, *::after {
+  font-family: 'Lato', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+/* Exception: keep monospace for code/timer elements */
+.font-mono, code, pre, kbd, [style*="JetBrains"], [style*="monospace"] {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+}
+
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    font-family: 'Lato', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13.5px;
+    font-weight: 400;
+    color: #1a1a2e;
+    background-color: #f2f3f7;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "kern" 1, "liga" 1, "tnum" 1;
+    line-height: 1.5;
+    letter-spacing: 0.005em;
+  }
+
+  /* Ensure all headings and labels use Lato */
+  h1, h2, h3, h4, h5, h6, label, button, input, select, textarea {
+    font-family: 'Lato', 'Inter', sans-serif;
+  }
+
+  /* All numbers render with tabular (monospace-width) digits */
+  span, p, div, td, th {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ── Custom scrollbar (Zoho uses thin scrollbars) ──────────────────── */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #d1d5db;
+    border-radius: 20px;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Page content offset for the sticky bottom bar */
+  .with-bottom-bar {
+    padding-bottom: 38px;
+  }
+}
+
+/* ── Time-of-day icon animations (greeting card on My Space) ─────────── */
+@keyframes nxt-sun-rays {
+  to { transform: rotate(360deg); }
+}
+@keyframes nxt-sun-core {
+  0%, 100% { transform: scale(1);     opacity: .95; }
+  50%      { transform: scale(1.08);  opacity: 1;   }
+}
+@keyframes nxt-sun-glow {
+  0%, 100% { opacity: .35; transform: scale(1); }
+  50%      { opacity: .65; transform: scale(1.15); }
+}
+@keyframes nxt-moon-twinkle {
+  0%, 100% { opacity: .8; }
+  50%      { opacity: 1;   }
+}
+/* Cloud drifts right -> left across the sky and loops. Two variants
+ * with different speeds + offsets so the two clouds feel independent
+ * rather than parallel-locked. Fades at edges so the loop is invisible. */
+@keyframes nxt-cloud-drift {
+  0%   { transform: translateX(34px); opacity: 0; }
+  15%  { transform: translateX(18px); opacity: 1; }
+  85%  { transform: translateX(-18px); opacity: 1; }
+  100% { transform: translateX(-34px); opacity: 0; }
+}
+@keyframes nxt-cloud-drift-2 {
+  0%   { transform: translateX(38px); opacity: 0; }
+  20%  { transform: translateX(22px); opacity: 0.85; }
+  80%  { transform: translateX(-22px); opacity: 0.85; }
+  100% { transform: translateX(-38px); opacity: 0; }
+}
+/* Twinkle for the stars surrounding the moon at night. */
+@keyframes nxt-star-twinkle {
+  0%, 100% { opacity: .3; }
+  50%      { opacity: 1;  }
+}
+.nxt-sun-rays    { animation: nxt-sun-rays 14s linear infinite; transform-origin: center; }
+.nxt-sun-glow    { animation: nxt-sun-glow 2.4s ease-in-out infinite; transform-origin: center; }
+.nxt-cloud-drift   { animation: nxt-cloud-drift   12s linear infinite; transform-origin: center; }
+.nxt-cloud-drift-2 { animation: nxt-cloud-drift-2 16s linear infinite; transform-origin: center; animation-delay: -4s; }
+.nxt-star-twinkle  { animation: nxt-star-twinkle 2.6s ease-in-out infinite; }
+.nxt-moon        { animation: nxt-moon-twinkle 3.2s ease-in-out infinite; }
+
+/* ── Zoho-style card hover effect ───────────────────────────────────── */
+@layer components {
+  .zoho-card {
+    @apply bg-white rounded-lg border border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.06)];
+    transition: box-shadow 0.15s ease;
+  }
+
+  .zoho-card:hover {
+    @apply shadow-[0_4px_12px_rgba(0,0,0,0.09)];
+  }
+
+  .zoho-tab-active {
+    @apply border-b-2 border-blue-500 text-blue-600 font-semibold;
+  }
+
+  .zoho-tab-inactive {
+    @apply border-b-2 border-transparent text-slate-600 hover:text-slate-800;
+  }
+
+  /* Status dot */
+  .status-in {
+    @apply inline-block w-2 h-2 rounded-full bg-emerald-500;
+  }
+  .status-out {
+    @apply inline-block w-2 h-2 rounded-full bg-slate-400;
+  }
+}
+
+/* ── Dark Mode — Proper targeted dark theme ─────────────────────────── */
+
+/* Global baseline — all text defaults to near-white in dark mode */
+html.dark body {
+  color: #f1f5f9 !important;
+  background-color: #111827 !important;
+}
+
+/* Force white text on all elements globally in dark mode */
+html.dark *:not(svg):not(path):not(.bg-\[#1a1d35\]):not([class*="bg-\[#"]):not(.no-dark-inherit) {
+  color: inherit;
+}
+
+html.dark .bg-\[#f2f3f7\]  { background-color: #111827 !important; }
+html.dark .bg-white         { background-color: #1f2937 !important; }
+
+/* Text colours */
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-gray-900,
+html.dark .text-gray-800  { color: #f8fafc !important; }
+
+html.dark .text-slate-700,
+html.dark .text-gray-700  { color: #e2e8f0 !important; }
+
+html.dark .text-slate-600,
+html.dark .text-slate-500,
+html.dark .text-gray-600,
+html.dark .text-gray-500  { color: #cbd5e1 !important; }
+
+html.dark .text-slate-400,
+html.dark .text-gray-400  { color: #94a3b8 !important; }
+
+html.dark .text-slate-300,
+html.dark .text-gray-300  { color: #4b5563 !important; }
+
+/* Hover text colors */
+html.dark .hover\:text-slate-850:hover,
+html.dark .hover\:text-slate-800:hover,
+html.dark .hover\:text-slate-750:hover,
+html.dark .hover\:text-slate-700:hover,
+html.dark .hover\:text-gray-800:hover,
+html.dark .hover\:text-gray-700:hover { color: #f8fafc !important; }
+
+/* Inactive tabs text hover */
+html.dark button.text-slate-500:hover { color: #f8fafc !important; }
+
+/* Borders */
+html.dark .border-slate-200,
+html.dark .border-slate-100,
+html.dark .border-slate-50,
+html.dark .border-gray-200,
+html.dark .border-gray-100 { border-color: #374151 !important; }
+
+/* Cards / surfaces */
+html.dark .shadow-sm,
+html.dark .shadow-md { box-shadow: 0 1px 8px rgba(0,0,0,0.4) !important; }
+
+/* Inputs */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #1f2937 !important;
+  color: #f1f5f9 !important;
+  border-color: #374151 !important;
+}
+
+/* Timer boxes */
+html.dark [style*="background: #f0f1f5"],
+html.dark [style*="background:#f0f1f5"] {
+  background: #374151 !important;
+  color: #f1f5f9 !important;
+}
+
+/* Bottom bar */
+html.dark .fixed.bottom-0.bg-white {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+  color: #94a3b8 !important;
+}
+
+/* Sub-nav tab strip */
+html.dark .border-b.bg-white {
+  background-color: #111827 !important;
+  border-color: #374151 !important;
+}
+
+/* Hover rows/cells */
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-gray-50:hover { background-color: #1f2937 !important; }
+html.dark .hover\:bg-slate-100:hover { background-color: #374151 !important; }
+
+/* ── Dashboard-specific dark overrides ──────────────────────────────── */
+
+/* "General Shift" schedule box — named class for reliable dark mode targeting */
+.shift-bar {
+  background-color: #eff6ff;
+}
+
+html.dark .shift-bar {
+  background-color: #1e2d4a !important;
+}
+html.dark .shift-bar p { color: #e2e8f0 !important; }
+
+/* Tab body background — use attribute selector to match arbitrary Tailwind color */
+html.dark [class*="f8f9fc"] { background-color: #0f172a !important; }
+
+/* "Access my payroll" button — semi-transparent dark glass look */
+html.dark .bg-white\/90 {
+  background-color: rgba(30, 41, 59, 0.85) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(148, 163, 184, 0.3) !important;
+}
+html.dark .hover\:bg-white:hover {
+  background-color: rgba(51, 65, 85, 0.95) !important;
+}
+
+/* Status badge pills, card counts, and timeline items (emerald/amber/slate/blue/purple/indigo/rose) */
+
+/* Blue / Info / Brand / Leaves */
+html.dark .bg-blue-50,
+html.dark .bg-brand-50,
+html.dark .bg-blue-500\/10 { background-color: #1e3a8a !important; }
+html.dark .text-blue-700,
+html.dark .text-blue-600,
+html.dark .text-blue-500,
+html.dark .text-brand-700,
+html.dark .text-brand-600,
+html.dark .text-brand-500  { color: #60a5fa !important; }
+html.dark .border-blue-200  { border-color: #1e40af !important; }
+
+/* Green / Emerald / Success / Approved */
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-100,
+html.dark .bg-green-50      { background-color: #064e3b !important; }
+html.dark .text-emerald-700,
+html.dark .text-emerald-600,
+html.dark .text-emerald-500,
+html.dark .text-green-700,
+html.dark .text-green-600   { color: #86efac !important; }
+html.dark .border-emerald-200 { border-color: #047857 !important; }
+
+/* Amber / Yellow / Warning / Pending */
+html.dark .bg-amber-50,
+html.dark .bg-amber-100,
+html.dark .bg-yellow-50     { background-color: #451a03 !important; }
+html.dark .text-amber-700,
+html.dark .text-amber-600,
+html.dark .text-amber-500,
+html.dark .text-yellow-600  { color: #fbbf24 !important; }
+html.dark .border-amber-200  { border-color: #b45309 !important; }
+
+/* Red / Rose / Danger / Rejected */
+html.dark .bg-rose-50,
+html.dark .bg-red-50,
+html.dark .bg-rose-100      { background-color: #881337 !important; }
+html.dark .text-rose-700,
+html.dark .text-rose-600,
+html.dark .text-red-600,
+html.dark .text-red-500     { color: #fecdd3 !important; }
+html.dark .border-rose-200,
+html.dark .border-red-200,
+html.dark .border-red-100   { border-color: #991b1b !important; }
+
+/* Purple / Regularizations */
+html.dark .bg-purple-50     { background-color: #581c87 !important; }
+html.dark .text-purple-700,
+html.dark .text-purple-600  { color: #d8b4fe !important; }
+
+/* Indigo / WFH */
+html.dark .bg-indigo-50     { background-color: #312e81 !important; }
+html.dark .text-indigo-700,
+html.dark .text-indigo-600  { color: #a5b4fc !important; }
+
+/* Slate / Inactive / Unpaid / Avatars */
+html.dark .bg-slate-100,
+html.dark .bg-slate-50      { background-color: #374151 !important; }
+html.dark .text-slate-600   { color: #cbd5e1 !important; }
+
+/* Timeline panel background and elements */
+html.dark .bg-slate-50\/50  { background-color: rgba(17, 24, 39, 0.6) !important; }
+html.dark .bg-slate-200      { background-color: #374151 !important; }
+
+/* Gradient text (AltiusNxt brand label) — keep white in dark mode */
+html.dark .bg-clip-text {
+  background: none !important;
+  color: #e2e8f0 !important;
+  -webkit-text-fill-color: #e2e8f0 !important;
+}
+
+/* Page-level white gaps (right-side white area beyond content) */
+html.dark .flex.min-h-screen { background-color: #111827 !important; }
+html.dark .flex-1.min-w-0 { background-color: #111827 !important; }
+
+/* Greeting banner in dark mode */
+html.dark .greeting-banner {
+  background: linear-gradient(to right, #1e1b4b, #111827) !important;
+  border-color: #374151 !important;
+}
+
+/* ── Topbar: white sub-nav bar ──────────────────────────────────────────── */
+html.dark .h-\\[42px\\].bg-white {
+  background-color: #1a2040 !important;
+  border-color: #2d3748 !important;
+}
+
+/* ── Sub-nav link colours in dark mode ─────────────────────────────────── */
+html.dark .border-transparent.text-slate-500    { color: #94a3b8 !important; }
+html.dark .border-transparent.text-slate-500:hover { color: #e2e8f0 !important; }
+
+/* ── Borders in dark mode ───────────────────────────────────────────────── */
+html.dark .border-slate-200  { border-color: #374151 !important; }
+html.dark .border-slate-100  { border-color: #2d3748 !important; }
+html.dark .divide-slate-50   > * + * { border-color: #1f2937 !important; }
+
+/* ── Calendar page ──────────────────────────────────────────────────────── */
+/* Outer wrapper */
+html.dark .bg-white.min-h-\\[calc\\(100vh-120px\\)\\] { background-color: #111827 !important; }
+/* Weekend cells (bg-[#fffdf7]) */
+html.dark .bg-\\[\\#fffdf7\\] { background-color: #1e1b4b !important; }
+/* All calendar cells */
+html.dark .border-slate-200.p-2.min-h-\\[120px\\] { background-color: #1f2937 !important; }
+/* Date number text */
+html.dark .text-slate-700 { color: #cbd5e1 !important; }
+/* Day header text (Sun/Mon etc.) */
+html.dark .text-slate-600 { color: #94a3b8 !important; }
+/* Absent pill (hardcoded inline bg-[#fef2f2]) */
+html.dark [class*="bg-\\[#fef2f2\\]"] { background-color: #450a0a !important; border-color: #7f1d1d !important; color: #fca5a5 !important; }
+html.dark [class*="bg-\\[#fff1f2\\]"] { background-color: #4c0519 !important; border-color: #9f1239 !important; color: #fda4af !important; }
+html.dark [class*="bg-\\[#eef8ff\\]"] { background-color: #1e3a5f !important; border-color: #1e40af !important; color: #93c5fd !important; }
+html.dark [class*="bg-\\[#eefdf5\\]"] { background-color: #052e16 !important; border-color: #166534 !important; color: #86efac !important; }
+
+/* ── OrgChart page ──────────────────────────────────────────────────────── */
+/* Employee Tree outer wrapper */
+html.dark .bg-white.rounded-xl.shadow-sm.border.border-slate-200 {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+}
+/* Tree scroll area */
+html.dark .bg-\\[\\#f8f9fc\\] { background-color: #111827 !important; }
+/* Department Tree outer container */
+html.dark .bg-white.min-h-\\[calc\\(100vh-120px\\)\\].border-t {
+  background-color: #111827 !important;
+}
+/* Dept list left panel border */
+html.dark .border-r.border-slate-100 { border-color: #374151 !important; }
+/* Search input in org chart */
+html.dark input.bg-white { background-color: #1f2937 !important; color: #f1f5f9 !important; border-color: #374151 !important; }
+html.dark input.bg-white::placeholder { color: #6b7280 !important; }
+/* OrgChart top header bar */
+html.dark .p-4.border-b.border-slate-100.bg-white {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+}
+
+/* ── Hover popup (OrgChart details card) ───────────────────────────────── */
+html.dark .z-40.bg-white.border.border-slate-200.rounded-lg.shadow-xl {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+}
+html.dark .border-t.border-slate-100 { border-color: #374151 !important; }
+/* Disabled action button (slate-200 bg) */
+html.dark .bg-slate-200.text-slate-400 { background-color: #374151 !important; color: #6b7280 !important; }
+
+/* ── Policies page cards ─────────────────────────────────────────────────── */
+/* Already covered by bg-white → #1f2937, but strengthen the icon badge */
+html.dark .bg-blue-50 { background-color: #1e3a5f !important; }
+
+/* ── Topbar dropdowns (notifications, search, quick-actions, user-menu) ─── */
+html.dark .absolute.bg-white.rounded-xl.shadow-2xl {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+}
+html.dark .bg-slate-50.flex.items-center.justify-between {
+  background-color: #111827 !important;
+}
+html.dark .bg-slate-50 { background-color: #111827 !important; }
+/* Notification item hover / unread tint */
+html.dark .hover\\:bg-slate-50:hover { background-color: #374151 !important; }
+html.dark .bg-blue-50\\/40 { background-color: rgba(30,58,138,0.25) !important; }
+/* User menu header gradient */
+html.dark .bg-gradient-to-r.from-blue-50.to-indigo-50 {
+  background: linear-gradient(to right, #1e3a5f, #1e1b4b) !important;
+}
+/* User menu & quick-action button hover */
+html.dark .hover\\:bg-slate-50 { background-color: transparent; }
+html.dark .hover\\:bg-red-50:hover { background-color: #450a0a !important; }
+/* "More" overflow dropdown */
+html.dark .absolute.right-0.top-\\[36px\\].bg-white {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+}
+/* More dropdown item hover */
+html.dark .hover\\:bg-slate-50:hover { background-color: #374151 !important; }
+/* More dropdown active tint */
+html.dark .bg-blue-50\\/50 { background-color: rgba(30,58,138,0.3) !important; }
+
+/* ── "More" overflow button active state ────────────────────────────────── */
+html.dark .bg-slate-100.text-\\[\\#1a73e8\\] { background-color: #1e3a5f !important; }
+
+/* ── Misc containers that bleed white ───────────────────────────────────── */
+html.dark .bg-white.p-4.border-b { background-color: #1f2937 !important; }
+html.dark .bg-white.border-b     { background-color: #1f2937 !important; }
+html.dark .bg-white.z-10         { background-color: #1f2937 !important; }
+html.dark .bg-white.p-8          { background-color: #1f2937 !important; }

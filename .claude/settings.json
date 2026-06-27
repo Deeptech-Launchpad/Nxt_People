@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/Altius/.claude/projects/**)",
+      "Read(//c/Users/Altius/.claude/projects/d--Projects-altiusnxt-v2-altiusnxt/memory/**)",
+      "Read(//c/Users/Altius/.claude/projects/d--Projects-nxt-people-main-110426--nxt-people/memory/**)",
+      "Bash(git init *)",
+      "Bash(git remote *)",
+      "Bash(git fetch *)",
+      "Bash(git config *)",
+      "Bash(git checkout *)"
+    ]
+  }
+}

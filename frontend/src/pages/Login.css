@@ -1,0 +1,157 @@
+/* ── Login page styles (AltiusNxt "Nxt People" design) ────────────────────
+   Every selector is scoped under `.nxt-login` so these styles only apply to
+   the login screen and never leak into the rest of the app. */
+
+.nxt-login {
+  --red: #e63329;
+  --red-dark: #c0271e;
+  --login-font: 'DM Sans', system-ui, sans-serif;
+  font-family: var(--login-font);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+.nxt-login,
+.nxt-login *,
+.nxt-login *::before,
+.nxt-login *::after { box-sizing: border-box; }
+.nxt-login h1,
+.nxt-login h2,
+.nxt-login p,
+.nxt-login ul,
+.nxt-login li { margin: 0; padding: 0; }
+
+.nxt-login .page { display: flex; min-height: 100vh; }
+
+/* ── Left panel ── */
+.nxt-login .left {
+  width: 380px; flex-shrink: 0;
+  background: linear-gradient(160deg, #1c1c2e 0%, #141420 100%);
+  display: flex; flex-direction: column;
+  padding: 40px 36px; position: relative; overflow: hidden;
+}
+.nxt-login .geo { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.nxt-login .geo-1 { position: absolute; width: 280px; height: 280px; border-radius: 50%; background: radial-gradient(circle, rgba(230,51,41,0.12) 0%, transparent 65%); top: -80px; right: -80px; }
+.nxt-login .geo-2 { position: absolute; width: 200px; height: 200px; background: linear-gradient(135deg, rgba(99,102,241,0.08), transparent); bottom: 120px; left: -60px; border-radius: 40px; transform: rotate(30deg); }
+.nxt-login .geo-3 { position: absolute; width: 160px; height: 160px; border: 1px solid rgba(255,255,255,0.04); border-radius: 24px; bottom: 60px; right: -40px; transform: rotate(15deg); }
+.nxt-login .logo-wrap { background: rgba(255,255,255,0.96); border-radius: 12px; padding: 10px 16px; display: inline-flex; align-items: center; width: fit-content; margin-bottom: 40px; position: relative; z-index: 1; }
+.nxt-login .logo-wrap img { height: 30px; width: auto; }
+.nxt-login .left-body { flex: 1; position: relative; z-index: 1; }
+.nxt-login .left-divider { width: 40px; height: 2px; background: linear-gradient(90deg, #e63329, rgba(230,51,41,0.3)); border-radius: 2px; margin-bottom: 14px; }
+.nxt-login .access-label { font-size: 11px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: rgba(255,255,255,0.45); margin-bottom: 10px; }
+.nxt-login .app-name { font-size: 26px; font-weight: 700; color: #fff; line-height: 1.2; letter-spacing: -0.3px; margin-bottom: 16px; }
+.nxt-login .red-rule { width: 32px; height: 3px; background: #e63329; border-radius: 2px; margin-bottom: 24px; }
+.nxt-login .feature-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.nxt-login .feature-item { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: rgba(255,255,255,0.75); line-height: 1.4; }
+.nxt-login .feat-icon { color: #e63329; flex-shrink: 0; margin-top: 1px; display: flex; }
+.nxt-login .left-bottom { position: relative; z-index: 1; }
+.nxt-login .bottom-divider { height: 1px; background: rgba(255,255,255,0.08); margin-bottom: 16px; }
+.nxt-login .suite-label { font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,0.35); margin-bottom: 10px; }
+.nxt-login .suite-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+.nxt-login .suite-chip { font-size: 11px; font-weight: 500; color: rgba(255,255,255,0.45); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 4px 10px; font-family: var(--login-font); }
+.nxt-login .suite-chip.active { color: #e63329; background: rgba(230,51,41,0.12); border-color: rgba(230,51,41,0.3); }
+.nxt-login a.suite-chip { text-decoration: none; cursor: pointer; transition: color .15s, background .15s, border-color .15s; }
+.nxt-login a.suite-chip:hover { color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.2); }
+.nxt-login .left-foot { font-size: 11px; color: rgba(255,255,255,0.2); }
+
+/* ── Right panel — login form lives inside a centered white card ── */
+.nxt-login .right { flex: 1; background: #eef1f6; display: flex; padding: 40px 48px; overflow-y: auto; }
+.nxt-login .right-content {
+  margin: auto;                 /* centers both axes; degrades to scroll when taller than viewport */
+  width: 100%; max-width: 440px;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgba(15,23,42,0.08), 0 2px 8px rgba(15,23,42,0.04);
+  padding: 40px 36px 32px;
+}
+.nxt-login .app-badge { width: 48px; height: 48px; border-radius: 13px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; background: #e63329; }
+.nxt-login .app-badge-short { color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.3px; }
+
+.nxt-login .step-title { font-size: 26px; font-weight: 700; color: #0f172a; letter-spacing: -0.3px; margin-bottom: 4px; }
+.nxt-login .step-sub { font-size: 14px; color: #64748b; margin-bottom: 28px; }
+
+.nxt-login .email-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 500; color: #64748b;
+  border-radius: 100px; padding: 5px 12px 5px 8px;
+  margin-bottom: 20px; cursor: pointer; background: none; border: none;
+  font-family: var(--login-font); transition: color .15s;
+}
+.nxt-login .email-back:hover { color: #1c1c2e; }
+.nxt-login .email-back-addr { font-weight: 600; color: #334155; }
+
+.nxt-login .welcome-block { margin-bottom: 24px; }
+.nxt-login .welcome-title { font-size: 26px; font-weight: 700; color: #0f172a; letter-spacing: -0.3px; margin-bottom: 4px; }
+.nxt-login .welcome-sub { font-size: 14px; color: #64748b; }
+
+.nxt-login .form { display: flex; flex-direction: column; gap: 16px; }
+.nxt-login .field { display: flex; flex-direction: column; gap: 6px; }
+.nxt-login .label-row { display: flex; align-items: center; justify-content: space-between; }
+.nxt-login label { font-size: 13px; font-weight: 600; color: #334155; }
+.nxt-login input[type=text],
+.nxt-login input[type=email],
+.nxt-login input[type=password] {
+  width: 100%; padding: 10px 14px; border: 1.5px solid #e2e8f0; border-radius: 10px;
+  font-size: 14px; color: #0f172a; background: #fff; outline: none; font-family: var(--login-font);
+  transition: border-color .15s, box-shadow .15s;
+}
+.nxt-login input::placeholder { color: #94a3b8; }
+.nxt-login input:focus { border-color: #e63329; box-shadow: 0 0 0 3px rgba(230,51,41,0.10); }
+.nxt-login .forgot-btn { font-size: 12px; font-weight: 500; color: #e63329; background: none; border: none; cursor: pointer; padding: 0; font-family: var(--login-font); }
+
+.nxt-login .pw-wrap { position: relative; }
+.nxt-login .pw-wrap input { padding-right: 44px; }
+.nxt-login .pw-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #94a3b8; padding: 4px; display: flex; align-items: center; }
+.nxt-login .pw-toggle:hover { color: #334155; }
+
+.nxt-login .submit-btn {
+  width: 100%; padding: 12px 20px; background: #e63329; color: #fff; border: none; border-radius: 10px;
+  font-size: 15px; font-weight: 600; cursor: pointer; font-family: var(--login-font); min-height: 46px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: background .15s, box-shadow .15s, transform .1s;
+}
+.nxt-login .submit-btn:hover:not(:disabled) { background: #c0271e; box-shadow: 0 4px 16px rgba(230,51,41,0.35); }
+.nxt-login .submit-btn:active:not(:disabled) { transform: translateY(1px); }
+.nxt-login .submit-btn:disabled { opacity: .7; cursor: not-allowed; }
+
+.nxt-login .or-divider { display: flex; align-items: center; gap: 12px; color: #94a3b8; font-size: 12px; margin: 20px 0; }
+.nxt-login .or-divider::before,
+.nxt-login .or-divider::after { content: ''; flex: 1; height: 1px; background: #e2e8f0; }
+
+.nxt-login .msg-error { font-size: 13px; color: #e63329; background: rgba(230,51,41,0.06); padding: 8px 12px; border-radius: 8px; }
+.nxt-login .msg-success { font-size: 13px; color: #059669; background: rgba(5,150,105,0.07); padding: 8px 12px; border-radius: 8px; }
+
+.nxt-login .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: nxt-spin .7s linear infinite; }
+.nxt-login .spinner-dark { border-color: rgba(0,0,0,0.15); border-top-color: #334155; }
+@keyframes nxt-spin { to { transform: rotate(360deg); } }
+
+.nxt-login .right-foot { margin-top: 32px; font-size: 12px; color: #94a3b8; text-align: center; }
+.nxt-login .right-foot a { color: #e63329; font-weight: 500; text-decoration: none; }
+
+/* Info / status block (pending, accept terms, check-inbox, etc.) */
+.nxt-login .info-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; text-align: left; }
+.nxt-login .info-card.warn { background: rgba(245,158,11,0.06); border-color: rgba(245,158,11,0.25); }
+.nxt-login .info-card-title { font-size: 12px; font-weight: 600; color: #b45309; margin-bottom: 6px; }
+.nxt-login .info-list { list-style: disc; padding-left: 18px; color: #64748b; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+.nxt-login .terms-box { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; text-align: left; font-size: 13px; color: #64748b; line-height: 1.55; max-height: 160px; overflow-y: auto; margin-bottom: 16px; }
+.nxt-login .status-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+
+/* MFA code input */
+.nxt-login .mfa-input { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; font-size: 18px; font-family: ui-monospace, monospace; letter-spacing: 0.35em; text-align: center; color: #0f172a; outline: none; transition: border-color .15s, box-shadow .15s; }
+.nxt-login .mfa-input:focus { border-color: #e63329; box-shadow: 0 0 0 3px rgba(230,51,41,0.10); }
+.nxt-login .link-btn { background: none; border: none; cursor: pointer; color: #e63329; font-size: 12.5px; font-weight: 500; font-family: var(--login-font); padding: 0; margin-top: 16px; }
+
+/* Demo shortcuts (dev only) */
+.nxt-login .demo-wrap { margin-top: 28px; }
+.nxt-login .demo-label { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; text-align: center; margin-bottom: 10px; }
+.nxt-login .demo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.nxt-login .demo-btn { font-size: 12px; font-weight: 500; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; color: #475569; cursor: pointer; font-family: var(--login-font); transition: border-color .15s, background .15s; }
+.nxt-login .demo-btn:hover { border-color: #cbd5e1; background: #f8fafc; }
+
+@media (max-width: 768px) {
+  .nxt-login .page { flex-direction: column; }
+  .nxt-login .left { width: 100%; padding: 28px 24px 24px; }
+  .nxt-login .left-bottom { display: none; }
+  .nxt-login .app-name { font-size: 20px; }
+  .nxt-login .right { padding: 20px; }
+  .nxt-login .right-content { margin: auto; max-width: 100%; padding: 28px 22px; }
+}
