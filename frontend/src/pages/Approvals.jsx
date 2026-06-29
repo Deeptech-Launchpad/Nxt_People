@@ -12,6 +12,15 @@ const LEAVE_TYPE_LABELS = {
   permission: 'Permission'
 };
 
+// Convert HH:MM or HH:MM:SS (24-hour) to 12-hour AM/PM display.
+const fmt12 = (t) => {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+};
+
 // Safe date-only formatter — never renders "Invalid Date" for a blank value.
 const fmtDay = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) => {
   if (!d) return '—';
@@ -461,7 +470,7 @@ export default function Approvals() {
                           {fmtDay(r.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
                         <p className="text-sm text-slate-600 mt-0.5">
-                          {r.checkIn ? `In: ${r.checkIn.slice(0, 5)}` : ''}{r.checkIn && r.checkOut ? ' · ' : ''}{r.checkOut ? `Out: ${r.checkOut.slice(0, 5)}` : ''}
+                          {r.checkIn ? `In: ${fmt12(r.checkIn)}` : ''}{r.checkIn && r.checkOut ? ' · ' : ''}{r.checkOut ? `Out: ${fmt12(r.checkOut)}` : ''}
                         </p>
                         <p className="text-sm text-slate-600 mt-0.5 max-w-xs">{r.reason}</p>
                       </div>
