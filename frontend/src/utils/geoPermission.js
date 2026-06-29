@@ -42,6 +42,16 @@ export function capturePosition() {
  * Ensure consent, then capture. Returns coords (or null) + the permission status.
  */
 export async function requestLocation() {
+  // Detect browser-level denial before showing our modal or waiting for GPS
+  if (navigator.permissions) {
+    try {
+      const perm = await navigator.permissions.query({ name: 'geolocation' });
+      if (perm.state === 'denied') {
+        return { coords: null, permissionStatus: 'browser_denied' };
+      }
+    } catch (_) {}
+  }
+
   const pref = getGeoPref();
 
   // Already said Allow Always — capture silently, no modal

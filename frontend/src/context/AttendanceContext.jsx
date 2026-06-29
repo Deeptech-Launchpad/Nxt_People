@@ -104,6 +104,10 @@ export const AttendanceProvider = ({ children }) => {
        // App-level consent + GPS capture (Allow Always / This Time / Deny).
        // GPS stays optional for check-in itself — backend warns if required.
        const { coords, permissionStatus } = await requestLocation();
+       if (permissionStatus === 'browser_denied') {
+         toast.error('Location is blocked. Click the lock icon in the address bar → Location → Allow, then try again.', { duration: 7000 });
+         return;
+       }
        const r = await api.post('/attendance/checkin', {
          location: 'Office',
          latitude:  coords?.latitude  ?? null,
@@ -131,6 +135,10 @@ export const AttendanceProvider = ({ children }) => {
     setActionLoading(true);
     try {
       const { coords, permissionStatus } = await requestLocation();
+      if (permissionStatus === 'browser_denied') {
+        toast.error('Location is blocked. Click the lock icon in the address bar → Location → Allow, then try again.', { duration: 7000 });
+        return;
+      }
       const r = await api.post('/attendance/checkout', {
         location: 'Office',
         latitude:  coords?.latitude  ?? null,
