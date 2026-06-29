@@ -63,40 +63,34 @@ router.post('/checkin', async (req, res) => {
     // GPS is validated against settings — not required by default
     const today = todayStr();
 
-    // Pre-flight existence check — used purely to keep the early "already
-    // checked in" 400 response, AND to decide whether to compute late time
-    // off the existing row's check_in (so a re-check-in after auto-checkout
-    // doesn't get re-tagged as late from a second SELECT later). The real
-    // race-safe write happens later via UPSERT (ON CONFLICT DO UPDATE).
-    const existingRes = await pool.query(
-      'SELECT * FROM attendance WHERE employee_id = $1 AND date = $2::date',
-      [req.user._id, today]
-    );
+    // Run all three read queries in parallel — eliminates 3 sequential
+    // round-trips that were adding latency before the UPSERT.
+    // Timezone-adjusted check-in minutes are merged into the settings query
+    // so the separate tzNowRes round-trip is no longer needed.
+    const [existingRes, settingsRes, shiftRes] = await Promise.all([
+      pool.query(
+        'SELECT * FROM attendance WHERE employee_id = $1 AND date = $2::date',
+        [req.user._id, today]
+      ),
+      pool.query(
+        `SELECT late_after_minutes, require_gps, enforce_geofence, office_latitude, office_longitude, gps_radius_meters,
+          (EXTRACT(HOUR FROM NOW() AT TIME ZONE COALESCE(timezone, 'Asia/Kolkata')) * 60
+          + EXTRACT(MINUTE FROM NOW() AT TIME ZONE COALESCE(timezone, 'Asia/Kolkata')))::int AS check_in_mins
+         FROM settings LIMIT 1`
+      ),
+      pool.query(
+        `SELECT s.id, s.start_time FROM employees e
+         LEFT JOIN shifts s ON e.shift_id = s.id
+         WHERE e.id = $1`, [req.user._id]
+      ),
+    ]);
     const existing = existingRes.rows[0];
+    const settings = settingsRes.rows[0] || {};
+    const shift = shiftRes.rows[0];
 
     if (existing && existing.check_in && !existing.check_out) {
       return res.status(400).json({ success: false, message: 'Already checked in today' });
     }
-
-    // Fetch settings + shift for late detection.
-    // enforce_geofence is a new flag (default FALSE) that separates two
-    // policies that used to be conflated under require_gps:
-    //   - require_gps:       GPS coords MUST be sent (browser permission)
-    //   - enforce_geofence:  GPS must additionally be inside the radius
-    // Default keeps geofence informational so WFH/field/late employees
-    // can still check in; HR sees the distance in attendance reports.
-    const settingsRes = await pool.query(
-      'SELECT late_after_minutes, require_gps, enforce_geofence, office_latitude, office_longitude, gps_radius_meters FROM settings LIMIT 1'
-    );
-    const settings = settingsRes.rows[0] || {};
-
-    // Try to get employee's assigned shift for precise late detection
-    const shiftRes = await pool.query(
-      `SELECT s.id, s.start_time FROM employees e
-       LEFT JOIN shifts s ON e.shift_id = s.id
-       WHERE e.id = $1`, [req.user._id]
-    );
-    const shift = shiftRes.rows[0];
 
     // GPS validation
     const { location } = req.body;
@@ -130,16 +124,7 @@ router.post('/checkin', async (req, res) => {
     }
 
     const now = new Date();
-    // Resolve "minutes past midnight" using the org's configured timezone
-    // (defaults to IST). Docker containers default to UTC, so naive
-    // now.getHours() would tag a 10:17 IST check-in as 04:47 UTC and
-    // wrongly mark it on-time. Asking Postgres to compute this directly
-    // avoids the JS Date timezone footgun entirely.
-    const tzNowRes = await pool.query(
-      `SELECT (EXTRACT(HOUR FROM NOW() AT TIME ZONE COALESCE((SELECT timezone FROM settings LIMIT 1), 'Asia/Kolkata')) * 60
-            + EXTRACT(MINUTE FROM NOW() AT TIME ZONE COALESCE((SELECT timezone FROM settings LIMIT 1), 'Asia/Kolkata')))::int AS mins`
-    );
-    const checkInMins = Number(tzNowRes.rows[0]?.mins) || (now.getHours() * 60 + now.getMinutes());
+    const checkInMins = Number(settings.check_in_mins) || (now.getHours() * 60 + now.getMinutes());
 
     // ── Late detection ──────────────────────────────────────────────────────────
     // ALWAYS compute lateMinutes from the actual minutes past shift start —
@@ -211,31 +196,6 @@ router.post('/checkin', async (req, res) => {
     }
     const record = upRes.rows[0];
 
-    // ── Notify Manager (if late) & Feed Entry ──
-    try {
-      const { createFeedEntry } = require('./feeds');
-      const { createNotification } = require('./notifications');
-      const timeLabel = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-      const feedMsg = lateMinutes > 0
-        ? `Late check-in at ${timeLabel} — ${Math.floor(lateMinutes/60)}h ${lateMinutes%60}m late`
-        : `Checked in at ${timeLabel}`;
-      
-      await createFeedEntry(req.user._id, lateMinutes > 0 ? 'late_checkin' : 'checkin', 'Attendance', feedMsg, lateMinutes > 0 ? '🟠' : '🟢');
-
-      if (lateMinutes > 0) {
-        const emp = await pool.query('SELECT reporting_manager_id FROM employees WHERE id=$1', [req.user._id]);
-        if (emp.rows[0]?.reporting_manager_id) {
-          await createNotification(
-            emp.rows[0].reporting_manager_id,
-            'late_arrival',
-            'Late Arrival',
-            `${req.user.firstName} checked in ${Math.floor(lateMinutes/60)}h ${lateMinutes%60}m late.`,
-            '/attendance/team'
-          );
-        }
-      }
-    } catch (e) { logger.error({ err: e.message }, '[attendance] notify/feed soft-fail'); }
-
     const lateMsg = lateMinutes > 0
       ? `Late by ${Math.floor(lateMinutes/60)}h ${lateMinutes%60}m`
       : null;
@@ -244,6 +204,33 @@ router.post('/checkin', async (req, res) => {
       success: true, data: record,
       message: lateMsg ? `Checked in — ${lateMsg}` : 'Checked in successfully',
       gpsWarning, lateMinutes, lateMessage: lateMsg
+    });
+
+    // ── Notify Manager (if late) & Feed Entry — fire after response ──
+    setImmediate(async () => {
+      try {
+        const { createFeedEntry } = require('./feeds');
+        const { createNotification } = require('./notifications');
+        const timeLabel = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        const feedMsg = lateMinutes > 0
+          ? `Late check-in at ${timeLabel} — ${Math.floor(lateMinutes/60)}h ${lateMinutes%60}m late`
+          : `Checked in at ${timeLabel}`;
+
+        await createFeedEntry(req.user._id, lateMinutes > 0 ? 'late_checkin' : 'checkin', 'Attendance', feedMsg, lateMinutes > 0 ? '🟠' : '🟢');
+
+        if (lateMinutes > 0) {
+          const emp = await pool.query('SELECT reporting_manager_id FROM employees WHERE id=$1', [req.user._id]);
+          if (emp.rows[0]?.reporting_manager_id) {
+            await createNotification(
+              emp.rows[0].reporting_manager_id,
+              'late_arrival',
+              'Late Arrival',
+              `${req.user.firstName} checked in ${Math.floor(lateMinutes/60)}h ${lateMinutes%60}m late.`,
+              '/attendance/team'
+            );
+          }
+        }
+      } catch (e) { logger.error({ err: e.message }, '[attendance] notify/feed soft-fail'); }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -328,22 +315,24 @@ router.post('/checkout', async (req, res) => {
       return res.status(409).json({ success: false, message: 'Already checked out' });
     }
 
-    // ── Feed Entry ──
-    try {
-      const { createFeedEntry } = require('./feeds');
-      const totalH = Math.floor(workingHours);
-      const totalM = Math.round((workingHours - totalH) * 60);
-      const timeLabel = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-      await createFeedEntry(
-        req.user._id,
-        'checkout',
-        'Attendance',
-        `Checked out at ${timeLabel} — ${totalH}h ${totalM}m worked`,
-        '🔵'
-      );
-    } catch (_) {}
-
     res.json({ success: true, data: up.rows[0], message: 'Checked out successfully' });
+
+    // ── Feed Entry — fire after response ──
+    setImmediate(async () => {
+      try {
+        const { createFeedEntry } = require('./feeds');
+        const totalH = Math.floor(workingHours);
+        const totalM = Math.round((workingHours - totalH) * 60);
+        const timeLabel = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        await createFeedEntry(
+          req.user._id,
+          'checkout',
+          'Attendance',
+          `Checked out at ${timeLabel} — ${totalH}h ${totalM}m worked`,
+          '🔵'
+        );
+      } catch (_) {}
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -33,7 +33,7 @@ export function capturePosition() {
         accuracy: pos.coords.accuracy,
       }),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: false, timeout: 5000 }
     );
   });
 }
