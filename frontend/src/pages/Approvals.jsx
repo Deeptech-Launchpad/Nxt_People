@@ -457,13 +457,13 @@ export default function Approvals() {
                           <span className="text-sm text-slate-600">{r.employee?.employeeId}</span>
                           <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{r.employee?.department}</span>
                         </div>
-                        <p className="text-base text-slate-500 mt-1">
-                          {new Date(r.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        <p className="text-base text-slate-600 mt-1">
+                          {fmtDay(r.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
-                        <p className="text-sm text-slate-400 mt-0.5">
-                          {r.checkIn ? `In: ${r.checkIn}` : ''}{r.checkIn && r.checkOut ? ' · ' : ''}{r.checkOut ? `Out: ${r.checkOut}` : ''}
+                        <p className="text-sm text-slate-600 mt-0.5">
+                          {r.checkIn ? `In: ${r.checkIn.slice(0, 5)}` : ''}{r.checkIn && r.checkOut ? ' · ' : ''}{r.checkOut ? `Out: ${r.checkOut.slice(0, 5)}` : ''}
                         </p>
-                        <p className="text-sm text-slate-400 mt-0.5 max-w-xs">{r.reason}</p>
+                        <p className="text-sm text-slate-600 mt-0.5 max-w-xs">{r.reason}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
