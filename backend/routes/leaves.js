@@ -394,9 +394,12 @@ router.post('/', [
       }
 
       // In-app notifications to all recipients.
+      const notifTitle = leaveType === 'permission' ? 'Permission Approval Required' : 'Leave Approval Required';
+      const notifMsg = leaveType === 'permission'
+        ? `${empName} requested permission on ${startLabel} (${permStartTime}–${permEndTime}).`
+        : `${empName} requested ${leaveType} leave from ${startLabel} (${totalDays} day${totalDays !== 1 ? 's' : ''}).`;
       await Promise.all(allRecipients.map(a => createNotification(
-        a.id, 'approval', 'Leave Approval Required',
-        `${empName} requested ${leaveType} leave from ${startLabel} (${totalDays} day${totalDays !== 1 ? 's' : ''}).`,
+        a.id, 'approval', notifTitle, notifMsg,
         leaveType === 'permission' ? '/approvals?tab=permissions' : '/approvals?tab=leaves'
       ).catch(err => logger.warn({ err: err.message }, '[leaves] notify approver failed'))));
 
