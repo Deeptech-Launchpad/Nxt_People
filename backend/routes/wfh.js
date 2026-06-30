@@ -80,7 +80,7 @@ router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_inchar
     await createNotification(wfh.employee_id, 'info',
       action === 'approved' ? 'WFH Approved ✓' : 'WFH Rejected',
       action === 'approved' ? `Your WFH request for ${dateLabel} has been approved.` : `Your WFH request for ${dateLabel} was rejected.`,
-      '/leave'
+      '/wfh'
     );
 
     res.json({ success: true, message: `WFH ${action}` });

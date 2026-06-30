@@ -323,7 +323,7 @@ export default function Approvals() {
                             )}
                          </div>
                          <p className="text-base text-slate-500 mt-1 capitalize">
-                           Permission · {p.hours}h {p.startTime && p.endTime && `(${(p.startTime || '').slice(0,5)}–${(p.endTime || '').slice(0,5)})`}
+                           Permission · {p.hours}h {p.startTime && p.endTime && `(${fmt12(p.startTime)}–${fmt12(p.endTime)})`}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
                           {new Date(p.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
