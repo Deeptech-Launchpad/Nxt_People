@@ -400,6 +400,9 @@ router.post('/', [
           totalDays,
           reason,
           approvalLink,
+          hours: isPermission ? permHours : null,
+          startTime: isPermission ? permStartTime : null,
+          endTime: isPermission ? permEndTime : null,
         }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))
       ));
     } catch (e) { logger.error({ err: e.message }, '[leaves] notify/feed soft-fail'); }

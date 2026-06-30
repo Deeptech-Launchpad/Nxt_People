@@ -225,7 +225,7 @@ const sendMail = async ({ to, subject, text, html }) => {
  * Leave Approval Email — sent to approvers with a direct approval link.
  * Includes employee info, leave details, and a clickable approval button.
  */
-const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, endDate, totalDays, reason, approvalLink, customSubject }) => {
+const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, endDate, totalDays, reason, approvalLink, customSubject, hours, startTime, endTime }) => {
   const transporter = createTransporter();
   const dateRange = `${new Date(startDate).toLocaleDateString('en-IN')} ${endDate !== startDate ? `– ${new Date(endDate).toLocaleDateString('en-IN')}` : ''}`;
   const safeEmployeeName = escapeHtml(employeeName || 'Employee');
@@ -290,7 +290,7 @@ const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, 
         </div>
         <div class="detail-row">
           <span class="detail-label">Duration</span>
-          <span class="detail-value">${safeDateRange} (${totalDays} day${totalDays !== 1 ? 's' : ''})</span>
+          <span class="detail-value">${safeDateRange}${hours ? ` · ${escapeHtml(startTime)} – ${escapeHtml(endTime)} (${hours} hr${Number(hours) !== 1 ? 's' : ''})` : ` (${totalDays} day${totalDays !== 1 ? 's' : ''})`}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">Reason</span>
