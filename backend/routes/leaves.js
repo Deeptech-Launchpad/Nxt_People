@@ -225,7 +225,25 @@ router.post('/', [
       }
     }
 
-    if (!isPermission) {
+    if (isPermission) {
+      const dupPerm = await pool.query(
+        `SELECT id FROM leaves
+          WHERE employee_id = $1
+            AND leave_type = 'permission'
+            AND status IN ('pending', 'pending_approval', 'approved')
+            AND start_date = $2::date
+            AND start_time = $3
+            AND end_time = $4
+          LIMIT 1`,
+        [req.user._id, startDate, permStartTime, permEndTime]
+      );
+      if (dupPerm.rows.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'You already have a permission request for this time slot.'
+        });
+      }
+    } else {
       const overlap = await pool.query(
         `SELECT id, start_date, end_date FROM leaves
           WHERE employee_id = $1
