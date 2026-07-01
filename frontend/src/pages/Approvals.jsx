@@ -230,24 +230,27 @@ export default function Approvals() {
               </button>
             );
           })}
-          <div className="ml-auto flex items-center gap-2 pr-4">
-            {['approvedLeaves', 'rejectedLeaves'].includes(tab) && (
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Filter by name..."
-                  value={searchFilter}
-                  onChange={e => setSearchFilter(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 w-48 border border-slate-200 rounded-lg text-[15px] outline-none focus:border-brand-400"
-                />
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
-              </div>
-            )}
+          <div className="ml-auto flex items-center gap-2 pr-4 flex-shrink-0">
             <button onClick={load} className="p-2 text-slate-400 hover:text-brand-600 transition-colors">
               <RefreshCw size={14} />
             </button>
           </div>
         </div>
+
+        {['approvedLeaves', 'rejectedLeaves'].includes(tab) && (
+          <div className="px-5 py-3 border-b border-slate-100">
+            <div className="relative w-64">
+              <input
+                type="text"
+                placeholder="Filter by name..."
+                value={searchFilter}
+                onChange={e => setSearchFilter(e.target.value)}
+                className="pl-8 pr-3 py-1.5 w-full border border-slate-200 rounded-lg text-[15px] outline-none focus:border-brand-400"
+              />
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-12"><div className="w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
@@ -352,7 +355,7 @@ export default function Approvals() {
               data.approvedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).length === 0
                 ? <EmptyState icon={CheckCircle} message="No approved leave requests found" />
                 : data.approvedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).map(l => (
-                  <div key={l._id} className="p-5 flex items-start gap-4 overflow-hidden">
+                  <div key={l._id} className="p-5 flex items-start justify-between gap-4 overflow-hidden">
                     <div className="flex items-start gap-4 min-w-0">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
                         {l.leaveType?.[0]?.toUpperCase()}
@@ -388,7 +391,7 @@ export default function Approvals() {
               data.rejectedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).length === 0
                 ? <EmptyState icon={XCircle} message="No rejected leave requests found" />
                 : data.rejectedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).map(l => (
-                  <div key={l._id} className="p-5 flex items-start gap-4 overflow-hidden">
+                  <div key={l._id} className="p-5 flex items-start justify-between gap-4 overflow-hidden">
                     <div className="flex items-start gap-4 min-w-0">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
                         {l.leaveType?.[0]?.toUpperCase()}
