@@ -649,12 +649,21 @@ export default function Dashboard() {
        .catch(() => setLeaveCards([]));
    }, []);
 
-   // Fetch weekly attendance (used by Work Schedule widget)
+   // Fetch weekly attendance (used by Work Schedule widget).
+   // Week can straddle a month boundary (e.g. Jun 29–Jul 4), so fetch both
+   // months when needed and merge — mirrors fetchAttWeek's logic.
    const fetchWeeklyAttendance = () => {
      const now = new Date();
-     api.get(`/attendance/my?month=${now.getMonth()}&year=${now.getFullYear()}`)
-       .then(r => setWeeklyAttendance(r.data.data || []))
-       .catch(() => setWeeklyAttendance([]));
+     const day = now.getDay();
+     const weekStart = new Date(now); weekStart.setDate(now.getDate() - day);
+     const weekEnd   = new Date(now); weekEnd.setDate(now.getDate() + (6 - day));
+     const months = new Map();
+     [weekStart, weekEnd].forEach(d => {
+       months.set(`${d.getFullYear()}-${d.getMonth()}`, { y: d.getFullYear(), m: d.getMonth() });
+     });
+     Promise.all([...months.values()].map(({ y, m }) =>
+       api.get(`/attendance/my?month=${m}&year=${y}`).then(r => r.data.data || []).catch(() => [])
+     )).then(arrs => setWeeklyAttendance(arrs.flat()));
    };
 
    // Fetch attendance covering the Attendance-tab's displayed week. A week can
