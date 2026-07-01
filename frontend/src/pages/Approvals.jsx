@@ -352,8 +352,8 @@ export default function Approvals() {
               data.approvedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).length === 0
                 ? <EmptyState icon={CheckCircle} message="No approved leave requests found" />
                 : data.approvedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).map(l => (
-                  <div key={l._id} className="p-5 flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-4">
+                  <div key={l._id} className="p-5 flex items-start justify-between gap-4 overflow-hidden">
+                    <div className="flex items-start gap-4 min-w-0">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
                         {l.leaveType?.[0]?.toUpperCase()}
                       </div>
@@ -388,8 +388,8 @@ export default function Approvals() {
               data.rejectedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).length === 0
                 ? <EmptyState icon={XCircle} message="No rejected leave requests found" />
                 : data.rejectedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).map(l => (
-                  <div key={l._id} className="p-5 flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-4">
+                  <div key={l._id} className="p-5 flex items-start justify-between gap-4 overflow-hidden">
+                    <div className="flex items-start gap-4 min-w-0">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
                         {l.leaveType?.[0]?.toUpperCase()}
                          </div>
