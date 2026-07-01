@@ -43,7 +43,7 @@ export default function Layout() {
       <Sidebar />
       <div className="flex-1 ml-[72px] flex flex-col min-h-screen">
         <Topbar />
-        <main className="flex-1 overflow-auto pb-10">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-10">
           <Outlet />
         </main>
 
