@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../components/LeaveDetailModal';
@@ -42,6 +43,7 @@ const saveSeen = (obj) => {
 
 export default function Approvals() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   // Approve All is available to HR / Super Admin and Team Leads (managers).
   // Managers are still scoped server-side to requests they actually approve.
   const canApproveAll = ['admin', 'director', 'hr_admin', 'manager'].includes(user?.role);
@@ -97,6 +99,31 @@ export default function Approvals() {
   };
 
   useEffect(load, []);
+
+  /* ── Auto-open modal from ?openId= URL param (email/notification deep-link) ── */
+  useEffect(() => {
+    const openId = searchParams.get('openId');
+    if (!openId || loading) return;
+    const allItems = [
+      ...data.leaves,
+      ...(data.permissions || []),
+      ...(data.timesheets || []),
+      ...(data.regularizations || []),
+      ...(data.wfhRequests || []),
+      ...(data.compOffs || []),
+      ...(data.approvedLeaves || []),
+      ...(data.rejectedLeaves || []),
+    ];
+    const found = allItems.find(item => item._id === openId);
+    if (!found) return;
+    setDetailLeave(found);
+    setDetailBalance(null);
+    if (found.status === 'pending' && found.employee?._id) {
+      api.get(`/leaves/balance?employeeId=${found.employee._id}&year=${new Date(found.startDate || Date.now()).getFullYear()}`)
+        .then(r => setDetailBalance(r.data.data || []))
+        .catch(() => setDetailBalance(null));
+    }
+  }, [loading, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The 'leaves' tab is the default open one — auto-mark it as seen
   // whenever fresh data arrives so the user never sees a badge on the

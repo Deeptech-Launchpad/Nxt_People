@@ -401,7 +401,7 @@ router.post('/', [
         : `${empName} requested ${leaveType} leave from ${startLabel} (${totalDays} day${totalDays !== 1 ? 's' : ''}).`;
       await Promise.all(allRecipients.map(a => createNotification(
         a.id, 'approval', notifTitle, notifMsg,
-        `/more-services/operations/leave-tracker?openId=${leaveId}`
+        `/leave-tracker/team?openId=${leaveId}`
       ).catch(err => logger.warn({ err: err.message }, '[leaves] notify approver failed'))));
 
       // Emails to all recipients with direct approval link (soft-fail; SMTP may be unconfigured).
@@ -409,7 +409,7 @@ router.post('/', [
       const leaveTypeDisplay = leaveType === 'permission' ? 'Permission' :
                                leaveType === 'comp_off' ? 'Compensatory Off' :
                                leaveType.charAt(0).toUpperCase() + leaveType.slice(1) + ' Leave';
-      const approvalLink = `${baseUrl}/more-services/operations/leave-tracker?openId=${leaveId}`;
+      const approvalLink = `${baseUrl}/leave-tracker/team?openId=${leaveId}`;
 
       await Promise.all(allRecipients.filter(a => a.email).map(a =>
         sendLeaveApprovalEmail({

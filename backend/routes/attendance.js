@@ -8,12 +8,12 @@ const { sendCheckOutReminderEmail } = require('../utils/mailer');
 
 router.use(protect);
 
-// Helper: returns today's date as a YYYY-MM-DD string in server local time
+// Helper: returns today's date as a YYYY-MM-DD string in IST (Asia/Kolkata)
 function todayStr() {
-  return new Date().toLocaleDateString('en-CA');
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 }
 function toDateStr(date) {
-  return date.toLocaleDateString('en-CA');
+  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 }
 
 // ── GET today's attendance record ──────────────────────────────────────────────

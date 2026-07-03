@@ -24,6 +24,7 @@ export const AttendanceProvider = ({ children }) => {
   // to `record=null` and the UI showed stale state with no signal.
   const [loadError, setLoadError]     = useState(null);
   const timerRef = useRef(null);
+  const currentDateRef = useRef(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
 
   /* ── Start/restart the live timer ─────────────────────────────── */
   const startTimer = useCallback((checkInTime, baseSeconds = 0) => {
@@ -82,6 +83,31 @@ export const AttendanceProvider = ({ children }) => {
 
       return () => stopTimer();
     }, [user?._id]); // Re-fetch when user changes
+
+  /* ── Re-fetch when IST date rolls over (app kept open overnight) ─── */
+  useEffect(() => {
+    const id = setInterval(() => {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      if (today === currentDateRef.current) return;
+      currentDateRef.current = today;
+      stopTimer();
+      setRecord(null);
+      setElapsed(0);
+      api.get('/attendance/today')
+        .then(r => {
+          const rec = r.data.data;
+          setRecord(rec);
+          if (rec?.checkIn && !rec?.checkOut) {
+            startTimer(rec.checkIn, Math.round(parseFloat(rec.workingHours || 0) * 3600));
+          } else if (rec?.checkOut) {
+            setElapsed(Math.round(parseFloat(rec.workingHours || 0) * 3600));
+            stopTimer();
+          }
+        })
+        .catch(() => {});
+    }, 60000);
+    return () => clearInterval(id);
+  }, [stopTimer, startTimer]);
 
   /* ── Additive location log ──────────────────────────────────────────
      Records where the check-in/out happened to the location-history table.

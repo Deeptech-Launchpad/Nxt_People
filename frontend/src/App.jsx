@@ -183,7 +183,7 @@ const AppRoutes = () => {
               the sidebar highlight on Leave Tracker instead of jumping
               the user back to Home (which was the pre-fix behaviour).
               Role-gated identically — only admins/managers can view it. */}
-          <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Approvals/></ProtectedRoute>}/>
+          <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
           <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
           <Route path="leave-tracker/weekends"   element={<ProtectedRoute roles={['admin','director','hr_admin']}><Weekends/></ProtectedRoute>}/>
 
