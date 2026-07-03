@@ -46,13 +46,23 @@ function DetailRow({ icon: Icon, label, children }) {
 function BalanceCard({ leave, balanceCards }) {
   const card = balanceCards.find(c => c.code === leave.leaveType);
   const isPerm = leave.leaveType === 'permission';
-  const u = isPerm ? 'h' : '';                       // hours suffix for permission
   // Round to 2 dp so float subtraction doesn't show 1.9399999999999997.
   const r2 = (n) => (n === null || n === undefined) ? n : Math.round((n + Number.EPSILON) * 100) / 100;
   const avail = card ? r2(card.available) : undefined;
   const booking = r2(isPerm ? (parseFloat(leave.hours) || 0) : (parseFloat(leave.totalDays ?? leave.total_days) || 0));
   const unlimited = avail === null || avail === undefined;
   const after = unlimited ? null : r2(avail - booking);
+  // Convert decimal hours to "Xh Ym" / "Ym" for permission leaves
+  const fmtPerm = (h) => {
+    if (h === null || h === undefined) return '—';
+    const totalMins = Math.round(h * 60);
+    const hrs = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    if (hrs === 0) return `${mins} min`;
+    if (mins === 0) return `${hrs}h`;
+    return `${hrs}h ${mins}m`;
+  };
+  const fmt = (n) => isPerm ? fmtPerm(n) : `${n}`;
   const Row = ({ label, value, strong, muted }) => (
     <div className="flex items-center justify-between py-1.5">
       <span className={`text-[14px] ${muted ? 'text-slate-400' : 'text-slate-500'}`}>{label}</span>
@@ -65,10 +75,10 @@ function BalanceCard({ leave, balanceCards }) {
         <p className="text-[14px] font-bold text-slate-700">{isPerm ? 'Permission Balance' : 'Leave Balance'}</p>
         <span className="text-[13px] text-slate-600">{TYPE_LABEL[leave.leaveType] || leave.leaveType}</span>
       </div>
-      <Row label={isPerm ? 'Available this month' : 'Available balance'} value={unlimited ? 'Unlimited' : `${avail}${u}`} />
-      <Row label="Current booking" value={`${booking}${u}`} />
+      <Row label={isPerm ? 'Available this month' : 'Available balance'} value={unlimited ? 'Unlimited' : fmt(avail)} />
+      <Row label="Current booking" value={fmt(booking)} />
       <div className="border-t border-slate-100 my-1.5" />
-      <Row label="Balance after current booking" value={unlimited ? '—' : `${after}${u}`} strong />
+      <Row label="Balance after current booking" value={unlimited ? '—' : fmt(after)} strong />
       {!isPerm && <Row label="Estimated balance (year-end)" value={unlimited ? '—' : avail} muted />}
       {isPerm && <Row label="Monthly allowance" value="4h" muted />}
     </div>
