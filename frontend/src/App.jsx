@@ -196,7 +196,7 @@ const AppRoutes = () => {
           <Route path="more-services/files"        element={<Documents/>}/>
           {/* Operations workspace + admin Leave Tracker — Super Admin / HR only. */}
           <Route path="more-services/operations"               element={<ProtectedRoute roles={['admin','director','hr_admin']}><Operations/></ProtectedRoute>}/>
-          <Route path="more-services/operations/leave-tracker" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerAdmin/></ProtectedRoute>}/>
+          <Route path="more-services/operations/leave-tracker" element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><LeaveTrackerAdmin/></ProtectedRoute>}/>
           <Route path="more-services/operations/permission-usage" element={<ProtectedRoute roles={['admin','director','hr_admin']}><PermissionUsage/></ProtectedRoute>}/>
           <Route path="more-services/operations/conference" element={<ProtectedRoute roles={['admin','director','hr_admin']}><Conference/></ProtectedRoute>}/>
           <Route path="more-services/travel"       element={<Travel/>}/>

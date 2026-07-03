@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Plus, ChevronLeft, ChevronRight, CheckCircle2, CheckCheck, Clock, XCircle, Search, Filter,
 } from 'lucide-react';
@@ -42,6 +42,7 @@ function StatusCell({ status }) {
 
 export default function LeaveTrackerAdmin() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   // This admin page is HR / Super Admin only (route-gated); both may Approve All.
   const canApproveAll = ['admin', 'director'].includes(user?.role);
@@ -69,6 +70,27 @@ export default function LeaveTrackerAdmin() {
     api.get('/org/directory').then(r => setDirectory(r.data.data || [])).catch(() => {});
     api.get('/leaves/balance').then(r => setApplyTypes(r.data.data || [])).catch(() => {});
   }, []);
+
+  // If the URL contains ?openId=UUID (from an approval email link), fetch that
+  // specific leave and open its detail modal automatically.
+  useEffect(() => {
+    const openId = searchParams.get('openId');
+    if (!openId) return;
+    api.get(`/leaves?leaveId=${openId}`)
+      .then(r => {
+        const l = (r.data.data || [])[0];
+        if (!l) return;
+        setDetail(l);
+        setDetailBalance(null);
+        if (l.status === 'pending' && l.employee?._id) {
+          const yr = new Date(l.startDate).getFullYear();
+          api.get(`/leaves/balance?employeeId=${l.employee._id}&year=${yr}`)
+            .then(b => setDetailBalance(b.data.data || []))
+            .catch(() => setDetailBalance(null));
+        }
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const departments = Array.from(new Set(directory.map(d => d.department).filter(Boolean))).sort();
 

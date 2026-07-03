@@ -101,11 +101,12 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
     let params = [];
     let idx = 1;
 
-    if (status)     { query += ` AND l.status = $${idx++}`;           params.push(status); }
-    if (employeeId) { query += ` AND l.employee_id = $${idx++}`;      params.push(employeeId); }
-    if (department) { query += ` AND e.department = $${idx++}`;       params.push(department); }
-    if (startDate)  { query += ` AND l.end_date >= $${idx++}`;        params.push(startDate); }
-    if (endDate)    { query += ` AND l.start_date <= $${idx++}`;      params.push(endDate); }
+    if (status)              { query += ` AND l.status = $${idx++}`;           params.push(status); }
+    if (employeeId)          { query += ` AND l.employee_id = $${idx++}`;      params.push(employeeId); }
+    if (department)          { query += ` AND e.department = $${idx++}`;       params.push(department); }
+    if (startDate)           { query += ` AND l.end_date >= $${idx++}`;        params.push(startDate); }
+    if (endDate)             { query += ` AND l.start_date <= $${idx++}`;      params.push(endDate); }
+    if (req.query.leaveId)   { query += ` AND l.id = $${idx++}::uuid`;         params.push(req.query.leaveId); }
 
     // Full-access sees every employee's leaves; managers only their direct
     // reports' (the per-record /:id/action guard still governs who can act).
@@ -400,7 +401,7 @@ router.post('/', [
         : `${empName} requested ${leaveType} leave from ${startLabel} (${totalDays} day${totalDays !== 1 ? 's' : ''}).`;
       await Promise.all(allRecipients.map(a => createNotification(
         a.id, 'approval', notifTitle, notifMsg,
-        leaveType === 'permission' ? '/approvals?tab=permissions' : '/approvals?tab=leaves'
+        `/more-services/operations/leave-tracker?openId=${leaveId}`
       ).catch(err => logger.warn({ err: err.message }, '[leaves] notify approver failed'))));
 
       // Emails to all recipients with direct approval link (soft-fail; SMTP may be unconfigured).
@@ -408,8 +409,7 @@ router.post('/', [
       const leaveTypeDisplay = leaveType === 'permission' ? 'Permission' :
                                leaveType === 'comp_off' ? 'Compensatory Off' :
                                leaveType.charAt(0).toUpperCase() + leaveType.slice(1) + ' Leave';
-      const approvalTab = leaveType === 'permission' ? 'permissions' : 'leaves';
-      const approvalLink = `${baseUrl}/approvals?tab=${approvalTab}`;
+      const approvalLink = `${baseUrl}/more-services/operations/leave-tracker?openId=${leaveId}`;
 
       await Promise.all(allRecipients.filter(a => a.email).map(a =>
         sendLeaveApprovalEmail({
