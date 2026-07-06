@@ -218,13 +218,15 @@ export default function Approvals() {
   return (
     <div className="space-y-5">
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-7 gap-3">
         {[
           ['Total Pending', data.total, 'bg-amber-50 text-amber-700'],
           ['Leaves', data.leaves?.length, 'bg-blue-50 text-blue-700'],
           ['Permissions', data.permissions?.length, 'bg-purple-50 text-purple-700'],
           ['Timesheets', data.timesheets?.length, 'bg-brand-50 text-brand-700'],
           ['Regularizations', data.regularizations?.length, 'bg-slate-50 text-slate-600'],
+          ['WFH Requests', data.wfhRequests?.length, 'bg-green-50 text-green-700'],
+          ['Comp-Off', data.compOffs?.length, 'bg-orange-50 text-orange-700'],
         ].map(([l, v, c]) => (
           <div key={l} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
             <p className="text-sm text-slate-500 mb-2">{l}</p>
