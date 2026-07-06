@@ -220,15 +220,19 @@ export default function Approvals() {
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-7 gap-3">
         {[
-          ['Total Pending', data.total, 'bg-amber-50 text-amber-700'],
-          ['Leaves', data.leaves?.length, 'bg-blue-50 text-blue-700'],
-          ['Permissions', data.permissions?.length, 'bg-purple-50 text-purple-700'],
-          ['Timesheets', data.timesheets?.length, 'bg-brand-50 text-brand-700'],
-          ['Regularizations', data.regularizations?.length, 'bg-slate-50 text-slate-600'],
-          ['WFH Requests', data.wfhRequests?.length, 'bg-green-50 text-green-700'],
-          ['Comp-Off', data.compOffs?.length, 'bg-orange-50 text-orange-700'],
-        ].map(([l, v, c]) => (
-          <div key={l} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+          ['Total Pending',   data.total,                    'bg-amber-50 text-amber-700',  null],
+          ['Leaves',          data.leaves?.length,           'bg-blue-50 text-blue-700',    'leaves'],
+          ['Permissions',     data.permissions?.length,      'bg-purple-50 text-purple-700','permissions'],
+          ['Timesheets',      data.timesheets?.length,       'bg-brand-50 text-brand-700',  'timesheets'],
+          ['Regularizations', data.regularizations?.length,  'bg-slate-50 text-slate-600',  'regularizations'],
+          ['WFH Requests',    data.wfhRequests?.length,      'bg-green-50 text-green-700',  'wfh'],
+          ['Comp-Off',        data.compOffs?.length,         'bg-orange-50 text-orange-700','compoff'],
+        ].map(([l, v, c, tabId]) => (
+          <div
+            key={l}
+            onClick={() => tabId && setTab(tabId)}
+            className={`bg-white rounded-2xl p-4 border border-slate-100 shadow-sm transition-colors ${tabId ? 'cursor-pointer hover:border-slate-300 hover:shadow-md' : ''}`}
+          >
             <p className="text-sm text-slate-500 mb-2">{l}</p>
             <p className={`text-4xl font-display font-bold px-3 py-1 rounded-lg w-fit ${c}`}>{v ?? 0}</p>
           </div>
