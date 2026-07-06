@@ -69,6 +69,7 @@ export const AttendanceProvider = ({ children }) => {
             stopTimer();
           } else {
             stopTimer();
+            setElapsed(0);
           }
         })
         .catch((err) => {
