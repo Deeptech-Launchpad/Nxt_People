@@ -271,59 +271,65 @@ router.post('/', [
       });
     }
 
-    // Check balance
-    let balance = 0;
-    if (!isPermission && leaveType !== 'unpaid') {
-      const year = start.getFullYear();
-      const dbCode = leaveType === 'comp_off' ? 'compoff' : leaveType;
-      // Try to get from leave_balances table first
-      const lbRes = await pool.query(
-        `SELECT lb.available 
-         FROM leave_balances lb
-         JOIN leave_types lt ON lb.leave_type_id = lt.id
-         WHERE lb.employee_id = $1 AND lt.code = $2 AND lb.year = $3`,
-        [req.user._id, dbCode, year]
-      );
-      if (lbRes.rows.length > 0) {
-        balance = parseFloat(lbRes.rows[0].available) || 0;
-      } else {
-        // Fallback to employees table (legacy columns)
-        const empRes = await pool.query(
-          'SELECT casual_leave, sick_leave, earned_leave, unpaid_leave FROM employees WHERE id=$1',
-          [req.user._id]
-        );
-        const employee = empRes.rows[0] || {};
-        if (leaveType === 'casual') {
-          balance = parseFloat(employee.casual_leave) || 0;
-        } else if (leaveType === 'permission') {
-          balance = parseFloat(employee.earned_leave) || 0;
-        } else {
-          balance = 0;
-        }
-      }
-
-      if (balance < totalDays) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient ${leaveType} leave balance. Available: ${balance} day(s)`
-        });
-      }
-    }
-
-    // ── Phase 3: Decrement leave_balances.available on Apply ──
+    // ── Phase 3: Atomic balance check + decrement ──────────────────────────────
+    // Single UPDATE that both checks and decrements — prevents two concurrent
+    // requests from both reading a sufficient balance and both proceeding.
     if (!isPermission && leaveType !== 'unpaid') {
       const year = start.getFullYear();
       const dbCode = leaveType === 'comp_off' ? 'compoff' : leaveType;
       const ltRes = await pool.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
       if (ltRes.rows[0]) {
         const updRes = await pool.query(
-          `UPDATE leave_balances
-             SET available = available - $1
-           WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4
-           RETURNING id`,
+          `UPDATE leave_balances SET available = available - $1
+            WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4 AND available >= $1
+            RETURNING id`,
           [totalDays, req.user._id, ltRes.rows[0].id, year]
         );
-        void updRes;
+        if (updRes.rows.length === 0) {
+          // Either no leave_balances row for this year, or balance was insufficient
+          const chk = await pool.query(
+            `SELECT available FROM leave_balances WHERE employee_id=$1 AND leave_type_id=$2 AND year=$3`,
+            [req.user._id, ltRes.rows[0].id, year]
+          );
+          if (chk.rows.length > 0) {
+            // Row exists — balance truly insufficient
+            return res.status(400).json({
+              success: false,
+              message: `Insufficient ${leaveType} leave balance. Available: ${parseFloat(chk.rows[0].available) || 0} day(s)`
+            });
+          }
+          // No leave_balances row — legacy fallback via employees table
+          const empRes = await pool.query(
+            'SELECT casual_leave, sick_leave, earned_leave, unpaid_leave FROM employees WHERE id=$1',
+            [req.user._id]
+          );
+          const employee = empRes.rows[0] || {};
+          let balance = 0;
+          if (leaveType === 'casual') balance = parseFloat(employee.casual_leave) || 0;
+          else if (leaveType === 'permission') balance = parseFloat(employee.earned_leave) || 0;
+          if (balance < totalDays) {
+            return res.status(400).json({
+              success: false,
+              message: `Insufficient ${leaveType} leave balance. Available: ${balance} day(s)`
+            });
+          }
+        }
+      } else {
+        // No leave_types entry — legacy balance check via employees table
+        const empRes = await pool.query(
+          'SELECT casual_leave, sick_leave, earned_leave, unpaid_leave FROM employees WHERE id=$1',
+          [req.user._id]
+        );
+        const employee = empRes.rows[0] || {};
+        let balance = 0;
+        if (leaveType === 'casual') balance = parseFloat(employee.casual_leave) || 0;
+        else if (leaveType === 'permission') balance = parseFloat(employee.earned_leave) || 0;
+        if (balance < totalDays) {
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient ${leaveType} leave balance. Available: ${balance} day(s)`
+          });
+        }
       }
     }
 
@@ -491,20 +497,57 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
       }
 
       if (result.allApproved) {
-        // Final approval - book balances (UNCHANGED from prior workflow).
+        // Final approval — update leave_balances.booked.
+        // Do NOT also decrement employees.col here: leave_balances.available was
+        // already decremented at apply time, so touching employees.col would be
+        // a double-deduction. Only fall back to employees.col when no leave_balances
+        // row exists (legacy setup with no leave_balances rows for this year).
         if (leave.leave_type !== 'unpaid') {
-          const col = LEAVE_BALANCE_COLUMN[leave.leave_type];
-          if (col && VALID_BALANCE_COLUMNS.has(col)) {
-            await client.query(`UPDATE employees SET ${col}=GREATEST(0,${col}-$1) WHERE id=$2`, [leave.total_days, leave.employee_id]);
-          }
           const year = new Date(leave.start_date).getFullYear();
           const dbCode = leave.leave_type === 'comp_off' ? 'compoff' : leave.leave_type;
           const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
           if (ltRes.rows[0]) {
-            await client.query(
-              `UPDATE leave_balances SET booked=booked+$1 WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
+            const lbRes = await client.query(
+              `UPDATE leave_balances SET booked=booked+$1 WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4 RETURNING id`,
               [leave.total_days, leave.employee_id, ltRes.rows[0].id, year]
             );
+            if (lbRes.rows.length === 0) {
+              // No leave_balances row — nothing was decremented at apply, so decrement legacy column now
+              const col = LEAVE_BALANCE_COLUMN[leave.leave_type];
+              if (col && VALID_BALANCE_COLUMNS.has(col)) {
+                await client.query(`UPDATE employees SET ${col}=GREATEST(0,${col}-$1) WHERE id=$2`, [leave.total_days, leave.employee_id]);
+              }
+            }
+          } else {
+            // No leave_types entry — fall back to legacy employees column
+            const col = LEAVE_BALANCE_COLUMN[leave.leave_type];
+            if (col && VALID_BALANCE_COLUMNS.has(col)) {
+              await client.query(`UPDATE employees SET ${col}=GREATEST(0,${col}-$1) WHERE id=$2`, [leave.total_days, leave.employee_id]);
+            }
+          }
+          // For comp_off leaves: deduct from the comp_offs ledger (FIFO) so the balance card stays accurate
+          if (leave.leave_type === 'comp_off') {
+            let remaining = parseFloat(leave.total_days);
+            if (remaining > 0) {
+              const credits = await client.query(
+                `SELECT id, days_earned, days_used FROM comp_offs
+                  WHERE employee_id = $1 AND status = 'approved'
+                    AND (expires_at IS NULL OR expires_at >= CURRENT_DATE)
+                    AND days_earned > days_used
+                  ORDER BY worked_date ASC FOR UPDATE`,
+                [leave.employee_id]
+              );
+              for (const credit of credits.rows) {
+                if (remaining <= 0) break;
+                const avail = parseFloat(credit.days_earned) - parseFloat(credit.days_used);
+                const deduct = Math.min(remaining, avail);
+                await client.query(
+                  `UPDATE comp_offs SET days_used = days_used + $1 WHERE id = $2`,
+                  [deduct, credit.id]
+                );
+                remaining -= deduct;
+              }
+            }
           }
         }
         await client.query(

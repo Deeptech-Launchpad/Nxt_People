@@ -84,7 +84,8 @@ router.get('/company', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { employeeId, type, title, body, icon } = req.body;
-    const empId = employeeId || req.user._id;
+    const { isFullAccess } = require('../utils/roles');
+    const empId = (employeeId && isFullAccess(req.user.role)) ? employeeId : req.user._id;
     const r = await pool.query(
       `INSERT INTO feeds (employee_id, type, title, body, icon)
        VALUES ($1,$2,$3,$4,$5)

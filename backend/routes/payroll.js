@@ -10,7 +10,7 @@ const { sendMail } = require('../utils/mailer');
 router.use(protect);
 
 // GET payroll report for a month
-router.get('/', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { month, year } = req.query;
     const m = parseInt(month) || new Date().getMonth() + 1;
@@ -43,7 +43,8 @@ router.get('/', authorize('admin', 'director', 'manager'), async (req, res) => {
        COUNT(CASE WHEN a.status = 'half-day' THEN 1 END) as half_days,
        COALESCE(SUM(CASE WHEN a.check_out IS NOT NULL AND a.check_in IS NOT NULL
          THEN EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600 ELSE 0 END), 0) as total_hours,
-       (SELECT COUNT(*) FROM leaves l WHERE l.employee_id = e.id AND l.status='approved'
+       (SELECT COALESCE(SUM(l.total_days), 0) FROM leaves l WHERE l.employee_id = e.id AND l.status='approved'
+         AND l.leave_type != 'unpaid'
          AND l.start_date <= $2 AND l.end_date >= $1) as approved_leave_days
        FROM employees e
        LEFT JOIN attendance a ON e.id = a.employee_id AND a.date BETWEEN $1::date AND $2::date
@@ -419,13 +420,19 @@ async function lopDaysForRange(employeeId, startDate, endDate, queryRunner = poo
   const start = startDate instanceof Date ? startDate.toLocaleDateString('en-CA') : startDate;
   const end   = endDate   instanceof Date ? endDate.toLocaleDateString('en-CA')   : endDate;
   const r = await queryRunner.query(
-    `SELECT COALESCE(SUM(total_days), 0) AS lop
-       FROM leaves
-      WHERE employee_id = $1
-        AND status = 'approved'
-        AND leave_type = 'unpaid'
-        AND start_date <= $3::date
-        AND end_date   >= $2::date`,
+    `SELECT COALESCE(SUM(
+        ROUND(
+          l.total_days::numeric *
+          (LEAST(l.end_date, $3::date) - GREATEST(l.start_date, $2::date) + 1.0) /
+          NULLIF((l.end_date - l.start_date + 1)::numeric, 0)
+        , 2)
+      ), 0) AS lop
+       FROM leaves l
+      WHERE l.employee_id = $1
+        AND l.status = 'approved'
+        AND l.leave_type = 'unpaid'
+        AND l.start_date <= $3::date
+        AND l.end_date   >= $2::date`,
     [employeeId, start, end]
   );
   return Number(r.rows[0].lop || 0);
@@ -911,7 +918,7 @@ router.put('/admin/payslips/:id/lock', authorize('admin', 'director'), logAuditW
     const lockRes = await client.query(
       `UPDATE payroll_payslips SET status='locked', locked_at=NOW()
         WHERE id=$1 AND status='draft' RETURNING id, employee_id, pay_month, pay_year,
-                                              reimbursement, loan_recovery`,
+                                              reimbursement, loan_recovery, updated_at`,
       [req.params.id]
     );
     if (lockRes.rows.length === 0) {
@@ -920,15 +927,17 @@ router.put('/admin/payslips/:id/lock', authorize('admin', 'director'), logAuditW
     }
     const slip = lockRes.rows[0];
 
-    // Mark this month's approved claims as paid
+    // Mark only the claims that were approved by run-month time as paid.
+    // Claims approved after run-month are not in the payslip amount and must not be marked paid.
     if (Number(slip.reimbursement) > 0) {
       const start = `${slip.pay_year}-${String(slip.pay_month).padStart(2,'0')}-01`;
       const end   = new Date(slip.pay_year, slip.pay_month, 0).toLocaleDateString('en-CA');
       await client.query(
         `UPDATE compensation_claims SET status='paid', approved_at=COALESCE(approved_at, NOW())
           WHERE employee_id=$1 AND status='approved'
-            AND claim_date BETWEEN $2::date AND $3::date`,
-        [slip.employee_id, start, end]
+            AND claim_date BETWEEN $2::date AND $3::date
+            AND (approved_at IS NULL OR approved_at <= $4)`,
+        [slip.employee_id, start, end, slip.updated_at]
       );
     }
 

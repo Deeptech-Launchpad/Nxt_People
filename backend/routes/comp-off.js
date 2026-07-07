@@ -253,12 +253,16 @@ router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_inchar
 router.post('/:id/use', audit('USE', 'comp_off'), async (req, res) => {
   try {
     const { daysToUse } = req.body;
+    const days = parseFloat(daysToUse);
+    if (!days || days <= 0) {
+      return res.status(400).json({ success: false, message: 'daysToUse must be a positive number.' });
+    }
     const r = await pool.query(
       `UPDATE comp_offs SET days_used = LEAST(days_earned, days_used + $1)
         WHERE id = $2 AND employee_id = $3 AND status = 'approved'
           AND (expires_at IS NULL OR expires_at >= CURRENT_DATE)
         RETURNING id`,
-      [daysToUse || 1, req.params.id, req.user._id]
+      [days, req.params.id, req.user._id]
     );
     if (r.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'This comp-off credit is not available (not approved, or it has expired).' });

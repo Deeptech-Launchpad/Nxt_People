@@ -58,7 +58,7 @@ router.get('/attendance', async (req, res) => {
 });
 
 // Bug #10 + #20 fix: single aggregation query, also accepts startDate/endDate
-router.get('/summary', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { month, year, startDate, endDate } = req.query;
     let start, end;

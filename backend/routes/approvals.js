@@ -11,7 +11,7 @@ const LEAVE_LEVELS_JSON = approvalLevelsJson('leave', 'l');
 const REG_LEVELS_JSON   = approvalLevelsJson('regularization', 'r');
 const COMPOFF_LEVELS_JSON = approvalLevelsJson('comp_off', 'c');
 
-router.get('/pending', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
+router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
     const userId = req.user._id;
     // Full-access (Super Admin / HR) sees the entire org's pending queue;
