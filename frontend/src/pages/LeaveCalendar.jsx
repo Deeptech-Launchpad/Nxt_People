@@ -12,7 +12,7 @@ function getFirstDayOfMonth(year, month) {
 }
 
 export default function LeaveCalendar() {
-  const [date, setDate] = useState(new Date(2026, 4, 1)); // Default May 2026 or new Date()
+  const [date, setDate] = useState(new Date());
   const [events, setEvents] = useState({});
   const [loading, setLoading] = useState(false);
   // Pulls the org's weekend rules (e.g. "Sundays" + "1st & 3rd Saturdays")

@@ -25,22 +25,25 @@ export default function DashboardWidgets() {
   const [announcements, setAnnouncements] = useState([]);
   const [holidays, setHolidays] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [leaveBalance, setLeaveBalance] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.get('/dashboard/stats').catch(() => ({ data: { data: {} } })),
       api.get('/holidays').catch(() => ({ data: { data: [] } })),
-      api.get('/employees?limit=200&status=active').catch(() => ({ data: { data: [] } }))
-    ]).then(([statsRes, holRes, empRes]) => {
+      api.get('/employees?limit=200&status=active').catch(() => ({ data: { data: [] } })),
+      api.get('/leaves/balance').catch(() => ({ data: { data: [] } }))
+    ]).then(([statsRes, holRes, empRes, lbRes]) => {
       const sData = statsRes.data?.data || {};
       setStats(sData);
       setAnnouncements(sData.announcements || []);
-      
+
       const upcomingHolidays = (holRes.data?.data || []).filter(h => new Date(h.date) >= new Date()).slice(0, 6);
       setHolidays(upcomingHolidays);
 
       setEmployees(empRes.data?.data || []);
+      setLeaveBalance(lbRes.data?.data || []);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -143,23 +146,31 @@ export default function DashboardWidgets() {
 
         <Card title="Leave Report" className="min-h-[280px]">
           <div className="space-y-4 -mt-2">
-            {[
-              { name: 'Absent', count: '0', color: 'border-slate-200 text-slate-400' },
-              { name: 'Casual Leave', sub: 'Available 10 Day(s)', count: '2', color: 'border-orange-200 text-orange-500' },
-              { name: 'Compensatory Off', sub: 'Available 0 Day(s)', count: '0', color: 'border-emerald-200 text-emerald-500' },
-              { name: 'Leave Without Pay', count: '0', color: 'border-rose-200 text-rose-500' },
-              { name: 'Permission', sub: 'Available 47.74 Hour(s)', count: '0', color: 'border-amber-200 text-amber-500' },
-            ].map((lr, i) => (
-              <div key={i} className="flex items-center gap-4">
-                <div className={`w-8 h-8 rounded-full border-[3px] flex items-center justify-center text-[13px] font-bold ${lr.color}`}>
-                  {lr.count}
+            {leaveBalance.length === 0 ? (
+              <EmptyState text="No leave data" />
+            ) : leaveBalance.map((lb, i) => {
+              const isHours = lb.unit === 'hours';
+              const colorClass =
+                lb.code === 'casual'     ? 'border-orange-200 text-orange-500'  :
+                lb.code === 'comp_off'   ? 'border-emerald-200 text-emerald-500' :
+                lb.code === 'unpaid'     ? 'border-rose-200 text-rose-500'      :
+                lb.code === 'permission' ? 'border-amber-200 text-amber-500'    :
+                'border-slate-200 text-slate-400';
+              const sub = lb.available !== null && lb.available !== undefined
+                ? `Available ${lb.available} ${isHours ? 'Hour(s)' : 'Day(s)'}`
+                : null;
+              return (
+                <div key={i} className="flex items-center gap-4">
+                  <div className={`w-8 h-8 rounded-full border-[3px] flex items-center justify-center text-[13px] font-bold ${colorClass}`}>
+                    {lb.booked || 0}
+                  </div>
+                  <div>
+                    <p className="text-[14px] font-semibold text-slate-800">{lb.name}</p>
+                    {sub && <p className="text-[12px] text-slate-500 font-medium">{sub}</p>}
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[14px] font-semibold text-slate-800">{lr.name}</p>
-                  {lr.sub && <p className="text-[12px] text-slate-500 font-medium">{lr.sub}</p>}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
 
