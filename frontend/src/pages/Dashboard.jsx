@@ -1406,7 +1406,7 @@ export default function Dashboard() {
                               {approval.employee?.firstName} {approval.employee?.lastName}
                             </p>
                             <p className="text-[14px] text-slate-500 capitalize">
-                              {approval.leaveType} Leave • {approval.totalDays} Day(s)
+                              {approval.leaveType} Leave • {approval.leaveType === 'permission' ? (() => { const m = Math.round(parseFloat(approval.hours || 0) * 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`; })() : `${approval.totalDays} Day(s)`}
                             </p>
                             <p className="text-[13px] text-slate-400 mt-0.5">
                               {new Date(approval.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
