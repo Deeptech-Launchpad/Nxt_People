@@ -208,11 +208,11 @@ router.post('/register', [
 // @POST /api/auth/accept-terms
 router.post('/accept-terms', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, token: setupToken } = req.body;
     if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
     const result = await pool.query(
-      'SELECT id, registration_status, employee_id FROM employees WHERE email = $1',
+      'SELECT id, registration_status, employee_id, reset_password_token FROM employees WHERE email = $1',
       [email.toLowerCase()]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Account not found' });
@@ -221,6 +221,18 @@ router.post('/accept-terms', async (req, res) => {
 
     if (employee.registration_status !== 'approved') {
       return res.status(403).json({ success: false, message: 'Your account has not been approved yet.' });
+    }
+
+    // If a setup token was stored at approval time, the caller must provide it
+    if (employee.reset_password_token) {
+      if (!setupToken) {
+        return res.status(400).json({ success: false, message: 'Please use the setup link from your approval email.' });
+      }
+      const crypto = require('crypto');
+      const providedHash = crypto.createHash('sha256').update(setupToken).digest('hex');
+      if (providedHash !== employee.reset_password_token) {
+        return res.status(400).json({ success: false, message: 'Invalid or expired setup link.' });
+      }
     }
 
     let empId = employee.employee_id;
@@ -233,7 +245,7 @@ router.post('/accept-terms', async (req, res) => {
     }
 
     const updated = await pool.query(
-      `UPDATE employees SET has_accepted = true, accepted_at = NOW(), registration_status = 'active', employee_id = $1 WHERE id = $2
+      `UPDATE employees SET has_accepted = true, accepted_at = NOW(), registration_status = 'active', employee_id = $1, reset_password_token = NULL WHERE id = $2
        RETURNING id as "_id", first_name AS "firstName", last_name AS "lastName", email, role, department, designation, company, division, registration_status AS "registrationStatus", has_accepted AS "hasAccepted", employee_id AS "employeeId"`,
       [empId, employee.id]
     );

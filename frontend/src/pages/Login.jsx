@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import GoogleSignInButton from '../components/GoogleSignInButton';
@@ -252,7 +252,7 @@ function StepRejected({ email, onBack }) {
 }
 
 /* ── STEP — Accept terms ───────────────────────────────────────────────── */
-function StepAccept({ email, firstName, onBack }) {
+function StepAccept({ email, firstName, setupToken, onBack }) {
   const [loading, setLoading] = useState(false);
   const { acceptTerms } = useAuth();
   const navigate = useNavigate();
@@ -260,7 +260,7 @@ function StepAccept({ email, firstName, onBack }) {
   const handleAccept = async () => {
     setLoading(true);
     try {
-      await acceptTerms(email);
+      await acceptTerms(email, setupToken);
       toast.success(`Welcome, ${firstName || ''}!`);
       navigate('/');
     } catch (err) {
@@ -466,6 +466,8 @@ function StepMfa({ email, mfaTicket, onBack }) {
 /* ── Main Login component ──────────────────────────────────────────────── */
 export default function Login() {
   const { token } = useParams();
+  const [searchParams] = useSearchParams();
+  const setupToken = searchParams.get('setupToken');
   const [step, setStep] = useState(token ? 'reset' : 'email'); // email | pending | rejected | accept | password | mfa | forgot | reset
   const [emailData, setEmailData] = useState({ email: '', status: null, hasAccepted: false, firstName: '' });
   const [resetToken, setResetToken] = useState(token || '');
@@ -508,7 +510,7 @@ export default function Login() {
             {step === 'email' && <StepEmail onNext={handleEmailNext} onGoogleMfaRequired={handleGoogleMfaRequired} />}
             {step === 'pending' && <StepPending email={emailData.email} firstName={emailData.firstName} onBack={reset} />}
             {step === 'rejected' && <StepRejected email={emailData.email} onBack={reset} />}
-            {step === 'accept' && <StepAccept email={emailData.email} firstName={emailData.firstName} onBack={reset} />}
+            {step === 'accept' && <StepAccept email={emailData.email} firstName={emailData.firstName} setupToken={setupToken} onBack={reset} />}
             {step === 'password' && <StepPassword
               email={emailData.email}
               firstName={emailData.firstName}

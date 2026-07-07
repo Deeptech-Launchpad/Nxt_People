@@ -33,8 +33,8 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
-  const acceptTerms = async (email) => {
-    const res = await api.post('/auth/accept-terms', { email });
+  const acceptTerms = async (email, setupToken) => {
+    const res = await api.post('/auth/accept-terms', { email, token: setupToken });
     const { token, refreshToken, data } = res.data;
     localStorage.setItem('nxt_token', token);
     if (refreshToken) localStorage.setItem('nxt_refresh_token', refreshToken);

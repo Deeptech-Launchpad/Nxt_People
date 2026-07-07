@@ -77,7 +77,19 @@ if (process.env.NODE_ENV !== 'test') {
     },
   }));
 }
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Profile photos are displayed in <img> tags which cannot send Authorization headers.
+// Serve them publicly from the /photos sub-path; all other uploads require a valid JWT.
+app.use('/uploads/photos', express.static(path.join(__dirname, 'uploads', 'photos')));
+const jwt = require('jsonwebtoken');
+app.use('/uploads', (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : req.query.t;
+  if (!token) return res.status(401).json({ success: false, message: 'Not authorized' });
+  try {
+    jwt.verify(token, process.env.JWT_SECRET);
+    next();
+  } catch { return res.status(401).json({ success: false, message: 'Token invalid' }); }
+}, express.static(path.join(__dirname, 'uploads')));
 
 // ── Auth rate limiter — outer guard for the whole /api/auth namespace.
 // Tighter per-route limiters (login, forgot-password) live inside routes/auth.js.

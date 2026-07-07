@@ -1037,7 +1037,8 @@ export default function Employees() {
                       </h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {viewEmpData.documents.map((doc, i) => {
-                          const fileUrl = `/uploads/${doc.filePath}`;
+                          const _tok = localStorage.getItem('nxt_token');
+                          const fileUrl = `${doc.filePath}${_tok ? `?t=${encodeURIComponent(_tok)}` : ''}`;
                           return (
                             <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-brand-300 hover:bg-brand-50 transition-colors group">
                               <div className="flex items-center gap-3 overflow-hidden">

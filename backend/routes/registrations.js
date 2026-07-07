@@ -471,12 +471,31 @@ router.put('/:id/approve', async (req, res) => {
     }
     params.push(req.params.id);
 
+    const setupToken = crypto.randomBytes(32).toString('hex');
+    const setupTokenHash = crypto.createHash('sha256').update(setupToken).digest('hex');
+    updates.push(`reset_password_token = $${idx++}`);
+    params.push(setupTokenHash);
+
     const up = await pool.query(`
       UPDATE employees SET ${updates.join(', ')} WHERE id = $${idx}
       RETURNING id as "_id", first_name as "firstName", last_name as "lastName", email, role, department, registration_status as "registrationStatus"
     `, params);
 
-    res.json({ success: true, message: `${up.rows[0].firstName} ${up.rows[0].lastName} approved successfully.`, data: up.rows[0] });
+    const emp = up.rows[0];
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const companyName = process.env.COMPANY_NAME || 'NxtPeople';
+    try {
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: emp.email,
+        subject: `Your account has been approved — ${companyName}`,
+        html: `<p>Hi ${emp.firstName},</p><p>Your registration has been approved. Click the link below to complete your account setup:</p><p><a href="${frontendUrl}/login?email=${encodeURIComponent(emp.email)}&setupToken=${setupToken}">Complete Setup</a></p><p>This link expires in 7 days. If you did not register, please ignore this email.</p>`
+      });
+    } catch (mailErr) {
+      logger.error({ err: mailErr?.message }, 'Failed to send approval email');
+    }
+
+    res.json({ success: true, message: `${emp.firstName} ${emp.lastName} approved successfully.`, data: emp });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

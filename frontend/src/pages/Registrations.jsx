@@ -279,7 +279,8 @@ function ConfirmModal({ employee, onClose, onConfirmed }) {
                   <span className="block text-slate-500 text-sm font-medium mb-2">Uploaded Documents</span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {data.documents.map((doc, i) => {
-                      const fileUrl = `/uploads/${doc.filePath}`;
+                      const _tok = localStorage.getItem('nxt_token');
+                      const fileUrl = `${doc.filePath}${_tok ? `?t=${encodeURIComponent(_tok)}` : ''}`;
                       return (
                         <div key={i} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200 hover:border-brand-300 transition-colors group">
                           <div className="flex items-center gap-3 overflow-hidden">

@@ -131,7 +131,9 @@ router.get('/', async (req, res) => {
     );
     const total = parseInt(countResult.rows[0].count, 10);
 
-    res.json({ success: true, data: employeesResult.rows, total, page: Number(page), pages: Math.ceil(total / limitNum) });
+    const canSeeSalary = ['admin', 'director', 'hr_admin'].includes(req.user.role);
+    const data = canSeeSalary ? employeesResult.rows : employeesResult.rows.map(({ monthlyCTC, basicSalary, ...rest }) => rest);
+    res.json({ success: true, data, total, page: Number(page), pages: Math.ceil(total / limitNum) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -199,8 +201,14 @@ router.get('/:id', async (req, res) => {
     );
 
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
-    
+
     const empData = result.rows[0];
+    // Never expose security-sensitive columns regardless of caller role
+    delete empData.password;
+    delete empData.mfa_secret;
+    delete empData.mfa_backup_codes;
+    delete empData.reset_password_token;
+    delete empData.reset_password_expires;
     const eduRes = await pool.query('SELECT * FROM employee_education WHERE employee_id = $1 ORDER BY year_of_passing DESC', [req.params.id]);
     // Collapse partial duplicate education rows (same institute + year) so each
     // qualification shows once — same fix as the own-Profile page.
