@@ -172,14 +172,18 @@ export default function LeaveCalendar() {
           
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const dayNum = i + 1;
+            const dayDate = new Date(year, month, dayNum);
             const isWeekend = (firstDayOfMonth + i) % 7 === 0 || (firstDayOfMonth + i) % 7 === 6;
+            const isWeekendDay = typeof isWeekendByRule === 'function'
+              ? isWeekendByRule(dayDate)
+              : (dayDate.getDay() === 0 || dayDate.getDay() === 6);
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
             const dayEvents = events[dateStr] || [];
             const isCurrentDay = dayNum === currentDayHighlight;
 
             return (
-              <div 
-                key={dayNum} 
+              <div
+                key={dayNum}
                 className={`border-r border-b border-slate-200 p-2 min-h-[120px] ${isWeekend ? 'bg-[#fffdf7]' : 'bg-white'}`}
               >
                 <div className="flex items-center">
@@ -189,8 +193,13 @@ export default function LeaveCalendar() {
                     {dayNum}
                   </span>
                 </div>
-                
+
                 <div className="mt-2 space-y-1">
+                  {isWeekendDay && dayEvents.length === 0 && (
+                    <div className="bg-slate-100 border border-slate-200 text-slate-400 text-[12px] font-semibold px-2 py-1 rounded">
+                      Weekend
+                    </div>
+                  )}
                   {dayEvents.map((ev, idx) => (
                     <div key={idx}>
                       {ev.type === 'holiday' && (
