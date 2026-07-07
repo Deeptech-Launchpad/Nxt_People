@@ -718,10 +718,16 @@ export default function MyAttendance() {
                 const ds = isoDate(day);
                 const r = recordMap[ds];
                 const isWeekend = effectiveIsWeekend(day);
+                const isFuture = ds > todayStr;
                 return (
                   <tr key={ds} className={`hover:bg-slate-50 transition-colors ${ds === todayStr ? 'bg-blue-50/30' : ''}`}>
                     <td className="px-5 py-3 text-[14px] font-medium text-slate-700">
-                      {day.toLocaleDateString('en-IN', { day:'2-digit', month:'short' })}
+                      <div>{day.toLocaleDateString('en-IN', { day:'2-digit', month:'short' })}</div>
+                      {r?.lateMinutes > 0 && (
+                        <div className="text-[12px] font-semibold mt-0.5" style={{ color: '#F5A623' }}>
+                          Late by {fmtHHMM(r.lateMinutes / 60)}
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-[14px] text-slate-500">
                       {day.toLocaleDateString('en-US', { weekday:'short' })}
@@ -732,7 +738,9 @@ export default function MyAttendance() {
                     <td className="px-5 py-3">
                       {isWeekend
                         ? <StatusPill status="weekend" />
-                        : <StatusPill status={r?.status || 'absent'} />
+                        : isFuture
+                          ? <span className="text-slate-400 text-[13px]">—</span>
+                          : <StatusPill status={r?.status === 'late' ? 'present' : (r?.status || 'absent')} />
                       }
                     </td>
                   </tr>
@@ -791,11 +799,16 @@ export default function MyAttendance() {
                 const isToday = ds === todayStr;
                 const isFuture = day > new Date();
                 let pill = null;
-                if (isWknd && !r) {
-                  // Calendar shows weekends faintly with no pill (Zoho pattern).
+                if (isWknd) {
+                  pill = (
+                    <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-slate-100 text-slate-500 border border-slate-200">
+                      Weekend
+                    </div>
+                  );
                 } else if (r) {
-                  const status = r.status === 'late' ? 'Present' : r.status === 'half-day' ? 'Half day' : (r.status || 'Present').replace(/^./, c => c.toUpperCase());
                   const isAbsent = r.status === 'absent';
+                  const isLate = r.status === 'late';
+                  const status = isLate ? 'Present' : r.status === 'half-day' ? 'Half day' : (r.status || 'Present').replace(/^./, c => c.toUpperCase());
                   pill = (
                     <div className={`text-[13px] font-medium px-2 py-1 rounded leading-tight ${
                       isAbsent ? 'bg-rose-50 text-rose-700 border border-rose-200'
@@ -803,6 +816,11 @@ export default function MyAttendance() {
                     }`}>
                       <div>{status}</div>
                       {r.workingHours != null && <div className="text-[12px] opacity-80">{fmtHHMM(r.workingHours)} Hrs</div>}
+                      {isLate && r.lateMinutes > 0 && (
+                        <div className="text-[11px] font-semibold mt-0.5" style={{ color: '#F5A623' }}>
+                          Late {fmtHHMM(r.lateMinutes / 60)}
+                        </div>
+                      )}
                     </div>
                   );
                 } else if (!isWknd && !isFuture && ds < todayStr) {
