@@ -93,6 +93,12 @@ router.put('/:id/action', authorize('admin', 'director'), async (req, res) => {
 // PUT update clearance status (admin)
 router.put('/:id/clearance', authorize('admin', 'director'), async (req, res) => {
   try {
+    const preCheck = await pool.query('SELECT status FROM exit_requests WHERE id=$1', [req.params.id]);
+    if (!preCheck.rows[0]) return res.status(404).json({ success: false, message: 'Exit request not found' });
+    if (preCheck.rows[0].status !== 'approved') {
+      return res.status(400).json({ success: false, message: 'Clearances can only be updated for approved exit requests' });
+    }
+
     const { itClearance, hrClearance, financeClearance, managerClearance, exitInterviewNotes } = req.body;
     await pool.query(
       `UPDATE exit_requests SET it_clearance=COALESCE($1,it_clearance), hr_clearance=COALESCE($2,hr_clearance),

@@ -995,16 +995,18 @@ export default function Employees() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-base">
                       <div><span className="block text-slate-400 text-sm font-medium mb-0.5">Phone</span><span className="text-slate-800">{viewEmpData.phone || '—'}</span></div>
                       <div><span className="block text-slate-400 text-sm font-medium mb-0.5">Gender</span><span className="text-slate-800">{viewEmpData.gender || '—'}</span></div>
-                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">Date of Birth</span><span className="text-slate-800">{viewEmpData.date_of_birth ? new Date(viewEmpData.date_of_birth).toLocaleDateString() : '—'}</span></div>
-                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">Marital Status</span><span className="text-slate-800">{viewEmpData.marital_status || '—'}</span></div>
-                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">Blood Group</span><span className="text-slate-800">{viewEmpData.blood_group || '—'}</span></div>
-                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">Aadhaar Number</span><span className="text-slate-800 font-mono">{viewEmpData.aadhaar_number || '—'}</span></div>
-                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">PAN Number</span><span className="text-slate-800 font-mono">{viewEmpData.pan_number || '—'}</span></div>
-                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">UAN Number</span><span className="text-slate-800 font-mono">{viewEmpData.uan_number || '—'}</span></div>
+                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">Date of Birth</span><span className="text-slate-800">{viewEmpData.dateOfBirth ? new Date(viewEmpData.dateOfBirth).toLocaleDateString('en-IN') : '—'}</span></div>
+                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">Marital Status</span><span className="text-slate-800">{viewEmpData.maritalStatus || '—'}</span></div>
+                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">Blood Group</span><span className="text-slate-800">{viewEmpData.bloodGroup || '—'}</span></div>
+                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">Aadhaar Number</span><span className="text-slate-800 font-mono">{viewEmpData.aadhaarNumber || '—'}</span></div>
+                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">PAN Number</span><span className="text-slate-800 font-mono">{viewEmpData.panNumber || '—'}</span></div>
+                      <div><span className="block text-slate-400 text-sm font-medium mb-0.5">UAN Number</span><span className="text-slate-800 font-mono">{viewEmpData.uanNumber || '—'}</span></div>
                       <div className="md:col-span-4 mt-2">
                         <span className="block text-slate-400 text-sm font-medium mb-0.5">Current Address</span>
                         <span className="text-slate-800">
-                          {viewEmpData.current_address ? `${viewEmpData.current_address}, ${viewEmpData.city || ''}, ${viewEmpData.state || ''}, ${viewEmpData.country || ''} - ${viewEmpData.pin_code || ''}` : '—'}
+                          {(viewEmpData.current_address || viewEmpData.currentAddress)
+                            ? `${viewEmpData.current_address || viewEmpData.currentAddress}, ${viewEmpData.city || ''}, ${viewEmpData.state || ''}, ${viewEmpData.country || ''} - ${viewEmpData.pin_code || viewEmpData.pinCode || ''}`
+                            : '—'}
                         </span>
                       </div>
                     </div>

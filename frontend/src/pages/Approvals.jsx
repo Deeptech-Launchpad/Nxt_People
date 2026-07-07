@@ -481,7 +481,7 @@ export default function Approvals() {
                         <p className="text-sm text-slate-400 mt-1">{ts.totalHours?.toFixed(1)} total hours{ts.notes ? ` · ${ts.notes}` : ''}</p>
                       </div>
                     </div>
-                    <ActionBtns endpoint="timesheets" id={ts._id} type="Timesheet" />
+                    <ActionBtns endpoint="timesheets" id={ts._id} type="Timesheet" status={ts.status} />
                   </div>
                 ))
             )}
@@ -543,7 +543,7 @@ export default function Approvals() {
                         <p className="text-sm text-slate-400 mt-0.5 max-w-xs">{w.reason}</p>
                       </div>
                     </div>
-                    <ActionBtns endpoint="wfh" id={w._id} type="WFH" />
+                    <ActionBtns endpoint="wfh" id={w._id} type="WFH" status={w.status} />
                   </div>
                 ))
             )}

@@ -608,7 +608,6 @@ router.post('/admin/run-month', authorize('admin', 'director'), logAuditWrapper(
     const force = !!req.body.force;
 
     if (month < 1 || month > 12) {
-      client.release();
       return res.status(400).json({ success: false, message: 'Invalid month' });
     }
 
@@ -897,11 +896,9 @@ router.put('/admin/payslips/:id/lock', authorize('admin', 'director'), logAuditW
         [req.params.id]
       );
       if (check.rows.length === 0) {
-        client.release();
         return res.status(404).json({ success: false, message: 'Payslip not found' });
       }
       if (check.rows[0].status === 'draft' && !check.rows[0].approved_by_manager_at) {
-        client.release();
         return res.status(400).json({
           success: false,
           code:    'MANAGER_APPROVAL_REQUIRED',

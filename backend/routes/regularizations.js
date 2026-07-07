@@ -186,20 +186,70 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
       if (!result.ok) { await client.query('ROLLBACK'); return res.status(403).json({ success: false, message: result.message }); }
 
       if (result.allApproved) {
-        // Final approval — patch attendance (UNCHANGED logic) + mark approved.
+        // Final approval — patch attendance + recalculate working_hours, status, late_minutes.
+        const [settingsRes, shiftRes] = await Promise.all([
+          client.query('SELECT half_day_hours, late_after_minutes FROM settings LIMIT 1'),
+          client.query(
+            'SELECT s.start_time FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.id = $1',
+            [reg.employee_id]
+          ),
+        ]);
+        const halfDayHours = parseFloat(settingsRes.rows[0]?.half_day_hours) || 4;
+        const lateAfterMins = parseInt(settingsRes.rows[0]?.late_after_minutes, 10) || 570;
+        const shiftStartRaw = shiftRes.rows[0]?.start_time || null;
+        const shiftStartMins = shiftStartRaw
+          ? (() => { const [h, m] = String(shiftStartRaw).split(':').map(Number); return h * 60 + (m || 0); })()
+          : lateAfterMins;
+
+        let workingHours = null;
+        let newStatus = 'present';
+        let newLateMinutes = 0;
+
+        if (reg.check_in) {
+          const ciTime = new Date(`${reg.date}T${reg.check_in}`);
+          const checkInMins = ciTime.getHours() * 60 + ciTime.getMinutes();
+          const minsLate = checkInMins - shiftStartMins;
+          if (minsLate > 0) newLateMinutes = minsLate;
+
+          if (reg.check_out) {
+            const coTime = new Date(`${reg.date}T${reg.check_out}`);
+            const diffMs = coTime - ciTime;
+            if (diffMs > 0) {
+              workingHours = parseFloat((diffMs / 3600000).toFixed(8));
+              if (workingHours < halfDayHours) {
+                newStatus = 'absent';
+              } else if (workingHours < 7.5) {
+                newStatus = 'half-day';
+              } else {
+                newStatus = (minsLate > 15) ? 'late' : 'present';
+              }
+            }
+          } else {
+            newStatus = (minsLate > 15) ? 'late' : 'present';
+          }
+        }
+
         const exists = await client.query('SELECT id FROM attendance WHERE employee_id=$1 AND date=$2', [reg.employee_id, reg.date]);
         if (exists.rows.length > 0) {
           await client.query(
-            `UPDATE attendance SET check_in = CASE WHEN $1::time IS NOT NULL THEN ($2::date + $1::time)::timestamp ELSE check_in END,
-             check_out = CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp ELSE check_out END, updated_at=NOW() WHERE employee_id=$4 AND date=$2`,
-            [reg.check_in, reg.date, reg.check_out, reg.employee_id]
+            `UPDATE attendance
+             SET check_in = CASE WHEN $1::time IS NOT NULL THEN ($2::date + $1::time)::timestamp ELSE check_in END,
+                 check_out = CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp ELSE check_out END,
+                 working_hours = CASE WHEN $5::numeric IS NOT NULL THEN $5 ELSE working_hours END,
+                 status = $6,
+                 late_minutes = $7,
+                 updated_at = NOW()
+             WHERE employee_id=$4 AND date=$2`,
+            [reg.check_in, reg.date, reg.check_out, reg.employee_id, workingHours, newStatus, newLateMinutes]
           );
         } else {
           await client.query(
-            `INSERT INTO attendance (employee_id, date, check_in, check_out, status) VALUES ($1,$2,
-             CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp END,
-             CASE WHEN $4::time IS NOT NULL THEN ($2::date + $4::time)::timestamp END, 'present')`,
-            [reg.employee_id, reg.date, reg.check_in, reg.check_out]
+            `INSERT INTO attendance (employee_id, date, check_in, check_out, status, working_hours, late_minutes)
+             VALUES ($1, $2,
+               CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp END,
+               CASE WHEN $4::time IS NOT NULL THEN ($2::date + $4::time)::timestamp END,
+               $5, $6, $7)`,
+            [reg.employee_id, reg.date, reg.check_in, reg.check_out, newStatus, workingHours, newLateMinutes]
           );
         }
         await client.query(

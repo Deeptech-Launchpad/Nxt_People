@@ -291,8 +291,10 @@ router.post('/checkout', async (req, res) => {
 
     let status = record.status;
     if (isFinite(workingHours)) {
-      if (workingHours < 7.5) {
+      if (workingHours < halfDayHours) {
         status = 'absent';
+      } else if (workingHours < 7.5) {
+        status = 'half-day';
       } else {
         status = record.late_minutes > 0 ? 'late' : 'present';
       }

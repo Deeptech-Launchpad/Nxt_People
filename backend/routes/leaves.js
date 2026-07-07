@@ -684,12 +684,12 @@ router.delete('/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Cannot cancel approved leave' });
     }
 
-    // Atomic refund-and-delete: apply debited leave_balances.available, so
-    // cancellation has to credit it back. If we delete the leave without
-    // refunding, the user's available balance silently drifts down.
+    // Only refund balance if the leave was still pending — rejected and cancelled
+    // leaves already had their balance refunded at rejection/cancellation time.
+    // Refunding again here would inflate the balance.
     try {
       await client.query('BEGIN');
-      if (leave.leave_type !== 'unpaid' && leave.total_days > 0) {
+      if (leave.status === 'pending' && leave.leave_type !== 'unpaid' && leave.total_days > 0) {
         const year = new Date(leave.start_date).getFullYear();
         const dbCode = leave.leave_type === 'comp_off' ? 'compoff' : leave.leave_type;
         const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
