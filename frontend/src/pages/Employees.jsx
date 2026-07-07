@@ -527,7 +527,8 @@ export default function Employees() {
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
-                          <button onClick={()=>openView(emp._id)} title="View" className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"><Eye size={14}/></button>
+                          {/* View shows PII — restrict to HR / Super Admin only */}
+                          {isAdmin && <button onClick={()=>openView(emp._id)} title="View" className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"><Eye size={14}/></button>}
                           {/* Edit / status / delete are employee-management actions — HR / Super Admin only. */}
                           {isAdmin && (<>
                           <button onClick={()=>openEdit(emp)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg bg-brand-50 text-brand-600 hover:bg-brand-100 transition-colors"><Edit2 size={14}/></button>
@@ -807,6 +808,7 @@ export default function Employees() {
                       <label className="block text-sm font-medium text-slate-600 mb-1.5">Status</label>
                       <select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400">
                         <option value="active">Active (Current Employee)</option>
+                        <option value="notice_period">Notice Period</option>
                         <option value="resigned">Resigned</option>
                         <option value="terminated">Terminated</option>
                         <option value="inactive">Inactive</option>

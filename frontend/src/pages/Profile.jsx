@@ -375,7 +375,7 @@ export default function Profile() {
               <p className="text-[15px] text-slate-600 mb-1">
                 Add a photo so your colleagues can recognise you across the app.
               </p>
-              <p className="text-[13px] text-slate-400 mb-3">JPG, PNG, WebP or GIF — up to 5 MB.</p>
+              <p className="text-[13px] text-slate-400 mb-3">JPG, PNG, WebP or GIF — up to 10 MB.</p>
               <div className="flex items-center gap-2">
                 <button
                   type="button"

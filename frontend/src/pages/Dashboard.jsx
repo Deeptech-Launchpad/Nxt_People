@@ -750,7 +750,7 @@ export default function Dashboard() {
   const attWeek = getCurrentWeek(user?.shift?.workingDays, holidays, isWeekendByRule, attWeekOffset);
 
   /* ─ tabs ─ */
-  const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance', 'Time Logs'];
+  const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance', 'Time Logs', 'Payslips'];
 
   return (
     <div className="flex flex-col relative w-full min-h-full font-sans bg-[#f2f3f7]">
@@ -1476,8 +1476,8 @@ export default function Dashboard() {
                         <ChevronLeft size={15} />
                       </button>
                       <span className="text-[13px] font-bold text-[#1a73e8] bg-blue-50 px-3 py-1 rounded-full whitespace-nowrap">{weekRange}</span>
-                      <button onClick={() => setAttWeekOffset(o => o + 1)} title="Next week"
-                        className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700">
+                      <button onClick={() => setAttWeekOffset(o => Math.min(0, o + 1))} disabled={attWeekOffset >= 0} title="Next week"
+                        className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
                         <ChevronRight size={15} />
                       </button>
                       {attWeekOffset !== 0 && (

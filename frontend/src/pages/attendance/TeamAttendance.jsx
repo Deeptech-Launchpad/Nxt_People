@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { Search, Phone, ChevronDown, Filter } from 'lucide-react';
+import { Search, Phone, ChevronDown } from 'lucide-react';
 import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -68,21 +68,25 @@ export default function TeamAttendance() {
               {person.firstName} {person.lastName}
             </p>
             <p className="text-[13px] text-slate-500 mt-0.5">
-              {person.department || 'No Department'}, {/* location mock */ 'Coimbatore'}
+              {person.department || 'No Department'}{person.workLocation ? `, ${person.workLocation}` : ''}
             </p>
           </div>
 
-          {/* Phone icon */}
-          <button className="text-slate-300 hover:text-blue-500 transition-colors flex-shrink-0">
-            <Phone size={15} />
-          </button>
+          {/* Phone icon — only shown when the employee has a number on record */}
+          {person.phone && (
+            <a href={`tel:${person.phone}`} className="text-slate-300 hover:text-blue-500 transition-colors flex-shrink-0">
+              <Phone size={15} />
+            </a>
+          )}
         </div>
 
         {/* Shift info */}
         <div className="mt-2.5 pl-[52px]">
-          <p className="text-[13px] text-slate-500">
-            General Shift · 9:30 AM - 6:00 PM
-          </p>
+          {person.shift?.name && (
+            <p className="text-[13px] text-slate-500">
+              {person.shift.name}{person.shift.start_time && person.shift.end_time ? ` · ${person.shift.start_time} - ${person.shift.end_time}` : ''}
+            </p>
+          )}
           {att?.checkIn && (
             <p className="text-[13px] text-slate-400 mt-0.5">
               In: {fmtTime(att.checkIn)}
@@ -144,9 +148,6 @@ export default function TeamAttendance() {
             }}
             className="border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400 bg-white text-slate-600"
           />
-          <button className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-3 py-2 text-[14px] text-slate-600 hover:bg-slate-50 bg-white transition-colors">
-            <Filter size={13} /> Filter
-          </button>
         </div>
 
         {loading ? (

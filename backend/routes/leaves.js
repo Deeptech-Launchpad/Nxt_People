@@ -271,35 +271,89 @@ router.post('/', [
       });
     }
 
-    // ── Phase 3: Atomic balance check + decrement ──────────────────────────────
-    // Single UPDATE that both checks and decrements — prevents two concurrent
-    // requests from both reading a sufficient balance and both proceeding.
-    if (!isPermission && leaveType !== 'unpaid') {
-      const year = start.getFullYear();
-      const dbCode = leaveType === 'comp_off' ? 'compoff' : leaveType;
-      const ltRes = await pool.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
-      if (ltRes.rows[0]) {
-        const updRes = await pool.query(
-          `UPDATE leave_balances SET available = available - $1
-            WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4 AND available >= $1
-            RETURNING id`,
-          [totalDays, req.user._id, ltRes.rows[0].id, year]
+    // ── Phase 3: Atomic write — balance decrement + INSERT + approval chain ──────
+    // All three operations run in a single transaction. The employee row lock
+    // (SELECT ... FOR UPDATE) serialises concurrent leave applications from the
+    // same user, closing the TOCTOU race on the permission/overlap pre-checks
+    // above. If createLevels fails the entire write is rolled back so no orphaned
+    // leave row exists without an approval chain.
+    const client = await pool.connect();
+    let ins;
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT 1 FROM employees WHERE id = $1 FOR UPDATE', [req.user._id]);
+
+      // Re-verify inside the lock — catches any race that slipped through the pre-checks.
+      if (isPermission) {
+        const recheck = await client.query(
+          `SELECT COALESCE(SUM(hours), 0) AS used FROM leaves
+            WHERE employee_id = $1 AND leave_type = 'permission'
+              AND status IN ('pending', 'approved')
+              AND date_trunc('month', start_date) = date_trunc('month', $2::date)`,
+          [req.user._id, startDate]
         );
-        if (updRes.rows.length === 0) {
-          // Either no leave_balances row for this year, or balance was insufficient
-          const chk = await pool.query(
-            `SELECT available FROM leave_balances WHERE employee_id=$1 AND leave_type_id=$2 AND year=$3`,
-            [req.user._id, ltRes.rows[0].id, year]
+        const usedHrs = parseFloat(recheck.rows[0].used) || 0;
+        if (usedHrs + permHours > 4) {
+          await client.query('ROLLBACK');
+          const left = Math.max(0, 4 - usedHrs);
+          return res.status(400).json({ success: false, message: `Monthly permission limit is 4 hours. You have ${left.toFixed(2)}h remaining this month.` });
+        }
+      } else {
+        const recheck = await client.query(
+          `SELECT id FROM leaves
+            WHERE employee_id = $1
+              AND status IN ('pending', 'pending_approval', 'approved')
+              AND start_date <= $3::date AND end_date >= $2::date
+            LIMIT 1`,
+          [req.user._id, startDate, endDate]
+        );
+        if (recheck.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ success: false, message: 'You already have a leave request covering one or more of these dates.' });
+        }
+      }
+
+      if (!isPermission && leaveType !== 'unpaid') {
+        const year = start.getFullYear();
+        const dbCode = leaveType === 'comp_off' ? 'compoff' : leaveType;
+        const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
+        if (ltRes.rows[0]) {
+          const updRes = await client.query(
+            `UPDATE leave_balances SET available = available - $1
+              WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4 AND available >= $1
+              RETURNING id`,
+            [totalDays, req.user._id, ltRes.rows[0].id, year]
           );
-          if (chk.rows.length > 0) {
-            // Row exists — balance truly insufficient
-            return res.status(400).json({
-              success: false,
-              message: `Insufficient ${leaveType} leave balance. Available: ${parseFloat(chk.rows[0].available) || 0} day(s)`
-            });
+          if (updRes.rows.length === 0) {
+            const chk = await client.query(
+              `SELECT available FROM leave_balances WHERE employee_id=$1 AND leave_type_id=$2 AND year=$3`,
+              [req.user._id, ltRes.rows[0].id, year]
+            );
+            if (chk.rows.length > 0) {
+              await client.query('ROLLBACK');
+              return res.status(400).json({
+                success: false,
+                message: `Insufficient ${leaveType} leave balance. Available: ${parseFloat(chk.rows[0].available) || 0} day(s)`
+              });
+            }
+            const empRes = await client.query(
+              'SELECT casual_leave, sick_leave, earned_leave, unpaid_leave FROM employees WHERE id=$1',
+              [req.user._id]
+            );
+            const employee = empRes.rows[0] || {};
+            let balance = 0;
+            if (leaveType === 'casual') balance = parseFloat(employee.casual_leave) || 0;
+            else if (leaveType === 'permission') balance = parseFloat(employee.earned_leave) || 0;
+            if (balance < totalDays) {
+              await client.query('ROLLBACK');
+              return res.status(400).json({
+                success: false,
+                message: `Insufficient ${leaveType} leave balance. Available: ${balance} day(s)`
+              });
+            }
           }
-          // No leave_balances row — legacy fallback via employees table
-          const empRes = await pool.query(
+        } else {
+          const empRes = await client.query(
             'SELECT casual_leave, sick_leave, earned_leave, unpaid_leave FROM employees WHERE id=$1',
             [req.user._id]
           );
@@ -308,133 +362,121 @@ router.post('/', [
           if (leaveType === 'casual') balance = parseFloat(employee.casual_leave) || 0;
           else if (leaveType === 'permission') balance = parseFloat(employee.earned_leave) || 0;
           if (balance < totalDays) {
+            await client.query('ROLLBACK');
             return res.status(400).json({
               success: false,
               message: `Insufficient ${leaveType} leave balance. Available: ${balance} day(s)`
             });
           }
         }
-      } else {
-        // No leave_types entry — legacy balance check via employees table
-        const empRes = await pool.query(
-          'SELECT casual_leave, sick_leave, earned_leave, unpaid_leave FROM employees WHERE id=$1',
-          [req.user._id]
-        );
-        const employee = empRes.rows[0] || {};
-        let balance = 0;
-        if (leaveType === 'casual') balance = parseFloat(employee.casual_leave) || 0;
-        else if (leaveType === 'permission') balance = parseFloat(employee.earned_leave) || 0;
-        if (balance < totalDays) {
-          return res.status(400).json({
-            success: false,
-            message: `Insufficient ${leaveType} leave balance. Available: ${balance} day(s)`
-          });
-        }
-      }
-    }
-
-    const ins = await pool.query(
-      `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, total_days, reason, is_half_day, half_day_type, start_time, end_time, hours)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       RETURNING id as "_id", leave_type as "leaveType", start_date as "startDate",
-       end_date as "endDate", total_days as "totalDays", reason, status,
-       is_half_day as "isHalfDay", half_day_type as "halfDayType", created_at as "createdAt",
-       start_time as "startTime", end_time as "endTime", hours`,
-      [req.user._id, leaveType, startDate, endDateVal, totalDays, reason, isHalfDay || false, halfDayType || null,
-       permStartTime, permEndTime, isPermission ? permHours : null]
-    );
-
-    const leaveId = ins.rows[0]._id;
-
-    // ── Build the hierarchy-based approval chain (Employee Tree) ──
-    // Levels are derived dynamically from reporting_manager_id; up to 3.
-    let approverLevels = [];
-    try {
-      approverLevels = await createLevels(pool, 'leave', leaveId, req.user._id);
-    } catch (e) { logger.error({ err: e.message }, '[leaves] createLevels soft-fail'); }
-
-    // ── Notify ALL approval levels immediately (parallel), + employee feed ──
-    try {
-      const { createFeedEntry } = require('./feeds');
-      const startLabel = new Date(startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-      const empName = `${req.user.firstName} ${req.user.lastName}`;
-      const msg = `${req.user.firstName} applied ${leaveType} leave from ${startLabel} for ${totalDays} day(s).`;
-
-      // Post to employee's own feed.
-      await createFeedEntry(req.user._id, 'leave', 'Leave Applied', msg, '📅');
-
-      // Resolve the hierarchy approvers (L1, L2, L3).
-      const approverIds = approverLevels.map(l => l.approverId).filter(Boolean);
-      let hierarchyApprovers = [];
-      if (approverIds.length > 0) {
-        const r = await pool.query(
-          `SELECT id, email, first_name AS "firstName" FROM employees WHERE id = ANY($1::uuid[])`,
-          [approverIds]
-        );
-        hierarchyApprovers = r.rows;
-      } else {
-        // No hierarchy → route to HR / Super Admin as the fallback approvers.
-        const r = await pool.query(
-          `SELECT id, email, first_name AS "firstName" FROM employees
-            WHERE role IN ('admin','hr_admin') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
-        );
-        hierarchyApprovers = r.rows;
       }
 
-      // Broadcast list: Admin + HR & Administration + employees with designation 'Business Unit Head'.
-      // Director is intentionally excluded (will be enabled later).
-      const broadcastRes = await pool.query(
-        `SELECT id, email, first_name AS "firstName" FROM employees
-          WHERE (role IN ('admin','hr_admin') OR LOWER(designation) = 'business unit head')
-            AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+      ins = await client.query(
+        `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, total_days, reason, is_half_day, half_day_type, start_time, end_time, hours)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         RETURNING id as "_id", leave_type as "leaveType", start_date as "startDate",
+         end_date as "endDate", total_days as "totalDays", reason, status,
+         is_half_day as "isHalfDay", half_day_type as "halfDayType", created_at as "createdAt",
+         start_time as "startTime", end_time as "endTime", hours`,
+        [req.user._id, leaveType, startDate, endDateVal, totalDays, reason, isHalfDay || false, halfDayType || null,
+         permStartTime, permEndTime, isPermission ? permHours : null]
       );
 
-      // Merge hierarchy + broadcast; deduplicate by id; skip blocked emails.
-      const BLOCKED_EMAILS = new Set(['vellayan@altiusnxt.com']);
-      const seenIds = new Set();
-      const allRecipients = [];
-      for (const a of [...hierarchyApprovers, ...broadcastRes.rows]) {
-        if (!seenIds.has(String(a.id)) && !BLOCKED_EMAILS.has((a.email || '').toLowerCase())) {
-          seenIds.add(String(a.id));
-          allRecipients.push(a);
-        }
+      const leaveId = ins.rows[0]._id;
+
+      // ── Build the hierarchy-based approval chain (Employee Tree) ──
+      let approverLevels = [];
+      try {
+        approverLevels = await createLevels(client, 'leave', leaveId, req.user._id);
+      } catch (e) {
+        await client.query('ROLLBACK');
+        logger.error({ err: e.message }, '[leaves] createLevels failed — rolling back leave apply');
+        return res.status(500).json({ success: false, message: 'Leave could not be submitted — approval chain setup failed. Please contact HR.' });
       }
 
-      // In-app notifications to all recipients.
-      const notifTitle = leaveType === 'permission' ? 'Permission Approval Required' : 'Leave Approval Required';
-      const notifMsg = leaveType === 'permission'
-        ? `${empName} requested permission on ${startLabel} (${permStartTime}–${permEndTime}).`
-        : `${empName} requested ${leaveType} leave from ${startLabel} (${totalDays} day${totalDays !== 1 ? 's' : ''}).`;
-      await Promise.all(allRecipients.map(a => createNotification(
-        a.id, 'approval', notifTitle, notifMsg,
-        `/leave-tracker/team?openId=${leaveId}`
-      ).catch(err => logger.warn({ err: err.message }, '[leaves] notify approver failed'))));
+      await client.query('COMMIT');
 
-      // Emails to all recipients with direct approval link (soft-fail; SMTP may be unconfigured).
-      const baseUrl = process.env.APP_URL || 'https://nxtpeople.altiusnxt.tech';
-      const leaveTypeDisplay = leaveType === 'permission' ? 'Permission' :
-                               leaveType === 'comp_off' ? 'Compensatory Off' :
-                               leaveType.charAt(0).toUpperCase() + leaveType.slice(1) + ' Leave';
-      const approvalLink = `${baseUrl}/leave-tracker/team?openId=${leaveId}`;
+      // ── Notify ALL approval levels immediately (parallel), + employee feed ──
+      // Runs after COMMIT so slow email sends don't hold the DB connection.
+      try {
+        const { createFeedEntry } = require('./feeds');
+        const startLabel = new Date(startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+        const empName = `${req.user.firstName} ${req.user.lastName}`;
+        const msg = `${req.user.firstName} applied ${leaveType} leave from ${startLabel} for ${totalDays} day(s).`;
 
-      await Promise.all(allRecipients.filter(a => a.email).map(a =>
-        sendLeaveApprovalEmail({
-          to: a.email,
-          employeeName: empName,
-          leaveType: leaveTypeDisplay,
-          startDate,
-          endDate,
-          totalDays,
-          reason,
-          approvalLink,
-          hours: isPermission ? permHours : null,
-          startTime: isPermission ? permStartTime : null,
-          endTime: isPermission ? permEndTime : null,
-        }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))
-      ));
-    } catch (e) { logger.error({ err: e.message }, '[leaves] notify/feed soft-fail'); }
+        await createFeedEntry(req.user._id, 'leave', 'Leave Applied', msg, '📅');
 
-    res.status(201).json({ success: true, data: ins.rows[0], message: 'Leave applied successfully' });
+        const approverIds = approverLevels.map(l => l.approverId).filter(Boolean);
+        let hierarchyApprovers = [];
+        if (approverIds.length > 0) {
+          const r = await pool.query(
+            `SELECT id, email, first_name AS "firstName" FROM employees WHERE id = ANY($1::uuid[])`,
+            [approverIds]
+          );
+          hierarchyApprovers = r.rows;
+        } else {
+          const r = await pool.query(
+            `SELECT id, email, first_name AS "firstName" FROM employees
+              WHERE role IN ('admin','hr_admin') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+          );
+          hierarchyApprovers = r.rows;
+        }
+
+        const broadcastRes = await pool.query(
+          `SELECT id, email, first_name AS "firstName" FROM employees
+            WHERE (role IN ('admin','hr_admin') OR LOWER(designation) = 'business unit head')
+              AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+        );
+
+        const BLOCKED_EMAILS = new Set(['vellayan@altiusnxt.com']);
+        const seenIds = new Set();
+        const allRecipients = [];
+        for (const a of [...hierarchyApprovers, ...broadcastRes.rows]) {
+          if (!seenIds.has(String(a.id)) && !BLOCKED_EMAILS.has((a.email || '').toLowerCase())) {
+            seenIds.add(String(a.id));
+            allRecipients.push(a);
+          }
+        }
+
+        const notifTitle = leaveType === 'permission' ? 'Permission Approval Required' : 'Leave Approval Required';
+        const notifMsg = leaveType === 'permission'
+          ? `${empName} requested permission on ${startLabel} (${permStartTime}–${permEndTime}).`
+          : `${empName} requested ${leaveType} leave from ${startLabel} (${totalDays} day${totalDays !== 1 ? 's' : ''}).`;
+        await Promise.all(allRecipients.map(a => createNotification(
+          a.id, 'approval', notifTitle, notifMsg,
+          `/leave-tracker/team?openId=${leaveId}`
+        ).catch(err => logger.warn({ err: err.message }, '[leaves] notify approver failed'))));
+
+        const baseUrl = process.env.APP_URL || 'https://nxtpeople.altiusnxt.tech';
+        const leaveTypeDisplay = leaveType === 'permission' ? 'Permission' :
+                                 leaveType === 'comp_off' ? 'Compensatory Off' :
+                                 leaveType.charAt(0).toUpperCase() + leaveType.slice(1) + ' Leave';
+        const approvalLink = `${baseUrl}/leave-tracker/team?openId=${leaveId}`;
+
+        await Promise.all(allRecipients.filter(a => a.email).map(a =>
+          sendLeaveApprovalEmail({
+            to: a.email,
+            employeeName: empName,
+            leaveType: leaveTypeDisplay,
+            startDate,
+            endDate,
+            totalDays,
+            reason,
+            approvalLink,
+            hours: isPermission ? permHours : null,
+            startTime: isPermission ? permStartTime : null,
+            endTime: isPermission ? permEndTime : null,
+          }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))
+        ));
+      } catch (e) { logger.error({ err: e.message }, '[leaves] notify/feed soft-fail'); }
+
+      res.status(201).json({ success: true, data: ins.rows[0], message: 'Leave applied successfully' });
+    } catch (txErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
