@@ -532,10 +532,11 @@ router.put('/change-password', protect, async (req, res) => {
 
     const hashed = await bcrypt.hash(newPassword, 12);
     await pool.query('UPDATE employees SET password = $1 WHERE id = $2', [hashed, req.user._id]);
+    await pool.query('DELETE FROM refresh_tokens WHERE employee_id = $1', [req.user._id]);
 
     res.json({ success: true, message: 'Password updated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -630,10 +631,11 @@ router.put('/reset-password/:token', async (req, res) => {
       'UPDATE employees SET password = $1, reset_password_token = NULL, reset_password_expires = NULL WHERE id = $2',
       [newHashedPassword, result.rows[0].id]
     );
+    await pool.query('DELETE FROM refresh_tokens WHERE employee_id = $1', [result.rows[0].id]);
 
     res.json({ success: true, message: 'Password reset successfully. You can now log in.' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 

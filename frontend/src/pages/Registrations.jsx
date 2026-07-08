@@ -384,7 +384,7 @@ function ConfirmModal({ employee, onClose, onConfirmed }) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Initial Password</label>
-                <input type="text" value={form.password} onChange={e => setForm({...form, password: e.target.value})} className="w-full bg-white border border-slate-300 text-slate-900 px-3 py-2.5 rounded-xl text-base focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" placeholder="Required for login" />
+                <input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} className="w-full bg-white border border-slate-300 text-slate-900 px-3 py-2.5 rounded-xl text-base focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500" placeholder="Required for login" />
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Allow Access To</label>

@@ -290,7 +290,7 @@ router.post('/checkout', async (req, res) => {
     const workingHours = parseFloat((safePrev + sessionHours).toFixed(8));
 
     let status = record.status;
-    if (isFinite(workingHours)) {
+    if (isFinite(workingHours) && record.status !== 'on_duty') {
       if (workingHours < halfDayHours) {
         status = 'absent';
       } else if (workingHours < 7.5) {

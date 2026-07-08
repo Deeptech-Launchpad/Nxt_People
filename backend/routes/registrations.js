@@ -119,16 +119,17 @@ router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => 
   try {
     const { token } = req.params;
 
-    // Validate token again
+    await client.query('BEGIN');
+    // FOR UPDATE serialises concurrent submissions from the same invite link
     const tokenRes = await client.query(
-      'SELECT id, email, expires_at, used FROM onboarding_tokens WHERE token = $1',
+      'SELECT id, email, expires_at, used FROM onboarding_tokens WHERE token = $1 FOR UPDATE',
       [token]
     );
 
-    if (tokenRes.rows.length === 0)              { client.release(); return res.status(400).json({ success: false, message: 'Invalid token.' }); }
-    if (tokenRes.rows[0].used)                   { client.release(); return res.status(410).json({ success: false, message: 'Link already used.' }); }
+    if (tokenRes.rows.length === 0)              { await client.query('ROLLBACK'); return res.status(400).json({ success: false, message: 'Invalid token.' }); }
+    if (tokenRes.rows[0].used)                   { await client.query('ROLLBACK'); return res.status(410).json({ success: false, message: 'Link already used.' }); }
     if (new Date() > new Date(tokenRes.rows[0].expires_at)) {
-      client.release(); return res.status(410).json({ success: false, message: 'Link expired.' });
+      await client.query('ROLLBACK'); return res.status(410).json({ success: false, message: 'Link expired.' });
     }
 
     const {
@@ -140,8 +141,6 @@ router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => 
       emergencyContactNumber, emergencyContactAlternate,
       education // JSON string
     } = req.body;
-
-    await client.query('BEGIN');
 
     // Insert into employees table
     const empInsert = await client.query(`
@@ -232,7 +231,7 @@ router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => 
     res.json({ success: true, message: 'Submitted successfully. HR will review and contact you.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   } finally {
     client.release();
   }
@@ -306,8 +305,9 @@ router.get('/:id/full', async (req, res) => {
 
     const eduRes = await pool.query('SELECT * FROM employee_education WHERE employee_id = $1 ORDER BY year_of_passing DESC', [id]);
     const docRes = await pool.query('SELECT * FROM employee_documents WHERE employee_id = $1', [id]);
-    
-    const candidate = empRes.rows[0];
+
+    const { password, mfa_secret, mfa_backup_codes, reset_password_token, reset_password_expires, ...safeRow } = empRes.rows[0];
+    const candidate = safeRow;
     candidate.education = eduRes.rows;
     candidate.documents = docRes.rows.map(d => ({
       documentType: d.document_type,

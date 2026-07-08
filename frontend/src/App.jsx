@@ -142,8 +142,8 @@ const AppRoutes = () => {
           <Route path="team/department" element={<OrgChart/>}/>
           <Route path="team/projects"   element={<TeamProjects/>}/>
           <Route path="team/peers"      element={<Peers/>}/>
-          <Route path="team/approvals"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Approvals/></ProtectedRoute>}/>
-          <Route path="approvals"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Approvals/></ProtectedRoute>}/>
+          <Route path="team/approvals"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
+          <Route path="approvals"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
 
           {/* ── Home / Organization ──────────────────────────────────── */}
           <Route path="organization" element={<OrgOverview/>}/>
@@ -163,7 +163,7 @@ const AppRoutes = () => {
           <Route path="attendance/checkin"        element={<CheckInOut/>}/>
           <Route path="attendance/regularization" element={<Regularization/>}/>
           <Route path="attendance/location"       element={<AttendanceLocation/>}/>
-          <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TeamAttendance/></ProtectedRoute>}/>
+          <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><TeamAttendance/></ProtectedRoute>}/>
 
           {/* ── Time Tracker ─────────────────────────────────────────── */}
           <Route path="time-tracker"             element={<TimeTrackerLanding/>}/>

@@ -1040,7 +1040,20 @@ export default function Employees() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {viewEmpData.documents.map((doc, i) => {
                           const _tok = localStorage.getItem('nxt_token');
-                          const fileUrl = `${doc.filePath}${_tok ? `?t=${encodeURIComponent(_tok)}` : ''}`;
+                          const openDoc = (download) => {
+                            fetch(doc.filePath, { headers: { Authorization: `Bearer ${_tok}` } })
+                              .then(r => r.blob())
+                              .then(blob => {
+                                const blobUrl = URL.createObjectURL(blob);
+                                if (download) {
+                                  const a = document.createElement('a'); a.href = blobUrl; a.download = doc.originalName;
+                                  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                                } else {
+                                  window.open(blobUrl, '_blank');
+                                }
+                                setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+                              });
+                          };
                           return (
                             <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-brand-300 hover:bg-brand-50 transition-colors group">
                               <div className="flex items-center gap-3 overflow-hidden">
@@ -1053,12 +1066,12 @@ export default function Employees() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-                                <a href={fileUrl} target="_blank" rel="noreferrer" title="Preview" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
+                                <button onClick={() => openDoc(false)} title="Preview" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
                                   <Eye size={16} />
-                                </a>
-                                <a href={fileUrl} download={doc.originalName} title="Download" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
+                                </button>
+                                <button onClick={() => openDoc(true)} title="Download" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
                                   <Download size={16} />
-                                </a>
+                                </button>
                               </div>
                             </div>
                           );

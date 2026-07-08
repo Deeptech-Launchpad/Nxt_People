@@ -359,14 +359,18 @@ router.post('/', [
           );
           const employee = empRes.rows[0] || {};
           let balance = 0;
-          if (leaveType === 'casual') balance = parseFloat(employee.casual_leave) || 0;
-          else if (leaveType === 'permission') balance = parseFloat(employee.earned_leave) || 0;
+          let legacyCol = null;
+          if (leaveType === 'casual') { balance = parseFloat(employee.casual_leave) || 0; legacyCol = 'casual_leave'; }
+          else if (leaveType === 'permission') { balance = parseFloat(employee.earned_leave) || 0; legacyCol = 'earned_leave'; }
           if (balance < totalDays) {
             await client.query('ROLLBACK');
             return res.status(400).json({
               success: false,
               message: `Insufficient ${leaveType} leave balance. Available: ${balance} day(s)`
             });
+          }
+          if (legacyCol) {
+            await client.query(`UPDATE employees SET ${legacyCol} = ${legacyCol} - $1 WHERE id = $2`, [totalDays, req.user._id]);
           }
         }
       }

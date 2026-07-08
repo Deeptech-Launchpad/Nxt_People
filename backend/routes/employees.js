@@ -402,17 +402,18 @@ router.put('/:id', authorize('admin', 'director'), async (req, res) => {
 
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
 
+    const { panNumber, aadhaarNumber, bankAccount, bankIfsc, uanNumber, ...safeChanges } = req.body;
     await logAudit(req, {
       action: 'UPDATE',
       resource: 'Employee',
       resourceId: req.params.id,
-      changes: req.body // simplified, passing the requested changes
+      changes: safeChanges
     });
 
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'Email already exists' });
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 

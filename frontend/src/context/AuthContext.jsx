@@ -13,9 +13,11 @@ export const AuthProvider = ({ children }) => {
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       api.get('/auth/me')
         .then(res => setUser(res.data.data))
-        .catch(() => {
-          localStorage.removeItem('nxt_token');
-          localStorage.removeItem('nxt_refresh_token');
+        .catch((err) => {
+          if (err?.response?.status === 401) {
+            localStorage.removeItem('nxt_token');
+            localStorage.removeItem('nxt_refresh_token');
+          }
         })
         .finally(() => setLoading(false));
     } else {

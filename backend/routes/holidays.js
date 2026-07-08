@@ -186,18 +186,15 @@ router.post('/:id/notify', authorize('admin', 'director'), audit('NOTIFY', 'holi
 
     const { sendMail } = require('../utils/mailer');
     const subject = `${process.env.COMPANY_NAME || 'Company'} — ${holiday.name}`;
-    let sent = 0, failed = 0;
-
-    for (const emp of emps.rows) {
-      try {
-        await sendMail({
-          to: emp.email,
-          subject,
-          text: `Hi ${emp.first_name},\n\n${holiday.mail_body}\n\nDate: ${holiday.date}\n\nRegards,\nHR Team`,
-        });
-        sent++;
-      } catch { failed++; }
-    }
+    const results = await Promise.allSettled(
+      emps.rows.map(emp => sendMail({
+        to: emp.email,
+        subject,
+        text: `Hi ${emp.first_name},\n\n${holiday.mail_body}\n\nDate: ${holiday.date}\n\nRegards,\nHR Team`,
+      }))
+    );
+    const sent = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.filter(r => r.status === 'rejected').length;
 
     // Only stamp notified_at when every recipient succeeded. Partial-success
     // would mislead the UI ("Sent on …") into thinking the broadcast worked

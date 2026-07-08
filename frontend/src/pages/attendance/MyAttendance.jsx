@@ -913,13 +913,13 @@ export default function MyAttendance() {
             {/* Report items */}
             <div className="flex-1 overflow-y-auto py-2">
               {[
-                { label: 'Payable Days', val: `${summary?.present ?? 0} Days`,  color: '#f59e0b' },
-                { label: 'Present',      val: `${summary?.present ?? 0} Days`,  color: '#22c55e' },
-                { label: 'On Duty',      val: '0 Day',                           color: '#6366f1' },
-                { label: 'Paid leave',   val: `${summary?.leave ?? 0} Day`,      color: '#34a853' },
-                { label: 'Holidays',     val: '0 Day',                           color: '#f97316' },
-                { label: 'Weekend',      val: `${summary?.weekend ?? 0} Day`,    color: '#94a3b8' },
-                { label: 'Unpaid leave', val: '0 Day',                           color: '#e53935' },
+                { label: 'Payable Days', val: `${summary?.payableDays ?? 0} Days`, color: '#f59e0b' },
+                { label: 'Present',      val: `${summary?.present ?? 0} Days`,     color: '#22c55e' },
+                { label: 'On Duty',      val: `${summary?.onDuty ?? 0} Day`,       color: '#6366f1' },
+                { label: 'Paid leave',   val: `${summary?.leave ?? 0} Day`,        color: '#34a853' },
+                { label: 'Holidays',     val: `${summary?.holidays ?? 0} Day`,     color: '#f97316' },
+                { label: 'Weekend',      val: `${summary?.weekend ?? 0} Day`,      color: '#94a3b8' },
+                { label: 'Unpaid leave', val: `${summary?.unpaid ?? 0} Day`,       color: '#e53935' },
               ].map(({ label, val, color }) => (
                 <div key={label} className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-50 last:border-0">
                   <div className="w-[3px] h-[18px] rounded-full flex-shrink-0" style={{ backgroundColor: color }} />

@@ -536,9 +536,9 @@ async function computeMonthlyTDS(client, { employeeId, monthlyGrossFull, fy }) {
     const slice = Math.min(taxableIncome, to) - from;
     if (slice > 0) annualTax += slice * (rate / 100);
   }
-  // Section 87A rebate — both regimes give a full rebate up to ₹5L (old) / ₹7L (new).
-  if (regime === 'old' && taxableIncome <= 5_00_000 && annualTax <= 12_500) annualTax = 0;
-  if (regime === 'new' && taxableIncome <= 7_00_000 && annualTax <= 25_000) annualTax = 0;
+  // Section 87A rebate — partial rebate up to ₹12,500 (old) / ₹25,000 (new).
+  if (regime === 'old' && taxableIncome <= 5_00_000) annualTax = Math.max(0, annualTax - 12_500);
+  if (regime === 'new' && taxableIncome <= 7_00_000) annualTax = Math.max(0, annualTax - 25_000);
   // 4% health & education cess
   annualTax *= 1.04;
 
