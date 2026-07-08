@@ -141,6 +141,11 @@ router.get('/', async (req, res) => {
 
 // GET single employee — Bug #9 fix: include leave balance columns
 router.get('/:id', async (req, res) => {
+  // Full-access roles (admin/director/hr_admin) may fetch any employee's PII.
+  // All other roles may only fetch their own record (needed for the profile page).
+  if (!isFullAccess(req.user.role) && String(req.params.id) !== String(req.user._id)) {
+    return res.status(403).json({ success: false, message: 'Access denied.' });
+  }
   try {
     // SELECT every column on employees so the Edit modal can populate fields
     // like nickName, personalEmail, workPhone, PAN, Aadhaar, bank, emergency

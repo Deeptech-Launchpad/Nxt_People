@@ -204,10 +204,10 @@ const AppRoutes = () => {
           <Route path="more-services/hr-letters"   element={<HRLetters/>}/>
 
           {/* ── Reports / Admin ──────────────────────────────────────── */}
-          <Route path="reports"            element={<ProtectedRoute roles={['admin','director','manager']}><ReportsLanding/></ProtectedRoute>}/>
-          <Route path="reports/attendance" element={<ProtectedRoute roles={['admin','director','manager']}><Reports/></ProtectedRoute>}/>
-          <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','director','manager']}><DailyAttendance/></ProtectedRoute>}/>
-          <Route path="payroll"                element={<ProtectedRoute roles={['admin','director','manager']}><PayrollReport/></ProtectedRoute>}/>
+          <Route path="reports"            element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ReportsLanding/></ProtectedRoute>}/>
+          <Route path="reports/attendance" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Reports/></ProtectedRoute>}/>
+          <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><DailyAttendance/></ProtectedRoute>}/>
+          <Route path="payroll"                element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><PayrollReport/></ProtectedRoute>}/>
           <Route path="payroll/setup"          element={<ProtectedRoute roles={['admin','director']}><PayrollSetup/></ProtectedRoute>}/>
           <Route path="payroll/run"            element={<ProtectedRoute roles={['admin','director']}><PayrollRun/></ProtectedRoute>}/>
           <Route path="payroll/my"             element={<MyPayroll/>}/>

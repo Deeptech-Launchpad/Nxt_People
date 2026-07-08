@@ -92,8 +92,11 @@ function ApproveModal({ employee, onClose, onApproved }) {
             <label className="block text-sm font-medium text-slate-700 mb-1.5">Role</label>
             <div className="relative">
               <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="w-full bg-white border border-slate-300 text-slate-900 px-3 py-2.5 rounded-xl text-base focus:outline-none focus:border-brand-500 appearance-none shadow-sm">
-                <option value="employee">Employee</option>
-                <option value="manager">Team Lead</option>
+                <option value="team_member">Employee</option>
+                <option value="team_incharge">Team Incharge</option>
+                <option value="manager">Team Lead / Manager</option>
+                <option value="hr_admin">HR Admin</option>
+                <option value="director">Director</option>
                 <option value="admin">Admin</option>
               </select>
               <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />

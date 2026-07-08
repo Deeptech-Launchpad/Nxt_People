@@ -7,7 +7,7 @@ router.use(protect);
 
 // Bug #10 fix: single JOIN+GROUP BY query instead of N+1 loop
 // Bug #20 fix: summary now accepts startDate/endDate OR month/year params
-router.get('/attendance', async (req, res) => {
+router.get('/attendance', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { startDate, endDate, department, employeeId } = req.query;
     const start = startDate ? startDate : new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
