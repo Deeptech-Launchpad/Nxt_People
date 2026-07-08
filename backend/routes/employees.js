@@ -402,7 +402,9 @@ router.put('/:id', authorize('admin', 'director'), async (req, res) => {
 
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
 
-    const { panNumber, aadhaarNumber, bankAccount, bankIfsc, uanNumber, ...safeChanges } = req.body;
+    const safeChanges = { ...req.body };
+    delete safeChanges.panNumber; delete safeChanges.aadhaarNumber;
+    delete safeChanges.bankAccount; delete safeChanges.bankIfsc; delete safeChanges.uanNumber;
     await logAudit(req, {
       action: 'UPDATE',
       resource: 'Employee',
