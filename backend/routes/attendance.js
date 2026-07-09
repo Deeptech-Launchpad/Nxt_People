@@ -466,7 +466,7 @@ router.get('/team', authorize('admin', 'director', 'manager', 'team_incharge'), 
     let empIdx = 1;
 
     if (department) { empQuery += ` AND e.department = $${empIdx++}`; empParams.push(department); }
-    if (req.user.role === 'manager') { empQuery += ` AND e.reporting_manager_id = $${empIdx++}`; empParams.push(req.user._id); }
+    if (['manager', 'team_incharge'].includes(req.user.role)) { empQuery += ` AND e.reporting_manager_id = $${empIdx++}`; empParams.push(req.user._id); }
 
     const employeesRes = await pool.query(
       `SELECT e.id as "_id", e.first_name as "firstName", e.last_name as "lastName",

@@ -53,7 +53,7 @@ export default function DashboardWidgets() {
   // Find birthdays this month
   const birthdays = employees.filter(e => {
     if (!e.dateOfBirth) return false;
-    const dob = new Date(e.dateOfBirth);
+    const dob = new Date(e.dateOfBirth + 'T00:00:00');
     return dob.getMonth() === currentMonth;
   });
 

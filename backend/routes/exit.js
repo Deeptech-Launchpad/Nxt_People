@@ -61,20 +61,24 @@ router.post('/', async (req, res) => {
 
 // PUT approve/reject (admin)
 router.put('/:id/action', authorize('admin', 'director'), async (req, res) => {
+  const client = await pool.connect();
   try {
     const { action, lastWorkingDate, rejectionReason } = req.body;
-    const existing = await pool.query('SELECT * FROM exit_requests WHERE id=$1', [req.params.id]);
+    await client.query('BEGIN');
+    const existing = await client.query('SELECT * FROM exit_requests WHERE id=$1 FOR UPDATE', [req.params.id]);
     const ex = existing.rows[0];
-    if (!ex) return res.status(404).json({ success: false, message: 'Not found' });
+    if (!ex) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Not found' }); }
+    if (ex.status !== 'pending') { await client.query('ROLLBACK'); return res.status(400).json({ success: false, message: `Exit request is already ${ex.status}` }); }
 
     const status = action === 'approved' ? 'approved' : 'rejected';
-    await pool.query(
+    await client.query(
       'UPDATE exit_requests SET status=$1, approved_by=$2, approved_at=NOW(), last_working_date=COALESCE($3, last_working_date), rejection_reason=$4 WHERE id=$5',
       [status, req.user._id, lastWorkingDate || null, rejectionReason || null, req.params.id]
     );
     if (action === 'approved') {
-      await pool.query("UPDATE employees SET status='resigned' WHERE id=$1", [ex.employee_id]);
+      await client.query("UPDATE employees SET status='resigned' WHERE id=$1", [ex.employee_id]);
     }
+    await client.query('COMMIT');
     await createNotification(ex.employee_id, 'alert',
       action === 'approved' ? 'Resignation Accepted' : 'Resignation Rejected',
       action === 'approved' ? `Your resignation has been accepted. Last working day confirmed.` : `Your resignation was rejected. ${rejectionReason || ''}`,
@@ -87,7 +91,12 @@ router.put('/:id/action', authorize('admin', 'director'), async (req, res) => {
       details: { action, lastWorkingDate, rejectionReason }
     });
     res.json({ success: true, message: `Exit request ${action}` });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
 });
 
 // PUT update clearance status (admin)

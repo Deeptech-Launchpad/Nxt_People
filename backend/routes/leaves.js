@@ -761,42 +761,41 @@ router.delete('/:id', async (req, res) => {
   // before the return statement. finally is the canonical pattern here.
   const client = await pool.connect();
   try {
+    // BEGIN before SELECT so FOR UPDATE locks the row, preventing a concurrent
+    // approval from changing status between our check and the DELETE.
+    await client.query('BEGIN');
     const leaveRes = await client.query(
-      'SELECT status, leave_type, start_date, end_date, total_days FROM leaves WHERE id=$1 AND employee_id=$2',
+      'SELECT status, leave_type, start_date, end_date, total_days FROM leaves WHERE id=$1 AND employee_id=$2 FOR UPDATE',
       [req.params.id, req.user._id]
     );
     if (leaveRes.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, message: 'Leave not found' });
     }
     const leave = leaveRes.rows[0];
     if (leave.status === 'approved') {
+      await client.query('ROLLBACK');
       return res.status(400).json({ success: false, message: 'Cannot cancel approved leave' });
     }
 
     // Only refund balance if the leave was still pending — rejected and cancelled
     // leaves already had their balance refunded at rejection/cancellation time.
     // Refunding again here would inflate the balance.
-    try {
-      await client.query('BEGIN');
-      if (leave.status === 'pending' && leave.leave_type !== 'unpaid' && leave.total_days > 0) {
-        const year = new Date(leave.start_date).getFullYear();
-        const dbCode = leave.leave_type === 'comp_off' ? 'compoff' : leave.leave_type;
-        const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
-        if (ltRes.rows[0]) {
-          await client.query(
-            `UPDATE leave_balances
-                SET available = available + $1
-              WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
-            [leave.total_days, req.user._id, ltRes.rows[0].id, year]
-          );
-        }
+    if (leave.status === 'pending' && leave.leave_type !== 'unpaid' && leave.total_days > 0) {
+      const year = new Date(leave.start_date).getFullYear();
+      const dbCode = leave.leave_type === 'comp_off' ? 'compoff' : leave.leave_type;
+      const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
+      if (ltRes.rows[0]) {
+        await client.query(
+          `UPDATE leave_balances
+              SET available = available + $1
+            WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
+          [leave.total_days, req.user._id, ltRes.rows[0].id, year]
+        );
       }
-      await client.query('DELETE FROM leaves WHERE id=$1', [req.params.id]);
-      await client.query('COMMIT');
-    } catch (txErr) {
-      await client.query('ROLLBACK').catch(() => {});
-      throw txErr;
     }
+    await client.query('DELETE FROM leaves WHERE id=$1', [req.params.id]);
+    await client.query('COMMIT');
 
     // Audit trail for cancellations — was missing entirely before.
     await logAudit(req, {
@@ -813,6 +812,7 @@ router.delete('/:id', async (req, res) => {
     });
     res.json({ success: true, message: 'Leave cancelled' });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ success: false, message: err.message });
   } finally {
     client.release();

@@ -37,7 +37,7 @@ export default function LeaveCalendar() {
     const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${daysInMonth}`;
 
     Promise.all([
-      api.get(`/attendance/my?month=${month}&year=${year}`).catch(() => ({ data: { data: [] } })),
+      api.get(`/attendance/my?month=${month + 1}&year=${year}`).catch(() => ({ data: { data: [] } })),
       api.get(`/holidays?year=${year}`).catch(() => ({ data: { data: [] } })),
       api.get(`/leaves?startDate=${startDate}&endDate=${endDate}&status=approved&limit=500`).catch(() => ({ data: { data: [] } }))
     ]).then(([attRes, holRes, leaveRes]) => {

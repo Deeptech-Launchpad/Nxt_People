@@ -35,7 +35,7 @@ export default function CompOff() {
   const [expanded, setExpanded] = useState(null); // request id whose timeline is open
   const [viewItem, setViewItem] = useState(null); // item open in CompOffDetailModal
 
-  const canApproveAll = ['admin', 'director', 'manager'].includes(user?.role);
+  const canApproveAll = ['admin', 'director', 'manager', 'hr_admin'].includes(user?.role);
   const today = new Date();
   const tomorrow = new Date(today.getTime() + 86400000);
 

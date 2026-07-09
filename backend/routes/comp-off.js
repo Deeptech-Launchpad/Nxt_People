@@ -144,6 +144,14 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
     }
 
     await client.query('BEGIN');
+    const dupCheck = await client.query(
+      'SELECT id FROM comp_offs WHERE employee_id=$1 AND worked_date=$2 FOR UPDATE',
+      [req.user._id, workedDate]
+    );
+    if (dupCheck.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'You have already claimed comp-off for this worked date.' });
+    }
     const r = await client.query(
       `INSERT INTO comp_offs (employee_id, worked_date, comp_off_date, reason, days_earned, expires_at)
        VALUES ($1,$2,$3,$4,$5,$6)

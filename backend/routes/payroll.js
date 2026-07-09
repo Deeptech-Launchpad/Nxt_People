@@ -38,7 +38,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (re
     const r = await pool.query(
       `SELECT e.id, e.first_name, e.last_name, e.employee_id as emp_id, e.department, e.designation,
        e.basic_salary, e.monthly_ctc,
-       COUNT(CASE WHEN a.status IN ('present','late') THEN 1 END) as present_days,
+       COUNT(CASE WHEN a.status IN ('present','late','on_duty','on-duty') THEN 1 END) as present_days,
        COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
        COUNT(CASE WHEN a.status = 'half-day' THEN 1 END) as half_days,
        COALESCE(SUM(CASE WHEN a.check_out IS NOT NULL AND a.check_in IS NOT NULL
@@ -456,6 +456,9 @@ function fyForMonth(month, year) {
  *  caller doesn't need a separate sequence object. */
 async function nextSlipNumber(client, month, year) {
   const prefix = `PSL-${year}-${String(month).padStart(2, '0')}`;
+  // Advisory lock serialises concurrent payroll runs for the same month so two
+  // transactions cannot both read the same max and produce duplicate slip numbers.
+  await client.query('SELECT pg_advisory_xact_lock($1)', [year * 100 + month]);
   const r = await client.query(
     `SELECT slip_number FROM payroll_payslips
       WHERE slip_number LIKE $1 || '-%'

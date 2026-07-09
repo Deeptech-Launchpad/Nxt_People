@@ -37,6 +37,18 @@ router.delete('/:id', authorize('admin', 'director'), async (req, res) => {
 router.post('/:id/assign', authorize('admin', 'director', 'manager'), async (req, res) => {
   try {
     const { employeeIds } = req.body;
+    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'No employees specified' });
+    }
+    if (req.user.role === 'manager') {
+      const scope = await pool.query(
+        'SELECT id FROM employees WHERE id = ANY($1) AND reporting_manager_id = $2',
+        [employeeIds, req.user._id]
+      );
+      if (scope.rows.length !== employeeIds.length) {
+        return res.status(403).json({ success: false, message: 'You can only assign shifts to employees in your team' });
+      }
+    }
     await pool.query('UPDATE employees SET shift_id = $1 WHERE id = ANY($2)', [req.params.id, employeeIds]);
     res.json({ success: true, message: 'Shift assigned' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
