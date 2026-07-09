@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const logger = require('../logger');
 const pool = require('../db');
@@ -34,7 +34,7 @@ router.get('/today', async (req, res) => {
     }
     res.json({ success: true, data: row });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -52,7 +52,7 @@ router.get('/by-date', async (req, res) => {
     const row = result.rows[0] || null;
     res.json({ success: true, data: row });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -233,7 +233,7 @@ router.post('/checkin', async (req, res) => {
       } catch (e) { logger.error({ err: e.message }, '[attendance] notify/feed soft-fail'); }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -274,7 +274,7 @@ router.post('/checkout', async (req, res) => {
         ? `GPS (${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)})`
         : 'Office');
 
-    const checkInDate = new Date(record.check_in);
+    const checkInDate = new Date(String(record.check_in).replace(' ', 'T') + (String(record.check_in).includes('+') || String(record.check_in).endsWith('Z') ? '' : 'Z'));
     
     // Round to nearest minute logic (if seconds >= 35, count as a full minute)
     const diffSeconds = isFinite(checkInDate) ? (now - checkInDate) / 1000 : 0;
@@ -336,7 +336,7 @@ router.post('/checkout', async (req, res) => {
       } catch (_) {}
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -451,7 +451,7 @@ router.get('/my', async (req, res) => {
 
     res.json({ success: true, data: mapped });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -513,7 +513,7 @@ router.get('/team', authorize('admin', 'director', 'manager', 'team_incharge'), 
 
     res.json({ success: true, data: mapped, employees: employeesRes.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -637,7 +637,7 @@ router.get('/summary', async (req, res) => {
 
     res.json({ success: true, data: summary, range: { start, end } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -729,7 +729,7 @@ router.get('/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(lines.join('\n'));
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -746,7 +746,7 @@ router.get('/holidays', async (req, res) => {
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -896,9 +896,6 @@ router.post('/reminder/checkout-self', async (req, res) => {
     }
 
     const emp = empRes.rows[0];
-    if ((emp.email || '').toLowerCase() === 'vellayan@altiusnxt.com') {
-      return res.json({ success: true, message: 'Check-out reminder email sent' });
-    }
     await sendCheckOutReminderEmail({
       to: emp.email,
       employeeName: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),

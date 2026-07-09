@@ -107,10 +107,7 @@ export default function Approvals() {
     const allItems = [
       ...data.leaves,
       ...(data.permissions || []),
-      ...(data.timesheets || []),
       ...(data.regularizations || []),
-      ...(data.wfhRequests || []),
-      ...(data.compOffs || []),
       ...(data.approvedLeaves || []),
       ...(data.rejectedLeaves || []),
     ];

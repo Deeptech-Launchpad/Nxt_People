@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const multer = require('multer');
@@ -41,6 +41,7 @@ router.post('/import', authorize('admin', 'director'), audit('IMPORT', 'holiday'
     const data = xlsx.utils.sheet_to_json(ws);
     
     if (data.length === 0) return res.status(400).json({ success: false, message: 'Empty sheet' });
+    if (data.length > 500) return res.status(400).json({ success: false, message: 'Import limited to 500 rows per file.' });
 
     let count = 0;
     for (const row of data) {
@@ -76,7 +77,7 @@ router.post('/import', authorize('admin', 'director'), audit('IMPORT', 'holiday'
 
     res.json({ success: true, message: `Successfully imported ${count} holidays.` });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -103,7 +104,7 @@ router.get('/', async (req, res) => {
       params
     );
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 router.post('/', authorize('admin', 'director'), audit('CREATE', 'holiday'), async (req, res) => {
@@ -127,7 +128,7 @@ router.post('/', authorize('admin', 'director'), audit('CREATE', 'holiday'), asy
       ]
     );
     res.status(201).json({ success: true, data: result.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 router.put('/:id', authorize('admin', 'director'), audit('UPDATE', 'holiday'), async (req, res) => {
@@ -154,14 +155,14 @@ router.put('/:id', authorize('admin', 'director'), audit('UPDATE', 'holiday'), a
       ]
     );
     res.json({ success: true, data: result.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 router.delete('/:id', authorize('admin', 'director'), audit('DELETE', 'holiday'), async (req, res) => {
   try {
     await pool.query('DELETE FROM holidays WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Holiday deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // Send the holiday's mail_body to every active employee. Idempotent — admin
@@ -203,7 +204,7 @@ router.post('/:id/notify', authorize('admin', 'director'), audit('NOTIFY', 'holi
       await pool.query('UPDATE holidays SET notified_at = NOW() WHERE id = $1', [req.params.id]);
     }
     res.json({ success: true, sent, failed, total: emps.rows.length });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 module.exports = router;

@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
@@ -11,18 +11,24 @@ router.use(protect);
 // GET /api/notifications — get current user's notifications
 router.get('/', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT id as "_id", type, title, message, is_read as "isRead", link, created_at as "createdAt"
-       FROM notifications
-       WHERE employee_id = $1
-       ORDER BY created_at DESC
-       LIMIT 50`,
-      [req.user._id]
-    );
-    const unreadCount = result.rows.filter(n => !n.isRead).length;
+    const [result, countRes] = await Promise.all([
+      pool.query(
+        `SELECT id as "_id", type, title, message, is_read as "isRead", link, created_at as "createdAt"
+         FROM notifications
+         WHERE employee_id = $1
+         ORDER BY created_at DESC
+         LIMIT 50`,
+        [req.user._id]
+      ),
+      pool.query(
+        'SELECT COUNT(*)::int AS n FROM notifications WHERE employee_id = $1 AND is_read = false',
+        [req.user._id]
+      ),
+    ]);
+    const unreadCount = countRes.rows[0].n;
     res.json({ success: true, data: result.rows, unreadCount });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -35,7 +41,7 @@ router.put('/read-all', async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -48,7 +54,7 @@ router.put('/:id/read', async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 

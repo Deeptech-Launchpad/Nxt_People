@@ -57,6 +57,16 @@ const forgotPasswordLimiter = rateLimit({
   message: { success: false, message: 'Too many requests. Try again later.' },
 });
 
+// M-02: Rate limiter for registration endpoint (20 / hour per IP).
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipRateLimit,
+  message: { success: false, message: 'Too many registration attempts. Try again later.' },
+});
+
 // Limiter for /check-email. The endpoint differentiates account states
 // (new / pending / approved / active) so the login UI can route correctly,
 // which inherently leaks account existence. We can't collapse the response
@@ -167,7 +177,7 @@ router.post('/check-email', checkEmailLimiter, async (req, res) => {
 });
 
 // @POST /api/auth/register
-router.post('/register', [
+router.post('/register', registerLimiter, [
   body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
   body('firstName').notEmpty().withMessage('First name is required').trim(),
   body('lastName').notEmpty().withMessage('Last name is required').trim(),
@@ -223,16 +233,16 @@ router.post('/accept-terms', async (req, res) => {
       return res.status(403).json({ success: false, message: 'Your account has not been approved yet.' });
     }
 
-    // If a setup token was stored at approval time, the caller must provide it
-    if (employee.reset_password_token) {
-      if (!setupToken) {
-        return res.status(400).json({ success: false, message: 'Please use the setup link from your approval email.' });
-      }
-      const crypto = require('crypto');
-      const providedHash = crypto.createHash('sha256').update(setupToken).digest('hex');
-      if (providedHash !== employee.reset_password_token) {
-        return res.status(400).json({ success: false, message: 'Invalid or expired setup link.' });
-      }
+    // Setup token is always required — accounts approved without one need HR to re-issue.
+    if (!employee.reset_password_token) {
+      return res.status(403).json({ success: false, message: 'Your setup link has expired. Please contact HR to resend your setup email.' });
+    }
+    if (!setupToken) {
+      return res.status(400).json({ success: false, message: 'Please use the setup link from your approval email.' });
+    }
+    const providedHash = crypto.createHash('sha256').update(setupToken).digest('hex');
+    if (providedHash !== employee.reset_password_token) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired setup link.' });
     }
 
     let empId = employee.employee_id;
@@ -516,6 +526,9 @@ router.get('/me', protect, async (req, res) => {
 router.put('/change-password', protect, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
+    if (!currentPassword) {
+      return res.status(400).json({ success: false, message: 'Current password is required' });
+    }
     if (!newPassword || newPassword.length < 6) {
       return res.status(400).json({ success: false, message: 'New password must be at least 6 characters' });
     }

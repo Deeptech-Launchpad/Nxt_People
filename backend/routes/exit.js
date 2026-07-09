@@ -110,10 +110,10 @@ router.put('/:id/clearance', authorize('admin', 'director'), async (req, res) =>
 
     const { itClearance, hrClearance, financeClearance, managerClearance, exitInterviewNotes } = req.body;
     await pool.query(
-      `UPDATE exit_requests SET it_clearance=COALESCE($1,it_clearance), hr_clearance=COALESCE($2,hr_clearance),
-       finance_clearance=COALESCE($3,finance_clearance), manager_clearance=COALESCE($4,manager_clearance),
+      `UPDATE exit_requests SET it_clearance=$1, hr_clearance=$2,
+       finance_clearance=$3, manager_clearance=$4,
        exit_interview_notes=COALESCE($5,exit_interview_notes) WHERE id=$6`,
-      [itClearance, hrClearance, financeClearance, managerClearance, exitInterviewNotes || null, req.params.id]
+      [itClearance ?? null, hrClearance ?? null, financeClearance ?? null, managerClearance ?? null, exitInterviewNotes || null, req.params.id]
     );
     // Check if all clearances done → mark completed
     const r = await pool.query('SELECT * FROM exit_requests WHERE id=$1', [req.params.id]);

@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
@@ -54,7 +54,7 @@ router.get('/attendance', authorize('admin', 'director', 'hr_admin', 'manager'),
     );
 
     res.json({ success: true, data: attRes.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // Bug #10 + #20 fix: single aggregation query, also accepts startDate/endDate
@@ -68,7 +68,7 @@ router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager'), as
       end = endDate;
     } else {
       const now = new Date();
-      const m = month ? parseInt(month) : now.getMonth();
+      const m = month ? parseInt(month) - 1 : now.getMonth();
       const y = parseInt(year) || now.getFullYear();
       start = new Date(y, m, 1).toLocaleDateString('en-CA');
       end = new Date(y, m + 1, 0).toLocaleDateString('en-CA');
@@ -102,7 +102,7 @@ router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager'), as
     }));
 
     res.json({ success: true, data: results });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 module.exports = router;

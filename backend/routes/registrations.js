@@ -87,9 +87,10 @@ const upload = multer({
 router.get('/validate-token/:token', async (req, res) => {
   try {
     const { token } = req.params;
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const result = await pool.query(
       'SELECT email, expires_at, used FROM onboarding_tokens WHERE token = $1',
-      [token]
+      [tokenHash]
     );
 
     if (result.rows.length === 0) {
@@ -118,12 +119,13 @@ router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => 
   const client = await pool.connect();
   try {
     const { token } = req.params;
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
     await client.query('BEGIN');
     // FOR UPDATE serialises concurrent submissions from the same invite link
     const tokenRes = await client.query(
       'SELECT id, email, expires_at, used FROM onboarding_tokens WHERE token = $1 FOR UPDATE',
-      [token]
+      [tokenHash]
     );
 
     if (tokenRes.rows.length === 0)              { await client.query('ROLLBACK'); return res.status(400).json({ success: false, message: 'Invalid token.' }); }
@@ -166,9 +168,19 @@ router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => 
 
     const employeeId = empInsert.rows[0].id;
 
+    // M-05: validate that the submitted personal email matches the invite address
+    if (personalEmail && personalEmail.toLowerCase() !== tokenRes.rows[0].email.toLowerCase()) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'Email address does not match the invite.' });
+    }
+
     // Insert education records.
     if (education) {
-      const eduArray = JSON.parse(education);
+      let eduArray;
+      try { eduArray = JSON.parse(education); } catch {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: 'Invalid education data format.' });
+      }
       for (let ed of eduArray) {
         await client.query(`
           INSERT INTO employee_education (
@@ -255,11 +267,11 @@ router.post('/generate-link', async (req, res) => {
 
     await pool.query(
       'INSERT INTO onboarding_tokens (token, email, created_by, expires_at) VALUES ($1, $2, $3, $4)',
-      [token, email, req.user._id, expiresAt]
+      [tokenHash, email, req.user._id, expiresAt]
     );
 
-    // Get the frontend origin from request headers or environment
-    const frontendUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const link = `${frontendUrl}/onboarding/${token}`;
 
     const mailOptions = {
@@ -454,11 +466,14 @@ router.get('/counts', async (req, res) => {
 });
 
 router.put('/:id/approve', async (req, res) => {
+  const client = await pool.connect();
   try {
     const { role = 'team_member', password, department } = req.body;
-    const empRes = await pool.query('SELECT registration_status FROM employees WHERE id = $1', [req.params.id]);
-    if (empRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Registration not found' });
-    if (empRes.rows[0].registration_status !== 'pending') return res.status(400).json({ success: false, message: 'Only pending registrations can be approved' });
+
+    await client.query('BEGIN');
+    const empRes = await client.query('SELECT registration_status FROM employees WHERE id = $1 FOR UPDATE', [req.params.id]);
+    if (empRes.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Registration not found' }); }
+    if (empRes.rows[0].registration_status !== 'pending') { await client.query('ROLLBACK'); return res.status(400).json({ success: false, message: 'Only pending registrations can be approved' }); }
 
     let updates = [`registration_status = 'approved'`, `approved_by = $1`, `approved_at = NOW()`, `role = $2`];
     let params = [req.user._id, role];
@@ -476,12 +491,15 @@ router.put('/:id/approve', async (req, res) => {
     updates.push(`reset_password_token = $${idx++}`);
     params.push(setupTokenHash);
 
-    const up = await pool.query(`
+    const up = await client.query(`
       UPDATE employees SET ${updates.join(', ')} WHERE id = $${idx}
       RETURNING id as "_id", first_name as "firstName", last_name as "lastName", email, role, department, registration_status as "registrationStatus"
     `, params);
 
+    await client.query('COMMIT');
+
     const emp = up.rows[0];
+    const esc = (s) => s ? String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const companyName = process.env.COMPANY_NAME || 'NxtPeople';
     try {
@@ -489,14 +507,19 @@ router.put('/:id/approve', async (req, res) => {
         from: process.env.EMAIL_USER,
         to: emp.email,
         subject: `Your account has been approved — ${companyName}`,
-        html: `<p>Hi ${emp.firstName},</p><p>Your registration has been approved. Click the link below to complete your account setup:</p><p><a href="${frontendUrl}/login?email=${encodeURIComponent(emp.email)}&setupToken=${setupToken}">Complete Setup</a></p><p>This link expires in 7 days. If you did not register, please ignore this email.</p>`
+        html: `<p>Hi ${esc(emp.firstName)},</p><p>Your registration has been approved. Click the link below to complete your account setup:</p><p><a href="${frontendUrl}/login?email=${encodeURIComponent(emp.email)}&setupToken=${setupToken}">Complete Setup</a></p><p>This link expires in 7 days. If you did not register, please ignore this email.</p>`
       });
     } catch (mailErr) {
       logger.error({ err: mailErr?.message }, 'Failed to send approval email');
     }
 
     res.json({ success: true, message: `${emp.firstName} ${emp.lastName} approved successfully.`, data: emp });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+  } finally {
+    client.release();
+  }
 });
 
 router.put('/:id/reject', async (req, res) => {

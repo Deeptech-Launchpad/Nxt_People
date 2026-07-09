@@ -683,14 +683,14 @@ export default function MyAttendance() {
                 <div className="flex-1 relative h-4">
                   {TICK_HOURS.map(h => {
                     const pct = ((h * 60 - SHIFT_START) / (SHIFT_END - SHIFT_START)) * 100;
-                    const label = h >= 12 ? `${h > 12 ? h - 12 : h}:30PM` : `${h}:30AM`;
+                    const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
                     return (
                       <span
                         key={h}
                         className="absolute text-[12px] text-slate-400 transform -translate-x-1/2"
                         style={{ left: `${pct}%` }}
                       >
-                        {h}:30{h < 12 ? 'AM' : 'PM'}
+                        {h12}:00{h < 12 ? 'AM' : 'PM'}
                       </span>
                     );
                   })}
@@ -740,7 +740,7 @@ export default function MyAttendance() {
                         ? <StatusPill status="weekend" />
                         : isFuture
                           ? <span className="text-slate-400 text-[13px]">—</span>
-                          : <StatusPill status={r?.status === 'late' ? 'present' : (r?.status || 'absent')} />
+                          : <StatusPill status={r?.status || 'absent'} />
                       }
                     </td>
                   </tr>

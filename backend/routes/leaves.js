@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const pool = require('../db');
@@ -81,7 +81,7 @@ router.get('/my', async (req, res) => {
     ]);
     res.json({ success: true, data: result.rows, total: countRes.rows[0]?.n || 0, page, limit });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -148,7 +148,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
 
     res.json({ success: true, data: result.rows, total: countRes.rows[0]?.n || 0, page, limit });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -482,7 +482,7 @@ router.post('/', [
       client.release();
     }
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -701,7 +701,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
 
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   } finally {
     client.release();
   }
@@ -748,7 +748,7 @@ router.put('/:id/cancel', authorize('admin', 'director', 'hr_admin'), async (req
     return res.json({ success: true, status: 'cancelled', message: 'Leave cancelled.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   } finally {
     client.release();
   }
@@ -794,7 +794,7 @@ router.delete('/:id', async (req, res) => {
         );
       }
     }
-    await client.query('DELETE FROM leaves WHERE id=$1', [req.params.id]);
+    await client.query("UPDATE leaves SET status='cancelled' WHERE id=$1", [req.params.id]);
     await client.query('COMMIT');
 
     // Audit trail for cancellations — was missing entirely before.
@@ -813,7 +813,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true, message: 'Leave cancelled' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   } finally {
     client.release();
   }
@@ -945,7 +945,7 @@ router.get('/balance', async (req, res) => {
 
     res.json({ success: true, data: cards, year });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -991,11 +991,52 @@ router.get('/permission-usage', authorize('admin', 'director', 'hr_admin'), asyn
     });
     res.json({ success: true, data, month, year, monthlyLimit: MONTHLY_LIMIT });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
 // ── GET pending approvals for approving authority ─────────────────────────────
+// GET /api/leaves/team-pending — pending leaves for manager's 2-level hierarchy
+// Full-access users (admin/director/hr_admin) see all pending leaves.
+// Managers and team_incharge see leaves for their direct reports AND those employees' subordinates.
+router.get('/team-pending', async (req, res) => {
+  try {
+    const { isFullAccess } = require('../utils/roles');
+    const full = isFullAccess(req.user.role);
+    let whereClause, params;
+
+    if (full) {
+      whereClause = `l.status = 'pending'`;
+      params = [];
+    } else {
+      whereClause = `l.status = 'pending'
+        AND (
+          e.reporting_manager_id = $1
+          OR e.reporting_manager_id IN (SELECT id FROM employees WHERE reporting_manager_id = $1 AND deleted_at IS NULL)
+        )`;
+      params = [req.user._id];
+    }
+
+    const r = await pool.query(
+      `SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate",
+       l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
+       l.created_at as "createdAt",
+       json_build_object(
+         '_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
+         'department', e.department, 'designation', e.designation
+       ) as employee
+       FROM leaves l
+       JOIN employees e ON l.employee_id = e.id
+       WHERE ${whereClause}
+       ORDER BY l.created_at DESC`,
+      params
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+  }
+});
+
 router.get('/pending-approvals', async (req, res) => {
   try {
     // Hierarchy-based queue: full-access (HR/Super Admin) see every pending
@@ -1030,7 +1071,7 @@ router.get('/pending-approvals', async (req, res) => {
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 

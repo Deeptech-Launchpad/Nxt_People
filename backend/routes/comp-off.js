@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
@@ -69,7 +69,7 @@ router.get('/my', async (req, res) => {
       .filter(x => x.status === 'approved' && !x.expired)
       .reduce((s, x) => s + (parseFloat(x.daysEarned) - parseFloat(x.daysUsed)), 0);
     res.json({ success: true, data: r.rows, balance: Math.max(0, balance) });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // GET pending (admin/manager) — same hierarchy scoping as the leave queue:
@@ -101,7 +101,7 @@ router.get('/pending', authorize('admin', 'director', 'manager', 'team_incharge'
       [req.user._id, full]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // POST apply comp-off — validates the worked day, attendance, the requested
@@ -168,7 +168,7 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
     res.status(201).json({ success: true, data: created });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   } finally {
     client.release();
   }
@@ -251,7 +251,7 @@ router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_inchar
     return res.json({ success: true, status: 'rejected', message: 'Comp-off rejected.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   } finally {
     client.release();
   }
@@ -269,14 +269,15 @@ router.post('/:id/use', audit('USE', 'comp_off'), async (req, res) => {
       `UPDATE comp_offs SET days_used = LEAST(days_earned, days_used + $1)
         WHERE id = $2 AND employee_id = $3 AND status = 'approved'
           AND (expires_at IS NULL OR expires_at >= CURRENT_DATE)
+          AND days_used < days_earned
         RETURNING id`,
       [days, req.params.id, req.user._id]
     );
     if (r.rows.length === 0) {
-      return res.status(400).json({ success: false, message: 'This comp-off credit is not available (not approved, or it has expired).' });
+      return res.status(400).json({ success: false, message: 'This comp-off credit is not available or has no remaining days.' });
     }
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 module.exports = router;

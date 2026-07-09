@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
@@ -117,7 +117,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         JOIN employees e ON l.employee_id = e.id
         WHERE ${full ? 'TRUE' : `EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1)`}
           AND l.status IN ('approved', 'rejected')
-        ORDER BY l.created_at DESC LIMIT 100
+        ORDER BY l.created_at DESC LIMIT 500
       `, full ? [] : [userId]),
     ]);
 
@@ -133,7 +133,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       success: true,
       data: { leaves, timesheets, regularizations, wfhRequests, compOffs, approvedLeaves, total }
     });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 module.exports = router;

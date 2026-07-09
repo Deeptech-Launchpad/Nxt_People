@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const logger = require('../logger');
 const pool = require('../db');
@@ -82,7 +82,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (re
     });
 
     res.json({ success: true, data: rows, meta: { month: m, year: y, totalWorkingDays, startDate, endDate } });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // GET leave accrual — run monthly accrual
@@ -130,7 +130,7 @@ router.post('/accrue', authorize('admin', 'director'), async (req, res) => {
       details: { count: credited }
     });
     res.json({ success: true, message: `Leave accrued for ${credited} employees` });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -240,7 +240,7 @@ router.get('/admin/employees', authorize('admin', 'director'), async (req, res) 
     });
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -268,7 +268,7 @@ router.get('/admin/employees/:id/structure', authorize('admin', 'director'), asy
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -333,7 +333,7 @@ router.put('/admin/employees/:id/structure',
       res.json({ success: true, data: withTotals(insert.rows[0]) });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
-      res.status(500).json({ success: false, message: err.message });
+      res.status(500).json({ success: false, message: 'An internal server error occurred' });
     } finally {
       client.release();
     }
@@ -580,7 +580,8 @@ async function reimbursementsFor(client, employeeId, month, year) {
   const r = await client.query(
     `SELECT id, amount FROM compensation_claims
       WHERE employee_id = $1 AND status = 'approved'
-        AND claim_date BETWEEN $2::date AND $3::date`,
+        AND claim_date BETWEEN $2::date AND $3::date
+        AND approved_at <= NOW()`,
     [employeeId, start, end]
   );
   const total = r.rows.reduce((s, x) => s + Number(x.amount || 0), 0);
@@ -746,7 +747,7 @@ router.post('/admin/run-month', authorize('admin', 'director'), logAuditWrapper(
              pfE, esiE, pt, tds,
              gross, totalDed, net,
              reim.total, loans.total, adj.bonus, adj.overtime,
-             adj.deduction + adj.other,
+             adj.other,
              req.user._id, existing.rows[0].id]
           );
           results.updated++;
@@ -768,7 +769,7 @@ router.post('/admin/run-month', authorize('admin', 'director'), logAuditWrapper(
              empWorkingDays, paidDays, lopDays, lopAmount,
              pfE, esiE, pt, tds,
              gross, totalDed, net,
-             reim.total, loans.total, adj.bonus, adj.overtime, adj.deduction + adj.other,
+             reim.total, loans.total, adj.bonus, adj.overtime, adj.other,
              req.user._id]
           );
           results.created++;
@@ -783,7 +784,7 @@ router.post('/admin/run-month', authorize('admin', 'director'), logAuditWrapper(
     }
     res.json({ success: true, month, year, workingDays, results });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   } finally {
     client.release();
   }
@@ -827,7 +828,7 @@ router.get('/admin/payslips', authorize('admin', 'director', 'manager'), async (
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -856,7 +857,7 @@ router.get('/admin/payslips/:id', authorize('admin', 'director', 'manager'), asy
     }
     res.json({ success: true, data: r.rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -889,7 +890,7 @@ router.get('/admin/payslips/:id/preview-email', authorize('admin', 'director', '
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     // Wrap in a minimal document so it renders correctly when shown in an iframe.
     res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Email Preview</title></head><body style="margin:0">${html}</body></html>`);
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 router.put('/admin/payslips/:id/lock', authorize('admin', 'director'), logAuditWrapper('LOCK', 'payslip'), async (req, res) => {
@@ -966,7 +967,7 @@ router.put('/admin/payslips/:id/lock', authorize('admin', 'director'), logAuditW
     sendLockEmail(req.params.id).catch(err => logger.error({ err: err.message }, '[payroll] lock email failed'));
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   } finally {
     client.release();
   }
@@ -1083,7 +1084,7 @@ router.put('/admin/payslips/:id/mark-paid', authorize('admin', 'director'), logA
     if (r.rows.length === 0) return res.status(400).json({ success: false, message: 'Only locked payslips can be marked paid' });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -1097,7 +1098,7 @@ router.delete('/admin/payslips/:id', authorize('admin', 'director'), logAuditWra
     if (r.rows.length === 0) return res.status(400).json({ success: false, message: 'Only draft payslips can be deleted' });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -1116,7 +1117,7 @@ router.get('/my', async (req, res) => {
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -1137,7 +1138,7 @@ router.get('/my/:id', async (req, res) => {
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Payslip not found' });
     res.json({ success: true, data: r.rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -1177,7 +1178,7 @@ router.get('/team', authorize('admin', 'director', 'manager'), async (req, res) 
 
     res.json({ success: true, month, year, summary: total, data: team.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -1339,7 +1340,7 @@ router.get('/admin/payslips/:id/pdf', authorize('admin', 'director', 'manager'),
     }
     streamPayslipPdf(res, { ...r.rows[0], payMonth: r.rows[0].pay_month, payYear: r.rows[0].pay_year });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -1359,7 +1360,7 @@ router.get('/my/:id/pdf', async (req, res) => {
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Payslip not found' });
     streamPayslipPdf(res, { ...r.rows[0], payMonth: r.rows[0].pay_month, payYear: r.rows[0].pay_year });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -1455,7 +1456,7 @@ router.post('/admin/bulk-upload',
       }
       res.json({ success: true, results });
     } catch (err) {
-      res.status(500).json({ success: false, message: err.message });
+      res.status(500).json({ success: false, message: 'An internal server error occurred' });
     }
   }
 );
@@ -1490,7 +1491,7 @@ router.get('/declarations/my', async (req, res) => {
       [req.user._id, fy]
     );
     res.json({ success: true, data: r.rows[0] || null, financialYear: fy });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // POST /api/payroll/declarations — employee submits / updates own.
@@ -1532,7 +1533,7 @@ router.post('/declarations', logAuditWrapper('SUBMIT', 'tax_declaration'), async
        num(b.homeLoanInterest), num(b.otherDeductions)]
     );
     res.status(201).json({ success: true, id: r.rows[0].id });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // GET /api/payroll/admin/declarations?status=submitted — admin: review queue
@@ -1559,7 +1560,7 @@ router.get('/admin/declarations', authorize('admin', 'director'), async (req, re
       [status, fy]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // PUT /api/payroll/admin/declarations/:id/action — approve / reject
@@ -1578,7 +1579,7 @@ router.put('/admin/declarations/:id/action', authorize('admin', 'director'),
       );
       if (r.rows.length === 0) return res.status(400).json({ success: false, message: 'Only submitted declarations can be actioned' });
       res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
   }
 );
 
@@ -1651,7 +1652,7 @@ router.get('/admin/reports/:type', authorize('admin', 'director'), async (req, r
           [x.code, `${x.first_name} ${x.last_name}`, x.gross_earnings, x.professional_tax]));
     }
     res.status(400).json({ success: false, message: 'type must be pf | esi | tds | pt' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1682,7 +1683,7 @@ router.put('/payslips/:id/approve', authorize('admin', 'director', 'manager'),
       );
       if (r.rows.length === 0) return res.status(400).json({ success: false, message: 'Slip not found or not eligible for approval' });
       res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
   }
 );
 
@@ -1789,7 +1790,7 @@ router.post('/admin/payslips/:id/correct', authorize('admin', 'director'),
       res.status(201).json({ success: true, id: ins.rows[0].id, slipNumber: slip });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
-      res.status(500).json({ success: false, message: err.message });
+      res.status(500).json({ success: false, message: 'An internal server error occurred' });
     } finally { client.release(); }
   }
 );
@@ -1817,7 +1818,7 @@ router.get('/admin/adjustments', authorize('admin', 'director'), async (req, res
       params
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // POST /api/payroll/admin/adjustments
@@ -1840,7 +1841,7 @@ router.post('/admin/adjustments', authorize('admin', 'director'),
          num(b.amount), b.reason || null, req.user._id]
       );
       res.status(201).json({ success: true, id: r.rows[0].id });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
   }
 );
 
@@ -1854,7 +1855,7 @@ router.delete('/admin/adjustments/:id', authorize('admin', 'director'),
       const r = await pool.query(`DELETE FROM payroll_adjustments WHERE id = $1 RETURNING id`, [req.params.id]);
       if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
       res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
   }
 );
 
@@ -1881,7 +1882,7 @@ router.get('/admin/loans', authorize('admin', 'director'), async (req, res) => {
       params
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 router.post('/admin/loans', authorize('admin', 'director'),
@@ -1900,7 +1901,7 @@ router.post('/admin/loans', authorize('admin', 'director'),
          b.issuedAt || null, req.user._id]
       );
       res.status(201).json({ success: true, id: r.rows[0].id });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
   }
 );
 
@@ -1920,7 +1921,7 @@ router.put('/admin/loans/:id', authorize('admin', 'director'),
       );
       if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
       res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
   }
 );
 
@@ -1937,7 +1938,7 @@ router.delete('/admin/loans/:id', authorize('admin', 'director'),
       }
       await pool.query(`DELETE FROM payroll_loans WHERE id = $1`, [req.params.id]);
       res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
   }
 );
 
@@ -1972,7 +1973,7 @@ router.get('/admin/reports/neft/status', authorize('admin', 'director'), async (
       fresh:           Number(row.fresh            || 0),
       lastExportedAt:  row.last_exported_at,
     });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // GET /api/payroll/admin/reports/neft?month=&year=&force=true — bank-upload-
@@ -2046,7 +2047,7 @@ router.get('/admin/reports/neft', authorize('admin', 'director'), async (req, re
         x.slip_number || x.code,
       ])
     );
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 /* ── Tax slabs viewer ─────────────────────────────────────────────────── */
@@ -2067,7 +2068,7 @@ router.get('/admin/tax-slabs', authorize('admin', 'director'), async (req, res) 
       if (out[row.regime]) out[row.regime].push(row);
     }
     res.json({ success: true, data: out, financialYear: fy });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 module.exports = router;

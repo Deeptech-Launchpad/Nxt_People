@@ -415,6 +415,7 @@ export default function Employees() {
   const roleColors = {
     admin:'bg-purple-100 text-purple-700',
     director:'bg-purple-100 text-purple-700',
+    hr_admin:'bg-rose-100 text-rose-700',
     manager:'bg-brand-100 text-brand-700',
     team_incharge:'bg-brand-100 text-brand-700',
     team_member:'bg-slate-100 text-slate-600'

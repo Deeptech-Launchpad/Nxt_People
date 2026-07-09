@@ -271,12 +271,21 @@ async function applyRejection(db, requestType, requestId, user) {
   return { ok: true };
 }
 
+const VALID_APPROVAL_REQUEST_TYPES = new Set(['leave', 'regularization', 'comp_off', 'wfh', 'timesheet']);
+const SAFE_ALIAS_RE = /^[a-z_][a-z0-9_.]*$/i;
+
 /**
  * SQL fragment that materialises a request's approval chain as a JSON array for
  * the frontend timeline. Pass the request table alias and its id column, plus
  * the request_type literal. Reused by leaves/regularizations list queries.
  */
 function approvalLevelsJson(requestTypeLiteral, reqAlias = 'l', idCol = 'id') {
+  if (!VALID_APPROVAL_REQUEST_TYPES.has(requestTypeLiteral)) {
+    throw new Error(`Invalid approval request type: ${requestTypeLiteral}`);
+  }
+  if (!SAFE_ALIAS_RE.test(reqAlias) || !SAFE_ALIAS_RE.test(idCol)) {
+    throw new Error('Invalid SQL alias in approvalLevelsJson');
+  }
   return `COALESCE((
     SELECT json_agg(json_build_object(
       'level', al.level, 'status', al.status,

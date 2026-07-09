@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const bcrypt = require('bcryptjs');
@@ -22,7 +22,7 @@ router.get('/next-id', async (req, res) => {
     const suggested = await nextIdForCompany(pool, req.query.company);
     res.json({ success: true, data: { suggested } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -58,7 +58,7 @@ router.get('/metadata', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -96,7 +96,7 @@ router.get('/', async (req, res) => {
     // Bug #2 fix: capture filter params BEFORE adding limit/offset
     const filterParams = [...params];
 
-    const limitNum = Number(limit);
+    const limitNum = Math.min(500, Math.max(1, Number(limit) || 50));
     const offsetNum = (Number(page) - 1) * limitNum;
     params.push(limitNum, offsetNum);
 
@@ -135,7 +135,7 @@ router.get('/', async (req, res) => {
     const data = canSeeSalary ? employeesResult.rows : employeesResult.rows.map(({ monthlyCTC, basicSalary, ...rest }) => rest);
     res.json({ success: true, data, total, page: Number(page), pages: Math.ceil(total / limitNum) });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -241,7 +241,7 @@ router.get('/:id', async (req, res) => {
     
     res.json({ success: true, data: empData });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -292,7 +292,7 @@ router.post('/', authorize('admin', 'director'), async (req, res) => {
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'Email already exists' });
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -457,7 +457,7 @@ router.post('/send-onboarding', authorize('admin', 'director'), async (req, res)
     res.json({ success: true, message: `Onboarding email sent to ${email}` });
   } catch (err) {
     logger.error({ err: err?.message }, 'Onboarding email failed');
-    res.status(500).json({ success: false, message: err.message || 'Failed to send email' });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' || 'Failed to send email' });
   }
 });
 
@@ -490,7 +490,7 @@ router.delete('/:id', authorize('admin', 'director'), async (req, res) => {
 
     res.json({ success: true, message: 'Employee archived' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 
@@ -517,7 +517,7 @@ router.get('/:id/app-access', authorize('admin', 'director'), async (req, res) =
        ORDER BY a.name ASC
     `, [req.params.id]);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // PUT /api/employees/:id/app-access — sync this employee's access list
@@ -555,7 +555,7 @@ router.put('/:id/app-access', authorize('admin', 'director'), async (req, res) =
     res.json({ success: true, granted: wanted.length });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   } finally { client.release(); }
 });
 

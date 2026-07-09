@@ -44,7 +44,12 @@ export default function Reports() {
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const stamp = new Date().toISOString().slice(0, 10);
-    const a = document.createElement('a'); a.href = url; a.download = `nxt-people-report-${stamp}.csv`; a.click();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nxt-people-report-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 

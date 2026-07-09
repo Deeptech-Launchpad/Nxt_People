@@ -1,4 +1,4 @@
-/**
+﻿/**
  * routes/feeds.js
  * Event-driven activity feed for each employee
  */
@@ -38,8 +38,9 @@ const FEED_ICON_SQL = `CASE
 
 router.get('/', async (req, res) => {
   try {
-    const { type, page = 1, limit = 50 } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { type, page = 1 } = req.query;
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const offset = (parseInt(page) - 1) * limit;
 
     // Map the requested tab to the underlying notification types.
     const TAB_FILTER = {
@@ -61,7 +62,7 @@ router.get('/', async (req, res) => {
       [req.user._id, parseInt(limit), offset]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // GET /api/feeds/company — company-wide feed (announcements + approvals visible to all)
@@ -77,7 +78,7 @@ router.get('/company', async (req, res) => {
        ORDER BY a.created_at DESC LIMIT 10`
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 // POST /api/feeds — create a feed entry (internal / system use)
@@ -93,7 +94,7 @@ router.post('/', async (req, res) => {
       [empId, type || 'info', title || '', body || null, icon || '📌']
     );
     res.status(201).json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 /**

@@ -7,7 +7,7 @@ export default function LeaveTeam() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/leaves/pending').then(r => setLeaves(r.data.data || [])).catch(() => {}).finally(() => setLoading(false));
+    api.get('/leaves/team-pending').then(r => setLeaves(r.data.data || [])).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const today = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'long' });
