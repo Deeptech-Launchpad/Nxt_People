@@ -124,7 +124,7 @@ export default function CompOff() {
             {displayList.length === 0 ? (
               <div className="text-center py-16"><Gift size={32} className="text-slate-200 mx-auto mb-3" /><p className="text-slate-400">No comp-off requests</p></div>
             ) : displayList.map(r => {
-              const canAct = r.canAct !== undefined ? r.canAct : r.status === 'pending';
+              const canAct = r.canAct === true;
               const isExpanded = expanded === r._id;
               const hasLevels = Array.isArray(r.approvalLevels) && r.approvalLevels.length > 0;
               return (

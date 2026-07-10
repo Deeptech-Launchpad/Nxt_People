@@ -15,7 +15,7 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
+    const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
   }
 });
@@ -91,8 +91,8 @@ router.post('/:employeeId', upload.single('file'), async (req, res) => {
 router.delete('/:employeeId/:docId', async (req, res) => {
   try {
     const doc = await pool.query(
-      'SELECT file_url, uploaded_by FROM employee_documents WHERE id=$1',
-      [req.params.docId]
+      'SELECT file_url, uploaded_by FROM employee_documents WHERE id=$1 AND employee_id=$2',
+      [req.params.docId, req.params.employeeId]
     );
     if (!doc.rows[0]) return res.status(404).json({ success: false, message: 'Not found' });
     const isUploader = doc.rows[0].uploaded_by && doc.rows[0].uploaded_by === req.user._id;

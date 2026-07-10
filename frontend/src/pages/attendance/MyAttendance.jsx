@@ -529,7 +529,8 @@ export default function MyAttendance() {
                          document.body.appendChild(a); a.click();
                          document.body.removeChild(a);
                          URL.revokeObjectURL(url);
-                       });
+                       })
+                       .catch(() => toast.error('Export failed. Please try again.'));
                    }}
                    className="w-full text-left px-3 py-2 text-[14px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                  >

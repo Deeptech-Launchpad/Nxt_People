@@ -245,20 +245,32 @@ router.post('/accept-terms', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid or expired setup link.' });
     }
 
-    let empId = employee.employee_id;
-    if (!empId) {
-      // Bug #8 fix: use MAX-based sequence to avoid collisions with employees.js
-      const seqRes = await pool.query(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
-      );
-      empId = `NXT${String(seqRes.rows[0].next).padStart(4, '0')}`;
-    }
+    const client = await pool.connect();
+    let updated;
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(42424242)');
 
-    const updated = await pool.query(
-      `UPDATE employees SET has_accepted = true, accepted_at = NOW(), registration_status = 'active', employee_id = $1, reset_password_token = NULL WHERE id = $2
-       RETURNING id as "_id", first_name AS "firstName", last_name AS "lastName", email, role, department, designation, company, division, registration_status AS "registrationStatus", has_accepted AS "hasAccepted", employee_id AS "employeeId"`,
-      [empId, employee.id]
-    );
+      let empId = employee.employee_id;
+      if (!empId) {
+        const seqRes = await client.query(
+          "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
+        );
+        empId = `NXT${String(seqRes.rows[0].next).padStart(4, '0')}`;
+      }
+
+      updated = await client.query(
+        `UPDATE employees SET has_accepted = true, accepted_at = NOW(), registration_status = 'active', employee_id = $1, reset_password_token = NULL WHERE id = $2
+         RETURNING id as "_id", first_name AS "firstName", last_name AS "lastName", email, role, department, designation, company, division, registration_status AS "registrationStatus", has_accepted AS "hasAccepted", employee_id AS "employeeId"`,
+        [empId, employee.id]
+      );
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      client.release();
+      throw txErr;
+    }
+    client.release();
 
     const token = signToken(employee.id);
     const refreshToken = await generateRefreshToken(employee.id, req);
@@ -271,7 +283,7 @@ router.post('/accept-terms', async (req, res) => {
       data: updated.rows[0]
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
 

@@ -39,7 +39,8 @@ export default function DashboardWidgets() {
       setStats(sData);
       setAnnouncements(sData.announcements || []);
 
-      const upcomingHolidays = (holRes.data?.data || []).filter(h => new Date(h.date) >= new Date()).slice(0, 6);
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const upcomingHolidays = (holRes.data?.data || []).filter(h => new Date(h.date + 'T00:00:00') >= todayStart).slice(0, 6);
       setHolidays(upcomingHolidays);
 
       setEmployees(empRes.data?.data || []);

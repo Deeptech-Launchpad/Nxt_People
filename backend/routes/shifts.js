@@ -23,6 +23,7 @@ router.put('/:id', authorize('admin', 'director'), async (req, res) => {
   try {
     const { name, startTime, endTime, graceMinutes, workingDays, color, isDefault } = req.body;
     const result = await pool.query(`UPDATE shifts SET name = $1, start_time = $2, end_time = $3, grace_minutes = $4, working_days = $5, color = $6, is_default = $7, updated_at = NOW() WHERE id = $8 RETURNING id as "_id", name, start_time as "startTime", end_time as "endTime", grace_minutes as "graceMinutes", working_days as "workingDays", color, is_default as "isDefault"`, [name, startTime, endTime, graceMinutes, JSON.stringify(workingDays || []), color, isDefault, req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ success: false, message: 'Shift not found' });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -41,11 +42,12 @@ router.post('/:id/assign', authorize('admin', 'director', 'manager'), async (req
       return res.status(400).json({ success: false, message: 'No employees specified' });
     }
     if (req.user.role === 'manager') {
+      const uniqueIds = [...new Set(employeeIds)];
       const scope = await pool.query(
         'SELECT id FROM employees WHERE id = ANY($1) AND reporting_manager_id = $2',
-        [employeeIds, req.user._id]
+        [uniqueIds, req.user._id]
       );
-      if (scope.rows.length !== employeeIds.length) {
+      if (scope.rows.length !== uniqueIds.length) {
         return res.status(403).json({ success: false, message: 'You can only assign shifts to employees in your team' });
       }
     }

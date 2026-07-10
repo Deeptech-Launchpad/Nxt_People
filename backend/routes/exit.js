@@ -70,7 +70,11 @@ router.put('/:id/action', authorize('admin', 'director'), async (req, res) => {
     if (!ex) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Not found' }); }
     if (ex.status !== 'pending') { await client.query('ROLLBACK'); return res.status(400).json({ success: false, message: `Exit request is already ${ex.status}` }); }
 
-    const status = action === 'approved' ? 'approved' : 'rejected';
+    if (!['approved', 'rejected'].includes(action)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: "action must be 'approved' or 'rejected'" });
+    }
+    const status = action;
     await client.query(
       'UPDATE exit_requests SET status=$1, approved_by=$2, approved_at=NOW(), last_working_date=COALESCE($3, last_working_date), rejection_reason=$4 WHERE id=$5',
       [status, req.user._id, lastWorkingDate || null, rejectionReason || null, req.params.id]
