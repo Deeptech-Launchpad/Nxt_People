@@ -49,7 +49,11 @@ export default function Approvals() {
   const canApproveAll = ['admin', 'director', 'hr_admin', 'manager'].includes(user?.role);
   const [data, setData] = useState({ leaves: [], permissions: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], total: 0 });
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('leaves');
+  const [tab, setTab] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    const valid = ['leaves','permissions','approvedLeaves','rejectedLeaves','timesheets','regularizations','wfh','compoff'];
+    return valid.includes(t) ? t : 'leaves';
+  });
   // Last-seen count per tab — persisted to localStorage so the badge
   // stays cleared across refreshes (was previously a stale per-session
   // Set that always re-populated on reload). If new items arrive later
@@ -113,6 +117,12 @@ export default function Approvals() {
     ];
     const found = allItems.find(item => item._id === openId);
     if (!found) return;
+    const typeToTab = { permission: 'permissions' };
+    if (data.regularizations?.find(r => r._id === openId)) setTab('regularizations');
+    else if (data.permissions?.find(p => p._id === openId)) setTab('permissions');
+    else if (data.approvedLeaves?.find(l => l._id === openId)) setTab('approvedLeaves');
+    else if (data.rejectedLeaves?.find(l => l._id === openId)) setTab('rejectedLeaves');
+    else setTab(typeToTab[found.leaveType] || 'leaves');
     setDetailLeave(found);
     setDetailBalance(null);
     if (found.status === 'pending' && found.employee?._id) {
