@@ -126,7 +126,7 @@ router.post('/', [
       await Promise.all(allRecipients.map(a => createNotification(
         a.id, 'approval', 'Regularization Approval Required',
         `${empName} requested an attendance regularization for ${dateLabel}.`,
-        '/approvals?tab=regularizations'
+        `/approvals?tab=regularizations&openId=${reg._id}`
       ).catch(err => logger.warn({ err: err.message }, '[regularizations] notify approver failed'))));
 
       const baseUrl = process.env.APP_URL || 'https://nxtpeople.altiusnxt.tech';
