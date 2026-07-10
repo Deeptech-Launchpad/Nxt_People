@@ -262,6 +262,7 @@ router.post('/generate-link', async (req, res) => {
     if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
     const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
 
@@ -271,7 +272,6 @@ router.post('/generate-link', async (req, res) => {
     );
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const link = `${frontendUrl}/onboarding/${token}`;
 
     const mailOptions = {

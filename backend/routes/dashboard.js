@@ -25,13 +25,13 @@ router.get('/stats', async (req, res) => {
     const todayAttendance = todayAttendanceRes.rows;
     const present = todayAttendance.filter(a => ['present', 'late'].includes(a.status)).length;
     const late = todayAttendance.filter(a => a.status === 'late').length;
-    const absent = Math.max(0, totalEmployees - present - onLeave);
 
     const onLeaveRes = await pool.query(
       "SELECT COUNT(*) FROM leaves WHERE status = 'approved' AND start_date <= $1::date AND end_date >= $1::date",
       [today]
     );
     const onLeave = parseInt(onLeaveRes.rows[0].count, 10);
+    const absent = Math.max(0, totalEmployees - present - onLeave);
 
     const pendingLeavesRes = await pool.query(
       "SELECT COUNT(*) FROM leaves WHERE status = 'pending'"
