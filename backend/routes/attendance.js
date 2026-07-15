@@ -191,16 +191,18 @@ router.post('/checkin', async (req, res) => {
       return res.status(409).json({ success: false, message: 'Already checked in today' });
     }
     const record = upRes.rows[0];
+    const isReCheckin = !!(existing && existing.check_out);
 
     const effectiveLate = Number(record.lateMinutes) || 0;
-    const lateMsg = effectiveLate > 0
+    const lateMsg = !isReCheckin && effectiveLate > 0
       ? `Late by ${Math.floor(effectiveLate/60)}h ${effectiveLate%60}m`
       : null;
+    const toastMsg = isReCheckin ? 'Re-checked in successfully' : lateMsg;
 
     res.status(201).json({
       success: true, data: record,
-      message: lateMsg ? `Checked in — ${lateMsg}` : 'Checked in successfully',
-      gpsWarning, lateMinutes: effectiveLate, lateMessage: lateMsg
+      message: isReCheckin ? 'Re-checked in successfully' : (lateMsg ? `Checked in — ${lateMsg}` : 'Checked in successfully'),
+      gpsWarning, lateMinutes: effectiveLate, lateMessage: toastMsg
     });
 
     // ── Notify Manager (if late) & Feed Entry — fire after response ──
