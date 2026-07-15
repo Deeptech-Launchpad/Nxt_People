@@ -545,7 +545,7 @@ export default function Approvals() {
                           <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{w.employee?.department}</span>
                         </div>
                         <p className="text-base text-slate-500 mt-1">
-                          {new Date(w.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                          {fmtDay(w.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                         </p>
                         <p className="text-sm text-slate-400 mt-0.5 max-w-xs">{w.reason}</p>
                       </div>
