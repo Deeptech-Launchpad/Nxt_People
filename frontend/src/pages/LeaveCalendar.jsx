@@ -80,7 +80,7 @@ export default function LeaveCalendar() {
         const ad = `${y}-${m}-${d}`;
         if (!newEvents[ad]) newEvents[ad] = [];
         
-        if (a.status === 'absent') {
+        if (a.status === 'absent' && a.checkOut) {
           // If a leave or holiday already exists for this date, don't show absent
           if (!newEvents[ad].some(e => e.type === 'leave' || e.type === 'holiday')) {
             newEvents[ad].push({ type: 'absent', text: 'Absent' });
