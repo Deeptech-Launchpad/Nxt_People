@@ -274,7 +274,13 @@ router.post('/checkout', async (req, res) => {
         ? `GPS (${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)})`
         : 'Office');
 
-    const checkInDate = new Date(String(record.check_in).replace(' ', 'T') + (String(record.check_in).includes('+') || String(record.check_in).endsWith('Z') ? '' : 'Z'));
+    // pg returns TIMESTAMP columns as JS Date objects, not strings.
+    // String(dateObj) produces an unstructured locale string that breaks ISO parsing.
+    // If it's already a Date, use it directly; if it's a string (older pg configs),
+    // convert the "YYYY-MM-DD HH:MM:SS" format to ISO before parsing.
+    const checkInDate = record.check_in instanceof Date
+      ? record.check_in
+      : new Date(String(record.check_in).replace(' ', 'T') + (String(record.check_in).includes('+') || String(record.check_in).endsWith('Z') ? '' : 'Z'));
     
     // Round to nearest minute logic (if seconds >= 35, count as a full minute)
     const diffSeconds = isFinite(checkInDate) ? (now - checkInDate) / 1000 : 0;
