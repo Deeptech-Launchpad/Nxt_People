@@ -20,7 +20,7 @@ router.get('/my', async (req, res) => {
 });
 
 // GET all pending (admin/manager)
-router.get('/pending', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
+router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
     // Full-access sees the whole org queue; managers only their direct reports.
     const scope = reportsScope(req.user, 'e', 1);

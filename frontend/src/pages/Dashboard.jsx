@@ -1203,9 +1203,11 @@ export default function Dashboard() {
                                   <p className="text-[13px] text-slate-800 font-medium mt-0.5">
                                     {isToday && isCheckedIn
                                       ? `${timerDisplay} Hrs`
-                                      : record?.workingHours !== undefined
-                                        ? `${fmtHHMM(record.workingHours)} Hrs`
-                                        : '00:00 Hrs'
+                                      : isToday && isCheckedOut
+                                        ? `${hrs}:${mins} Hrs`
+                                        : record?.workingHours !== undefined
+                                          ? `${fmtHHMM(record.workingHours)} Hrs`
+                                          : '00:00 Hrs'
                                     }
                                   </p>
                                 )}

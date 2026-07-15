@@ -1,6 +1,6 @@
 ﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal, MessageCircle } from 'lucide-react';
+import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal } from 'lucide-react';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
 import { isApprover, roleLabel } from '../../utils/roles';
@@ -85,7 +85,7 @@ const NAV = {
     // and subNav['__landing__'] is undefined so the white sub-nav bar stays hidden.
     getActiveTab: p => {
       if (p === '/leave-tracker')                                              return '__landing__';
-      if (p.startsWith('/leave-tracker/team'))                                 return 'team';
+      if (p.startsWith('/leave-tracker/team') || p.startsWith('/leave-tracker/all')) return 'team';
       if (p.startsWith('/leave-tracker/holidays') || p.startsWith('/leave-tracker/weekends')) return 'holidays';
       return 'mydata';
     },
@@ -94,10 +94,10 @@ const NAV = {
         { to: '/leave-tracker/summary',  label: 'Leave Summary'  },
         { to: '/leave-tracker/requests', label: 'Leave Requests' },
         { to: '/leave-tracker/comp-off', label: 'Comp-Off'       },
-        { to: '/leave-tracker/balance',  label: 'Leave Balance'  },
       ],
       team: [
         { to: '/leave-tracker/team', label: 'Team Approvals', roles: ['admin','director','manager'] },
+        { to: '/leave-tracker/all',  label: 'All Requests',   roles: ['admin','director','hr_admin'] },
       ],
       holidays: [
         { to: '/leave-tracker/holidays', label: 'Holidays'                                   },
@@ -339,7 +339,7 @@ export default function Topbar() {
   // badge updates instantly when a new DM arrives, no polling needed.
   // notificationTick fires every time a 'notification' event lands on the
   // WS so the bell re-fetches without waiting for the 60-second poll.
-  const { unreadTotal: chatUnread, notificationTick } = useChat();
+  const { notificationTick } = useChat();
   const [showUserMenu, setShowUserMenu]           = useState(false);
   const [showQuickActions, setShowQuickActions]   = useState(false);
   const [showSearch, setShowSearch]               = useState(false);
@@ -377,10 +377,9 @@ export default function Topbar() {
   // Prefix the existing title rather than overwriting it so per-page titles
   // (set elsewhere) keep working — restore on cleanup just in case.
   useEffect(() => {
-    const total = (unreadCount || 0) + (chatUnread || 0);
     const base  = document.title.replace(/^\(\d+\)\s/, '');
-    document.title = total > 0 ? `(${total}) ${base}` : base;
-  }, [unreadCount, chatUnread]);
+    document.title = unreadCount > 0 ? `(${unreadCount}) ${base}` : base;
+  }, [unreadCount]);
 
   useEffect(() => {
     const h = e => {
@@ -538,23 +537,6 @@ export default function Topbar() {
               </div>
             )}
           </div>
-
-          {/* Chat — quick-jump to /chat with an unread badge driven by the
-              WebSocket context. Separate from the notifications bell so the
-              two counters don't compete for the same pill. */}
-          <button onClick={() => navigate('/chat')}
-            title={chatUnread > 0 ? `${chatUnread} unread message${chatUnread === 1 ? '' : 's'}` : 'Open chat'}
-            className="relative hover:bg-white/10 transition-colors p-1 rounded">
-            <MessageCircle size={17} />
-            {chatUnread > 0 && (
-              <>
-                <span className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-[#0088FF] rounded-full ring-2 ring-[#1a2040] animate-pulse" />
-                <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] bg-emerald-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center ring-2 ring-[#1a2040]">
-                  {chatUnread > 9 ? '9+' : chatUnread}
-                </span>
-              </>
-            )}
-          </button>
 
           {/* Notifications — bell with two indicators:
               • Blue pulsing dot at top-left  → "you have NEW activity"

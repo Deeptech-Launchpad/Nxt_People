@@ -3,14 +3,16 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import SmartChat from '../SmartChat';
+import GuidedTour from '../GuidedTour';
 import GeoPermissionModal from '../GeoPermissionModal';
-import { MessageSquare, Users, Moon, Sun, Volume2, VolumeX, Search } from 'lucide-react';
+import { Moon, Sun, Volume2, VolumeX, Search, HelpCircle, MapPin } from 'lucide-react';
 
 export default function Layout() {
   const navigate = useNavigate();
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('nxt-dark') === '1');
   const [muted, setMuted] = useState(false);
   const [smartChatOpen, setSmartChatOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
 
   /* Apply dark class on mount and whenever darkMode changes */
   useEffect(() => {
@@ -51,16 +53,16 @@ export default function Layout() {
         <div className="h-[30px] bg-white border-t border-slate-200 fixed bottom-0 left-[72px] right-0 z-40 flex items-center px-4 justify-between text-[13px] text-slate-500 shadow-sm">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => navigate('/chat')}
+              onClick={() => navigate('/help')}
               className="flex items-center gap-1.5 hover:text-slate-800 transition-colors font-medium"
             >
-              <MessageSquare size={13} /> Chats
+              <HelpCircle size={13} /> Help
             </button>
             <button
-              onClick={() => navigate('/directory')}
+              onClick={() => setTourOpen(true)}
               className="flex items-center gap-1.5 hover:text-slate-800 transition-colors font-medium"
             >
-              <Users size={13} /> Contacts
+              <MapPin size={13} /> Take a Tour
             </button>
             <span className="text-slate-300">|</span>
             <button
@@ -95,6 +97,7 @@ export default function Layout() {
       </div>
 
       <SmartChat open={smartChatOpen} onClose={() => setSmartChatOpen(false)} />
+      {tourOpen && <GuidedTour onClose={() => setTourOpen(false)} />}
 
       {/* App-level location consent prompt (used by the attendance check-in/out flow) */}
       <GeoPermissionModal />

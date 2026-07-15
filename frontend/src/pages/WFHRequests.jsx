@@ -26,12 +26,13 @@ export default function WFHRequests() {
 
   const load = () => {
     setLoading(true);
-    const calls = [api.get('/wfh/my')];
-    if (isApprover(user)) calls.push(api.get('/wfh/pending'));
+    const safe = p => p.catch(() => ({ data: { data: [] } }));
+    const calls = [safe(api.get('/wfh/my'))];
+    if (isApprover(user)) calls.push(safe(api.get('/wfh/pending')));
     Promise.all(calls).then(([myRes, pendingRes]) => {
       setMyRequests(myRes.data.data || []);
       if (pendingRes) setPending(pendingRes.data.data || []);
-    }).catch(console.error).finally(() => setLoading(false));
+    }).finally(() => setLoading(false));
   };
 
   useEffect(load, []);

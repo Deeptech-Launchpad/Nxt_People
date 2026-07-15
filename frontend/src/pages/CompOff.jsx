@@ -80,25 +80,25 @@ export default function CompOff() {
         <BackButton to="/leave-tracker" label="Leave Tracker" />
       </div>
       {/* Balance cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl p-5 text-white">
-          <p className="text-indigo-200 text-base font-medium">Available Balance</p>
-          <p className="text-4xl font-display font-bold mt-1">{balance.toFixed(1)}</p>
-          <p className="text-indigo-300 text-base mt-0.5">comp-off days (within validity)</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-xl p-3.5 text-white">
+          <p className="text-indigo-200 text-sm font-medium">Available Balance</p>
+          <p className="text-2xl font-display font-bold mt-0.5">{balance.toFixed(1)}</p>
+          <p className="text-indigo-300 text-xs mt-0.5">comp-off days (within validity)</p>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <p className="text-slate-400 text-base">Total Earned</p>
-          <p className="text-3xl font-display font-bold text-slate-800 mt-1">
+        <div className="bg-white rounded-xl border border-slate-100 p-3.5 shadow-sm">
+          <p className="text-slate-400 text-sm">Total Earned</p>
+          <p className="text-xl font-display font-bold text-slate-800 mt-0.5">
             {myRequests.filter(r => r.status === 'approved').reduce((s, r) => s + parseFloat(r.daysEarned), 0).toFixed(1)}
           </p>
-          <p className="text-slate-400 text-sm mt-0.5">from approved requests</p>
+          <p className="text-slate-400 text-xs mt-0.5">from approved requests</p>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <p className="text-slate-400 text-base">Pending Approval</p>
-          <p className="text-3xl font-display font-bold text-slate-800 mt-1">
+        <div className="bg-white rounded-xl border border-slate-100 p-3.5 shadow-sm">
+          <p className="text-slate-400 text-sm">Pending Approval</p>
+          <p className="text-xl font-display font-bold text-slate-800 mt-0.5">
             {myRequests.filter(r => r.status === 'pending').length}
           </p>
-          <p className="text-slate-400 text-sm mt-0.5">requests awaiting</p>
+          <p className="text-slate-400 text-xs mt-0.5">requests awaiting</p>
         </div>
       </div>
 

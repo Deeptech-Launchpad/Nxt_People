@@ -398,8 +398,17 @@ export default function LeaveSummary() {
     sick: '🏥', earned: '💼',
   };
   const ICON_BG = {
-    casual: 'bg-amber-50', comp_off: 'bg-green-50', unpaid: 'bg-gray-50',
-    permission: 'bg-purple-50', sick: 'bg-red-50', earned: 'bg-blue-50',
+    casual: 'bg-sky-50', comp_off: 'bg-teal-50', unpaid: 'bg-orange-50',
+    permission: 'bg-violet-50', sick: 'bg-rose-50', earned: 'bg-blue-50',
+  };
+  const CARD_ACCENT = {
+    casual: 'border-l-4 border-l-sky-400', comp_off: 'border-l-4 border-l-teal-400',
+    unpaid: 'border-l-4 border-l-orange-400', permission: 'border-l-4 border-l-violet-400',
+    sick: 'border-l-4 border-l-rose-400', earned: 'border-l-4 border-l-blue-400',
+  };
+  const AVAIL_COLOR = {
+    casual: 'text-sky-600', comp_off: 'text-teal-600', unpaid: 'text-orange-600',
+    permission: 'text-violet-600', sick: 'text-rose-600', earned: 'text-blue-600',
   };
 
   return (
@@ -451,11 +460,9 @@ export default function LeaveSummary() {
               // Round to 2 dp so JS float math doesn't show 2.9699999999999998.
               const fmt = (v) => (v === null || v === undefined) ? '—' : `${Math.round((v + Number.EPSILON) * 100) / 100}${unit}`;
               return (
-                <div key={card.code} className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                <div key={card.code} className={`bg-white rounded-lg border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow ${CARD_ACCENT[card.code] || ''}`}>
                   {/* Icon */}
                   <div className={`w-11 h-11 rounded flex items-center justify-center text-[22px] mb-4 ${ICON_BG[card.code] || 'bg-gray-50'}`}>
-                    {/* Prefer the local (clean UTF-8) icon map for known leave codes;
-                        the backend-stored card.icon can be mojibake-corrupted. */}
                     {ICON_MAP[card.code] || card.icon || '📋'}
                   </div>
                   {/* Name */}
@@ -463,7 +470,7 @@ export default function LeaveSummary() {
                   {/* Available */}
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[14px] text-gray-500">Available</span>
-                    <span className="text-[15px] font-bold text-[#34a853]">
+                    <span className={`text-[15px] font-bold ${AVAIL_COLOR[card.code] || 'text-[#34a853]'}`}>
                       {fmt(card.available)}
                     </span>
                   </div>

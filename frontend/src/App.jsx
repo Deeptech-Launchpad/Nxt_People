@@ -91,6 +91,8 @@ const LeaveTeam      = lazy(() => import('./pages/leavetracker/LeaveTeam'));
 const PerformanceGoals = lazy(() => import('./pages/performance/Goals'));
 const SkillMatrix      = lazy(() => import('./pages/performance/SkillMatrix'));
 
+const Help = lazy(() => import('./pages/Help'));
+
 /* ── New pages — Phase 8: More Services ────────────────────────────── */
 const Travel       = lazy(() => import('./pages/moreservices/Travel'));
 const Compensation = lazy(() => import('./pages/moreservices/Compensation'));
@@ -184,6 +186,7 @@ const AppRoutes = () => {
               the user back to Home (which was the pre-fix behaviour).
               Role-gated identically — only admins/managers can view it. */}
           <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
+          <Route path="leave-tracker/all"        element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerAdmin/></ProtectedRoute>}/>
           <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
           <Route path="leave-tracker/weekends"   element={<ProtectedRoute roles={['admin','director','hr_admin']}><Weekends/></ProtectedRoute>}/>
 
@@ -232,6 +235,7 @@ const AppRoutes = () => {
           <Route path="shift-roster" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ShiftRoster/></ProtectedRoute>}/>
 
           {/* ── Other ────────────────────────────────────────────────── */}
+          <Route path="help"           element={<Help/>}/>
           <Route path="documents"      element={<Documents/>}/>
           <Route path="chat"           element={<Chat/>}/>
           <Route path="exit"           element={<ExitManagement/>}/>

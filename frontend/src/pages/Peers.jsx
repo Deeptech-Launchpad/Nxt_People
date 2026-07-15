@@ -3,18 +3,38 @@ import { Search, Phone, MessageSquare, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { isFullAccess, isManager } from '../utils/roles';
 import { PhotoAvatar } from '../components/ui';
 
-/* ── Peers — colleagues who report to the same manager as you.
- *  Zoho shows your reporting manager at the top + "Members N" on the
- *  right, then a grid of every direct report of that manager (excluding
- *  yourself). Falls back to "all of my department" if the user has no
- *  reporting manager set (e.g. CEOs / top of the tree). */
+/* ── Peers — org-tree view based on role:
+ *  • Admin / Director / HR Admin / BUH designation → full org
+ *  • Manager / Team Incharge → direct + indirect reports (subtree)
+ *  • Team member → peers sharing the same reporting manager */
+
+function buildSubtree(managerId, allEmployees) {
+  const result = [];
+  const queue = [managerId];
+  const visited = new Set([managerId]);
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const directs = allEmployees.filter(e =>
+      (e.reportingManagerId === current || e.reporting_manager_id === current)
+    );
+    for (const d of directs) {
+      if (visited.has(d._id)) continue;
+      visited.add(d._id);
+      result.push(d);
+      queue.push(d._id);
+    }
+  }
+  return result;
+}
+
 export default function Peers() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
-  const [me, setMe] = useState(null);                  // own row (for reportingManagerId + manager metadata)
+  const [me, setMe] = useState(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -22,7 +42,7 @@ export default function Peers() {
     if (!user?._id) return;
     setLoading(true);
     Promise.all([
-      api.get('/employees?limit=500&status=active'),
+      api.get('/employees?limit=1000&status=active'),
       api.get(`/employees/${user._id}`),
     ]).then(([list, meRes]) => {
       setEmployees(list.data.data || []);
@@ -31,12 +51,18 @@ export default function Peers() {
   }, [user?._id]);
 
   const myManagerId = me?.reporting_manager_id || me?.reportingManagerId || null;
+  const isBUH = (me?.designation || '').toLowerCase().includes('business unit head');
 
-  // Peers = employees who share my reporting manager (excluding me). If I
-  // have no manager (top of the org), show department colleagues so the
-  // page isn't empty for execs.
   const peers = useMemo(() => {
     if (!me) return [];
+    const others = employees.filter(e => e._id !== user._id);
+
+    if (isFullAccess(user) || isBUH) {
+      return others;
+    }
+    if (isManager(user)) {
+      return buildSubtree(user._id, employees);
+    }
     if (myManagerId) {
       return employees.filter(e =>
         e._id !== user._id &&
@@ -47,7 +73,7 @@ export default function Peers() {
       return employees.filter(e => e._id !== user._id && e.department === me.department);
     }
     return [];
-  }, [employees, me, myManagerId, user?._id]);
+  }, [employees, me, myManagerId, user, isBUH]);
 
   const filtered = useMemo(() => peers.filter(e =>
     !search || `${e.firstName} ${e.lastName} ${e.designation || ''} ${e.department || ''} ${e.employeeId || ''}`
@@ -59,28 +85,24 @@ export default function Peers() {
     : null;
   const managerCode = me?.manager?.employeeId || me?.manager?.id || null;
 
+  const headerLabel = (() => {
+    if (!me) return null;
+    if (isFullAccess(user) || isBUH) return 'Full Organization';
+    if (isManager(user)) return 'Your Team (direct & indirect reports)';
+    if (myManagerId) return `Peers reporting to ${managerCode ? `${managerCode} — ` : ''}${managerName || 'your manager'}`;
+    return `Colleagues in ${me.department || 'your department'}`;
+  })();
+
   return (
     <div className="p-6">
-      {/* Header — manager breadcrumb + member count (matches Zoho) */}
+      {/* Header */}
       {!loading && me && (
         <div className="flex items-center justify-between mb-5 bg-white rounded-lg border border-slate-200 px-5 py-3">
           <div className="flex items-center gap-3">
-            {myManagerId ? (
-              <>
-                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
-                  <Users size={16} className="text-slate-400"/>
-                </div>
-                <div className="text-[15px] text-slate-700">
-                  Peers reporting to <span className="font-semibold text-slate-900">
-                    {managerCode ? `${managerCode} — ` : ''}{managerName || 'your manager'}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <div className="text-[15px] text-slate-700">
-                Colleagues in <span className="font-semibold text-slate-900">{me.department || 'your department'}</span>
-              </div>
-            )}
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+              <Users size={16} className="text-slate-400"/>
+            </div>
+            <div className="text-[15px] text-slate-700">{headerLabel}</div>
           </div>
           <div className="text-[14px] text-slate-500">
             Members <span className="ml-1 font-bold text-slate-800">{peers.length}</span>
