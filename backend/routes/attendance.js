@@ -174,14 +174,14 @@ router.post('/checkin', async (req, res) => {
           check_in_location, check_in_latitude, check_in_longitude, shift_id)
        VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (employee_id, date) DO UPDATE
-         SET check_in           = EXCLUDED.check_in,
+         SET check_in           = attendance.check_in,
              check_out          = NULL,
-             status             = EXCLUDED.status,
-             late_minutes       = EXCLUDED.late_minutes,
-             check_in_location  = EXCLUDED.check_in_location,
-             check_in_latitude  = EXCLUDED.check_in_latitude,
-             check_in_longitude = EXCLUDED.check_in_longitude,
-             shift_id           = EXCLUDED.shift_id,
+             status             = attendance.status,
+             late_minutes       = attendance.late_minutes,
+             check_in_location  = attendance.check_in_location,
+             check_in_latitude  = attendance.check_in_latitude,
+             check_in_longitude = attendance.check_in_longitude,
+             shift_id           = attendance.shift_id,
              updated_at         = NOW()
          WHERE attendance.check_out IS NOT NULL
        RETURNING id as "_id", check_in as "checkIn", check_out as "checkOut",
