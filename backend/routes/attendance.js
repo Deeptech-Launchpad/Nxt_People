@@ -196,14 +196,15 @@ router.post('/checkin', async (req, res) => {
     }
     const record = upRes.rows[0];
 
-    const lateMsg = lateMinutes > 0
-      ? `Late by ${Math.floor(lateMinutes/60)}h ${lateMinutes%60}m`
+    const effectiveLate = Number(record.lateMinutes) || 0;
+    const lateMsg = effectiveLate > 0
+      ? `Late by ${Math.floor(effectiveLate/60)}h ${effectiveLate%60}m`
       : null;
 
     res.status(201).json({
       success: true, data: record,
       message: lateMsg ? `Checked in — ${lateMsg}` : 'Checked in successfully',
-      gpsWarning, lateMinutes, lateMessage: lateMsg
+      gpsWarning, lateMinutes: effectiveLate, lateMessage: lateMsg
     });
 
     // ── Notify Manager (if late) & Feed Entry — fire after response ──
@@ -212,20 +213,20 @@ router.post('/checkin', async (req, res) => {
         const { createFeedEntry } = require('./feeds');
         const { createNotification } = require('./notifications');
         const timeLabel = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-        const feedMsg = lateMinutes > 0
-          ? `Late check-in at ${timeLabel} — ${Math.floor(lateMinutes/60)}h ${lateMinutes%60}m late`
+        const feedMsg = effectiveLate > 0
+          ? `Late check-in at ${timeLabel} — ${Math.floor(effectiveLate/60)}h ${effectiveLate%60}m late`
           : `Checked in at ${timeLabel}`;
 
-        await createFeedEntry(req.user._id, lateMinutes > 0 ? 'late_checkin' : 'checkin', 'Attendance', feedMsg, lateMinutes > 0 ? '🟠' : '🟢');
+        await createFeedEntry(req.user._id, effectiveLate > 0 ? 'late_checkin' : 'checkin', 'Attendance', feedMsg, effectiveLate > 0 ? '🟠' : '🟢');
 
-        if (lateMinutes > 0) {
+        if (effectiveLate > 0) {
           const emp = await pool.query('SELECT reporting_manager_id FROM employees WHERE id=$1', [req.user._id]);
           if (emp.rows[0]?.reporting_manager_id) {
             await createNotification(
               emp.rows[0].reporting_manager_id,
               'late_arrival',
               'Late Arrival',
-              `${req.user.firstName} checked in ${Math.floor(lateMinutes/60)}h ${lateMinutes%60}m late.`,
+              `${req.user.firstName} checked in ${Math.floor(effectiveLate/60)}h ${effectiveLate%60}m late.`,
               '/attendance/team'
             );
           }
