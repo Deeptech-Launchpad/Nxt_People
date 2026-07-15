@@ -347,6 +347,36 @@ router.post('/checkout', async (req, res) => {
   }
 });
 
+// ── PATCH location (background GPS update after fast check-in/out) ───────────
+// The frontend fires check-in/out immediately with null coords, then patches
+// the location once GPS resolves (~2-5s later) so the UI never waits for GPS.
+router.patch('/location', async (req, res) => {
+  try {
+    const { type, latitude, longitude } = req.body;
+    if (!latitude || !longitude || !['checkin', 'checkout'].includes(type)) {
+      return res.status(400).json({ success: false });
+    }
+    const today = todayStr();
+    const locLabel = `GPS (${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)})`;
+    if (type === 'checkin') {
+      await pool.query(
+        `UPDATE attendance SET check_in_location=$1, check_in_latitude=$2, check_in_longitude=$3, updated_at=NOW()
+         WHERE employee_id=$4 AND date=$5::date`,
+        [locLabel, latitude, longitude, req.user._id, today]
+      );
+    } else {
+      await pool.query(
+        `UPDATE attendance SET check_out_location=$1, check_out_latitude=$2, check_out_longitude=$3, updated_at=NOW()
+         WHERE employee_id=$4 AND date=$5::date`,
+        [locLabel, latitude, longitude, req.user._id, today]
+      );
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
+});
+
 // ── GET my attendance (monthly) ───────────────────────────────────────────────
 // Computes lateMinutes ON THE FLY from check-in vs. the employee's current
 // shift start time. This handles two cases the stored late_minutes can't:

@@ -7,7 +7,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
-import { requestLocation } from '../utils/geoPermission';
+import { startLocationCapture } from '../utils/geoPermission';
 
 const AttendanceContext = createContext();
 
@@ -125,60 +125,69 @@ export const AttendanceProvider = ({ children }) => {
   };
 
   /* ── Check In ─────────────────────────────────────────────────── */
-   const checkIn = async () => {
-     setActionLoading(true);
-     try {
-       // App-level consent + GPS capture (Allow Always / This Time / Deny).
-       // GPS stays optional for check-in itself — backend warns if required.
-       const { coords, permissionStatus } = await requestLocation();
-       if (permissionStatus === 'browser_denied') {
-         toast.error('Location is blocked. Click the lock icon in the address bar → Location → Allow, then try again.', { duration: 7000 });
-         return;
-       }
-       const r = await api.post('/attendance/checkin', {
-         location: 'Office',
-         latitude:  coords?.latitude  ?? null,
-         longitude: coords?.longitude ?? null,
-       });
-       const rec = r.data.data;
-       setRecord(rec);
-       logLocation('checkin', coords, permissionStatus);
+  const checkIn = async () => {
+    setActionLoading(true);
+    try {
+      // Consent check + start GPS — returns immediately after user decision.
+      // GPS acquisition runs in the background; API call fires right after.
+      const { gpsPromise, permissionStatus } = await startLocationCapture();
+      if (permissionStatus === 'browser_denied') {
+        toast.error('Location is blocked. Click the lock icon in the address bar → Location → Allow, then try again.', { duration: 7000 });
+        return;
+      }
 
-       // Include any previously worked hours today (cumulative timer)
-       const prevHours = parseFloat(rec.workingHours || 0);
-       const baseSeconds = Math.round(prevHours * 3600);
-       startTimer(rec.checkIn, baseSeconds);
+      // Fire API immediately — no GPS wait
+      const r = await api.post('/attendance/checkin', { location: 'Office', latitude: null, longitude: null });
+      const rec = r.data.data;
+      setRecord(rec);
 
-       toast.success(r.data.lateMessage || 'Checked in successfully!');
-       return rec;
-     } catch (err) {
-       toast.error(err.response?.data?.message || 'Check-in failed');
-       throw err;
-     } finally { setActionLoading(false); }
-   };
+      const prevHours = parseFloat(rec.workingHours || 0);
+      const baseSeconds = Math.round(prevHours * 3600);
+      startTimer(rec.checkIn, baseSeconds);
+      toast.success(r.data.lateMessage || 'Checked in successfully!');
+
+      // GPS resolves in background — patch location silently, never blocks UI
+      gpsPromise.then(coords => {
+        if (coords) {
+          api.patch('/attendance/location', { type: 'checkin', latitude: coords.latitude, longitude: coords.longitude }).catch(() => {});
+          logLocation('checkin', coords, permissionStatus);
+        }
+      });
+
+      return rec;
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Check-in failed');
+      throw err;
+    } finally { setActionLoading(false); }
+  };
 
   /* ── Check Out ────────────────────────────────────────────────── */
   const checkOut = async () => {
     setActionLoading(true);
     try {
-      const { coords, permissionStatus } = await requestLocation();
+      const { gpsPromise, permissionStatus } = await startLocationCapture();
       if (permissionStatus === 'browser_denied') {
         toast.error('Location is blocked. Click the lock icon in the address bar → Location → Allow, then try again.', { duration: 7000 });
         return;
       }
-      const r = await api.post('/attendance/checkout', {
-        location: 'Office',
-        latitude:  coords?.latitude  ?? null,
-        longitude: coords?.longitude ?? null,
-      });
+
+      // Fire API immediately — no GPS wait
+      const r = await api.post('/attendance/checkout', { location: 'Office', latitude: null, longitude: null });
       const rec = r.data.data;
       setRecord(rec);
-      logLocation('checkout', coords, permissionStatus);
       stopTimer();
-      // Set elapsed to total worked hours
       const prev = parseFloat(rec.workingHours || 0);
       setElapsed(Math.round(prev * 3600));
       toast.success('Checked out successfully!');
+
+      // GPS resolves in background
+      gpsPromise.then(coords => {
+        if (coords) {
+          api.patch('/attendance/location', { type: 'checkout', latitude: coords.latitude, longitude: coords.longitude }).catch(() => {});
+          logLocation('checkout', coords, permissionStatus);
+        }
+      });
+
       return rec;
     } catch (err) {
       toast.error(err.response?.data?.message || 'Check-out failed');

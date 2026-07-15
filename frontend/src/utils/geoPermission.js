@@ -22,6 +22,42 @@ export const resetGeoPref = () => setGeoPref(null);
 let askHandler = null;
 export const _registerGeoHandler = (fn) => { askHandler = fn; };
 
+/**
+ * Handle consent only — start GPS capture immediately after, return the
+ * running promise without awaiting it. Lets callers fire the API call in
+ * parallel with GPS acquisition instead of waiting for GPS first.
+ * Returns { gpsPromise, permissionStatus }.
+ */
+export async function startLocationCapture() {
+  if (navigator.permissions) {
+    try {
+      const perm = await navigator.permissions.query({ name: 'geolocation' });
+      if (perm.state === 'denied') {
+        return { gpsPromise: Promise.resolve(null), permissionStatus: 'browser_denied' };
+      }
+    } catch (_) {}
+  }
+
+  const pref = getGeoPref();
+
+  if (pref === 'always') {
+    return { gpsPromise: capturePosition(), permissionStatus: 'always' };
+  }
+
+  const choice = askHandler ? await askHandler() : 'once';
+
+  if (choice === 'deny') {
+    return { gpsPromise: Promise.resolve(null), permissionStatus: 'denied' };
+  }
+
+  if (choice === 'always') setGeoPref('always');
+
+  return {
+    gpsPromise: capturePosition(),
+    permissionStatus: choice === 'always' ? 'always' : 'once',
+  };
+}
+
 /** Capture one GPS fix. Resolves to coords or null (never rejects). */
 export function capturePosition() {
   return new Promise((resolve) => {
