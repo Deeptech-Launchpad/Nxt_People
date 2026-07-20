@@ -50,7 +50,6 @@ const NAV = {
         { to: '/team/department', label: 'Department' },
         { to: '/team/projects',   label: 'Projects'   },
         { to: '/team/peers',      label: 'Peers'      },
-        { to: '/team/approvals',  label: 'Approvals'  },
       ],
       organization: [
         { to: '/organization', label: 'Overview'          },
