@@ -85,6 +85,8 @@ const STEPS = [
 const TOOLTIP_W = 350;
 const SPOT_PAD = 8;
 
+const TOOLTIP_H = 390; // conservative height estimate so clamp never cuts off footer
+
 function computeTooltipPos(rect, position) {
   const gap = 14;
   const vw = window.innerWidth;
@@ -92,10 +94,14 @@ function computeTooltipPos(rect, position) {
 
   if (position === 'right') {
     let left = rect.right + gap;
-    let top = Math.max(10, rect.top + rect.height / 2 - 140);
     if (left + TOOLTIP_W > vw - 10) left = rect.left - TOOLTIP_W - gap;
-    if (top + 300 > vh - 10) top = vh - 310;
-    return { left, top, arrow: 'left' };
+    // Center on the element, then clamp so the whole card fits in the viewport
+    let top = rect.top + rect.height / 2 - TOOLTIP_H / 2;
+    if (top < 10) top = 10;
+    if (top + TOOLTIP_H > vh - 10) top = Math.max(10, vh - TOOLTIP_H - 10);
+    // Arrow offset: where element center falls relative to tooltip top
+    const arrowTop = Math.max(20, Math.min(TOOLTIP_H - 20, rect.top + rect.height / 2 - top));
+    return { left, top, arrow: 'left', arrowTop };
   }
 
   if (position === 'bottom' || position === 'bottom-left') {
@@ -109,7 +115,7 @@ function computeTooltipPos(rect, position) {
     return { left, top, arrow: 'top', arrowOffset };
   }
 
-  return { left: vw / 2 - TOOLTIP_W / 2, top: vh / 2 - 150, arrow: null };
+  return { left: vw / 2 - TOOLTIP_W / 2, top: vh / 2 - TOOLTIP_H / 2, arrow: null };
 }
 
 export default function GuidedTour({ onClose }) {
@@ -180,11 +186,11 @@ export default function GuidedTour({ onClose }) {
         style={{ width: TOOLTIP_W, top: tooltipPos.top, left: tooltipPos.left }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Left arrow (tooltip to the right of element) */}
+        {/* Left arrow (tooltip to the right of element) — position tracks element center */}
         {tooltipPos.arrow === 'left' && spotRect && (
           <div
-            className="absolute -left-[9px] top-1/2 -translate-y-1/2"
-            style={{ width: 0, height: 0, borderTop: '9px solid transparent', borderBottom: '9px solid transparent', borderRight: '9px solid white' }}
+            className="absolute -left-[9px]"
+            style={{ top: tooltipPos.arrowTop ?? '50%', transform: tooltipPos.arrowTop ? 'translateY(-50%)' : 'translateY(-50%)', width: 0, height: 0, borderTop: '9px solid transparent', borderBottom: '9px solid transparent', borderRight: '9px solid white' }}
           />
         )}
         {/* Top arrow (tooltip below element) */}
