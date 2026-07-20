@@ -175,7 +175,7 @@ const AppRoutes = () => {
           <Route path="time-tracker/schedule"    element={<JobSchedule/>}/>
 
           {/* ── Leave Tracker ────────────────────────────────────────── */}
-          <Route path="leave-tracker"            element={<LeaveTrackerLanding/>}/>
+          <Route path="leave-tracker"            element={<Navigate to="/leave-tracker/summary" replace/>}/>
           <Route path="leave-tracker/summary"    element={<LeaveSummary/>}/>
           <Route path="leave-tracker/balance"    element={<LeaveBalance/>}/>
           <Route path="leave-tracker/requests"   element={<LeaveRequests/>}/>
@@ -198,7 +198,7 @@ const AppRoutes = () => {
           {/* ── More Services ────────────────────────────────────────── */}
           <Route path="more-services/files"        element={<Documents/>}/>
           {/* Operations workspace + admin Leave Tracker — Super Admin / HR only. */}
-          <Route path="more-services/operations"               element={<ProtectedRoute roles={['admin','director','hr_admin']}><Operations/></ProtectedRoute>}/>
+          <Route path="more-services/operations"               element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Operations/></ProtectedRoute>}/>
           <Route path="more-services/operations/leave-tracker" element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
           <Route path="more-services/operations/permission-usage" element={<ProtectedRoute roles={['admin','director','hr_admin']}><PermissionUsage/></ProtectedRoute>}/>
           <Route path="more-services/operations/conference" element={<ProtectedRoute roles={['admin','director','hr_admin']}><Conference/></ProtectedRoute>}/>
