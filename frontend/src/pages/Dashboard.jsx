@@ -874,7 +874,7 @@ export default function Dashboard() {
               </div>
 
               {/* Check-in / out button */}
-              <div className="mt-4 px-6">
+              <div className="mt-4 px-6" data-tour="checkin-btn">
                 {!isCheckedIn && !isCheckedOut && (
                   <button
                     onClick={handleCheckIn}

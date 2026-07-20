@@ -5,7 +5,7 @@ import Topbar from './Topbar';
 import SmartChat from '../SmartChat';
 import GuidedTour from '../GuidedTour';
 import GeoPermissionModal from '../GeoPermissionModal';
-import { Moon, Sun, Volume2, VolumeX, Search, HelpCircle, MapPin } from 'lucide-react';
+import { Moon, Sun, Volume2, VolumeX, HelpCircle, MapPin } from 'lucide-react';
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -63,18 +63,6 @@ export default function Layout() {
               className="flex items-center gap-1.5 hover:text-slate-800 transition-colors font-medium"
             >
               <MapPin size={13} /> Take a Tour
-            </button>
-            <span className="text-slate-300">|</span>
-            <button
-              onClick={() => setSmartChatOpen(true)}
-              className="flex items-center gap-1.5 text-slate-400 hover:text-slate-800 transition-colors text-[13px]"
-              title="Open Smart Chat (Ctrl+Space)"
-            >
-              <Search size={12} />
-              <span>Here is your Smart Chat</span>
-              <kbd className="ml-1 hidden sm:inline-flex items-center gap-1 px-1.5 py-[1px] rounded border border-slate-200 bg-slate-50 text-slate-500 font-mono text-[12px]">
-                Ctrl + Space
-              </kbd>
             </button>
           </div>
           <div className="flex items-center gap-2">

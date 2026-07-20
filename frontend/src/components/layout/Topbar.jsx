@@ -445,7 +445,9 @@ export default function Topbar() {
             }
             const targetTo = (key === 'reports' && !isApprover(user)) ? '/payroll/my' : to;
             return (
-              <button key={key} onClick={() => navigate(targetTo)}
+              <button key={key}
+                {...(key === 'team' ? { 'data-tour': 'topbar-team' } : {})}
+                onClick={() => navigate(targetTo)}
                 className={`h-full px-4 flex items-center text-[16px] border-b-[3px] transition-all duration-150 tracking-[-0.01em]
                   ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`}>
                 {label}
@@ -459,6 +461,7 @@ export default function Topbar() {
           {/* Quick Actions + button */}
           <div className="relative" ref={quickActionsRef}>
             <button
+              data-tour="quick-actions"
               onClick={() => setShowQuickActions(v => !v)}
               className="w-7 h-7 bg-[#1a73e8] hover:bg-[#1557B0] text-white rounded flex items-center justify-center transition-colors"
             >
