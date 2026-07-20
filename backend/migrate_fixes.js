@@ -1143,6 +1143,17 @@ const steps = [
     WHERE check_in IS NOT NULL
       AND COALESCE(late_minutes, 0) = 0
       AND (check_in AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') > (date::timestamp + TIME '09:40:00')`,
+
+  // ── Org tree fix: CEO should always be the true root ─────────────────────
+  // The Zoho sync sets reporting_manager_id from Zoho's ReportingTo field.
+  // If Zoho has a ReportingTo set for the CEO (incorrectly), the sync wires
+  // them as someone else's child and breaks the entire employee tree.
+  // Clear reporting_manager_id for any employee designated Chief Executive
+  // Officer so they always render as the top-level root node.
+  `UPDATE employees
+      SET reporting_manager_id = NULL
+    WHERE reporting_manager_id IS NOT NULL
+      AND LOWER(designation) LIKE '%chief executive officer%'`,
 ];
 
 // Classify a step as "critical" (failure must abort the container start)

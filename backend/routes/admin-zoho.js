@@ -356,6 +356,7 @@ async function runEmployeeSync(initiatedBy = 'cron') {
   const stats = { inserted: 0, updated: 0, skipped: 0, managersResolved: 0, secondaryManagersResolved: 0, errors: [] };
   const managerLinks = [];
   const secondaryManagerLinks = [];
+  const syncedEmails = [];
 
   const client = await pool.connect();
   try {
@@ -416,11 +417,24 @@ async function runEmployeeSync(initiatedBy = 'cron') {
           }
         }
 
+        syncedEmails.push(mapped.email);
         if (mapped.reportsToEmail)            managerLinks.push({ employeeEmail: mapped.email, managerEmail: mapped.reportsToEmail });
         if (mapped.secondaryReportsToEmail)   secondaryManagerLinks.push({ employeeEmail: mapped.email, managerEmail: mapped.secondaryReportsToEmail });
       } catch (err) {
         stats.errors.push({ email: mapped.email, message: err.message });
       }
+    }
+
+    // Clear reporting_manager_id for every synced employee before re-applying
+    // the links from Zoho. This ensures the hierarchy in NxtPeople always
+    // matches Zoho exactly — employees whose ReportingTo was removed in Zoho
+    // (e.g. the CEO) correctly become root nodes instead of keeping a stale link.
+    if (syncedEmails.length > 0) {
+      await client.query(
+        `UPDATE employees SET reporting_manager_id = NULL
+          WHERE LOWER(email) = ANY($1::text[])`,
+        [syncedEmails]
+      );
     }
 
     for (const link of managerLinks) {
