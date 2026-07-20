@@ -226,8 +226,8 @@ const LINE_COLOR   = '#DCDCDC';   // gray — the bulk of the tree
 const ACTIVE_COLOR = '#0088FF';   // blue — the "active branch" hook
 const CARD_PITCH   = 70;          // full card: 58px + gap-3 (12px)
 const CARD_HALF    = 29;          // centerline of a full card
-const MINI_PITCH   = 60;          // mini card: 40px + 20px gap
-const MINI_HALF    = 20;          // centerline of a mini card
+const MINI_PITCH   = 58;          // mini card: 38px + 20px gap
+const MINI_HALF    = 19;          // centerline of a mini card
 const MINI_GAP     = 20;          // breathing room between mini cards
 const FULL_GAP     = 12;          // gap-3 between full cards
 // Connector geometry. COL_GAP and HOOK_LEN must be equal so the parent
@@ -704,7 +704,6 @@ export default function OrgChart() {
                     // Root column: no connector (nothing on the left).
                     // Auto-size to card contents; just stack the cards.
                     <div className="flex flex-col" style={{
-                      alignItems: 'flex-start',
                       gap: isAncestor ? MINI_GAP : FULL_GAP,
                     }}>
                       {colEmps.length === 0 ? (
