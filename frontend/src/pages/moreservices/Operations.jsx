@@ -22,7 +22,7 @@ const SERVICES = [
   { key: 'attendance',   label: 'Attendance',          icon: CalendarCheck, color: 'text-rose-500' },
   { key: 'shift',        label: 'Shift',               icon: Clock,         color: 'text-sky-500' },
   { key: 'time-tracker', label: 'Time Tracker',        icon: Timer,         color: 'text-amber-500' },
-  { key: 'leave-tracker',label: 'Leave Tracker',       icon: CalendarDays,  color: 'text-blue-600' },
+  { key: 'leave-tracker',label: 'Leave Requests',      icon: CalendarDays,  color: 'text-blue-600' },
   { key: 'permission-usage', label: 'Permission Usage', icon: Hourglass,    color: 'text-purple-600' },
   { key: 'conference',   label: 'Conference',          icon: DoorOpen,      color: 'text-blue-600' },
   { key: 'performance',  label: 'Performance',         icon: Trophy,        color: 'text-yellow-500' },
@@ -47,7 +47,7 @@ export default function Operations() {
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 min-h-[calc(100vh-12rem)]">
       <div className="px-6 py-5 border-b border-slate-100">
         <h2 className="text-[18px] font-semibold text-slate-900">Services</h2>
-        <p className="text-[15px] text-slate-500 mt-1">Operations workspace — open <span className="font-semibold text-blue-700">Leave Tracker</span> to manage all leave requests.</p>
+        <p className="text-[15px] text-slate-500 mt-1">Operations workspace — open <span className="font-semibold text-blue-700">Leave Requests</span> to manage all leave requests.</p>
       </div>
 
       <div className="p-6">

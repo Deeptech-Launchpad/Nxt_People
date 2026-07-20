@@ -78,14 +78,12 @@ const NAV = {
     label: 'Leave Tracker',
     primaryTabs: [
       { key: 'mydata',   label: 'My Data',  to: '/leave-tracker/summary'  },
-      { key: 'team',     label: 'Team',     to: '/leave-tracker/team',    roles: ['admin','director','manager'] },
       { key: 'holidays', label: 'Holidays', to: '/leave-tracker/holidays' },
     ],
     // '__landing__' signals "we're on the root /leave-tracker page" — no tab highlighted,
     // and subNav['__landing__'] is undefined so the white sub-nav bar stays hidden.
     getActiveTab: p => {
       if (p === '/leave-tracker')                                              return '__landing__';
-      if (p.startsWith('/leave-tracker/team') || p.startsWith('/leave-tracker/all')) return 'team';
       if (p.startsWith('/leave-tracker/holidays') || p.startsWith('/leave-tracker/weekends')) return 'holidays';
       return 'mydata';
     },
@@ -94,10 +92,6 @@ const NAV = {
         { to: '/leave-tracker/summary',  label: 'Leave Summary'  },
         { to: '/leave-tracker/requests', label: 'Leave Requests' },
         { to: '/leave-tracker/comp-off', label: 'Comp-Off'       },
-      ],
-      team: [
-        { to: '/leave-tracker/team', label: 'Team Approvals', roles: ['admin','director','manager'] },
-        { to: '/leave-tracker/all',  label: 'All Requests',   roles: ['admin','director','hr_admin'] },
       ],
       holidays: [
         { to: '/leave-tracker/holidays', label: 'Holidays'                                   },
@@ -144,7 +138,7 @@ const NAV = {
     subNav: {
       operations:   [
         { to: '/more-services/operations',               label: 'Services'      },
-        { to: '/more-services/operations/leave-tracker', label: 'Leave Tracker' },
+        { to: '/more-services/operations/leave-tracker', label: 'Leave Requests' },
       ],
       files:        [{ to: '/more-services/files',        label: 'Document Storage' }],
       travel:       [{ to: '/more-services/travel',       label: 'Travel Requests'  }],
