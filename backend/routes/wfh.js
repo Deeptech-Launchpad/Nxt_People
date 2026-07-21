@@ -19,16 +19,15 @@ router.get('/my', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// GET all pending (admin/manager)
+// GET all team WFH requests (all statuses)
 router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
-    // Full-access sees the whole org queue; managers only their direct reports.
     const scope = reportsScope(req.user, 'e', 1);
     const result = await pool.query(
-      `SELECT w.id as "_id", w.date, w.reason, w.status, w.created_at as "createdAt",
+      `SELECT w.id as "_id", w.date, w.reason, w.status, w.rejection_reason as "rejectionReason", w.created_at as "createdAt",
        json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'employeeId', e.employee_id, 'department', e.department) as employee
        FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
-       WHERE w.status = 'pending'${scope.clause} ORDER BY w.date DESC`,
+       WHERE 1=1${scope.clause} ORDER BY w.date DESC`,
       scope.params
     );
     res.json({ success: true, data: result.rows });
@@ -48,6 +47,31 @@ router.post('/', audit('CREATE', 'wfh_request'), async (req, res) => {
       [req.user._id, date, reason]
     );
     res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// PUT bulk approve all pending in scope
+router.put('/approve-all', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
+  try {
+    const scope = reportsScope(req.user, 'e', 1);
+    const selfClause = isFullAccess(req.user.role) ? '' : ` AND w.employee_id != $${scope.params.length + 1}`;
+    const params = isFullAccess(req.user.role) ? scope.params : [...scope.params, req.user._id];
+    const pending = await pool.query(
+      `SELECT w.id, w.employee_id, w.date FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
+       WHERE w.status = 'pending'${scope.clause}${selfClause}`,
+      params
+    );
+    if (pending.rows.length === 0) return res.json({ success: true, count: 0 });
+    const ids = pending.rows.map(r => r.id);
+    await pool.query(
+      `UPDATE wfh_requests SET status='approved', approved_by=$1, approved_at=NOW() WHERE id = ANY($2)`,
+      [req.user._id, ids]
+    );
+    for (const wfh of pending.rows) {
+      const dateLabel = new Date(wfh.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      await createNotification(wfh.employee_id, 'info', 'WFH Approved ✓', `Your WFH request for ${dateLabel} has been approved.`, '/wfh');
+    }
+    res.json({ success: true, count: ids.length });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

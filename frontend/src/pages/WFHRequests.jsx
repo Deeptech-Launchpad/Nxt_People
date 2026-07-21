@@ -58,6 +58,18 @@ export default function WFHRequests() {
     finally { setActionLoading(''); }
   };
 
+  const pendingCount = pending.filter(r => r.status === 'pending').length;
+
+  const handleApproveAll = async () => {
+    setActionLoading('all');
+    try {
+      const res = await api.put('/wfh/approve-all');
+      toast.success(`${res.data.count} WFH request(s) approved`);
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setActionLoading(''); }
+  };
+
   const displayList = tab === 'my' ? myRequests : pending;
 
   return (
@@ -68,14 +80,22 @@ export default function WFHRequests() {
             <h3 className="font-display font-semibold text-slate-800">Work From Home Requests</h3>
             <p className="text-slate-400 text-base mt-0.5">Apply to work remotely on specific dates</p>
           </div>
-          <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
-            <Plus size={16} /> Apply WFH
-          </button>
+          <div className="flex items-center gap-2">
+            {tab === 'pending' && pendingCount > 0 && (
+              <button onClick={handleApproveAll} disabled={!!actionLoading}
+                className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-50">
+                <CheckCircle size={16} /> Approve All
+              </button>
+            )}
+            <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
+              <Plus size={16} /> Apply WFH
+            </button>
+          </div>
         </div>
 
         {isApprover(user) && (
           <div className="flex border-b border-slate-100">
-            {[['my', 'My Requests'], ['pending', `Team Pending (${pending.length})`]].map(([id, label]) => (
+            {[['my', 'My Requests'], ['pending', `Team Requests (${pendingCount} pending)`]].map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)}
                 className={`px-6 py-3.5 text-base font-medium border-b-2 transition-colors ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                 {label}
