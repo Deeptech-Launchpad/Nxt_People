@@ -91,6 +91,7 @@ const NAV = {
         { to: '/leave-tracker/summary',  label: 'Leave Summary'  },
         { to: '/leave-tracker/requests', label: 'Leave Requests' },
         { to: '/leave-tracker/comp-off', label: 'Comp-Off'       },
+        { to: '/wfh',                    label: 'WFH Requests'   },
       ],
       holidays: [
         { to: '/leave-tracker/holidays', label: 'Holidays'                                   },
