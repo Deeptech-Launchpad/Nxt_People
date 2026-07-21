@@ -1,9 +1,10 @@
-﻿import React, { useState, useEffect } from 'react';
-import { Plus, X, CheckCircle, XCircle, Home, Clock, Send, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, X, CheckCircle, CheckCheck, XCircle, Home, Send, Eye } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { isApprover } from '../utils/roles';
+import LeaveDetailModal from '../components/LeaveDetailModal';
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -23,6 +24,7 @@ export default function WFHRequests() {
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
   const [tab, setTab] = useState(user?.role === 'team_member' ? 'my' : 'pending');
+  const [detailWfh, setDetailWfh] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -48,28 +50,17 @@ export default function WFHRequests() {
     finally { setSaving(false); }
   };
 
-  const handleAction = async (id, action, reason) => {
+  const handleAction = async (id, action, reason, approveAll = false) => {
     setActionLoading(id);
     try {
-      await api.put(`/wfh/${id}/action`, { action, rejectionReason: reason });
-      toast.success(`WFH request ${action}`);
+      await api.put(`/wfh/${id}/action`, { action, rejectionReason: reason, approveAll });
+      toast.success(approveAll ? 'All levels approved' : `WFH request ${action}`);
       setRejectModal(null); setRejectReason(''); load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setActionLoading(''); }
   };
 
   const pendingCount = pending.filter(r => r.status === 'pending').length;
-
-  const handleApproveAll = async () => {
-    setActionLoading('all');
-    try {
-      const res = await api.put('/wfh/approve-all');
-      toast.success(`${res.data.count} WFH request(s) approved`);
-      load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
-    finally { setActionLoading(''); }
-  };
-
   const displayList = tab === 'my' ? myRequests : pending;
 
   return (
@@ -80,17 +71,9 @@ export default function WFHRequests() {
             <h3 className="font-display font-semibold text-slate-800">Work From Home Requests</h3>
             <p className="text-slate-400 text-base mt-0.5">Apply to work remotely on specific dates</p>
           </div>
-          <div className="flex items-center gap-2">
-            {tab === 'pending' && pendingCount > 0 && (
-              <button onClick={handleApproveAll} disabled={!!actionLoading}
-                className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-50">
-                <CheckCircle size={16} /> Approve All
-              </button>
-            )}
-            <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
-              <Plus size={16} /> Apply WFH
-            </button>
-          </div>
+          <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
+            <Plus size={16} /> Apply WFH
+          </button>
         </div>
 
         {isApprover(user) && (
@@ -124,12 +107,18 @@ export default function WFHRequests() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={`text-sm px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[r.status]}`}>{r.status}</span>
-                  {tab === 'pending' && r.status === 'pending' && (
+                  <button onClick={() => setDetailWfh(r)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+                    <Eye size={13} /> View
+                  </button>
+                  {tab === 'pending' && r.status === 'pending' && r.canAct && (
                     <>
                       <button onClick={() => handleAction(r._id, 'approved')} disabled={!!actionLoading}
                         className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
                         <CheckCircle size={13} /> Approve
+                      </button>
+                      <button onClick={() => handleAction(r._id, 'approved', undefined, true)} disabled={!!actionLoading}
+                        className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                        <CheckCheck size={13} /> Approve All
                       </button>
                       <button onClick={() => { setRejectModal(r._id); setRejectReason(''); }}
                         className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
@@ -137,12 +126,29 @@ export default function WFHRequests() {
                       </button>
                     </>
                   )}
+                  {!(tab === 'pending' && r.status === 'pending' && r.canAct) && (
+                    <span className={`text-sm px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[r.status]}`}>{r.status}</span>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {detailWfh && (
+        <LeaveDetailModal
+          leave={detailWfh}
+          kind="wfh"
+          onClose={() => setDetailWfh(null)}
+          canAct={tab === 'pending' && detailWfh.status === 'pending' && !!detailWfh.canAct}
+          onApprove={(x, comment) => { setDetailWfh(null); handleAction(x._id, 'approved', comment); }}
+          onApproveAll={tab === 'pending' && detailWfh.status === 'pending' && !!detailWfh.canAct
+            ? (x, comment) => { setDetailWfh(null); handleAction(x._id, 'approved', comment, true); }
+            : undefined}
+          onReject={(x, comment) => { setDetailWfh(null); setRejectModal(x._id); setRejectReason(comment || ''); }}
+        />
+      )}
 
       {modal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

@@ -93,8 +93,9 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
   const balanceCards = Array.isArray(balance) ? balance : null;
   const emp = leave.employee;
   const status = leave.status === 'pending' ? 'pending' : leave.status;
-  const isReg = (kind === 'regularization') || (!kind && !leave.leaveType && (leave.checkIn !== undefined || leave.checkOut !== undefined || (leave.date && !leave.startDate)));
-  const typeLabel = isReg ? 'Attendance Regularization' : (TYPE_LABEL[leave.leaveType] || `${(leave.leaveType || '').replace(/_/g, ' ')}`);
+  const isWfh = kind === 'wfh';
+  const isReg = !isWfh && ((kind === 'regularization') || (!kind && !leave.leaveType && (leave.checkIn !== undefined || leave.checkOut !== undefined || (leave.date && !leave.startDate))));
+  const typeLabel = isWfh ? 'WFH Request' : isReg ? 'Attendance Regularization' : (TYPE_LABEL[leave.leaveType] || `${(leave.leaveType || '').replace(/_/g, ' ')}`);
   const empName = emp ? `${emp.firstName} ${emp.lastName}` : null;
   const showBalance = !!balanceCards && status === 'pending' && !isReg;
   const noteText = leave.rejectionReason;                    // doubles as approver comment
@@ -149,12 +150,14 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                     {empName}{emp.department && <span className="ml-2 text-[13px] text-slate-600">{emp.department}</span>}
                   </DetailRow>
                 )}
-                <DetailRow icon={FileText} label={isReg ? 'Request Type' : 'Leave Type'}>
+                <DetailRow icon={FileText} label="Request Type">
                   {typeLabel}
-                  {!isReg && leave.isHalfDay && <span className="ml-2 text-[13px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">Half Day</span>}
+                  {!isReg && !isWfh && leave.isHalfDay && <span className="ml-2 text-[13px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">Half Day</span>}
                 </DetailRow>
 
-                {isReg ? (
+                {isWfh ? (
+                  <DetailRow icon={Calendar} label="Date">{fmtDate(leave.date)}</DetailRow>
+                ) : isReg ? (
                   <>
                     <DetailRow icon={Calendar} label="Date">{fmtDate(leave.date)}</DetailRow>
                     <DetailRow icon={LogIn} label="Check-in">{leave.checkIn || '—'}</DetailRow>

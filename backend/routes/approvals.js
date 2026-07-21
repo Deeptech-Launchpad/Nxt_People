@@ -10,6 +10,7 @@ router.use(protect);
 const LEAVE_LEVELS_JSON = approvalLevelsJson('leave', 'l');
 const REG_LEVELS_JSON   = approvalLevelsJson('regularization', 'r');
 const COMPOFF_LEVELS_JSON = approvalLevelsJson('comp_off', 'c');
+const WFH_LEVELS_JSON   = approvalLevelsJson('wfh', 'w');
 
 router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
@@ -76,12 +77,22 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       `, [userId, full]),
 
       pool.query(`
-        SELECT w.id as "_id", w.date, w.reason, w.status, w.created_at as "createdAt",
+        SELECT w.id as "_id", w.date, w.reason, w.status, w.rejection_reason as "rejectionReason", w.created_at as "createdAt",
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
-                 'department', e.department, 'employeeId', e.employee_id) as employee
+                 'department', e.department, 'employeeId', e.employee_id) as employee,
+               ${WFH_LEVELS_JSON} as "approvalLevels",
+               ($2::boolean OR EXISTS (
+                  SELECT 1 FROM approval_levels x
+                   WHERE x.request_type = 'wfh' AND x.request_id = w.id AND x.approver_id = $1 AND x.status = 'pending'
+               )) as "canAct"
         FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
-        WHERE w.status = 'pending'${reportFilter} ORDER BY w.date DESC
-      `, simpleParams),
+        WHERE w.status = 'pending'
+          AND ($2::boolean OR EXISTS (
+               SELECT 1 FROM approval_levels x
+                WHERE x.request_type = 'wfh' AND x.request_id = w.id AND x.approver_id = $1 AND x.status = 'pending'
+          ))
+        ORDER BY w.date DESC
+      `, [userId, full]),
 
       // Comp-Offs now flow through the same hierarchy engine as leaves.
       pool.query(`

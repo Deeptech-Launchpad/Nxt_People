@@ -63,6 +63,7 @@ export default function Approvals() {
   const [searchFilter, setSearchFilter] = useState('');
   const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
   const [detailBalance, setDetailBalance] = useState(null); // balance cards for the detail modal
+  const [detailWfh, setDetailWfh] = useState(null);
   const [actionLoading, setActionLoading] = useState('');
 
   // When the user clicks a tab, mark its current count as "seen" and
@@ -170,10 +171,7 @@ export default function Approvals() {
 
   const ActionBtns = ({ endpoint, id, type, canActLeave, status }) => {
     let canAct = false;
-    if (endpoint === 'leaves' || endpoint === 'regularizations' || endpoint === 'comp-off') {
-      // Hierarchy-based: the server decides whether the current user may act on
-      // this request's approval levels (per-level "top not first" gate enforced
-      // at action time). Same engine for leaves, regularizations, and comp-offs.
+    if (endpoint === 'leaves' || endpoint === 'regularizations' || endpoint === 'comp-off' || endpoint === 'wfh') {
       canAct = status === 'pending' && !!canActLeave;
     } else {
       canAct = (status === 'pending' || status === 'submitted');
@@ -200,8 +198,8 @@ export default function Approvals() {
           className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
           <CheckCircle size={13} /> Approve
         </button>
-        {/* Approve every remaining level at once (leaves + comp-offs) — HR/SA + Team Leads. */}
-        {(endpoint === 'leaves' || endpoint === 'comp-off') && canApproveAll && (
+        {/* Approve every remaining level at once (leaves + comp-offs + wfh) — HR/SA + Team Leads. */}
+        {(endpoint === 'leaves' || endpoint === 'comp-off' || endpoint === 'wfh') && canApproveAll && (
           <button onClick={() => action(endpoint, id, 'approved', undefined, true)} disabled={!!actionLoading}
             className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
             <CheckCheck size={13} /> Approve All
@@ -543,6 +541,11 @@ export default function Approvals() {
                           <p className="font-semibold text-slate-700">{w.employee?.firstName} {w.employee?.lastName}</p>
                           <span className="text-sm text-slate-600">{w.employee?.employeeId}</span>
                           <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{w.employee?.department}</span>
+                          {w.status === 'pending' && w.approvalLevels?.length > 0 && (
+                            <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-200">
+                              {w.approvalLevels.filter(a => a.status === 'approved').length} of {w.approvalLevels.length} level{w.approvalLevels.length !== 1 ? 's' : ''} approved
+                            </span>
+                          )}
                         </div>
                         <p className="text-base text-slate-500 mt-1">
                           {fmtDay(w.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
@@ -550,7 +553,12 @@ export default function Approvals() {
                         <p className="text-sm text-slate-400 mt-0.5 max-w-xs">{w.reason}</p>
                       </div>
                     </div>
-                    <ActionBtns endpoint="wfh" id={w._id} type="WFH" status={w.status} />
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button onClick={() => setDetailWfh(w)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
+                        <Eye size={13} /> View
+                      </button>
+                      <ActionBtns endpoint="wfh" id={w._id} type="WFH" canActLeave={w.canAct} status={w.status} />
+                    </div>
                   </div>
                 ))
             )}
@@ -594,6 +602,21 @@ export default function Approvals() {
           </div>
         )}
       </div>
+
+      {/* WFH detail + approval timeline modal */}
+      {detailWfh && (
+        <LeaveDetailModal
+          leave={detailWfh}
+          kind="wfh"
+          onClose={() => setDetailWfh(null)}
+          canAct={detailWfh.status === 'pending' && !!detailWfh.canAct}
+          onApprove={(x, comment) => { setDetailWfh(null); action('wfh', x._id, 'approved', comment); }}
+          onApproveAll={canApproveAll && detailWfh.status === 'pending' && !!detailWfh.canAct
+            ? (x, comment) => { setDetailWfh(null); action('wfh', x._id, 'approved', comment, true); }
+            : undefined}
+          onReject={(x, comment) => { setDetailWfh(null); action('wfh', x._id, 'rejected', comment); }}
+        />
+      )}
 
       {/* Leave details + approval timeline modal */}
       {detailLeave && (() => {

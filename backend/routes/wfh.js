@@ -2,16 +2,20 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
-const { isFullAccess, reportsScope, canActOnEmployee } = require('../utils/roles');
+const { isFullAccess, reportsScope } = require('../utils/roles');
 const { audit } = require('../middleware/audit');
 const { createNotification } = require('./notifications');
+const { createLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
 router.use(protect);
+
+const WFH_LEVELS_JSON = approvalLevelsJson('wfh', 'w');
 
 // GET my WFH requests
 router.get('/my', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT w.id as "_id", w.date, w.reason, w.status, w.rejection_reason as "rejectionReason", w.created_at as "createdAt"
+      `SELECT w.id as "_id", w.date, w.reason, w.status, w.rejection_reason as "rejectionReason", w.created_at as "createdAt",
+       ${WFH_LEVELS_JSON} as "approvalLevels"
        FROM wfh_requests w WHERE w.employee_id = $1 ORDER BY w.created_at DESC`,
       [req.user._id]
     );
@@ -19,16 +23,23 @@ router.get('/my', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// GET all team WFH requests (all statuses)
+// GET all team WFH requests (all statuses, scoped to direct reports)
 router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
-    const scope = reportsScope(req.user, 'e', 1);
+    const userId = req.user._id;
+    const full = isFullAccess(req.user.role);
+    const scope = reportsScope(req.user, 'e', 3);
     const result = await pool.query(
       `SELECT w.id as "_id", w.date, w.reason, w.status, w.rejection_reason as "rejectionReason", w.created_at as "createdAt",
-       json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'employeeId', e.employee_id, 'department', e.department) as employee
+       json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'employeeId', e.employee_id, 'department', e.department) as employee,
+       ${WFH_LEVELS_JSON} as "approvalLevels",
+       ($2::boolean OR EXISTS (
+          SELECT 1 FROM approval_levels x
+           WHERE x.request_type = 'wfh' AND x.request_id = w.id AND x.approver_id = $1 AND x.status = 'pending'
+       )) as "canAct"
        FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
        WHERE 1=1${scope.clause} ORDER BY w.date DESC`,
-      scope.params
+      [userId, full, ...scope.params]
     );
     res.json({ success: true, data: result.rows });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -41,44 +52,32 @@ router.post('/', audit('CREATE', 'wfh_request'), async (req, res) => {
     if (!date || !reason) return res.status(400).json({ success: false, message: 'Date and reason are required' });
     const conflict = await pool.query('SELECT id FROM wfh_requests WHERE employee_id=$1 AND date=$2', [req.user._id, date]);
     if (conflict.rows.length > 0) return res.status(409).json({ success: false, message: 'WFH already requested for this date' });
-    const result = await pool.query(
-      `INSERT INTO wfh_requests (employee_id, date, reason) VALUES ($1,$2,$3)
-       RETURNING id as "_id", date, reason, status, created_at as "createdAt"`,
-      [req.user._id, date, reason]
-    );
-    res.status(201).json({ success: true, data: result.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-});
 
-// PUT bulk approve all pending in scope
-router.put('/approve-all', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
-  try {
-    const scope = reportsScope(req.user, 'e', 1);
-    const selfClause = isFullAccess(req.user.role) ? '' : ` AND w.employee_id != $${scope.params.length + 1}`;
-    const params = isFullAccess(req.user.role) ? scope.params : [...scope.params, req.user._id];
-    const pending = await pool.query(
-      `SELECT w.id, w.employee_id, w.date FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
-       WHERE w.status = 'pending'${scope.clause}${selfClause}`,
-      params
-    );
-    if (pending.rows.length === 0) return res.json({ success: true, count: 0 });
-    const ids = pending.rows.map(r => r.id);
-    await pool.query(
-      `UPDATE wfh_requests SET status='approved', approved_by=$1, approved_at=NOW() WHERE id = ANY($2)`,
-      [req.user._id, ids]
-    );
-    for (const wfh of pending.rows) {
-      const dateLabel = new Date(wfh.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-      await createNotification(wfh.employee_id, 'info', 'WFH Approved ✓', `Your WFH request for ${dateLabel} has been approved.`, '/wfh');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `INSERT INTO wfh_requests (employee_id, date, reason) VALUES ($1,$2,$3)
+         RETURNING id as "_id", date, reason, status, created_at as "createdAt"`,
+        [req.user._id, date, reason]
+      );
+      const wfh = result.rows[0];
+      await createLevels(client, 'wfh', wfh._id, req.user._id);
+      await client.query('COMMIT');
+      res.status(201).json({ success: true, data: wfh });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-    res.json({ success: true, count: ids.length });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// PUT approve/reject
-router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_incharge'), audit('ACTION', 'wfh_request'), async (req, res) => {
+// PUT approve/reject with multi-level hierarchy support
+router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), audit('ACTION', 'wfh_request'), async (req, res) => {
   try {
-    const { action, rejectionReason } = req.body;
+    const { action, rejectionReason, approveAll } = req.body;
     const wRes = await pool.query(
       `SELECT w.*, e.reporting_manager_id, e.approving_authority_id
          FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
@@ -87,27 +86,55 @@ router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_inchar
     );
     const wfh = wRes.rows[0];
     if (!wfh) return res.status(404).json({ success: false, message: 'WFH request not found' });
+    if (wfh.status !== 'pending') return res.status(400).json({ success: false, message: 'This request has already been actioned.' });
 
-    // Block self-approval (full-access exempt); managers only their direct reports.
-    if (wfh.employee_id === req.user._id && !isFullAccess(req.user.role))
-      return res.status(403).json({ success: false, message: 'You cannot act on your own WFH request.' });
-    if (!canActOnEmployee(req.user, wfh))
-      return res.status(403).json({ success: false, message: 'You can only act on your direct reports’ requests.' });
+    const canAct = await canUserAct(pool, 'wfh', req.params.id, req.user);
+    if (!canAct) return res.status(403).json({ success: false, message: 'You are not a pending approver for this request.' });
 
-    const status = action === 'approved' ? 'approved' : 'rejected';
-    await pool.query(
-      'UPDATE wfh_requests SET status=$1, approved_by=$2, approved_at=NOW(), rejection_reason=$3 WHERE id=$4',
-      [status, req.user._id, rejectionReason || null, req.params.id]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const dateLabel = new Date(wfh.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-    await createNotification(wfh.employee_id, 'info',
-      action === 'approved' ? 'WFH Approved ✓' : 'WFH Rejected',
-      action === 'approved' ? `Your WFH request for ${dateLabel} has been approved.` : `Your WFH request for ${dateLabel} was rejected.`,
-      '/wfh'
-    );
+      let result;
+      if (action === 'approved') {
+        result = approveAll
+          ? await applyApproveAll(client, 'wfh', req.params.id, req.user)
+          : await applyApproval(client, 'wfh', req.params.id, req.user);
+      } else {
+        result = await applyRejection(client, 'wfh', req.params.id, req.user);
+      }
 
-    res.json({ success: true, message: `WFH ${action}` });
+      if (!result.ok) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ success: false, message: result.message });
+      }
+
+      const finalStatus = action === 'rejected' ? 'rejected' : (result.allApproved ? 'approved' : 'pending');
+      await client.query(
+        `UPDATE wfh_requests SET status=$1, approved_by=$2, approved_at=NOW(), rejection_reason=$3 WHERE id=$4`,
+        [finalStatus, req.user._id, rejectionReason || null, req.params.id]
+      );
+
+      await client.query('COMMIT');
+
+      if (finalStatus !== 'pending') {
+        const dateLabel = new Date(wfh.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        await createNotification(wfh.employee_id, 'info',
+          finalStatus === 'approved' ? 'WFH Approved ✓' : 'WFH Rejected',
+          finalStatus === 'approved'
+            ? `Your WFH request for ${dateLabel} has been approved.`
+            : `Your WFH request for ${dateLabel} was rejected.`,
+          '/wfh'
+        );
+      }
+
+      res.json({ success: true, message: `WFH ${finalStatus}` });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
