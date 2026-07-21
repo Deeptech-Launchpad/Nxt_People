@@ -448,14 +448,14 @@ router.post('/', [
           : `${empName} requested ${leaveType} leave from ${startLabel} (${totalDays} day${totalDays !== 1 ? 's' : ''}).`;
         await Promise.all(allRecipients.map(a => createNotification(
           a.id, 'approval', notifTitle, notifMsg,
-          `/leave-tracker/team?openId=${leaveId}`
+          `/more-services/operations/leave-tracker?openId=${leaveId}`
         ).catch(err => logger.warn({ err: err.message }, '[leaves] notify approver failed'))));
 
         const baseUrl = process.env.APP_URL || 'https://nxtpeople.altiusnxt.tech';
         const leaveTypeDisplay = leaveType === 'permission' ? 'Permission' :
                                  leaveType === 'comp_off' ? 'Compensatory Off' :
                                  leaveType.charAt(0).toUpperCase() + leaveType.slice(1) + ' Leave';
-        const approvalLink = `${baseUrl}/leave-tracker/team?openId=${leaveId}`;
+        const approvalLink = `${baseUrl}/more-services/operations/leave-tracker?openId=${leaveId}`;
 
         await Promise.all(allRecipients.filter(a => a.email).map(a =>
           sendLeaveApprovalEmail({

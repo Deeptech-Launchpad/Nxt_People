@@ -1417,7 +1417,7 @@ export default function Dashboard() {
                           </div>
                         </div>
                         <button 
-                          onClick={() => navigate(`/leave-tracker/team?openId=${approval._id}`)}
+                          onClick={() => navigate(`/more-services/operations/leave-tracker?openId=${approval._id}`)}
                           className="text-[14px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors whitespace-nowrap ml-4"
                         >
                           Review
