@@ -98,7 +98,7 @@ export default function WFHRequests() {
                   </div>
                   <div>
                     {tab === 'pending' && <p className="font-semibold text-slate-700 text-base">{r.employee?.firstName} {r.employee?.lastName} <span className="text-sm text-slate-400">· {r.employee?.department}</span></p>}
-                    <p className="font-medium text-slate-700 text-base">{new Date(r.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                    <p className="font-medium text-slate-700 text-base">{new Date(r.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
                     <p className="text-sm text-slate-400 mt-0.5">{r.reason}</p>
                     {r.rejectionReason && <p className="text-sm text-red-500 mt-0.5">Rejected: {r.rejectionReason}</p>}
                   </div>
