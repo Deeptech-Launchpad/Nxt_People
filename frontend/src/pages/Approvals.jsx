@@ -340,7 +340,7 @@ export default function Approvals() {
                        }} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                          <Eye size={13} /> View
                        </button>
-                       <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                       <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct && l.employee?._id !== user?._id} status={l.status} />
                      </div>
                    </div>
                 ))
@@ -386,7 +386,7 @@ export default function Approvals() {
                        }} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                          <Eye size={13} /> View
                        </button>
-                       <ActionBtns endpoint="leaves" id={p._id} type="Permission" canActLeave={p.canAct} status={p.status} />
+                       <ActionBtns endpoint="leaves" id={p._id} type="Permission" canActLeave={p.canAct && p.employee?._id !== user?._id} status={p.status} />
                      </div>
                    </div>
                 ))
@@ -524,7 +524,7 @@ export default function Approvals() {
                       <button onClick={() => setDetailLeave(r)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                         <Eye size={13} /> View
                       </button>
-                      <ActionBtns endpoint="regularizations" id={r._id} type="Regularization" canActLeave={r.canAct} status={r.status} />
+                      <ActionBtns endpoint="regularizations" id={r._id} type="Regularization" canActLeave={r.canAct && r.employee?._id !== user?._id} status={r.status} />
                     </div>
                   </div>
                 ))
@@ -561,7 +561,7 @@ export default function Approvals() {
                       <button onClick={() => setDetailWfh(w)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                         <Eye size={13} /> View
                       </button>
-                      <ActionBtns endpoint="wfh" id={w._id} type="WFH" canActLeave={w.canAct} status={w.status} />
+                      <ActionBtns endpoint="wfh" id={w._id} type="WFH" canActLeave={w.canAct && w.employee?._id !== user?._id} status={w.status} />
                     </div>
                   </div>
                 ))
@@ -598,7 +598,7 @@ export default function Approvals() {
                         {c.reason && <p className="text-sm text-slate-400 mt-0.5 max-w-xs">{c.reason}</p>}
                       </div>
                     </div>
-                    <ActionBtns endpoint="comp-off" id={c._id} type="Comp-Off" canActLeave={c.canAct} status={c.status} />
+                    <ActionBtns endpoint="comp-off" id={c._id} type="Comp-Off" canActLeave={c.canAct && c.employee?._id !== user?._id} status={c.status} />
                   </div>
                 ))
             )}
@@ -613,7 +613,7 @@ export default function Approvals() {
           leave={detailWfh}
           kind="wfh"
           onClose={() => setDetailWfh(null)}
-          canAct={detailWfh.status === 'pending' && !!detailWfh.canAct}
+          canAct={detailWfh.status === 'pending' && !!detailWfh.canAct && detailWfh.employee?._id !== user?._id}
           onApprove={(x, comment) => { setDetailWfh(null); action('wfh', x._id, 'approved', comment); }}
           onApproveAll={canApproveAll && detailWfh.status === 'pending' && !!detailWfh.canAct
             ? (x, comment) => { setDetailWfh(null); action('wfh', x._id, 'approved', comment, true); }
@@ -653,7 +653,7 @@ export default function Approvals() {
             kind={isReg ? 'regularization' : 'leave'}
             balance={!isReg && detailLeave.status === 'pending' ? detailBalance : undefined}
             onClose={() => { setDetailLeave(null); setDetailBalance(null); }}
-            canAct={detailLeave.status === 'pending' && !!detailLeave.canAct}
+            canAct={detailLeave.status === 'pending' && !!detailLeave.canAct && detailLeave.employee?._id !== user?._id}
             onApprove={(x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'approved', comment); }}
             onApproveAll={!isReg && canApproveAll && detailLeave.status === 'pending' && !!detailLeave.canAct
               ? (x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'approved', comment, true); }

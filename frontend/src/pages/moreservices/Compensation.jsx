@@ -161,7 +161,7 @@ export default function Compensation() {
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  {view === 'All (Admin)' && c.status === 'pending' && isAdmin ? (
+                  {view === 'All (Admin)' && c.status === 'pending' && isAdmin && c.employee?._id !== user?._id ? (
                     <div className="flex gap-1">
                       <button onClick={() => handleAction(c._id, 'approve')} title="Approve" className="p-1 rounded hover:bg-emerald-50 text-emerald-600"><Check size={14}/></button>
                       <button onClick={() => handleAction(c._id, 'reject')}  title="Reject"  className="p-1 rounded hover:bg-red-50 text-red-500"><X size={14}/></button>

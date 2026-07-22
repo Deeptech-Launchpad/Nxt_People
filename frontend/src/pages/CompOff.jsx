@@ -157,7 +157,7 @@ export default function CompOff() {
                         {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </button>
                     )}
-                    {tab === 'pending' && r.status === 'pending' && canAct && (
+                    {tab === 'pending' && r.status === 'pending' && canAct && r.employee?._id !== user?._id && (
                       <>
                         <button onClick={() => handleAction(r._id, 'approved')} disabled={!!actionLoading} className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"><CheckCircle size={13} /> Approve</button>
                         {canApproveAll && (
@@ -222,7 +222,7 @@ export default function CompOff() {
       {viewItem && (
         <CompOffDetailModal
           item={viewItem}
-          canAct={tab === 'pending' && viewItem.canAct === true}
+          canAct={tab === 'pending' && viewItem.canAct === true && viewItem.employee?._id !== user?._id}
           canApproveAll={canApproveAll}
           onClose={() => setViewItem(null)}
           onApprove={(r) => { setViewItem(null); handleAction(r._id, 'approved'); }}

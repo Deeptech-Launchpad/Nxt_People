@@ -111,7 +111,7 @@ export default function WFHRequests() {
                   <button onClick={() => setDetailWfh(r)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
                     <Eye size={13} /> View
                   </button>
-                  {tab === 'pending' && r.status === 'pending' && r.canAct && (
+                  {tab === 'pending' && r.status === 'pending' && r.canAct && r.employee?._id !== user?._id && (
                     <>
                       <button onClick={() => handleAction(r._id, 'approved')} disabled={!!actionLoading}
                         className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
@@ -142,7 +142,7 @@ export default function WFHRequests() {
           leave={detailWfh}
           kind="wfh"
           onClose={() => setDetailWfh(null)}
-          canAct={tab === 'pending' && detailWfh.status === 'pending' && !!detailWfh.canAct}
+          canAct={tab === 'pending' && detailWfh.status === 'pending' && !!detailWfh.canAct && detailWfh.employee?._id !== user?._id}
           onApprove={(x, comment) => { setDetailWfh(null); handleAction(x._id, 'approved', comment); }}
           onApproveAll={tab === 'pending' && detailWfh.status === 'pending' && !!detailWfh.canAct
             ? (x, comment) => { setDetailWfh(null); handleAction(x._id, 'approved', comment, true); }

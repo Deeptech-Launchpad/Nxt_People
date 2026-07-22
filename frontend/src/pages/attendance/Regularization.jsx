@@ -44,7 +44,8 @@ export default function Regularization() {
     }).catch(console.error).finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(() => { if (user !== undefined) load(); }, [user?.role]);
+  useEffect(() => { if (user?.role === 'team_member') setTab('my'); }, [user?.role]);
 
   useEffect(() => {
     if (!modal) return;
@@ -153,7 +154,7 @@ export default function Regularization() {
                   <button onClick={() => setDetailReq(r)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors">
                     <Eye size={13} /> View
                   </button>
-                  {tab === 'pending' && r.status === 'pending' && r.canAct && (
+                  {tab === 'pending' && r.status === 'pending' && r.canAct && r.employee?._id !== user?._id && (
                     <>
                       <button onClick={() => handleAction(r._id, 'approved')} disabled={!!actionLoading}
                         className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
@@ -222,7 +223,7 @@ export default function Regularization() {
           leave={detailReq}
           kind="regularization"
           onClose={() => setDetailReq(null)}
-          canAct={tab === 'pending' && detailReq.status === 'pending' && !!detailReq.canAct}
+          canAct={tab === 'pending' && detailReq.status === 'pending' && !!detailReq.canAct && detailReq.employee?._id !== user?._id}
           defaultView={tab === 'my' ? 'timeline' : 'details'}
           onApprove={(x, comment) => { setDetailReq(null); handleAction(x._id, 'approved', comment); }}
           onReject={(x, comment) => { setDetailReq(null); handleAction(x._id, 'rejected', comment); }}
