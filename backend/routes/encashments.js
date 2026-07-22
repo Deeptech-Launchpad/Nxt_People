@@ -5,7 +5,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, reportsScope, canActOnEmployee } = require('../utils/roles');
 const { audit } = require('../middleware/audit');
 
-// Whitelist map — column names come from code, never from user input
+// Whitelist map -- column names come from code, never from user input
 const ENCASHMENT_COL = {
   casual: 'casual_leave',
 };
@@ -80,28 +80,28 @@ router.put('/:id/action', authorize('admin', 'director', 'manager'), audit('ACTI
 
     const client = await pool.connect();
     try {
-      await client.query(‘BEGIN’);
+      await client.query('BEGIN');
       const reqRes = await client.query(
         `SELECT l.*, e.reporting_manager_id, e.approving_authority_id
            FROM leave_encashments l JOIN employees e ON l.employee_id = e.id WHERE l.id = $1 FOR UPDATE OF l`,
         [req.params.id]
       );
       const encashReq = reqRes.rows[0];
-      if (!encashReq || encashReq.status !== ‘pending’) {
-        await client.query(‘ROLLBACK’);
-        return res.status(400).json({ success: false, message: ‘Invalid or already processed request’ });
+      if (!encashReq || encashReq.status !== 'pending') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: 'Invalid or already processed request' });
       }
 
       if (encashReq.employee_id === req.user._id && !isFullAccess(req.user.role)) {
-        await client.query(‘ROLLBACK’);
-        return res.status(403).json({ success: false, message: ‘You cannot act on your own encashment request.’ });
+        await client.query('ROLLBACK');
+        return res.status(403).json({ success: false, message: 'You cannot act on your own encashment request.' });
       }
       if (!canActOnEmployee(req.user, encashReq)) {
-        await client.query(‘ROLLBACK’);
-        return res.status(403).json({ success: false, message: ‘You can only act on requests from your direct reports.’ });
+        await client.query('ROLLBACK');
+        return res.status(403).json({ success: false, message: 'You can only act on requests from your direct reports.' });
       }
 
-      if (status === ‘approved’) {
+      if (status === 'approved') {
         const balCol = ENCASHMENT_COL[encashReq.leave_type];
         if (balCol) {
           await client.query(
@@ -114,13 +114,13 @@ router.put('/:id/action', authorize('admin', 'director', 'manager'), audit('ACTI
       const up = await client.query(`
         UPDATE leave_encashments
         SET status = $1, rejection_reason = $2, approved_by = $3, approved_at = NOW(), updated_at = NOW()
-        WHERE id = $4 AND status = ‘pending’ RETURNING *
+        WHERE id = $4 AND status = 'pending' RETURNING *
       `, [status, reason || null, req.user._id, req.params.id]);
 
-      await client.query(‘COMMIT’);
+      await client.query('COMMIT');
       res.json({ success: true, data: up.rows[0], message: `Encashment ${status}` });
     } catch (err) {
-      await client.query(‘ROLLBACK’);
+      await client.query('ROLLBACK');
       throw err;
     } finally {
       client.release();
