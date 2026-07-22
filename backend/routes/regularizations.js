@@ -78,18 +78,27 @@ router.post('/', [
     if (d > today) return res.status(400).json({ success: false, message: 'Cannot regularize a future date' });
     if (d < ninetyAgo) return res.status(400).json({ success: false, message: 'Cannot regularize older than 90 days' });
 
-    const result = await pool.query(
-      `INSERT INTO attendance_regularizations (employee_id, date, check_in, check_out, reason)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id as "_id", date, check_in as "checkIn", check_out as "checkOut", reason, status, created_at as "createdAt"`,
-      [req.user._id, date, checkIn || null, checkOut || null, reason]
-    );
-    const reg = result.rows[0];
-
-    // ── Build the hierarchy approval chain + notify all levels immediately ──
-    // Same engine and pattern as leave requests.
+    let reg;
     let levels = [];
-    try { levels = await createLevels(pool, 'regularization', reg._id, req.user._id); }
-    catch (e) { logger.error({ err: e.message }, '[regularizations] createLevels soft-fail'); }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `INSERT INTO attendance_regularizations (employee_id, date, check_in, check_out, reason)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id as "_id", date, check_in as "checkIn", check_out as "checkOut", reason, status, created_at as "createdAt"`,
+        [req.user._id, date, checkIn || null, checkOut || null, reason]
+      );
+      reg = result.rows[0];
+      levels = await createLevels(client, 'regularization', reg._id, req.user._id);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    // ── Notify all levels ──
 
     try {
       const empName = `${req.user.firstName} ${req.user.lastName}`;

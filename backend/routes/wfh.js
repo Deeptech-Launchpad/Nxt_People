@@ -50,12 +50,15 @@ router.post('/', audit('CREATE', 'wfh_request'), async (req, res) => {
   try {
     const { date, reason } = req.body;
     if (!date || !reason) return res.status(400).json({ success: false, message: 'Date and reason are required' });
-    const conflict = await pool.query('SELECT id FROM wfh_requests WHERE employee_id=$1 AND date=$2', [req.user._id, date]);
-    if (conflict.rows.length > 0) return res.status(409).json({ success: false, message: 'WFH already requested for this date' });
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      const conflict = await client.query('SELECT id FROM wfh_requests WHERE employee_id=$1 AND date=$2', [req.user._id, date]);
+      if (conflict.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ success: false, message: 'WFH already requested for this date' });
+      }
       const result = await client.query(
         `INSERT INTO wfh_requests (employee_id, date, reason) VALUES ($1,$2,$3)
          RETURNING id as "_id", date, reason, status, created_at as "createdAt"`,
@@ -78,22 +81,21 @@ router.post('/', audit('CREATE', 'wfh_request'), async (req, res) => {
 router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), audit('ACTION', 'wfh_request'), async (req, res) => {
   try {
     const { action, rejectionReason, approveAll } = req.body;
-    const wRes = await pool.query(
-      `SELECT w.*, e.reporting_manager_id, e.approving_authority_id
-         FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
-        WHERE w.id=$1`,
-      [req.params.id]
-    );
-    const wfh = wRes.rows[0];
-    if (!wfh) return res.status(404).json({ success: false, message: 'WFH request not found' });
-    if (wfh.status !== 'pending') return res.status(400).json({ success: false, message: 'This request has already been actioned.' });
-
-    const canAct = await canUserAct(pool, 'wfh', req.params.id, req.user);
-    if (!canAct) return res.status(403).json({ success: false, message: 'You are not a pending approver for this request.' });
-
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      const wRes = await client.query(
+        `SELECT w.*, e.reporting_manager_id, e.approving_authority_id
+           FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
+          WHERE w.id=$1 FOR UPDATE OF w`,
+        [req.params.id]
+      );
+      const wfh = wRes.rows[0];
+      if (!wfh) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'WFH request not found' }); }
+      if (wfh.status !== 'pending') { await client.query('ROLLBACK'); return res.status(400).json({ success: false, message: 'This request has already been actioned.' }); }
+
+      const canAct = await canUserAct(client, 'wfh', req.params.id, req.user);
+      if (!canAct) { await client.query('ROLLBACK'); return res.status(403).json({ success: false, message: 'You are not a pending approver for this request.' }); }
 
       let result;
       if (action === 'approved') {
@@ -110,10 +112,15 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
       }
 
       const finalStatus = action === 'rejected' ? 'rejected' : (result.allApproved ? 'approved' : 'pending');
-      await client.query(
-        `UPDATE wfh_requests SET status=$1, approved_by=$2, approved_at=NOW(), rejection_reason=$3 WHERE id=$4`,
-        [finalStatus, req.user._id, rejectionReason || null, req.params.id]
-      );
+      if (finalStatus === 'approved') {
+        await client.query(`UPDATE wfh_requests SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3`,
+          ['approved', req.user._id, req.params.id]);
+      } else if (finalStatus === 'rejected') {
+        await client.query(`UPDATE wfh_requests SET status=$1, approved_by=$2, approved_at=NOW(), rejection_reason=$3 WHERE id=$4`,
+          ['rejected', req.user._id, rejectionReason || null, req.params.id]);
+      } else {
+        await client.query(`UPDATE wfh_requests SET status=$1 WHERE id=$2`, ['pending', req.params.id]);
+      }
 
       await client.query('COMMIT');
 

@@ -500,6 +500,7 @@ router.post('/login-mfa', loginLimiter, async (req, res) => {
       [employeeId]
     );
     const employee = userRes.rows[0];
+    if (!employee) return res.status(401).json({ success: false, message: 'Account not found' });
     const token = signToken(employee._id);
     const refreshToken = await generateRefreshToken(employee._id, req);
 
@@ -556,7 +557,7 @@ router.put('/change-password', protect, async (req, res) => {
     }
 
     const hashed = await bcrypt.hash(newPassword, 12);
-    await pool.query('UPDATE employees SET password = $1 WHERE id = $2', [hashed, req.user._id]);
+    await pool.query('UPDATE employees SET password = $1, tokens_revoked_at = NOW() WHERE id = $2', [hashed, req.user._id]);
     await pool.query('DELETE FROM refresh_tokens WHERE employee_id = $1', [req.user._id]);
 
     res.json({ success: true, message: 'Password updated' });

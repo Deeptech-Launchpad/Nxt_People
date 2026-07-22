@@ -635,8 +635,17 @@ export default function Dashboard() {
    useEffect(() => {
      if (activeTab !== 'approvals') return;
      setLoadingApprovals(true);
-     api.get('/leaves/pending-approvals')
-       .then(r => setPendingApprovals(r.data.data || []))
+     api.get('/approvals/pending')
+       .then(r => {
+         const d = r.data.data || {};
+         const allPending = [
+           ...(d.leaves || []),
+           ...(d.regularizations || []),
+           ...(d.wfhRequests || []),
+           ...(d.compOffs || []),
+         ];
+         setPendingApprovals(allPending);
+       })
        .catch(err => toast.error('Failed to load pending approvals'))
        .finally(() => setLoadingApprovals(false));
    }, [activeTab]);
@@ -1408,11 +1417,22 @@ export default function Dashboard() {
                               {approval.employee?.firstName} {approval.employee?.lastName}
                             </p>
                             <p className="text-[14px] text-slate-500 capitalize">
-                              {approval.leaveType} Leave • {approval.leaveType === 'permission' ? (() => { const m = Math.round(parseFloat(approval.hours || 0) * 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`; })() : `${approval.totalDays} Day(s)`}
+                              {approval.workedDate ? `Comp-Off · ${approval.daysEarned} day(s)` :
+                               (approval.checkIn !== undefined || approval.checkOut !== undefined) ? 'Attendance Regularization' :
+                               !approval.leaveType ? 'Work From Home' :
+                               approval.leaveType === 'permission' ? (() => { const m = Math.round(parseFloat(approval.hours || 0) * 60); return `Permission · ${m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`}`; })() :
+                               `${approval.leaveType} Leave · ${approval.totalDays} Day(s)`}
                             </p>
                             <p className="text-[13px] text-slate-400 mt-0.5">
-                              {new Date(approval.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                              {approval.startDate !== approval.endDate && ` - ${new Date(approval.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                              {(() => {
+                                const d = approval.workedDate || approval.date || approval.startDate;
+                                if (!d) return '';
+                                const dt = new Date(String(d).slice(0,10) + 'T00:00:00');
+                                const s = dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                                if (!approval.endDate || approval.startDate === approval.endDate) return s;
+                                const dt2 = new Date(String(approval.endDate).slice(0,10) + 'T00:00:00');
+                                return `${s} - ${dt2.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+                              })()}
                             </p>
                           </div>
                         </div>

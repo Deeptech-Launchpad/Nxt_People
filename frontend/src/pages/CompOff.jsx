@@ -50,7 +50,8 @@ export default function CompOff() {
     }).catch(console.error).finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(() => { if (user !== undefined) load(); }, [user?.role]);
+  useEffect(() => { if (user?.role === 'team_member') setTab('my'); }, [user?.role]);
 
   const handleSubmit = async (e) => {
     e.preventDefault(); setSaving(true);
@@ -221,7 +222,7 @@ export default function CompOff() {
       {viewItem && (
         <CompOffDetailModal
           item={viewItem}
-          canAct={viewItem.canAct !== undefined ? viewItem.canAct : viewItem.status === 'pending'}
+          canAct={tab === 'pending' && viewItem.canAct === true}
           canApproveAll={canApproveAll}
           onClose={() => setViewItem(null)}
           onApprove={(r) => { setViewItem(null); handleAction(r._id, 'approved'); }}

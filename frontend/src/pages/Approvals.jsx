@@ -65,6 +65,8 @@ export default function Approvals() {
   const [detailBalance, setDetailBalance] = useState(null); // balance cards for the detail modal
   const [detailWfh, setDetailWfh] = useState(null);
   const [actionLoading, setActionLoading] = useState('');
+  const [rejectModal, setRejectModal] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   // When the user clicks a tab, mark its current count as "seen" and
   // persist. Done as a small helper so the rendering code stays clean.
@@ -115,6 +117,8 @@ export default function Approvals() {
       ...(data.regularizations || []),
       ...(data.approvedLeaves || []),
       ...(data.rejectedLeaves || []),
+      ...(data.wfhRequests || []),
+      ...(data.compOffs || []),
     ];
     const found = allItems.find(item => item._id === openId);
     if (!found) return;
@@ -205,7 +209,7 @@ export default function Approvals() {
             <CheckCheck size={13} /> Approve All
           </button>
         )}
-        <button onClick={() => action(endpoint, id, 'rejected')} disabled={!!actionLoading}
+        <button onClick={() => { setRejectModal({ endpoint, id }); setRejectReason(''); }} disabled={!!actionLoading}
           className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
           <XCircle size={13} /> Reject
         </button>
@@ -616,6 +620,23 @@ export default function Approvals() {
             : undefined}
           onReject={(x, comment) => { setDetailWfh(null); action('wfh', x._id, 'rejected', comment); }}
         />
+      )}
+
+      {rejectModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6">
+            <h3 className="font-display font-semibold text-slate-800 mb-4">Reject Request</h3>
+            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3} placeholder="Reason (optional)..."
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none mb-4" />
+            <div className="flex gap-3">
+              <button onClick={() => setRejectModal(null)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50">Cancel</button>
+              <button onClick={() => { action(rejectModal.endpoint, rejectModal.id, 'rejected', rejectReason); setRejectModal(null); }} disabled={!!actionLoading}
+                className="flex-1 bg-red-500 hover:bg-red-400 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60">
+                Confirm Reject
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Leave details + approval timeline modal */}
