@@ -20,17 +20,25 @@ function toDateStr(date) {
 router.get('/today', async (req, res) => {
   try {
     const today = todayStr();
-    const result = await pool.query(
-      `SELECT id as "_id", check_in as "checkIn", check_out as "checkOut",
-       working_hours as "workingHours", status, late_minutes as "lateMinutes",
-       check_in_location as "checkInLocation", check_out_location as "checkOutLocation"
-       FROM attendance WHERE employee_id = $1 AND date = $2::date`,
-      [req.user._id, today]
-    );
+    const [result, sessionsRes] = await Promise.all([
+      pool.query(
+        `SELECT id as "_id", check_in as "checkIn", check_out as "checkOut",
+         working_hours as "workingHours", status, late_minutes as "lateMinutes",
+         check_in_location as "checkInLocation", check_out_location as "checkOutLocation"
+         FROM attendance WHERE employee_id = $1 AND date = $2::date`,
+        [req.user._id, today]
+      ),
+      pool.query(
+        `SELECT id, check_in as "checkIn", check_out as "checkOut", session_hours as "sessionHours"
+         FROM attendance_sessions WHERE employee_id = $1 AND date = $2 ORDER BY check_in ASC`,
+        [req.user._id, today]
+      ),
+    ]);
     const row = result.rows[0] || null;
     if (row) {
       const wh = parseFloat(row.workingHours);
       row.workingHours = isFinite(wh) ? wh : 0;
+      row.sessions = sessionsRes.rows;
     }
     res.json({ success: true, data: row });
   } catch (err) {
@@ -191,6 +199,16 @@ router.post('/checkin', async (req, res) => {
       return res.status(409).json({ success: false, message: 'Already checked in today' });
     }
     const record = upRes.rows[0];
+
+    // Insert a session row for this check-in (soft-fail — must not break the response)
+    try {
+      await pool.query(
+        `INSERT INTO attendance_sessions (attendance_id, employee_id, date, check_in)
+         VALUES ($1, $2, $3, $4)`,
+        [record._id, req.user._id, today, now]
+      );
+    } catch (_) {}
+
     const isReCheckin = !!(existing && existing.check_out);
 
     const effectiveLate = Number(record.lateMinutes) || 0;
@@ -316,6 +334,15 @@ router.post('/checkout', async (req, res) => {
     if (up.rows.length === 0) {
       return res.status(409).json({ success: false, message: 'Already checked out' });
     }
+
+    // Update the open session with checkout time and hours (soft-fail)
+    try {
+      await pool.query(
+        `UPDATE attendance_sessions SET check_out = $1, session_hours = $2
+         WHERE id = (SELECT id FROM attendance_sessions WHERE attendance_id = $3 AND check_out IS NULL ORDER BY check_in DESC LIMIT 1)`,
+        [now, sessionHours, up.rows[0]._id]
+      );
+    } catch (_) {}
 
     res.json({ success: true, data: up.rows[0], message: 'Checked out successfully' });
 
@@ -461,6 +488,21 @@ router.get('/my', async (req, res) => {
       rows = r2.rows;
     }
 
+    // Fetch sessions for each attendance record in the date range
+    const sessionsByAtt = {};
+    try {
+      const sessRes = await pool.query(
+        `SELECT attendance_id, id, check_in as "checkIn", check_out as "checkOut", session_hours as "sessionHours"
+         FROM attendance_sessions WHERE employee_id = $1 AND date >= $2 AND date <= $3 ORDER BY check_in ASC`,
+        [req.user._id, start, end]
+      );
+      sessRes.rows.forEach(s => {
+        if (!sessionsByAtt[s.attendance_id]) sessionsByAtt[s.attendance_id] = [];
+        const { attendance_id, ...sData } = s;
+        sessionsByAtt[s.attendance_id].push(sData);
+      });
+    } catch (_) {}
+
     const mapped = rows.map(r => {
       // Always compute lateness from the SQL-extracted check-in minutes
       // (timezone-correct). Take the max of stored vs computed so we never
@@ -476,6 +518,7 @@ router.get('/my', async (req, res) => {
         ...rest,
         workingHours: Number(rest.workingHours) || 0,
         lateMinutes,
+        sessions: sessionsByAtt[r._id] || [],
       };
     });
 

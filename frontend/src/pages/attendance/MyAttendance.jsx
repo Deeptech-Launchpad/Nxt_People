@@ -161,42 +161,85 @@ function TimelineBar({ record, isToday, isCheckedIn }) {
   const nowPct = Math.max(0, Math.min(100, ((nowMins - SHIFT_START) / total) * 100));
   const showNowLine = isToday;
 
+  const sessions = record?.sessions;
+  const hasMultiSession = sessions && sessions.length > 1;
+
   // Row with no check-in yet — only show baseline dots and (if today) the now-line.
-  if (!record?.checkIn) {
+  if (!record?.checkIn && !hasMultiSession) {
     return (
       <div className="flex-1 flex items-center relative h-12">
         <div className="absolute left-[3%] right-[3%] h-[1px] border-t border-dashed border-slate-200" style={{ top: '50%' }} />
         <div className="absolute left-[3%] w-2 h-2 rounded-full border-2 border-slate-300 bg-white" style={{ top: '50%', transform: 'translate(-50%,-50%)' }} />
         <div className="absolute right-[3%] w-2 h-2 rounded-full border-2 border-slate-300 bg-white" style={{ top: '50%', transform: 'translate(50%,-50%)' }} />
         {showNowLine && (
-          <div
-            className="absolute top-0 bottom-0 border-l border-dashed border-blue-400 z-20"
-            style={{ left: `${nowPct}%` }}
-          />
+          <div className="absolute top-0 bottom-0 border-l border-dashed border-blue-400 z-20" style={{ left: `${nowPct}%` }} />
         )}
       </div>
     );
   }
 
-  const checkInMins  = timeToMinutes(record.checkIn);
-  const checkOutMins = record.checkOut ? timeToMinutes(record.checkOut) : null;
+  const color = record?.status === 'late' ? '#f59e0b' : '#22c55e';
+
+  if (hasMultiSession) {
+    return (
+      <div className="flex-1 flex items-center relative h-12">
+        <div className="absolute left-[3%] right-[3%] h-[1px] border-t border-dashed border-slate-200" style={{ top: '50%' }} />
+        {sessions.map((s, i) => {
+          const sMins = timeToMinutes(s.checkIn);
+          const eMins = s.checkOut ? timeToMinutes(s.checkOut) : null;
+          const sPct = Math.max(0, Math.min(100, ((sMins - SHIFT_START) / total) * 100));
+          const ePct = eMins !== null ? Math.max(0, Math.min(100, ((eMins - SHIFT_START) / total) * 100)) : null;
+          const isActive = isToday && isCheckedIn && i === sessions.length - 1 && !s.checkOut;
+          const livePct = isActive ? Math.max(sPct, nowPct) : null;
+          return (
+            <React.Fragment key={i}>
+              {ePct !== null && (
+                <div className="absolute h-1 rounded-full" style={{ left: `${sPct}%`, width: `${Math.max(0, ePct - sPct)}%`, backgroundColor: color, top: '50%', transform: 'translateY(-50%)' }} />
+              )}
+              {livePct !== null && (
+                <div className="absolute h-0 border-t-2 border-dashed" style={{ left: `${sPct}%`, width: `${Math.max(0, livePct - sPct)}%`, borderColor: '#22c55e', top: '50%', transform: 'translateY(-50%)' }} />
+              )}
+              <div
+                className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
+                style={{ left: `${sPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
+                title={`Session ${i + 1} in: ${new Date(s.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`}
+              />
+              {ePct !== null && (
+                <div
+                  className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
+                  style={{ left: `${ePct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
+                  title={`Session ${i + 1} out: ${new Date(s.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
+        {showNowLine && (
+          <div className="absolute top-0 bottom-0 border-l border-dashed border-blue-400 z-20" style={{ left: `${nowPct}%` }} />
+        )}
+      </div>
+    );
+  }
+
+  // Single session — use sessions[0] times when available (preserves first check-in on re-check-in days)
+  const ci = sessions?.[0]?.checkIn || record.checkIn;
+  const co = sessions?.[0]?.checkOut || record.checkOut;
+
+  const checkInMins  = timeToMinutes(ci);
+  const checkOutMins = co ? timeToMinutes(co) : null;
 
   const startPct = Math.max(0, Math.min(100, ((checkInMins - SHIFT_START) / total) * 100));
   const endPct   = checkOutMins ? Math.max(0, Math.min(100, ((checkOutMins - SHIFT_START) / total) * 100)) : null;
 
-  // For today + still checked in: draw a dashed green line from check-in to now.
   const liveEndPct = isToday && isCheckedIn && !checkOutMins
     ? Math.max(startPct, nowPct)
     : null;
-
-  const color = record.status === 'late' ? '#f59e0b' : '#22c55e';
 
   return (
     <div className="flex-1 flex items-center relative h-12">
       {/* Dashed baseline */}
       <div className="absolute left-[3%] right-[3%] h-[1px] border-t border-dashed border-slate-200" style={{ top: '50%' }} />
 
-      {/* Past: solid filled bar between check-in and check-out */}
       {endPct !== null && (
         <div
           className="absolute h-1 rounded-full"
@@ -204,37 +247,27 @@ function TimelineBar({ record, isToday, isCheckedIn }) {
         />
       )}
 
-      {/* Today + still in: dashed green line from check-in → now */}
       {liveEndPct !== null && (
         <div
           className="absolute h-0 border-t-2 border-dashed"
-          style={{
-            left: `${startPct}%`,
-            width: `${liveEndPct - startPct}%`,
-            borderColor: '#22c55e',
-            top: '50%',
-            transform: 'translateY(-50%)',
-          }}
+          style={{ left: `${startPct}%`, width: `${liveEndPct - startPct}%`, borderColor: '#22c55e', top: '50%', transform: 'translateY(-50%)' }}
         />
       )}
 
-      {/* Check-in dot */}
       <div
         className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
         style={{ left: `${startPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-        title={`Check-in, ${new Date(record.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`}
+        title={`Check-in, ${new Date(ci).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`}
       />
 
-      {/* Check-out dot */}
       {endPct !== null && (
         <div
           className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
           style={{ left: `${endPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-          title={`Check-out, ${new Date(record.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`}
+          title={`Check-out, ${new Date(co).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`}
         />
       )}
 
-      {/* Full-height "now" indicator across the row */}
       {showNowLine && (
         <div
           className="absolute top-0 bottom-0 border-l border-dashed border-blue-400 z-20"
@@ -565,8 +598,8 @@ export default function MyAttendance() {
                 const isWeekend = effectiveIsWeekend(day);
                 const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
                 const dayNum = day.getDate();
-                const checkInStr = fmtTime(record?.checkIn);
-                const checkOutStr = fmtTime(record?.checkOut);
+                const checkInStr = fmtTime(record?.sessions?.[0]?.checkIn || record?.checkIn);
+                const checkOutStr = fmtTime(record?.sessions?.[record?.sessions?.length - 1]?.checkOut || record?.checkOut);
                 const hoursStr = fmtHHMM(record?.workingHours);
 
                  return (
@@ -733,8 +766,8 @@ export default function MyAttendance() {
                     <td className="px-5 py-3 text-[14px] text-slate-500">
                       {day.toLocaleDateString('en-US', { weekday:'short' })}
                     </td>
-                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.checkIn) || '—'}</td>
-                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.checkOut) || '—'}</td>
+                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.sessions?.[0]?.checkIn || r?.checkIn) || '—'}</td>
+                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.sessions?.[r?.sessions?.length - 1]?.checkOut || r?.checkOut) || '—'}</td>
                     <td className="px-5 py-3 text-[14px] text-slate-700">{r?.workingHours ? `${fmtHHMM(r.workingHours)} hrs` : '—'}</td>
                     <td className="px-5 py-3">
                       {isWeekend

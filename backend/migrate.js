@@ -47,6 +47,7 @@ const ORDER = [
   'migrate_conference.js',               // conference_bookings (Operations → Conference hall booking)
   'migrate_location_logs.js',            // attendance_location_logs (check-in/out location history)
   'migrate_rename_roles.js',             // rename roles: super_admin→admin, hr→director, employee→team_member
+  'migrate_sessions.js',                 // attendance_sessions (per check-in/out pairs)
   'migrate_indexes.js',                  // perf indexes — run last
 ];
 
