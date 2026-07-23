@@ -4,9 +4,9 @@ const pool = require('./db');
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS attendance_sessions (
-        id SERIAL PRIMARY KEY,
-        attendance_id INTEGER NOT NULL REFERENCES attendance(id) ON DELETE CASCADE,
-        employee_id INTEGER NOT NULL,
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        attendance_id UUID NOT NULL REFERENCES attendance(id) ON DELETE CASCADE,
+        employee_id UUID NOT NULL,
         date DATE NOT NULL,
         check_in TIMESTAMP NOT NULL,
         check_out TIMESTAMP,
