@@ -32,7 +32,7 @@ export default function CheckInOut() {
   // we check in/out from this page. Was previously calling the API
   // directly and only updating local state, which left Dashboard's
   // useAttendance() hook stale.
-  const { record, loading, actionLoading, isCheckedIn, isCheckedOut, checkIn, checkOut } = useAttendance();
+  const { record, loading, actionLoading, isCheckedIn, isCheckedOut, checkIn, checkOut, elapsed } = useAttendance();
   const [time, setTime] = useState(new Date());
   const [gpsWarning, setGpsWarning] = useState(null);
   const { position, gpsError, gpsLoading, refresh: refreshGps } = useGeolocation();
@@ -148,7 +148,7 @@ export default function CheckInOut() {
             {/* Live elapsed timer */}
             {isCheckedIn && (
               <p className="text-center text-sm text-slate-400 mt-3">
-                Clocked in at {new Date(record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} · {Math.floor((time - new Date(record.checkIn)) / 3600000)}h {Math.floor(((time - new Date(record.checkIn)) % 3600000) / 60000)}m elapsed
+                Clocked in at {new Date(record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} · {Math.floor(elapsed / 3600)}h {Math.floor((elapsed % 3600) / 60)}m worked today
               </p>
             )}
           </>

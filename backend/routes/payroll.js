@@ -41,8 +41,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (re
        COUNT(CASE WHEN a.status IN ('present','late','on_duty','on-duty') THEN 1 END) as present_days,
        COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
        COUNT(CASE WHEN a.status = 'half-day' THEN 1 END) as half_days,
-       COALESCE(SUM(CASE WHEN a.check_out IS NOT NULL AND a.check_in IS NOT NULL
-         THEN EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600 ELSE 0 END), 0) as total_hours,
+       COALESCE(SUM(a.working_hours), 0) as total_hours,
        (SELECT COALESCE(SUM(l.total_days), 0) FROM leaves l WHERE l.employee_id = e.id AND l.status='approved'
          AND l.leave_type != 'unpaid'
          AND l.start_date <= $2 AND l.end_date >= $1) as approved_leave_days
