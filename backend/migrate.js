@@ -72,10 +72,39 @@ function runJsFile(file) {
   }
 }
 
+// Tracks which files in ORDER have already completed successfully. Every
+// migration is still written to be idempotent on its own (defense in depth),
+// but the tracking table means a deploy that fails on file #28 only re-runs
+// file #28 on retry instead of re-running #1–27 first. That mattered in
+// practice: a UUID-type mistake in migrate_sessions.js aborted mid-deploy,
+// and without this table the fix would have re-run every prior migration
+// (including slow ALTER TABLEs) before ever reaching the actual fix.
+async function ensureTrackingTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      filename TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+}
+
+async function isApplied(file) {
+  const r = await pool.query('SELECT 1 FROM schema_migrations WHERE filename = $1', [file]);
+  return r.rows.length > 0;
+}
+
+async function markApplied(file) {
+  await pool.query(
+    'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT (filename) DO NOTHING',
+    [file]
+  );
+}
+
 (async () => {
   console.log('🚀 Nxt-People — running ordered migrations\n');
   const start = Date.now();
-  let ranSql = false;
+  await ensureTrackingTable();
+
   for (const file of ORDER) {
     const abs = path.join(here, file);
     if (!fs.existsSync(abs)) {
@@ -88,21 +117,23 @@ function runJsFile(file) {
       console.error('   Restore it from git history or remove it from migrate.js ORDER intentionally.');
       process.exit(1);
     }
+    if (await isApplied(file)) {
+      console.log(`  ⏭  ${file} (already applied)`);
+      continue;
+    }
     try {
       if (file.endsWith('.sql')) {
         await runSqlFile(file);
-        ranSql = true;
       } else {
         runJsFile(file);
       }
+      await markApplied(file);
     } catch (err) {
       console.error(`\n❌ Aborting on ${file}: ${err.message}`);
       process.exit(1);
     }
   }
-  // The JS scripts call pool.end() themselves, but if we only ran .sql files
-  // through this process we still need to close.
-  if (ranSql) await pool.end();
+  await pool.end();
   console.log(`\n✨ All migrations applied in ${((Date.now() - start) / 1000).toFixed(1)}s`);
   process.exit(0);
 })();

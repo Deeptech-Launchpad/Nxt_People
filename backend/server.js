@@ -13,6 +13,7 @@ const logger  = require('./logger');
 const chatWs  = require('./ws-chat');
 const { isNonWorkingDay } = require('./utils/workingDays');
 const { sendCheckInReminderEmail, sendCheckOutReminderEmail } = require('./utils/mailer');
+const { DEFAULT_TZ } = require('./utils/timezone');
 
 // Process-level safety nets. Without these, an unhandled promise rejection
 // just prints a deprecation warning (then crashes silently in future Node
@@ -133,7 +134,7 @@ process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
 // the 9 AM check-in reminder never landed when employees expected it.
 // Configurable via CRON_TZ env var so non-Indian deployments can flip
 // to America/New_York etc. without a code change.
-const CRON_TZ = process.env.CRON_TZ || 'Asia/Kolkata';
+const CRON_TZ = process.env.CRON_TZ || DEFAULT_TZ;
 const cronOpts = { timezone: CRON_TZ };
 logger.info({ CRON_TZ }, 'Cron jobs configured to run in this timezone');
 

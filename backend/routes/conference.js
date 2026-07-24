@@ -12,17 +12,18 @@ const { body, validationResult } = require('express-validator');
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
+const { DEFAULT_TZ } = require('../utils/timezone');
 
 router.use(protect);
 
 const HALLS = ['Floor 1', 'Floor 2'];
 
-// "Now" in the app's timezone (Asia/Kolkata), regardless of the DB/server TZ,
+// "Now" in the app's default timezone, regardless of the DB/server TZ,
 // so the past-date / past-time guard matches what users see.
 async function nowIst() {
   const r = await pool.query(
-    `SELECT to_char(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS d,
-            to_char(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata', 'HH24:MI')    AS t`
+    `SELECT to_char(CURRENT_TIMESTAMP AT TIME ZONE '${DEFAULT_TZ}', 'YYYY-MM-DD') AS d,
+            to_char(CURRENT_TIMESTAMP AT TIME ZONE '${DEFAULT_TZ}', 'HH24:MI')    AS t`
   );
   return { date: r.rows[0].d, time: r.rows[0].t };
 }

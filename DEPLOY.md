@@ -217,6 +217,48 @@ docker compose -f docker-compose.prod.yml --env-file backend/.env up -d --build
 Backend migrations run automatically on container start. Zero-downtime is
 not configured by default — there's a few seconds of 502 during restart.
 
+#### Safer variant: run migrations before swapping containers
+
+The one-liner above runs `migrate.js` *inside* the new backend container's
+entrypoint. If a migration fails, the new container never becomes healthy,
+`depends_on: condition: service_healthy` blocks the frontend from starting
+too, and the currently-running (old, healthy) backend gets torn down by
+`docker compose up` regardless — so a bad migration causes an outage, not
+just a failed deploy.
+
+To catch a bad migration *before* touching the running containers, run
+migrations as a standalone one-off first:
+
+```bash
+# 1. Snapshot + note commit, same as above.
+
+# 2. Pull the new code.
+git pull
+
+# 3. Build the new backend image, then run migrations in a throwaway
+#    container against the SAME db/network. --build picks up the pulled
+#    code (including any new migration files) before running. --entrypoint
+#    overrides docker-entrypoint.sh (which always execs the server
+#    afterward and would otherwise hang here) so this container just runs
+#    migrate.js and exits. The currently-running backend/frontend keep
+#    serving traffic untouched throughout.
+#    If this fails, nothing in production has changed yet — fix and re-run.
+docker compose -f docker-compose.prod.yml --env-file backend/.env \
+  run --rm --build --entrypoint node backend migrate.js
+
+# 4. Only if step 3 succeeded: rebuild and swap containers, telling the
+#    entrypoint to skip migrations (already applied in step 3). RUN_MIGRATIONS
+#    is a host shell var here — it's forwarded into the container via
+#    docker-compose.prod.yml's environment section.
+RUN_MIGRATIONS=false docker compose -f docker-compose.prod.yml --env-file backend/.env \
+  up -d --build backend frontend
+```
+
+Since `migrate.js` now tracks completed migrations in a `schema_migrations`
+table, step 3 only runs whatever is new since the last deploy — not the
+full migration history — so this adds negligible time on top of the
+already-required rebuild.
+
 ### Rolling back a bad deploy
 
 If the new version is broken (5xx storm, login fails, migration corrupts data),

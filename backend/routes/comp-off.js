@@ -8,6 +8,7 @@ const { createNotification } = require('./notifications');
 const {
   createLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson,
 } = require('../utils/leaveApproval');
+const { DEFAULT_TZ } = require('../utils/timezone');
 router.use(protect);
 
 // Comp-Off approval chain as JSON for the shared ApprovalTimeline (same engine
@@ -42,11 +43,11 @@ async function workedOn(db, employeeId, date) {
   return r.rows.length > 0;
 }
 
-// Today's date in the app timezone (Asia/Kolkata) as YYYY-MM-DD, so the
+// Today's date in the app's default timezone as YYYY-MM-DD, so the
 // past/future guards match what users see.
 async function todayIst(db) {
   const r = await db.query(
-    `SELECT to_char(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS d`
+    `SELECT to_char(CURRENT_TIMESTAMP AT TIME ZONE '${DEFAULT_TZ}', 'YYYY-MM-DD') AS d`
   );
   return r.rows[0].d;
 }

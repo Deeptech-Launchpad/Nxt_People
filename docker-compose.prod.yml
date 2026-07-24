@@ -52,6 +52,11 @@ services:
       DB_HOST: db
       DB_PORT: 5432
       PORT: 5000
+      # Forwards a host shell env var into the container so a deploy can opt
+      # out of the entrypoint's automatic `node migrate.js` (e.g. after
+      # running migrations as a separate `docker compose run` step — see
+      # DEPLOY.md "Safer variant"). Defaults to true, same as always.
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
     depends_on:
       db:
         condition: service_healthy

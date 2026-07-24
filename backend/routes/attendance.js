@@ -5,15 +5,16 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { sendCheckOutReminderEmail } = require('../utils/mailer');
+const { DEFAULT_TZ } = require('../utils/timezone');
 
 router.use(protect);
 
-// Helper: returns today's date as a YYYY-MM-DD string in IST (Asia/Kolkata)
+// Helper: returns today's date as a YYYY-MM-DD string in the org's default timezone
 function todayStr() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  return new Date().toLocaleDateString('en-CA', { timeZone: DEFAULT_TZ });
 }
 function toDateStr(date) {
-  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  return date.toLocaleDateString('en-CA', { timeZone: DEFAULT_TZ });
 }
 
 // ── GET today's attendance record ──────────────────────────────────────────────
@@ -82,8 +83,8 @@ router.post('/checkin', async (req, res) => {
       ),
       pool.query(
         `SELECT late_after_minutes, require_gps, enforce_geofence, office_latitude, office_longitude, gps_radius_meters,
-          (EXTRACT(HOUR FROM NOW() AT TIME ZONE COALESCE(timezone, 'Asia/Kolkata')) * 60
-          + EXTRACT(MINUTE FROM NOW() AT TIME ZONE COALESCE(timezone, 'Asia/Kolkata')))::int AS check_in_mins
+          (EXTRACT(HOUR FROM NOW() AT TIME ZONE COALESCE(timezone, '${DEFAULT_TZ}')) * 60
+          + EXTRACT(MINUTE FROM NOW() AT TIME ZONE COALESCE(timezone, '${DEFAULT_TZ}')))::int AS check_in_mins
          FROM settings LIMIT 1`
       ),
       pool.query(
@@ -207,7 +208,9 @@ router.post('/checkin', async (req, res) => {
          VALUES ($1, $2, $3, $4)`,
         [record._id, req.user._id, today, now]
       );
-    } catch (_) {}
+    } catch (err) {
+      logger.error({ err: err.message, attendanceId: record._id }, '[attendance] session insert failed');
+    }
 
     const isReCheckin = !!(existing && existing.check_out);
 
@@ -342,7 +345,9 @@ router.post('/checkout', async (req, res) => {
          WHERE id = (SELECT id FROM attendance_sessions WHERE attendance_id = $3 AND check_out IS NULL ORDER BY check_in DESC LIMIT 1)`,
         [now, sessionHours, up.rows[0]._id]
       );
-    } catch (_) {}
+    } catch (err) {
+      logger.error({ err: err.message, attendanceId: up.rows[0]._id }, '[attendance] session checkout update failed');
+    }
 
     res.json({ success: true, data: up.rows[0], message: 'Checked out successfully' });
 
@@ -417,7 +422,7 @@ router.get('/my', async (req, res) => {
     const start = toDateStr(new Date(y, m, 1));
     const end   = toDateStr(new Date(y, m + 1, 0));
 
-    // Read the org timezone from settings (defaults to Asia/Kolkata) so the
+    // Read the org timezone from settings (defaults to DEFAULT_TZ) so the
     // SQL EXTRACT below returns the wall-clock time the employee actually
     // saw when they checked in, not whatever timezone the backend container
     // happens to be running in. Without this, a UTC server treats a 10:17
@@ -441,8 +446,8 @@ router.get('/my', async (req, res) => {
                 -- in that zone, converts to UTC) — that's the bug that
                 -- showed "Late by 13:47" for a real 47-min lateness.
                 CASE WHEN check_in IS NULL THEN NULL ELSE
-                  (EXTRACT(HOUR   FROM check_in AT TIME ZONE 'UTC' AT TIME ZONE COALESCE($4::text, 'Asia/Kolkata')) * 60 +
-                   EXTRACT(MINUTE FROM check_in AT TIME ZONE 'UTC' AT TIME ZONE COALESCE($4::text, 'Asia/Kolkata')))::int
+                  (EXTRACT(HOUR   FROM check_in AT TIME ZONE 'UTC' AT TIME ZONE COALESCE($4::text, '${DEFAULT_TZ}')) * 60 +
+                   EXTRACT(MINUTE FROM check_in AT TIME ZONE 'UTC' AT TIME ZONE COALESCE($4::text, '${DEFAULT_TZ}')))::int
                 END AS "checkInMins"
            FROM attendance
           WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date
@@ -458,7 +463,7 @@ router.get('/my', async (req, res) => {
       pool.query(`SELECT late_after_minutes, timezone FROM settings LIMIT 1`),
     ]);
 
-    const tz         = sRes.rows[0]?.timezone || 'Asia/Kolkata';
+    const tz         = sRes.rows[0]?.timezone || DEFAULT_TZ;
     const shiftStart = shiftRes.rows[0]?.start_time || null;
     const lateAfter  = sRes.rows[0]?.late_after_minutes || 570; // 09:30 AM default
 
@@ -467,10 +472,10 @@ router.get('/my', async (req, res) => {
       : lateAfter;
 
     // Re-run the same query with the resolved tz so EXTRACT uses the org's
-    // configured timezone instead of the IST default (only matters for orgs
+    // configured timezone instead of the default (only matters for orgs
     // that override the default; the extra round-trip cost is negligible).
     let rows = attRes.rows;
-    if (tz !== 'Asia/Kolkata') {
+    if (tz !== DEFAULT_TZ) {
       const r2 = await pool.query(
         `SELECT id as "_id", date, check_in as "checkIn", check_out as "checkOut",
                 working_hours as "workingHours", status,
@@ -501,7 +506,9 @@ router.get('/my', async (req, res) => {
         const { attendance_id, ...sData } = s;
         sessionsByAtt[s.attendance_id].push(sData);
       });
-    } catch (_) {}
+    } catch (err) {
+      logger.error({ err: err.message, employeeId: req.user._id }, '[attendance] sessions range query failed');
+    }
 
     const mapped = rows.map(r => {
       // Always compute lateness from the SQL-extracted check-in minutes
