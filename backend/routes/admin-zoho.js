@@ -266,10 +266,25 @@ function parseAddressChildValues(childValues) {
  * Never overwrites: role, password, MFA, leave balances.
  */
 async function upsertEmployee(client, mapped) {
-  const existing = await client.query(
+  let existing = await client.query(
     `SELECT id FROM employees WHERE LOWER(email) = $1`,
     [mapped.email]
   );
+
+  // Fall back to matching by Employee ID when the email lookup finds
+  // nothing. Without this, an employee whose email in Zoho differs even
+  // slightly from what's already stored (typo fix, personal→work swap,
+  // etc.) gets treated as a brand-new hire — and the INSERT below then
+  // collides on the employee_id unique constraint, since that ID already
+  // belongs to their existing row. The email itself is deliberately left
+  // untouched here (not in the UPDATE column list below) so this never
+  // silently changes anyone's login email.
+  if (existing.rows.length === 0 && mapped.employeeId) {
+    existing = await client.query(
+      `SELECT id FROM employees WHERE employee_id = $1`,
+      [mapped.employeeId]
+    );
+  }
 
   // Build a single COALESCE-based UPDATE / explicit INSERT so we never wipe
   // a value we don't have. Listed in the same order so the param indexes stay aligned.
