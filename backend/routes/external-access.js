@@ -79,9 +79,13 @@ router.post('/check', validateAppKey, async (req, res) => {
        LIMIT 1
     `, [req.application.id, email]);
 
-    if (r.rows.length === 0)            return res.json({ allowed: false, reason: 'NOT_FOUND' });
-    if (r.rows[0].status !== 'active')  return res.json({ allowed: false, reason: 'EMPLOYEE_INACTIVE' });
-    if (!r.rows[0].hasAccess)           return res.json({ allowed: false, reason: 'NOT_GRANTED' });
+    // Notice Period keeps access, same as Active — only resigned/terminated/
+    // inactive are actually locked out. Matches the status model in
+    // Employees.jsx (loginAccess: true for both 'active' and 'notice_period').
+    const ACCESS_ALLOWED_STATUSES = ['active', 'notice_period'];
+    if (r.rows.length === 0)                                   return res.json({ allowed: false, reason: 'NOT_FOUND' });
+    if (!ACCESS_ALLOWED_STATUSES.includes(r.rows[0].status))    return res.json({ allowed: false, reason: 'EMPLOYEE_INACTIVE' });
+    if (!r.rows[0].hasAccess)                                  return res.json({ allowed: false, reason: 'NOT_GRANTED' });
 
     const { _id, employeeId, firstName, lastName, department, designation, photoUrl } = r.rows[0];
     res.json({
