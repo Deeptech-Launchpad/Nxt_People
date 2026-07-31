@@ -94,7 +94,10 @@ router.get('/employees', async (req, res) => {
     if (!hasScope(req.apiConnection, 'employees', 'read')) {
       return res.status(403).json({ success: false, message: 'This connection does not have read access to employees data.' });
     }
-    let query = `WHERE registration_status = 'active' AND status = 'active'`;
+    // Notice Period employees retain access (same as Active) per the status
+    // model in Employees.jsx — connected apps like User Report Tool must see
+    // them too, or they get incorrectly locked out during their notice period.
+    let query = `WHERE registration_status = 'active' AND status IN ('active', 'notice_period')`;
     let params = [];
     if (req.apiConnection.company) {
       query += ' AND company = $1';

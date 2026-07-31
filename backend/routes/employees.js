@@ -86,7 +86,12 @@ router.get('/', async (req, res) => {
     if (department)  { query += ` AND e.department = $${paramIndex++}`;  params.push(department); }
     if (role)        { query += ` AND e.role = $${paramIndex++}`;        params.push(role); }
     if (designation) { query += ` AND e.designation = $${paramIndex++}`; params.push(designation); }
-    if (status)      { query += ` AND e.status = $${paramIndex++}`;      params.push(status); }
+    // 'inactive' is the tab's umbrella filter for "not currently active"
+    // (notice_period / resigned / terminated / inactive) — matches the
+    // intent already documented on the frontend's statusFilter state, not
+    // a literal status value. Any other status is matched exactly.
+    if (status === 'inactive') { query += ` AND e.status <> 'active'`; }
+    else if (status)           { query += ` AND e.status = $${paramIndex++}`; params.push(status); }
     if (search) {
       query += ` AND (e.first_name ILIKE $${paramIndex} OR e.last_name ILIKE $${paramIndex} OR e.email ILIKE $${paramIndex} OR e.employee_id ILIKE $${paramIndex})`;
       params.push(`%${search}%`);
