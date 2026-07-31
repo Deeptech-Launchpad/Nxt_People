@@ -16,6 +16,7 @@ function getSection(pathname) {
   if (pathname.startsWith('/performance')) return 'performance';
   if (pathname.startsWith('/more-services') || pathname.startsWith('/documents')) return 'moreservices';
   if (pathname.startsWith('/employees') || pathname.startsWith('/registrations')) return 'employeemaster';
+  if (pathname.startsWith('/my-apps') || pathname.startsWith('/api-connections')) return 'nxtapps';
   if (pathname.startsWith('/reports') || pathname.startsWith('/payroll') ||
       pathname.startsWith('/shifts') || pathname.startsWith('/shift-roster') ||
       pathname.startsWith('/daily-attendance')) return 'reports';
@@ -157,6 +158,20 @@ const NAV = {
     subNav: {
       employees: [{ to: '/employees', label: 'Employees' }],
       registrations: [{ to: '/registrations', label: 'Registrations' }],
+    },
+  },
+  nxtapps: {
+    label: 'NXT Apps',
+    primaryTabs: [
+      { key: 'myapps', label: 'My Apps', to: '/my-apps' },
+      // Same role gate as the /api-connections route itself (admin/director) —
+      // other roles never see this tab, matching who can actually use the page.
+      { key: 'apiconnections', label: 'API Connections', to: '/api-connections', roles: ['admin', 'director'] },
+    ],
+    getActiveTab: p => p.startsWith('/api-connections') ? 'apiconnections' : 'myapps',
+    subNav: {
+      myapps: [{ to: '/my-apps', label: 'My Apps' }],
+      apiconnections: [{ to: '/api-connections', label: 'API Connections' }],
     },
   },
   reports: {
