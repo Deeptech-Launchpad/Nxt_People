@@ -192,20 +192,45 @@ async function verifyMfaCode({ employeeId, code, backupCode }) {
   const row = r.rows[0];
   if (!row || !row.mfa_enabled) return { ok: false, reason: 'MFA not enabled' };
 
-  if (code && authenticator.check(String(code).trim(), row.mfa_secret)) {
+  // Defensive: mfa_enabled=true with mfa_secret=NULL shouldn't happen through
+  // any normal app flow (they're always set/cleared together), but if that
+  // inconsistent state ever occurs, short-circuit before calling
+  // authenticator.check() with a null secret rather than risk it throwing
+  // and surfacing as an unhandled 500 with a raw error message.
+  if (code && row.mfa_secret && authenticator.check(String(code).trim(), row.mfa_secret)) {
     return { ok: true };
   }
   if (backupCode) {
-    const codes = row.mfa_backup_codes || [];
-    for (let i = 0; i < codes.length; i++) {
-      if (await bcrypt.compare(String(backupCode).trim(), codes[i])) {
-        const remaining = [...codes.slice(0, i), ...codes.slice(i + 1)];
-        await pool.query(
-          'UPDATE employees SET mfa_backup_codes = $1::jsonb WHERE id = $2',
-          [JSON.stringify(remaining), employeeId]
-        );
-        return { ok: true, usedBackupCode: true, remainingBackupCodes: remaining.length };
+    // Row-locked read-modify-write: two concurrent requests presenting the
+    // SAME backup code used to both be able to read the pre-consumption
+    // array before either wrote it back, letting one code be accepted
+    // twice. FOR UPDATE serializes them — the second request re-reads the
+    // already-shortened array and correctly finds no match.
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const lockRes = await client.query(
+        'SELECT mfa_backup_codes FROM employees WHERE id = $1 FOR UPDATE',
+        [employeeId]
+      );
+      const codes = lockRes.rows[0]?.mfa_backup_codes || [];
+      for (let i = 0; i < codes.length; i++) {
+        if (await bcrypt.compare(String(backupCode).trim(), codes[i])) {
+          const remaining = [...codes.slice(0, i), ...codes.slice(i + 1)];
+          await client.query(
+            'UPDATE employees SET mfa_backup_codes = $1::jsonb WHERE id = $2',
+            [JSON.stringify(remaining), employeeId]
+          );
+          await client.query('COMMIT');
+          return { ok: true, usedBackupCode: true, remainingBackupCodes: remaining.length };
+        }
       }
+      await client.query('ROLLBACK');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
     }
   }
   return { ok: false, reason: 'Invalid code' };

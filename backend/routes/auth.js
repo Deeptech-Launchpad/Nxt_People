@@ -96,6 +96,13 @@ const googleLimiter = rateLimit({
   message: { success: false, message: 'Too many sign-in attempts. Try again in 15 minutes.' },
 });
 
+// Fixed dummy hash so a login attempt against a nonexistent email — or an
+// account that exists but has no password set yet (e.g. freshly accept-terms'd,
+// see accept-terms) — still pays bcrypt's compare cost. Without this, those
+// two cases return near-instantly while a real wrong-password attempt pays
+// the full bcrypt cost, letting response timing alone reveal account state.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('nxt-people-timing-mitigation-dummy', 12);
+
 // Access token: short-lived (15 min by default)
 const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, {
   expiresIn: clampAccessExpiry(process.env.JWT_ACCESS_EXPIRE) || '15m',
@@ -222,7 +229,7 @@ router.post('/accept-terms', async (req, res) => {
     if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
     const result = await pool.query(
-      'SELECT id, registration_status, employee_id, reset_password_token FROM employees WHERE email = $1',
+      'SELECT id, registration_status, employee_id, reset_password_token, reset_password_expires FROM employees WHERE email = $1',
       [email.toLowerCase()]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Account not found' });
@@ -235,6 +242,13 @@ router.post('/accept-terms', async (req, res) => {
 
     // Setup token is always required — accounts approved without one need HR to re-issue.
     if (!employee.reset_password_token) {
+      return res.status(403).json({ success: false, message: 'Your setup link has expired. Please contact HR to resend your setup email.' });
+    }
+    // Time-based expiry (7 days from approval, set in registrations.js).
+    // Older rows approved before this check existed have reset_password_expires
+    // = NULL, which would fail a strict comparison — treat NULL as "no expiry
+    // recorded" rather than locking out already-pending invites.
+    if (employee.reset_password_expires && new Date(employee.reset_password_expires) < new Date()) {
       return res.status(403).json({ success: false, message: 'Your setup link has expired. Please contact HR to resend your setup email.' });
     }
     if (!setupToken) {
@@ -251,7 +265,29 @@ router.post('/accept-terms', async (req, res) => {
       await client.query('BEGIN');
       await client.query('SELECT pg_advisory_xact_lock(42424242)');
 
-      let empId = employee.employee_id;
+      // Re-verify under the lock. Two identical accept-terms requests fired
+      // together both pass the token check above (using data read BEFORE
+      // either acquired the lock) — without this re-check, the loser wakes
+      // up after the winner already committed and blindly reprocesses:
+      // burns a second NXT#### id (the first becomes a silently orphaned,
+      // permanently skipped id) and overwrites the row a second time. This
+      // detects that the winner already consumed the token and stops
+      // cleanly instead.
+      const freshRes = await client.query(
+        'SELECT employee_id, reset_password_token FROM employees WHERE id = $1 FOR UPDATE',
+        [employee.id]
+      );
+      const fresh = freshRes.rows[0];
+      if (!fresh || fresh.reset_password_token !== employee.reset_password_token) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(409).json({
+          success: false,
+          message: 'This setup link was just used. Please log in normally.',
+        });
+      }
+
+      let empId = fresh.employee_id;
       if (!empId) {
         const seqRes = await client.query(
           "SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 4) AS INTEGER)), 1000) + 1 AS next FROM employees WHERE employee_id ~ '^NXT[0-9]+$'"
@@ -306,12 +342,16 @@ router.post('/login', loginLimiter, [
       [email]
     );
 
-    if (result.rows.length === 0) return res.status(401).json({ success: false, message: 'Invalid credentials' });
-
     const employee = result.rows[0];
 
-    // Verify password FIRST — never reveal account state to a caller who can't prove identity.
-    if (!employee.password || !(await bcrypt.compare(password, employee.password))) {
+    // Verify password FIRST — never reveal account state to a caller who can't
+    // prove identity. bcrypt.compare always runs exactly once here, against
+    // DUMMY_PASSWORD_HASH when there's no real hash to check (nonexistent
+    // email, or an account with no password set yet) — so "no such account,"
+    // "account has no password," and "wrong password" all cost the same
+    // amount of time and can't be told apart by response timing.
+    const passwordMatches = await bcrypt.compare(password, employee?.password || DUMMY_PASSWORD_HASH);
+    if (!employee || !employee.password || !passwordMatches) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
@@ -349,7 +389,14 @@ router.post('/login', loginLimiter, [
             message: 'Your role requires MFA. Set it up to continue.',
           });
         }
-      } catch (_) { /* settings table missing or column missing — fall through */ }
+      } catch (err) {
+        // Deliberately still falls through to a normal login (a broken
+        // settings query must not lock every user out) — but this used to
+        // be a silent catch, so a real DB hiccup here was indistinguishable
+        // from the expected "column doesn't exist on an older install" case.
+        // Logging it makes the fail-open path observable instead of invisible.
+        logger.error({ err: err.message, employeeId: employee._id }, '[auth] mfa_required_roles check failed — proceeding without MFA enforcement');
+      }
     }
 
     // MFA gate: if the user has MFA enabled, don't hand out a session yet.
@@ -458,7 +505,11 @@ router.post('/google', googleLimiter, async (req, res) => {
           const mfaTicket = issueMfaTicket(employee._id);
           return res.json({ success: true, requiresMfaSetup: true, mfaTicket, message: 'Your role requires MFA. Set it up to continue.' });
         }
-      } catch (_) { /* settings missing — fall through */ }
+      } catch (err) {
+        // Same reasoning as the password-login path: still falls through
+        // rather than locking everyone out, but now logged instead of silent.
+        logger.error({ err: err.message, employeeId: employee._id }, '[auth] mfa_required_roles check failed (google) — proceeding without MFA enforcement');
+      }
     }
     if (employee.mfaEnabled) {
       const mfaTicket = issueMfaTicket(employee._id);
@@ -597,36 +648,45 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
     const companyName = process.env.COMPANY_NAME || 'Nxt People';
+    const firstName = result.rows[0].first_name;
 
-    try {
-      const nodemailer = require('nodemailer');
-      const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-        port: parseInt(process.env.EMAIL_PORT) || 587,
-        secure: false,
-        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-      });
-      await transporter.sendMail({
-        from: `"${companyName}" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: `${companyName} — Password Reset Request`,
-        html: `
-          <div style="font-family:Inter,sans-serif;max-width:480px;margin:auto;padding:32px;background:#f8fafc;border-radius:12px">
-            <h2 style="color:#4F46E5;margin-top:0">Password Reset</h2>
-            <p>Hello <strong>${result.rows[0].first_name}</strong>,</p>
-            <p>You requested a password reset. Click the button below — this link expires in <strong>10 minutes</strong>.</p>
-            <a href="${resetUrl}" style="display:inline-block;padding:12px 28px;background:#4F46E5;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;margin:16px 0">Reset My Password</a>
-            <p style="color:#6b7280;font-size:13px;margin-top:24px">If you did not request this reset, please ignore this email — your password will remain unchanged.</p>
-            <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0">
-            <p style="color:#9ca3af;font-size:12px">${companyName} · Sent from no-reply</p>
-          </div>`,
-      });
-    } catch (emailErr) {
-      // Log the failure but do NOT expose it to the caller
-      logger.error({ err: emailErr.message }, 'Password reset email delivery failed');
-    }
-
+    // Respond BEFORE sending the email, not after. Previously the SMTP
+    // send was awaited in this same request, so a real account (send
+    // attempted, full network round-trip) took measurably longer to
+    // respond than a nonexistent one (returns immediately above) — a
+    // significant timing oracle for email enumeration, worse than a plain
+    // DB-only timing gap since it includes actual SMTP latency.
     res.json({ success: true, message: genericMsg });
+
+    setImmediate(async () => {
+      try {
+        const nodemailer = require('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+          port: parseInt(process.env.EMAIL_PORT) || 587,
+          secure: false,
+          auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+        });
+        await transporter.sendMail({
+          from: `"${companyName}" <${process.env.EMAIL_USER}>`,
+          to: email,
+          subject: `${companyName} — Password Reset Request`,
+          html: `
+            <div style="font-family:Inter,sans-serif;max-width:480px;margin:auto;padding:32px;background:#f8fafc;border-radius:12px">
+              <h2 style="color:#4F46E5;margin-top:0">Password Reset</h2>
+              <p>Hello <strong>${firstName}</strong>,</p>
+              <p>You requested a password reset. Click the button below — this link expires in <strong>10 minutes</strong>.</p>
+              <a href="${resetUrl}" style="display:inline-block;padding:12px 28px;background:#4F46E5;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;margin:16px 0">Reset My Password</a>
+              <p style="color:#6b7280;font-size:13px;margin-top:24px">If you did not request this reset, please ignore this email — your password will remain unchanged.</p>
+              <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0">
+              <p style="color:#9ca3af;font-size:12px">${companyName} · Sent from no-reply</p>
+            </div>`,
+        });
+      } catch (emailErr) {
+        // Log the failure but do NOT expose it to the caller — response is already sent.
+        logger.error({ err: emailErr.message }, 'Password reset email delivery failed');
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -684,11 +744,34 @@ router.post('/refresh', async (req, res) => {
 
     const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
+    // Atomically read-and-revoke in one statement. Previously this was a
+    // plain SELECT followed by a separate UPDATE later — two concurrent
+    // requests presenting the SAME refresh token could both pass the SELECT
+    // before either one's revoke landed, and both would go on to mint a new
+    // session pair from one token. The WHERE clause here only matches a row
+    // that's still unrevoked (and not superseded by a tokens_revoked_at
+    // bump — see below) at the exact instant this UPDATE runs; a losing
+    // concurrent request matches zero rows and correctly gets "invalid".
+    //
+    // The tokens_revoked_at check closes a second, separate gap: the theft-
+    // detection branch below only revokes the ONE token that tripped it,
+    // plus bumps tokens_revoked_at — but tokens_revoked_at was previously
+    // only ever checked by the `protect` middleware (access tokens), never
+    // here. That meant a sibling device's REFRESH token survived a theft
+    // event untouched and could silently mint itself a fresh access token
+    // once its old one expired, quietly undoing the "kill every other
+    // session too" guarantee the comment above promises. Now any refresh
+    // token created before the employee's tokens_revoked_at is rejected too.
     const result = await pool.query(
-      `SELECT rt.id, rt.employee_id, rt.user_agent, e.registration_status
-       FROM refresh_tokens rt
-       JOIN employees e ON rt.employee_id = e.id
-       WHERE rt.token_hash = $1 AND rt.expires_at > NOW() AND rt.revoked_at IS NULL`,
+      `UPDATE refresh_tokens rt
+          SET revoked_at = NOW()
+         FROM employees e
+        WHERE rt.token_hash = $1
+          AND rt.employee_id = e.id
+          AND rt.expires_at > NOW()
+          AND rt.revoked_at IS NULL
+          AND (e.tokens_revoked_at IS NULL OR rt.created_at >= e.tokens_revoked_at)
+       RETURNING rt.id, rt.employee_id, rt.user_agent, e.registration_status`,
       [tokenHash]
     );
 
@@ -721,8 +804,8 @@ router.post('/refresh', async (req, res) => {
     };
     const requestUA = req.get('user-agent') || '';
     if (storedUA && uaFamily(storedUA) !== uaFamily(requestUA)) {
-      // Likely token theft → kill this token AND every other live session.
-      await pool.query(`UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1`, [tokenId]);
+      // Likely token theft. This token is already revoked (the atomic
+      // UPDATE above did it) — kill every other live session too.
       await pool.query(`UPDATE employees SET tokens_revoked_at = NOW() WHERE id = $1`, [employeeId]);
       return res.status(401).json({
         success: false,
@@ -731,8 +814,7 @@ router.post('/refresh', async (req, res) => {
       });
     }
 
-    // Rotate: revoke old token, issue new pair
-    await pool.query(`UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1`, [tokenId]);
+    // Rotate: old token already revoked above, just issue the new pair.
     const newAccessToken   = signToken(employeeId);
     const newRefreshToken  = await generateRefreshToken(employeeId, req);
 

@@ -305,7 +305,14 @@ router.put('/change-password', async (req, res) => {
     }
 
     const hashed = await bcrypt.hash(newPassword, 12);
-    await pool.query('UPDATE employees SET password = $1, updated_at = NOW() WHERE id = $2', [hashed, req.user._id]);
+    // This is the endpoint the frontend actually calls for password changes
+    // (auth.js has a near-identical /change-password that isn't wired to any
+    // UI). It was missing the session-revocation step auth.js's copy has —
+    // meaning a password change here didn't invalidate any existing access
+    // or refresh tokens, so a stolen token/session stayed valid indefinitely
+    // even after the user "secured" their account by changing the password.
+    await pool.query('UPDATE employees SET password = $1, updated_at = NOW(), tokens_revoked_at = NOW() WHERE id = $2', [hashed, req.user._id]);
+    await pool.query('DELETE FROM refresh_tokens WHERE employee_id = $1', [req.user._id]);
     res.json({ success: true, message: 'Password updated successfully' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

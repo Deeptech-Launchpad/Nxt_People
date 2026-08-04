@@ -488,8 +488,14 @@ router.put('/:id/approve', async (req, res) => {
 
     const setupToken = crypto.randomBytes(32).toString('hex');
     const setupTokenHash = crypto.createHash('sha256').update(setupToken).digest('hex');
-    updates.push(`reset_password_token = $${idx++}`);
-    params.push(setupTokenHash);
+    // 7-day window — longer than the 10-minute forgot-password reset token
+    // since this is a one-time onboarding invite, not an active password
+    // reset a user is sitting in front of their inbox for. Previously this
+    // token never expired at all (reset_password_expires was never set),
+    // so accept-terms had no time-based invalidation.
+    const setupTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    updates.push(`reset_password_token = $${idx++}`, `reset_password_expires = $${idx++}`);
+    params.push(setupTokenHash, setupTokenExpires);
 
     const up = await client.query(`
       UPDATE employees SET ${updates.join(', ')} WHERE id = $${idx}
