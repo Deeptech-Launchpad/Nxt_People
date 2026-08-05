@@ -92,9 +92,14 @@ router.get('/', async (req, res) => {
     // a literal status value. Any other status is matched exactly.
     if (status === 'inactive') { query += ` AND e.status <> 'active'`; }
     else if (status)           { query += ` AND e.status = $${paramIndex++}`; params.push(status); }
-    if (search) {
+    if (search && search.trim()) {
+      // Untrimmed input used to build the wildcard pattern directly — a
+      // search of " Balaji " (stray leading/trailing space, easy to type
+      // or paste by accident) required that literal space to appear next
+      // to the match inside the stored value, so it silently found
+      // nothing even though "Balaji" existed.
       query += ` AND (e.first_name ILIKE $${paramIndex} OR e.last_name ILIKE $${paramIndex} OR e.email ILIKE $${paramIndex} OR e.employee_id ILIKE $${paramIndex})`;
-      params.push(`%${search}%`);
+      params.push(`%${search.trim()}%`);
       paramIndex++;
     }
 
@@ -296,7 +301,20 @@ router.post('/', authorize('admin', 'director'), async (req, res) => {
 
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
-    if (err.code === '23505') return res.status(400).json({ success: false, message: 'Email already exists' });
+    // The pre-check above closes most races, but two submissions using the
+    // same server-suggested employee_id (double-click, or two admins adding
+    // someone at once) can both pass it before either INSERTs — the DB's
+    // own unique index is the real backstop for that case. Previously any
+    // 23505 was reported as "Email already exists" regardless of which
+    // constraint actually fired, which is simply wrong when the real
+    // collision is on employee_id, not email — sends whoever's debugging it
+    // looking for a duplicate email that was never the problem.
+    if (err.code === '23505') {
+      if (err.constraint && err.constraint.includes('employee_id')) {
+        return res.status(400).json({ success: false, message: 'That Employee ID was just taken by another submission. Please try again.' });
+      }
+      return res.status(400).json({ success: false, message: 'Email already exists' });
+    }
     res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });
@@ -321,6 +339,20 @@ router.put('/:id', authorize('admin', 'director'), async (req, res) => {
       // Employment status workflow (post-meeting feature)
       noticePeriodEndDate, statusReason, rehireEligibility, isBlacklisted, statusAppliedAt,
     } = req.body;
+
+    // Nothing prevented setting someone as their own reporting manager —
+    // trivial to do via this endpoint even though there's no UI path to it
+    // deliberately, and it feeds directly into deriveLevels' approval-chain
+    // walk (leaveApproval.js), which resolves reporting_manager_id upward.
+    // That walk has its own depth<20 cycle guard so a self-reference can't
+    // hang the server, but the employee would still end up as their own
+    // Level-1 approver — reject it outright instead.
+    if (reportingManagerId && String(reportingManagerId) === String(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'An employee cannot be their own reporting manager.' });
+    }
+    if (approvingAuthorityId && String(approvingAuthorityId) === String(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'An employee cannot be their own approving authority.' });
+    }
 
     // Uniqueness guard if admin is changing employee_id. Unique index would
     // also catch it, but a friendly message is better.
@@ -473,6 +505,26 @@ router.post('/send-onboarding', authorize('admin', 'director'), async (req, res)
 // after reviewing what CASCADEs.
 router.delete('/:id', authorize('admin', 'director'), async (req, res) => {
   try {
+    // Soft-deleting someone who's still another active employee's manager/
+    // approving authority previously went through silently — the reports'
+    // reporting_manager_id kept pointing at an archived, can't-log-in
+    // employee. deriveLevels (leaveApproval.js) still walks that chain
+    // regardless of deleted_at, so those employees' leave requests would
+    // route to an approver who can never act on them — a stuck request
+    // with no visible error anywhere. Block the delete instead and make
+    // the admin reassign reports first.
+    const stillManages = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM employees
+        WHERE (reporting_manager_id = $1 OR approving_authority_id = $1) AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (stillManages.rows[0].n > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot deactivate — ${stillManages.rows[0].n} active employee(s) still report to this person. Reassign their reporting manager/approving authority first.`,
+      });
+    }
+
     const r = await pool.query(
       `UPDATE employees
           SET deleted_at = NOW(),

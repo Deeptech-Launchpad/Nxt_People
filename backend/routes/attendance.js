@@ -548,16 +548,31 @@ router.get('/team', authorize('admin', 'director', 'manager', 'team_incharge'), 
     if (department) { empQuery += ` AND e.department = $${empIdx++}`; empParams.push(department); }
     if (['manager', 'team_incharge'].includes(req.user.role)) { empQuery += ` AND e.reporting_manager_id = $${empIdx++}`; empParams.push(req.user._id); }
 
-    const employeesRes = await pool.query(
-      `SELECT e.id as "_id", e.first_name as "firstName", e.last_name as "lastName",
-       e.department, e.employee_id as "employeeId", e.designation, e.photo_url as "photoUrl",
-       e.phone,
-       json_build_object('name', s.name, 'start_time', s.start_time, 'end_time', s.end_time) as shift
-       FROM employees e
-       LEFT JOIN shifts s ON e.shift_id = s.id
-       ${empQuery}`,
-      empParams
-    );
+    const [employeesRes, wrRes, sRes] = await Promise.all([
+      pool.query(
+        `SELECT e.id as "_id", e.first_name as "firstName", e.last_name as "lastName",
+         e.department, e.employee_id as "employeeId", e.designation, e.photo_url as "photoUrl",
+         e.phone,
+         json_build_object('name', s.name, 'start_time', s.start_time, 'end_time', s.end_time) as shift
+         FROM employees e
+         LEFT JOIN shifts s ON e.shift_id = s.id
+         ${empQuery}`,
+        empParams
+      ),
+      pool.query(`SELECT days_of_week, weeks_of_month, interval_weeks, start_date FROM weekend_rules WHERE is_active = TRUE`),
+      pool.query(`SELECT working_days FROM settings LIMIT 1`),
+    ]);
+
+    // Same weekend determination as /summary — org-wide rule, so one flag
+    // covers the whole team view rather than a per-employee lookup.
+    const workingDays = Array.isArray(sRes.rows[0]?.working_days)
+      ? sRes.rows[0].working_days.map(d => String(d).toLowerCase().slice(0, 3))
+      : ['mon','tue','wed','thu','fri'];
+    const dayMap = ['sun','mon','tue','wed','thu','fri','sat'];
+    const targetDateObj = new Date(targetDate);
+    const isWeekendDay = wrRes.rows.length > 0
+      ? wrRes.rows.some(rule => ruleMatches(rule, targetDateObj))
+      : !workingDays.includes(dayMap[targetDateObj.getDay()]);
 
     let attQuery = 'WHERE a.date = $1::date';
     let attParams = [targetDate];
@@ -591,7 +606,7 @@ router.get('/team', authorize('admin', 'director', 'manager', 'team_incharge'), 
       workingHours: Number(r.workingHours) || 0
     }));
 
-    res.json({ success: true, data: mapped, employees: employeesRes.rows });
+    res.json({ success: true, data: mapped, employees: employeesRes.rows, isWeekend: isWeekendDay });
   } catch (err) {
     res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
@@ -634,7 +649,7 @@ router.get('/summary', async (req, res) => {
     // Pull attendance + holidays + settings + weekend_rules in parallel.
     // settings.working_days is the simplest weekend source; if weekend_rules
     // is populated we prefer that (richer recurrence patterns).
-    const [attRes, hRes, sRes, wrRes] = await Promise.all([
+    const [attRes, hRes, sRes, wrRes, leavesRes] = await Promise.all([
       pool.query(
         'SELECT date, status, working_hours, late_minutes, check_in, check_out FROM attendance WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date',
         [empId, start, end]
@@ -646,6 +661,26 @@ router.get('/summary', async (req, res) => {
       pool.query(`SELECT working_days FROM settings LIMIT 1`),
       pool.query(`SELECT days_of_week, weeks_of_month, interval_weeks, start_date
                     FROM weekend_rules WHERE is_active = TRUE`),
+      // Approved leaves overlapping the range, clipped to it and prorated the
+      // same way payroll's lopDaysForRange does — a leave that only partially
+      // falls inside [start,end] shouldn't count its full total_days here.
+      pool.query(
+        `SELECT l.leave_type,
+                COALESCE(SUM(
+                  ROUND(
+                    l.total_days::numeric *
+                    (LEAST(l.end_date, $3::date) - GREATEST(l.start_date, $2::date) + 1.0) /
+                    NULLIF((l.end_date - l.start_date + 1)::numeric, 0)
+                  , 2)
+                ), 0) AS days
+           FROM leaves l
+          WHERE l.employee_id = $1
+            AND l.status = 'approved'
+            AND l.leave_type != 'permission'
+            AND l.start_date <= $3::date AND l.end_date >= $2::date
+          GROUP BY l.leave_type`,
+        [empId, start, end]
+      ),
     ]);
 
     const workingDays = Array.isArray(sRes.rows[0]?.working_days)
@@ -687,8 +722,18 @@ router.get('/summary', async (req, res) => {
       cur.setDate(cur.getDate() + 1);
     }
 
+    // Paid vs unpaid leave days come from the leaves table directly — nothing
+    // ever writes status='leave' into the attendance table on approval, so
+    // deriving these from attendance rows would always read zero.
+    let paidLeaveDays = 0, unpaidLeaveDays = 0;
+    leavesRes.rows.forEach(r => {
+      const days = parseFloat(r.days) || 0;
+      if (r.leave_type === 'unpaid') unpaidLeaveDays += days;
+      else paidLeaveDays += days;
+    });
+
     const summary = {
-      present: 0, absent: 0, late: 0, halfDay: 0, leave: 0,
+      present: 0, absent: 0, late: 0, halfDay: 0, leave: paidLeaveDays, unpaid: unpaidLeaveDays,
       onDuty: 0, holidays: holidayDays, weekend: weekendDays,
       payableDays,
       totalHours: 0, totalLateMinutes: 0,
@@ -705,7 +750,6 @@ router.get('/summary', async (req, res) => {
         case 'absent':   summary.absent++; break;
         case 'late':     summary.late++; if (completed) summary.present++; break;
         case 'half-day': if (completed) summary.halfDay++; break;
-        case 'leave':    summary.leave++; break;
         case 'on_duty':
         case 'on-duty':  summary.onDuty++; break;
         default: break;

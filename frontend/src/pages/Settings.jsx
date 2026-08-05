@@ -6,7 +6,6 @@ import { roleLabel } from '../utils/roles';
 import WeekendRulesEditor from '../components/WeekendRulesEditor';
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-const TIMEZONES = ['Asia/Kolkata','America/New_York','America/Los_Angeles','Europe/London','Asia/Singapore','Australia/Sydney'];
 
 export default function Settings() {
   const [settings, setSettings] = useState(null);
@@ -76,9 +75,8 @@ export default function Settings() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1.5">Timezone</label>
-                    <select value={settings?.timezone||'Asia/Kolkata'} onChange={e=>setSettings({...settings,timezone:e.target.value})} className="w-full max-w-md border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400">
-                      {TIMEZONES.map(t=><option key={t}>{t}</option>)}
-                    </select>
+                    <input value="Asia/Kolkata" disabled readOnly className="w-full max-w-md border border-slate-200 rounded-xl px-3 py-2.5 text-base bg-slate-50 text-slate-500 cursor-not-allowed"/>
+                    <p className="text-sm text-slate-400 mt-1">This deployment is India-only — attendance, payroll, and cron scheduling all assume Asia/Kolkata throughout the system and aren't safe to change independently.</p>
                   </div>
                 </div>
               </div>

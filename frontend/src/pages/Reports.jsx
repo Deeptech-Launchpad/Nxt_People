@@ -30,16 +30,36 @@ export default function Reports() {
 
   useEffect(load, []);
 
+  // Quote-doubles embedded quotes (so a name like Raj "Bunny" Kumar doesn't
+  // break the field boundary) and defuses formula injection — a value
+  // starting with =, +, -, or @ is interpreted as a formula by Excel/Sheets
+  // on open. Mirrors the same escaping the backend's compliance CSV exports
+  // already use (routes/payroll.js csvEscape).
+  const csvField = (v) => {
+    let s = String(v ?? '');
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+
   const exportCSV = () => {
     const data = tab === 'detail' ? records : summary;
     if (!data?.length) return;
     let csv;
     if (tab === 'detail') {
       csv = 'Employee,ID,Department,Date,Check In,Check Out,Hours,Status\n' +
-        data.map(r => `"${r.employee?.firstName} ${r.employee?.lastName}","${r.employee?.employeeId}","${r.employee?.department}","${new Date(r.date).toLocaleDateString()}","${r.checkIn ? new Date(r.checkIn).toLocaleTimeString() : ''}","${r.checkOut ? new Date(r.checkOut).toLocaleTimeString() : ''}","${r.workingHours||0}","${r.status}"`).join('\n');
+        data.map(r => [
+          `${r.employee?.firstName} ${r.employee?.lastName}`, r.employee?.employeeId, r.employee?.department,
+          new Date(r.date).toLocaleDateString(),
+          r.checkIn ? new Date(r.checkIn).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : '',
+          r.checkOut ? new Date(r.checkOut).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : '',
+          r.workingHours || 0, r.status,
+        ].map(csvField).join(',')).join('\n');
     } else {
       csv = 'Employee,Department,Present,Absent,Late,Total Hours\n' +
-        data.map(r => `"${r.employee?.firstName} ${r.employee?.lastName}","${r.employee?.department}","${r.present}","${r.absent}","${r.late}","${r.totalHours}"`).join('\n');
+        data.map(r => [
+          `${r.employee?.firstName} ${r.employee?.lastName}`, r.employee?.department,
+          r.present, r.absent, r.late, r.totalHours,
+        ].map(csvField).join(',')).join('\n');
     }
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -53,7 +73,7 @@ export default function Reports() {
     URL.revokeObjectURL(url);
   };
 
-  const fmt = d => d ? new Date(d).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) : '—';
+  const fmt = d => d ? new Date(d).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'}) : '—';
 
   return (
     <div className="space-y-5">

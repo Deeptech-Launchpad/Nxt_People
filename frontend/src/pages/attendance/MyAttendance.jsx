@@ -22,7 +22,7 @@ function parseLocalDate(s) {
 
 function fmtTime(d) {
   if (!d) return null;
-  return new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
 }
 
 function fmtHHMM(hours) {
@@ -202,13 +202,13 @@ function TimelineBar({ record, isToday, isCheckedIn }) {
               <div
                 className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
                 style={{ left: `${sPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-                title={`Session ${i + 1} in: ${new Date(s.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`}
+                title={`Session ${i + 1} in: ${new Date(s.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`}
               />
               {ePct !== null && (
                 <div
                   className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
                   style={{ left: `${ePct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-                  title={`Session ${i + 1} out: ${new Date(s.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`}
+                  title={`Session ${i + 1} out: ${new Date(s.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`}
                 />
               )}
             </React.Fragment>
@@ -257,14 +257,14 @@ function TimelineBar({ record, isToday, isCheckedIn }) {
       <div
         className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
         style={{ left: `${startPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-        title={`Check-in, ${new Date(ci).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`}
+        title={`Check-in, ${new Date(ci).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`}
       />
 
       {endPct !== null && (
         <div
           className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
           style={{ left: `${endPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-          title={`Check-out, ${new Date(co).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`}
+          title={`Check-out, ${new Date(co).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`}
         />
       )}
 

@@ -368,7 +368,7 @@ async function upsertEmployee(client, mapped) {
  *   'cron' (if scheduled). Only used for log correlation.
  */
 async function runEmployeeSync(initiatedBy = 'cron') {
-  const stats = { inserted: 0, updated: 0, skipped: 0, managersResolved: 0, secondaryManagersResolved: 0, errors: [] };
+  const stats = { inserted: 0, updated: 0, skipped: 0, managersResolved: 0, secondaryManagersResolved: 0, errors: [], interrupted: false };
   const managerLinks = [];
   const secondaryManagerLinks = [];
   const syncedEmails = [];
@@ -377,67 +377,82 @@ async function runEmployeeSync(initiatedBy = 'cron') {
   try {
     logger.info({ initiatedBy }, 'Zoho sync started');
 
-    for await (const rec of iterateEmployees()) {
-      const mapped = mapEmployee(rec);
-      if (!mapped) { stats.skipped++; continue; }
+    // Each upsert below commits independently (no batch-wide transaction),
+    // so a mid-batch failure — network drop, Zoho API timeout — never rolls
+    // back employees already processed. But without this try/catch, an
+    // error thrown by the iterateEmployees() iterator itself (fetching the
+    // next page) would propagate out of this whole function and discard the
+    // `stats` accumulated so far, leaving the caller with a bare error and
+    // no idea how much of the batch actually completed. Catch it here,
+    // record the interruption, and fall through to Pass 2 with whatever was
+    // synced before the failure.
+    try {
+      for await (const rec of iterateEmployees()) {
+        const mapped = mapEmployee(rec);
+        if (!mapped) { stats.skipped++; continue; }
 
-      const tabular = parseTabularSections(rec);
-      if (tabular.emergency) {
-        mapped.emergencyContactName     = mapped.emergencyContactName     || tabular.emergency.name;
-        mapped.emergencyContactPhone    = mapped.emergencyContactPhone    || tabular.emergency.phone;
-        mapped.emergencyContactRelation = mapped.emergencyContactRelation || tabular.emergency.relation;
-        mapped.emergencyContactDob      = mapped.emergencyContactDob      || tabular.emergency.dob;
-      }
-
-      try {
-        const op = await upsertEmployee(client, mapped);
-        stats[op]++;
-
-        const idRow = await client.query(`SELECT id FROM employees WHERE LOWER(email) = $1`, [mapped.email]);
-        const empId = idRow.rows[0]?.id;
-
-        if (empId && tabular.education.length > 0) {
-          for (const ed of tabular.education) {
-            await client.query(
-              `INSERT INTO employee_education
-                 (employee_id, highest_qualification, degree, course,
-                  university_or_institution, year_of_passing, percentage_or_cgpa)
-               SELECT $1::uuid, $2::text, $3::text, $4::text, $5::text, $6::int, $7::text
-                WHERE NOT EXISTS (
-                  SELECT 1 FROM employee_education
-                   WHERE employee_id = $1::uuid
-                     AND COALESCE(university_or_institution, '') = COALESCE($5::text, '')
-                     AND COALESCE(year_of_passing, 0) = COALESCE($6::int, 0)
-                )`,
-              [empId, ed.qualification, ed.degree, ed.course, ed.institute,
-               ed.yearOfPassing ? parseInt(ed.yearOfPassing, 10) || null : null,
-               ed.percentageOrCgpa]
-            );
-          }
-        }
-        if (empId && tabular.prevEmployment.length > 0) {
-          for (const pe of tabular.prevEmployment) {
-            await client.query(
-              `INSERT INTO employee_previous_employment
-                 (employee_id, company, designation, from_date, to_date, job_description)
-               SELECT $1::uuid, $2::text, $3::text, $4::date, $5::date, $6::text
-                WHERE NOT EXISTS (
-                  SELECT 1 FROM employee_previous_employment
-                   WHERE employee_id = $1::uuid
-                     AND COALESCE(company, '') = COALESCE($2::text, '')
-                     AND COALESCE(designation, '') = COALESCE($3::text, '')
-                )`,
-              [empId, pe.company, pe.designation, pe.fromDate, pe.toDate, pe.description]
-            );
-          }
+        const tabular = parseTabularSections(rec);
+        if (tabular.emergency) {
+          mapped.emergencyContactName     = mapped.emergencyContactName     || tabular.emergency.name;
+          mapped.emergencyContactPhone    = mapped.emergencyContactPhone    || tabular.emergency.phone;
+          mapped.emergencyContactRelation = mapped.emergencyContactRelation || tabular.emergency.relation;
+          mapped.emergencyContactDob      = mapped.emergencyContactDob      || tabular.emergency.dob;
         }
 
-        syncedEmails.push(mapped.email);
-        if (mapped.reportsToEmail)            managerLinks.push({ employeeEmail: mapped.email, managerEmail: mapped.reportsToEmail });
-        if (mapped.secondaryReportsToEmail)   secondaryManagerLinks.push({ employeeEmail: mapped.email, managerEmail: mapped.secondaryReportsToEmail });
-      } catch (err) {
-        stats.errors.push({ email: mapped.email, message: err.message });
+        try {
+          const op = await upsertEmployee(client, mapped);
+          stats[op]++;
+
+          const idRow = await client.query(`SELECT id FROM employees WHERE LOWER(email) = $1`, [mapped.email]);
+          const empId = idRow.rows[0]?.id;
+
+          if (empId && tabular.education.length > 0) {
+            for (const ed of tabular.education) {
+              await client.query(
+                `INSERT INTO employee_education
+                   (employee_id, highest_qualification, degree, course,
+                    university_or_institution, year_of_passing, percentage_or_cgpa)
+                 SELECT $1::uuid, $2::text, $3::text, $4::text, $5::text, $6::int, $7::text
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM employee_education
+                     WHERE employee_id = $1::uuid
+                       AND COALESCE(university_or_institution, '') = COALESCE($5::text, '')
+                       AND COALESCE(year_of_passing, 0) = COALESCE($6::int, 0)
+                  )`,
+                [empId, ed.qualification, ed.degree, ed.course, ed.institute,
+                 ed.yearOfPassing ? parseInt(ed.yearOfPassing, 10) || null : null,
+                 ed.percentageOrCgpa]
+              );
+            }
+          }
+          if (empId && tabular.prevEmployment.length > 0) {
+            for (const pe of tabular.prevEmployment) {
+              await client.query(
+                `INSERT INTO employee_previous_employment
+                   (employee_id, company, designation, from_date, to_date, job_description)
+                 SELECT $1::uuid, $2::text, $3::text, $4::date, $5::date, $6::text
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM employee_previous_employment
+                     WHERE employee_id = $1::uuid
+                       AND COALESCE(company, '') = COALESCE($2::text, '')
+                       AND COALESCE(designation, '') = COALESCE($3::text, '')
+                  )`,
+                [empId, pe.company, pe.designation, pe.fromDate, pe.toDate, pe.description]
+              );
+            }
+          }
+
+          syncedEmails.push(mapped.email);
+          if (mapped.reportsToEmail)            managerLinks.push({ employeeEmail: mapped.email, managerEmail: mapped.reportsToEmail });
+          if (mapped.secondaryReportsToEmail)   secondaryManagerLinks.push({ employeeEmail: mapped.email, managerEmail: mapped.secondaryReportsToEmail });
+        } catch (err) {
+          stats.errors.push({ email: mapped.email, message: err.message });
+        }
       }
+    } catch (err) {
+      stats.interrupted = true;
+      stats.errors.push({ email: null, message: `Sync interrupted before completing the full batch: ${err.message}` });
+      logger.error({ err, stats }, 'Zoho sync interrupted mid-batch — returning partial stats');
     }
 
     // Clear reporting_manager_id for every synced employee before re-applying

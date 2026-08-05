@@ -74,7 +74,7 @@ export default function ComplianceReports() {
         const status = await api.get(`/payroll/admin/reports/neft/status?month=${month}&year=${year}`);
         if (status.data.alreadyExported > 0) {
           const exportedAt = status.data.lastExportedAt
-            ? new Date(status.data.lastExportedAt).toLocaleString('en-IN')
+            ? new Date(status.data.lastExportedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
             : 'previously';
           const ok = window.confirm(
             `⚠ ${status.data.alreadyExported} of ${status.data.total} payslip(s) for this month were already sent to the bank on ${exportedAt}.\n\n` +

@@ -1371,7 +1371,7 @@ const bulkUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize:
 router.get('/admin/structure-template', authorize('admin', 'director'), (req, res) => {
   const wb = xlsx.utils.book_new();
   const data = [{
-    'Employee ID':       'ANXT2600149',
+    'Employee ID':       'SAMPLE-EMP-ID',
     'Basic':             30000,
     'HRA':               15000,
     'Conveyance':        1600,
@@ -1498,6 +1498,18 @@ router.post('/declarations', logAuditWrapper('SUBMIT', 'tax_declaration'), async
   try {
     const fy = req.body.financialYear || currentFY();
     const b = req.body || {};
+    const regime = b.regime || 'new';
+    // New regime has no exemptions other than the standard deduction — zero
+    // these server-side regardless of what the form sent, so a stray/garbage
+    // value can never be stored (or mistakenly read) against a new-regime row.
+    const isOld = regime === 'old';
+    const hraAnnualRent    = isOld ? num(b.hraAnnualRent)    : 0;
+    const section80c       = isOld ? num(b.section80c)       : 0;
+    const section80d       = isOld ? num(b.section80d)       : 0;
+    const section80e       = isOld ? num(b.section80e)       : 0;
+    const homeLoanInterest = isOld ? num(b.homeLoanInterest) : 0;
+    const otherDeductions  = isOld ? num(b.otherDeductions)  : 0;
+
     // Upsert: if already exists for this FY, update it (only if not yet approved).
     const existing = await pool.query(
       `SELECT id, status FROM payroll_tax_declarations
@@ -1515,8 +1527,8 @@ router.post('/declarations', logAuditWrapper('SUBMIT', 'tax_declaration'), async
                 section_80e=$5, home_loan_interest=$6, other_deductions=$7,
                 status='submitted', rejection_reason=NULL, updated_at=NOW()
           WHERE id=$8 RETURNING id`,
-        [b.regime || 'new', num(b.hraAnnualRent), num(b.section80c), num(b.section80d),
-         num(b.section80e), num(b.homeLoanInterest), num(b.otherDeductions),
+        [regime, hraAnnualRent, section80c, section80d,
+         section80e, homeLoanInterest, otherDeductions,
          existing.rows[0].id]
       );
       return res.json({ success: true, id: r.rows[0].id });
@@ -1527,12 +1539,21 @@ router.post('/declarations', logAuditWrapper('SUBMIT', 'tax_declaration'), async
           hra_annual_rent, section_80c, section_80d, section_80e,
           home_loan_interest, other_deductions)
        VALUES ($1,$2,$3, $4,$5,$6,$7, $8,$9) RETURNING id`,
-      [req.user._id, fy, b.regime || 'new',
-       num(b.hraAnnualRent), num(b.section80c), num(b.section80d), num(b.section80e),
-       num(b.homeLoanInterest), num(b.otherDeductions)]
+      [req.user._id, fy, regime,
+       hraAnnualRent, section80c, section80d, section80e,
+       homeLoanInterest, otherDeductions]
     );
     res.status(201).json({ success: true, id: r.rows[0].id });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) {
+    // Backstop for a genuine double-submit race (two concurrent first-time
+    // submissions both pass the existence check before either commits) —
+    // the UNIQUE(employee_id, financial_year) constraint catches it; surface
+    // a clean message instead of a generic 500.
+    if (err.code === '23505') {
+      return res.status(400).json({ success: false, message: 'A declaration for this financial year already exists. Please refresh and try again.' });
+    }
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+  }
 });
 
 // GET /api/payroll/admin/declarations?status=submitted — admin: review queue

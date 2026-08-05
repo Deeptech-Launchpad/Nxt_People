@@ -58,8 +58,8 @@ export default function CheckInOut() {
   };
   const workingHours = record?.workingHours ? `${Math.floor(record.workingHours)}h ${Math.round((record.workingHours % 1) * 60)}m` : null;
 
-  const timeStr = time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const dateStr = time.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const timeStr = time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata' });
+  const dateStr = time.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' });
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
@@ -96,8 +96,8 @@ export default function CheckInOut() {
             {/* Times grid */}
             <div className="grid grid-cols-3 gap-3 mb-5">
               {[
-                ['Check In', (record?.sessions?.[0]?.checkIn || record?.checkIn) ? new Date(record?.sessions?.[0]?.checkIn || record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'],
-                ['Check Out', record?.checkOut ? new Date(record.checkOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'],
+                ['Check In', (record?.sessions?.[0]?.checkIn || record?.checkIn) ? new Date(record?.sessions?.[0]?.checkIn || record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata' }) : '—'],
+                ['Check Out', record?.checkOut ? new Date(record.checkOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata' }) : '—'],
                 ['Work Hours', workingHours || (isCheckedIn ? 'In Progress' : '—')],
               ].map(([label, val]) => (
                 <div key={label} className="text-center p-4 bg-slate-50 rounded-xl border border-slate-100">
@@ -148,7 +148,7 @@ export default function CheckInOut() {
             {/* Live elapsed timer */}
             {isCheckedIn && (
               <p className="text-center text-sm text-slate-400 mt-3">
-                Clocked in at {new Date(record?.sessions?.[0]?.checkIn || record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} · {Math.floor(elapsed / 3600)}h {Math.floor((elapsed % 3600) / 60)}m worked today
+                Clocked in at {new Date(record?.sessions?.[0]?.checkIn || record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} · {Math.floor(elapsed / 3600)}h {Math.floor((elapsed % 3600) / 60)}m worked today
               </p>
             )}
 
@@ -159,9 +159,9 @@ export default function CheckInOut() {
                   <div key={i} className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
                     <span className="text-slate-500 font-medium">Session {i + 1}</span>
                     <span className="text-slate-700">
-                      {new Date(s.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(s.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
                       {' → '}
-                      {s.checkOut ? new Date(s.checkOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : <span className="text-emerald-600">Active</span>}
+                      {s.checkOut ? new Date(s.checkOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : <span className="text-emerald-600">Active</span>}
                     </span>
                     {parseFloat(s.sessionHours) > 0 && (
                       <span className="text-slate-400 text-xs">{Math.floor(s.sessionHours)}h {Math.round((s.sessionHours % 1) * 60)}m</span>

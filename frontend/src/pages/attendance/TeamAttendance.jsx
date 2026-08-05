@@ -7,6 +7,7 @@ export default function TeamAttendance() {
   const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
+  const [isWeekend, setIsWeekend] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [date, setDate] = useState(new Date().toLocaleDateString('en-CA'));
@@ -17,6 +18,7 @@ export default function TeamAttendance() {
       .then(r => {
         setEmployees(r.data.employees || []);
         setAttendance(r.data.data || []);
+        setIsWeekend(!!r.data.isWeekend);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -44,7 +46,7 @@ export default function TeamAttendance() {
   const checkedOut = filtered.filter(p => p.att?.checkOut);
   const notYet     = filtered.filter(p => !p.att?.checkIn);
 
-  const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' }) : null;
+  const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata' }) : null;
 
   const MemberCard = ({ person }) => {
     const att = person.att;
@@ -163,7 +165,9 @@ export default function TeamAttendance() {
               <GroupSection title="Checked Out" count={checkedOut.length} people={checkedOut} statusColor="bg-slate-400" />
             )}
             {notYet.length > 0 && (
-              <GroupSection title="Not Yet Checked In" count={notYet.length} people={notYet} statusColor="bg-slate-300" />
+              isWeekend
+                ? <GroupSection title="Weekend" count={notYet.length} people={notYet} statusColor="bg-violet-400" />
+                : <GroupSection title="Not Yet Checked In" count={notYet.length} people={notYet} statusColor="bg-slate-300" />
             )}
             {filtered.length === 0 && (
               <div className="text-center py-16 text-slate-400">

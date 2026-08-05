@@ -59,6 +59,15 @@ router.post('/', audit('CREATE', 'wfh_request'), async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(409).json({ success: false, message: 'WFH already requested for this date' });
       }
+      const leaveConflict = await client.query(
+        `SELECT id FROM leaves WHERE employee_id=$1 AND status IN ('pending','pending_approval','approved')
+           AND start_date <= $2::date AND end_date >= $2::date`,
+        [req.user._id, date]
+      );
+      if (leaveConflict.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ success: false, message: 'You already have a leave request covering this date.' });
+      }
       const result = await client.query(
         `INSERT INTO wfh_requests (employee_id, date, reason) VALUES ($1,$2,$3)
          RETURNING id as "_id", date, reason, status, created_at as "createdAt"`,
@@ -92,6 +101,10 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
       );
       const wfh = wRes.rows[0];
       if (!wfh) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'WFH request not found' }); }
+      if (String(wfh.employee_id) === String(req.user._id)) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ success: false, message: 'You cannot approve or reject your own WFH request.' });
+      }
       if (wfh.status !== 'pending') { await client.query('ROLLBACK'); return res.status(400).json({ success: false, message: 'This request has already been actioned.' }); }
 
       const canAct = await canUserAct(client, 'wfh', req.params.id, req.user);

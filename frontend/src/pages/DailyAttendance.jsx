@@ -84,13 +84,13 @@ export default function DailyAttendance() {
 
   /* ── helpers ──────────────────────────────────────────────────────── */
   const fmtTime = (iso) =>
-    iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+    iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '—';
 
   const exportCSV = () => {
     if (!filtered.length) return;
     const csv = 'Employee ID,Name,Department,Designation,Check In,Check Out,Hours,Status,Presence\n' +
       filtered.map(r =>
-        `"${r.employeeId || ''}","${r.firstName} ${r.lastName}","${r.department || ''}","${r.designation || ''}","${r.att?.checkIn ? new Date(r.att.checkIn).toLocaleTimeString() : ''}","${r.att?.checkOut ? new Date(r.att.checkOut).toLocaleTimeString() : ''}","${r.att?.workingHours || 0}","${r.att?.status || ''}","${r.presence}"`
+        `"${r.employeeId || ''}","${r.firstName} ${r.lastName}","${r.department || ''}","${r.designation || ''}","${r.att?.checkIn ? new Date(r.att.checkIn).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : ''}","${r.att?.checkOut ? new Date(r.att.checkOut).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : ''}","${r.att?.workingHours || 0}","${r.att?.status || ''}","${r.presence}"`
       ).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);

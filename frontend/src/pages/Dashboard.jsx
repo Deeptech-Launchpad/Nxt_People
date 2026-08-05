@@ -905,7 +905,7 @@ export default function Dashboard() {
                 {isCheckedOut && record?.checkOut && (
                   <div className="space-y-2">
                     <p className="text-[13px] text-slate-400 font-medium">
-                      Checked out at <span className="text-slate-600 font-bold">{new Date(record.checkOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                      Checked out at <span className="text-slate-600 font-bold">{new Date(record.checkOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'})}</span>
                     </p>
                     <button
                       onClick={handleCheckIn}
@@ -1324,7 +1324,7 @@ export default function Dashboard() {
                           <div>
                             <p className="text-[13.5px] font-bold text-slate-800">{f.title}</p>
                             <p className="text-[13px] text-slate-400 font-medium">
-                              {new Date(f.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {f.type?.toUpperCase() || 'UPDATE'}
+                              {new Date(f.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'})} • {f.type?.toUpperCase() || 'UPDATE'}
                             </p>
                           </div>
                         </div>
@@ -1530,7 +1530,7 @@ export default function Dashboard() {
 
                       // Pretty-print "09:48 AM" — Zoho's exact format.
                       const fmtClock = (iso) =>
-                        iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : null;
+                        iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : null;
 
                       const checkInTxt  = att?.checkIn  ? fmtClock(att.checkIn)  : 'No check-in';
                       const checkOutTxt = att?.checkOut ? fmtClock(att.checkOut) : 'No check-out';

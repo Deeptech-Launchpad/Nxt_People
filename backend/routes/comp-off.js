@@ -192,7 +192,7 @@ router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_inchar
     const co = existing.rows[0];
     if (!co) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Not found' }); }
 
-    if (String(co.employee_id) === String(req.user._id) && !isFullAccess(req.user.role)) {
+    if (String(co.employee_id) === String(req.user._id)) {
       await client.query('ROLLBACK');
       return res.status(403).json({ success: false, message: 'You cannot approve or reject your own comp-off request.' });
     }
@@ -267,15 +267,15 @@ router.post('/:id/use', audit('USE', 'comp_off'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'daysToUse must be a positive number.' });
     }
     const r = await pool.query(
-      `UPDATE comp_offs SET days_used = LEAST(days_earned, days_used + $1)
+      `UPDATE comp_offs SET days_used = days_used + $1
         WHERE id = $2 AND employee_id = $3 AND status = 'approved'
           AND (expires_at IS NULL OR expires_at >= CURRENT_DATE)
-          AND days_used < days_earned
+          AND days_used + $1 <= days_earned
         RETURNING id`,
       [days, req.params.id, req.user._id]
     );
     if (r.rows.length === 0) {
-      return res.status(400).json({ success: false, message: 'This comp-off credit is not available or has no remaining days.' });
+      return res.status(400).json({ success: false, message: 'This comp-off credit is not available, has expired, or does not have enough remaining days for that request.' });
     }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }

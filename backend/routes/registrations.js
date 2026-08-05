@@ -111,7 +111,22 @@ router.get('/validate-token/:token', async (req, res) => {
   }
 });
 
-router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => {
+function handleOnboardingUploadError(err, req, res, next) {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ success: false, message: 'One of the attached files is over 5 MB. Please pick a smaller file.' });
+    }
+    return res.status(400).json({ success: false, message: err.message });
+  }
+  return next(err);
+}
+
+router.post('/submit/:token', (req, res, next) => {
+  upload.fields(UPLOAD_FIELDS)(req, res, (err) => {
+    if (err) return handleOnboardingUploadError(err, req, res, next);
+    next();
+  });
+}, async (req, res) => {
   // Use a dedicated client for the whole transaction. The previous code
   // used pool.query('BEGIN') which can land BEGIN/COMMIT/ROLLBACK on
   // different physical connections under pool churn — silently breaking
@@ -144,6 +159,11 @@ router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => 
       education // JSON string
     } = req.body;
 
+    // Normalize PAN before storing — otherwise the same value gets stored
+    // inconsistently ("abcde1234f", "ABCDE 1234F", ...) depending on how the
+    // candidate typed it.
+    const panNormalized = panNumber ? panNumber.trim().toUpperCase().replace(/\s+/g, '') : panNumber;
+
     // Insert into employees table
     const empInsert = await client.query(`
       INSERT INTO employees (
@@ -162,7 +182,7 @@ router.post('/submit/:token', upload.fields(UPLOAD_FIELDS), async (req, res) => 
     `, [
       firstName, lastName, personalEmail, mobile, gender, dateOfBirth, maritalStatus, bloodGroup,
       alternateMobile, currentAddress, permanentAddress, city, state, country, pinCode,
-      aadhaarNumber, panNumber, passportNumber, drivingLicense, voterId, uanNumber,
+      aadhaarNumber, panNormalized, passportNumber, drivingLicense, voterId, uanNumber,
       emergencyContactName, emergencyContactRelationship, emergencyContactNumber, emergencyContactAlternate
     ]);
 
@@ -307,6 +327,69 @@ router.post('/generate-link', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// POST /generate-links-bulk — { emails: string[] } → one onboarding invite per
+// address. Each send is isolated: one recipient's SMTP failure is logged and
+// the batch continues, instead of one bad address aborting everyone after it.
+router.post('/generate-links-bulk', async (req, res) => {
+  const { emails } = req.body;
+  if (!Array.isArray(emails) || emails.length === 0) {
+    return res.status(400).json({ success: false, message: 'emails must be a non-empty array' });
+  }
+
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const companyName = process.env.COMPANY_NAME || 'AltiusNxt';
+  const results = [];
+
+  for (const email of emails) {
+    if (!email || typeof email !== 'string') {
+      results.push({ email, success: false, message: 'Invalid email' });
+      continue;
+    }
+    try {
+      const token = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      await pool.query(
+        'INSERT INTO onboarding_tokens (token, email, created_by, expires_at) VALUES ($1, $2, $3, $4)',
+        [tokenHash, email, req.user._id, expiresAt]
+      );
+
+      const link = `${frontendUrl}/onboarding/${token}`;
+
+      if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: email,
+          subject: `Welcome to ${companyName} - Onboarding Preboard Link`,
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
+              <h2 style="color: #0f172a; margin-bottom: 20px;">Welcome!</h2>
+              <p style="color: #475569; line-height: 1.5;">Please click the link below to complete your onboarding details. This is required for your preboarding process.</p>
+              <div style="margin: 30px 0;">
+                <a href="${link}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Complete Onboarding</a>
+              </div>
+              <p style="color: #64748b; font-size: 14px;">Or copy and paste this link into your browser:</p>
+              <p style="color: #2563eb; word-break: break-all; font-size: 14px;">${link}</p>
+              <p style="color: #ef4444; font-size: 13px; margin-top: 30px;">This link is valid for 7 days and is single-use.</p>
+            </div>
+          `
+        });
+      } else {
+        logger.warn('SMTP credentials not found in environment. Email not sent, returning link only.');
+      }
+
+      results.push({ email, success: true, link });
+    } catch (err) {
+      logger.error({ err: err?.message, email }, 'Failed to send bulk onboarding email');
+      results.push({ email, success: false, message: 'Failed to send onboarding email' });
+    }
+  }
+
+  res.json({ success: true, data: results });
 });
 
 router.get('/:id/full', async (req, res) => {
@@ -531,14 +614,20 @@ router.put('/:id/approve', async (req, res) => {
 router.put('/:id/reject', async (req, res) => {
   try {
     const { reason } = req.body;
-    const empRes = await pool.query('SELECT registration_status FROM employees WHERE id = $1', [req.params.id]);
+    const empRes = await pool.query('SELECT registration_status, email FROM employees WHERE id = $1', [req.params.id]);
     if (empRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Registration not found' });
     if (empRes.rows[0].registration_status !== 'pending') return res.status(400).json({ success: false, message: 'Only pending registrations can be rejected' });
 
+    // Free the email so the candidate can submit a fresh application later —
+    // employees.email is UNIQUE, so leaving it as-is would permanently block
+    // any future registration or onboarding-link attempt with that address.
+    // The original address stays embedded in the mangled value for HR reference.
+    const mangledEmail = `rejected-${req.params.id}+${empRes.rows[0].email}`;
+
     const up = await pool.query(`
-      UPDATE employees SET registration_status = 'rejected', rejection_reason = $1, approved_by = $2, approved_at = NOW() WHERE id = $3
+      UPDATE employees SET registration_status = 'rejected', rejection_reason = $1, approved_by = $2, approved_at = NOW(), email = $3 WHERE id = $4
       RETURNING id as "_id", first_name as "firstName", last_name as "lastName", email, registration_status as "registrationStatus"
-    `, [reason || 'Not specified', req.user._id, req.params.id]);
+    `, [reason || 'Not specified', req.user._id, mangledEmail, req.params.id]);
 
     res.json({ success: true, message: 'Registration rejected.', data: up.rows[0] });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
