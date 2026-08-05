@@ -1178,7 +1178,7 @@ export default function Dashboard() {
                             let label = null;        // text under the date
                             let labelColor = '';     // tailwind class
                             if (day.isHoliday) {
-                              label = day.holidayName || 'Holiday'; labelColor = 'text-teal-500';
+                              label = day.holidayName ? `${day.holidayName}(Holiday)` : 'Holiday'; labelColor = 'text-teal-500';
                             } else if (isWeekend) {
                               label = 'Weekend'; labelColor = 'text-orange-500';
                             } else if (isPast) {
@@ -1593,6 +1593,16 @@ export default function Dashboard() {
                                 }
                               }
 
+                              if (row.isHoliday) {
+                                return (
+                                  <>
+                                    <p className="text-slate-600">No check-in - No check-out</p>
+                                    <p className="text-[14px] font-semibold text-teal-500 mt-1">
+                                      {row.holidayName ? `${row.holidayName}(Holiday)` : 'Holiday'}
+                                    </p>
+                                  </>
+                                );
+                              }
                               if (isWeekend) {
                                 return (
                                   <>
