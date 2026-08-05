@@ -247,6 +247,7 @@ function getCurrentWeek(workingDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], holid
         dateNum: day,
         isWeekend,
         isHoliday: !!exception && exception.type !== 'working_day',
+        holidayName: (exception && exception.type !== 'working_day') ? exception.name : null,
         dateObj: d
       });
     }
@@ -1177,7 +1178,7 @@ export default function Dashboard() {
                             let label = null;        // text under the date
                             let labelColor = '';     // tailwind class
                             if (day.isHoliday) {
-                              label = 'Holiday'; labelColor = 'text-teal-500';
+                              label = day.holidayName || 'Holiday'; labelColor = 'text-teal-500';
                             } else if (isWeekend) {
                               label = 'Weekend'; labelColor = 'text-orange-500';
                             } else if (isPast) {
