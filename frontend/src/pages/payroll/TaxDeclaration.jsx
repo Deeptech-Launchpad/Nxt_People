@@ -7,7 +7,7 @@
  * standard deduction, which is automatic).
  */
 import React, { useEffect, useState } from 'react';
-import { FileText, IndianRupee, CheckCircle2, AlertCircle, Save, Info } from 'lucide-react';
+import { FileText, IndianRupee, CheckCircle2, AlertCircle, Save, Info, Lock } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { fmtINR, currentFY, StatusPill } from './_shared';
@@ -31,8 +31,12 @@ export default function TaxDeclaration() {
   const [existing, setExisting] = useState(null);
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
+  const [window_, setWindow]    = useState(null);
 
   useEffect(() => {
+    api.get(`/payroll/declaration-windows/current?fy=${fy}`)
+      .then(r => setWindow(r.data.data))
+      .catch(() => {});
     api.get('/payroll/declarations/my')
       .then(r => {
         const d = r.data.data;
@@ -71,6 +75,10 @@ export default function TaxDeclaration() {
   };
 
   const locked = existing?.status === 'approved';
+  const now = new Date();
+  const windowClosed = !window_ || !window_.isOpen
+    || (window_.opensAt && now < new Date(window_.opensAt))
+    || (window_.closesAt && now > new Date(window_.closesAt));
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-5">
@@ -81,6 +89,16 @@ export default function TaxDeclaration() {
           Declare your investments and rent to reduce TDS. Submit once a year — HR approves and the values feed your monthly payslip from the next run.
         </p>
       </div>
+
+      {/* Declaration window banner — only shown when submission is actually blocked */}
+      {windowClosed && !locked && (
+        <div className="rounded-xl px-4 py-3 border border-slate-200 bg-slate-50 flex items-center gap-3">
+          <Lock size={16} className="text-slate-500" />
+          <p className="text-[14px] text-slate-700">
+            The declaration window for FY {fy} is currently closed. Contact HR if you need to submit or revise your declaration.
+          </p>
+        </div>
+      )}
 
       {/* Current status banner */}
       {existing && (
@@ -169,7 +187,8 @@ export default function TaxDeclaration() {
             {form.regime === 'new' && <p className="text-[13px] text-slate-400">No exemptions under new regime</p>}
           </div>
           <button type="submit"
-                  disabled={saving || locked || loading}
+                  disabled={saving || locked || loading || windowClosed}
+                  title={windowClosed ? 'Declaration window is closed' : undefined}
                   className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[15px] font-semibold disabled:opacity-60">
             <Save size={13} /> {saving ? 'Submitting…' : existing ? 'Resubmit' : 'Submit Declaration'}
           </button>

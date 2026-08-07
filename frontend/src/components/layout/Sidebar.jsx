@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { isApprover, isFullAccess } from '../../utils/roles';
 import {
   Home, CalendarCheck, Clock, CalendarDays, Trophy,
-  LayoutGrid, PieChart, Users, AppWindow, Briefcase
+  LayoutGrid, PieChart, Users, AppWindow, Briefcase, Wallet
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -16,6 +16,8 @@ const NAV_ITEMS = [
     matches: p => p.startsWith('/time-tracker') },
   { to: '/leave-tracker',    icon: CalendarDays, label: 'Leave\nTracker',
     matches: p => p.startsWith('/leave-tracker') || p === '/leave' || p.startsWith('/wfh') || p.startsWith('/comp-off') || p.startsWith('/leave-calendar') || p.startsWith('/leave-encashment') },
+  { to: '/payroll/my',       icon: Wallet,       label: 'Payroll',
+    matches: p => p.startsWith('/payroll') },
   // Performance is intentionally disabled — feature isn't built out yet.
   // Visible in the sidebar so users see it's planned, but the click is
   // a no-op until we wire up goals/reviews/skills properly.
@@ -89,9 +91,10 @@ export default function Sidebar() {
   // Team Leads view their team via Team Space / Org Chart, not this page.
   const canManageEmployees = isFullAccess(user);
 
-  // Reports icon should also highlight on /daily-attendance, /payroll,
+  // Reports icon should also highlight on /daily-attendance,
   // /shifts, /shift-roster — they all live under the Reports section.
-  const isReportsActive = ['/reports', '/daily-attendance', '/payroll', '/shifts', '/shift-roster']
+  // Payroll now has its own dedicated nav item (see NAV_ITEMS above).
+  const isReportsActive = ['/reports', '/daily-attendance', '/shifts', '/shift-roster']
     .some(p => location.pathname.startsWith(p));
 
   return (

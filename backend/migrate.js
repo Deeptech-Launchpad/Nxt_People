@@ -48,6 +48,7 @@ const ORDER = [
   'migrate_location_logs.js',            // attendance_location_logs (check-in/out location history)
   'migrate_rename_roles.js',             // rename roles: super_admin→admin, hr→director, employee→team_member
   'migrate_sessions.js',                 // attendance_sessions (per check-in/out pairs)
+  'migrate_payroll_v2.js',               // payroll rebuild: templates, increments/arrears, versioned compliance settings, declaration windows, extended payslips
   'migrate_indexes.js',                  // perf indexes — run last
 ];
 

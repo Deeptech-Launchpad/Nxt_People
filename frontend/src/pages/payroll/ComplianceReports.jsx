@@ -4,11 +4,11 @@
  * given month. Each report pulls from locked/paid payslips only, so
  * draft slips never leak into a return that's filed with the govt.
  */
-import React, { useState } from 'react';
-import { Download, Calendar, Building2, ShieldCheck, FileSpreadsheet, FileBarChart, Banknote } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Download, Calendar, Building2, ShieldCheck, FileSpreadsheet, FileBarChart, Banknote, User } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
-import { MONTH_NAMES } from './_shared';
+import { MONTH_NAMES, currentFY } from './_shared';
 
 const REPORTS = [
   {
@@ -157,6 +157,68 @@ export default function ComplianceReports() {
       {/* Footnote */}
       <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[13px] text-slate-500">
         💡 These are register-style CSVs you can pass to your CA or upload to the respective portal. For Tamil Nadu PT, the filing date is monthly by the 15th. For PF, by the 15th. For ESI, by the 15th. TDS challan by the 7th.
+      </div>
+
+      <EmployeeSummaryReports />
+    </div>
+  );
+}
+
+/** Per-employee annual EPF / ESI contribution summary PDFs — separate from
+ *  the monthly org-wide CSV registers above, this is a document employees
+ *  sometimes need for loan applications, visa proof of income, etc. */
+function EmployeeSummaryReports() {
+  const [employees, setEmployees] = useState([]);
+  const [employeeId, setEmployeeId] = useState('');
+  const [fy, setFy] = useState(currentFY());
+  const [downloading, setDownloading] = useState(null);
+
+  useEffect(() => {
+    api.get('/payroll/admin/employees').then(r => setEmployees(r.data.data || [])).catch(() => {});
+  }, []);
+
+  const download = async (kind) => {
+    if (!employeeId) { toast.error('Pick an employee first'); return; }
+    setDownloading(kind);
+    try {
+      const r = await api.get(`/payroll/reports/${kind}-summary/${employeeId}?fy=${fy}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${kind}-summary-${fy}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      let msg = 'Failed';
+      if (err.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await err.response.data.text()).message || msg; } catch (_) {}
+      } else { msg = err.response?.data?.message || msg; }
+      toast.error(msg);
+    } finally { setDownloading(null); }
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5">
+      <h3 className="text-[17px] font-bold text-slate-800">Employee EPF / ESI Summary</h3>
+      <p className="text-[14px] text-slate-500 mt-0.5 mb-4">Annual per-employee contribution statement — for loan applications, income proof, etc.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <User size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <select value={employeeId} onChange={e => setEmployeeId(e.target.value)}
+            className="pl-7 pr-3 py-2 border border-slate-200 rounded-lg text-[14px] bg-white min-w-[220px]">
+            <option value="">Select employee…</option>
+            {employees.map(e => <option key={e._id} value={e._id}>{e.firstName} {e.lastName} ({e.employeeId})</option>)}
+          </select>
+        </div>
+        <select value={fy} onChange={e => setFy(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-2 text-[14px] bg-white">
+          {[currentFY(), '2025-26', '2024-25'].filter((v, i, a) => a.indexOf(v) === i).map(f => <option key={f} value={f}>{f}</option>)}
+        </select>
+        <button onClick={() => download('epf')} disabled={downloading === 'epf'}
+          className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[14px] font-semibold px-3 py-2 rounded-lg disabled:opacity-60">
+          <Download size={12} /> {downloading === 'epf' ? 'Generating…' : 'EPF Summary'}
+        </button>
+        <button onClick={() => download('esi')} disabled={downloading === 'esi'}
+          className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[14px] font-semibold px-3 py-2 rounded-lg disabled:opacity-60">
+          <Download size={12} /> {downloading === 'esi' ? 'Generating…' : 'ESI Summary'}
+        </button>
       </div>
     </div>
   );

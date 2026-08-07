@@ -10,7 +10,7 @@
  * Status lifecycle is rendered as a coloured pill (draft / locked / paid).
  */
 import React, { useEffect, useState, useMemo } from 'react';
-import { Play, Search, Eye, Lock, CheckCircle2, Trash2, Download, RefreshCw, FileText, Filter, AlertCircle, MailCheck } from 'lucide-react';
+import { Play, Search, Eye, Lock, CheckCircle2, Trash2, Download, RefreshCw, FileText, Filter, AlertCircle, MailCheck, ListChecks, X } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { MONTH_NAMES, SHORT_MONTHS, fmtINR, fmtINRshort, StatusPill, StatCard } from './_shared';
@@ -25,6 +25,8 @@ export default function PayrollRun() {
   const [search, setSearch]     = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewing, setViewing]   = useState(null);
+  const [preview, setPreview]   = useState(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -35,6 +37,16 @@ export default function PayrollRun() {
   };
 
   useEffect(load, [month, year]);
+
+  const runPreview = async () => {
+    setPreviewing(true);
+    try {
+      const r = await api.post('/payroll/admin/run-month/preview', { month, year });
+      setPreview(r.data);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Preview failed');
+    } finally { setPreviewing(false); }
+  };
 
   const runPayroll = async (force = false) => {
     if (!confirm(`Run payroll for ${MONTH_NAMES[month]} ${year}?\n\n${force ? '⚠️ Existing DRAFT payslips will be overwritten. Locked/paid are protected.' : 'Existing payslips will be skipped — flip the Force toggle to re-run.'}`)) return;
@@ -158,6 +170,13 @@ export default function PayrollRun() {
         </div>
         <div className="flex items-center gap-2">
           <PeriodPicker month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
+          <button
+            onClick={runPreview}
+            disabled={previewing}
+            className="flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-[15px] font-semibold disabled:opacity-60"
+          >
+            <ListChecks size={14} /> {previewing ? 'Previewing…' : 'Preview'}
+          </button>
           <button
             onClick={() => runPayroll(false)}
             disabled={running}
@@ -296,6 +315,62 @@ export default function PayrollRun() {
       )}
 
       {viewing && <PayslipModal id={viewing.id} onClose={() => setViewing(null)} adminScope />}
+      {preview && <PreviewModal data={preview} onClose={() => setPreview(null)} />}
+    </div>
+  );
+}
+
+/** Dry-run preview — same computation as run-month, writes nothing. Lets
+ *  the admin sanity-check LOP/gross/net before actually generating drafts. */
+function PreviewModal({ data, onClose }) {
+  const rows = data.data || [];
+  const withStructure = rows.filter(r => r.status !== 'no_structure');
+  const missing = rows.filter(r => r.status === 'no_structure');
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-[17px] font-bold text-slate-800">Preview — {MONTH_NAMES[data.month]} {data.year}</h3>
+            <p className="text-[14px] text-slate-500 mt-0.5">Working days: {data.workingDays}. Nothing is saved by this preview.</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600"><X size={16} /></button>
+        </div>
+        <div className="overflow-y-auto p-4 flex-1">
+          {missing.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 text-[14px] text-amber-800">
+              {missing.length} employee(s) have no salary structure yet and will be skipped: {missing.map(m => `${m.employee.firstName} ${m.employee.lastName}`).join(', ')}
+            </div>
+          )}
+          <table className="w-full text-[14px]">
+            <thead className="text-[12px] font-bold text-slate-500 uppercase">
+              <tr>
+                <th className="text-left py-1.5">Employee</th>
+                <th className="text-right py-1.5">Paid Days</th>
+                <th className="text-right py-1.5">LOP</th>
+                <th className="text-right py-1.5">Gross</th>
+                <th className="text-right py-1.5">Net</th>
+                <th className="text-right py-1.5">Arrears</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {withStructure.map((r, i) => (
+                <tr key={i}>
+                  <td className="py-1.5">{r.employee.firstName} {r.employee.lastName}</td>
+                  <td className="py-1.5 text-right">{r.paidDays}</td>
+                  <td className="py-1.5 text-right">{r.lopDays > 0 ? <span className="text-amber-700">{r.lopDays}</span> : '—'}</td>
+                  <td className="py-1.5 text-right">{fmtINR(r.grossEarnings)}</td>
+                  <td className="py-1.5 text-right font-semibold">{fmtINR(r.netPay)}</td>
+                  <td className="py-1.5 text-right">{r.arrearsAmount > 0 ? <span className="text-blue-700">{fmtINR(r.arrearsAmount)}</span> : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex justify-end gap-2 px-6 py-3 border-t border-slate-100">
+          <button onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-lg text-[15px] text-slate-600 hover:bg-slate-50">Close</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -386,20 +461,24 @@ export function PayslipModal({ id, onClose, adminScope = false }) {
 /** Pure visual body for the payslip — used both inside the admin modal
  *  and on the employee MyPayroll detail page. */
 export function PayslipBody({ p }) {
+  const other = Array.isArray(p.other_components) ? p.other_components : [];
   const earnings = [
-    ['Basic',             p.basic],
-    ['HRA',               p.hra],
-    ['Conveyance',        p.conveyance],
-    ['Medical',           p.medical],
-    ['Special Allowance', p.special_allowance],
-    ['Other Allowances',  p.other_allowances],
+    ['Basic', p.basic],
+    ['HRA', p.hra],
+    ['Conveyance', p.conveyance],
+    ...other.map(c => [c.name, c.value]),
+    ...(Number(p.arrears_amount) > 0 ? [['Arrears', p.arrears_amount]] : []),
+    ...(Number(p.bonus) > 0 ? [['Bonus', p.bonus]] : []),
+    ...(Number(p.overtime) > 0 ? [['Overtime', p.overtime]] : []),
+    ...(Number(p.reimbursement) > 0 ? [['Reimbursement', p.reimbursement]] : []),
   ];
   const deductions = [
-    ['PF (Employee)',     p.pf_employee],
-    ['ESI (Employee)',    p.esi_employee],
-    ['Professional Tax',  p.professional_tax],
-    ['TDS',               p.tds],
-    ['LOP Adjustment',    p.lop_amount],
+    ['PF (Employee)', p.pf_employee],
+    ['ESI (Employee)', p.esi_employee],
+    ['Professional Tax', p.professional_tax],
+    ['TDS', p.tds],
+    ...(Number(p.arrears_extra_tds) > 0 ? [['TDS on Arrears', p.arrears_extra_tds]] : []),
+    ...(Number(p.loan_recovery) > 0 ? [['Loan Recovery', p.loan_recovery]] : []),
   ];
   return (
     <div className="space-y-4">
@@ -412,13 +491,19 @@ export function PayslipBody({ p }) {
         <KV label="Bank Name"    value={p.bank_name} />
         <KV label="Bank Account" value={p.bank_account} />
         <KV label="Bank IFSC"    value={p.bank_ifsc} />
-        <KV label="Days Worked"  value={`${p.present_days} / ${p.working_days}${Number(p.lop_days) > 0 ? ` · LOP ${p.lop_days}` : ''}`} />
+        <KV label="Days Worked"  value={`${p.present_days} / ${p.working_days}${Number(p.lop_days) > 0 ? ` · LOP ${p.lop_days} (${fmtINR(p.lop_amount)})` : ''}`} />
       </div>
 
       {/* Earnings / Deductions */}
       <div className="grid md:grid-cols-2 gap-4">
         <Block title="Earnings" tint="emerald" rows={earnings} total={p.gross_earnings} />
         <Block title="Deductions" tint="rose" rows={deductions} total={p.total_deductions} />
+      </div>
+
+      {/* Employer contributions — not part of take-home, shown for transparency */}
+      <div className="border border-slate-200 rounded-xl px-4 py-3 text-[13px] text-slate-500 flex flex-wrap gap-x-6 gap-y-1">
+        <span>Employer PF: <span className="font-semibold text-slate-700">{fmtINR(p.employer_pf)}</span> (EPF {fmtINR(p.employer_epf)} + EPS {fmtINR(p.employer_eps)})</span>
+        <span>Employer ESI: <span className="font-semibold text-slate-700">{fmtINR(p.employer_esi)}</span></span>
       </div>
 
       {/* Net pay */}

@@ -35,7 +35,6 @@ const Announcements   = lazy(() => import('./pages/Announcements'));
 const WFHRequests     = lazy(() => import('./pages/WFHRequests'));
 const CompOff         = lazy(() => import('./pages/CompOff'));
 const Documents       = lazy(() => import('./pages/Documents'));
-const PayrollReport   = lazy(() => import('./pages/PayrollReport'));
 const PayrollSetup    = lazy(() => import('./pages/payroll/PayrollSetup'));
 const PayrollRun      = lazy(() => import('./pages/payroll/PayrollRun'));
 const MyPayroll       = lazy(() => import('./pages/payroll/MyPayroll'));
@@ -46,6 +45,10 @@ const ComplianceReports = lazy(() => import('./pages/payroll/ComplianceReports')
 const Adjustments       = lazy(() => import('./pages/payroll/Adjustments'));
 const Loans             = lazy(() => import('./pages/payroll/Loans'));
 const TaxSlabs          = lazy(() => import('./pages/payroll/TaxSlabs'));
+const SalaryTemplates   = lazy(() => import('./pages/payroll/SalaryTemplates'));
+const Increments        = lazy(() => import('./pages/payroll/Increments'));
+const ComplianceSettings = lazy(() => import('./pages/payroll/ComplianceSettings'));
+const DeclarationWindows = lazy(() => import('./pages/payroll/DeclarationWindows'));
 const Performance     = lazy(() => import('./pages/Performance'));
 const ExitManagement  = lazy(() => import('./pages/ExitManagement'));
 const ShiftRoster     = lazy(() => import('./pages/ShiftRoster'));
@@ -210,7 +213,6 @@ const AppRoutes = () => {
           <Route path="reports"            element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ReportsLanding/></ProtectedRoute>}/>
           <Route path="reports/attendance" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Reports/></ProtectedRoute>}/>
           <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><DailyAttendance/></ProtectedRoute>}/>
-          <Route path="payroll"                element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><PayrollReport/></ProtectedRoute>}/>
           <Route path="payroll/setup"          element={<ProtectedRoute roles={['admin','director']}><PayrollSetup/></ProtectedRoute>}/>
           <Route path="payroll/run"            element={<ProtectedRoute roles={['admin','director']}><PayrollRun/></ProtectedRoute>}/>
           <Route path="payroll/my"             element={<MyPayroll/>}/>
@@ -221,6 +223,10 @@ const AppRoutes = () => {
           <Route path="payroll/adjustments"    element={<ProtectedRoute roles={['admin','director']}><Adjustments/></ProtectedRoute>}/>
           <Route path="payroll/loans"          element={<ProtectedRoute roles={['admin','director']}><Loans/></ProtectedRoute>}/>
           <Route path="payroll/tax-slabs"      element={<ProtectedRoute roles={['admin','director']}><TaxSlabs/></ProtectedRoute>}/>
+          <Route path="payroll/templates"      element={<ProtectedRoute roles={['admin','director','hr_admin']}><SalaryTemplates/></ProtectedRoute>}/>
+          <Route path="payroll/increments"     element={<ProtectedRoute roles={['admin','director','hr_admin']}><Increments/></ProtectedRoute>}/>
+          <Route path="payroll/settings"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><ComplianceSettings/></ProtectedRoute>}/>
+          <Route path="payroll/declaration-windows" element={<ProtectedRoute roles={['admin','director','hr_admin']}><DeclarationWindows/></ProtectedRoute>}/>
           {/* Employee management — HR / Super Admin only. Team Leads view their
               team via Team Space / Org Chart, not this admin page. */}
           <Route path="employees"    element={<ProtectedRoute roles={['admin','director','hr_admin']}><Employees/></ProtectedRoute>}/>

@@ -3,7 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal } from 'lucide-react';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
-import { isApprover, roleLabel } from '../../utils/roles';
+import { roleLabel } from '../../utils/roles';
 import api from '../../utils/api';
 
 /* ── Section detection ─────────────────────────────────────────────── */
@@ -17,7 +17,8 @@ function getSection(pathname) {
   if (pathname.startsWith('/more-services') || pathname.startsWith('/documents')) return 'moreservices';
   if (pathname.startsWith('/employees') || pathname.startsWith('/registrations')) return 'employeemaster';
   if (pathname.startsWith('/my-apps') || pathname.startsWith('/api-connections')) return 'nxtapps';
-  if (pathname.startsWith('/reports') || pathname.startsWith('/payroll') ||
+  if (pathname.startsWith('/payroll')) return 'payroll';
+  if (pathname.startsWith('/reports') ||
       pathname.startsWith('/shifts') || pathname.startsWith('/shift-roster') ||
       pathname.startsWith('/daily-attendance')) return 'reports';
   return 'home';
@@ -178,6 +179,50 @@ const NAV = {
     label: 'Reports',
     isLanding: true,
     landingPath: '/reports',
+  },
+  payroll: {
+    label: 'Payroll',
+    primaryTabs: [
+      { key: 'mypayroll',      label: 'My Payroll',     to: '/payroll/my' },
+      { key: 'taxdeclaration', label: 'Tax Declaration', to: '/payroll/tax-declaration' },
+      { key: 'team',           label: 'Team',            to: '/payroll/team',   roles: ['admin', 'director', 'manager'] },
+      { key: 'payrollrun',     label: 'Payroll Run',     to: '/payroll/run',    roles: ['admin', 'director', 'hr_admin'] },
+      { key: 'salarysetup',    label: 'Salary Setup',    to: '/payroll/setup',  roles: ['admin', 'director', 'hr_admin'] },
+      { key: 'compliance',     label: 'Compliance',      to: '/payroll/compliance', roles: ['admin', 'director', 'hr_admin'] },
+    ],
+    getActiveTab: p => {
+      if (p.startsWith('/payroll/tax-declaration') || p.startsWith('/payroll/declarations')) return 'taxdeclaration';
+      if (p.startsWith('/payroll/team')) return 'team';
+      if (p.startsWith('/payroll/run') || p.startsWith('/payroll/increments')) return 'payrollrun';
+      if (p.startsWith('/payroll/setup') || p.startsWith('/payroll/templates')) return 'salarysetup';
+      if (p.startsWith('/payroll/compliance') || p.startsWith('/payroll/adjustments') || p.startsWith('/payroll/loans') ||
+          p.startsWith('/payroll/tax-slabs') || p.startsWith('/payroll/settings') || p.startsWith('/payroll/declaration-windows')) return 'compliance';
+      return 'mypayroll';
+    },
+    subNav: {
+      mypayroll:      [{ to: '/payroll/my', label: 'My Payslips' }],
+      taxdeclaration: [
+        { to: '/payroll/tax-declaration', label: 'Tax Declaration' },
+        { to: '/payroll/declarations',    label: 'Approvals', roles: ['admin', 'director', 'hr_admin'] },
+      ],
+      team:           [{ to: '/payroll/team', label: 'Team Payroll' }],
+      payrollrun: [
+        { to: '/payroll/run',        label: 'Run Payroll' },
+        { to: '/payroll/increments', label: 'Increments & Arrears' },
+      ],
+      salarysetup: [
+        { to: '/payroll/setup',     label: 'Salary Setup' },
+        { to: '/payroll/templates', label: 'Salary Templates' },
+      ],
+      compliance: [
+        { to: '/payroll/compliance',          label: 'Compliance Reports' },
+        { to: '/payroll/adjustments',         label: 'Adjustments' },
+        { to: '/payroll/loans',               label: 'Loans' },
+        { to: '/payroll/tax-slabs',           label: 'Tax Slabs' },
+        { to: '/payroll/settings',            label: 'Compliance Settings' },
+        { to: '/payroll/declaration-windows', label: 'Declaration Windows' },
+      ],
+    },
   },
 };
 
@@ -452,11 +497,10 @@ export default function Topbar() {
                 </span>
               );
             }
-            const targetTo = (key === 'reports' && !isApprover(user)) ? '/payroll/my' : to;
             return (
               <button key={key}
                 {...(key === 'team' ? { 'data-tour': 'topbar-team' } : {})}
-                onClick={() => navigate(targetTo)}
+                onClick={() => navigate(to)}
                 className={`h-full px-4 flex items-center text-[16px] border-b-[3px] transition-all duration-150 tracking-[-0.01em]
                   ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`}>
                 {label}

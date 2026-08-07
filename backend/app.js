@@ -162,8 +162,12 @@ app.use('/api/feedback',         require('./routes/feedback'));
 app.use('/api/documents',        require('./routes/documents'));
 app.use('/api/exit',             require('./routes/exit'));
 app.use('/api/roster',           require('./routes/roster'));
-app.use('/api/payroll',          require('./routes/payroll'));
-app.use('/api/payslips',         require('./routes/payslips'));
+app.use('/api/payroll',                       require('./routes/payroll'));
+app.use('/api/payroll/increments',            require('./routes/payroll-increments'));
+app.use('/api/payroll/templates',             require('./routes/payroll-templates'));
+app.use('/api/payroll/compliance-settings',   require('./routes/payroll-compliance-settings'));
+app.use('/api/payroll/declaration-windows',   require('./routes/payroll-declaration-windows'));
+app.use('/api/payroll/reports',               require('./routes/payroll-reports'));
 app.use('/api/encashments',      require('./routes/encashments'));
 // /api/messages removed — superseded by /api/chat (chat_dm_threads / chat_dm_messages).
 // The legacy chat_conversations/chat_messages tables are no longer read by the UI.
