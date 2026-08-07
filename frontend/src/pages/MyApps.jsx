@@ -25,14 +25,21 @@ const Icon = ({ name, ...rest }) => {
 export default function MyApps() {
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true);
+    setError(false);
     api.get('/my-apps')
       .then(r => setApps(r.data.data || []))
-      .catch(err => toast.error(err.response?.data?.message || 'Failed to load apps'))
+      .catch(err => {
+        setError(true);
+        toast.error(err.response?.data?.message || 'Failed to load apps');
+      })
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(load, []);
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-5">
@@ -47,6 +54,17 @@ export default function MyApps() {
 
       {loading ? (
         <div className="py-20 text-center text-slate-400">Loading…</div>
+      ) : error ? (
+        <div className="bg-white border-2 border-dashed border-rose-200 rounded-2xl py-16 text-center">
+          <Inbox size={40} className="mx-auto text-rose-300 mb-3" />
+          <p className="text-[16px] font-semibold text-slate-700">Couldn't load your apps</p>
+          <p className="text-[14px] text-slate-500 mt-1 max-w-md mx-auto">
+            Something went wrong while loading this page.
+          </p>
+          <button onClick={load} className="mt-3 text-[14px] font-semibold text-indigo-600 hover:text-indigo-700">
+            Retry
+          </button>
+        </div>
       ) : apps.length === 0 ? (
         <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl py-16 text-center">
           <Inbox size={40} className="mx-auto text-slate-300 mb-3" />

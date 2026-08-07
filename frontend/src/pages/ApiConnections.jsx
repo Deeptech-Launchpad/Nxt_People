@@ -160,7 +160,7 @@ function ConnectionModal({ connection, onClose, onSaved }) {
         </div>
         <div className="flex gap-3 mt-6">
           <button onClick={onClose} className="flex-1 bg-white hover:bg-slate-200 text-slate-700 font-medium py-2.5 rounded-xl text-base transition-all">Cancel</button>
-          <button onClick={handleSave} disabled={loading} className="flex-1 bg-brand-600 hover:bg-brand-500 text-slate-800 font-semibold py-2.5 rounded-xl text-base transition-all disabled:opacity-60 flex items-center justify-center gap-1.5">
+          <button onClick={handleSave} disabled={loading} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white font-semibold py-2.5 rounded-xl text-base transition-all disabled:opacity-60 flex items-center justify-center gap-1.5">
             {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Check size={14} /> Save</>}
           </button>
         </div>
@@ -272,6 +272,7 @@ function AccessManager({ connection, onClose }) {
   useEffect(() => { load(); }, [load]);
 
   const toggle = (employeeId, currentlyHas) => async () => {
+    if (currentlyHas && !window.confirm('Revoke access for this employee? They will be blocked from logging in immediately.')) return;
     setSaving(true);
     try {
       if (currentlyHas) await api.delete(`/api-connections/${connection._id}/access/${employeeId}`);
@@ -450,7 +451,7 @@ export default function ApiConnections() {
           <h1 className="font-display font-bold text-slate-800 text-3xl">API Connections</h1>
           <p className="text-slate-500 text-base mt-1">Connect external websites to sync data into the unified database.</p>
         </div>
-        <button onClick={() => { setEditTarget(null); setModalOpen(true); }} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-slate-800 font-semibold px-4 py-2.5 rounded-xl text-base transition-all shadow-lg shadow-brand-500/20">
+        <button onClick={() => { setEditTarget(null); setModalOpen(true); }} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white font-semibold px-4 py-2.5 rounded-xl text-base transition-all shadow-lg shadow-brand-500/20">
           <Plus size={15} /> New Connection
         </button>
       </div>

@@ -14,10 +14,14 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState('company');
 
   useEffect(() => {
-    api.get('/settings').then(r => setSettings(r.data.data)).catch(console.error).finally(() => setLoading(false));
+    api.get('/settings').then(r => setSettings(r.data.data)).catch((err) => {
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Failed to load settings');
+    }).finally(() => setLoading(false));
   }, []);
 
   const handleSave = async () => {
+    if (!settings) { toast.error('Settings failed to load — refresh the page and try again.'); return; }
     setSaving(true);
     try {
       const r = await api.put('/settings', settings);
@@ -116,13 +120,13 @@ export default function Settings() {
                 <div className="space-y-4 max-w-sm">
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1.5">Late Mark After (minutes from midnight)</label>
-                    <input type="number" value={settings?.lateAfterMinutes||570} onChange={e=>setSettings({...settings,lateAfterMinutes:parseInt(e.target.value)})}
+                    <input type="number" value={settings?.lateAfterMinutes||570} onChange={e=>{ const v = parseInt(e.target.value); setSettings({...settings,lateAfterMinutes: Number.isNaN(v) ? settings.lateAfterMinutes : v}); }}
                       className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
                     <p className="text-sm text-slate-400 mt-1">570 = 9:30 AM</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1.5">Half Day if less than (hours)</label>
-                    <input type="number" value={settings?.halfDayHours||4} onChange={e=>setSettings({...settings,halfDayHours:parseFloat(e.target.value)})} min={1} max={8} step={0.5}
+                    <input type="number" value={settings?.halfDayHours||4} onChange={e=>{ const v = parseFloat(e.target.value); setSettings({...settings,halfDayHours: Number.isNaN(v) ? settings.halfDayHours : v}); }} min={1} max={8} step={0.5}
                       className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
                   </div>
                   <label className="flex items-center gap-3 cursor-pointer">
@@ -179,7 +183,7 @@ export default function Settings() {
           )}
 
           {activeTab === 'weekends' && (
-            <div className="p-6">
+            <div>
               <p className="text-[14px] text-slate-500 mb-4">
                 Manage which days are weekends using Google-Calendar-style recurrence rules.
                 Changes apply across attendance, leave, and reports.
@@ -303,7 +307,7 @@ export default function Settings() {
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 flex justify-end">
-          <button onClick={handleSave} disabled={saving}
+          <button onClick={handleSave} disabled={saving || !settings}
             className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-6 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25 disabled:opacity-60">
             <Save size={15}/>{saving ? 'Saving...' : 'Save Changes'}
           </button>

@@ -470,7 +470,8 @@ export default function Dashboard() {
     /* ─ Department members state ─ */
     const [deptMembers, setDeptMembers] = useState([]);
     const [loadingDeptMembers, setLoadingDeptMembers] = useState(false);
-    const [showMembersModal, setShowMembersModal] = useState(false);
+    const [membersModalOpen, setMembersModalOpen] = useState(false);
+    const [membersSearch, setMembersSearch] = useState('');
 
     /* ─ Avatar lightbox state ─ Clicking your photo in the profile
        card opens a Zoho-style preview. Change Image now opens the OS
@@ -554,11 +555,11 @@ export default function Dashboard() {
 
 
    /* ─ load data */
-   // Helper: log + report widget failures so a network blip doesn't leave the
+   // Helper: log widget failures so a network blip doesn't leave the
    // Dashboard rendering stale empty arrays forever with no signal. We don't
-   // toast each one (too noisy if the whole API is down), but we do log them
-   // for Sentry/console and bump a banner counter that the UI can choose to
-   // surface. Each widget keeps rendering — partial Dashboard is still useful.
+   // toast each one (too noisy if the whole API is down) — failures are
+   // logged to the console only. Each widget keeps rendering — partial
+   // Dashboard is still useful.
    const logWidgetError = (name) => (err) => {
      // eslint-disable-next-line no-console
      console.warn(`[Dashboard] ${name} failed`, err?.response?.status, err?.message);
@@ -629,7 +630,7 @@ export default function Dashboard() {
     ]).then(([p, fl]) => {
       setPayslips(p.data.data || []);
       setFyList(fl.data.data || []);
-    }).catch(() => {}).finally(() => setPayslipsLoading(false));
+    }).catch(() => toast.error('Failed to load payslips')).finally(() => setPayslipsLoading(false));
    }, [activeTab, payslipFY]);
 
    /* ─ load pending approvals when tab is active */
@@ -743,10 +744,10 @@ export default function Dashboard() {
 
   /* ─ shift info from user.shift */
   const shift = user?.shift;
-  const shiftName = shift?.name || 'General Shift';
+  const shiftName = shift?.name || 'No shift assigned';
   const shiftTime = (shift?.start_time && shift?.end_time)
     ? `${shift.start_time} - ${shift.end_time}`
-    : '9:30 AM - 6:00 PM';
+    : '';
 
   /* ─ week range display (Attendance tab — offset-aware) */
   const now = new Date();
@@ -846,7 +847,7 @@ export default function Dashboard() {
               <div className="mt-2 px-4">
                 {/* Employee ID on top */}
                 <p className="text-[13px] font-semibold text-slate-500 tracking-wider">
-                  {user?.employeeId || 'ANXT260001'}
+                  {user?.employeeId || '—'}
                 </p>
                 {/* Full name */}
                 <h2 className="text-[17px] font-bold text-slate-800 tracking-tight mt-0.5">
@@ -977,8 +978,8 @@ export default function Dashboard() {
                        </div>
                      ))}
                      {deptMembers.length > 3 && (
-                       <button 
-                         onClick={() => setShowMembersModal(true)} 
+                       <button
+                         onClick={() => setMembersModalOpen(true)}
                          className="text-[14px] font-bold text-blue-600 hover:text-blue-700 mt-2 text-left transition-colors"
                        >
                          +{deptMembers.length - 3} More
@@ -1785,7 +1786,7 @@ export default function Dashboard() {
                           <thead>
                             <tr className="border-b border-slate-100">
                               {['Month','Gross Pay','Reimbursements','Deductions','Take Home','Payslips','Tax Worksheet'].map(h => (
-                                <th key={h} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                                <th key={h} className={`px-5 py-3 text-[13px] font-semibold text-slate-500 uppercase tracking-wider ${['Gross Pay','Reimbursements','Deductions','Take Home'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>
                               ))}
                             </tr>
                           </thead>
@@ -1797,10 +1798,10 @@ export default function Dashboard() {
                                     {MONTHS[(p.month || 1) - 1]} {p.year}
                                   </button>
                                 </td>
-                                <td className="px-5 py-3.5 text-[15px] text-slate-700">{fmtINR(p.grossPay)}</td>
-                                <td className="px-5 py-3.5 text-[15px] text-slate-700">{fmtINR(p.reimbursements)}</td>
-                                <td className="px-5 py-3.5 text-[15px] text-slate-700">{fmtINR(p.deductions)}</td>
-                                <td className="px-5 py-3.5 text-[13.5px] font-bold text-slate-800">{fmtINR(p.takeHome)}</td>
+                                <td className="px-5 py-3.5 text-[15px] text-slate-700 text-right tabular-nums">{fmtINR(p.grossPay)}</td>
+                                <td className="px-5 py-3.5 text-[15px] text-slate-700 text-right tabular-nums">{fmtINR(p.reimbursements)}</td>
+                                <td className="px-5 py-3.5 text-[15px] text-slate-700 text-right tabular-nums">{fmtINR(p.deductions)}</td>
+                                <td className="px-5 py-3.5 text-[13.5px] font-bold text-slate-800 text-right tabular-nums">{fmtINR(p.takeHome)}</td>
                                 <td className="px-5 py-3.5">
                                   {p.payslipUrl
                                     ? <a href={p.payslipUrl} target="_blank" rel="noreferrer" className="text-[15px] font-semibold text-[#1a73e8] hover:underline">View</a>
@@ -1927,28 +1928,28 @@ export default function Dashboard() {
        )}
 
        {/* Department Members Modal */}
-       {showMembersModal && (
+       {membersModalOpen && (
          <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4">
            <div className="bg-white rounded-xl w-full max-w-[500px] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
              <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50">
                <h3 className="text-[16px] font-bold text-slate-800">Department Members</h3>
-               <button onClick={() => setShowMembersModal(false)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors">
+               <button onClick={() => { setMembersModalOpen(false); setMembersSearch(''); }} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors">
                  <X size={16}/>
                </button>
              </div>
-             
+
              <div className="p-4 border-b border-slate-100">
                <div className="relative">
                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                 <input 
-                   type="text" 
-                   value={showMembersModal === true ? '' : showMembersModal} // Just using a local inline state pattern or I should just use the actual state
-                   onChange={e => setShowMembersModal(e.target.value || true)}
-                   placeholder="Search Employee" 
+                 <input
+                   type="text"
+                   value={membersSearch}
+                   onChange={e => setMembersSearch(e.target.value)}
+                   placeholder="Search Employee"
                    className="w-full pl-9 pr-4 py-2 text-[15px] border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                  />
-                 {typeof showMembersModal === 'string' && showMembersModal !== '' && (
-                   <button onClick={() => setShowMembersModal(true)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                 {membersSearch !== '' && (
+                   <button onClick={() => setMembersSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                      <X size={14} />
                    </button>
                  )}
@@ -1958,7 +1959,7 @@ export default function Dashboard() {
              <div className="flex-1 overflow-y-auto max-h-[60vh] p-4">
                <div className="flex flex-col">
                  {deptMembers
-                   .filter(m => typeof showMembersModal === 'string' ? `${m.firstName} ${m.lastName} ${m.employeeId}`.toLowerCase().includes(showMembersModal.toLowerCase()) : true)
+                   .filter(m => membersSearch ? `${m.firstName} ${m.lastName} ${m.employeeId}`.toLowerCase().includes(membersSearch.toLowerCase()) : true)
                    .map(member => (
                    <div key={member._id} className="flex items-start gap-3 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors rounded-lg px-2">
                      <div className="relative flex-shrink-0">
@@ -1976,7 +1977,7 @@ export default function Dashboard() {
                      </div>
                    </div>
                  ))}
-                 {deptMembers.filter(m => typeof showMembersModal === 'string' ? `${m.firstName} ${m.lastName} ${m.employeeId}`.toLowerCase().includes(showMembersModal.toLowerCase()) : true).length === 0 && (
+                 {deptMembers.filter(m => membersSearch ? `${m.firstName} ${m.lastName} ${m.employeeId}`.toLowerCase().includes(membersSearch.toLowerCase()) : true).length === 0 && (
                    <p className="text-center text-slate-500 text-[15px] py-4">No employees found matching your search.</p>
                  )}
                </div>

@@ -57,6 +57,7 @@ function loadGsi() {
 export default function GoogleSignInButton({ onMfaRequired }) {
   const btnRef = useRef(null);
   const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
   const { loginGoogle } = useAuth();
   const navigate = useNavigate();
 
@@ -98,7 +99,7 @@ export default function GoogleSignInButton({ onMfaRequired }) {
         });
         setReady(true);
       })
-      .catch(() => { /* leave hidden; password login still works */ });
+      .catch(() => { setFailed(true); /* leave hidden; password login still works */ });
 
     return () => { cancelled = true; };
   }, [loginGoogle, navigate, onMfaRequired]);
@@ -114,7 +115,7 @@ export default function GoogleSignInButton({ onMfaRequired }) {
       </div>
       {/* Google renders its official button into this container. */}
       <div ref={btnRef} className="flex justify-center min-h-[44px]" />
-      {!ready && (
+      {!ready && !failed && (
         <p className="text-center text-sm text-slate-400 mt-2">Loading Google Sign-In…</p>
       )}
     </div>

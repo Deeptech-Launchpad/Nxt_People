@@ -71,7 +71,9 @@ export default function DashboardWidgets() {
         
         {/* Row 1 */}
         <Card title="New Hires" className="min-h-[220px]">
-          {newHires.length === 0 ? (
+          {loading ? (
+            <EmptyState text="Loading…" />
+          ) : newHires.length === 0 ? (
             <EmptyState text="No New Joinees in past 30 days." />
           ) : (
             <div className="space-y-3">
@@ -90,25 +92,31 @@ export default function DashboardWidgets() {
           )}
         </Card>
 
-        <Card title="🎂 Birthday" className="min-h-[220px] p-0 overflow-auto">
-          {birthdays.length === 0 ? (
-            <div className="p-5 flex-1 flex items-center justify-center">
-              <EmptyState text="No birthdays this month." />
-            </div>
-          ) : (
-            birthdays.map((e, i) => (
-              <div key={i} className="flex items-start gap-3 border border-slate-100 rounded-lg p-3 m-3 shadow-sm bg-white">
-                <div className="w-12 h-12 rounded-lg border border-slate-200 overflow-hidden flex-shrink-0 bg-slate-50">
-                  <img src={`https://ui-avatars.com/api/?name=${e.firstName}+${e.lastName || ''}&background=f8f9fc&color=475569`} alt="avatar" className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <p className="text-[14px] font-semibold text-slate-500 mb-1">{e.employeeId || `EMP-${i+1}`} - {e.firstName}</p>
-                  <p className="text-[14px] text-slate-700 leading-snug">{e.designation || 'Employee'}</p>
-                  <p className="text-[13px] text-slate-400 mt-1">{e.department || 'Unassigned'}</p>
-                </div>
+        <Card title="🎂 Birthday" className="min-h-[220px] p-0">
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="p-5 flex items-center justify-center">
+                <EmptyState text="Loading…" />
               </div>
-            ))
-          )}
+            ) : birthdays.length === 0 ? (
+              <div className="p-5 flex items-center justify-center">
+                <EmptyState text="No birthdays this month." />
+              </div>
+            ) : (
+              birthdays.map((e, i) => (
+                <div key={i} className="flex items-start gap-3 border border-slate-100 rounded-lg p-3 m-3 shadow-sm bg-white">
+                  <div className="w-12 h-12 rounded-lg border border-slate-200 overflow-hidden flex-shrink-0 bg-slate-50">
+                    <img src={`https://ui-avatars.com/api/?name=${e.firstName}+${e.lastName || ''}&background=f8f9fc&color=475569`} alt="avatar" className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                    <p className="text-[14px] font-semibold text-slate-500 mb-1">{e.employeeId || `EMP-${i+1}`} - {e.firstName}</p>
+                    <p className="text-[14px] text-slate-700 leading-snug">{e.designation || 'Employee'}</p>
+                    <p className="text-[13px] text-slate-400 mt-1">{e.department || 'Unassigned'}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </Card>
 
         <Card title="Favorites" className="min-h-[220px]">
@@ -121,7 +129,9 @@ export default function DashboardWidgets() {
         </Card>
 
         <Card title="Announcements" className="min-h-[280px]">
-          {announcements.length === 0 ? (
+          {loading ? (
+            <EmptyState text="Loading…" />
+          ) : announcements.length === 0 ? (
             <EmptyState text="No announcements" />
           ) : (
             <div className="space-y-5 -mt-2">
@@ -147,7 +157,9 @@ export default function DashboardWidgets() {
 
         <Card title="Leave Report" className="min-h-[280px]">
           <div className="space-y-4 -mt-2">
-            {leaveBalance.length === 0 ? (
+            {loading ? (
+              <EmptyState text="Loading…" />
+            ) : leaveBalance.length === 0 ? (
               <EmptyState text="No leave data" />
             ) : leaveBalance.map((lb, i) => {
               const isHours = lb.unit === 'hours';
@@ -177,7 +189,9 @@ export default function DashboardWidgets() {
 
         {/* Row 3 */}
         <Card title="Upcoming Holidays" className="min-h-[220px]">
-          {holidays.length === 0 ? (
+          {loading ? (
+            <EmptyState text="Loading…" />
+          ) : holidays.length === 0 ? (
             <EmptyState text="No upcoming holidays" />
           ) : (
             <div className="space-y-0 -m-5">

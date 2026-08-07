@@ -189,7 +189,10 @@ export default function Profile() {
           emergencyContactRelation: d.emergencyContactRelation || '',
         });
       })
-      .catch(console.error)
+      .catch((err) => {
+        console.error(err);
+        toast.error(err.response?.data?.message || 'Failed to load profile');
+      })
       .finally(() => setLoading(false));
   };
 
@@ -234,7 +237,20 @@ export default function Profile() {
       </div>
     );
   }
-  if (!profile) return null;
+  if (!profile) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+        <p className="text-[15px] text-slate-500">Couldn't load your profile.</p>
+        <button
+          type="button"
+          onClick={load}
+          className="text-[14px] font-semibold text-brand-600 hover:text-brand-500"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const initials = `${profile.firstName?.[0] || ''}${profile.lastName?.[0] || ''}`.toUpperCase();
   const fullName = `${profile.firstName || ''} ${profile.lastName || ''}`.trim();
@@ -381,7 +397,7 @@ export default function Profile() {
                   type="button"
                   onClick={triggerPhotoPicker}
                   disabled={uploadingPhoto}
-                  className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-white bg-[#1a73e8] hover:bg-[#1557B0] px-3 py-1.5 rounded-md transition-colors disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-white bg-brand-600 hover:bg-brand-500 px-3 py-1.5 rounded-md transition-colors disabled:opacity-60"
                 >
                   <Camera size={13} /> {profile.photoUrl ? 'Change photo' : 'Upload photo'}
                 </button>
@@ -428,7 +444,7 @@ export default function Profile() {
           <Row label="Work Location">{profile.workLocation}</Row>
           <Row label="Employment Type">{profile.employmentType}</Row>
           <Row label="Source of Hire">{profile.sourceOfHire}</Row>
-          <Row label="Role">{profile.role}</Row>
+          <Row label="Role">{profile.role ? roleLabel(profile.role) : null}</Row>
           <Row label="Date of Joining">{fmtDate(profile.joiningDate)}</Row>
           <Row label="Total Experience">{profile.totalExperience}</Row>
           <Row label="Expertise">{profile.expertise}</Row>
@@ -553,7 +569,7 @@ export default function Profile() {
               <button
                 type="button"
                 onClick={() => setPwModal(true)}
-                className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-[#1a73e8] hover:text-[#1557B0]"
+                className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-brand-600 hover:text-brand-500"
               >
                 <Key size={12} /> Change
               </button>
@@ -664,7 +680,7 @@ export default function Profile() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 bg-[#1a73e8] hover:bg-[#1557B0] text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   <Save size={14} />
                   {saving ? 'Saving...' : 'Save Changes'}
@@ -716,7 +732,7 @@ export default function Profile() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 bg-[#1a73e8] hover:bg-[#1557B0] text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60"
+                  className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60"
                 >
                   {saving ? 'Updating...' : 'Update Password'}
                 </button>

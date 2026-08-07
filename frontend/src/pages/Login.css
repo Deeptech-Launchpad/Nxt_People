@@ -70,14 +70,17 @@
 .nxt-login .step-sub { font-size: 14px; color: #64748b; margin-bottom: 28px; }
 
 .nxt-login .email-back {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
   font-size: 13px; font-weight: 500; color: #64748b;
   border-radius: 100px; padding: 5px 12px 5px 8px;
   margin-bottom: 20px; cursor: pointer; background: none; border: none;
   font-family: var(--login-font); transition: color .15s;
 }
 .nxt-login .email-back:hover { color: #1c1c2e; }
-.nxt-login .email-back-addr { font-weight: 600; color: #334155; }
+.nxt-login .email-back-addr {
+  font-weight: 600; color: #334155;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .nxt-login .welcome-block { margin-bottom: 24px; }
 .nxt-login .welcome-title { font-size: 26px; font-weight: 700; color: #0f172a; letter-spacing: -0.3px; margin-bottom: 4px; }

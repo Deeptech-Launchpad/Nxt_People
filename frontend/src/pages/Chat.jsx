@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Send, Search, UserPlus, Check, X, Clock, Circle, MessageCircle } from 'lucide-react';
+import { Send, Search, UserPlus, Check, X, Clock, Circle, MessageCircle, ArrowLeft } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 
@@ -103,6 +104,7 @@ export default function Chat() {
     setSearching(true);
     const t = setTimeout(async () => {
       try { setSearchResults(await searchEmployees(searchQ)); }
+      catch (err) { console.error(err); toast.error('Search failed'); setSearchResults([]); }
       finally { setSearching(false); }
     }, 250);
     return () => clearTimeout(t);
@@ -123,9 +125,14 @@ export default function Chat() {
   const handleSend = (e) => {
     e?.preventDefault?.();
     if (!activePeer || !draft.trim()) return;
-    sendMessage(activePeer.id, draft).catch(console.error);
+    const text = draft;
     setDraft('');
     sendTyping(activePeer.id, false);
+    sendMessage(activePeer.id, text).catch((err) => {
+      console.error(err);
+      setDraft(text);
+      toast.error('Message failed to send');
+    });
   };
 
   const handleDraftChange = (e) => {
@@ -152,8 +159,10 @@ export default function Chat() {
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 flex overflow-hidden" style={{ height: 'calc(100vh - 9rem)' }}>
-      {/* ───────── Left sidebar: contacts + requests + search ───────── */}
-      <aside className="w-[340px] border-r border-slate-200 flex flex-col">
+      {/* ───────── Left sidebar: contacts + requests + search ─────────
+          On mobile, only one pane shows at a time — the sidebar hides once a
+          conversation is open, and the back button in the header returns to it. */}
+      <aside className={`${activePeer ? 'hidden md:flex' : 'flex'} w-full md:w-[340px] border-r border-slate-200 flex-col`}>
         <div className="p-3 border-b border-slate-200">
           <div className="flex items-center gap-2 mb-2">
             <MessageCircle size={16} className="text-blue-600" />
@@ -309,10 +318,18 @@ export default function Chat() {
       </aside>
 
       {/* ───────── Right pane: conversation ───────── */}
-      <section className="flex-1 flex flex-col bg-slate-50">
+      <section className={`${activePeer ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-slate-50`}>
         {activePeer ? (
           <>
             <header className="flex items-center gap-3 px-5 py-3 bg-white border-b border-slate-200">
+              <button
+                type="button"
+                onClick={() => setActivePeer(null)}
+                className="md:hidden -ml-1 text-slate-500 hover:text-slate-800"
+                aria-label="Back to conversations"
+              >
+                <ArrowLeft size={18} />
+              </button>
               <Avatar name={`${activePeer.firstName} ${activePeer.lastName}`} photoUrl={activePeer.photoUrl} online={presence[activePeer.id]} size={36} />
               <div className="min-w-0">
                 <p className="text-[16px] font-bold text-slate-800 truncate">{activePeer.firstName} {activePeer.lastName}</p>

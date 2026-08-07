@@ -275,8 +275,8 @@ function StepAccept({ email, firstName, setupToken, onBack }) {
       <button type="button" className="email-back" onClick={onBack}>
         <ArrowLeft size={14} /> Back
       </button>
-      <div className="status-icon" style={{ background: 'rgba(230,51,41,0.1)' }}>
-        <CheckCircle2 size={26} color="#e63329" />
+      <div className="status-icon" style={{ background: 'rgba(5,150,105,0.1)' }}>
+        <CheckCircle2 size={26} color="#059669" />
       </div>
       <h1 className="step-title">You're approved!</h1>
       <p className="step-sub" style={{ marginBottom: 16 }}>
