@@ -157,7 +157,11 @@ const NAV = {
     ],
     getActiveTab: p => p.startsWith('/registrations') ? 'registrations' : 'employees',
     subNav: {
-      employees: [{ to: '/employees', label: 'Employees' }],
+      // No second-tier row for 'employees' — the primary tab above already
+      // reads "Employees"; a single-item sub-nav repeating the same label
+      // was pure redundancy. subNavItems.length > 0 gates the whole white
+      // bar, so an empty array here just cleanly hides it.
+      employees: [],
       registrations: [{ to: '/registrations', label: 'Registrations' }],
     },
   },

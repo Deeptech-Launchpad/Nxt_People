@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, X, ChevronLeft, ChevronRight, Mail, Send, Eye, FileText, Download, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, ChevronLeft, ChevronRight, ChevronDown, Mail, Send, Eye, FileText, Download, RefreshCw, CheckCircle2 } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -57,7 +57,8 @@ export default function Employees() {
   const [deptFilter, setDeptFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [desigFilter, setDesigFilter] = useState('');
-  // 'active' (default) | 'inactive' (terminated/resigned/etc.)
+  // 'active' (default) | 'inactive' (catch-all for everything but active) |
+  // a specific status value ('notice_period' | 'resigned' | 'terminated')
   const [statusFilter, setStatusFilter] = useState('active');
   const [loading, setLoading] = useState(true);
   // Zoho sync state — only used by admins
@@ -138,7 +139,7 @@ export default function Employees() {
   // which let admin pick any employee as a manager.
   const [managers, setManagers] = useState([]);
   const [approvingAuthorities, setApprovingAuthorities] = useState([]);
-  const limit = 10;
+  const [limit, setLimit] = useState(10);
 
   const load = () => {
     setLoading(true);
@@ -174,7 +175,7 @@ export default function Employees() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
-  useEffect(load, [page, search, deptFilter, roleFilter, desigFilter, statusFilter]);
+  useEffect(load, [page, limit, search, deptFilter, roleFilter, desigFilter, statusFilter]);
 
   const openCreate = () => {
     setEditEmp(null);
@@ -423,18 +424,24 @@ export default function Employees() {
 
   return (
     <div className="space-y-5">
-      {/* Current vs Ex Employees tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
-        {[
-          { key: 'active',   label: 'Active Employees' },
-          { key: 'inactive', label: 'Inactive Employees'      },
-        ].map(t => (
-          <button key={t.key}
-            onClick={() => { setStatusFilter(t.key); setPage(1); }}
-            className={`px-4 py-1.5 rounded-md text-[14px] font-medium transition-all ${statusFilter === t.key ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
-            {t.label}
-          </button>
-        ))}
+      {/* Employee status filter — plain style matching the Department/
+          Designation/Role filters below it, with breathing room above so
+          it's clearly separated from the top bar. */}
+      <div className="relative w-fit mt-3">
+        <select
+          value={statusFilter}
+          onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+          className="appearance-none pl-4 pr-9 py-2.5 text-base text-slate-700 bg-white border border-slate-200 rounded-xl shadow-sm cursor-pointer transition-colors focus:outline-none focus:border-brand-400"
+        >
+          {[
+            { key: 'active',        label: 'Active Employees' },
+            { key: 'inactive',      label: 'Inactive Employees' },
+            { key: 'notice_period', label: 'Notice Period Employees' },
+            { key: 'terminated',    label: 'Terminated' },
+            { key: 'resigned',      label: 'Resigned' },
+          ].map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -545,9 +552,21 @@ export default function Employees() {
             </div>
             <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100">
               <p className="text-base text-slate-500">Showing {Math.min((page-1)*limit+1, total)}–{Math.min(page*limit, total)} of {total} employees</p>
-              <div className="flex gap-2">
-                <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 disabled:opacity-40 hover:bg-slate-200 transition-colors"><ChevronLeft size={16}/></button>
-                <button onClick={()=>setPage(p=>Math.min(pages,p+1))} disabled={page>=pages} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 disabled:opacity-40 hover:bg-slate-200 transition-colors"><ChevronRight size={16}/></button>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-slate-500">Rows per page</span>
+                  <select
+                    value={limit}
+                    onChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
+                    className="px-2 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-brand-400"
+                  >
+                    {[10, 20, 30, 50, 100, 150].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 disabled:opacity-40 hover:bg-slate-200 transition-colors"><ChevronLeft size={16}/></button>
+                  <button onClick={()=>setPage(p=>Math.min(pages,p+1))} disabled={page>=pages} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 disabled:opacity-40 hover:bg-slate-200 transition-colors"><ChevronRight size={16}/></button>
+                </div>
               </div>
             </div>
           </>
