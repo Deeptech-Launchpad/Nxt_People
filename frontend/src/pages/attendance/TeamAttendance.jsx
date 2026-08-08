@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Search, Phone, ChevronDown } from 'lucide-react';
 import api from '../../utils/api';
+import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 
 export default function TeamAttendance() {
@@ -20,7 +21,7 @@ export default function TeamAttendance() {
         setAttendance(r.data.data || []);
         setIsWeekend(!!r.data.isWeekend);
       })
-      .catch(() => {})
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load team attendance'))
       .finally(() => setLoading(false));
   }, [date]);
 

@@ -59,6 +59,7 @@ export default function AttendanceLocation() {
 
   const [type, setType] = useState('');
   const [employeeId, setEmployeeId] = useState('');
+  const [employeeSearch, setEmployeeSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [directory, setDirectory] = useState([]);
@@ -120,6 +121,10 @@ export default function AttendanceLocation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
+  const filteredDirectory = employeeSearch
+    ? directory.filter(e => `${e.firstName} ${e.lastName} ${e.employeeId || ''}`.toLowerCase().includes(employeeSearch.toLowerCase()))
+    : directory;
+
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const colSpan = full ? 6 : 5;
 
@@ -154,10 +159,19 @@ export default function AttendanceLocation() {
             {TYPE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
           </select>
           {full && (
-            <select value={employeeId} onChange={e => setEmployeeId(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] bg-white focus:outline-none focus:border-blue-400 max-w-[220px]">
-              <option value="">All Employees</option>
-              {directory.map(e => <option key={e._id} value={e._id}>{e.firstName} {e.lastName}{e.employeeId ? ` (${e.employeeId})` : ''}</option>)}
-            </select>
+            <>
+              <input
+                type="text"
+                value={employeeSearch}
+                onChange={e => setEmployeeSearch(e.target.value)}
+                placeholder="Search employee..."
+                className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[14px] bg-white focus:outline-none focus:border-blue-400 w-36"
+              />
+              <select value={employeeId} onChange={e => setEmployeeId(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] bg-white focus:outline-none focus:border-blue-400 max-w-[220px]">
+                <option value="">All Employees</option>
+                {filteredDirectory.map(e => <option key={e._id} value={e._id}>{e.firstName} {e.lastName}{e.employeeId ? ` (${e.employeeId})` : ''}</option>)}
+              </select>
+            </>
           )}
           <div className="flex items-center gap-1">
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} title="From" className="border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] bg-white focus:outline-none focus:border-blue-400" />
@@ -165,7 +179,7 @@ export default function AttendanceLocation() {
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} title="To" className="border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] bg-white focus:outline-none focus:border-blue-400" />
           </div>
           {(type || employeeId || startDate || endDate) && (
-            <button onClick={() => { setType(''); setEmployeeId(''); setStartDate(''); setEndDate(''); }}
+            <button onClick={() => { setType(''); setEmployeeId(''); setEmployeeSearch(''); setStartDate(''); setEndDate(''); }}
               className="text-[14px] text-blue-600 hover:text-blue-700 font-medium ml-1">Clear</button>
           )}
         </div>
@@ -229,8 +243,14 @@ export default function AttendanceLocation() {
                         <span className={`inline-flex items-center gap-1.5 text-[13px] font-semibold px-2.5 py-1 rounded-full border ${wm.cls}`}>
                           {wm.icon} {wm.label}
                         </span>
-                      ) : (
+                      ) : !ck ? (
                         <span className="text-[14px] text-slate-400">—</span>
+                      ) : place === undefined ? (
+                        <span className="text-[14px] text-slate-400 italic">Locating…</span>
+                      ) : !keywords.length ? (
+                        <span className="text-[14px] text-slate-400" title="No office area configured in Settings">Not configured</span>
+                      ) : (
+                        <span className="text-[14px] text-slate-400" title="Couldn't resolve this location">Unknown</span>
                       )}
                     </td>
                   </tr>

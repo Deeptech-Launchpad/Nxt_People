@@ -1,7 +1,9 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
-import { Clock, MapPin, CheckCircle, LogIn, LogOut, Navigation, AlertTriangle, Wifi, WifiOff } from 'lucide-react';
+import { Clock, MapPin, CheckCircle, LogIn, LogOut, Navigation, AlertTriangle, Wifi, WifiOff, Building2, Home, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAttendance } from '../../context/AttendanceContext';
+import api from '../../utils/api';
+import { reverseGeocode } from '../../utils/reverseGeocode';
 import BackButton from '../../components/BackButton';
 
 function useGeolocation() {
@@ -36,6 +38,25 @@ export default function CheckInOut() {
   const [time, setTime] = useState(new Date());
   const [gpsWarning, setGpsWarning] = useState(null);
   const { position, gpsError, gpsLoading, refresh: refreshGps } = useGeolocation();
+
+  // Work Mode — same approach as AttendanceLocation.jsx: reverse-geocode the
+  // live GPS fix and match it against the configured office-area keyword.
+  const [officeAreaName, setOfficeAreaName] = useState('');
+  const [place, setPlace] = useState(undefined); // undefined=resolving, null=unresolved, string=resolved
+  useEffect(() => {
+    api.get('/attendance/location?limit=1').then(r => setOfficeAreaName(r.data.officeAreaName || '')).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!position) return;
+    setPlace(undefined);
+    let cancelled = false;
+    reverseGeocode(position.latitude, position.longitude).then(name => { if (!cancelled) setPlace(name ?? null); });
+    return () => { cancelled = true; };
+  }, [position]);
+  const keywords = officeAreaName ? officeAreaName.split(',').map(k => k.trim().toLowerCase()).filter(Boolean) : [];
+  const workMode = (place && keywords.length)
+    ? (keywords.some(k => place.toLowerCase().includes(k)) ? 'office' : 'wfh')
+    : null;
 
   useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
 
@@ -78,12 +99,40 @@ export default function CheckInOut() {
           </div>
           <p className="text-slate-700 font-semibold">{dateStr}</p>
 
-          {/* Work Mode Status */}
-          <div className="flex items-center justify-center gap-2 mt-3 text-sm px-3 py-1.5 rounded-full w-fit mx-auto border bg-blue-50 border-blue-200 text-blue-700">
-            <MapPin size={11} /> Work Mode: Office
+          {/* Work Mode Status — derived from the live GPS fix, mirrors AttendanceLocation.jsx */}
+          <div className={`flex items-center justify-center gap-2 mt-3 text-sm px-3 py-1.5 rounded-full w-fit mx-auto border ${
+            workMode === 'office' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+            workMode === 'wfh'    ? 'bg-amber-50 border-amber-200 text-amber-700' :
+                                     'bg-slate-50 border-slate-200 text-slate-500'
+          }`}>
+            {workMode === 'office' ? <Building2 size={11} /> : workMode === 'wfh' ? <Home size={11} /> : <MapPin size={11} />}
+            Work Mode: {
+              workMode === 'office' ? 'Office' :
+              workMode === 'wfh'    ? 'Work From Home' :
+              gpsError              ? 'Unavailable' :
+              gpsLoading || place === undefined ? 'Detecting…' :
+              !keywords.length      ? 'Not configured' : 'Unknown'
+            }
           </div>
         </div>
       </div>
+
+      {/* GPS status banner — surfaces denial/timeout instead of failing silently */}
+      {gpsError && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl px-4 py-3 flex items-center gap-3 text-sm">
+          <WifiOff size={16} className="flex-shrink-0" />
+          <span className="flex-1">Location unavailable: {gpsError}. Check-in will still work, but Work Mode can't be detected.</span>
+          <button onClick={refreshGps} className="flex items-center gap-1 font-semibold text-amber-700 hover:text-amber-900 flex-shrink-0">
+            <RefreshCw size={13} /> Retry
+          </button>
+        </div>
+      )}
+      {gpsWarning && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl px-4 py-3 flex items-center gap-3 text-sm">
+          <AlertTriangle size={16} className="flex-shrink-0" />
+          <span>{gpsWarning}</span>
+        </div>
+      )}
 
 
       {/* Attendance card */}

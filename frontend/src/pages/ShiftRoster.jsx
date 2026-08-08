@@ -88,7 +88,7 @@ export default function ShiftRoster() {
   const filtered = deptFilter ? employees.filter(e => e.department === deptFilter) : employees;
 
   const shiftColorMap = {};
-  shifts.forEach((s, i) => { shiftColorMap[s.id] = SHIFT_COLORS[i % SHIFT_COLORS.length]; });
+  shifts.forEach((s, i) => { shiftColorMap[s._id] = SHIFT_COLORS[i % SHIFT_COLORS.length]; });
 
   const weekLabel = `${weekDates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekDates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   const isCurrentWeek = getMondayOfWeek(new Date()).toLocaleDateString('en-CA') === monday.toLocaleDateString('en-CA');
@@ -118,9 +118,9 @@ export default function ShiftRoster() {
       {/* Shift legend */}
       <div className="flex flex-wrap gap-3">
         {shifts.map(s => (
-          <div key={s.id} className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border font-medium ${shiftColorMap[s.id]}`}>
+          <div key={s._id} className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border font-medium ${shiftColorMap[s._id]}`}>
             <span>{s.name}</span>
-            <span className="opacity-70">{s.start_time?.substring(0,5)}–{s.end_time?.substring(0,5)}</span>
+            <span className="opacity-70">{s.startTime?.substring(0,5)}–{s.endTime?.substring(0,5)}</span>
           </div>
         ))}
       </div>
@@ -191,7 +191,7 @@ export default function ShiftRoster() {
                               className="text-sm border border-dashed border-slate-200 rounded-xl px-2 py-1.5 text-slate-300 hover:border-brand-300 hover:text-brand-500 transition-colors cursor-pointer focus:outline-none bg-transparent"
                               defaultValue="">
                               <option value="" disabled>+ Assign</option>
-                              {shifts.map(s => <option key={s.id} value={s.id}>{s.name} ({s.start_time?.substring(0,5)})</option>)}
+                              {shifts.map(s => <option key={s._id} value={s._id}>{s.name} ({s.startTime?.substring(0,5)})</option>)}
                             </select>
                           )}
                         </td>

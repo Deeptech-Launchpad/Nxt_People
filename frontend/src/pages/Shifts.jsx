@@ -68,6 +68,9 @@ export default function Shifts() {
                 <div className="mt-4 flex items-center gap-2 text-slate-600">
                   <Clock size={16} style={{color: s.color}}/>
                   <span className="font-semibold text-base">{s.startTime} — {s.endTime}</span>
+                  {s.endTime <= s.startTime && (
+                    <span className="text-sm bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-medium">Overnight</span>
+                  )}
                 </div>
                 <p className="text-sm text-slate-400 mt-1">Grace period: {s.graceMinutes} minutes</p>
                 <div className="flex gap-1.5 mt-4 flex-wrap">
@@ -105,6 +108,11 @@ export default function Shifts() {
                   <input type="time" value={form.endTime} onChange={e=>setForm({...form,endTime:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
                 </div>
               </div>
+              {form.endTime <= form.startTime && (
+                <p className="text-sm text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 -mt-2">
+                  This shift crosses midnight (ends the next day).
+                </p>
+              )}
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Grace Period (minutes)</label>
                 <input type="number" value={form.graceMinutes} onChange={e=>setForm({...form,graceMinutes:parseInt(e.target.value)})} min={0} max={60} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>

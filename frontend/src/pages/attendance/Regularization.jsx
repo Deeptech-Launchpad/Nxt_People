@@ -11,9 +11,9 @@ function formatTime(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '';
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  return `${h}:${m}`;
+  // hour12: false + en-GB gives a plain 24-hour "HH:MM" string, pinned to
+  // Asia/Kolkata so this matches the check-in/out times shown elsewhere.
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
 }
 
 const STATUS_STYLE = {
@@ -156,11 +156,11 @@ export default function Regularization() {
                   </button>
                   {tab === 'pending' && r.status === 'pending' && r.canAct && r.employee?._id !== user?._id && (
                     <>
-                      <button onClick={() => handleAction(r._id, 'approved')} disabled={!!actionLoading}
+                      <button onClick={() => { if (confirm('Approve this attendance correction?')) handleAction(r._id, 'approved'); }} disabled={!!actionLoading}
                         className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
                         <CheckCircle size={13} /> Approve
                       </button>
-                      <button onClick={() => handleAction(r._id, 'rejected')} disabled={!!actionLoading}
+                      <button onClick={() => { if (confirm('Reject this attendance correction?')) handleAction(r._id, 'rejected'); }} disabled={!!actionLoading}
                         className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
                         <XCircle size={13} /> Reject
                       </button>
@@ -225,8 +225,8 @@ export default function Regularization() {
           onClose={() => setDetailReq(null)}
           canAct={tab === 'pending' && detailReq.status === 'pending' && !!detailReq.canAct && detailReq.employee?._id !== user?._id}
           defaultView={tab === 'my' ? 'timeline' : 'details'}
-          onApprove={(x, comment) => { setDetailReq(null); handleAction(x._id, 'approved', comment); }}
-          onReject={(x, comment) => { setDetailReq(null); handleAction(x._id, 'rejected', comment); }}
+          onApprove={(x, comment) => { if (confirm('Approve this attendance correction?')) { setDetailReq(null); handleAction(x._id, 'approved', comment); } }}
+          onReject={(x, comment) => { if (confirm('Reject this attendance correction?')) { setDetailReq(null); handleAction(x._id, 'rejected', comment); } }}
         />
       )}
     </div>

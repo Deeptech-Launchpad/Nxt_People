@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Download, Filter, RefreshCw } from 'lucide-react';
 import api from '../utils/api';
+import toast from 'react-hot-toast';
 import BackButton from '../components/BackButton';
 
 /**
@@ -32,7 +33,7 @@ export default function DailyAttendance() {
         setEmployees(r.data.employees || []);
         setAttendance(r.data.data || []);
       })
-      .catch(() => { setEmployees([]); setAttendance([]); })
+      .catch(err => { toast.error(err.response?.data?.message || 'Failed to load attendance'); setEmployees([]); setAttendance([]); })
       .finally(() => setLoading(false));
   };
   useEffect(load, [date]);
@@ -90,7 +91,7 @@ export default function DailyAttendance() {
     if (!filtered.length) return;
     const csv = 'Employee ID,Name,Department,Designation,Check In,Check Out,Hours,Status,Presence\n' +
       filtered.map(r =>
-        `"${r.employeeId || ''}","${r.firstName} ${r.lastName}","${r.department || ''}","${r.designation || ''}","${r.att?.checkIn ? new Date(r.att.checkIn).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : ''}","${r.att?.checkOut ? new Date(r.att.checkOut).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : ''}","${r.att?.workingHours || 0}","${r.att?.status || ''}","${r.presence}"`
+        `"${r.employeeId || ''}","${r.firstName} ${r.lastName}","${r.department || ''}","${r.designation || ''}","${r.att?.checkIn ? new Date(r.att.checkIn).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : ''}","${r.att?.checkOut ? new Date(r.att.checkOut).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : ''}","${r.att?.workingHours ? Number(r.att.workingHours).toFixed(1) : 0}","${r.att?.status || ''}","${r.presence}"`
       ).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -195,7 +196,7 @@ export default function DailyAttendance() {
           <h3 className="text-[15px] font-bold text-slate-700 uppercase tracking-wider">
             Daily Attendance · {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
           </h3>
-          <span className="text-[13px] text-slate-500">{filtered.length} {filtered.length === 1 ? 'team_member' : 'employees'}</span>
+          <span className="text-[13px] text-slate-500">{filtered.length} {filtered.length === 1 ? 'employee' : 'employees'}</span>
         </div>
 
         {/* ── Tabs: Checked In vs Not Checked In ─────────────────── */}

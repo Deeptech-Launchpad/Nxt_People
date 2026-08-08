@@ -595,6 +595,7 @@ export default function MyAttendance() {
                 const ds = isoDate(day);
                 const record = recordMap[ds] || null;
                 const isToday = ds === todayStr;
+                const isFuture = ds > todayStr;
                 const isWeekend = effectiveIsWeekend(day);
                 const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
                 const dayNum = day.getDate();
@@ -659,7 +660,9 @@ export default function MyAttendance() {
 
                      {/* Hours worked — live ticking on today's row when checked in */}
                      <div className="w-[100px] flex-shrink-0 text-right">
-                       {!isWeekend && (() => {
+                       {isFuture ? (
+                         <p className="text-slate-300 text-[13px]">—</p>
+                       ) : !isWeekend && (() => {
                          const liveOnToday = isToday && isCheckedIn;
                          let displayHours;
                          if (liveOnToday) {
