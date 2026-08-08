@@ -94,6 +94,7 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
   const [rules, setRules] = useState([]);
   const [editing, setEditing] = useState(null);     // either an existing rule or a blank one
   const [saving, setSaving] = useState(false);
+  const [actingId, setActingId] = useState(null);   // id of the rule currently being removed/toggled
 
   // Hydrate local state from the shared context so we don't re-fetch.
   useEffect(() => { if (contextRules) setRules(contextRules); }, [contextRules]);
@@ -176,20 +177,23 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
 
   const remove = async (rule) => {
     if (!window.confirm(`Delete rule "${rule.name}"?`)) return;
+    setActingId(rule.id);
     try {
       await api.delete(`/weekend-rules/${rule.id}`);
       toast.success('Rule deleted');
       reload();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Delete failed');
-    }
+    } finally { setActingId(null); }
   };
 
   const toggleActive = async (rule) => {
+    setActingId(rule.id);
     try {
       await api.put(`/weekend-rules/${rule.id}`, { ...rule, isActive: !rule.isActive });
       reload();
     } catch (err) { toast.error('Toggle failed'); }
+    finally { setActingId(null); }
   };
 
   /* ── Rule editor form (modal) ───────────────────────────────────── */
@@ -242,13 +246,14 @@ const WeekendRulesEditor = forwardRef(function WeekendRulesEditor(_props, ref) {
                   <input
                     type="checkbox"
                     checked={r.isActive !== false}
+                    disabled={actingId === r.id}
                     onChange={() => toggleActive(r)}
-                    className="rounded"
+                    className="rounded disabled:opacity-50"
                   />
                   Active
                 </label>
-                <button onClick={() => openEdit(r)}  className="w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800"><Pencil size={14} /></button>
-                <button onClick={() => remove(r)}    className="w-8 h-8 flex items-center justify-center rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+                <button onClick={() => openEdit(r)} disabled={actingId === r.id} className="w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 disabled:opacity-50"><Pencil size={14} /></button>
+                <button onClick={() => remove(r)} disabled={actingId === r.id} className="w-8 h-8 flex items-center justify-center rounded hover:bg-red-50 text-slate-400 hover:text-red-600 disabled:opacity-50"><Trash2 size={14} /></button>
               </>
             )}
           </div>

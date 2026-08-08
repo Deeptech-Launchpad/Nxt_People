@@ -1,8 +1,15 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, ChevronLeft, ChevronRight, Clock, Calendar, CheckCircle, Users, BarChart2, FileText } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
-const STEPS = [
+// Role gates mirroring App.jsx's ProtectedRoute for the routes the tour visits.
+const ROUTE_ROLES = {
+  '/team/approvals': ['admin', 'director', 'hr_admin', 'manager', 'team_incharge'],
+  '/reports': ['admin', 'director', 'hr_admin', 'manager'],
+};
+
+const ALL_STEPS = [
   {
     icon: Clock,
     iconColor: 'text-blue-600',
@@ -119,6 +126,12 @@ function computeTooltipPos(rect, position) {
 }
 
 export default function GuidedTour({ onClose }) {
+  const { user } = useAuth();
+  const STEPS = useMemo(() => ALL_STEPS.filter((s) => {
+    const roles = ROUTE_ROLES[s.route];
+    return !roles || roles.includes(user?.role);
+  }), [user?.role]);
+
   const [step, setStep] = useState(0);
   const [spotRect, setSpotRect] = useState(null);
   const navigate = useNavigate();

@@ -7,6 +7,7 @@ import {
   CornerDownLeft, ChevronUp, ChevronDown, ArrowRight,
 } from 'lucide-react';
 import api from '../utils/api';
+import toast from 'react-hot-toast';
 
 /**
  * Command palette / "Smart Chat" — global launcher triggered by Ctrl+Space
@@ -91,7 +92,7 @@ export default function SmartChat({ open, onClose }) {
     debounceRef.current = setTimeout(() => {
       api.get(`/employees?search=${encodeURIComponent(query.trim())}&limit=6`)
         .then(r => setEmployees(r.data.data || []))
-        .catch(() => setEmployees([]))
+        .catch(() => { toast.error('Employee search failed'); setEmployees([]); })
         .finally(() => setLoading(false));
     }, 220);
     return () => clearTimeout(debounceRef.current);

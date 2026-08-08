@@ -18,6 +18,15 @@ const GRID_COLS = {
   6: 'lg:grid-cols-6',
 };
 
+// sm value = min(colsLg, 4), so the column count scales up monotonically
+// (3 → 3 → 3, 4 → 4 → 4, 5/6 → 4 → 5/6) instead of shrinking mid-scale.
+const GRID_COLS_SM = {
+  3: 'sm:grid-cols-3',
+  4: 'sm:grid-cols-4',
+  5: 'sm:grid-cols-4',
+  6: 'sm:grid-cols-4',
+};
+
 export default function ModuleLanding({ title, description, items, colsLg = 6 }) {
   const navigate = useNavigate();
 
@@ -29,7 +38,7 @@ export default function ModuleLanding({ title, description, items, colsLg = 6 })
       </div>
 
       <div className="p-6">
-        <div className={`grid grid-cols-3 sm:grid-cols-4 ${GRID_COLS[colsLg] || 'lg:grid-cols-6'} gap-4`}>
+        <div className={`grid grid-cols-3 ${GRID_COLS_SM[colsLg] || 'sm:grid-cols-4'} ${GRID_COLS[colsLg] || 'lg:grid-cols-6'} gap-4`}>
           {items.map(({ key, label, icon: Icon, color }) => (
             <button
               key={key}

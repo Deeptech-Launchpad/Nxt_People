@@ -205,22 +205,22 @@ const NAV = {
         { to: '/payroll/tax-declaration', label: 'Tax Declaration' },
         { to: '/payroll/declarations',    label: 'Approvals', roles: ['admin', 'director', 'hr_admin'] },
       ],
-      team:           [{ to: '/payroll/team', label: 'Team Payroll' }],
+      team:           [{ to: '/payroll/team', label: 'Team Payroll', roles: ['admin', 'director', 'manager'] }],
       payrollrun: [
-        { to: '/payroll/run',        label: 'Run Payroll' },
-        { to: '/payroll/increments', label: 'Increments & Arrears' },
+        { to: '/payroll/run',        label: 'Run Payroll',           roles: ['admin', 'director', 'hr_admin'] },
+        { to: '/payroll/increments', label: 'Increments & Arrears',  roles: ['admin', 'director', 'hr_admin'] },
       ],
       salarysetup: [
-        { to: '/payroll/setup',     label: 'Salary Setup' },
-        { to: '/payroll/templates', label: 'Salary Templates' },
+        { to: '/payroll/setup',     label: 'Salary Setup',     roles: ['admin', 'director', 'hr_admin'] },
+        { to: '/payroll/templates', label: 'Salary Templates', roles: ['admin', 'director', 'hr_admin'] },
       ],
       compliance: [
-        { to: '/payroll/compliance',          label: 'Compliance Reports' },
-        { to: '/payroll/adjustments',         label: 'Adjustments' },
-        { to: '/payroll/loans',               label: 'Loans' },
-        { to: '/payroll/tax-slabs',           label: 'Tax Slabs' },
-        { to: '/payroll/settings',            label: 'Compliance Settings' },
-        { to: '/payroll/declaration-windows', label: 'Declaration Windows' },
+        { to: '/payroll/compliance',          label: 'Compliance Reports',  roles: ['admin', 'director', 'hr_admin'] },
+        { to: '/payroll/adjustments',         label: 'Adjustments',         roles: ['admin', 'director', 'hr_admin'] },
+        { to: '/payroll/loans',               label: 'Loans',                roles: ['admin', 'director', 'hr_admin'] },
+        { to: '/payroll/tax-slabs',           label: 'Tax Slabs',            roles: ['admin', 'director', 'hr_admin'] },
+        { to: '/payroll/settings',            label: 'Compliance Settings', roles: ['admin', 'director', 'hr_admin'] },
+        { to: '/payroll/declaration-windows', label: 'Declaration Windows', roles: ['admin', 'director', 'hr_admin'] },
       ],
     },
   },
@@ -477,12 +477,13 @@ export default function Topbar() {
     <div className="flex flex-col sticky top-0 z-40">
       {/* ── Navy primary bar ─────────────────────────────────────────── */}
       <div className="h-[48px] bg-[#1a2040] flex items-center justify-between px-5 shadow-sm flex-shrink-0">
-        <div className="flex items-center h-full gap-1">
+        <div className="flex items-center h-full gap-1 min-w-0 flex-1">
           {!isHome && (
-            <span className="text-white text-[16px] font-semibold mr-3 border-r border-white/20 pr-4">
+            <span className="text-white text-[16px] font-semibold mr-3 border-r border-white/20 pr-4 flex-shrink-0">
               {config.label}
             </span>
           )}
+          <div className="flex items-center h-full gap-1 min-w-0 overflow-x-auto scrollbar-none">
           {!config.isLanding && primaryTabs.map(({ key, label, to, disabled }) => {
             const active = isHome ? homeTab === key : activeTab === key;
             // Disabled primary tabs (e.g. Travel / Compensation in More
@@ -492,21 +493,22 @@ export default function Topbar() {
             if (disabled) {
               return (
                 <span key={key} title="Coming soon"
-                  className="h-full px-4 flex items-center text-[16px] border-b-[3px] border-transparent text-white/30 font-semibold cursor-not-allowed">
+                  className="h-full px-4 flex items-center text-[16px] border-b-[3px] border-transparent text-white/30 font-semibold cursor-not-allowed flex-shrink-0">
                   {label}
                 </span>
               );
             }
             return (
               <button key={key}
-                {...(key === 'team' ? { 'data-tour': 'topbar-team' } : {})}
+                {...(key === 'team' && isHome ? { 'data-tour': 'topbar-team' } : {})}
                 onClick={() => navigate(to)}
-                className={`h-full px-4 flex items-center text-[16px] border-b-[3px] transition-all duration-150 tracking-[-0.01em]
+                className={`h-full px-4 flex items-center text-[16px] border-b-[3px] transition-all duration-150 tracking-[-0.01em] flex-shrink-0
                   ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`}>
                 {label}
               </button>
             );
           })}
+          </div>
         </div>
 
         {/* Right icons */}

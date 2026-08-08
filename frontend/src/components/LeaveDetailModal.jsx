@@ -92,7 +92,20 @@ function BalanceCard({ leave, balanceCards }) {
 export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct = false, onApprove, onApproveAll, onReject, onCancel, defaultView = 'details' }) {
   const [view, setView] = useState(defaultView);   // 'details' | 'timeline'
   const [comment, setComment] = useState('');
+  const [acting, setActing] = useState(false);
   if (!leave) return null;
+
+  const runAction = (handler) => async (...args) => {
+    if (acting) return;
+    setActing(true);
+    try {
+      const result = handler(...args);
+      if (result && typeof result.then === 'function') await result;
+    } finally {
+      // no-op when fire-and-forget; if the handler closed the modal this
+      // component has already unmounted by the time we'd reset `acting`
+    }
+  };
 
   const balanceCards = Array.isArray(balance) ? balance : null;
   const emp = leave.employee;
@@ -226,18 +239,18 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                 <button onClick={onClose} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[15px] font-medium transition-colors">Close</button>
               )}
               {showActions && onReject && (
-                <button onClick={() => onReject(leave, c())} className="flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors">
+                <button disabled={acting} onClick={runAction(() => onReject(leave, c()))} className="flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors disabled:opacity-60">
                   <XCircle size={15} /> Reject
                 </button>
               )}
               {showActions && onApprove && (
-                <button onClick={() => onApprove(leave, c())} className="flex items-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors">
+                <button disabled={acting} onClick={runAction(() => onApprove(leave, c()))} className="flex items-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors disabled:opacity-60">
                   <CheckCircle size={15} /> Approve
                 </button>
               )}
               {/* Super-Admin only: finalise every remaining level in one click. */}
               {showActions && onApproveAll && (
-                <button onClick={() => onApproveAll(leave, c())} className="flex items-center gap-1.5 bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors">
+                <button disabled={acting} onClick={runAction(() => onApproveAll(leave, c()))} className="flex items-center gap-1.5 bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors disabled:opacity-60">
                   <CheckCheck size={15} /> Approve All
                 </button>
               )}

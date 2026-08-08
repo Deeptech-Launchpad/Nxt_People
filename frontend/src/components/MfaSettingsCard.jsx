@@ -20,6 +20,7 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
   const [code, setCode]             = useState('');
   const [busy, setBusy]             = useState(false);
   const [backupCodes, setBackupCodes] = useState(null); // shown once after verify
+  const [codesAck, setCodesAck]     = useState(false); // "I've saved my backup codes" confirmation
 
   /* ── Enable flow ────────────────────────────────────────────────── */
   const startSetup = async () => {
@@ -53,6 +54,7 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
     setSetupData(null);
     setBackupCodes(null);
     setCode('');
+    setCodesAck(false);
   };
 
   /* ── Disable flow ───────────────────────────────────────────────── */
@@ -77,11 +79,16 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
   /* ── ESC closes any open modal ─────────────────────────────────── */
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') { closeSetup(); setDisableOpen(false); }
+      if (e.key !== 'Escape') return;
+      if (backupCodes && !codesAck) {
+        if (!window.confirm("Are you sure you've saved your backup codes? They won't be shown again.")) return;
+      }
+      closeSetup();
+      setDisableOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [backupCodes, codesAck]);
 
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-start gap-3">
@@ -161,15 +168,29 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
 
       {/* ── Backup codes display — shown ONCE after a successful enable ── */}
       {backupCodes && (
-        <Modal onClose={closeSetup} title="Save your backup codes">
+        <Modal
+          onClose={closeSetup}
+          title="Save your backup codes"
+          closeDisabled={!codesAck}
+          closeTitle="Check the box below confirming you've saved your codes first"
+        >
           <p className="text-[14px] text-slate-600 mb-3">
             Store these somewhere safe. Each code works <strong>once</strong> if you lose access to
             your authenticator app. They will not be shown again.
           </p>
           <BackupCodeList codes={backupCodes} />
+          <label className="flex items-start gap-2 mt-4 text-[14px] text-slate-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={codesAck}
+              onChange={(e) => setCodesAck(e.target.checked)}
+              className="mt-0.5"
+            />
+            I have saved my backup codes
+          </label>
           <button
             onClick={closeSetup}
-            className="mt-4 w-full bg-[#1a73e8] hover:bg-[#1557B0] text-white py-2 rounded-md text-[15px] font-semibold"
+            className="mt-3 w-full bg-[#1a73e8] hover:bg-[#1557B0] text-white py-2 rounded-md text-[15px] font-semibold"
           >
             I've saved them
           </button>
@@ -214,13 +235,18 @@ export default function MfaSettingsCard({ mfaEnabled, onChange }) {
 }
 
 /* ── Small reusable modal shell ────────────────────────────────────── */
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, closeDisabled, closeTitle }) {
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
           <h3 className="text-[14.5px] font-semibold text-slate-800">{title}</h3>
-          <button onClick={onClose} className="w-7 h-7 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500">
+          <button
+            onClick={onClose}
+            disabled={closeDisabled}
+            title={closeDisabled ? closeTitle : undefined}
+            className="w-7 h-7 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          >
             <X size={15} />
           </button>
         </div>

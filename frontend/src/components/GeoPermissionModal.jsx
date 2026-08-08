@@ -12,6 +12,7 @@ import { _registerGeoHandler } from '../utils/geoPermission';
 
 export default function GeoPermissionModal() {
   const [open, setOpen] = useState(false);
+  const [browserDenied, setBrowserDenied] = useState(false);
   const resolveRef = useRef(null);
 
   useEffect(() => {
@@ -21,6 +22,20 @@ export default function GeoPermissionModal() {
     }));
     return () => _registerGeoHandler(null);
   }, []);
+
+  // Check for a browser-level permanent denial whenever the modal opens, so
+  // we can show recovery instructions instead of a consent choice that would
+  // just fail silently anyway.
+  useEffect(() => {
+    if (!open) { setBrowserDenied(false); return; }
+    let cancelled = false;
+    if (navigator.permissions) {
+      navigator.permissions.query({ name: 'geolocation' })
+        .then((perm) => { if (!cancelled && perm.state === 'denied') setBrowserDenied(true); })
+        .catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [open]);
 
   const choose = (choice) => {
     setOpen(false);
@@ -46,34 +61,55 @@ export default function GeoPermissionModal() {
           </button>
         </div>
 
-        <div className="px-5 py-4">
-          <p className="text-[15px] text-slate-600 leading-relaxed">
-            NXT People would like to record where you check in and out for attendance.
-            Your location is captured only at that moment and saved to your attendance
-            location history.
-          </p>
-        </div>
+        {browserDenied ? (
+          <>
+            <div className="px-5 py-4">
+              <p className="text-[15px] text-slate-600 leading-relaxed">
+                Location is blocked for this site at the browser level. Click the lock icon in
+                the address bar → Location → Allow, then try again.
+              </p>
+            </div>
+            <div className="px-5 pb-5">
+              <button
+                onClick={() => choose('deny')}
+                className="w-full border border-slate-200 text-slate-700 hover:bg-slate-50 py-2.5 rounded-lg text-[15px] font-semibold transition-colors"
+              >
+                OK
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="px-5 py-4">
+              <p className="text-[15px] text-slate-600 leading-relaxed">
+                NXT People would like to record where you check in and out for attendance.
+                Your location is captured only at that moment and saved to your attendance
+                location history.
+              </p>
+            </div>
 
-        <div className="px-5 pb-5 space-y-2">
-          <button
-            onClick={() => choose('always')}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-[15px] font-semibold transition-colors"
-          >
-            Allow Always
-          </button>
-          <button
-            onClick={() => choose('once')}
-            className="w-full border border-slate-200 text-slate-700 hover:bg-slate-50 py-2.5 rounded-lg text-[15px] font-semibold transition-colors"
-          >
-            Allow This Time
-          </button>
-          <button
-            onClick={() => choose('deny')}
-            className="w-full text-slate-500 hover:text-slate-700 py-2 rounded-lg text-[15px] font-medium transition-colors"
-          >
-            Deny
-          </button>
-        </div>
+            <div className="px-5 pb-5 space-y-2">
+              <button
+                onClick={() => choose('always')}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-[15px] font-semibold transition-colors"
+              >
+                Allow Always
+              </button>
+              <button
+                onClick={() => choose('once')}
+                className="w-full border border-slate-200 text-slate-700 hover:bg-slate-50 py-2.5 rounded-lg text-[15px] font-semibold transition-colors"
+              >
+                Allow This Time
+              </button>
+              <button
+                onClick={() => choose('deny')}
+                className="w-full text-slate-500 hover:text-slate-700 py-2 rounded-lg text-[15px] font-medium transition-colors"
+              >
+                Deny
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

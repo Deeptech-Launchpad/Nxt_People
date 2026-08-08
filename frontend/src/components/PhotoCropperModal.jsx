@@ -1,6 +1,7 @@
 ﻿import React, { useState, useCallback } from 'react';
 import { X, Save } from 'lucide-react';
 import Cropper from 'react-easy-crop';
+import toast from 'react-hot-toast';
 
 /**
  * Reusable circular photo cropper modal.
@@ -52,8 +53,12 @@ export default function PhotoCropperModal({ src, uploading, onSave, onCancel }) 
 
   const handleSave = async () => {
     if (!src || !areaPixels) return;
-    const blob = await getCroppedBlob(src, areaPixels);
-    onSave(blob);
+    try {
+      const blob = await getCroppedBlob(src, areaPixels);
+      onSave(blob);
+    } catch (err) {
+      toast.error("Couldn't process this image. Please try a different photo.");
+    }
   };
 
   // Reset transient state whenever a fresh image opens.

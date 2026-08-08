@@ -2,7 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
-import { MapPin, Clock, LogIn, LogOut, ChevronDown, Calendar, Star, DollarSign, Activity, Rss, FileText } from 'lucide-react';
+import { MapPin, Clock, LogIn, LogOut, ChevronDown, Calendar, Star, DollarSign, Activity, Rss, FileText, X } from 'lucide-react';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (s) => s?.toFixed ? s.toFixed(2) : s;
@@ -77,9 +77,12 @@ function ApplyLeaveModal({ onClose, onSuccess, leaveTypes }) {
     finally { setSaving(false); }
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-        <h3 className="text-[17px] font-bold text-slate-800 mb-4">{isPermission ? 'Apply Permission' : 'Apply Leave'}</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[17px] font-bold text-slate-800">{isPermission ? 'Apply Permission' : 'Apply Leave'}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={18} /></button>
+        </div>
         <form onSubmit={submit} className="space-y-3">
           <select value={form.leaveType} onChange={e => set('leaveType', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400">
             {(leaveTypes || []).map(lt => <option key={lt.code} value={lt.code}>{lt.name}{lt.code === 'permission' ? ` (${lt.available ?? 0}h left this month)` : (lt.available != null ? ` (${lt.available} avail.)` : '')}</option>)}

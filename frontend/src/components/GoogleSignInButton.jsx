@@ -118,6 +118,9 @@ export default function GoogleSignInButton({ onMfaRequired }) {
       {!ready && !failed && (
         <p className="text-center text-sm text-slate-400 mt-2">Loading Google Sign-In…</p>
       )}
+      {failed && (
+        <p className="text-center text-sm text-slate-400 mt-2">Google Sign-In failed to load. Please refresh the page or try again.</p>
+      )}
     </div>
   );
 }
