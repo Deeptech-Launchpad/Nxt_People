@@ -22,7 +22,7 @@ router.get('/my', async (req, res) => {
 });
 
 // GET all (admin only)
-router.get('/all', authorize('admin', 'director'), async (req, res) => {
+router.get('/all', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT ex.id as "_id", ex.resignation_date as "resignationDate", ex.last_working_date as "lastWorkingDate",
@@ -60,7 +60,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT approve/reject (admin)
-router.put('/:id/action', authorize('admin', 'director'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   const client = await pool.connect();
   try {
     const { action, lastWorkingDate, rejectionReason } = req.body;
@@ -104,7 +104,7 @@ router.put('/:id/action', authorize('admin', 'director'), async (req, res) => {
 });
 
 // PUT update clearance status (admin)
-router.put('/:id/clearance', authorize('admin', 'director'), async (req, res) => {
+router.put('/:id/clearance', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const preCheck = await pool.query('SELECT status FROM exit_requests WHERE id=$1', [req.params.id]);
     if (!preCheck.rows[0]) return res.status(404).json({ success: false, message: 'Exit request not found' });

@@ -10,17 +10,17 @@ import { isFullAccess, isApprover } from '../../utils/roles';
 const GRID_COLS = { 3: 'lg:grid-cols-3', 4: 'lg:grid-cols-4', 5: 'lg:grid-cols-5', 6: 'lg:grid-cols-6' };
 
 const ALL_CARDS = [
-  { key: 'attendance',     label: 'Attendance Report',  icon: BarChart2,      color: 'text-blue-600',    to: '/reports/attendance', roles: ['admin','director','manager'] },
-  { key: 'daily',          label: 'Daily Attendance',   icon: CalendarCheck,  color: 'text-emerald-600', to: '/daily-attendance',   roles: ['admin','director','manager'] },
-  { key: 'payroll',        label: 'Payroll Report',     icon: DollarSign,     color: 'text-violet-600',  to: '/payroll',            roles: ['admin','director','manager'] },
-  { key: 'salary-setup',   label: 'Salary Setup',       icon: Settings,       color: 'text-slate-600',   to: '/payroll/setup',      roles: ['admin','director'] },
-  { key: 'payroll-run',    label: 'Payroll Run',        icon: Play,           color: 'text-green-600',   to: '/payroll/run',        roles: ['admin','director'] },
-  { key: 'team-payroll',   label: 'Team Payroll',       icon: Users,          color: 'text-sky-600',     to: '/payroll/team',       roles: ['admin','director','manager'] },
+  { key: 'attendance',     label: 'Attendance Report',  icon: BarChart2,      color: 'text-blue-600',    to: '/reports/attendance', roles: ['admin','director','hr_admin','manager'] },
+  { key: 'daily',          label: 'Daily Attendance',   icon: CalendarCheck,  color: 'text-emerald-600', to: '/daily-attendance',   roles: ['admin','director','hr_admin','manager'] },
+  { key: 'payroll',        label: 'Payroll Report',     icon: DollarSign,     color: 'text-violet-600',  to: '/payroll',            roles: ['admin','director','hr_admin','manager'] },
+  { key: 'salary-setup',   label: 'Salary Setup',       icon: Settings,       color: 'text-slate-600',   to: '/payroll/setup',      roles: ['admin','director','hr_admin'] },
+  { key: 'payroll-run',    label: 'Payroll Run',        icon: Play,           color: 'text-green-600',   to: '/payroll/run',        roles: ['admin','director','hr_admin'] },
+  { key: 'team-payroll',   label: 'Team Payroll',       icon: Users,          color: 'text-sky-600',     to: '/payroll/team',       roles: ['admin','director','hr_admin','manager'] },
   { key: 'payslips',       label: 'Payslips',           icon: Receipt,        color: 'text-amber-600',   to: '/payroll/my' },
   { key: 'tax-decl',       label: 'Tax Declarations',   icon: FileText,       color: 'text-orange-600',  to: '/payroll/tax-declaration' },
-  { key: 'compliance',     label: 'Compliance',         icon: ShieldCheck,    color: 'text-rose-600',    to: '/payroll/compliance', roles: ['admin','director'] },
-  { key: 'shifts',         label: 'Shifts',             icon: Clock,          color: 'text-indigo-600',  to: '/shifts',             roles: ['admin','director'] },
-  { key: 'shift-roster',   label: 'Shift Roster',       icon: CalendarClock,  color: 'text-teal-600',    to: '/shift-roster',       roles: ['admin','director','manager'] },
+  { key: 'compliance',     label: 'Compliance',         icon: ShieldCheck,    color: 'text-rose-600',    to: '/payroll/compliance', roles: ['admin','director','hr_admin'] },
+  { key: 'shifts',         label: 'Shifts',             icon: Clock,          color: 'text-indigo-600',  to: '/shifts',             roles: ['admin','director','hr_admin'] },
+  { key: 'shift-roster',   label: 'Shift Roster',       icon: CalendarClock,  color: 'text-teal-600',    to: '/shift-roster',       roles: ['admin','director','hr_admin','manager'] },
 ];
 
 export default function ReportsLanding() {

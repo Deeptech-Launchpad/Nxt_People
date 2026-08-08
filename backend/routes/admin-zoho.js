@@ -18,7 +18,7 @@ const { iterateEmployees, iteratePayroll, listEmployeeFiles, downloadFile } = re
 const fs = require('fs');
 const path = require('path');
 
-router.use(protect, authorize('admin', 'director'));
+router.use(protect, authorize('admin', 'director', 'hr_admin'));
 
 /* ── Field mapping ─────────────────────────────────────────────────────────
  * Zoho's field names vary slightly across orgs. Try the standard Zoho People

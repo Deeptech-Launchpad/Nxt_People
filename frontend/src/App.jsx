@@ -159,7 +159,7 @@ const AppRoutes = () => {
           <Route path="birthdays"    element={<BirthdayFolks/>}/>
           <Route path="new-hires"    element={<NewHires/>}/>
           <Route path="directory"    element={<Directory/>}/>
-          <Route path="companies"    element={<ProtectedRoute roles={['admin','director']}><Companies/></ProtectedRoute>}/>
+          <Route path="companies"    element={<ProtectedRoute roles={['admin','director','hr_admin']}><Companies/></ProtectedRoute>}/>
           <Route path="holidays"     element={<Holidays/>}/>
 
           {/* ── Attendance ───────────────────────────────────────────── */}
@@ -213,16 +213,16 @@ const AppRoutes = () => {
           <Route path="reports"            element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ReportsLanding/></ProtectedRoute>}/>
           <Route path="reports/attendance" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Reports/></ProtectedRoute>}/>
           <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><DailyAttendance/></ProtectedRoute>}/>
-          <Route path="payroll/setup"          element={<ProtectedRoute roles={['admin','director']}><PayrollSetup/></ProtectedRoute>}/>
-          <Route path="payroll/run"            element={<ProtectedRoute roles={['admin','director']}><PayrollRun/></ProtectedRoute>}/>
+          <Route path="payroll/setup"          element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayrollSetup/></ProtectedRoute>}/>
+          <Route path="payroll/run"            element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayrollRun/></ProtectedRoute>}/>
           <Route path="payroll/my"             element={<MyPayroll/>}/>
-          <Route path="payroll/team"           element={<ProtectedRoute roles={['admin','director','manager']}><TeamPayroll/></ProtectedRoute>}/>
+          <Route path="payroll/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TeamPayroll/></ProtectedRoute>}/>
           <Route path="payroll/tax-declaration" element={<TaxDeclaration/>}/>
-          <Route path="payroll/declarations"   element={<ProtectedRoute roles={['admin','director']}><DeclarationApprovals/></ProtectedRoute>}/>
-          <Route path="payroll/compliance"     element={<ProtectedRoute roles={['admin','director']}><ComplianceReports/></ProtectedRoute>}/>
-          <Route path="payroll/adjustments"    element={<ProtectedRoute roles={['admin','director']}><Adjustments/></ProtectedRoute>}/>
-          <Route path="payroll/loans"          element={<ProtectedRoute roles={['admin','director']}><Loans/></ProtectedRoute>}/>
-          <Route path="payroll/tax-slabs"      element={<ProtectedRoute roles={['admin','director']}><TaxSlabs/></ProtectedRoute>}/>
+          <Route path="payroll/declarations"   element={<ProtectedRoute roles={['admin','director','hr_admin']}><DeclarationApprovals/></ProtectedRoute>}/>
+          <Route path="payroll/compliance"     element={<ProtectedRoute roles={['admin','director','hr_admin']}><ComplianceReports/></ProtectedRoute>}/>
+          <Route path="payroll/adjustments"    element={<ProtectedRoute roles={['admin','director','hr_admin']}><Adjustments/></ProtectedRoute>}/>
+          <Route path="payroll/loans"          element={<ProtectedRoute roles={['admin','director','hr_admin']}><Loans/></ProtectedRoute>}/>
+          <Route path="payroll/tax-slabs"      element={<ProtectedRoute roles={['admin','director','hr_admin']}><TaxSlabs/></ProtectedRoute>}/>
           <Route path="payroll/templates"      element={<ProtectedRoute roles={['admin','director','hr_admin']}><SalaryTemplates/></ProtectedRoute>}/>
           <Route path="payroll/increments"     element={<ProtectedRoute roles={['admin','director','hr_admin']}><Increments/></ProtectedRoute>}/>
           <Route path="payroll/settings"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><ComplianceSettings/></ProtectedRoute>}/>
@@ -252,9 +252,9 @@ const AppRoutes = () => {
           <Route path="leave-calendar" element={<Navigate to="/calendar" replace/>}/>
           <Route path="leave-encashment" element={<LeaveEncashment/>}/>
           <Route path="projects"       element={<Navigate to="/team/projects" replace/>}/>
-          <Route path="api-connections"element={<ProtectedRoute roles={['admin','director']}><ApiConnections/></ProtectedRoute>}/>
+          <Route path="api-connections"element={<ProtectedRoute roles={['admin','director','hr_admin']}><ApiConnections/></ProtectedRoute>}/>
           <Route path="my-apps"          element={<MyApps/>}/>
-          <Route path="settings"       element={<ProtectedRoute roles={['admin','director']}><Settings/></ProtectedRoute>}/>
+          <Route path="settings"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><Settings/></ProtectedRoute>}/>
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace/>}/>

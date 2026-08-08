@@ -536,7 +536,7 @@ router.get('/my', async (req, res) => {
 });
 
 // ── GET team attendance ───────────────────────────────────────────────────────
-router.get('/team', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
+router.get('/team', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
     const { date, department, employeeId } = req.query;
     const targetDate = date || todayStr();
@@ -963,7 +963,7 @@ router.get('/location', async (req, res) => {
 // ── POST send check-out reminder email ──────────────────────────────────────────
 // Endpoint for HR/Admin to send check-out reminders to employee(s).
 // Used to remind employees to log out of Zoho and update daily production report.
-router.post('/reminder/checkout', authorize('admin', 'director'), async (req, res) => {
+router.post('/reminder/checkout', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const { employeeIds } = req.body;
     if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {

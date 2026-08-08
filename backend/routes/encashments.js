@@ -24,7 +24,7 @@ router.get('/my', async (req, res) => {
 });
 
 // GET all pending encashments (admin/manager)
-router.get('/pending', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     // Full-access sees the whole org queue; managers only their direct reports.
     const scope = reportsScope(req.user, 'e', 1);
@@ -73,7 +73,7 @@ router.post('/', audit('CREATE', 'encashment'), async (req, res) => {
 });
 
 // PUT approve/reject
-router.put('/:id/action', authorize('admin', 'director', 'manager'), audit('ACTION', 'encashment'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager'), audit('ACTION', 'encashment'), async (req, res) => {
   try {
     const { action, reason } = req.body;
     const status = action === 'approve' ? 'approved' : 'rejected';

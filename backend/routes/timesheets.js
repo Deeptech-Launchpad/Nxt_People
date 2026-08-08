@@ -13,7 +13,7 @@ router.get('/my', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
-router.get('/', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { status } = req.query;
     let params = [];
@@ -76,7 +76,7 @@ router.put('/:id/submit', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
-router.put('/:id/action', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { action, rejectionReason } = req.body;
 

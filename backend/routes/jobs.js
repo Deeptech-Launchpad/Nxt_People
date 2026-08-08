@@ -76,7 +76,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/jobs (admin/manager)
-router.post('/', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.post('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { projectId, name, description, estimatedHours, billable = true, assigneeId, dueDate } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Job name required' });
@@ -91,7 +91,7 @@ router.post('/', authorize('admin', 'director', 'manager'), async (req, res) => 
 });
 
 // PUT /api/jobs/:id
-router.put('/:id', authorize('admin', 'director', 'manager'), async (req, res) => {
+router.put('/:id', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { name, description, status, estimatedHours, billable, assigneeId, dueDate } = req.body;
     const r = await pool.query(
@@ -110,7 +110,7 @@ router.put('/:id', authorize('admin', 'director', 'manager'), async (req, res) =
 });
 
 // DELETE /api/jobs/:id (admin)
-router.delete('/:id', authorize('admin', 'director'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     await pool.query('DELETE FROM jobs WHERE id=$1', [req.params.id]);
     res.json({ success: true, message: 'Job deleted' });

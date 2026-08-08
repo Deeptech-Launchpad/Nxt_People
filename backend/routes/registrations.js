@@ -274,7 +274,7 @@ router.post('/submit/:token', (req, res, next) => {
 // PROTECTED ROUTES (Super Admin / HR — onboarding creates employees, so it is
 // full-access only; managers have no employee CRUD)
 // ---------------------------------------------------------------------------
-router.use(protect, authorize('admin', 'director'));
+router.use(protect, authorize('admin', 'director', 'hr_admin'));
 
 router.post('/generate-link', async (req, res) => {
   try {

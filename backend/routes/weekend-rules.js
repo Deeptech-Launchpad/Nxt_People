@@ -67,7 +67,7 @@ router.get('/', async (req, res) => {
 });
 
 /* POST — create. Admin only. */
-router.post('/', authorize('admin', 'director'), async (req, res) => {
+router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const v = normaliseRule(req.body);
     const r = await pool.query(
@@ -85,7 +85,7 @@ router.post('/', authorize('admin', 'director'), async (req, res) => {
 });
 
 /* PUT — update. Admin only. */
-router.put('/:id', authorize('admin', 'director'), async (req, res) => {
+router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const v = normaliseRule(req.body);
     const r = await pool.query(
@@ -113,7 +113,7 @@ router.put('/:id', authorize('admin', 'director'), async (req, res) => {
 });
 
 /* DELETE — admin only. */
-router.delete('/:id', authorize('admin', 'director'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const r = await pool.query('DELETE FROM weekend_rules WHERE id = $1 RETURNING id', [req.params.id]);
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Rule not found' });

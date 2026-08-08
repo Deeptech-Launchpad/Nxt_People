@@ -256,7 +256,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST create employee — full-access only (managers have no employee CRUD)
-router.post('/', authorize('admin', 'director'), async (req, res) => {
+router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     let { firstName, lastName, email, password, phone, role, department, designation, company, division, joiningDate, monthlyCTC, basicSalary, casualLeave, sickLeave, earnedLeave, reportingManagerId, approvingAuthorityId, employeeId: providedId } = req.body;
     let hashedPassword = null;
@@ -321,7 +321,7 @@ router.post('/', authorize('admin', 'director'), async (req, res) => {
 
 
 // PUT update employee — full-access only (managers have no employee CRUD)
-router.put('/:id', authorize('admin', 'director'), async (req, res) => {
+router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const {
       firstName, lastName, email, phone, role, department, designation, company, division,
@@ -457,7 +457,7 @@ router.put('/:id', authorize('admin', 'director'), async (req, res) => {
 });
 
 // POST send onboarding email — full-access only (onboarding = HR function)
-router.post('/send-onboarding', authorize('admin', 'director'), async (req, res) => {
+router.post('/send-onboarding', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const { email, candidateName, dueDate } = req.body;
     if (!email) return res.status(400).json({ success: false, message: 'Candidate email is required' });
@@ -503,7 +503,7 @@ router.post('/send-onboarding', authorize('admin', 'director'), async (req, res)
 // and rely on SELECT-side filters to hide it. Hard delete is intentionally
 // removed; admins who *really* want to purge can do so directly in the DB
 // after reviewing what CASCADEs.
-router.delete('/:id', authorize('admin', 'director'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     // Soft-deleting someone who's still another active employee's manager/
     // approving authority previously went through silently — the reports'
@@ -559,7 +559,7 @@ router.delete('/:id', authorize('admin', 'director'), async (req, res) => {
 
 // GET /api/employees/:id/app-access — all user-facing apps with this
 // employee's current access status. One query, no N+1.
-router.get('/:id/app-access', authorize('admin', 'director'), async (req, res) => {
+router.get('/:id/app-access', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const r = await pool.query(`
       SELECT a.id, a.name, a.description,
@@ -580,7 +580,7 @@ router.get('/:id/app-access', authorize('admin', 'director'), async (req, res) =
 // PUT /api/employees/:id/app-access — sync this employee's access list
 // to match `apiConnectionIds` exactly: grant new ones, revoke removed ones.
 // Idempotent. Used by Approve modal (post-approve) and Edit modal (post-save).
-router.put('/:id/app-access', authorize('admin', 'director'), async (req, res) => {
+router.put('/:id/app-access', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   const client = await pool.connect();
   try {
     const wanted = Array.isArray(req.body?.apiConnectionIds) ? req.body.apiConnectionIds : [];

@@ -13,7 +13,7 @@ import { useAuth } from '../../context/AuthContext';
  *  Access: super_admin, hr, manager (Team Lead) only. */
 
 const HALLS = ['Floor 1', 'Floor 2'];
-const ALLOWED_ROLES = ['admin', 'director', 'manager'];
+const ALLOWED_ROLES = ['admin', 'director', 'hr_admin', 'manager'];
 const todayStr = () => new Date().toLocaleDateString('en-CA');   // YYYY-MM-DD (local)
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const EMPTY = { title: '', bookingDate: todayStr(), startTime: '', endTime: '', hall: 'Floor 1', description: '', bookedFor: '' };

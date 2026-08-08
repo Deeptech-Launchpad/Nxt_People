@@ -10,7 +10,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.use(protect);
 
-router.get('/template', authorize('admin', 'director'), (req, res) => {
+router.get('/template', authorize('admin', 'director', 'hr_admin'), (req, res) => {
   const ws = xlsx.utils.json_to_sheet([{
     "Name": "Happy New Year 2026",
     "From": "01/01/2026",
@@ -32,7 +32,7 @@ router.get('/template', authorize('admin', 'director'), (req, res) => {
   res.send(buffer);
 });
 
-router.post('/import', authorize('admin', 'director'), audit('IMPORT', 'holiday'), upload.single('file'), async (req, res) => {
+router.post('/import', authorize('admin', 'director', 'hr_admin'), audit('IMPORT', 'holiday'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
     
@@ -107,7 +107,7 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
-router.post('/', authorize('admin', 'director'), audit('CREATE', 'holiday'), async (req, res) => {
+router.post('/', authorize('admin', 'director', 'hr_admin'), audit('CREATE', 'holiday'), async (req, res) => {
   try {
     const {
       name, date, type, description, year,
@@ -131,7 +131,7 @@ router.post('/', authorize('admin', 'director'), audit('CREATE', 'holiday'), asy
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
-router.put('/:id', authorize('admin', 'director'), audit('UPDATE', 'holiday'), async (req, res) => {
+router.put('/:id', authorize('admin', 'director', 'hr_admin'), audit('UPDATE', 'holiday'), async (req, res) => {
   try {
     const {
       name, date, type, description, year,
@@ -158,7 +158,7 @@ router.put('/:id', authorize('admin', 'director'), audit('UPDATE', 'holiday'), a
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
-router.delete('/:id', authorize('admin', 'director'), audit('DELETE', 'holiday'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director', 'hr_admin'), audit('DELETE', 'holiday'), async (req, res) => {
   try {
     await pool.query('DELETE FROM holidays WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Holiday deleted' });
@@ -168,7 +168,7 @@ router.delete('/:id', authorize('admin', 'director'), audit('DELETE', 'holiday')
 // Send the holiday's mail_body to every active employee. Idempotent — admin
 // can re-trigger if they edit the message. Marks notified_at so the UI can
 // show "Sent on …".
-router.post('/:id/notify', authorize('admin', 'director'), audit('NOTIFY', 'holiday'), async (req, res) => {
+router.post('/:id/notify', authorize('admin', 'director', 'hr_admin'), audit('NOTIFY', 'holiday'), async (req, res) => {
   try {
     const h = await pool.query(
       `SELECT name, date, type, mail_body FROM holidays WHERE id = $1`,

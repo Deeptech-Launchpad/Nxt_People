@@ -76,7 +76,7 @@ router.get('/my', async (req, res) => {
 // GET pending (admin/manager) — same hierarchy scoping as the leave queue:
 // full-access sees the whole org; everyone else sees requests where they are an
 // assigned approver of a still-pending level.
-router.get('/pending', authorize('admin', 'director', 'manager', 'team_incharge'), async (req, res) => {
+router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
     const full = isFullAccess(req.user.role);
     const r = await pool.query(
@@ -178,7 +178,7 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
 // PUT approve/reject — routed through the shared hierarchy engine, exactly like
 // leaves: Approve covers lower levels on-behalf; Approve All finalises every
 // pending level; any rejection rejects the whole request.
-router.put('/:id/action', authorize('admin', 'director', 'manager', 'team_incharge'), audit('ACTION', 'comp_off'), async (req, res) => {
+router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), audit('ACTION', 'comp_off'), async (req, res) => {
   const { action, rejectionReason, approveAll } = req.body;
   if (!['approved', 'rejected'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Invalid action. Use: approved or rejected' });

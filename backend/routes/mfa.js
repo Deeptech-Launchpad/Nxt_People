@@ -154,7 +154,7 @@ router.post('/regenerate-backup-codes', protect, async (req, res) => {
 
 // POST /api/mfa/reset/:employeeId — admin only. Wipes MFA for the target user so they
 // can re-enrol after losing their device. Audited.
-router.post('/reset/:employeeId', protect, authorize('admin', 'director'), async (req, res) => {
+router.post('/reset/:employeeId', protect, authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const r = await pool.query(
       `UPDATE employees

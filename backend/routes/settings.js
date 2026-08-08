@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/', authorize('admin', 'director'), async (req, res) => {
+router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const {
       companyName, companyEmail, timezone,

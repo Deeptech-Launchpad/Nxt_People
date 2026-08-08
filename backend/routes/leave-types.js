@@ -71,7 +71,7 @@ router.get('/balances', async (req, res) => {
 });
 
 // POST /api/leave-types — create (admin)
-router.post('/', authorize('admin', 'director'), async (req, res) => {
+router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const { name, code, icon, color, maxDaysPerYear, carryForward } = req.body;
     if (!name || !code) return res.status(400).json({ success: false, message: 'name and code required' });
@@ -89,7 +89,7 @@ router.post('/', authorize('admin', 'director'), async (req, res) => {
 });
 
 // PUT /api/leave-types/balances/:employeeId — admin: set balance for employee
-router.put('/balances/:employeeId', authorize('admin', 'director'), async (req, res) => {
+router.put('/balances/:employeeId', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const { leaveTypeId, available, year } = req.body;
     const y = year || new Date().getFullYear();

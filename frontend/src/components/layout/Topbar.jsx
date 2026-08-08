@@ -97,7 +97,7 @@ const NAV = {
       ],
       holidays: [
         { to: '/leave-tracker/holidays', label: 'Holidays'                                   },
-        { to: '/leave-tracker/weekends', label: 'Weekend Rules', roles: ['admin','director'] },
+        { to: '/leave-tracker/weekends', label: 'Weekend Rules', roles: ['admin','director','hr_admin'] },
       ],
     },
   },
@@ -152,8 +152,8 @@ const NAV = {
     label: 'Employees',
     primaryTabs: [
       // Employee management is HR / Super Admin only (Team Leads excluded).
-      { key: 'employees', label: 'Employees', to: '/employees', roles: ['admin', 'director'] },
-      { key: 'registrations', label: 'Registrations', to: '/registrations', roles: ['admin', 'director'] },
+      { key: 'employees', label: 'Employees', to: '/employees', roles: ['admin', 'director', 'hr_admin'] },
+      { key: 'registrations', label: 'Registrations', to: '/registrations', roles: ['admin', 'director', 'hr_admin'] },
     ],
     getActiveTab: p => p.startsWith('/registrations') ? 'registrations' : 'employees',
     subNav: {
@@ -169,9 +169,9 @@ const NAV = {
     label: 'NXT Apps',
     primaryTabs: [
       { key: 'myapps', label: 'My Apps', to: '/my-apps' },
-      // Same role gate as the /api-connections route itself (admin/director) —
+      // Same role gate as the /api-connections route itself (admin/director/hr_admin) —
       // other roles never see this tab, matching who can actually use the page.
-      { key: 'apiconnections', label: 'API Connections', to: '/api-connections', roles: ['admin', 'director'] },
+      { key: 'apiconnections', label: 'API Connections', to: '/api-connections', roles: ['admin', 'director', 'hr_admin'] },
     ],
     getActiveTab: p => p.startsWith('/api-connections') ? 'apiconnections' : 'myapps',
     subNav: {
@@ -189,7 +189,7 @@ const NAV = {
     primaryTabs: [
       { key: 'mypayroll',      label: 'My Payroll',     to: '/payroll/my' },
       { key: 'taxdeclaration', label: 'Tax Declaration', to: '/payroll/tax-declaration' },
-      { key: 'team',           label: 'Team',            to: '/payroll/team',   roles: ['admin', 'director', 'manager'] },
+      { key: 'team',           label: 'Team',            to: '/payroll/team',   roles: ['admin', 'director', 'hr_admin', 'manager'] },
       { key: 'payrollrun',     label: 'Payroll Run',     to: '/payroll/run',    roles: ['admin', 'director', 'hr_admin'] },
       { key: 'salarysetup',    label: 'Salary Setup',    to: '/payroll/setup',  roles: ['admin', 'director', 'hr_admin'] },
       { key: 'compliance',     label: 'Compliance',      to: '/payroll/compliance', roles: ['admin', 'director', 'hr_admin'] },
@@ -209,7 +209,7 @@ const NAV = {
         { to: '/payroll/tax-declaration', label: 'Tax Declaration' },
         { to: '/payroll/declarations',    label: 'Approvals', roles: ['admin', 'director', 'hr_admin'] },
       ],
-      team:           [{ to: '/payroll/team', label: 'Team Payroll', roles: ['admin', 'director', 'manager'] }],
+      team:           [{ to: '/payroll/team', label: 'Team Payroll', roles: ['admin', 'director', 'hr_admin', 'manager'] }],
       payrollrun: [
         { to: '/payroll/run',        label: 'Run Payroll',           roles: ['admin', 'director', 'hr_admin'] },
         { to: '/payroll/increments', label: 'Increments & Arrears',  roles: ['admin', 'director', 'hr_admin'] },
@@ -582,10 +582,10 @@ export default function Topbar() {
                 </div>
                 <div className="py-1">
                   {[
-                    { label: 'Employees', to: '/employees', roles: ['admin', 'director'] },
+                    { label: 'Employees', to: '/employees', roles: ['admin', 'director', 'hr_admin'] },
                     { label: 'Attendance', to: '/attendance/my' },
                     { label: 'Leave Tracker', to: '/leave-tracker/summary' },
-                    { label: 'Reports', to: '/reports', roles: ['admin', 'director', 'manager'] },
+                    { label: 'Reports', to: '/reports', roles: ['admin', 'director', 'hr_admin', 'manager'] },
                     { label: 'Announcements', to: '/announcements' },
                   ].filter(item => (!item.roles || item.roles.includes(user?.role)))
                    .filter(item => !searchQuery || item.label.toLowerCase().includes(searchQuery.toLowerCase()))
