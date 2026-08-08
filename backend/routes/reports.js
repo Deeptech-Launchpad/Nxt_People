@@ -42,18 +42,52 @@ router.get('/attendance', authorize('admin', 'director', 'hr_admin', 'manager'),
     }
 
     const ids = employeesRes.rows.map(e => e._id);
+    const empMap = new Map(employeesRes.rows.map(e => [e._id, e]));
 
     const attRes = await pool.query(
-      `SELECT a.id as "_id", a.date, a.check_in as "checkIn", a.check_out as "checkOut", a.working_hours as "workingHours", a.status,
+      `SELECT a.id as "_id", a.date, a.check_in as "checkIn", a.check_out as "checkOut", a.working_hours as "workingHours",
+              a.status, a.late_minutes as "lateMinutes", s.end_time as "shiftEnd",
        json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'department', e.department, 'employeeId', e.employee_id) as employee
        FROM attendance a
        JOIN employees e ON a.employee_id = e.id
+       LEFT JOIN shifts s ON a.shift_id = s.id
        WHERE a.employee_id = ANY($1) AND a.date >= $2::date AND a.date <= $3::date
        ORDER BY a.date DESC`,
       [ids, start, end]
     );
 
-    res.json({ success: true, data: attRes.rows });
+    // Attendance rows never carry status='leave' (see attendance.js:726) — approved
+    // leave days have to be pulled from the leaves table and merged in as synthetic
+    // rows so the Detailed Report can show "Leave" for days with no attendance record.
+    const covered = new Set(attRes.rows.map(r => `${r.employee._id}_${new Date(r.date).toDateString()}`));
+    const leaveRes = await pool.query(
+      `SELECT employee_id, start_date, end_date
+         FROM leaves
+        WHERE employee_id = ANY($1) AND status = 'approved' AND start_date <= $3::date AND end_date >= $2::date`,
+      [ids, start, end]
+    );
+
+    const leaveRows = [];
+    for (const l of leaveRes.rows) {
+      const emp = empMap.get(l.employee_id);
+      if (!emp) continue;
+      const rangeStart = new Date(Math.max(new Date(l.start_date), new Date(start)));
+      const rangeEnd = new Date(Math.min(new Date(l.end_date), new Date(end)));
+      for (let d = new Date(rangeStart); d <= rangeEnd; d.setDate(d.getDate() + 1)) {
+        const key = `${l.employee_id}_${d.toDateString()}`;
+        if (covered.has(key)) continue;
+        covered.add(key);
+        leaveRows.push({
+          _id: `leave-${l.employee_id}-${d.toISOString().slice(0, 10)}`,
+          date: new Date(d), checkIn: null, checkOut: null, workingHours: 0,
+          status: 'leave', lateMinutes: null, shiftEnd: null,
+          employee: { _id: emp._id, firstName: emp.firstName, lastName: emp.lastName, department: emp.department, employeeId: emp.employeeId },
+        });
+      }
+    }
+
+    const data = [...attRes.rows, ...leaveRows].sort((a, b) => new Date(b.date) - new Date(a.date));
+    res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -102,6 +136,58 @@ router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager'), as
     }));
 
     res.json({ success: true, data: results });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+// Single-day snapshot for the Daily Report pie chart: how many employees are
+// present (broken down into currently checked-in vs. already checked out),
+// absent, or on approved leave for one specific date.
+router.get('/daily', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const date = req.query.date || new Date().toLocaleDateString('en-CA');
+    const { department } = req.query;
+
+    let empQuery = "WHERE e.status = 'active'";
+    let empParams = [];
+    let empIdx = 1;
+    if (department) { empQuery += ` AND e.department = $${empIdx++}`; empParams.push(department); }
+    if (!isFullAccess(req.user.role)) {
+      if (isManager(req.user.role)) {
+        empQuery += ` AND (e.reporting_manager_id = $${empIdx} OR e.approving_authority_id = $${empIdx})`;
+        empParams.push(req.user._id); empIdx++;
+      } else {
+        empQuery += ` AND e.id = $${empIdx++}`; empParams.push(req.user._id);
+      }
+    }
+    const dateIdx = empIdx;
+
+    const r = await pool.query(
+      `SELECT e.id as "_id", e.first_name as "firstName", e.last_name as "lastName", e.department,
+              a.status as "attStatus", a.check_in as "checkIn", a.check_out as "checkOut",
+              l.id as "leaveId"
+         FROM employees e
+         LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = $${dateIdx}::date
+         LEFT JOIN leaves l ON l.employee_id = e.id AND l.status = 'approved'
+                            AND l.start_date <= $${dateIdx}::date AND l.end_date >= $${dateIdx}::date
+         ${empQuery}
+        ORDER BY e.first_name`,
+      [...empParams, date]
+    );
+
+    const counts = { present: 0, absent: 0, leave: 0, checkedIn: 0, checkedOut: 0 };
+    const data = r.rows.map(row => {
+      let status;
+      if (row.leaveId) { status = 'leave'; counts.leave++; }
+      else if (row.attStatus === 'absent') { status = 'absent'; counts.absent++; }
+      else if (row.checkIn && !row.checkOut) { status = 'checked-in'; counts.checkedIn++; counts.present++; }
+      else if (row.checkIn && row.checkOut) { status = 'checked-out'; counts.checkedOut++; counts.present++; }
+      // No attendance row and no leave on file — same "absent" convention the
+      // dashboard headcount widget already uses (dashboard.js: a.id IS NULL).
+      else { status = 'absent'; counts.absent++; }
+      return { _id: row._id, firstName: row.firstName, lastName: row.lastName, department: row.department, status, checkIn: row.checkIn, checkOut: row.checkOut };
+    });
+
+    res.json({ success: true, date, counts, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
