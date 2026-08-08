@@ -4,6 +4,21 @@ import { User, Search, Eye, MessageSquare, Video, Phone } from 'lucide-react';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
+/* No app-wide theme context exists yet — the dark toggle just flips a
+ * class on <html>. This hook watches that class reactively (instead of
+ * reading it once per render) so colors here don't go stale if the user
+ * toggles theme while this page is mounted and otherwise idle. */
+function useIsDark() {
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  useEffect(() => {
+    const el = document.documentElement;
+    const observer = new MutationObserver(() => setIsDark(el.classList.contains('dark')));
+    observer.observe(el, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+  return isDark;
+}
+
 /* ── Square photo thumbnail. When no photo, a soft gray User silhouette
    (matches Zoho's placeholder — no initials, no coloured background). */
 function Avatar({ size = 36, photoUrl, photoBroken, onPhotoError }) {
@@ -142,7 +157,7 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
   };
   useEffect(() => () => clearTimeout(hoverTimer.current), []);
 
-  const isDark = document.documentElement.classList.contains('dark');
+  const isDark = useIsDark();
 
   if (mini) {
     return (
@@ -319,6 +334,7 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
 }
 
 export default function OrgChart() {
+  const isDark = useIsDark();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -415,6 +431,10 @@ export default function OrgChart() {
     if (mgrId && childrenOf[mgrId]) {
       childrenOf[mgrId] = childrenOf[mgrId].filter(c => c._id !== cycleHead._id);
     }
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[OrgChart] Circular reporting_manager_id chain detected — ${cycleHead.firstName} ${cycleHead.lastName} (${cycleHead.employeeId || cycleHead._id}) was re-parented as an extra root to break the loop. Fix their reporting manager in Employee Master.`
+    );
     extraRoots.push(cycleHead);
     markFromRoot(cycleHead._id);
   }
@@ -511,9 +531,21 @@ export default function OrgChart() {
     const spineBottom     = Math.max(selectedDeptY, lastEmpY);
 
     return (
-      <div className="bg-white min-h-[calc(100vh-120px)] border-t border-slate-200">
-        <div className="flex h-full relative">
-          <div className="w-[380px] p-8 border-r border-slate-100 flex flex-col gap-3 dark:bg-[#111827] dark:border-[#374151]">
+      <div className="bg-white border-t border-slate-200 flex flex-col max-h-[calc(100vh-120px)]">
+        <div className="p-4 border-b border-slate-100 dark:border-[#374151] flex-shrink-0">
+          <div className="relative max-w-xs">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by name, designation, dept..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="pl-9 pr-4 py-1.5 border border-slate-200 dark:border-[#374151] rounded text-base w-full focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all bg-white dark:bg-[#111827] text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+            />
+          </div>
+        </div>
+        <div className="flex overflow-auto relative flex-1">
+          <div className="w-[380px] p-8 border-r border-slate-100 flex flex-col gap-3 flex-shrink-0 dark:bg-[#111827] dark:border-[#374151]">
             {deptsList.map(dept => {
               const isActive = (activeDept?.name) === dept.name;
               return (
@@ -621,10 +653,10 @@ export default function OrgChart() {
                     style={{
                       borderWidth: isSel ? 1.5 : 1,
                       borderStyle: 'solid',
-                      borderColor: isSel ? '#0088FF' : (document.documentElement.classList.contains('dark') ? '#374151' : '#e2e8f0'),
+                      borderColor: isSel ? '#0088FF' : (isDark ? '#374151' : '#e2e8f0'),
                       background: isSel
-                        ? (document.documentElement.classList.contains('dark') ? '#1e3a5f' : '#eff6ff')
-                        : (document.documentElement.classList.contains('dark') ? '#1f2937' : '#ffffff'),
+                        ? (isDark ? '#1e3a5f' : '#eff6ff')
+                        : (isDark ? '#1f2937' : '#ffffff'),
                     }}
                   >
                     <Avatar photoUrl={emp.photoUrl} size={40} />

@@ -5,6 +5,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Search, Star, Phone, Calendar } from 'lucide-react';
 import api from '../utils/api';
+import toast from 'react-hot-toast';
+import { PhotoAvatar } from '../components/ui';
+
+const STARRED_KEY = 'birthdayFolks.starred';
+function loadStarred() {
+  try { return JSON.parse(localStorage.getItem(STARRED_KEY)) || {}; } catch { return {}; }
+}
 
 const MONTHS = [
   'January','February','March','April','May','June',
@@ -21,7 +28,7 @@ export default function BirthdayFolks() {
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  const [starred, setStarred]     = useState({}); // empId → bool
+  const [starred, setStarred]     = useState(loadStarred); // empId → bool
 
   const load = useCallback(() => {
     setLoading(true);
@@ -43,7 +50,10 @@ export default function BirthdayFolks() {
               return da - db;
             });
             setEmployees(filtered);
-          }).catch(() => setEmployees([]));
+          }).catch(err => {
+            toast.error(err.response?.data?.message || 'Failed to load birthdays');
+            setEmployees([]);
+          });
       })
       .finally(() => setLoading(false));
   }, [month, year]);
@@ -60,7 +70,11 @@ export default function BirthdayFolks() {
   };
 
   const toggleStar = (id) => {
-    setStarred(prev => ({ ...prev, [id]: !prev[id] }));
+    setStarred(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      localStorage.setItem(STARRED_KEY, JSON.stringify(next));
+      return next;
+    });
   };
 
   const filtered = employees.filter(e => {
@@ -156,9 +170,6 @@ export default function BirthdayFolks() {
               const day       = dob ? dob.getDate() : null;
               const mon       = dob ? MONTH_SHORT[dob.getMonth()] : '';
               const isTodayBday = dob && dob.getDate() === today.getDate() && dob.getMonth() === today.getMonth();
-              const avatarUrl = emp.photoUrl || emp.photo_url
-                ? (emp.photoUrl || emp.photo_url)
-                : `https://ui-avatars.com/api/?name=${encodeURIComponent(firstName + ' ' + lastName)}&background=e8f0fe&color=1a73e8&size=80&bold=true`;
 
               return (
                 <div key={emp._id || emp.id}
@@ -189,13 +200,12 @@ export default function BirthdayFolks() {
                   {/* Photo */}
                   <div className="pt-12 pb-3 px-3">
                     <div className="flex justify-center mb-3">
-                      <img
-                        src={avatarUrl}
-                        alt={firstName}
-                        className="w-[72px] h-[72px] rounded object-cover border border-gray-100"
-                        onError={e => {
-                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(firstName + ' ' + lastName)}&background=e8f0fe&color=1a73e8&size=80&bold=true`;
-                        }}
+                      <PhotoAvatar
+                        photoUrl={emp.photoUrl || emp.photo_url}
+                        firstName={firstName}
+                        lastName={lastName}
+                        className="w-[72px] h-[72px] border border-gray-100"
+                        textClassName="text-lg"
                       />
                     </div>
 

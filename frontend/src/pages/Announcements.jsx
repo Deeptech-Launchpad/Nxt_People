@@ -17,6 +17,7 @@ function timeAgo(dateStr) {
   const mins = Math.floor(diff / 60000);
   const hrs = Math.floor(mins / 60);
   const days = Math.floor(hrs / 24);
+  if (days > 30) return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
   if (hrs > 0) return `${hrs} hour${hrs > 1 ? 's' : ''} ago`;
   if (mins > 0) return `${mins} min ago`;
@@ -30,6 +31,7 @@ export default function Announcements() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ title: '', body: '', type: 'general', isPinned: false, pinnedUntil: '' });
   const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -57,13 +59,16 @@ export default function Announcements() {
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this announcement?')) return;
+    setBusyId(id);
     try { await api.delete(`/announcements/${id}`); toast.success('Deleted'); load(); }
     catch (err) { toast.error('Failed to delete'); }
+    finally { setBusyId(null); }
   };
 
   // Toggle the pin badge on an existing announcement. Unpinning leaves the
   // announcement visible on this page but removes it from the dashboard feed.
   const handleTogglePin = async (a) => {
+    setBusyId(a._id);
     try {
       await api.put(`/announcements/${a._id}`, {
         isPinned: !a.isPinned,
@@ -75,6 +80,8 @@ export default function Announcements() {
       load();
     } catch (err) {
       toast.error('Failed to update');
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -113,8 +120,9 @@ export default function Announcements() {
                       <button
                         type="button"
                         onClick={() => handleTogglePin(a)}
+                        disabled={busyId === a._id}
                         title="Click to unpin"
-                        className="bg-brand-500 hover:bg-brand-600 text-white text-[12px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 transition-colors"
+                        className="bg-brand-500 hover:bg-brand-600 text-white text-[12px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 transition-colors disabled:opacity-60"
                       >
                         <Pin size={10} /> Pinned
                       </button>
@@ -130,8 +138,9 @@ export default function Announcements() {
                     <button
                       type="button"
                       onClick={() => handleTogglePin(a)}
+                      disabled={busyId === a._id}
                       title="Click to pin"
-                      className="bg-slate-100 hover:bg-brand-50 text-slate-500 hover:text-brand-600 text-[12px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 transition-colors"
+                      className="bg-slate-100 hover:bg-brand-50 text-slate-500 hover:text-brand-600 text-[12px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 transition-colors disabled:opacity-60"
                     >
                       <Pin size={10} /> Pin
                     </button>
@@ -162,7 +171,7 @@ export default function Announcements() {
                     </div>
                   </div>
                   {isFullAccess(user) && (
-                    <button onClick={() => handleDelete(a._id)} className="flex-shrink-0 p-2 rounded-lg hover:bg-black/5 transition-colors text-slate-500 hover:text-red-500">
+                    <button onClick={() => handleDelete(a._id)} disabled={busyId === a._id} className="flex-shrink-0 p-2 rounded-lg hover:bg-black/5 transition-colors text-slate-500 hover:text-red-500 disabled:opacity-60">
                       <Trash2 size={15} />
                     </button>
                   )}

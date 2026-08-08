@@ -1,7 +1,8 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarCheck, Clock, CalendarDays, Trophy, FileText, Plane, DollarSign, CheckSquare, Users, FileCheck, MapPin, Link2 } from 'lucide-react';
+import { CalendarCheck, Clock, CalendarDays, Trophy, FileText, Plane, DollarSign, CheckSquare, FileCheck, MapPin, Link2 } from 'lucide-react';
 import api from '../utils/api';
+import toast from 'react-hot-toast';
 
 const SERVICE_TILES = [
   { icon: CalendarCheck, label: 'Attendance',          color: 'bg-blue-500',   to: '/attendance/my' },
@@ -12,7 +13,6 @@ const SERVICE_TILES = [
   { icon: Plane,         label: 'Travel',              color: 'bg-sky-500',    to: '/more-services/travel' },
   { icon: DollarSign,    label: 'Compensation',        color: 'bg-emerald-500',to: '/more-services/compensation' },
   { icon: CheckSquare,   label: 'Tasks',               color: 'bg-orange-500', to: '/dashboard' },
-  { icon: Users,         label: 'Employee Engagement', color: 'bg-rose-500',   to: '/more-services/surveys' },
   { icon: FileCheck,     label: 'HR Letters',          color: 'bg-teal-500',   to: '/more-services/hr-letters' },
 ];
 
@@ -30,7 +30,9 @@ export default function OrgOverview() {
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
-    api.get('/dashboard/stats').then(r => setStats(r.data.data)).catch(() => {});
+    api.get('/dashboard/stats')
+      .then(r => setStats(r.data.data))
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load org stats'));
   }, []);
 
   return (
@@ -77,7 +79,7 @@ export default function OrgOverview() {
 
       {/* Stats row */}
       {stats && (
-        <div className="grid grid-cols-4 gap-4 mt-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
           {[
             { label: 'Total Employees', val: stats.totalEmployees, color: 'text-slate-700' },
             { label: 'Present Today',   val: stats.present,        color: 'text-emerald-600' },

@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { UserPlus } from 'lucide-react';
 import api from '../utils/api';
+import toast from 'react-hot-toast';
 import { PhotoAvatar } from '../components/ui';
 
 export default function NewHires() {
@@ -8,7 +9,7 @@ export default function NewHires() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/employees?limit=200&status=active')
+    api.get('/employees?limit=500&status=active')
       .then(r => {
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - 30);
@@ -16,7 +17,7 @@ export default function NewHires() {
           .filter(e => e.joiningDate && new Date(e.joiningDate) >= cutoff)
           .sort((a, b) => new Date(b.joiningDate) - new Date(a.joiningDate));
         setEmployees(data);
-      }).catch(() => {}).finally(() => setLoading(false));
+      }).catch(err => toast.error(err.response?.data?.message || 'Failed to load new hires')).finally(() => setLoading(false));
   }, []);
 
   return (

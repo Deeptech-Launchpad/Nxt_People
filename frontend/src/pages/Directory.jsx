@@ -3,14 +3,20 @@ import { Search, Phone, Mail, Building2, Users, X, ChevronDown } from 'lucide-re
 import api from '../utils/api';
 
 function EmployeeCard({ emp }) {
+  const [imgError, setImgError] = useState(false);
+  const hasPhoto = emp.photoUrl && !imgError;
   return (
     <div className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow transition-all duration-200 overflow-hidden flex flex-col items-center p-6">
       <div className="w-20 h-20 bg-slate-100 rounded-lg flex items-end justify-center overflow-hidden mb-4 border border-slate-200">
-        <svg viewBox="0 0 24 24" fill="currentColor" className="w-16 h-16 text-slate-300 translate-y-2">
-          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-        </svg>
+        {hasPhoto ? (
+          <img src={emp.photoUrl} alt={`${emp.firstName} ${emp.lastName}`} className="w-full h-full object-cover" onError={() => setImgError(true)} />
+        ) : (
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-16 h-16 text-slate-300 translate-y-2">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+          </svg>
+        )}
       </div>
-      <h3 className="font-semibold text-slate-800 text-[16px] text-center">{emp.firstName} {emp.lastName}</h3>
+      <h3 className="font-semibold text-slate-800 text-[16px] text-center truncate max-w-full">{emp.firstName} {emp.lastName}</h3>
       <p className="text-[14px] text-slate-500 mt-1 text-center">{emp.designation || '—'}</p>
       
       <div className="w-full mt-5 space-y-2 border-t border-slate-100 pt-4">
@@ -47,6 +53,7 @@ export default function Directory() {
   const [selectedDesignation, setSelectedDesignation] = useState('');
   const [selectedLocation, setSelectedLocation] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
 
   // Extract unique values
   const departments = [...new Set(employees.map(e => e.department).filter(Boolean))].sort();
@@ -84,8 +91,25 @@ export default function Directory() {
 
   return (
     <div className="flex flex-col md:flex-row gap-4 items-start">
+      {/* Mobile search + filter toggle — always reachable, unlike the sidebar below */}
+      <div className="w-full md:hidden flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search"
+            className="w-full border border-slate-200 rounded text-[14px] pl-9 pr-3 py-2 focus:outline-none focus:border-blue-400"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <button onClick={() => setShowFilters(v => !v)} className="flex-shrink-0 border border-slate-200 rounded px-3 py-2 text-[14px] font-semibold text-slate-600 bg-white">
+          Filters
+        </button>
+      </div>
+
       {/* Left Sidebar Filter */}
-      <div className="w-full md:w-64 flex-shrink-0 bg-white border border-slate-200 rounded-lg p-4 sticky top-4 hidden md:block shadow-sm">
+      <div className={`w-full md:w-64 flex-shrink-0 bg-white border border-slate-200 rounded-lg p-4 sticky top-4 shadow-sm ${showFilters ? 'block' : 'hidden'} md:block`}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 text-slate-700">
             <Search size={14} />
@@ -155,8 +179,14 @@ export default function Directory() {
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm text-center py-20">
             <Users size={40} className="text-slate-200 mx-auto mb-3" />
-            <p className="text-slate-400 font-medium text-base">No employees match the filters</p>
-            <button onClick={clearFilters} className="text-blue-600 hover:text-blue-700 text-[14px] font-semibold mt-2">Clear Filters</button>
+            {employees.length === 0 ? (
+              <p className="text-slate-400 font-medium text-base">No employees found</p>
+            ) : (
+              <>
+                <p className="text-slate-400 font-medium text-base">No employees match the filters</p>
+                <button onClick={clearFilters} className="text-blue-600 hover:text-blue-700 text-[14px] font-semibold mt-2">Clear Filters</button>
+              </>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
