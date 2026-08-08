@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Users, MessageSquare, BarChart2, MapPin, UserPlus, Clock, Cake } from 'lucide-react';
 import api from '../utils/api';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 
 const Tab = ({ active, onClick, children }) => (
@@ -66,7 +67,7 @@ export default function TeamSpace() {
     setLoading(true);
     api.get('/team/space')
       .then(r => setData(r.data.data))
-      .catch(() => {})
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load team space'))
       .finally(() => setLoading(false));
   }, [user?._id]);
 
@@ -74,7 +75,7 @@ export default function TeamSpace() {
   const avail    = data?.teamAvailability || { in: 0, out: 0, yetToCheckIn: 0 };
 
   return (
-    <div className="flex gap-5 p-6 min-h-[calc(100vh-100px)]">
+    <div className="flex flex-col lg:flex-row gap-5 p-6 min-h-[calc(100vh-100px)]">
       {/* Main area: department wall / groups / surveys (placeholder for now) */}
       <div className="flex-1 min-w-0 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col">
         {/* Department header card */}
@@ -101,7 +102,7 @@ export default function TeamSpace() {
       </div>
 
       {/* Right sidebar panels */}
-      <div className="w-[260px] flex-shrink-0 space-y-3">
+      <div className="w-full lg:w-[260px] flex-shrink-0 space-y-3">
         <PanelCard icon={Users} title="Team Strength">
           {loading ? '—' : (
             <div className="flex items-center justify-between">

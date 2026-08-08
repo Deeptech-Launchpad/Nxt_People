@@ -59,12 +59,12 @@ export default function Projects() {
 
         <div className="md:col-span-2 space-y-4">
           {loading ? <p>Loading...</p> : projects.map(p => (
-            <div key={p.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+            <div key={p._id || p.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-slate-800">{p.name}</h3>
                 <p className="text-base text-slate-500 mt-1">{p.description}</p>
               </div>
-              <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1"><CheckCircle size={12}/> Active</span>
+              <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1 capitalize"><CheckCircle size={12}/> {p.status || 'Active'}</span>
             </div>
           ))}
           {!loading && projects.length === 0 && <p className="text-slate-500 text-center p-6 border border-dashed rounded-xl">No projects found. Create one to get started.</p>}

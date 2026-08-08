@@ -2,6 +2,7 @@
 import { Search, Phone, MessageSquare, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { isFullAccess, isManager } from '../utils/roles';
 import { PhotoAvatar } from '../components/ui';
@@ -37,6 +38,8 @@ export default function Peers() {
   const [me, setMe] = useState(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const PAGE_SIZE = 60;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     if (!user?._id) return;
@@ -47,7 +50,7 @@ export default function Peers() {
     ]).then(([list, meRes]) => {
       setEmployees(list.data.data || []);
       setMe(meRes.data.data || null);
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch(err => toast.error(err.response?.data?.message || 'Failed to load peers')).finally(() => setLoading(false));
   }, [user?._id]);
 
   const myManagerId = me?.reporting_manager_id || me?.reportingManagerId || null;
@@ -79,6 +82,9 @@ export default function Peers() {
     !search || `${e.firstName} ${e.lastName} ${e.designation || ''} ${e.department || ''} ${e.employeeId || ''}`
       .toLowerCase().includes(search.toLowerCase())
   ), [peers, search]);
+
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search]);
+  const visiblePeers = filtered.slice(0, visibleCount);
 
   const managerName = me?.manager
     ? `${me.manager.firstName || ''} ${me.manager.lastName || ''}`.trim()
@@ -130,7 +136,7 @@ export default function Peers() {
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {filtered.map(e => {
+          {visiblePeers.map(e => {
             const phoneNum  = e.phone || e.workPhone;
             const telHref   = phoneNum ? `tel:${phoneNum}` : null;
             return (
@@ -169,6 +175,14 @@ export default function Peers() {
           {filtered.length === 0 && (
             <div className="col-span-full text-center py-16 text-slate-400 text-base">No peers match your search.</div>
           )}
+        </div>
+      )}
+
+      {filtered.length > visibleCount && (
+        <div className="text-center mt-5">
+          <button onClick={() => setVisibleCount(c => c + PAGE_SIZE)} className="text-blue-600 hover:text-blue-700 text-[14px] font-semibold">
+            Show more ({filtered.length - visibleCount} remaining)
+          </button>
         </div>
       )}
     </div>

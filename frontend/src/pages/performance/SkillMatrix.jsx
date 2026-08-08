@@ -8,10 +8,21 @@ const LEVEL_COLOR = { '': 'bg-slate-100', Beginner: 'bg-yellow-100 text-yellow-7
 export default function SkillMatrix() {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [levels, setLevels] = useState({}); // `${employeeId}:${skill}` → level, frozen once per employee load
 
   useEffect(() => {
-    api.get('/employees?limit=30&status=active')
-      .then(r => setEmployees(r.data.data || []))
+    api.get('/employees?limit=500&status=active')
+      .then(r => {
+        const emps = r.data.data || [];
+        setEmployees(emps);
+        const nextLevels = {};
+        emps.forEach(e => {
+          SKILLS.forEach(s => {
+            nextLevels[`${e._id}:${s}`] = LEVELS[Math.floor(Math.random() * 4)];
+          });
+        });
+        setLevels(nextLevels);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -43,7 +54,7 @@ export default function SkillMatrix() {
                   </div>
                 </td>
                 {SKILLS.map(s => {
-                  const level = LEVELS[Math.floor(Math.random() * 4)];
+                  const level = levels[`${e._id}:${s}`];
                   return (
                     <td key={s} className="px-4 py-3 text-center">
                       {level && <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full ${LEVEL_COLOR[level]}`}>{level}</span>}
@@ -56,6 +67,9 @@ export default function SkillMatrix() {
         </table>
       </div>
       <p className="text-[13px] text-slate-400 mt-3">* Skill levels shown are for demonstration. Actual skill data requires employee self-assessment.</p>
+      {employees.length >= 500 && (
+        <p className="text-[13px] text-amber-500 mt-1">Showing the first 500 active employees — results may be capped.</p>
+      )}
     </div>
   );
 }

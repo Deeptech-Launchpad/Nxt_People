@@ -33,10 +33,11 @@ const StatusBadge = ({ status }) => {
   );
 };
 
+const AVATAR_SIZES = { 6: 'w-6 h-6', 7: 'w-7 h-7', 9: 'w-9 h-9' };
 const Avatar = ({ name = '', size = 7 }) => {
   const initials = name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
   return (
-    <div className={`w-${size} h-${size} rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white text-[12px] font-bold flex-shrink-0`}>
+    <div className={`${AVATAR_SIZES[size] || AVATAR_SIZES[7]} rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white text-[12px] font-bold flex-shrink-0`}>
       {initials || '?'}
     </div>
   );
@@ -61,7 +62,7 @@ function ProjectDrawer({ project, onClose, onRefresh }) {
         setMembers(r.data.data?.members || []);
         setTasks(r.data.data?.tasks || []);
       })
-      .catch(() => {})
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load project details'))
       .finally(() => setLT(false));
   };
 
@@ -366,7 +367,7 @@ export default function TeamProjects() {
 
   const load = () => {
     setLoading(true);
-    api.get('/projects').then(r => setProjects(r.data.data || [])).catch(() => {}).finally(() => setLoading(false));
+    api.get('/projects').then(r => setProjects(r.data.data || [])).catch(err => toast.error(err.response?.data?.message || 'Failed to load projects')).finally(() => setLoading(false));
   };
 
   useEffect(load, []);

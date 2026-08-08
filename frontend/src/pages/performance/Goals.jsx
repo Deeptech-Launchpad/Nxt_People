@@ -16,6 +16,7 @@ export default function PerformanceGoals() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving]     = useState(false);
   const [form, setForm]         = useState({ title: '', target: '' });
+  const [busyId, setBusyId]     = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -44,11 +45,14 @@ export default function PerformanceGoals() {
   };
 
   const handleStatus = async (id, status) => {
+    setBusyId(id);
     try {
       await api.put(`/performance/goals/${id}`, { status });
       load();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update');
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -131,12 +135,20 @@ export default function PerformanceGoals() {
               <div className="flex-1 min-w-0">
                 <p className="text-[15px] font-semibold text-slate-800">{g.title}</p>
                 {g.target && <p className="text-[13px] text-blue-600 mt-0.5">Target: {g.target}</p>}
-                {g.dueDate && <p className="text-[13px] text-slate-400 mt-0.5">Due: {new Date(g.dueDate).toLocaleDateString('en-IN')}</p>}
+                {g.dueDate && (() => {
+                  const overdue = g.status !== 'completed' && new Date(g.dueDate) < new Date();
+                  return (
+                    <p className={`text-[13px] mt-0.5 ${overdue ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>
+                      Due: {new Date(g.dueDate).toLocaleDateString('en-IN')}{overdue && ' · Overdue'}
+                    </p>
+                  );
+                })()}
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
                 <select value={g.status}
                   onChange={e => handleStatus(g._id, e.target.value)}
-                  className={`text-[13px] font-semibold px-2 py-1 rounded-full border-0 cursor-pointer ${STATUS_MAP[g.status]?.cls || ''}`}>
+                  disabled={busyId === g._id}
+                  className={`text-[13px] font-semibold px-2 py-1 rounded-full border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${STATUS_MAP[g.status]?.cls || ''}`}>
                   {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_MAP[s].label}</option>)}
                 </select>
                 <div className="flex gap-0.5">

@@ -67,6 +67,10 @@ export default function Approvals() {
   const [actionLoading, setActionLoading] = useState('');
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
+  const PAGE_SIZE = 25;
+  const [visibleCounts, setVisibleCounts] = useState({});
+  const getVisible = (tabId, arr) => (arr || []).slice(0, visibleCounts[tabId] || PAGE_SIZE);
+  const showMore = (tabId) => setVisibleCounts(prev => ({ ...prev, [tabId]: (prev[tabId] || PAGE_SIZE) + PAGE_SIZE }));
 
   // When the user clicks a tab, mark its current count as "seen" and
   // persist. Done as a small helper so the rendering code stays clean.
@@ -101,7 +105,7 @@ export default function Approvals() {
           total: d.total || 0,
         });
       })
-      .catch(console.error)
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load approvals'))
       .finally(() => setLoading(false));
   };
 
@@ -177,6 +181,8 @@ export default function Approvals() {
     let canAct = false;
     if (endpoint === 'leaves' || endpoint === 'regularizations' || endpoint === 'comp-off' || endpoint === 'wfh') {
       canAct = status === 'pending' && !!canActLeave;
+    } else if (endpoint === 'timesheets') {
+      canAct = status === 'submitted' && !!canActLeave;
     } else {
       canAct = (status === 'pending' || status === 'submitted');
     }
@@ -204,7 +210,7 @@ export default function Approvals() {
         </button>
         {/* Approve every remaining level at once (leaves + comp-offs + wfh) — HR/SA + Team Leads. */}
         {(endpoint === 'leaves' || endpoint === 'comp-off' || endpoint === 'wfh') && canApproveAll && (
-          <button onClick={() => action(endpoint, id, 'approved', undefined, true)} disabled={!!actionLoading}
+          <button onClick={() => { if (confirm('Approve all remaining levels for this request? This skips any other pending approvers.')) action(endpoint, id, 'approved', undefined, true); }} disabled={!!actionLoading}
             className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
             <CheckCheck size={13} /> Approve All
           </button>
@@ -221,6 +227,14 @@ export default function Approvals() {
     <div className="text-center py-16">
       <Icon size={40} className="text-slate-200 mx-auto mb-3" />
       <p className="text-slate-600">{message}</p>
+    </div>
+  );
+
+  const ShowMoreFooter = ({ tabId, total, shown }) => shown >= total ? null : (
+    <div className="p-4 text-center">
+      <button onClick={() => showMore(tabId)} className="text-brand-600 hover:text-brand-700 text-sm font-semibold">
+        Show more ({total - shown} remaining)
+      </button>
     </div>
   );
 
@@ -303,7 +317,8 @@ export default function Approvals() {
             {tab === 'leaves' && (
               data.leaves?.length === 0
                 ? <EmptyState icon={CheckCircle} message="No pending leave requests" />
-                : data.leaves?.map(l => (
+                : <>
+                {getVisible('leaves', data.leaves).map(l => (
                   <div key={l._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
@@ -325,7 +340,7 @@ export default function Approvals() {
                            {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
-                          {new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(l.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {fmtDay(l.startDate, { month: 'short', day: 'numeric' })} – {fmtDay(l.endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                         <p className="text-sm text-slate-600 mt-1">{l.reason}</p>
                       </div>
@@ -343,14 +358,17 @@ export default function Approvals() {
                        <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct && l.employee?._id !== user?._id} status={l.status} />
                      </div>
                    </div>
-                ))
+                ))}
+                <ShowMoreFooter tabId="leaves" total={data.leaves.length} shown={getVisible('leaves', data.leaves).length} />
+                </>
             )}
 
             {/* Permissions */}
             {tab === 'permissions' && (
               data.permissions?.length === 0
                 ? <EmptyState icon={CheckCircle} message="No pending permission requests" />
-                : data.permissions?.map(p => (
+                : <>
+                {getVisible('permissions', data.permissions).map(p => (
                   <div key={p._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[p.leaveType] || 'bg-slate-50 text-slate-600'}`}>
@@ -371,7 +389,7 @@ export default function Approvals() {
                            Permission · {p.hours}h {p.startTime && p.endTime && `(${fmt12(p.startTime)}–${fmt12(p.endTime)})`}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
-                          {new Date(p.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {fmtDay(p.startDate, { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                         <p className="text-sm text-slate-400 mt-1">{p.reason}</p>
                       </div>
@@ -389,14 +407,18 @@ export default function Approvals() {
                        <ActionBtns endpoint="leaves" id={p._id} type="Permission" canActLeave={p.canAct && p.employee?._id !== user?._id} status={p.status} />
                      </div>
                    </div>
-                ))
+                ))}
+                <ShowMoreFooter tabId="permissions" total={data.permissions.length} shown={getVisible('permissions', data.permissions).length} />
+                </>
             )}
 
             {/* Approved Leaves */}
-            {tab === 'approvedLeaves' && (
-              data.approvedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).length === 0
+            {tab === 'approvedLeaves' && (() => {
+              const list = data.approvedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())) || [];
+              return list.length === 0
                 ? <EmptyState icon={CheckCircle} message="No approved leave requests found" />
-                : data.approvedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).map(l => (
+                : <>
+                {getVisible('approvedLeaves', list).map(l => (
                   <div key={l._id} className="p-5 flex items-start justify-between gap-4 overflow-hidden">
                     <div className="flex items-start gap-4 min-w-0">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
@@ -413,7 +435,7 @@ export default function Approvals() {
                            {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
-                          {new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(l.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {fmtDay(l.startDate, { month: 'short', day: 'numeric' })} – {fmtDay(l.endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                         <p className="text-sm text-slate-600 mt-1">{l.reason}</p>
                       </div>
@@ -425,14 +447,18 @@ export default function Approvals() {
                        <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
                      </div>
                    </div>
-                ))
-            )}
+                ))}
+                <ShowMoreFooter tabId="approvedLeaves" total={list.length} shown={getVisible('approvedLeaves', list).length} />
+                </>;
+            })()}
 
             {/* Rejected Leaves */}
-            {tab === 'rejectedLeaves' && (
-              data.rejectedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).length === 0
+            {tab === 'rejectedLeaves' && (() => {
+              const list = data.rejectedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())) || [];
+              return list.length === 0
                 ? <EmptyState icon={XCircle} message="No rejected leave requests found" />
-                : data.rejectedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())).map(l => (
+                : <>
+                {getVisible('rejectedLeaves', list).map(l => (
                   <div key={l._id} className="p-5 flex items-start justify-between gap-4 overflow-hidden">
                     <div className="flex items-start gap-4 min-w-0">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
@@ -449,7 +475,7 @@ export default function Approvals() {
                            {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
-                          {new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(l.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {fmtDay(l.startDate, { month: 'short', day: 'numeric' })} – {fmtDay(l.endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                         <p className="text-sm text-slate-600 mt-1">{l.reason}</p>
                         {l.rejectionReason && (
@@ -466,14 +492,17 @@ export default function Approvals() {
                        <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
                      </div>
                    </div>
-                ))
-            )}
+                ))}
+                <ShowMoreFooter tabId="rejectedLeaves" total={list.length} shown={getVisible('rejectedLeaves', list).length} />
+                </>;
+            })()}
 
             {/* Timesheets */}
             {tab === 'timesheets' && (
               data.timesheets?.length === 0
                 ? <EmptyState icon={CheckCircle} message="No pending timesheets" />
-                : data.timesheets?.map(ts => (
+                : <>
+                {getVisible('timesheets', data.timesheets).map(ts => (
                   <div key={ts._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center text-brand-600 font-display font-bold text-base flex-shrink-0">
@@ -490,16 +519,19 @@ export default function Approvals() {
                         <p className="text-sm text-slate-400 mt-1">{ts.totalHours?.toFixed(1)} total hours{ts.notes ? ` · ${ts.notes}` : ''}</p>
                       </div>
                     </div>
-                    <ActionBtns endpoint="timesheets" id={ts._id} type="Timesheet" status={ts.status} />
+                    <ActionBtns endpoint="timesheets" id={ts._id} type="Timesheet" canActLeave={ts.employee?._id !== user?._id} status={ts.status} />
                   </div>
-                ))
+                ))}
+                <ShowMoreFooter tabId="timesheets" total={data.timesheets.length} shown={getVisible('timesheets', data.timesheets).length} />
+                </>
             )}
 
             {/* Regularizations */}
             {tab === 'regularizations' && (
               data.regularizations?.length === 0
                 ? <EmptyState icon={Clock} message="No pending regularizations" />
-                : data.regularizations?.map(r => (
+                : <>
+                {getVisible('regularizations', data.regularizations).map(r => (
                   <div key={r._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600 flex-shrink-0">
@@ -527,14 +559,17 @@ export default function Approvals() {
                       <ActionBtns endpoint="regularizations" id={r._id} type="Regularization" canActLeave={r.canAct && r.employee?._id !== user?._id} status={r.status} />
                     </div>
                   </div>
-                ))
+                ))}
+                <ShowMoreFooter tabId="regularizations" total={data.regularizations.length} shown={getVisible('regularizations', data.regularizations).length} />
+                </>
             )}
 
             {/* WFH Requests */}
             {tab === 'wfh' && (
               data.wfhRequests?.length === 0
                 ? <EmptyState icon={Home} message="No pending WFH requests" />
-                : data.wfhRequests?.map(w => (
+                : <>
+                {getVisible('wfh', data.wfhRequests).map(w => (
                   <div key={w._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 flex-shrink-0">
@@ -564,14 +599,17 @@ export default function Approvals() {
                       <ActionBtns endpoint="wfh" id={w._id} type="WFH" canActLeave={w.canAct && w.employee?._id !== user?._id} status={w.status} />
                     </div>
                   </div>
-                ))
+                ))}
+                <ShowMoreFooter tabId="wfh" total={data.wfhRequests.length} shown={getVisible('wfh', data.wfhRequests).length} />
+                </>
             )}
 
             {/* Comp-Off Requests */}
             {tab === 'compoff' && (
               data.compOffs?.length === 0
                 ? <EmptyState icon={Gift} message="No pending comp-off requests" />
-                : data.compOffs?.map(c => (
+                : <>
+                {getVisible('compoff', data.compOffs).map(c => (
                   <div key={c._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 flex-shrink-0">
@@ -600,7 +638,9 @@ export default function Approvals() {
                     </div>
                     <ActionBtns endpoint="comp-off" id={c._id} type="Comp-Off" canActLeave={c.canAct && c.employee?._id !== user?._id} status={c.status} />
                   </div>
-                ))
+                ))}
+                <ShowMoreFooter tabId="compoff" total={data.compOffs.length} shown={getVisible('compoff', data.compOffs).length} />
+                </>
             )}
 
           </div>
@@ -616,7 +656,7 @@ export default function Approvals() {
           canAct={detailWfh.status === 'pending' && !!detailWfh.canAct && detailWfh.employee?._id !== user?._id}
           onApprove={(x, comment) => { setDetailWfh(null); action('wfh', x._id, 'approved', comment); }}
           onApproveAll={canApproveAll && detailWfh.status === 'pending' && !!detailWfh.canAct
-            ? (x, comment) => { setDetailWfh(null); action('wfh', x._id, 'approved', comment, true); }
+            ? (x, comment) => { if (confirm('Approve all remaining levels for this request? This skips any other pending approvers.')) { setDetailWfh(null); action('wfh', x._id, 'approved', comment, true); } }
             : undefined}
           onReject={(x, comment) => { setDetailWfh(null); action('wfh', x._id, 'rejected', comment); }}
         />
@@ -656,7 +696,7 @@ export default function Approvals() {
             canAct={detailLeave.status === 'pending' && !!detailLeave.canAct && detailLeave.employee?._id !== user?._id}
             onApprove={(x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'approved', comment); }}
             onApproveAll={!isReg && canApproveAll && detailLeave.status === 'pending' && !!detailLeave.canAct
-              ? (x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'approved', comment, true); }
+              ? (x, comment) => { if (confirm('Approve all remaining levels for this request? This skips any other pending approvers.')) { setDetailLeave(null); action(endpoint, x._id, 'approved', comment, true); } }
               : undefined}
             onReject={(x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'rejected', comment); }}
           />

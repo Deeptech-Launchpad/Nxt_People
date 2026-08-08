@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Download, Filter, BarChart2 } from 'lucide-react';
 import api from '../utils/api';
+import toast from 'react-hot-toast';
 import BackButton from '../components/BackButton';
 
 const DEPTS = ['All','Engineering','HR','Sales','Marketing','Finance','Design','Product'];
@@ -25,7 +26,7 @@ export default function Reports() {
       // Bug #20 fix: pass the same date range to summary so it's not stuck on current month
       api.get(`/reports/summary?${params}`)
     ]).then(([r1, r2]) => { setRecords(r1.data.data); setSummary(r2.data.data); })
-      .catch(console.error).finally(() => setLoading(false));
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load report')).finally(() => setLoading(false));
   };
 
   useEffect(load, []);
@@ -43,7 +44,7 @@ export default function Reports() {
 
   const exportCSV = () => {
     const data = tab === 'detail' ? records : summary;
-    if (!data?.length) return;
+    if (!data?.length) return toast.error('No data to export for the selected filters');
     let csv;
     if (tab === 'detail') {
       csv = 'Employee,ID,Department,Date,Check In,Check Out,Hours,Status\n' +
@@ -118,7 +119,7 @@ export default function Reports() {
           <div className="overflow-x-auto">
             {tab === 'detail' ? (
               <table className="w-full">
-                <thead><tr className="bg-slate-50">{['Employee','Department','Date','Check In','Check Out','Hours','Status'].map(h=><th key={h} className="px-5 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
+                <thead><tr className="bg-slate-50">{['Employee','Department','Date','Check In','Check Out','Hours','Status'].map(h=><th key={h} className={`px-5 py-3 text-sm font-semibold text-slate-500 uppercase tracking-wider ${h==='Hours' ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {records.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-slate-400">No records for selected filters</td></tr> :
                   records.map((r,i) => (
@@ -133,7 +134,7 @@ export default function Reports() {
                       <td className="px-5 py-3.5 text-base text-slate-600">{new Date(r.date).toLocaleDateString('en-US',{day:'2-digit',month:'short',year:'numeric'})}</td>
                       <td className="px-5 py-3.5 text-base text-slate-700">{fmt(r.checkIn)}</td>
                       <td className="px-5 py-3.5 text-base text-slate-700">{fmt(r.checkOut)}</td>
-                      <td className="px-5 py-3.5 text-base text-slate-700">{r.workingHours ? `${Number(r.workingHours).toFixed(1)}h` : '—'}</td>
+                      <td className="px-5 py-3.5 text-base text-slate-700 text-right tabular-nums">{r.workingHours ? `${Number(r.workingHours).toFixed(1)}h` : '—'}</td>
                       <td className="px-5 py-3.5"><span className={`px-2.5 py-1 rounded-full text-sm font-medium capitalize ${STATUS_STYLE[r.status] || 'bg-slate-100 text-slate-600'}`}>{r.status}</span></td>
                     </tr>
                   ))}
@@ -141,7 +142,7 @@ export default function Reports() {
               </table>
             ) : (
               <table className="w-full">
-                <thead><tr className="bg-slate-50">{['Employee','Department','Present','Absent','Late','Total Hours'].map(h=><th key={h} className="px-5 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
+                <thead><tr className="bg-slate-50">{['Employee','Department','Present','Absent','Late','Total Hours'].map(h=><th key={h} className={`px-5 py-3 text-sm font-semibold text-slate-500 uppercase tracking-wider ${['Present','Absent','Late','Total Hours'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {summary.length === 0 ? <tr><td colSpan={6} className="text-center py-12 text-slate-400">No data available</td></tr> :
                   summary.map((r,i) => (
@@ -153,10 +154,10 @@ export default function Reports() {
                         </div>
                       </td>
                       <td className="px-5 py-3.5 text-base text-slate-500">{r.employee?.department}</td>
-                      <td className="px-5 py-3.5"><span className="text-base font-medium text-emerald-600">{r.present}</span></td>
-                      <td className="px-5 py-3.5"><span className="text-base font-medium text-red-500">{r.absent}</span></td>
-                      <td className="px-5 py-3.5"><span className="text-base font-medium text-amber-600">{r.late}</span></td>
-                      <td className="px-5 py-3.5 text-base font-semibold text-brand-600">{r.totalHours?.toFixed(1)}h</td>
+                      <td className="px-5 py-3.5 text-right"><span className="text-base font-medium text-emerald-600 tabular-nums">{r.present}</span></td>
+                      <td className="px-5 py-3.5 text-right"><span className="text-base font-medium text-red-500 tabular-nums">{r.absent}</span></td>
+                      <td className="px-5 py-3.5 text-right"><span className="text-base font-medium text-amber-600 tabular-nums">{r.late}</span></td>
+                      <td className="px-5 py-3.5 text-base font-semibold text-brand-600 text-right tabular-nums">{r.totalHours?.toFixed(1)}h</td>
                     </tr>
                   ))}
                 </tbody>
