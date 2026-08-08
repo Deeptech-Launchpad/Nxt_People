@@ -11,18 +11,34 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { fmtINR, currentFY } from './_shared';
 
+// Current FY + the two before it, derived rather than hardcoded so this
+// list doesn't need a manual edit every April.
+const FY_OPTIONS = (() => {
+  const startYear = parseInt(currentFY().split('-')[0], 10);
+  return [0, 1, 2].map(offset => {
+    const y = startYear - offset;
+    return `${y}-${String((y + 1) % 100).padStart(2, '0')}`;
+  });
+})();
+
 export default function TaxSlabs() {
   const [fy, setFy] = useState(currentFY());
   const [slabs, setSlabs] = useState({ old: [], new: [] });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true);
+    setLoadError(false);
     api.get(`/payroll/admin/tax-slabs?fy=${fy}`)
       .then(r => setSlabs(r.data.data || { old: [], new: [] }))
-      .catch(err => toast.error(err.response?.data?.message || 'Failed'))
+      .catch(err => {
+        setLoadError(true);
+        toast.error(err.response?.data?.message || 'Failed to load tax slabs');
+      })
       .finally(() => setLoading(false));
-  }, [fy]);
+  };
+  useEffect(load, [fy]);
 
   const SlabTable = ({ title, rows, palette }) => (
     <div className={`rounded-2xl border-2 ${palette.border} bg-white overflow-hidden`}>
@@ -77,9 +93,7 @@ export default function TaxSlabs() {
         </div>
         <select value={fy} onChange={e => setFy(e.target.value)}
           className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-[15px] font-semibold">
-          <option value="2026-27">FY 2026-27</option>
-          <option value="2025-26">FY 2025-26</option>
-          <option value="2024-25">FY 2024-25</option>
+          {FY_OPTIONS.map(f => <option key={f} value={f}>FY {f}</option>)}
         </select>
       </div>
 
@@ -96,6 +110,11 @@ export default function TaxSlabs() {
 
       {loading ? (
         <div className="py-20 text-center text-slate-400">Loading slabs…</div>
+      ) : loadError ? (
+        <div className="py-20 text-center text-slate-400">
+          <p>Couldn't load tax slabs for FY {fy}.</p>
+          <button onClick={load} className="mt-2 text-[14px] font-semibold text-blue-600 hover:text-blue-700">Retry</button>
+        </div>
       ) : (
         <div className="grid md:grid-cols-2 gap-5">
           <SlabTable

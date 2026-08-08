@@ -8,8 +8,9 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, X, Layers } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import { fmtINR } from './_shared';
 
-function TemplateModal({ template, onClose, onSaved }) {
+function TemplateModal({ template, existingNames, onClose, onSaved }) {
   const [name, setName] = useState(template?.name || '');
   const [band, setBand] = useState(template?.band || '');
   const [components, setComponents] = useState(
@@ -24,11 +25,24 @@ function TemplateModal({ template, onClose, onSaved }) {
 
   const save = async (e) => {
     e.preventDefault();
-    if (!name.trim()) return toast.error('Template name is required');
+    const trimmedName = name.trim();
+    if (!trimmedName) return toast.error('Template name is required');
+    if (components.length === 0) return toast.error('Add at least one component');
     if (components.some(c => !c.name.trim())) return toast.error('Every component needs a name');
+    const isDuplicate = (existingNames || []).some(n => n.toLowerCase() === trimmedName.toLowerCase());
+    if (isDuplicate) return toast.error('A template with this name already exists');
+    const percentSum = components
+      .filter(c => c.type === 'percent_of_ctc')
+      .reduce((s, c) => s + (Number(c.value) || 0), 0);
+    if (components.some(c => c.type === 'percent_of_ctc') && Math.abs(percentSum - 100) > 0.01) {
+      const proceed = window.confirm(
+        `The "% of CTC" components add up to ${percentSum}%, not 100%. Save anyway?`
+      );
+      if (!proceed) return;
+    }
     setSaving(true);
     try {
-      const body = { name: name.trim(), band: band.trim() || null, components };
+      const body = { name: trimmedName, band: band.trim() || null, components };
       if (template) await api.put(`/payroll/templates/${template.id}`, body);
       else await api.post('/payroll/templates', body);
       toast.success('Template saved');
@@ -68,15 +82,15 @@ function TemplateModal({ template, onClose, onSaved }) {
             <p className="text-[13px] text-slate-400 mb-2">"Percent of CTC" values are percentage points of annual CTC (e.g. 40 = 40%). "Fixed" values are flat monthly amounts. Name a component "Basic", "HRA", or "Conveyance" to map it to those columns — anything else becomes an "other" component.</p>
             <div className="space-y-2">
               {components.map((c, i) => (
-                <div key={i} className="flex gap-2 items-center">
+                <div key={i} className="flex flex-wrap gap-2 items-center">
                   <input value={c.name} onChange={e => setComp(i, 'name', e.target.value)} placeholder="Name"
-                    className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
+                    className="flex-1 min-w-[140px] border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
                   <select value={c.type} onChange={e => setComp(i, 'type', e.target.value)}
                     className="border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] bg-white">
                     <option value="percent_of_ctc">% of CTC</option>
                     <option value="fixed">Fixed ₹/mo</option>
                   </select>
-                  <input type="number" value={c.value} onChange={e => setComp(i, 'value', Number(e.target.value) || 0)}
+                  <input type="number" min={0} value={c.value} onChange={e => setComp(i, 'value', Number(e.target.value) || 0)}
                     className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] text-right focus:outline-none focus:border-blue-400" />
                   <button type="button" onClick={() => removeComp(i)} className="text-slate-400 hover:text-rose-600"><Trash2 size={14} /></button>
                 </div>
@@ -86,7 +100,7 @@ function TemplateModal({ template, onClose, onSaved }) {
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-lg text-[15px] text-slate-600 hover:bg-slate-50">Cancel</button>
-            <button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[15px] font-semibold disabled:opacity-60">
+            <button type="submit" disabled={saving || components.length === 0} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[15px] font-semibold disabled:opacity-60">
               {saving ? 'Saving…' : 'Save Template'}
             </button>
           </div>
@@ -104,7 +118,10 @@ export default function SalaryTemplates() {
 
   const load = () => {
     setLoading(true);
-    api.get('/payroll/templates').then(r => setTemplates(r.data.data || [])).catch(() => {}).finally(() => setLoading(false));
+    api.get('/payroll/templates')
+      .then(r => setTemplates(r.data.data || []))
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load templates'))
+      .finally(() => setLoading(false));
   };
   useEffect(load, []);
 
@@ -140,21 +157,21 @@ export default function SalaryTemplates() {
         <div className="grid md:grid-cols-2 gap-4">
           {templates.map(t => (
             <div key={t.id} className="bg-white border border-slate-200 rounded-xl p-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-[16px] font-bold text-slate-800">{t.name}</h3>
-                  {t.band && <p className="text-[13px] text-slate-400">{t.band}</p>}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-[16px] font-bold text-slate-800 truncate">{t.name}</h3>
+                  {t.band && <p className="text-[13px] text-slate-400 truncate">{t.band}</p>}
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-shrink-0">
                   <button onClick={() => setEditing(t)} className="w-7 h-7 flex items-center justify-center rounded text-slate-500 hover:bg-slate-100"><Pencil size={13} /></button>
                   <button onClick={() => remove(t.id)} className="w-7 h-7 flex items-center justify-center rounded text-rose-500 hover:bg-rose-50"><Trash2 size={13} /></button>
                 </div>
               </div>
               <div className="mt-2 space-y-1 text-[13px] text-slate-500">
                 {t.components.map((c, i) => (
-                  <div key={i} className="flex justify-between">
-                    <span>{c.name}</span>
-                    <span className="font-mono">{c.type === 'percent_of_ctc' ? `${c.value}% of CTC` : `₹${c.value}/mo`}</span>
+                  <div key={i} className="flex justify-between gap-2">
+                    <span className="truncate">{c.name}</span>
+                    <span className="font-mono flex-shrink-0">{c.type === 'percent_of_ctc' ? `${c.value}% of CTC` : `${fmtINR(c.value)}/mo`}</span>
                   </div>
                 ))}
               </div>
@@ -164,7 +181,12 @@ export default function SalaryTemplates() {
       )}
 
       {(creating || editing) && (
-        <TemplateModal template={editing} onClose={() => { setCreating(false); setEditing(null); }} onSaved={load} />
+        <TemplateModal
+          template={editing}
+          existingNames={templates.filter(t => t.id !== editing?.id).map(t => t.name)}
+          onClose={() => { setCreating(false); setEditing(null); }}
+          onSaved={load}
+        />
       )}
     </div>
   );

@@ -10,7 +10,7 @@ import React, { useEffect, useState } from 'react';
 import { FileText, IndianRupee, CheckCircle2, AlertCircle, Save, Info, Lock } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
-import { fmtINR, currentFY, StatusPill } from './_shared';
+import { fmtINR, currentFY, StatusPill, fmtDate, fmtDateTime } from './_shared';
 
 const OLD_REGIME_FIELDS = [
   { key: 'hraAnnualRent',     label: 'HRA — Annual rent paid', hint: 'Used to compute HRA exemption against your HRA component' },
@@ -32,11 +32,13 @@ export default function TaxDeclaration() {
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
   const [window_, setWindow]    = useState(null);
+  const [windowLoading, setWindowLoading] = useState(true);
 
   useEffect(() => {
     api.get(`/payroll/declaration-windows/current?fy=${fy}`)
       .then(r => setWindow(r.data.data))
-      .catch(() => {});
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to check the declaration window status'))
+      .finally(() => setWindowLoading(false));
     api.get('/payroll/declarations/my')
       .then(r => {
         const d = r.data.data;
@@ -76,9 +78,16 @@ export default function TaxDeclaration() {
 
   const locked = existing?.status === 'approved';
   const now = new Date();
-  const windowClosed = !window_ || !window_.isOpen
-    || (window_.opensAt && now < new Date(window_.opensAt))
-    || (window_.closesAt && now > new Date(window_.closesAt));
+  const opensInFuture = !!(window_?.opensAt && now < new Date(window_.opensAt));
+  const closedAlready  = !!(window_?.closesAt && now > new Date(window_.closesAt));
+  // windowLoading gates this so the closed-banner never flashes true before
+  // the window-status fetch has actually resolved.
+  const windowClosed = !windowLoading && (!window_ || !window_.isOpen || opensInFuture || closedAlready);
+  const windowClosedReason = opensInFuture
+    ? `This window opens on ${fmtDateTime(window_.opensAt)}. Come back then to submit.`
+    : closedAlready
+      ? `This window closed on ${fmtDateTime(window_.closesAt)}. Contact HR if you still need to submit.`
+      : `The declaration window for FY ${fy} is currently closed. Contact HR if you need to submit or revise your declaration.`;
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-5">
@@ -94,9 +103,7 @@ export default function TaxDeclaration() {
       {windowClosed && !locked && (
         <div className="rounded-xl px-4 py-3 border border-slate-200 bg-slate-50 flex items-center gap-3">
           <Lock size={16} className="text-slate-500" />
-          <p className="text-[14px] text-slate-700">
-            The declaration window for FY {fy} is currently closed. Contact HR if you need to submit or revise your declaration.
-          </p>
+          <p className="text-[14px] text-slate-700">{windowClosedReason}</p>
         </div>
       )}
 
@@ -122,7 +129,7 @@ export default function TaxDeclaration() {
               <p className="text-[13px] text-slate-600 mt-0.5">
                 {existing.status === 'rejected'
                   ? (existing.rejectionReason || 'Reason not provided — please contact HR')
-                  : `Last updated ${new Date(existing.updatedAt).toLocaleDateString('en-GB')}`}
+                  : `Last updated ${fmtDate(existing.updatedAt)}`}
               </p>
             </div>
           </div>
@@ -157,7 +164,7 @@ export default function TaxDeclaration() {
           <p className="text-[13px] font-bold uppercase tracking-wider text-slate-500 mb-3">Annual exemption amounts</p>
           <div className="space-y-3">
             {OLD_REGIME_FIELDS.map(f => (
-              <div key={f.key} className="grid grid-cols-[1fr_180px] gap-3 items-center">
+              <div key={f.key} className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-3 sm:items-center">
                 <div>
                   <p className="text-[14px] font-semibold text-slate-700">{f.label}</p>
                   <p className="text-[13px] text-slate-400">{f.hint}</p>

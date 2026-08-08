@@ -20,6 +20,8 @@ export default function PayrollRun() {
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [year, setYear]   = useState(today.getFullYear());
   const [payslips, setPayslips] = useState([]);
+  const [previewRows, setPreviewRows] = useState([]);
+  const [previewAutoLoading, setPreviewAutoLoading] = useState(false);
   const [loading, setLoading]   = useState(true);
   const [running, setRunning]   = useState(false);
   const [search, setSearch]     = useState('');
@@ -27,11 +29,47 @@ export default function PayrollRun() {
   const [viewing, setViewing]   = useState(null);
   const [preview, setPreview]   = useState(null);
   const [previewing, setPreviewing] = useState(false);
+  // Per-row in-flight tracking for Lock/Mark-Paid/Delete/Preview-Email/Download —
+  // guards against a fast double-click firing the same request twice.
+  const [busyId, setBusyId] = useState(null);
 
   const load = () => {
     setLoading(true);
+    setPreviewRows([]);
     api.get(`/payroll/admin/payslips?month=${month}&year=${year}`)
-      .then(r => setPayslips(r.data.data || []))
+      .then(async r => {
+        const rows = r.data.data || [];
+        setPayslips(rows);
+        // Nothing generated yet for this month — show a live, unsaved
+        // projection (from current salary setup + attendance) instead of
+        // a bare "click Run Payroll" empty state.
+        if (rows.length === 0) {
+          setPreviewAutoLoading(true);
+          try {
+            const pr = await api.post('/payroll/admin/run-month/preview', { month, year });
+            const normalized = (pr.data.data || [])
+              .filter(x => x.status !== 'no_structure')
+              .map(x => ({
+                id: `preview-${x.employee._id}`,
+                firstName: x.employee.firstName,
+                lastName: x.employee.lastName,
+                employeeCode: x.employee.employeeCode || '',
+                designation: x.employee.designation,
+                department: x.employee.department,
+                presentDays: x.paidDays,
+                workingDays: x.workingDays,
+                absentDays: x.absentDays,
+                lopDays: x.lopDays,
+                grossEarnings: x.grossEarnings,
+                totalDeductions: x.totalDeductions,
+                netPay: x.netPay,
+                status: '__preview__',
+              }));
+            setPreviewRows(normalized);
+          } catch (_) { /* silent — the empty state still renders */ }
+          finally { setPreviewAutoLoading(false); }
+        }
+      })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load'))
       .finally(() => setLoading(false));
   };
@@ -62,7 +100,9 @@ export default function PayrollRun() {
   };
 
   const lockPayslip = async (id) => {
+    if (busyId) return;
     if (!confirm('Lock this payslip? Employee will be able to see it once locked.')) return;
+    setBusyId(id);
     try {
       await api.put(`/payroll/admin/payslips/${id}/lock`);
       toast.success('Locked');
@@ -75,18 +115,17 @@ export default function PayrollRun() {
       } else {
         toast.error(err.response?.data?.message || 'Lock failed');
       }
-    }
+    } finally { setBusyId(null); }
   };
 
   // Open the EXACT email body the employee would receive on lock in a new
   // tab. Lets admin spot wrong TDS / net pay / formatting before the
   // fire-and-forget email goes out.
   const previewEmail = (id) => {
-    const token = localStorage.getItem('nxt_token');
+    if (busyId) return;
+    setBusyId(id);
     // We have to use fetch instead of api.get because we want the HTML to
-    // open in a new tab, not parse as JSON. Token must be appended as a
-    // query param since new windows can't carry Authorization headers.
-    // For security, we'll fetch as a blob and use a one-shot data URL.
+    // open in a new tab, not parse as JSON.
     api.get(`/payroll/admin/payslips/${id}/preview-email`, { responseType: 'text' })
       .then(r => {
         const blob = new Blob([r.data], { type: 'text/html' });
@@ -96,30 +135,37 @@ export default function PayrollRun() {
         setTimeout(() => URL.revokeObjectURL(url), 60000);
         if (!w) toast.error('Allow popups for this site to preview the email.');
       })
-      .catch(err => toast.error(err.response?.data?.message || 'Preview failed'));
-    // Silence unused var lint
-    void token;
+      .catch(err => toast.error(err.response?.data?.message || 'Preview failed'))
+      .finally(() => setBusyId(null));
   };
 
   const markPaid = async (id) => {
+    if (busyId) return;
     if (!confirm('Mark this payslip as paid?')) return;
+    setBusyId(id);
     try {
       await api.put(`/payroll/admin/payslips/${id}/mark-paid`);
       toast.success('Marked paid');
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Mark paid failed'); }
+    finally { setBusyId(null); }
   };
 
   const removeDraft = async (id) => {
+    if (busyId) return;
     if (!confirm('Delete this draft payslip? This cannot be undone.')) return;
+    setBusyId(id);
     try {
       await api.delete(`/payroll/admin/payslips/${id}`);
       toast.success('Deleted');
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Delete failed'); }
+    finally { setBusyId(null); }
   };
 
   const downloadPdf = async (id) => {
+    if (busyId) return;
+    setBusyId(id);
     try {
       const r = await api.get(`/payroll/admin/payslips/${id}/pdf`, { responseType: 'blob' });
       const objectUrl = URL.createObjectURL(r.data);
@@ -130,13 +176,16 @@ export default function PayrollRun() {
       URL.revokeObjectURL(objectUrl);
     } catch (err) {
       toast.error(err.response?.data?.message || 'PDF download failed');
-    }
+    } finally { setBusyId(null); }
   };
+
+  const isPreview = payslips.length === 0 && previewRows.length > 0;
+  const sourceRows = payslips.length > 0 ? payslips : previewRows;
 
   // Filtering + aggregation in memo so big lists stay snappy.
   const filtered = useMemo(() => {
-    let rows = payslips;
-    if (statusFilter !== 'all') rows = rows.filter(p => p.status === statusFilter);
+    let rows = sourceRows;
+    if (!isPreview && statusFilter !== 'all') rows = rows.filter(p => p.status === statusFilter);
     if (search) {
       const q = search.toLowerCase();
       rows = rows.filter(p =>
@@ -146,17 +195,17 @@ export default function PayrollRun() {
       );
     }
     return rows;
-  }, [payslips, search, statusFilter]);
+  }, [sourceRows, isPreview, search, statusFilter]);
 
   const stats = useMemo(() => {
-    const total = payslips.length;
-    const draft = payslips.filter(p => p.status === 'draft').length;
-    const locked = payslips.filter(p => p.status === 'locked').length;
-    const paid = payslips.filter(p => p.status === 'paid').length;
-    const gross = payslips.reduce((s, p) => s + Number(p.grossEarnings || 0), 0);
-    const net   = payslips.reduce((s, p) => s + Number(p.netPay || 0), 0);
+    const total = sourceRows.length;
+    const draft = sourceRows.filter(p => p.status === 'draft').length;
+    const locked = sourceRows.filter(p => p.status === 'locked').length;
+    const paid = sourceRows.filter(p => p.status === 'paid').length;
+    const gross = sourceRows.reduce((s, p) => s + Number(p.grossEarnings || 0), 0);
+    const net   = sourceRows.reduce((s, p) => s + Number(p.netPay || 0), 0);
     return { total, draft, locked, paid, gross, net };
-  }, [payslips]);
+  }, [sourceRows]);
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-5">
@@ -189,13 +238,26 @@ export default function PayrollRun() {
 
       {/* Stat row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Total Payslips" value={stats.total} icon={FileText} />
-        <StatCard label="Draft / Locked / Paid"
-                  value={`${stats.draft} · ${stats.locked} · ${stats.paid}`}
-                  color={stats.draft > 0 ? 'text-amber-700' : 'text-emerald-700'} />
-        <StatCard label="Gross Payroll" value={fmtINRshort(stats.gross)} color="text-blue-700" hint={fmtINR(stats.gross)} />
-        <StatCard label="Net Payable"   value={fmtINRshort(stats.net)}   color="text-emerald-700" hint={fmtINR(stats.net)} />
+        <StatCard label={isPreview ? 'Employees (Projected)' : 'Total Payslips'} value={stats.total} icon={FileText} />
+        {isPreview ? (
+          <StatCard label="Status" value="Not run yet" color="text-slate-500" />
+        ) : (
+          <StatCard label="Draft / Locked / Paid"
+                    value={`${stats.draft} · ${stats.locked} · ${stats.paid}`}
+                    color={stats.draft > 0 ? 'text-amber-700' : 'text-emerald-700'} />
+        )}
+        <StatCard label={isPreview ? 'Projected Gross' : 'Gross Payroll'} value={fmtINRshort(stats.gross)} color="text-blue-700" hint={fmtINR(stats.gross)} />
+        <StatCard label={isPreview ? 'Projected Net' : 'Net Payable'}   value={fmtINRshort(stats.net)}   color="text-emerald-700" hint={fmtINR(stats.net)} />
       </div>
+
+      {isPreview && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-start gap-3 text-[14px]">
+          <ListChecks size={14} className="text-blue-600 mt-0.5 flex-shrink-0" />
+          <p className="text-blue-800">
+            Nothing has been generated for {MONTH_NAMES[month]} {year} yet — these are <strong>projected</strong> figures computed live from current salary setup and attendance, not saved anywhere. Click <strong>Run Payroll</strong> to create the official Draft payslips.
+          </p>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
@@ -210,7 +272,7 @@ export default function PayrollRun() {
               className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-[15px] focus:outline-none focus:border-blue-400"
             />
           </div>
-          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-0.5">
+          <div className={`flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-0.5 ${isPreview ? 'opacity-40 pointer-events-none' : ''}`} title={isPreview ? 'Not applicable until payroll has been run' : undefined}>
             {['all', 'draft', 'locked', 'paid'].map(s => (
               <button
                 key={s}
@@ -234,23 +296,25 @@ export default function PayrollRun() {
             <tr>
               <th className="px-4 py-2.5">Employee</th>
               <th className="px-4 py-2.5">Designation</th>
+              <th className="px-4 py-2.5 text-right">Present Days</th>
+              <th className="px-4 py-2.5 text-right">Absent Days</th>
+              <th className="px-4 py-2.5 text-right">LOP</th>
               <th className="px-4 py-2.5 text-right">Gross</th>
               <th className="px-4 py-2.5 text-right">Deductions</th>
               <th className="px-4 py-2.5 text-right">Net Pay</th>
-              <th className="px-4 py-2.5">LOP</th>
               <th className="px-4 py-2.5">Status</th>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {loading ? (
-              <tr><td colSpan={8} className="py-10 text-center text-slate-400">Loading…</td></tr>
+            {loading || previewAutoLoading ? (
+              <tr><td colSpan={10} className="py-10 text-center text-slate-400">Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="py-10 text-center text-slate-400">
+              <tr><td colSpan={10} className="py-10 text-center text-slate-400">
                 <div className="flex flex-col items-center gap-2">
                   <FileText size={32} className="text-slate-300" />
                   <p>No payslips for {MONTH_NAMES[month]} {year}.</p>
-                  <p className="text-[13px]">Click "Run Payroll" above to generate them.</p>
+                  <p className="text-[13px]">No employee has a salary structure covering this month yet.</p>
                 </div>
               </td></tr>
             ) : filtered.map(p => (
@@ -263,32 +327,46 @@ export default function PayrollRun() {
                   <div>{p.designation || '—'}</div>
                   <div className="text-[13px] text-slate-400">{p.department || ''}</div>
                 </td>
-                <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtINR(p.grossEarnings)}</td>
-                <td className="px-4 py-3 text-right font-medium text-red-600">{fmtINR(p.totalDeductions)}</td>
-                <td className="px-4 py-3 text-right font-bold text-emerald-700">{fmtINR(p.netPay)}</td>
-                <td className="px-4 py-3 text-[14px]">
+                <td className="px-4 py-3 text-right text-[14px] text-slate-600 tabular-nums">
+                  {p.presentDays != null ? Number(p.presentDays) : '—'}
+                </td>
+                <td className="px-4 py-3 text-right text-[14px]">
+                  {Number(p.absentDays) > 0 ? (
+                    <span className="text-rose-600 font-medium tabular-nums">{Number(p.absentDays)}</span>
+                  ) : <span className="text-slate-300">—</span>}
+                </td>
+                <td className="px-4 py-3 text-right text-[14px]">
                   {Number(p.lopDays) > 0 ? (
                     <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
                       <AlertCircle size={11} /> {Number(p.lopDays)}d
                     </span>
                   ) : <span className="text-slate-300">—</span>}
                 </td>
-                <td className="px-4 py-3"><StatusPill status={p.status} /></td>
+                <td className="px-4 py-3 text-right font-medium text-slate-700 tabular-nums">{fmtINR(p.grossEarnings)}</td>
+                <td className="px-4 py-3 text-right font-medium text-red-600 tabular-nums">{fmtINR(p.totalDeductions)}</td>
+                <td className={`px-4 py-3 text-right font-bold tabular-nums ${Number(p.netPay) > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{fmtINR(p.netPay)}</td>
+                <td className="px-4 py-3">
+                  {p.status === '__preview__'
+                    ? <span className="text-[13px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500">Not run</span>
+                    : <StatusPill status={p.status} />}
+                </td>
                 <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <IconBtn title="View" onClick={() => setViewing(p)}><Eye size={13} /></IconBtn>
-                    <IconBtn title="Download PDF" onClick={() => downloadPdf(p.id)}><Download size={13} /></IconBtn>
-                    {p.status === 'draft' && (
-                      <>
-                        <IconBtn title="Preview email (as employee will see)" onClick={() => previewEmail(p.id)} color="text-indigo-600 hover:bg-indigo-50"><MailCheck size={13} /></IconBtn>
-                        <IconBtn title="Lock" onClick={() => lockPayslip(p.id)} color="text-blue-600 hover:bg-blue-50"><Lock size={13} /></IconBtn>
-                        <IconBtn title="Delete" onClick={() => removeDraft(p.id)} color="text-red-500 hover:bg-red-50"><Trash2 size={13} /></IconBtn>
-                      </>
-                    )}
-                    {p.status === 'locked' && (
-                      <IconBtn title="Mark paid" onClick={() => markPaid(p.id)} color="text-emerald-600 hover:bg-emerald-50"><CheckCircle2 size={13} /></IconBtn>
-                    )}
-                  </div>
+                  {p.status !== '__preview__' && (
+                    <div className="flex items-center justify-end gap-1">
+                      <IconBtn title="View" onClick={() => setViewing(p)} disabled={busyId === p.id}><Eye size={13} /></IconBtn>
+                      <IconBtn title="Download PDF" onClick={() => downloadPdf(p.id)} disabled={busyId === p.id}><Download size={13} /></IconBtn>
+                      {p.status === 'draft' && (
+                        <>
+                          <IconBtn title="Preview email (as employee will see)" onClick={() => previewEmail(p.id)} disabled={busyId === p.id} color="text-indigo-600 hover:bg-indigo-50"><MailCheck size={13} /></IconBtn>
+                          <IconBtn title="Lock" onClick={() => lockPayslip(p.id)} disabled={busyId === p.id} color="text-blue-600 hover:bg-blue-50"><Lock size={13} /></IconBtn>
+                          <IconBtn title="Delete" onClick={() => removeDraft(p.id)} disabled={busyId === p.id} color="text-red-500 hover:bg-red-50"><Trash2 size={13} /></IconBtn>
+                        </>
+                      )}
+                      {p.status === 'locked' && (
+                        <IconBtn title="Mark paid" onClick={() => markPaid(p.id)} disabled={busyId === p.id} color="text-emerald-600 hover:bg-emerald-50"><CheckCircle2 size={13} /></IconBtn>
+                      )}
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -339,7 +417,14 @@ function PreviewModal({ data, onClose }) {
         <div className="overflow-y-auto p-4 flex-1">
           {missing.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 text-[14px] text-amber-800">
-              {missing.length} employee(s) have no salary structure yet and will be skipped: {missing.map(m => `${m.employee.firstName} ${m.employee.lastName}`).join(', ')}
+              <p className="mb-1.5">{missing.length} employee(s) have no salary structure yet and will be skipped:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {missing.map((m, i) => (
+                  <span key={i} className="bg-white border border-amber-200 rounded-full px-2 py-0.5 text-[13px]">
+                    {m.employee.firstName} {m.employee.lastName}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
           <table className="w-full text-[14px]">
@@ -375,9 +460,10 @@ function PreviewModal({ data, onClose }) {
   );
 }
 
-function IconBtn({ title, onClick, children, color = 'text-slate-500 hover:bg-slate-100' }) {
+function IconBtn({ title, onClick, children, disabled, color = 'text-slate-500 hover:bg-slate-100' }) {
   return (
-    <button type="button" title={title} onClick={onClick} className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${color}`}>
+    <button type="button" title={title} onClick={onClick} disabled={disabled}
+      className={`w-7 h-7 flex items-center justify-center rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${color}`}>
       {children}
     </button>
   );
@@ -445,7 +531,7 @@ export function PayslipModal({ id, onClose, adminScope = false }) {
             <button onClick={downloadPdf} className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-[14px] font-semibold px-3 py-1.5 rounded-lg">
               <Download size={13} /> PDF
             </button>
-            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-white/15 hover:bg-white/25 flex items-center justify-center">✕</button>
+            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-white/15 hover:bg-white/25 flex items-center justify-center"><X size={16} /></button>
           </div>
         </div>
         <div className="overflow-y-auto p-6">
@@ -507,12 +593,18 @@ export function PayslipBody({ p }) {
       </div>
 
       {/* Net pay */}
-      <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border border-blue-200 rounded-xl px-5 py-4 flex items-center justify-between">
+      <div className={`border rounded-xl px-5 py-4 flex items-center justify-between ${
+        Number(p.net_pay) > 0
+          ? 'bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border-blue-200'
+          : 'bg-gradient-to-r from-rose-50 via-red-50 to-rose-50 border-rose-200'
+      }`}>
         <div>
-          <p className="text-[12px] font-bold uppercase tracking-wider text-blue-700">Net Pay</p>
-          <p className="text-[13px] text-blue-500 mt-0.5">Amount credited to bank</p>
+          <p className={`text-[12px] font-bold uppercase tracking-wider ${Number(p.net_pay) > 0 ? 'text-blue-700' : 'text-rose-700'}`}>Net Pay</p>
+          <p className={`text-[13px] mt-0.5 ${Number(p.net_pay) > 0 ? 'text-blue-500' : 'text-rose-500'}`}>
+            {Number(p.net_pay) > 0 ? 'Amount credited to bank' : 'Deductions exceed earnings — review before locking'}
+          </p>
         </div>
-        <p className="text-[26px] font-bold text-blue-800">{fmtINR(p.net_pay)}</p>
+        <p className={`text-[26px] font-bold tabular-nums ${Number(p.net_pay) > 0 ? 'text-blue-800' : 'text-rose-800'}`}>{fmtINR(p.net_pay)}</p>
       </div>
     </div>
   );
@@ -536,9 +628,9 @@ function Block({ title, tint, rows, total }) {
       <div className={`px-4 py-2 text-[13px] font-bold uppercase tracking-wider ${palette.head}`}>{title}</div>
       <div className="divide-y divide-slate-100">
         {rows.map(([label, amt]) => (
-          <div key={label} className="px-4 py-2 flex items-center justify-between text-[14px]">
-            <span className="text-slate-600">{label}</span>
-            <span className={`font-semibold ${palette.amt}`}>{fmtINR(amt)}</span>
+          <div key={label} className="px-4 py-2 flex items-center justify-between gap-2 text-[14px]">
+            <span className="text-slate-600 truncate min-w-0">{label}</span>
+            <span className={`font-semibold flex-shrink-0 tabular-nums ${palette.amt}`}>{fmtINR(amt)}</span>
           </div>
         ))}
         <div className="px-4 py-2.5 flex items-center justify-between text-[15px] bg-slate-50 font-bold text-slate-800">

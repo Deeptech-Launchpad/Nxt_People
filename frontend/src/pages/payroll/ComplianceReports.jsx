@@ -10,6 +10,19 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { MONTH_NAMES, currentFY } from './_shared';
 
+// Written out as literal class strings (not built via template interpolation)
+// so Tailwind's build-time scanner can actually find and generate them —
+// `bg-${accent}-50` etc. isn't a real string anywhere in the source, so
+// Tailwind can silently drop classes for any accent that doesn't happen to
+// appear literally elsewhere in the codebase (this bit the NEFT/violet card).
+const ACCENT_CLASSES = {
+  emerald: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700',
+  blue:    'bg-blue-50 hover:bg-blue-100 text-blue-700',
+  rose:    'bg-rose-50 hover:bg-rose-100 text-rose-700',
+  amber:   'bg-amber-50 hover:bg-amber-100 text-amber-700',
+  violet:  'bg-violet-50 hover:bg-violet-100 text-violet-700',
+};
+
 const REPORTS = [
   {
     type: 'pf',
@@ -143,7 +156,7 @@ export default function ComplianceReports() {
                   <button
                     onClick={() => download(r.type)}
                     disabled={isDownloading}
-                    className={`mt-3 inline-flex items-center gap-1.5 bg-${r.accent}-50 hover:bg-${r.accent}-100 text-${r.accent}-700 text-[14px] font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60`}
+                    className={`mt-3 inline-flex items-center gap-1.5 ${ACCENT_CLASSES[r.accent]} text-[14px] font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60`}
                   >
                     <Download size={12} /> {isDownloading ? 'Generating…' : 'Download CSV'}
                   </button>
@@ -174,7 +187,9 @@ function EmployeeSummaryReports() {
   const [downloading, setDownloading] = useState(null);
 
   useEffect(() => {
-    api.get('/payroll/admin/employees').then(r => setEmployees(r.data.data || [])).catch(() => {});
+    api.get('/payroll/admin/employees')
+      .then(r => setEmployees(r.data.data || []))
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load employees'));
   }, []);
 
   const download = async (kind) => {

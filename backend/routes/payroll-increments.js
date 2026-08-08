@@ -61,7 +61,7 @@ router.get('/', async (req, res) => {
               i.arrears_paid AS "arrearsPaid", i.rejection_reason AS "rejectionReason",
               i.decided_at AS "decidedAt", i.created_at AS "createdAt",
               json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'department', e.department) as employee,
-              json_build_object('firstName', pb.first_name, 'lastName', pb.last_name) as "proposedBy"
+              json_build_object('_id', pb.id, 'firstName', pb.first_name, 'lastName', pb.last_name) as "proposedBy"
          FROM payroll_increments i
          JOIN employees e ON i.employee_id = e.id
          JOIN employees pb ON i.proposed_by = pb.id

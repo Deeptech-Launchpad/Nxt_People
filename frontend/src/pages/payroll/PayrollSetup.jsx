@@ -14,9 +14,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Search, Pencil, History, X, IndianRupee, Info, Upload, Download, FileSpreadsheet, Plus, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
-
-const fmtINR = (n) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(n) || 0);
+import { fmtINR, StatCard } from './_shared';
 
 // Mirrors utils/payroll-calc.js's formulas for a live client-side preview —
 // the server is still the source of truth at generation time; this is a
@@ -55,40 +53,64 @@ function StructureModal({ employee, onClose, onSaved }) {
   });
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  // Snapshot of the editable fields taken right after a successful load —
+  // compared on close so an admin isn't allowed to silently lose edits.
+  const [formSnapshot, setFormSnapshot] = useState(null);
 
-  useEffect(() => {
+  const loadStructure = () => {
     if (!employee?._id) return;
     setLoading(true);
+    setLoadError(false);
     Promise.all([
       api.get(`/payroll/admin/employees/${employee._id}/structure`),
       api.get('/payroll/templates'),
       api.get('/payroll/compliance-settings'),
     ]).then(([structRes, tplRes, settingsRes]) => {
       const cur = structRes.data.data?.current;
+      let loadedForm = form;
       if (cur) {
-        setForm({
+        loadedForm = {
           basic: cur.basic || 0, hra: cur.hra || 0, conveyance: cur.conveyance || 0,
           otherComponents: Array.isArray(cur.otherComponents) ? cur.otherComponents : [],
           pfApplicable: cur.pfApplicable !== false, esiApplicable: !!cur.esiApplicable,
           pfOverride: cur.pfOverride ?? '', esiOverride: cur.esiOverride ?? '', ptOverride: cur.ptOverride ?? '',
           notes: cur.notes || '',
-        });
+        };
+        setForm(loadedForm);
       }
       setHistory(structRes.data.data?.history || []);
       setTemplates(tplRes.data.data || []);
       setSettings(settingsRes.data.data);
-    }).catch(err => toast.error(err.response?.data?.message || 'Failed to load'))
-      .finally(() => setLoading(false));
-  }, [employee?._id]);
+      setFormSnapshot(JSON.stringify({ mode: 'custom', templateId: '', ctcAnnual: '', form: loadedForm }));
+    }).catch(err => {
+      setLoadError(true);
+      toast.error(err.response?.data?.message || 'Failed to load');
+    }).finally(() => setLoading(false));
+  };
+
+  useEffect(loadStructure, [employee?._id]);
 
   useEffect(() => {
     if (mode !== 'template' || !templateId || !ctcAnnual) { setTemplatePreview(null); return; }
     api.post(`/payroll/templates/${templateId}/apply-preview`, { ctcAnnual: Number(ctcAnnual) })
       .then(r => setTemplatePreview(r.data.data))
-      .catch(() => setTemplatePreview(null));
+      .catch(err => {
+        setTemplatePreview(null);
+        toast.error(err.response?.data?.message || 'Failed to load template preview');
+      });
   }, [mode, templateId, ctcAnnual]);
+
+  // Closing (Cancel/X) with unsaved edits asks for confirmation instead of
+  // silently discarding them. formSnapshot is null until the initial load
+  // resolves, so closing early (still loading) never prompts.
+  const requestClose = () => {
+    const dirty = formSnapshot !== null && formSnapshot !== JSON.stringify({ mode, templateId, ctcAnnual, form });
+    if (dirty && !window.confirm('You have unsaved changes. Discard them?')) return;
+    onClose();
+  };
 
   const effective = mode === 'template' && templatePreview ? templatePreview : form;
   const otherTotal = (effective.otherComponents || []).reduce((s, c) => s + (Number(c.value) || 0), 0);
@@ -110,6 +132,14 @@ function StructureModal({ employee, onClose, onSaved }) {
 
   const onSave = async (e) => {
     e?.preventDefault();
+    if (mode === 'template') {
+      if (!templateId) return toast.error('Select a template');
+      if (!ctcAnnual || Number(ctcAnnual) <= 0) return toast.error('Enter a valid annual CTC');
+    } else {
+      const otherSum = (form.otherComponents || []).reduce((s, c) => s + (Number(c.value) || 0), 0);
+      const grossCheck = Number(form.basic || 0) + Number(form.hra || 0) + Number(form.conveyance || 0) + otherSum;
+      if (grossCheck <= 0) return toast.error('Enter at least one earnings component greater than 0');
+    }
     setSaving(true);
     try {
       const body = mode === 'template'
@@ -133,24 +163,24 @@ function StructureModal({ employee, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl max-h-[92vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
-          <div>
-            <h3 className="text-[17px] font-bold text-slate-800">Salary Structure</h3>
-            <p className="text-[14px] text-slate-500 mt-0.5">
+      <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-4 flex items-center justify-between flex-shrink-0">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] uppercase tracking-wider font-bold opacity-90">Salary Structure</p>
+            <p className="text-[18px] font-bold mt-0.5 truncate">
               {employee.firstName} {employee.lastName}
-              {employee.employeeId && <span className="font-mono text-slate-400 ml-2">{employee.employeeId}</span>}
+              {employee.employeeId && <span className="font-normal opacity-80 ml-2">{employee.employeeId}</span>}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {history.length > 0 && (
               <button type="button" onClick={() => setShowHistory(s => !s)}
-                className="flex items-center gap-1.5 text-[14px] text-slate-600 hover:text-slate-800 border border-slate-200 px-2.5 py-1.5 rounded-lg">
+                className="flex items-center gap-1.5 text-[13px] text-white/90 hover:text-white border border-white/30 hover:border-white/50 px-2.5 py-1.5 rounded-lg">
                 <History size={13} /> History ({history.length})
               </button>
             )}
-            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600">
-              <X size={16} />
+            <button onClick={requestClose} className="text-white/80 hover:text-white">
+              <X size={18} />
             </button>
           </div>
         </div>
@@ -158,6 +188,13 @@ function StructureModal({ employee, onClose, onSaved }) {
         <form onSubmit={onSave} className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>
+          ) : loadError ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+              <p className="text-[15px] text-slate-500">Couldn't load this employee's salary data.</p>
+              <button type="button" onClick={loadStructure} className="text-[14px] font-semibold text-blue-600 hover:text-blue-700">
+                Retry
+              </button>
+            </div>
           ) : (
             <div className="p-6 space-y-5">
               <div className="flex gap-2">
@@ -224,9 +261,9 @@ function StructureModal({ employee, onClose, onSaved }) {
                   <div>
                     <p className="text-[13px] font-bold text-red-700 uppercase tracking-wider mb-3">Deductions (computed — override optional)</p>
                     <div className="space-y-3">
-                      <PreviewRow label="PF (Employee)" preview={ded.pf} override={form.pfOverride} onChange={v => set('pfOverride', v)} />
-                      <PreviewRow label="ESI (Employee)" preview={ded.esi} override={form.esiOverride} onChange={v => set('esiOverride', v)} />
-                      <PreviewRow label="Professional Tax" preview={ded.pt} override={form.ptOverride} onChange={v => set('ptOverride', v)} />
+                      <PreviewRow label="PF (Employee)" preview={ded.pf} override={form.pfOverride} onChange={v => set('pfOverride', v)} max={gross} />
+                      <PreviewRow label="ESI (Employee)" preview={ded.esi} override={form.esiOverride} onChange={v => set('esiOverride', v)} max={gross} />
+                      <PreviewRow label="Professional Tax" preview={ded.pt} override={form.ptOverride} onChange={v => set('ptOverride', v)} max={gross} />
                     </div>
                     <p className="text-[13px] font-bold text-slate-600 uppercase tracking-wider mt-6 mb-3">Eligibility</p>
                     <div className="space-y-2">
@@ -251,7 +288,7 @@ function StructureModal({ employee, onClose, onSaved }) {
               <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                 <Totals label="Monthly Gross" value={totals.gross} color="text-slate-800" />
                 <Totals label="Deductions" value={totals.ded} color="text-red-600" />
-                <Totals label="Take-Home" value={totals.net} color="text-emerald-700" />
+                <Totals label="Take-Home" value={totals.net} color={totals.net < 0 ? 'text-rose-700' : 'text-emerald-700'} />
                 <Totals label="Annual CTC" value={totals.ctc} color="text-blue-700" emphasis />
               </div>
 
@@ -272,9 +309,9 @@ function StructureModal({ employee, onClose, onSaved }) {
           )}
 
           <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-slate-100">
-            <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-lg text-[15px] text-slate-600 hover:bg-slate-50">Cancel</button>
-            <button type="submit" disabled={saving || loading || (mode === 'template' && !templateId)}
-              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[15px] font-semibold disabled:opacity-60">
+            <button type="button" onClick={requestClose} className="px-4 py-2 border border-slate-200 rounded-lg text-[15px] text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button type="submit" disabled={saving || loading || (mode === 'template' && (!templateId || !ctcAnnual || Number(ctcAnnual) <= 0))}
+              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-[15px] font-semibold disabled:opacity-60">
               {saving ? 'Saving…' : 'Save Structure'}
             </button>
           </div>
@@ -301,7 +338,7 @@ function FieldRow({ label, hint, value, onChange }) {
   );
 }
 
-function PreviewRow({ label, preview, override, onChange }) {
+function PreviewRow({ label, preview, override, onChange, max }) {
   return (
     <div>
       <label className="flex items-center justify-between text-[14px] text-slate-600 mb-1">
@@ -310,7 +347,7 @@ function PreviewRow({ label, preview, override, onChange }) {
       </label>
       <div className="relative">
         <IndianRupee size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input type="number" min={0} step="0.01" value={override} placeholder="auto"
+        <input type="number" min={0} max={max} step="0.01" value={override} placeholder="auto"
           onChange={e => onChange(e.target.value)}
           className="w-full pl-7 pr-3 py-1.5 border border-slate-200 rounded-lg text-[15px] focus:outline-none focus:border-blue-400 text-right" />
       </div>
@@ -373,7 +410,7 @@ export default function PayrollSetup() {
         <StatCard label="Total Employees" value={stats.total} />
         <StatCard label="Structure Set" value={stats.configured} color="text-emerald-700" />
         <StatCard label="Pending Setup" value={stats.pending} color={stats.pending > 0 ? 'text-amber-700' : 'text-slate-500'} />
-        <StatCard label="Annual Payroll" value={fmtINR(stats.totalCTC)} color="text-blue-700" small />
+        <StatCard label="Annual Payroll" value={fmtINR(stats.totalCTC)} color="text-blue-700" />
       </div>
 
       <div className="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-3 flex-wrap gap-3">
@@ -403,16 +440,18 @@ export default function PayrollSetup() {
             {loading ? (
               <tr><td colSpan={5} className="py-10 text-center text-slate-400">Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={5} className="py-10 text-center text-slate-400">No employees match the filter.</td></tr>
+              <tr><td colSpan={5} className="py-10 text-center text-slate-400">
+                {employees.length === 0 ? 'No employees found.' : 'No employees match the filter.'}
+              </td></tr>
             ) : filtered.map(emp => (
               <tr key={emp._id} className="hover:bg-slate-50">
-                <td className="px-4 py-3">
-                  <div className="font-semibold text-slate-800">{emp.firstName} {emp.lastName}</div>
-                  <div className="text-[13px] text-slate-400 font-mono">{emp.employeeId}</div>
+                <td className="px-4 py-3 max-w-[220px]">
+                  <div className="font-semibold text-slate-800 truncate">{emp.firstName} {emp.lastName}</div>
+                  <div className="text-[13px] text-slate-400 font-mono truncate">{emp.employeeId}</div>
                 </td>
-                <td className="px-4 py-3 text-slate-600">
-                  <div>{emp.designation || '—'}</div>
-                  <div className="text-[13px] text-slate-400">{emp.department || ''}</div>
+                <td className="px-4 py-3 text-slate-600 max-w-[180px]">
+                  <div className="truncate">{emp.designation || '—'}</div>
+                  <div className="text-[13px] text-slate-400 truncate">{emp.department || ''}</div>
                 </td>
                 <td className="px-4 py-3 text-right font-medium text-slate-700">
                   {emp.structure ? fmtINR(emp.structure.monthlyGross) : <span className="text-amber-600 text-[13px]">Not set up</span>}
@@ -430,15 +469,6 @@ export default function PayrollSetup() {
       </div>
 
       {editing && <StructureModal employee={editing} onClose={() => setEditing(null)} onSaved={load} />}
-    </div>
-  );
-}
-
-function StatCard({ label, value, color = 'text-slate-800', small }) {
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
-      <p className="text-[12px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className={`mt-1 font-bold ${color} ${small ? 'text-[17px]' : 'text-[20px]'}`}>{value}</p>
     </div>
   );
 }
@@ -476,7 +506,7 @@ function BulkUpload({ onDone }) {
   };
 
   return (
-    <>
+    <div className="relative flex items-center gap-2">
       <button onClick={downloadTemplate} title="Download xlsx template"
         className="flex items-center gap-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-2.5 py-1.5 rounded-lg text-[14px] font-semibold">
         <Download size={12} /> Template
@@ -488,7 +518,7 @@ function BulkUpload({ onDone }) {
       </button>
       <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} className="hidden" />
       {result && (
-        <div className="absolute z-50 right-6 top-32 bg-white border border-slate-200 rounded-xl shadow-2xl p-4 w-80">
+        <div className="absolute z-50 right-0 top-full mt-2 bg-white border border-slate-200 rounded-xl shadow-2xl p-4 w-80">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[15px] font-bold text-slate-800 flex items-center gap-2"><FileSpreadsheet size={14} className="text-emerald-600" /> Upload summary</p>
             <button onClick={() => setResult(null)} className="text-slate-400 hover:text-slate-600">✕</button>
@@ -507,6 +537,6 @@ function BulkUpload({ onDone }) {
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }

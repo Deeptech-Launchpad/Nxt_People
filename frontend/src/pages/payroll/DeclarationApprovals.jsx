@@ -15,6 +15,7 @@ export default function DeclarationApprovals() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
+  const [actingId, setActingId] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -26,16 +27,22 @@ export default function DeclarationApprovals() {
   useEffect(load, [status, fy]);
 
   const act = async (id, action) => {
+    if (actingId) return;
     let reason = null;
     if (action === 'reject') {
       reason = window.prompt('Reason for rejection (visible to employee):', '');
       if (reason === null) return;  // cancelled
+      if (!reason.trim()) return toast.error('A rejection reason is required');
+    } else if (action === 'approve') {
+      if (!window.confirm('Approve this declaration? This feeds directly into TDS computation.')) return;
     }
+    setActingId(id);
     try {
       await api.put(`/payroll/admin/declarations/${id}/action`, { action, reason });
       toast.success(action === 'approve' ? 'Approved' : 'Rejected');
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
+    finally { setActingId(null); }
   };
 
   return (
@@ -58,9 +65,7 @@ export default function DeclarationApprovals() {
             ))}
           </div>
           <select value={fy} onChange={e => setFy(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-[15px] font-semibold bg-white">
-            <option value={currentFY()}>{currentFY()}</option>
-            <option value="2025-26">2025-26</option>
-            <option value="2024-25">2024-25</option>
+            {[currentFY(), '2025-26', '2024-25'].filter((v, i, a) => a.indexOf(v) === i).map(f => <option key={f} value={f}>{f}</option>)}
           </select>
         </div>
         <button onClick={load} className="flex items-center gap-1.5 text-[14px] text-slate-600 hover:text-slate-800 border border-slate-200 px-2.5 py-1.5 rounded-lg">
@@ -119,10 +124,10 @@ export default function DeclarationApprovals() {
                   )}
                   {status === 'submitted' && (
                     <div className="flex items-center justify-end gap-2 mt-3">
-                      <button onClick={() => act(d.id, 'reject')} className="flex items-center gap-1.5 border border-rose-300 text-rose-700 hover:bg-rose-50 text-[14px] font-semibold px-3 py-1.5 rounded-lg">
+                      <button onClick={() => act(d.id, 'reject')} disabled={actingId === d.id} className="flex items-center gap-1.5 border border-rose-300 text-rose-700 hover:bg-rose-50 text-[14px] font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60">
                         <XCircle size={13} /> Reject
                       </button>
-                      <button onClick={() => act(d.id, 'approve')} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[14px] font-semibold px-3 py-1.5 rounded-lg">
+                      <button onClick={() => act(d.id, 'approve')} disabled={actingId === d.id} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[14px] font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60">
                         <CheckCircle2 size={13} /> Approve
                       </button>
                     </div>

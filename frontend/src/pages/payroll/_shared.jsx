@@ -34,6 +34,10 @@ export function StatusPill({ status }) {
     locked: { bg: 'bg-blue-50',     fg: 'text-blue-700',    label: 'Locked' },
     paid:   { bg: 'bg-emerald-50',  fg: 'text-emerald-700', label: 'Paid'   },
   };
+  if (!map[status]) {
+    // eslint-disable-next-line no-console
+    console.warn(`[StatusPill] unknown status "${status}" — falling back to Draft styling`);
+  }
   const s = map[status] || map.draft;
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[13px] font-bold ${s.bg} ${s.fg}`}>
@@ -43,6 +47,20 @@ export function StatusPill({ status }) {
       {s.label}
     </span>
   );
+}
+
+/** Date-only formatting (DD/MM/YYYY), used wherever only the calendar date
+ *  matters — declaration/approval timestamps, increment effective dates. */
+export function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+/** Date+time formatting, IST-pinned — used wherever the time of day matters
+ *  (declaration window opens/closes at a specific moment, not just a date). */
+export function fmtDateTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 }
 
 /** Current financial year string, India convention: 2026-27. */

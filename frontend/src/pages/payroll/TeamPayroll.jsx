@@ -55,7 +55,7 @@ export default function TeamPayroll() {
         <StatCard label="Headcount"    value={data.summary?.headcount ?? '—'} icon={Users} />
         <StatCard label="Payslips Generated"
                   value={`${data.summary?.withSlip ?? 0} / ${data.summary?.headcount ?? 0}`}
-                  color={data.summary && data.summary.withSlip === data.summary.headcount ? 'text-emerald-700' : 'text-amber-700'} />
+                  color={data.summary && data.summary.headcount > 0 && data.summary.withSlip === data.summary.headcount ? 'text-emerald-700' : 'text-amber-700'} />
         <StatCard label="Total Gross" value={fmtINRshort(data.summary?.gross ?? 0)} color="text-blue-700" hint={fmtINR(data.summary?.gross ?? 0)} icon={Wallet} />
         <StatCard label="Total Net"   value={fmtINRshort(data.summary?.net ?? 0)}   color="text-emerald-700" hint={fmtINR(data.summary?.net ?? 0)} />
       </div>
@@ -92,9 +92,9 @@ export default function TeamPayroll() {
                         ? <img src={r.photoUrl} alt="" className="w-full h-full object-cover" />
                         : <div className="w-full h-full flex items-center justify-center text-slate-400"><UserIcon size={16} /></div>}
                     </div>
-                    <div>
-                      <p className="font-semibold text-slate-800">{r.firstName} {r.lastName}</p>
-                      <p className="text-[13px] text-slate-400 font-mono">{r.employeeId}</p>
+                    <div className="min-w-0 max-w-[220px]">
+                      <p className="font-semibold text-slate-800 truncate">{r.firstName} {r.lastName}</p>
+                      <p className="text-[13px] text-slate-400 font-mono truncate">{r.employeeId}</p>
                     </div>
                   </div>
                 </td>

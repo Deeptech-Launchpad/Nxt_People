@@ -145,7 +145,7 @@ router.get('/admin/employees/:id/structure', authorize(...PAYROLL_ADMIN), async 
     const currentRow = current.rows[0] || null;
     const history = await pool.query(
       `SELECT ${STRUCT_COLS} FROM salary_structures
-        WHERE employee_id = $1 ${currentRow ? 'AND id <> $3' : ''}
+        WHERE employee_id = $1 AND effective_from <= $2::date ${currentRow ? 'AND id <> $3' : ''}
         ORDER BY effective_from DESC LIMIT 5`,
       currentRow ? [req.params.id, today, currentRow.id] : [req.params.id, today]
     );
@@ -293,28 +293,92 @@ function workingDaysInRange(start, end, holMap, rules) {
   return working;
 }
 
-// Unpaid (LOP) leave days for an employee inside a date range, prorated for
-// leaves that only partially overlap the range.
-async function lopDaysForRange(employeeId, startDate, endDate, queryRunner = pool) {
+// Same walk as workingDaysInRange but returns the actual dates instead of
+// just a count — needed to resolve LOP day-by-day below.
+function listWorkingDays(start, end, holMap, rules) {
+  const days = [];
+  if (!start || !end || start > end) return days;
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+  const stop = new Date(end);
+  stop.setHours(0, 0, 0, 0);
+  while (cursor <= stop) {
+    const key = `${cursor.getFullYear()}-${cursor.getMonth() + 1}-${cursor.getDate()}`;
+    const holType = holMap.get(key);
+    if (holType === 'working_day') {
+      days.push(new Date(cursor));
+    } else if (!holType) {
+      const isWeekend = rules.some(rule => ruleMatchesDate(rule, cursor));
+      if (!isWeekend) days.push(new Date(cursor));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
+// LOP (Loss of Pay) days for an employee inside a date range. A working day
+// is unpaid unless something on file accounts for it:
+//   - attendance row with status 'present' or 'late'          → paid
+//   - approved WFH request covering the date                  → paid
+//   - approved leave covering the date, ANY type but 'unpaid'  → paid
+//   - approved leave covering the date, type 'unpaid'          → LOP (0.5 if half-day)
+//   - nothing at all (or attendance status 'absent')            → LOP
+// Only days strictly before today are judged — an in-progress or future day
+// has no verdict yet, so it's never counted as LOP.
+async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, queryRunner = pool) {
+  const workingDates = listWorkingDays(startDate, endDate, holMap, rules);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const pastWorkingDates = workingDates.filter(d => d < today);
+  if (pastWorkingDates.length === 0) return 0;
+
   const start = startDate instanceof Date ? startDate.toLocaleDateString('en-CA') : startDate;
   const end = endDate instanceof Date ? endDate.toLocaleDateString('en-CA') : endDate;
-  const r = await queryRunner.query(
-    `SELECT COALESCE(SUM(
-        ROUND(
-          l.total_days::numeric *
-          (LEAST(l.end_date, $3::date) - GREATEST(l.start_date, $2::date) + 1.0) /
-          NULLIF((l.end_date - l.start_date + 1)::numeric, 0)
-        , 2)
-      ), 0) AS lop
-       FROM leaves l
-      WHERE l.employee_id = $1
-        AND l.status = 'approved'
-        AND l.leave_type = 'unpaid'
-        AND l.start_date <= $3::date
-        AND l.end_date >= $2::date`,
+
+  // Sequential, not Promise.all — queryRunner may be a single client inside
+  // a transaction (runMonthlyPayroll), which can't run concurrent queries.
+  const attRes = await queryRunner.query(
+    `SELECT date, status FROM attendance WHERE employee_id = $1 AND date >= $2::date AND date <= $3::date`,
     [employeeId, start, end]
   );
-  return Number(r.rows[0].lop || 0);
+  const leaveRes = await queryRunner.query(
+    `SELECT leave_type, start_date, end_date, is_half_day
+       FROM leaves
+      WHERE employee_id = $1 AND status = 'approved'
+        AND start_date <= $3::date AND end_date >= $2::date`,
+    [employeeId, start, end]
+  );
+  const wfhRes = await queryRunner.query(
+    `SELECT date FROM wfh_requests WHERE employee_id = $1 AND status = 'approved' AND date >= $2::date AND date <= $3::date`,
+    [employeeId, start, end]
+  );
+
+  const attMap = new Map(attRes.rows.map(r => [new Date(r.date).toDateString(), r.status]));
+  const wfhSet = new Set(wfhRes.rows.map(r => new Date(r.date).toDateString()));
+  const leaves = leaveRes.rows.map(r => ({
+    type: r.leave_type,
+    start: new Date(r.start_date),
+    end: new Date(r.end_date),
+    isHalfDay: r.is_half_day,
+  }));
+
+  let lop = 0;
+  for (const day of pastWorkingDates) {
+    const key = day.toDateString();
+    const attStatus = attMap.get(key);
+    if (attStatus === 'present' || attStatus === 'late' || attStatus === 'half-day') continue;
+    if (wfhSet.has(key)) continue;
+
+    const coveringLeave = leaves.find(l => day >= l.start && day <= l.end);
+    if (coveringLeave) {
+      if (coveringLeave.type === 'unpaid') lop += coveringLeave.isHalfDay ? 0.5 : 1;
+      continue; // any other approved leave type is paid — not LOP
+    }
+
+    // Attendance says 'absent', or nothing on file accounts for this day.
+    lop += 1;
+  }
+  return lop;
 }
 
 /** Indian FY for a given (month, year). Apr-Mar boundary. Returns "2026-27". */
@@ -328,8 +392,11 @@ function fyForMonth(month, year) {
 async function nextSlipNumber(client, month, year) {
   const lockKey = year * 100 + month;
   await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
+  // Extract only the trailing sequence digits (e.g. "0002" out of
+  // "PSL-2026-07-0002") — stripping ALL non-digits (previous behaviour)
+  // also pulled in the year/month digits and compounded on every call.
   const r = await client.query(
-    `SELECT COALESCE(MAX(NULLIF(regexp_replace(slip_number, '\\D', '', 'g'), '')::int), 0) AS max_seq
+    `SELECT COALESCE(MAX(NULLIF(substring(slip_number FROM '(\\d+)$'), '')::int), 0) AS max_seq
        FROM payroll_payslips WHERE pay_month = $1 AND pay_year = $2`,
     [month, year]
   );
@@ -403,7 +470,7 @@ async function computeDraftPayslip(client, emp, { month, year, workingDays, holM
   if (!structure) return { skip: true, reason: 'no_structure' };
 
   const empWorkingDays = isPartial ? workingDaysInRange(effectiveStart, effectiveEnd, holMap, rules) : workingDays;
-  const rawLop = await lopDaysForRange(emp.id, effectiveStart, effectiveEnd, client);
+  const rawLop = await lopDaysForRange(emp.id, effectiveStart, effectiveEnd, holMap, rules, client);
   const lopDays = Math.min(rawLop, empWorkingDays);
   const paidDays = empWorkingDays - lopDays;
   const ratio = workingDays > 0 ? paidDays / workingDays : 1;
@@ -584,10 +651,20 @@ router.post('/admin/run-month/preview', authorize(...PAYROLL_ADMIN), async (req,
     const fy = fyForMonth(month, year);
 
     const employees = await pool.query(
-      `SELECT id, first_name AS "firstName", last_name AS "lastName", department, designation,
+      `SELECT id, employee_id AS "employeeCode", first_name AS "firstName", last_name AS "lastName", department, designation,
               joining_date, exit_date, status, state
          FROM employees WHERE status = 'active' ORDER BY first_name ASC`
     );
+
+    const periodStart = monthStart.toLocaleDateString('en-CA');
+    const periodEnd = monthEnd.toLocaleDateString('en-CA');
+    const absentRes = await pool.query(
+      `SELECT employee_id, COUNT(*)::int AS n FROM attendance
+        WHERE status = 'absent' AND date >= $1::date AND date <= $2::date
+        GROUP BY employee_id`,
+      [periodStart, periodEnd]
+    );
+    const absentMap = new Map(absentRes.rows.map(r => [r.employee_id, r.n]));
 
     const preview = [];
     for (const emp of employees.rows) {
@@ -597,8 +674,9 @@ router.post('/admin/run-month/preview', authorize(...PAYROLL_ADMIN), async (req,
         continue;
       }
       preview.push({
-        employee: { _id: emp.id, firstName: emp.firstName, lastName: emp.lastName, department: emp.department, designation: emp.designation },
+        employee: { _id: emp.id, employeeCode: emp.employeeCode, firstName: emp.firstName, lastName: emp.lastName, department: emp.department, designation: emp.designation },
         workingDays: draft.workingDays, paidDays: draft.paidDays, lopDays: draft.lopDays,
+        absentDays: absentMap.get(emp.id) || 0,
         grossEarnings: draft.gross, totalDeductions: draft.totalDed, netPay: draft.net,
         arrearsAmount: draft.arrearsAmount,
       });
@@ -614,17 +692,27 @@ router.get('/admin/payslips', authorize('admin', 'director', 'hr_admin', 'manage
     const month = Number(req.query.month) || (new Date().getMonth() + 1);
     const year = Number(req.query.year) || new Date().getFullYear();
     const isMgrOnly = !isFullAccess(req.user.role);
+    const periodStart = `${year}-${String(month).padStart(2, '0')}-01`;
+    const periodEnd = new Date(year, month, 0).toLocaleDateString('en-CA');
     const where = isMgrOnly
-      ? `WHERE p.pay_month=$1 AND p.pay_year=$2 AND p.superseded_by IS NULL AND (e.reporting_manager_id=$3 OR e.approving_authority_id=$3)`
+      ? `WHERE p.pay_month=$1 AND p.pay_year=$2 AND p.superseded_by IS NULL AND (e.reporting_manager_id=$5 OR e.approving_authority_id=$5)`
       : `WHERE p.pay_month=$1 AND p.pay_year=$2 AND p.superseded_by IS NULL`;
-    const params = isMgrOnly ? [month, year, req.user._id] : [month, year];
+    const params = isMgrOnly ? [month, year, periodStart, periodEnd, req.user._id] : [month, year, periodStart, periodEnd];
     const r = await pool.query(
-      `SELECT p.id AS "_id", p.slip_number AS "slipNumber", p.status,
+      `SELECT p.id, p.slip_number AS "slipNumber", p.status,
               p.gross_earnings AS "grossEarnings", p.total_deductions AS "totalDeductions",
               p.net_pay AS "netPay", p.lop_days AS "lopDays",
-              json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
-                'designation', e.designation, 'department', e.department) as employee
+              p.present_days AS "presentDays", p.working_days AS "workingDays",
+              COALESCE(ab.absent_days, 0) AS "absentDays",
+              e.employee_id AS "employeeCode", e.first_name AS "firstName", e.last_name AS "lastName",
+              e.designation, e.department
          FROM payroll_payslips p JOIN employees e ON p.employee_id = e.id
+         LEFT JOIN (
+           SELECT employee_id, COUNT(*)::int AS absent_days
+             FROM attendance
+            WHERE status = 'absent' AND date >= $3::date AND date <= $4::date
+            GROUP BY employee_id
+         ) ab ON ab.employee_id = p.employee_id
          ${where} ORDER BY e.first_name ASC`,
       params
     );
@@ -698,7 +786,7 @@ router.put('/admin/payslips/:id/lock', authorize(...PAYROLL_ADMIN), logAuditWrap
     const lockRes = await client.query(
       `UPDATE payroll_payslips SET status='locked', locked_at=NOW()
         WHERE id=$1 AND status='draft' RETURNING id, employee_id, pay_month, pay_year,
-                                              reimbursement, loan_recovery, gross_earnings, total_deductions, net_pay, tds, updated_at`,
+                                              reimbursement, loan_recovery, gross_earnings, total_deductions, net_pay, tds, generated_at`,
       [req.params.id]
     );
     if (lockRes.rows.length === 0) {
@@ -715,7 +803,7 @@ router.put('/admin/payslips/:id/lock', authorize(...PAYROLL_ADMIN), logAuditWrap
           WHERE employee_id=$1 AND status='approved'
             AND claim_date BETWEEN $2::date AND $3::date
             AND (approved_at IS NULL OR approved_at <= $4)`,
-        [slip.employee_id, start, end, slip.updated_at]
+        [slip.employee_id, start, end, slip.generated_at]
       );
     }
 
@@ -1312,6 +1400,36 @@ router.get('/admin/reports/:type', authorize(...PAYROLL_ADMIN), async (req, res)
     if (type === 'pt') return sendCsv(res, `pt-register-${period}.csv`, ['Employee ID', 'Name', 'Gross', 'Professional Tax'],
       r.rows.filter(x => Number(x.professional_tax) > 0).map(x => [x.code, `${x.first_name} ${x.last_name}`, x.gross_earnings, x.professional_tax]));
     res.status(400).json({ success: false, message: 'type must be pf | esi | tds | pt' });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+// GET /api/payroll/admin/payslips/export — full payslip + bank-detail CSV
+// for a given month, at ANY status (unlike the NEFT export below, which is
+// deliberately locked/paid-only). This is the pre-lock verification list —
+// accounts can eyeball bank details against a draft run before anything is
+// finalised, then this same sheet is what actually goes to the bank.
+router.get('/admin/payslips/export', authorize(...PAYROLL_ADMIN), async (req, res) => {
+  try {
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const r = await pool.query(
+      `SELECT e.employee_id AS code, e.first_name, e.last_name, e.designation, e.department,
+              e.bank_name, e.bank_account, e.bank_ifsc, e.pan_number,
+              p.status, p.gross_earnings, p.pf_employee, p.esi_employee, p.professional_tax, p.tds,
+              p.total_deductions, p.net_pay, p.lop_days, p.slip_number
+         FROM payroll_payslips p JOIN employees e ON p.employee_id = e.id
+        WHERE p.pay_month = $1 AND p.pay_year = $2 AND p.superseded_by IS NULL
+        ORDER BY e.first_name ASC`,
+      [month, year]
+    );
+    const period = `${String(month).padStart(2, '0')}-${year}`;
+    sendCsv(res, `payroll-verification-${period}.csv`,
+      ['Employee ID', 'Name', 'Designation', 'Department', 'Bank Name', 'Account Number', 'IFSC', 'PAN',
+       'Gross Earnings', 'PF', 'ESI', 'Professional Tax', 'TDS', 'Total Deductions', 'Net Pay', 'LOP Days', 'Status', 'Slip Number'],
+      r.rows.map(x => [x.code, `${x.first_name} ${x.last_name}`, x.designation || '', x.department || '',
+        x.bank_name || '', x.bank_account || '', x.bank_ifsc || '', x.pan_number || '',
+        x.gross_earnings, x.pf_employee, x.esi_employee, x.professional_tax, x.tds, x.total_deductions, x.net_pay,
+        x.lop_days, x.status, x.slip_number || '']));
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 

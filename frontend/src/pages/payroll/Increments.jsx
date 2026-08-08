@@ -10,6 +10,7 @@ import { Plus, CheckCircle2, XCircle, X, TrendingUp } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { fmtINR } from './_shared';
+import { useAuth } from '../../context/AuthContext';
 
 function ProposeModal({ onClose, onSaved }) {
   const [employees, setEmployees] = useState([]);
@@ -19,12 +20,23 @@ function ProposeModal({ onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.get('/payroll/admin/employees').then(r => setEmployees(r.data.data || [])).catch(() => {});
+    api.get('/payroll/admin/employees')
+      .then(r => setEmployees(r.data.data || []))
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load employees'));
   }, []);
+
+  const selectedEmployee = employees.find(e => e._id === employeeId);
+  const currentGross = selectedEmployee?.structure?.monthlyGross ?? null;
+  const isPayCut = currentGross != null && proposedGross !== '' && Number(proposedGross) < currentGross;
 
   const save = async (e) => {
     e.preventDefault();
-    if (!employeeId || !proposedGross) return toast.error('Employee and proposed gross are required');
+    if (!employeeId || !proposedGross || Number(proposedGross) <= 0) {
+      return toast.error('Select an employee and enter a proposed gross greater than 0');
+    }
+    if (isPayCut && !window.confirm(
+      `The proposed gross (${fmtINR(proposedGross)}) is LESS than this employee's current gross (${fmtINR(currentGross)}) — this is a pay cut, not an increment. Continue?`
+    )) return;
     setSaving(true);
     try {
       const r = await api.post('/payroll/increments', { employeeId, proposedGross: Number(proposedGross), effectiveDate });
@@ -55,11 +67,15 @@ function ProposeModal({ onClose, onSaved }) {
               <option value="">Select…</option>
               {employees.map(e => <option key={e._id} value={e._id}>{e.firstName} {e.lastName} — {e.structure ? fmtINR(e.structure.monthlyGross) + '/mo' : 'no structure'}</option>)}
             </select>
+            {currentGross != null && (
+              <p className="text-[12px] text-slate-500 mt-1">Current monthly gross: <strong>{fmtINR(currentGross)}</strong></p>
+            )}
           </div>
           <div>
             <label className="block text-[13px] font-medium text-slate-600 mb-1">New Monthly Gross</label>
             <input type="number" min={0} value={proposedGross} onChange={e => setProposedGross(e.target.value)} required
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400 text-right" />
+              className={`w-full border rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400 text-right ${isPayCut ? 'border-rose-300' : 'border-slate-200'}`} />
+            {isPayCut && <p className="text-[12px] text-rose-600 mt-1">This is lower than the current gross — a pay cut, not an increment.</p>}
           </div>
           <div>
             <label className="block text-[13px] font-medium text-slate-600 mb-1">Effective From</label>
@@ -80,29 +96,40 @@ function ProposeModal({ onClose, onSaved }) {
 }
 
 export default function Increments() {
+  const { user } = useAuth();
   const [status, setStatus] = useState('pending');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [proposing, setProposing] = useState(false);
+  const [actingId, setActingId] = useState(null);
 
   const load = () => {
     setLoading(true);
-    api.get(`/payroll/increments?status=${status}`).then(r => setRows(r.data.data || [])).catch(() => {}).finally(() => setLoading(false));
+    api.get(`/payroll/increments?status=${status}`)
+      .then(r => setRows(r.data.data || []))
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load increments'))
+      .finally(() => setLoading(false));
   };
   useEffect(load, [status]);
 
   const act = async (id, action) => {
+    if (actingId) return;
     let reason = null;
     if (action === 'reject') {
-      reason = window.prompt('Reason for rejection (optional):', '');
+      reason = window.prompt('Reason for rejection (visible to employee):', '');
       if (reason === null) return;
+      if (!reason.trim()) return toast.error('A rejection reason is required');
+    } else if (action === 'approve') {
+      if (!window.confirm("Approve this increment? It will proportionally rescale this employee's salary components and queue any applicable arrears immediately.")) return;
     }
+    setActingId(id);
     try {
       if (action === 'approve') await api.put(`/payroll/increments/${id}/approve`);
       else await api.put(`/payroll/increments/${id}/reject`, { reason });
       toast.success(action === 'approve' ? 'Approved' : 'Rejected');
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
+    finally { setActingId(null); }
   };
 
   return (
@@ -139,7 +166,7 @@ export default function Increments() {
             <div>
               <p className="font-semibold text-slate-800">{r.employee.firstName} {r.employee.lastName}</p>
               <p className="text-[13px] text-slate-500">
-                {fmtINR(r.currentGross)} → <span className="font-bold text-emerald-700">{fmtINR(r.proposedGross)}</span>/mo
+                {fmtINR(r.currentGross)} → <span className={`font-bold ${Number(r.proposedGross) < Number(r.currentGross) ? 'text-rose-700' : 'text-emerald-700'}`}>{fmtINR(r.proposedGross)}</span>/mo
                 <span className="text-slate-400"> · effective {new Date(r.effectiveDate).toLocaleDateString('en-GB')}</span>
               </p>
               {r.arrearsJson?.totalArrears > 0 && (
@@ -148,14 +175,20 @@ export default function Increments() {
               {r.rejectionReason && <p className="text-[13px] text-rose-600 mt-0.5">Reason: {r.rejectionReason}</p>}
             </div>
             {status === 'pending' && (
-              <div className="flex items-center gap-2">
-                <button onClick={() => act(r.id, 'reject')} className="flex items-center gap-1.5 border border-rose-300 text-rose-700 hover:bg-rose-50 text-[14px] font-semibold px-3 py-1.5 rounded-lg">
-                  <XCircle size={13} /> Reject
-                </button>
-                <button onClick={() => act(r.id, 'approve')} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[14px] font-semibold px-3 py-1.5 rounded-lg">
-                  <CheckCircle2 size={13} /> Approve
-                </button>
-              </div>
+              r.proposedBy?._id && String(r.proposedBy._id) === String(user?._id) ? (
+                <span className="text-[13px] text-slate-400 italic" title="You proposed this — another admin must approve or reject it">
+                  Awaiting another admin
+                </span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => act(r.id, 'reject')} disabled={actingId === r.id} className="flex items-center gap-1.5 border border-rose-300 text-rose-700 hover:bg-rose-50 text-[14px] font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60">
+                    <XCircle size={13} /> Reject
+                  </button>
+                  <button onClick={() => act(r.id, 'approve')} disabled={actingId === r.id} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[14px] font-semibold px-3 py-1.5 rounded-lg disabled:opacity-60">
+                    <CheckCircle2 size={13} /> Approve
+                  </button>
+                </div>
+              )
             )}
           </div>
         ))}
