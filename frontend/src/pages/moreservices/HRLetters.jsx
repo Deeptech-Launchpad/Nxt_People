@@ -74,6 +74,10 @@ export default function HRLetters() {
 
   const handleProcess = async (e) => {
     e.preventDefault();
+    if (processForm.status === 'issued' && !processForm.letter) {
+      toast.error('Please attach the signed letter before marking as Issued');
+      return;
+    }
     setSaving(true);
     try {
       const fd = new FormData();
@@ -176,7 +180,10 @@ export default function HRLetters() {
                 <td className="px-4 py-3">
                   {view === 'All (Admin)' && isAdmin ? (
                     r.status === 'issued' || r.status === 'rejected' ? (
-                      <span className="text-slate-300">—</span>
+                      <button onClick={() => { setProcessModal(r); setProcessForm({ status: r.status, rejectionReason: r.rejectionReason || '', letter: null }); }}
+                        className="text-[13px] font-semibold text-blue-600 hover:underline">
+                        Re-process
+                      </button>
                     ) : (
                       <button onClick={() => { setProcessModal(r); setProcessForm({ status: 'in_progress', rejectionReason: '', letter: null }); }}
                         className="text-[13px] font-semibold text-blue-600 hover:underline">

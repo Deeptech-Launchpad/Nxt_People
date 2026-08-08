@@ -24,6 +24,9 @@ export default function Travel() {
   const [saving, setSaving]     = useState(false);
   const [form, setForm]         = useState({ destination: '', purpose: '', fromDate: '', toDate: '', transport: 'Flight' });
 
+  const [rejectModal, setRejectModal] = useState(null); // { id }
+  const [rejectReason, setRejectReason] = useState('');
+
   const load = useCallback(() => {
     const endpoint = (isAdmin && view === 'All (Admin)') ? '/travel' : '/travel/my';
     setLoading(true);
@@ -51,12 +54,7 @@ export default function Travel() {
     }
   };
 
-  const handleAction = async (id, action) => {
-    let rejectionReason = null;
-    if (action === 'reject') {
-      rejectionReason = prompt('Reason for rejection?');
-      if (!rejectionReason) return;
-    }
+  const handleAction = async (id, action, rejectionReason = null) => {
     try {
       await api.put(`/travel/${id}/action`, { action, rejectionReason });
       toast.success(`Request ${action}d`);
@@ -64,6 +62,13 @@ export default function Travel() {
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed');
     }
+  };
+
+  const confirmReject = async () => {
+    if (!rejectReason.trim()) return;
+    await handleAction(rejectModal.id, 'reject', rejectReason);
+    setRejectModal(null);
+    setRejectReason('');
   };
 
   const handleCancel = async (id) => {
@@ -113,7 +118,11 @@ export default function Travel() {
             {loading ? (
               <tr><td colSpan={8} className="py-12 text-center text-[15px] text-slate-400">Loading…</td></tr>
             ) : requests.length === 0 ? (
-              <tr><td colSpan={8} className="py-12 text-center text-[15px] text-slate-400">No travel requests yet</td></tr>
+              <tr><td colSpan={8} className="py-14 text-center">
+                <Plane size={32} className="text-slate-200 mx-auto mb-3"/>
+                <p className="text-[15px] font-semibold text-slate-400">No travel requests yet</p>
+                <p className="text-[14px] text-slate-300 mt-1">Click "New Request" to submit one</p>
+              </td></tr>
             ) : requests.map(r => (
               <tr key={r._id} className="hover:bg-slate-50 transition-colors">
                 {view === 'All (Admin)' && (
@@ -140,7 +149,7 @@ export default function Travel() {
                         className="p-1 rounded hover:bg-emerald-50 text-emerald-600">
                         <Check size={14}/>
                       </button>
-                      <button onClick={() => handleAction(r._id, 'reject')} title="Reject"
+                      <button onClick={() => setRejectModal({ id: r._id })} title="Reject"
                         className="p-1 rounded hover:bg-red-50 text-red-500">
                         <X size={14}/>
                       </button>
@@ -207,6 +216,31 @@ export default function Travel() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {rejectModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <div className="flex items-center gap-2"><X size={16} className="text-red-500"/><h3 className="font-semibold text-slate-800">Reject Request</h3></div>
+              <button onClick={() => { setRejectModal(null); setRejectReason(''); }} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-[14px] font-medium text-slate-600 mb-1.5">Reason for rejection *</label>
+                <textarea rows={3} required value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400 resize-none"/>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => { setRejectModal(null); setRejectReason(''); }} className="flex-1 border border-slate-200 text-slate-600 py-2 rounded-lg text-[14px] font-medium hover:bg-slate-50">Cancel</button>
+                <button type="button" disabled={!rejectReason.trim()} onClick={confirmReject} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-[14px] font-semibold disabled:opacity-60">
+                  Confirm Reject
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

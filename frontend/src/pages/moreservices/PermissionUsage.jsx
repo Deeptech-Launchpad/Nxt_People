@@ -89,7 +89,11 @@ export default function PermissionUsage() {
             {loading ? (
               <tr><td colSpan={7} className="px-5 py-16 text-center"><div className="w-6 h-6 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto" /></td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={7} className="px-5 py-16 text-center text-slate-400 text-[15px]">No permission requests in {MONTHS[month - 1]} {year}</td></tr>
+              <tr><td colSpan={7} className="px-5 py-16 text-center">
+                <Hourglass size={32} className="text-slate-200 mx-auto mb-3"/>
+                <p className="text-[15px] font-semibold text-slate-400">No permission requests in {MONTHS[month - 1]} {year}</p>
+                <p className="text-[14px] text-slate-300 mt-1">Usage will appear here once requests are submitted</p>
+              </td></tr>
             ) : rows.map(r => {
               const approved = parseFloat(r.approvedHours) || 0;
               const pending  = parseFloat(r.pendingHours) || 0;

@@ -40,6 +40,7 @@ export default function Documents({ employeeId: propEmpId }) {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [form, setForm] = useState({ name: '', type: 'other', file: null });
   const [modal, setModal] = useState(false);
   const fileRef = React.useRef();
@@ -47,7 +48,7 @@ export default function Documents({ employeeId: propEmpId }) {
   const load = useCallback(() => {
     if (!empId) return;
     setLoading(true);
-    api.get(`/documents/${empId}`).then(r => setDocs(r.data.data || [])).catch(console.error).finally(() => setLoading(false));
+    api.get(`/documents/${empId}`).then(r => setDocs(r.data.data || [])).catch(err => toast.error(err.response?.data?.message || 'Failed to load documents')).finally(() => setLoading(false));
   }, [empId]);
 
   useEffect(load, [load]);
@@ -56,18 +57,22 @@ export default function Documents({ employeeId: propEmpId }) {
     e.preventDefault();
     if (!form.file) return toast.error('Please select a file');
     setUploading(true);
+    setUploadProgress(0);
     const fd = new FormData();
     fd.append('file', form.file);
     fd.append('name', form.name || form.file.name);
     fd.append('type', form.type);
     try {
-      await api.post(`/documents/${empId}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await api.post(`/documents/${empId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (evt) => setUploadProgress(Math.round((evt.loaded * 100) / evt.total)),
+      });
       toast.success('Document uploaded!');
       setModal(false); setForm({ name: '', type: 'other', file: null });
       if (fileRef.current) fileRef.current.value = '';
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Upload failed'); }
-    finally { setUploading(false); }
+    finally { setUploading(false); setUploadProgress(0); }
   };
 
   const handleDelete = async (docId) => {
@@ -186,7 +191,7 @@ export default function Documents({ employeeId: propEmpId }) {
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50">Cancel</button>
                 <button type="submit" disabled={uploading || !form.file} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                  <Upload size={14} />{uploading ? 'Uploading...' : 'Upload'}
+                  <Upload size={14} />{uploading ? `Uploading... ${uploadProgress}%` : 'Upload'}
                 </button>
               </div>
             </form>

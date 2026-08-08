@@ -26,6 +26,9 @@ export default function Compensation() {
   const [saving, setSaving] = useState(false);
   const [form, setForm]     = useState({ claimType: 'Medical', amount: '', claimDate: '', description: '', receipt: null });
 
+  const [rejectModal, setRejectModal] = useState(null); // { id }
+  const [rejectReason, setRejectReason] = useState('');
+
   const load = useCallback(() => {
     const endpoint = (isAdmin && view === 'All (Admin)') ? '/compensation' : '/compensation/my';
     setLoading(true);
@@ -61,12 +64,7 @@ export default function Compensation() {
     }
   };
 
-  const handleAction = async (id, action) => {
-    let rejectionReason = null;
-    if (action === 'reject') {
-      rejectionReason = prompt('Reason for rejection?');
-      if (!rejectionReason) return;
-    }
+  const handleAction = async (id, action, rejectionReason = null) => {
     try {
       await api.put(`/compensation/${id}/action`, { action, rejectionReason });
       toast.success(`Claim ${action}d`);
@@ -74,6 +72,13 @@ export default function Compensation() {
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed');
     }
+  };
+
+  const confirmReject = async () => {
+    if (!rejectReason.trim()) return;
+    await handleAction(rejectModal.id, 'reject', rejectReason);
+    setRejectModal(null);
+    setRejectReason('');
   };
 
   const handleCancel = async (id) => {
@@ -134,7 +139,11 @@ export default function Compensation() {
             {loading ? (
               <tr><td colSpan={8} className="py-12 text-center text-[15px] text-slate-400">Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="py-12 text-center text-[15px] text-slate-400">No claims found</td></tr>
+              <tr><td colSpan={8} className="py-14 text-center">
+                <FileText size={32} className="text-slate-200 mx-auto mb-3"/>
+                <p className="text-[15px] font-semibold text-slate-400">No claims found</p>
+                <p className="text-[14px] text-slate-300 mt-1">Click "Add Claim" to submit one</p>
+              </td></tr>
             ) : filtered.map(c => (
               <tr key={c._id} className="hover:bg-slate-50 transition-colors">
                 {view === 'All (Admin)' && (
@@ -164,7 +173,7 @@ export default function Compensation() {
                   {view === 'All (Admin)' && c.status === 'pending' && isAdmin && c.employee?._id !== user?._id ? (
                     <div className="flex gap-1">
                       <button onClick={() => handleAction(c._id, 'approve')} title="Approve" className="p-1 rounded hover:bg-emerald-50 text-emerald-600"><Check size={14}/></button>
-                      <button onClick={() => handleAction(c._id, 'reject')}  title="Reject"  className="p-1 rounded hover:bg-red-50 text-red-500"><X size={14}/></button>
+                      <button onClick={() => setRejectModal({ id: c._id })}  title="Reject"  className="p-1 rounded hover:bg-red-50 text-red-500"><X size={14}/></button>
                     </div>
                   ) : view !== 'All (Admin)' && c.status === 'pending' ? (
                     <button onClick={() => handleCancel(c._id)} title="Cancel" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"><Trash2 size={13}/></button>
@@ -230,6 +239,31 @@ export default function Compensation() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {rejectModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <div className="flex items-center gap-2"><X size={16} className="text-red-500"/><h3 className="font-semibold text-slate-800">Reject Claim</h3></div>
+              <button onClick={() => { setRejectModal(null); setRejectReason(''); }} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-[14px] font-medium text-slate-600 mb-1.5">Reason for rejection *</label>
+                <textarea rows={3} required value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400 resize-none"/>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => { setRejectModal(null); setRejectReason(''); }} className="flex-1 border border-slate-200 text-slate-600 py-2 rounded-lg text-[14px] font-medium hover:bg-slate-50">Cancel</button>
+                <button type="button" disabled={!rejectReason.trim()} onClick={confirmReject} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-[14px] font-semibold disabled:opacity-60">
+                  Confirm Reject
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

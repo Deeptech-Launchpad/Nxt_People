@@ -392,7 +392,11 @@ export default function Conference() {
             {loading ? (
               <tr><td colSpan={8} className="px-5 py-16 text-center"><div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" /></td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400 text-[15px]">No bookings for {fmtDate(date)}</td></tr>
+              <tr><td colSpan={8} className="px-5 py-16 text-center">
+                <Calendar size={32} className="text-slate-200 mx-auto mb-3"/>
+                <p className="text-[15px] font-semibold text-slate-400">No bookings for {fmtDate(date)}</p>
+                <p className="text-[14px] text-slate-300 mt-1">Click "Book Conference Hall" to schedule one</p>
+              </td></tr>
             ) : rows.map(b => {
               const dynStatus = computeStatus(b);
               const pill = STATUS_PILL[dynStatus] || STATUS_PILL.booked;
@@ -401,14 +405,14 @@ export default function Conference() {
                   <td className="px-5 py-3.5 text-[14px] text-slate-600">{fmtDate(b.bookingDate)}</td>
                   <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmt12(b.startTime)}</td>
                   <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmt12(b.endTime)}</td>
-                  <td className="px-5 py-3.5 text-[14px] text-slate-700">
+                  <td className="px-5 py-3.5 text-[14px] text-slate-700 max-w-[200px] truncate" title={`By ${b.bookedBy || '—'}${b.bookedFor ? ` For ${b.bookedFor}` : ''}`}>
                     By {b.bookedBy || '—'}
                     {b.bookedFor && <span className="text-slate-500"> For {b.bookedFor}</span>}
                   </td>
                   <td className="px-5 py-3.5">
                     <span className="text-[13px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">{b.hall}</span>
                   </td>
-                  <td className="px-5 py-3.5 text-[15px] text-slate-700">{b.title}</td>
+                  <td className="px-5 py-3.5 text-[15px] text-slate-700 max-w-[200px] truncate" title={b.title}>{b.title}</td>
                   <td className="px-5 py-3.5">
                     <span className={`inline-flex items-center text-[13px] font-semibold px-2.5 py-0.5 rounded-full ${pill.cls}`}>
                       {pill.label}
