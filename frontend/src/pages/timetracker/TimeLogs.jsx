@@ -21,6 +21,7 @@ export default function TimeLogs() {
 
   const ws = weekStart(week);
   const we = new Date(ws); we.setDate(ws.getDate() + 6);
+  const weEnd = new Date(we); weEnd.setHours(23, 59, 59, 999);
   const weekLabel = `${ws.toLocaleDateString('en-IN', {day:'2-digit',month:'short'})} – ${we.toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'})}`;
 
   useEffect(() => {
@@ -85,9 +86,9 @@ export default function TimeLogs() {
           <tbody className="divide-y divide-slate-50">
             {loading ? (
               <tr><td colSpan={5} className="py-12 text-center"><div className="w-5 h-5 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"/></td></tr>
-            ) : logs.length === 0 ? (
+            ) : logs.flatMap(ts => ts.entries || []).filter(e => { const d = new Date(e.date); return d >= ws && d <= weEnd; }).length === 0 ? (
               <tr><td colSpan={5} className="py-12 text-center text-[15px] text-slate-400">No time logs for this week</td></tr>
-            ) : logs.flatMap(ts => ts.entries || []).map((e, i) => (
+            ) : logs.flatMap(ts => ts.entries || []).filter(e => { const d = new Date(e.date); return d >= ws && d <= weEnd; }).map((e, i) => (
               <tr key={i} className="hover:bg-slate-50 transition-colors">
                 <td className="px-4 py-3 text-[14px] text-slate-600">{new Date(e.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</td>
                 <td className="px-4 py-3 text-[14px] font-medium text-slate-700">{e.project}</td>

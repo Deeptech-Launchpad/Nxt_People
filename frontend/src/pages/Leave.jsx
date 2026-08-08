@@ -56,7 +56,7 @@ export default function Leave() {
       const balMap = {};
       cards.forEach(c => { balMap[c.code] = c.available; });
       setBalance(balMap);
-    }).catch(console.error).finally(() => setLoading(false));
+    }).catch(err => toast.error(err.response?.data?.message || 'Failed to load leave data')).finally(() => setLoading(false));
   };
 
   useEffect(load, []);
@@ -84,6 +84,9 @@ export default function Leave() {
     try { await api.delete(`/leaves/${id}`); toast.success('Leave cancelled'); load(); }
     catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
   };
+
+  const availableForSelected = form.leaveType === 'permission' ? (balance?.permission ?? 0) : (balance?.[form.leaveType] ?? 0);
+  const insufficientBalance = !!balance && form.leaveType !== 'unpaid' && availableForSelected <= 0;
 
   const leaveTypeColors = {
     casual: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -144,7 +147,7 @@ export default function Leave() {
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium text-slate-700 capitalize">{LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType}</p>
-                            <span className={`px-2.5 py-0.5 rounded-full text-sm font-medium capitalize ${STATUS_STYLE[l.status]}`}>{l.status}</span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-sm font-medium capitalize ${STATUS_STYLE[l.status] || 'bg-slate-100 text-slate-500'}`}>{l.status}</span>
                           </div>
                           <p className="text-base text-slate-500 mt-1">
                             {startDate?.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -225,10 +228,11 @@ export default function Leave() {
               </div>
               {/* Show available balance for selected leave type */}
               {balance && form.leaveType !== 'unpaid' && (
-                <p className="text-sm text-slate-500 -mt-2">
+                <p className={`text-sm -mt-2 ${insufficientBalance ? 'text-red-600 font-medium' : 'text-slate-500'}`}>
                   {form.leaveType === 'permission'
-                    ? <>Remaining this month: <span className="font-semibold text-brand-600">{balance.permission ?? 0}h</span> of 4h</>
-                    : <>Available: <span className="font-semibold text-brand-600">{balance[form.leaveType] ?? 0} day(s)</span></>}
+                    ? <>Remaining this month: <span className="font-semibold">{availableForSelected}h</span> of 4h</>
+                    : <>Available: <span className="font-semibold">{availableForSelected} day(s)</span></>}
+                  {insufficientBalance && ' — no balance remaining'}
                 </p>
               )}
               {form.leaveType === 'permission' ? (
@@ -253,7 +257,7 @@ export default function Leave() {
                 <>
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={form.isHalfDay} onChange={e => setForm({ ...form, isHalfDay: e.target.checked })} className="w-4 h-4 rounded accent-brand-600" />
+                      <input type="checkbox" checked={form.isHalfDay} onChange={e => setForm({ ...form, isHalfDay: e.target.checked, endDate: e.target.checked ? form.startDate : form.endDate })} className="w-4 h-4 rounded accent-brand-600" />
                       <span className="text-base text-slate-600">Half Day</span>
                     </label>
                     {form.isHalfDay && (
@@ -267,11 +271,11 @@ export default function Leave() {
                       <label className="block text-sm font-medium text-slate-600 mb-1.5">From</label>
                       {/* Block past-dated leave requests at the UI level. Local
                           date in YYYY-MM-DD so the input accepts it directly. */}
-                      <input type="date" value={form.startDate} min={new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: e.target.value > form.endDate ? e.target.value : form.endDate })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                      <input type="date" value={form.startDate} min={new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: form.isHalfDay ? e.target.value : (e.target.value > form.endDate ? e.target.value : form.endDate) })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-600 mb-1.5">To</label>
-                      <input type="date" value={form.endDate} min={form.startDate || new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                      <input type="date" value={form.endDate} min={form.startDate || new Date().toLocaleDateString('en-CA')} disabled={form.isHalfDay} onChange={e => setForm({ ...form, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 disabled:bg-slate-50 disabled:text-slate-400" />
                     </div>
                   </div>
                 </>
@@ -282,7 +286,7 @@ export default function Leave() {
               </div>
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50 transition-colors">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60">
+                <button type="submit" disabled={saving || insufficientBalance} title={insufficientBalance ? 'No balance remaining for this leave type' : ''} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60">
                   {saving ? 'Submitting...' : 'Submit Request'}
                 </button>
               </div>

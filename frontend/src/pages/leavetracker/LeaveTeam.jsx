@@ -2,6 +2,13 @@
 import { Calendar } from 'lucide-react';
 import api from '../../utils/api';
 
+const STATUS_STYLE = {
+  pending: 'bg-amber-100 text-amber-700',
+  approved: 'bg-emerald-100 text-emerald-700',
+  rejected: 'bg-red-100 text-red-700',
+  cancelled: 'bg-slate-100 text-slate-500',
+};
+
 export default function LeaveTeam() {
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +51,7 @@ export default function LeaveTeam() {
                   <td className="px-5 py-3 text-[14px] text-slate-600">{new Date(l.endDate + 'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</td>
                   <td className="px-5 py-3 text-[14px] font-bold text-slate-700">{l.totalDays}</td>
                   <td className="px-5 py-3">
-                    <span className="text-[13px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 capitalize">{l.status}</span>
+                    <span className={`text-[13px] font-semibold px-2 py-0.5 rounded-full capitalize ${STATUS_STYLE[l.status] || 'bg-slate-100 text-slate-500'}`}>{l.status}</span>
                   </td>
                 </tr>
               ))}

@@ -27,6 +27,7 @@ export default function Timesheets() {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const [submittingId, setSubmittingId] = useState(null);
 
   const { start, end } = getWeekDates();
   const weekLabel = `${start.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
@@ -50,8 +51,10 @@ export default function Timesheets() {
   };
 
   const handleSubmitExisting = async (id) => {
+    setSubmittingId(id);
     try { await api.put(`/timesheets/${id}/submit`); toast.success('Submitted!'); load(); }
     catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setSubmittingId(null); }
   };
 
   const totalHours = entries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0);
@@ -98,8 +101,9 @@ export default function Timesheets() {
                     <span className={`px-2.5 py-1 rounded-full text-sm font-medium capitalize ${STATUS_STYLE[ts.status]}`}>{ts.status}</span>
                     {ts.status === 'draft' && (
                       <button onClick={e => { e.stopPropagation(); handleSubmitExisting(ts._id); }}
-                        className="flex items-center gap-1.5 text-sm bg-brand-50 text-brand-600 px-3 py-1.5 rounded-lg hover:bg-brand-100 transition-colors font-medium">
-                        <Send size={12}/> Submit
+                        disabled={submittingId === ts._id}
+                        className="flex items-center gap-1.5 text-sm bg-brand-50 text-brand-600 px-3 py-1.5 rounded-lg hover:bg-brand-100 transition-colors font-medium disabled:opacity-60">
+                        <Send size={12}/> {submittingId === ts._id ? 'Submitting...' : 'Submit'}
                       </button>
                     )}
                     <ChevronDown size={16} className={`text-slate-400 transition-transform ${expandedId === ts._id ? 'rotate-180' : ''}`}/>

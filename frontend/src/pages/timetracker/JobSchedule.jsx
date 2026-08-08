@@ -12,9 +12,9 @@ export default function JobSchedule() {
     <div className="p-6 max-w-5xl space-y-4">
       <BackButton to="/time-tracker" label="Time Tracker" />
       <div className="flex items-center gap-3">
-        <button className="w-7 h-7 border border-slate-200 rounded hover:bg-slate-50 flex items-center justify-center text-slate-500"><ChevronLeft size={14}/></button>
+        <button disabled title="Not available yet" className="w-7 h-7 border border-slate-200 rounded flex items-center justify-center text-slate-300 cursor-not-allowed"><ChevronLeft size={14}/></button>
         <span className="text-[15px] font-semibold text-slate-700">This Week</span>
-        <button className="w-7 h-7 border border-slate-200 rounded hover:bg-slate-50 flex items-center justify-center text-slate-500"><ChevronRight size={14}/></button>
+        <button disabled title="Not available yet" className="w-7 h-7 border border-slate-200 rounded flex items-center justify-center text-slate-300 cursor-not-allowed"><ChevronRight size={14}/></button>
         <div className="ml-auto flex border border-slate-200 rounded-md overflow-hidden">
           {['day','week'].map(v => (
             <button key={v} onClick={() => setView(v)}
@@ -23,7 +23,7 @@ export default function JobSchedule() {
             </button>
           ))}
         </div>
-        <button className="bg-blue-600 hover:bg-blue-700 text-white text-[14px] font-semibold px-3.5 py-1.5 rounded-md transition-colors">
+        <button disabled title="Not available yet" className="bg-slate-200 text-slate-400 text-[14px] font-semibold px-3.5 py-1.5 rounded-md cursor-not-allowed">
           Publish
         </button>
       </div>

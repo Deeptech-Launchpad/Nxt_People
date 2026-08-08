@@ -81,6 +81,7 @@ function PresetDialog({ date, onClose, onCustom, onSaved, isWeekend }) {
   const presets = buildPresets(date);
 
   const apply = async (preset) => {
+    if (!confirm(`Create this rule — "${preset.label}"? This changes attendance, leave, and reports app-wide.`)) return;
     setSaving(preset.key);
     try {
       await api.post('/weekend-rules', preset.rule);
@@ -96,6 +97,7 @@ function PresetDialog({ date, onClose, onCustom, onSaved, isWeekend }) {
    *  Implemented via the holidays table (type='working_day'), not the
    *  weekend_rules table, because it's a per-date override. */
   const addWorkingDayException = async () => {
+    if (!confirm('Mark this date as a working day? This overrides the weekend rule for this date across attendance, leave, and reports.')) return;
     setSaving('working_day');
     try {
       const yearFromDate = date.getFullYear();

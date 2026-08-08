@@ -38,6 +38,7 @@ export default function CompOff() {
   const canApproveAll = ['admin', 'director', 'manager', 'hr_admin'].includes(user?.role);
   const today = new Date();
   const tomorrow = new Date(today.getTime() + 86400000);
+  const threeMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 3, today.getDate());
 
   const load = () => {
     setLoading(true);
@@ -47,7 +48,7 @@ export default function CompOff() {
       setMyRequests(myRes.data.data || []);
       setBalance(myRes.data.balance || 0);
       if (pendingRes) setPending(pendingRes.data.data || []);
-    }).catch(console.error).finally(() => setLoading(false));
+    }).catch(err => toast.error(err.response?.data?.message || 'Failed to load comp-off requests')).finally(() => setLoading(false));
   };
 
   useEffect(() => { if (user !== undefined) load(); }, [user?.role]);
@@ -148,7 +149,7 @@ export default function CompOff() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-sm px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[r.status]}`}>{r.status}</span>
+                    <span className={`text-sm px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[r.status] || 'bg-slate-100 text-slate-500'}`}>{r.status}</span>
                     <button onClick={() => setViewItem(r)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                       <Eye size={13} /> View
                     </button>
@@ -189,8 +190,8 @@ export default function CompOff() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Worked Date (weekend / holiday) *</label>
-                <input type="date" value={form.workedDate} onChange={e => setForm({ ...form, workedDate: e.target.value })} required max={ymd(today)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
-                <p className="text-[13px] text-slate-400 mt-1">Must be a Saturday, Sunday, or approved holiday you actually worked.</p>
+                <input type="date" value={form.workedDate} onChange={e => setForm({ ...form, workedDate: e.target.value })} required min={ymd(threeMonthsAgo)} max={ymd(today)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
+                <p className="text-[13px] text-slate-400 mt-1">Must be a Saturday, Sunday, or approved holiday you actually worked, within the last 3 months.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Reason / Work Details *</label>

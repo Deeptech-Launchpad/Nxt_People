@@ -6,10 +6,19 @@ import { DollarSign, Clock, CheckCircle, XCircle } from 'lucide-react';
 export default function LeaveEncashment() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [balance, setBalance] = useState(null);
   const [form, setForm] = useState({ leaveType: 'casual', days: '', reason: '' });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadData();
+    api.get('/leaves/balance')
+      .then(r => {
+        const balMap = {};
+        (r.data.data || []).forEach(c => { balMap[c.code] = c.available; });
+        setBalance(balMap);
+      })
+      .catch(() => {});
   }, []);
 
   const loadData = async () => {
@@ -25,6 +34,7 @@ export default function LeaveEncashment() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSaving(true);
     try {
       await api.post('/encashments', form);
       toast.success('Encashment requested successfully');
@@ -32,6 +42,8 @@ export default function LeaveEncashment() {
       loadData();
     } catch (e) {
       toast.error(e.response?.data?.message || 'Failed to submit');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -54,12 +66,17 @@ export default function LeaveEncashment() {
             <div>
               <label className="text-sm font-medium text-slate-600">Number of Days</label>
               <input type="number" min="1" required value={form.days} onChange={e=>setForm({...form, days: e.target.value})} className="w-full mt-1 p-2 border rounded-lg text-base" />
+              {balance && (
+                <p className="text-sm text-slate-500 mt-1">
+                  Available: <span className="font-semibold text-brand-600">{balance[form.leaveType] ?? 0} day(s)</span>
+                </p>
+              )}
             </div>
             <div>
               <label className="text-sm font-medium text-slate-600">Reason</label>
               <textarea required value={form.reason} onChange={e=>setForm({...form, reason: e.target.value})} className="w-full mt-1 p-2 border rounded-lg text-base" rows="3"></textarea>
             </div>
-            <button className="w-full bg-brand-600 text-white py-2 rounded-lg font-medium hover:bg-brand-500 transition">Submit Request</button>
+            <button type="submit" disabled={saving} className="w-full bg-brand-600 text-white py-2 rounded-lg font-medium hover:bg-brand-500 transition disabled:opacity-60">{saving ? 'Submitting...' : 'Submit Request'}</button>
           </form>
         </div>
 

@@ -61,10 +61,14 @@ export default function LeaveCalendar() {
         const end = new Date(l.endDate + 'T00:00:00');
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
           if (d.getMonth() !== month || d.getFullYear() !== year) continue;
+          const isWknd = typeof isWeekendByRule === 'function'
+            ? isWeekendByRule(d)
+            : (d.getDay() === 0 || d.getDay() === 6);
+          if (isWknd) continue; // a multi-day leave doesn't consume weekend days
           const ds = d.toLocaleDateString('en-CA');
           if (!newEvents[ds]) newEvents[ds] = [];
-          newEvents[ds].push({ 
-            type: 'leave', 
+          newEvents[ds].push({
+            type: 'leave',
             text: `${l.employee?.firstName || 'User'} - ${l.leaveType || 'Leave'}`
           });
         }
@@ -154,7 +158,12 @@ export default function LeaveCalendar() {
       </div>
 
       {/* Grid Container */}
-      <div className="flex flex-col h-[800px]">
+      <div className="flex flex-col h-[800px] relative">
+        {loading && (
+          <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center">
+            <div className="w-6 h-6 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
         {/* Days Header */}
         <div className="grid grid-cols-7 border-b border-slate-200">
           {DAYS.map(day => (
@@ -173,8 +182,7 @@ export default function LeaveCalendar() {
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const dayNum = i + 1;
             const dayDate = new Date(year, month, dayNum);
-            const isWeekend = (firstDayOfMonth + i) % 7 === 0 || (firstDayOfMonth + i) % 7 === 6;
-            const isWeekendDay = typeof isWeekendByRule === 'function'
+            const isWeekend = typeof isWeekendByRule === 'function'
               ? isWeekendByRule(dayDate)
               : (dayDate.getDay() === 0 || dayDate.getDay() === 6);
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
@@ -195,7 +203,7 @@ export default function LeaveCalendar() {
                 </div>
 
                 <div className="mt-2 space-y-1">
-                  {isWeekendDay && dayEvents.length === 0 && (
+                  {isWeekend && dayEvents.length === 0 && (
                     <div className="bg-slate-100 border border-slate-200 text-slate-400 text-[12px] font-semibold px-2 py-1 rounded">
                       Weekend
                     </div>
@@ -208,7 +216,7 @@ export default function LeaveCalendar() {
                         </div>
                       )}
                       {ev.type === 'leave' && (
-                        <div className="bg-[#fff1f2] border border-[#fecdd3] text-[#be123c] text-[12px] font-semibold px-2 py-1 rounded truncate">
+                        <div className="bg-[#eef2ff] border border-[#c7d2fe] text-[#4338ca] text-[12px] font-semibold px-2 py-1 rounded truncate">
                           {ev.text}
                         </div>
                       )}

@@ -20,21 +20,22 @@ function fmtDateLong(s) {
   const d = typeof s === 'string' && !s.includes('T') ? new Date(s + 'T00:00:00') : new Date(s);
   return d.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 }
-function countWorkingDays(from, to) {
+function countWorkingDays(from, to, holidays = []) {
   if (!from || !to) return 0;
+  const holidaySet = new Set((holidays || []).map(h => new Date(h.date).toLocaleDateString('en-CA')));
   let count = 0;
   const cur = new Date(from);
   const end = new Date(to);
   while (cur <= end) {
     const d = cur.getDay();
-    if (d !== 0 && d !== 6) count++;
+    if (d !== 0 && d !== 6 && !holidaySet.has(cur.toLocaleDateString('en-CA'))) count++;
     cur.setDate(cur.getDate() + 1);
   }
   return count;
 }
 
 /* ── Apply Leave Modal ───────────────────────────────────────────────── */
-function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
+function ApplyLeaveModal({ cards, holidays, onClose, onSubmitted }) {
   const [form, setForm] = useState({
     leaveType: cards[0]?.code || 'casual',
     fromDate: '',
@@ -64,12 +65,12 @@ function ApplyLeaveModal({ cards, onClose, onSubmitted }) {
   useEffect(() => {
     if (isPermission) { setWorkingDays(0); return; }
     if (form.fromDate && form.toDate) {
-      const days = form.isHalfDay ? 0.5 : countWorkingDays(form.fromDate, form.toDate);
+      const days = form.isHalfDay ? 0.5 : countWorkingDays(form.fromDate, form.toDate, holidays);
       setWorkingDays(days);
     } else {
       setWorkingDays(0);
     }
-  }, [form.fromDate, form.toDate, form.isHalfDay, isPermission]);
+  }, [form.fromDate, form.toDate, form.isHalfDay, isPermission, holidays]);
 
   // Close on ESC
   useEffect(() => {
@@ -385,8 +386,7 @@ export default function LeaveSummary() {
   };
 
   const today = new Date();
-  const bookedTotal = leaves.filter(l => l.status !== 'cancelled').reduce((s, l) => s + (l.totalDays || 0), 0);
-  const absentCount = 0; // would need a separate API
+  const bookedTotal = leaves.filter(l => l.status === 'approved').reduce((s, l) => s + (l.totalDays || 0), 0);
 
   // Upcoming holidays (future dates)
   const upcomingHolidays = holidays.filter(h => new Date(h.date) >= today).slice(0, 10);
@@ -419,7 +419,7 @@ export default function LeaveSummary() {
           <BackButton to="/leave-tracker" label="Leave Tracker" />
           <span className="font-semibold text-gray-700">Leave booked this year : <span className="text-[#1a73e8]">{bookedTotal} day(s)</span></span>
           <span className="text-gray-300">|</span>
-          <span>Absent : <span className="font-semibold">{absentCount}</span></span>
+          <span>Absent : <span className="font-semibold">—</span></span>
         </div>
         <div className="flex items-center gap-3">
           {/* Date range nav */}
@@ -577,6 +577,7 @@ export default function LeaveSummary() {
       {showApply && (
         <ApplyLeaveModal
           cards={cards.filter(c => ['casual', 'comp_off', 'unpaid', 'permission'].includes(c.code))}
+          holidays={holidays}
           onClose={() => setShowApply(false)}
           onSubmitted={load}
         />

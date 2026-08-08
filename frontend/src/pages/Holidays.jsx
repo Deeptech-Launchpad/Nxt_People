@@ -5,11 +5,12 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import BackButton from '../components/BackButton';
 import { isFullAccess } from '../utils/roles';
+import { parseLocalDate as parseLocalDateUtil, fmtDate } from '../utils/dateFormat';
 
+// Holidays.jsx historically defaults a blank date to "today" rather than
+// null (used as a display fallback in a couple of spots below).
 function parseLocalDate(dateStr) {
-  if (!dateStr) return new Date();
-  if (typeof dateStr !== 'string' || dateStr.includes('T')) return new Date(dateStr);
-  return new Date(dateStr + 'T00:00:00');
+  return parseLocalDateUtil(dateStr) || new Date();
 }
 
 export default function Holidays() {
@@ -50,8 +51,7 @@ export default function Holidays() {
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const header = 'Name,Date,Type,Location,Shifts,Description\n';
     const rows = holidays.map(h => {
-      const d = parseLocalDate(h.date);
-      return [h.name, d.toLocaleDateString('en-GB'), h.type, h.location, h.shifts, h.description].map(esc).join(',');
+      return [h.name, fmtDate(h.date, { day: '2-digit', month: '2-digit', year: 'numeric' }), h.type, h.location, h.shifts, h.description].map(esc).join(',');
     }).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -304,7 +304,7 @@ export default function Holidays() {
                        </div>
                      </td>
                      <td className="px-6 py-4 text-[15px] text-slate-600 border-l border-slate-100">
-                       {d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}, {d.toLocaleDateString('en-US', { weekday: 'short' })}
+                       {fmtDate(d, { day: '2-digit', month: '2-digit', year: 'numeric' })}, {fmtDate(d, { weekday: 'short' })}
                      </td>
                      <td className="px-6 py-4 border-l border-slate-100">
                        <span className="inline-block px-2.5 py-1 bg-slate-100 rounded text-[14px] text-slate-500">
@@ -440,7 +440,7 @@ export default function Holidays() {
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
                         <option value="">Select…</option>
                         {holidays.filter(h => h.type !== 'working_day' && h.isCompensatory).map(h => (
-                          <option key={h._id} value={h._id}>{new Date(h.date).toLocaleDateString('en-IN')} — {h.name}</option>
+                          <option key={h._id} value={h._id}>{fmtDate(h.date)} — {h.name}</option>
                         ))}
                       </select>
                       <p className="text-[12px] text-slate-400 mt-1">Only shows holidays marked Compensatory.</p>
@@ -488,14 +488,15 @@ export default function Holidays() {
  * Pure read-only — clicking a day does nothing right now (add later if
  * the team wants click-to-edit behaviour). */
 function CalendarYearGrid({ year, holidays, parseLocalDate }) {
-  // Build a Set of day-of-year keys ("Y-M-D") that are holidays, with the
-  // first holiday hitting each key as the tooltip text. Multiple holidays
-  // on the same day will show only one — that's fine for a year overview.
+  // Build a map of day-of-year keys ("Y-M-D") to every holiday name landing
+  // on that day, so two holidays sharing a date both surface in the tooltip
+  // instead of the second one silently disappearing.
   const map = {};
   for (const h of holidays) {
     const d = parseLocalDate(h.date);
     const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    if (!map[k]) map[k] = h.name;
+    if (!map[k]) map[k] = [];
+    map[k].push(h.name);
   }
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -522,18 +523,22 @@ function CalendarYearGrid({ year, holidays, parseLocalDate }) {
               {cells.map((day, idx) => {
                 if (day === null) return <div key={idx} className="h-6" />;
                 const k = `${year}-${mIdx}-${day}`;
-                const holidayName = map[k];
+                const names = map[k];
+                const isWeekendCol = idx % 7 === 0 || idx % 7 === 6;
                 return (
                   <div
                     key={idx}
-                    title={holidayName ? `${day} ${mName}: ${holidayName}` : ''}
-                    className={`h-6 flex items-center justify-center text-[13px] rounded ${
-                      holidayName
+                    title={names ? names.map(n => `${day} ${mName}: ${n}`).join('\n') : ''}
+                    className={`relative h-6 flex items-center justify-center text-[13px] rounded ${
+                      names
                         ? 'bg-red-100 text-red-700 font-bold cursor-help'
-                        : 'text-slate-600'
+                        : isWeekendCol ? 'bg-amber-50 text-amber-700' : 'text-slate-600'
                     }`}
                   >
                     {day}
+                    {names && names.length > 1 && (
+                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-red-500" />
+                    )}
                   </div>
                 );
               })}
