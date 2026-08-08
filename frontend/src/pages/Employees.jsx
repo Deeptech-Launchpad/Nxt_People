@@ -652,6 +652,7 @@ export default function Employees() {
                  <div>
                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Department</label>
                    <select value={form.department} onChange={e=>setForm({...form,department:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400">
+                     <option value="">Select...</option>
                      {departments.map(d=><option key={d}>{d}</option>)}
                    </select>
                  </div>

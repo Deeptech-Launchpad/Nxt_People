@@ -2,14 +2,25 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mail, Phone, MessageSquare, Video } from 'lucide-react';
 import api from '../utils/api';
+import { fmtDate } from '../utils/dateFormat';
 
 /* ── Read-only view of any employee's profile. Reachable from the
  *  Employee Tree / Department Tree popup's eye button. Backend
  *  `/api/employees/:id` is `protect`-gated only — any logged-in user
  *  can fetch any colleague's profile, so this works for every role. */
 
-const fmtDate = (iso) =>
-  iso ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
+const DATE_OPTS = { day: '2-digit', month: '2-digit', year: 'numeric' };
+
+// Same status → {label, color} mapping as Employees.jsx's STATUS_OPTIONS,
+// kept in sync so this profile's status pill matches the admin list view.
+const STATUS_META = [
+  { value: 'active',        label: 'Active (Current Employee)', color: 'bg-emerald-100 text-emerald-700' },
+  { value: 'notice_period', label: 'Notice Period',             color: 'bg-amber-100 text-amber-700' },
+  { value: 'resigned',      label: 'Resigned',                  color: 'bg-slate-100 text-slate-600' },
+  { value: 'terminated',    label: 'Terminated',                color: 'bg-red-100 text-red-700' },
+  { value: 'inactive',      label: 'Inactive',                  color: 'bg-slate-100 text-slate-500' },
+];
+const statusMeta = (s) => STATUS_META.find(o => o.value === s) || STATUS_META[0];
 
 const Row = ({ label, children }) => (
   <div className="grid grid-cols-[160px_1fr] gap-4 items-start py-3 border-b border-slate-100 last:border-b-0">
@@ -37,23 +48,40 @@ export default function EmployeeProfile() {
   const [emp, setEmp] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const fetchEmployee = () => {
     if (!id) return;
     setLoading(true);
+    setNotFound(false);
+    setError(false);
     api.get(`/employees/${id}`)
       .then(r => setEmp(r.data.data || null))
       .catch(err => {
         if (err.response?.status === 404) setNotFound(true);
+        else setError(true);
         console.error(err);
       })
       .finally(() => setLoading(false));
-  }, [id]);
+  };
+
+  useEffect(fetchEmployee, [id]);
 
   if (loading) {
     return (
       <div className="flex justify-center py-20">
         <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="bg-[#f5f6f8] min-h-screen p-6">
+        <button onClick={() => navigate(-1)} className="text-blue-600 text-base flex items-center gap-1 mb-4">
+          <ArrowLeft size={14}/> Back
+        </button>
+        <p className="text-slate-500 mb-3">Something went wrong loading this employee.</p>
+        <button onClick={fetchEmployee} className="text-blue-600 text-base font-medium border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-50">Retry</button>
       </div>
     );
   }
@@ -108,10 +136,8 @@ export default function EmployeeProfile() {
               <p className="text-[14px] text-blue-600 truncate mt-0.5">{emp.email}</p>
             )}
             {emp.status && (
-              <span className={`mt-2 inline-block px-2 py-0.5 rounded text-[13px] font-semibold ${
-                emp.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
-              }`}>
-                {emp.status}
+              <span className={`mt-2 inline-block px-2 py-0.5 rounded text-[13px] font-semibold ${statusMeta(emp.status).color}`}>
+                {statusMeta(emp.status).label}
               </span>
             )}
           </div>
@@ -131,7 +157,7 @@ export default function EmployeeProfile() {
           <Row label="Division">{emp.division}</Row>
           <Row label="Work Location">{emp.workLocation}</Row>
           <Row label="Employment Type">{emp.employmentType}</Row>
-          <Row label="Date of Joining">{fmtDate(emp.joiningDate)}</Row>
+          <Row label="Date of Joining">{fmtDate(emp.joiningDate, DATE_OPTS)}</Row>
           <Row label="Total Experience">{emp.totalExperience}</Row>
           <Row label="Source of Hire">{emp.sourceOfHire}</Row>
         </Section>
@@ -152,7 +178,7 @@ export default function EmployeeProfile() {
         </Section>
 
         <Section title="Personal Details">
-          <Row label="Date of Birth">{emp.dateOfBirth ? fmtDate(emp.dateOfBirth) : null}</Row>
+          <Row label="Date of Birth">{emp.dateOfBirth ? fmtDate(emp.dateOfBirth, DATE_OPTS) : null}</Row>
           <Row label="Gender">{emp.gender}</Row>
           <Row label="Marital Status">{emp.maritalStatus}</Row>
           <Row label="Blood Group">{emp.bloodGroup}</Row>

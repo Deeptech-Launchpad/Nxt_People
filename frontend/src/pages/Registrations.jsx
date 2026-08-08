@@ -14,13 +14,13 @@ const STATUS_TABS = [
 
 const Badge = ({ status }) => {
   const map = {
-    pending: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    approved: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    rejected: 'bg-red-500/10 text-red-400 border-red-500/20',
-    active: 'bg-brand-500/10 text-brand-400 border-brand-500/20',
+    pending: 'bg-amber-100 text-amber-700 border-amber-200',
+    approved: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    rejected: 'bg-red-100 text-red-700 border-red-200',
+    active: 'bg-brand-100 text-brand-700 border-brand-200',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-medium border ${map[status] || 'bg-slate-500/10 text-slate-400 border-slate-500/20'}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-medium border ${map[status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
       {status}
     </span>
   );
@@ -487,9 +487,9 @@ export default function Registrations() {
       {/* Count cards */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
-          { label: 'Pending Review', value: counts.pending, color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
-          { label: 'Approved', value: counts.approved, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
-          { label: 'Rejected', value: counts.rejected, color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' },
+          { label: 'Pending Review', value: counts.pending, color: 'text-amber-700', bg: 'bg-amber-100 border-amber-200' },
+          { label: 'Approved', value: counts.approved, color: 'text-emerald-700', bg: 'bg-emerald-100 border-emerald-200' },
+          { label: 'Rejected', value: counts.rejected, color: 'text-red-700', bg: 'bg-red-100 border-red-200' },
         ].map(({ label, value, color, bg }) => (
           <div key={label} className={`rounded-xl border p-4 ${bg}`}>
             <p className={`font-display font-bold text-3xl ${color}`}>{value}</p>
@@ -516,13 +516,17 @@ export default function Registrations() {
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto shadow-sm">
         {loading ? (
           <div className="flex items-center justify-center py-16"><div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Clock size={32} className="text-slate-300 mb-3" />
-            <p className="text-slate-500 text-base">No {tab === 'all' ? '' : tab} registrations found.</p>
+            {search ? (
+              <p className="text-slate-500 text-base">No matches in this tab — try switching to a different status filter.</p>
+            ) : (
+              <p className="text-slate-500 text-base">No {tab === 'all' ? '' : tab} registrations found.</p>
+            )}
           </div>
         ) : (
           <table className="w-full">

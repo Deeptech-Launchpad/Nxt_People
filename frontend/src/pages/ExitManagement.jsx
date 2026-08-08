@@ -177,7 +177,7 @@ export default function ExitManagement() {
                       <span className={`text-sm px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[ex.status]}`}>{ex.status}</span>
                       {ex.status === 'pending' && (
                         <>
-                          <button onClick={() => handleAction(ex._id, 'approved')} disabled={actionLoading} className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+                          <button onClick={() => { if (confirm('Accept this resignation? This starts the employee\'s exit process.')) handleAction(ex._id, 'approved'); }} disabled={actionLoading} className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
                             <CheckCircle size={13} /> Accept
                           </button>
                           <button onClick={() => { setRejectModal(ex._id); setRejectReason(''); }} className="flex items-center gap-1.5 bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
@@ -220,7 +220,7 @@ export default function ExitManagement() {
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Proposed Last Working Day</label>
                 <input type="date" value={form.lastWorkingDate} onChange={e => setForm({ ...form, lastWorkingDate: e.target.value })}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
+                  min={form.resignationDate || undefined} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Reason *</label>

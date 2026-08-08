@@ -13,6 +13,30 @@ const STEPS = [
   'Documents Upload'
 ];
 
+const QUALIFICATION_LEVELS = { '10th': 1, '12th': 2, 'Diploma': 3, 'UG': 4, 'PG': 5, 'PhD': 6, 'Other': 4 };
+
+const DRAFT_FORM_DEFAULTS = {
+  firstName: '', lastName: '', gender: '', dateOfBirth: '', maritalStatus: '', bloodGroup: '',
+  mobile: '', alternateMobile: '',
+  currentAddress: '', permanentAddress: '', city: '', state: '', country: '', pinCode: '',
+  sameAsCurrent: false,
+  aadhaarNumber: '', panNumber: '', passportNumber: '', drivingLicense: '', voterId: '', uanNumber: '',
+  emergencyContactName: '', emergencyContactRelationship: '', emergencyContactNumber: '', emergencyContactAlternate: '',
+};
+
+const DRAFT_EDUCATION_DEFAULT = [
+  { highestQualification: '', degree: '', course: '', universityOrInstitution: '', yearOfPassing: '', percentageOrCgpa: '' }
+];
+
+function loadOnboardingDraft(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 const Input = ({ label, name, type = 'text', required = false, placeholder = '', value, onChange }) => (
   <div>
     <label className="block text-base font-medium text-slate-700 mb-1.5">{label} {required && <span className="text-red-500">*</span>}</label>
@@ -46,32 +70,48 @@ const FileInput = ({ label, name, required = false, accept = ".pdf,.jpg,.jpeg,.p
 
 export default function OnboardingForm() {
   const { token } = useParams();
+  const draftKey = `onboarding_draft_${token}`;
   const [isValid, setIsValid] = useState(null);
   const [email, setEmail] = useState('');
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(() => loadOnboardingDraft(draftKey)?.step || 1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   // Form Data
-  const [form, setForm] = useState({
-    firstName: '', lastName: '', gender: '', dateOfBirth: '', maritalStatus: '', bloodGroup: '',
-    mobile: '', alternateMobile: '',
-    currentAddress: '', permanentAddress: '', city: '', state: '', country: '', pinCode: '',
-    sameAsCurrent: false,
-    aadhaarNumber: '', panNumber: '', passportNumber: '', drivingLicense: '', voterId: '', uanNumber: '',
-    emergencyContactName: '', emergencyContactRelationship: '', emergencyContactNumber: '', emergencyContactAlternate: '',
-  });
+  const [form, setForm] = useState(() => ({ ...DRAFT_FORM_DEFAULTS, ...(loadOnboardingDraft(draftKey)?.form || {}) }));
 
-  const [education, setEducation] = useState([
-    { highestQualification: '', degree: '', course: '', universityOrInstitution: '', yearOfPassing: '', percentageOrCgpa: '' }
-  ]);
+  const [education, setEducation] = useState(() => loadOnboardingDraft(draftKey)?.education || DRAFT_EDUCATION_DEFAULT);
 
   const [files, setFiles] = useState({
     resume: null, aadhaarCard: null, panCard: null,
     tenthCertificate: null, twelfthCertificate: null, ugCertificate: null, pgCertificate: null,
     experienceLetters: null, passportPhoto: null
   });
+
+  const highestQualificationLevel = Math.max(0, ...education.map(edu => QUALIFICATION_LEVELS[edu.highestQualification] || 0));
+  const requiresUgCertificate = highestQualificationLevel >= QUALIFICATION_LEVELS.UG;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ form, education, step }));
+    } catch {}
+  }, [form, education, step, draftKey]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (submitted) return;
+      const hasFormProgress = Object.entries(form).some(([k, v]) => k !== 'sameAsCurrent' && typeof v === 'string' && v.trim() !== '');
+      const hasEduProgress = education.some(edu => Object.values(edu).some(v => v && String(v).trim() !== ''));
+      const hasFileProgress = Object.values(files).some(Boolean);
+      if (hasFormProgress || hasEduProgress || hasFileProgress) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [form, education, files, submitted]);
 
   useEffect(() => {
     api.get(`/registrations/validate-token/${token}`)
@@ -113,11 +153,11 @@ export default function OnboardingForm() {
         toast.error('Please fill all required fields in this step.');
         return false;
       }
-      if (!/^[A-Za-z\s]+$/.test(form.firstName)) {
+      if (!/^[A-Za-z\s'-]+$/.test(form.firstName)) {
         toast.error('First name must contain only letters.');
         return false;
       }
-      if (!/^[A-Za-z\s]+$/.test(form.lastName)) {
+      if (!/^[A-Za-z\s'-]+$/.test(form.lastName)) {
         toast.error('Last name must contain only letters.');
         return false;
       }
@@ -149,7 +189,7 @@ export default function OnboardingForm() {
       }
     }
     if (step === 6) {
-      if (!files.resume || !files.aadhaarCard || !files.panCard || !files.passportPhoto || !files.tenthCertificate || !files.twelfthCertificate || !files.ugCertificate) {
+      if (!files.resume || !files.aadhaarCard || !files.panCard || !files.passportPhoto || !files.tenthCertificate || !files.twelfthCertificate || (requiresUgCertificate && !files.ugCertificate)) {
         toast.error('Please upload all required documents.');
         return false;
       }
@@ -175,6 +215,7 @@ export default function OnboardingForm() {
       });
 
       await api.post(`/registrations/submit/${token}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      try { localStorage.removeItem(draftKey); } catch {}
       setSubmitted(true);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Submission failed.');
@@ -225,13 +266,13 @@ export default function OnboardingForm() {
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-base font-bold transition-all duration-300 border-2 ${i + 1 < step ? 'bg-brand-500 border-brand-500 text-white' : i + 1 === step ? 'bg-white border-brand-500 text-brand-600' : 'bg-white border-slate-300 text-slate-400'}`}>
                   {i + 1 < step ? <CheckCircle2 size={16} /> : i + 1}
                 </div>
-                <span className="text-sm font-medium hidden sm:block whitespace-nowrap absolute -bottom-6">{s}</span>
+                <span className="text-[9px] sm:text-sm font-medium text-center leading-tight whitespace-normal sm:whitespace-nowrap absolute -bottom-8 sm:-bottom-6 w-14 sm:w-auto">{s}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mt-12 sm:mt-8">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mt-14 sm:mt-8">
           <div className="p-6 sm:p-8">
             <h2 className="text-xl font-display font-bold text-slate-800 mb-6">{STEPS[step - 1]}</h2>
 
@@ -356,7 +397,14 @@ export default function OnboardingForm() {
                 
                 <FileInput label="10th Certificate" name="tenthCertificate" required file={files.tenthCertificate} onChange={handleFileChange} />
                 <FileInput label="12th Certificate" name="twelfthCertificate" required file={files.twelfthCertificate} onChange={handleFileChange} />
-                <FileInput label="UG Certificate" name="ugCertificate" required file={files.ugCertificate} onChange={handleFileChange} />
+                {requiresUgCertificate ? (
+                  <FileInput label="UG Certificate" name="ugCertificate" required file={files.ugCertificate} onChange={handleFileChange} />
+                ) : (
+                  <div>
+                    <label className="block text-base font-medium text-slate-700 mb-1.5">UG Certificate</label>
+                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center text-slate-400 text-base">Not applicable for your highest qualification</div>
+                  </div>
+                )}
                 <FileInput label="PG Certificate (Optional)" name="pgCertificate" file={files.pgCertificate} onChange={handleFileChange} />
                 <FileInput label="Experience Letters (Optional)" name="experienceLetters" file={files.experienceLetters} onChange={handleFileChange} />
               </div>
