@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import {
   CalendarCheck, Clock, Timer, CalendarDays, Trophy, FolderOpen, Users, Plane,
-  Wallet, CheckSquare, Smile, Mail, UserPlus, Settings, Activity, CheckCircle, Database, Hourglass, DoorOpen,
+  Wallet, CheckSquare, Smile, Mail, UserPlus, Settings, Activity, CheckCircle, Database, Hourglass, DoorOpen, AppWindow,
 } from 'lucide-react';
 
 /* ── Operations services grid (Super Admin / HR) ──────────────────────────
@@ -16,6 +16,7 @@ const ROUTES = {
   'leave-tracker':    '/more-services/operations/leave-tracker',
   'permission-usage': '/more-services/operations/permission-usage',
   'conference':       '/more-services/operations/conference',
+  'nxt-apps':         '/my-apps',
 };
 
 const SERVICES = [
@@ -25,6 +26,7 @@ const SERVICES = [
   { key: 'leave-tracker',label: 'Leave Requests',      icon: CalendarDays,  color: 'text-blue-600' },
   { key: 'permission-usage', label: 'Permission Usage', icon: Hourglass,    color: 'text-purple-600' },
   { key: 'conference',   label: 'Conference',          icon: DoorOpen,      color: 'text-blue-600' },
+  { key: 'nxt-apps',     label: 'NXT Apps',            icon: AppWindow,     color: 'text-indigo-600' },
   { key: 'performance',  label: 'Performance',         icon: Trophy,        color: 'text-yellow-500' },
   { key: 'files',        label: 'Files',               icon: FolderOpen,    color: 'text-indigo-500' },
   { key: 'emp-info',     label: 'Employee Information', icon: Users,         color: 'text-emerald-500' },

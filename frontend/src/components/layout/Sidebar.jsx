@@ -7,6 +7,13 @@ import {
   LayoutGrid, PieChart, Users, AppWindow, Briefcase, Wallet
 } from 'lucide-react';
 
+// Roles that see Operations in the sidebar — for them, NXT Apps now lives
+// as a card inside Operations instead of its own icon (see Operations.jsx).
+// Other roles have no Operations entry, so they keep the direct icon —
+// /my-apps itself carries no role restriction (App.jsx), unlike
+// /api-connections which is admin/director-only.
+const OPERATIONS_ROLES = ['admin', 'director', 'hr_admin'];
+
 const NAV_ITEMS = [
   { to: '/',                         icon: Home,         label: 'Home',         end: true,
     matches: p => p === '/' || ['/dashboard','/calendar','/team-space','/team/','/organization','/org-chart','/dept-tree','/announcements','/policies','/birthdays','/new-hires','/directory','/companies','/profile','/approvals','/employees','/registrations','/chat','/exit','/settings'].some(x => p.startsWith(x)) },
@@ -27,9 +34,9 @@ const NAV_ITEMS = [
     matches: p => (p.startsWith('/more-services') && !p.startsWith('/more-services/operations')) || p.startsWith('/documents') },
   // Operations workspace — relocated here from the More Services top tabs.
   // Super Admin / HR only (the page + its routes are already role-gated).
-  { to: '/more-services/operations', icon: Briefcase,    label: 'Operations', roles: ['admin', 'director', 'hr_admin'],
-    matches: p => p.startsWith('/more-services/operations') },
-  { to: '/my-apps',                  icon: AppWindow,    label: 'NXT\nApps',
+  { to: '/more-services/operations', icon: Briefcase,    label: 'Operations', roles: OPERATIONS_ROLES,
+    matches: p => p.startsWith('/more-services/operations') || p.startsWith('/my-apps') || p.startsWith('/api-connections') },
+  { to: '/my-apps',                  icon: AppWindow,    label: 'NXT\nApps', excludeRoles: OPERATIONS_ROLES,
     matches: p => p.startsWith('/my-apps') || p.startsWith('/api-connections') },
 ];
 
@@ -99,9 +106,18 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed top-0 left-0 h-screen w-[72px] bg-[#1a2040] flex flex-col z-50 shadow-xl">
-      {/* Main nav — HOME is the first item, flush to the top of the sidebar. */}
+      {/* Brand mark — sits above Home; the nav list (Home + everything else)
+          starts below this, not flush to the very top of the sidebar.
+          Height matches Topbar's primary bar (h-[48px]) so the two borders
+          line up across the top of the page instead of the logo block
+          running taller than the "My Space" row beside it. */}
+      <div className="flex items-center justify-center h-[48px] flex-shrink-0 border-b border-white/10">
+        <img src="/favicon.png" alt="NxtPeople" className="w-8 h-8 object-contain rounded-lg" />
+      </div>
+
+      {/* Main nav — HOME is the first item, flush to the top of the nav list. */}
       <nav className="flex-1 flex flex-col overflow-y-auto scrollbar-none py-1">
-        {NAV_ITEMS.filter(item => !item.roles || item.roles.includes(user?.role)).map(item => <NavItem key={item.to} item={item}/>)}
+        {NAV_ITEMS.filter(item => (!item.roles || item.roles.includes(user?.role)) && (!item.excludeRoles || !item.excludeRoles.includes(user?.role))).map(item => <NavItem key={item.to} item={item}/>)}
 
         {/* Admin sections appended to the scrolling nav. Employees = HR/Super
             Admin only; Reports = any approver (incl. Team Leads). */}
