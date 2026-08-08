@@ -174,15 +174,23 @@ router.get('/daily', authorize('admin', 'director', 'hr_admin', 'manager'), asyn
       [...empParams, date]
     );
 
-    const counts = { present: 0, absent: 0, leave: 0, checkedIn: 0, checkedOut: 0 };
+    // A day that hasn't ended yet (today or a future date) can't have real
+    // "absents" — nobody with no record on file has failed to show up, they
+    // just haven't checked in yet. Only a past date's no-record employees
+    // are counted as Absent.
+    const isOpenDay = date >= new Date().toLocaleDateString('en-CA');
+
+    const counts = { checkedIn: 0, checkedOut: 0, leave: 0, absent: 0, yetToCheckIn: 0 };
     const data = r.rows.map(row => {
       let status;
       if (row.leaveId) { status = 'leave'; counts.leave++; }
       else if (row.attStatus === 'absent') { status = 'absent'; counts.absent++; }
-      else if (row.checkIn && !row.checkOut) { status = 'checked-in'; counts.checkedIn++; counts.present++; }
-      else if (row.checkIn && row.checkOut) { status = 'checked-out'; counts.checkedOut++; counts.present++; }
-      // No attendance row and no leave on file — same "absent" convention the
-      // dashboard headcount widget already uses (dashboard.js: a.id IS NULL).
+      else if (row.checkIn && !row.checkOut) { status = 'checked-in'; counts.checkedIn++; }
+      else if (row.checkIn && row.checkOut) { status = 'checked-out'; counts.checkedOut++; }
+      else if (isOpenDay) { status = 'yet-to-check-in'; counts.yetToCheckIn++; }
+      // Past date, no attendance row and no leave on file — same "absent"
+      // convention the dashboard headcount widget already uses
+      // (dashboard.js: a.id IS NULL).
       else { status = 'absent'; counts.absent++; }
       return { _id: row._id, firstName: row.firstName, lastName: row.lastName, department: row.department, status, checkIn: row.checkIn, checkOut: row.checkOut };
     });

@@ -1,12 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Download, Filter } from 'lucide-react';
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 
 const DEPTS = ['All','Engineering','HR','Sales','Marketing','Finance','Design','Product'];
 const STATUS_STYLE = { present:'bg-emerald-100 text-emerald-700', absent:'bg-red-100 text-red-700', 'half-day':'bg-blue-100 text-blue-700', leave:'bg-purple-100 text-purple-700' };
-const DAILY_COLORS = { Present: '#10b981', Absent: '#ef4444', Leave: '#8b5cf6' };
+const DAILY_CATEGORIES = [
+  { key: 'checked-in',      name: 'Checked In',       color: '#0ea5e9' },
+  { key: 'checked-out',     name: 'Checked Out',      color: '#10b981' },
+  { key: 'leave',           name: 'Leave',            color: '#8b5cf6' },
+  { key: 'yet-to-check-in', name: 'Yet To Check In',  color: '#f59e0b' },
+  { key: 'absent',          name: 'Absent',           color: '#ef4444' },
+];
 
 // "late" isn't its own status anymore — a late employee is still Present;
 // the lateness itself now shows in the separate Late/Early column.
@@ -55,6 +61,7 @@ export default function Reports() {
     department: ''
   });
   const [dailyDate, setDailyDate] = useState(todayCA());
+  const [selectedCategory, setSelectedCategory] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -71,7 +78,7 @@ export default function Reports() {
     setLoading(true);
     const params = new URLSearchParams({ date: dailyDate, ...(filters.department && filters.department !== 'All' ? { department: filters.department } : {}) });
     api.get(`/reports/daily?${params}`)
-      .then(r => setDaily(r.data))
+      .then(r => { setDaily(r.data); setSelectedCategory(null); })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
@@ -130,11 +137,11 @@ export default function Reports() {
 
   const fmt = d => d ? new Date(d).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'}) : '—';
 
-  const dailyPieData = daily ? [
-    { name: 'Present', value: daily.counts.present },
-    { name: 'Absent', value: daily.counts.absent },
-    { name: 'Leave', value: daily.counts.leave },
-  ].filter(d => d.value > 0) : [];
+  const countKey = { 'checked-in': 'checkedIn', 'checked-out': 'checkedOut', leave: 'leave', 'yet-to-check-in': 'yetToCheckIn', absent: 'absent' };
+  const dailyPieData = daily ? DAILY_CATEGORIES
+    .map(c => ({ ...c, value: daily.counts[countKey[c.key]] || 0 }))
+    .filter(d => d.value > 0) : [];
+  const drilldownList = daily && selectedCategory ? daily.data.filter(d => d.status === selectedCategory) : [];
 
   return (
     <div className="space-y-5 pt-5">
@@ -245,40 +252,74 @@ export default function Reports() {
               !daily || dailyPieData.length === 0 ? (
                 <div className="text-center py-16 text-slate-400">No attendance data for this date</div>
               ) : (
-                <div className="p-6 space-y-6">
-                  <ResponsiveContainer width="100%" height={280}>
-                    <PieChart>
-                      <Pie data={dailyPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={95} label={({name, value, percent}) => `${name}: ${value} (${(percent*100).toFixed(0)}%)`}>
-                        {dailyPieData.map(entry => <Cell key={entry.name} fill={DAILY_COLORS[entry.name] || '#94a3b8'} />)}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-2">
-                    <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center">
-                      <p className="text-sm text-emerald-700 font-medium">Present</p>
-                      <p className="text-2xl font-bold text-emerald-700 mt-1">{daily.counts.present}</p>
+                <div className="p-6">
+                  <div className="flex flex-col lg:flex-row gap-8 items-center lg:items-start">
+                    <div className="w-full lg:flex-1 lg:min-w-0">
+                      <ResponsiveContainer width="100%" height={320}>
+                        <PieChart>
+                          <Pie data={dailyPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={65} outerRadius={115}
+                               label={({percent}) => `${(percent*100).toFixed(0)}%`}>
+                            {dailyPieData.map(entry => (
+                              <Cell
+                                key={entry.key}
+                                fill={entry.color}
+                                style={{ cursor: 'pointer', outline: 'none' }}
+                                stroke={selectedCategory === entry.key ? '#1e293b' : '#fff'}
+                                strokeWidth={selectedCategory === entry.key ? 2 : 1}
+                                onClick={() => setSelectedCategory(entry.key === selectedCategory ? null : entry.key)}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(value, name) => [value, name]} />
+                        </PieChart>
+                      </ResponsiveContainer>
                     </div>
-                    <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center">
-                      <p className="text-sm text-red-600 font-medium">Absent</p>
-                      <p className="text-2xl font-bold text-red-600 mt-1">{daily.counts.absent}</p>
-                    </div>
-                    <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 text-center">
-                      <p className="text-sm text-purple-700 font-medium">Leave</p>
-                      <p className="text-2xl font-bold text-purple-700 mt-1">{daily.counts.leave}</p>
+
+                    <div className="w-full lg:w-72 flex-shrink-0 space-y-2">
+                      {dailyPieData.map(entry => (
+                        <button
+                          key={entry.key}
+                          onClick={() => setSelectedCategory(entry.key === selectedCategory ? null : entry.key)}
+                          className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-colors ${selectedCategory === entry.key ? 'border-brand-400 bg-brand-50' : 'border-slate-200 hover:bg-slate-50'}`}
+                        >
+                          <span className="flex items-center gap-2 text-base font-medium text-slate-700">
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: entry.color }} />
+                            {entry.name}
+                          </span>
+                          <span className="text-base font-bold text-slate-800 tabular-nums">{entry.value}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 px-2">
-                    <div className="bg-sky-50 border border-sky-100 rounded-xl p-4 text-center">
-                      <p className="text-sm text-sky-700 font-medium">Checked In (still working)</p>
-                      <p className="text-2xl font-bold text-sky-700 mt-1">{daily.counts.checkedIn}</p>
+
+                  {selectedCategory && (
+                    <div className="mt-8 border-t border-slate-100 pt-6">
+                      <p className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
+                        {DAILY_CATEGORIES.find(c => c.key === selectedCategory)?.name} — {drilldownList.length} {drilldownList.length === 1 ? 'employee' : 'employees'}
+                      </p>
+                      <div className="divide-y divide-slate-50 border border-slate-100 rounded-xl overflow-hidden">
+                        {drilldownList.length === 0 ? (
+                          <div className="px-4 py-6 text-center text-slate-400 text-base">No employees in this category</div>
+                        ) : drilldownList.map(emp => (
+                          <div key={emp._id} className="flex items-center justify-between px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">{emp.firstName?.[0]}{emp.lastName?.[0]}</div>
+                              <div>
+                                <p className="text-base font-medium text-slate-700">{emp.firstName} {emp.lastName}</p>
+                                <p className="text-sm text-slate-400">{emp.department || '—'}</p>
+                              </div>
+                            </div>
+                            {(emp.checkIn || emp.checkOut) && (
+                              <div className="text-sm text-slate-500 text-right">
+                                {emp.checkIn && <div>In: {fmt(emp.checkIn)}</div>}
+                                {emp.checkOut && <div>Out: {fmt(emp.checkOut)}</div>}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
-                      <p className="text-sm text-slate-600 font-medium">Checked Out</p>
-                      <p className="text-2xl font-bold text-slate-700 mt-1">{daily.counts.checkedOut}</p>
-                    </div>
-                  </div>
+                  )}
                 </div>
               )
             )}
