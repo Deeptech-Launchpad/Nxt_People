@@ -26,7 +26,7 @@ function EmployeeCell({ row }) {
 // columns: [{ key, header, align, format?(value, row) }]. A column with
 // key === 'employee' auto-renders the avatar/name/department cell instead
 // of needing a format function repeated on every caller.
-export default function TableReportPage({ title, subtitle, endpoint, filterType = 'range', columns, emptyText = 'No data for this period', rowKey }) {
+export default function TableReportPage({ title, subtitle, endpoint, filterType = 'range', columns, emptyText = 'No data for this period', rowKey, switcherCategory }) {
   const [date, setDate] = useState(todayCA());
   const [year, setYear] = useState(new Date().getFullYear());
   const [startDate, setStartDate] = useState(monthStartCA());
@@ -84,7 +84,7 @@ export default function TableReportPage({ title, subtitle, endpoint, filterType 
   );
 
   return (
-    <ReportShell title={title} subtitle={subtitle} filters={filters} loading={loading}>
+    <ReportShell title={title} subtitle={subtitle} filters={filters} loading={loading} switcherCategory={switcherCategory}>
       <div className="overflow-x-auto">
         <table className="w-full text-[14px]">
           <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">

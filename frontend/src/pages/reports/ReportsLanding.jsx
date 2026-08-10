@@ -1,62 +1,17 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  CalendarCheck, DollarSign, Clock,
-  Building2, CalendarDays,
+  DollarSign, Clock,
+  Building2, CalendarDays, CalendarCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { isFullAccess, isApprover } from '../../utils/roles';
+import { REPORT_CATALOG } from './catalogData';
 
-// The categorized report catalog. Each entry navigates straight to that
-// report's own dedicated page — the list itself only ever lives here, never
-// re-appears on the destination page. Three Attendance reports deep-link
-// into the existing Attendance Reports page's tabs instead of duplicating
-// them as separate pages.
-const REPORT_CATALOG = [
-  {
-    category: 'Employee Information', icon: Building2,
-    reports: [
-      { label: 'Dashboard',                  to: '/reports/employee/dashboard' },
-      { label: 'Headcount',                  to: '/reports/employee/headcount' },
-      { label: 'Employee addition trend',    to: '/reports/employee/addition-trend' },
-      { label: 'Employee attrition trend',   to: '/reports/employee/attrition-trend' },
-      { label: 'Distribution',               to: '/reports/employee/distribution' },
-      { label: 'Diversity',                  to: '/reports/employee/diversity' },
-      { label: 'Experience wise exit',       to: '/reports/employee/experience-exit' },
-    ],
-  },
-  {
-    category: 'Leave Tracker', icon: CalendarDays,
-    reports: [
-      { label: 'Daily leave status',          to: '/reports/leave/daily-status' },
-      { label: 'Resource availability',       to: '/reports/leave/resource-availability' },
-      { label: 'Employee leave balance',      to: '/reports/leave/balance' },
-      { label: 'Leave booked and balance',    to: '/reports/leave/booked-balance' },
-      { label: 'Leave type wise summary',     to: '/reports/leave/type-summary' },
-      { label: 'Leave encashment details',    to: '/reports/leave/encashment' },
-      { label: 'Loss of pay details',         to: '/reports/leave/lop' },
-      { label: 'Leave data for payroll',      to: '/reports/leave/payroll-export' },
-    ],
-  },
-  {
-    category: 'Attendance', icon: CalendarCheck,
-    reports: [
-      { label: 'Daily attendance status',              to: '/reports/attendance?tab=daily' },
-      { label: 'Early/late check-in and check-out',    to: '/reports/attendance?tab=detail' },
-      { label: 'Employee present/absent status',       to: '/reports/attendance?tab=summary' },
-      { label: 'Presence hours break-up',               to: '/reports/attendance/hours-breakup' },
-      { label: 'Attendance data for payroll',           to: '/reports/attendance/payroll-export' },
-      { label: 'Muster roll',                            to: '/reports/attendance/muster-roll' },
-      { label: 'Consecutive absences',                   to: '/reports/attendance/consecutive-absences' },
-      { label: 'Expected vs Worked Hours',               to: '/reports/attendance/expected-vs-worked' },
-      // Formerly duplicated as their own "Attendance" heading under Quick
-      // Links — merged in here so the page only ever has one Attendance
-      // section.
-      { label: 'Attendance Report',                      to: '/reports/attendance' },
-      { label: 'Daily Attendance',                        to: '/daily-attendance' },
-    ],
-  },
-];
+// Icons live here (not in catalogData.js) so that shared file stays a plain
+// data module usable from both this page and ReportShell without pulling
+// in an icon library dependency there.
+const CATEGORY_ICONS = { 'Employee Information': Building2, 'Leave Tracker': CalendarDays, 'Attendance': CalendarCheck };
 
 // Quick Links, restructured to match the report catalog's own look
 // (category heading + plain dashed-row list) instead of the old icon-tile
@@ -100,7 +55,9 @@ export default function ReportsLanding() {
       </div>
 
       <div className="px-6 pt-6 grid grid-cols-1 md:grid-cols-3 gap-x-10 gap-y-8">
-        {REPORT_CATALOG.map(({ category, icon: Icon, reports }) => (
+        {REPORT_CATALOG.map(({ category, reports }) => {
+          const Icon = CATEGORY_ICONS[category];
+          return (
           <div key={category}>
             <div className="flex items-center gap-2 mb-3">
               <Icon size={16} className="text-slate-500" />
@@ -119,7 +76,8 @@ export default function ReportsLanding() {
               ))}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="px-6 pt-8 pb-6">

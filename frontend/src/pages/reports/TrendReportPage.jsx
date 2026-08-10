@@ -6,7 +6,7 @@ import ReportShell from './ReportShell';
 
 // Generic month-by-month bar-chart report page — covers Employee addition
 // trend and Employee attrition trend, whose endpoints return [{month, count}].
-export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#2563eb' }) {
+export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#2563eb', switcherCategory }) {
   const [months, setMonths] = useState(12);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
@@ -31,7 +31,7 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
   );
 
   return (
-    <ReportShell title={title} subtitle={subtitle} filters={filters} loading={loading}>
+    <ReportShell title={title} subtitle={subtitle} filters={filters} loading={loading} switcherCategory={switcherCategory}>
       {data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (

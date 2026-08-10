@@ -30,7 +30,7 @@ export default function Distribution() {
   );
 
   return (
-    <ReportShell title="Distribution" subtitle="Active employees split by department or designation" actions={actions} loading={loading}>
+    <ReportShell title="Distribution" subtitle="Active employees split by department or designation" actions={actions} loading={loading} switcherCategory="Employee Information">
       <table className="w-full text-[14px]">
         <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
           <tr><th className="text-left px-4 py-2.5">{by === 'department' ? 'Department' : 'Designation'}</th><th className="text-right px-4 py-2.5">Count</th><th className="text-right px-4 py-2.5">Share</th></tr>

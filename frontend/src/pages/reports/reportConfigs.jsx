@@ -6,6 +6,7 @@ import React from 'react';
 
 export const diversityConfig = {
   title: 'Diversity', subtitle: 'Active employees by gender', endpoint: '/reports/employee/diversity', filterType: 'none',
+  switcherCategory: 'Employee Information',
   columns: [
     { key: 'label', header: 'Gender' },
     { key: 'count', header: 'Count', align: 'right' },
@@ -14,6 +15,7 @@ export const diversityConfig = {
 
 export const experienceExitConfig = {
   title: 'Experience Wise Exit', subtitle: 'Exited employees banded by tenure at exit', endpoint: '/reports/employee/experience-exit', filterType: 'none',
+  switcherCategory: 'Employee Information',
   columns: [
     { key: 'label', header: 'Tenure at Exit' },
     { key: 'count', header: 'Count', align: 'right' },
@@ -113,8 +115,8 @@ export const expectedVsWorkedConfig = {
   ],
 };
 
-export const additionTrendConfig = { title: 'Employee Addition Trend', subtitle: 'New hires per month', endpoint: '/reports/employee/addition-trend', barColor: '#10b981' };
-export const attritionTrendConfig = { title: 'Employee Attrition Trend', subtitle: 'Exits per month', endpoint: '/reports/employee/attrition-trend', barColor: '#ef4444' };
+export const additionTrendConfig = { title: 'Employee Addition Trend', subtitle: 'New hires per month', endpoint: '/reports/employee/addition-trend', barColor: '#10b981', switcherCategory: 'Employee Information' };
+export const attritionTrendConfig = { title: 'Employee Attrition Trend', subtitle: 'Exits per month', endpoint: '/reports/employee/attrition-trend', barColor: '#ef4444', switcherCategory: 'Employee Information' };
 
 export const leavePayrollExportConfig = {
   title: 'Leave Data for Payroll', subtitle: 'Download approved leave days for the selected period', endpoint: '/reports/leave/payroll-export', sheetName: 'Leave Data', fileStub: 'leave-payroll-export',

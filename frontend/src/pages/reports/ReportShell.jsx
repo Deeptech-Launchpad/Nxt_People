@@ -1,13 +1,23 @@
-import React from 'react';
-import { ChevronLeft } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { ChevronLeft, ChevronDown } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { REPORT_CATALOG } from './catalogData';
 
-// Shared page frame for every dedicated report page — back link, title,
-// an optional filter bar, and a loading/content area. Deliberately does
-// NOT show the report catalog list — that lives only on the Reports
-// landing page, never on the destination page itself.
-export default function ReportShell({ title, subtitle, filters, actions, loading, children }) {
+// Shared page frame for every dedicated report page — back link, title
+// (optionally a switcher dropdown), an optional filter bar, and a
+// loading/content area. Deliberately does NOT show the full report catalog
+// list on the page — that lives only on the Reports landing page. The
+// switcher is different: a collapsed, click-to-open dropdown scoped to one
+// category, not a persistently-visible list, so it lets you jump straight
+// to a sibling report without leaving this page.
+export default function ReportShell({ title, subtitle, filters, actions, loading, children, switcherCategory }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+
+  const catalogEntry = switcherCategory ? REPORT_CATALOG.find(c => c.category === switcherCategory) : null;
+  const siblings = catalogEntry ? catalogEntry.reports.filter(r => r.to.split('?')[0] !== location.pathname) : [];
+
   return (
     <div className="max-w-6xl mx-auto space-y-5 pb-10">
       <div className="pt-5">
@@ -17,7 +27,35 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
       </div>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-[20px] font-bold text-slate-800">{title}</h1>
+          {siblings.length > 0 ? (
+            <div className="relative">
+              <button
+                onClick={() => setSwitcherOpen(o => !o)}
+                className="flex items-center gap-1.5 text-[20px] font-bold text-slate-800 hover:text-blue-600 transition-colors"
+              >
+                {title}
+                <ChevronDown size={18} className={`text-slate-400 transition-transform ${switcherOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {switcherOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setSwitcherOpen(false)} />
+                  <div className="absolute z-20 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-2">
+                    {siblings.map(r => (
+                      <button
+                        key={r.to}
+                        onClick={() => { setSwitcherOpen(false); navigate(r.to); }}
+                        className="w-full text-left px-4 py-2.5 text-[14px] text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors"
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <h1 className="text-[20px] font-bold text-slate-800">{title}</h1>
+          )}
           {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
         </div>
         {actions}

@@ -247,16 +247,20 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-CA');
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-CA');
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString('en-CA');
+    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).toLocaleDateString('en-CA');
 
-    const [statsRes, deptRes, genderRes] = await Promise.all([
+    const [statsRes, deptRes, genderRes, additionRes, attritionRes] = await Promise.all([
       pool.query(
         `SELECT
            COUNT(*) FILTER (WHERE e.status='active')::int AS active,
            COUNT(*) FILTER (WHERE e.status != 'active')::int AS inactive,
            COUNT(*) FILTER (WHERE e.status='active' AND e.joining_date >= $1::date AND e.joining_date <= $2::date)::int AS "newThisMonth",
-           COUNT(*) FILTER (WHERE e.exit_date >= $1::date AND e.exit_date <= $2::date)::int AS "exitsThisMonth"
-         FROM employees e WHERE 1=1${reportsScope(req.user, 'e', 3).clause}`,
-        [monthStart, monthEnd, ...reportsScope(req.user, 'e', 3).params]
+           COUNT(*) FILTER (WHERE e.exit_date >= $1::date AND e.exit_date <= $2::date)::int AS "exitsThisMonth",
+           COUNT(*) FILTER (WHERE e.status='active' AND e.joining_date >= $3::date AND e.joining_date <= $4::date)::int AS "newLastMonth",
+           COUNT(*) FILTER (WHERE e.exit_date >= $3::date AND e.exit_date <= $4::date)::int AS "exitsLastMonth"
+         FROM employees e WHERE 1=1${reportsScope(req.user, 'e', 5).clause}`,
+        [monthStart, monthEnd, prevMonthStart, prevMonthEnd, ...reportsScope(req.user, 'e', 5).params]
       ),
       pool.query(
         `SELECT COALESCE(e.department,'Unassigned') AS label, COUNT(*)::int AS count
@@ -270,8 +274,33 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
           GROUP BY e.gender ORDER BY count DESC`,
         reportsScope(req.user, 'e', 1).params
       ),
+      // Last 6 months addition/attrition — feeds the two mini trend charts,
+      // which deep-link to the full Addition/Attrition Trend reports.
+      pool.query(
+        `SELECT to_char(date_trunc('month', e.joining_date), 'Mon') AS month, COUNT(*)::int AS count
+           FROM employees e
+          WHERE e.joining_date >= (date_trunc('month', CURRENT_DATE) - '5 months'::interval)${reportsScope(req.user, 'e', 1).clause}
+          GROUP BY date_trunc('month', e.joining_date) ORDER BY date_trunc('month', e.joining_date)`,
+        reportsScope(req.user, 'e', 1).params
+      ),
+      pool.query(
+        `SELECT to_char(date_trunc('month', e.exit_date), 'Mon') AS month, COUNT(*)::int AS count
+           FROM employees e
+          WHERE e.exit_date IS NOT NULL AND e.exit_date >= (date_trunc('month', CURRENT_DATE) - '5 months'::interval)${reportsScope(req.user, 'e', 1).clause}
+          GROUP BY date_trunc('month', e.exit_date) ORDER BY date_trunc('month', e.exit_date)`,
+        reportsScope(req.user, 'e', 1).params
+      ),
     ]);
-    res.json({ success: true, data: { ...statsRes.rows[0], byDepartment: deptRes.rows, byGender: genderRes.rows } });
+    res.json({
+      success: true,
+      data: {
+        ...statsRes.rows[0],
+        byDepartment: deptRes.rows,
+        byGender: genderRes.rows,
+        last6MonthsAddition: additionRes.rows,
+        last6MonthsAttrition: attritionRes.rows,
+      },
+    });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 

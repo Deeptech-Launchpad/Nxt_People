@@ -37,7 +37,7 @@ export default function Headcount() {
   }, []);
 
   return (
-    <ReportShell title="Headcount" subtitle="Active employees by department and work location" loading={loading}>
+    <ReportShell title="Headcount" subtitle="Active employees by department and work location" loading={loading} switcherCategory="Employee Information">
       {data && (
         <div className="p-5 space-y-5">
           <div className="bg-white rounded-xl border border-slate-200 p-4 w-fit">
