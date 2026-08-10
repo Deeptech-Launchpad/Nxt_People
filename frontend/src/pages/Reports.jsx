@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Download, Filter } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Download, Filter, ArrowUpDown, Search, X } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import * as XLSX from 'xlsx';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 
@@ -59,6 +60,29 @@ const lateEarly = (r) => {
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 
+// % of working days present out of (present + absent) — null when there's
+// no data either way, so a genuinely blank row doesn't read as "0%".
+const attendanceRate = (r) => {
+  const total = (r.present || 0) + (r.absent || 0);
+  return total > 0 ? (r.present / total) * 100 : null;
+};
+
+// Clickable, sortable Summary Report column header.
+function SortableTh({ field, label, align = 'right', sortField, sortDir, onSort }) {
+  const active = sortField === field;
+  return (
+    <th
+      onClick={() => onSort(field)}
+      className={`px-4 py-3 text-sm font-semibold uppercase tracking-wider cursor-pointer select-none whitespace-nowrap transition-colors ${active ? 'text-brand-600' : 'text-slate-500 hover:text-slate-700'} ${align === 'left' ? 'text-left' : 'text-right'}`}
+    >
+      <span className={`inline-flex items-center gap-1 ${align === 'left' ? '' : 'justify-end w-full'}`}>
+        {label}
+        <ArrowUpDown size={12} className={active ? 'text-brand-600' : 'text-slate-300'} />
+      </span>
+    </th>
+  );
+}
+
 export default function Reports() {
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState([]);
@@ -72,6 +96,10 @@ export default function Reports() {
   });
   const [dailyDate, setDailyDate] = useState(todayCA());
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [summarySearch, setSummarySearch] = useState('');
+  const [sortField, setSortField] = useState(null);
+  const [sortDir, setSortDir] = useState('desc');
+  const [empDrilldown, setEmpDrilldown] = useState(null); // { empName, status, dates: [] }
 
   const load = () => {
     setLoading(true);
@@ -98,24 +126,14 @@ export default function Reports() {
 
   const applyFilters = () => tab === 'daily' ? loadDaily() : load();
 
-  // Quote-doubles embedded quotes (so a name like Raj "Bunny" Kumar doesn't
-  // break the field boundary) and defuses formula injection — a value
-  // starting with =, +, -, or @ is interpreted as a formula by Excel/Sheets
-  // on open. Mirrors the same escaping the backend's compliance CSV exports
-  // already use (routes/payroll.js csvEscape).
-  const csvField = (v) => {
-    let s = String(v ?? '');
-    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-    return `"${s.replace(/"/g, '""')}"`;
-  };
-
-  const exportCSV = () => {
-    const data = tab === 'detail' ? records : summary;
+  const exportFile = () => {
+    const data = tab === 'detail' ? records : filteredSummary;
     if (!data?.length) return toast.error('No data to export for the selected filters');
-    let csv;
+    let rows;
     if (tab === 'detail') {
-      csv = 'Employee,ID,Department,Date,Check In,Check Out,Hours,Status,Late/Early\n' +
-        data.map(r => {
+      rows = [
+        ['Employee', 'ID', 'Department', 'Date', 'Check In', 'Check Out', 'Hours', 'Status', 'Late/Early'],
+        ...data.map(r => {
           const le = lateEarly(r);
           return [
             `${r.employee?.firstName} ${r.employee?.lastName}`, r.employee?.employeeId, r.employee?.department,
@@ -124,28 +142,64 @@ export default function Reports() {
             r.checkOut ? new Date(r.checkOut).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : '',
             formatDuration(r), displayStatus(r.status),
             le ? `${le.text} (${le.kind})` : '',
-          ].map(csvField).join(',');
-        }).join('\n');
+          ];
+        }),
+      ];
     } else {
-      csv = 'Employee,Department,Present,Absent,Late,Total Hours\n' +
-        data.map(r => [
-          `${r.employee?.firstName} ${r.employee?.lastName}`, r.employee?.department,
-          r.present, r.absent, r.late, r.totalHours,
-        ].map(csvField).join(',')).join('\n');
+      rows = [
+        ['Employee', 'Department', 'Present', 'Absent', 'Late', 'Permission Hours', 'Total Hours', 'Attendance %'],
+        ...data.map(r => {
+          const rate = attendanceRate(r);
+          return [
+            `${r.employee?.firstName} ${r.employee?.lastName}`, r.employee?.department,
+            r.present, r.absent, r.late, clockHours(r.permissionHours), r.totalHours,
+            rate == null ? '' : `${rate.toFixed(0)}%`,
+          ];
+        }),
+      ];
     }
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, tab === 'detail' ? 'Detailed Report' : 'Summary Report');
     const stamp = new Date().toISOString().slice(0, 10);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `nxt-people-report-${stamp}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    XLSX.writeFile(wb, `nxt-people-report-${stamp}.xlsx`);
   };
 
   const fmt = d => d ? new Date(d).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'}) : '—';
+
+  const toggleSort = (field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('desc'); }
+  };
+
+  const filteredSummary = useMemo(() => {
+    let rows = summary.filter(r => {
+      if (!summarySearch) return true;
+      const name = `${r.employee?.firstName || ''} ${r.employee?.lastName || ''}`.toLowerCase();
+      return name.includes(summarySearch.toLowerCase());
+    });
+    if (sortField) {
+      rows = [...rows].sort((a, b) => {
+        const va = sortField === 'rate' ? (attendanceRate(a) ?? -1) : (a[sortField] ?? 0);
+        const vb = sortField === 'rate' ? (attendanceRate(b) ?? -1) : (b[sortField] ?? 0);
+        return sortDir === 'asc' ? va - vb : vb - va;
+      });
+    }
+    return rows;
+  }, [summary, summarySearch, sortField, sortDir]);
+
+  // Present/Absent cells in the Summary table are clickable — this pulls the
+  // matching dates straight from the already-fetched Detailed Report data
+  // for the same date range, so no extra API call is needed.
+  const openEmpDrilldown = (r, status) => {
+    const empId = r.employee?._id;
+    const empName = `${r.employee?.firstName || ''} ${r.employee?.lastName || ''}`.trim();
+    const dates = records
+      .filter(rec => rec.employee?._id === empId && displayStatus(rec.status) === status)
+      .map(rec => rec.date)
+      .sort((a, b) => new Date(b) - new Date(a));
+    setEmpDrilldown({ empName, status, dates });
+  };
 
   const countKey = { 'checked-in': 'checkedIn', 'checked-out': 'checkedOut', leave: 'leave', 'yet-to-check-in': 'yetToCheckIn', absent: 'absent' };
   const dailyPieData = daily ? DAILY_CATEGORIES
@@ -185,9 +239,9 @@ export default function Reports() {
             <Filter size={15}/> Apply Filters
           </button>
           {tab !== 'daily' && (
-            <button onClick={exportCSV}
+            <button onClick={exportFile}
               className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-4 py-2.5 rounded-xl text-base font-medium transition-colors border border-emerald-200">
-              <Download size={15}/> Export CSV
+              <Download size={15}/> Export Excel
             </button>
           )}
         </div>
@@ -232,30 +286,71 @@ export default function Reports() {
             )}
 
             {tab === 'summary' && (
-              <table className="w-full table-fixed">
-                <colgroup>
-                  <col className="w-[30%]" /><col className="w-[20%]" /><col className="w-[12%]" /><col className="w-[12%]" /><col className="w-[12%]" /><col className="w-[14%]" />
-                </colgroup>
-                <thead><tr className="bg-slate-50">{['Employee','Department','Present','Absent','Late','Total Hours'].map(h=><th key={h} className={`px-4 py-3 text-sm font-semibold text-slate-500 uppercase tracking-wider ${['Present','Absent','Late','Total Hours'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
-                <tbody className="divide-y divide-slate-50">
-                  {summary.length === 0 ? <tr><td colSpan={6} className="text-center py-12 text-slate-400">No data available</td></tr> :
-                  summary.map((r,i) => (
-                    <tr key={i} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">{r.employee?.firstName?.[0]}{r.employee?.lastName?.[0]}</div>
-                          <span className="text-base font-medium text-slate-700 truncate">{r.employee?.firstName} {r.employee?.lastName}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5 text-base text-slate-500 truncate">{r.employee?.department}</td>
-                      <td className="px-4 py-3.5 text-right"><span className="text-base font-medium text-emerald-600 tabular-nums">{r.present}</span></td>
-                      <td className="px-4 py-3.5 text-right"><span className="text-base font-medium text-red-500 tabular-nums">{r.absent}</span></td>
-                      <td className="px-4 py-3.5 text-right"><span className="text-base font-medium text-amber-600 tabular-nums">{r.late}</span></td>
-                      <td className="px-4 py-3.5 text-base font-semibold text-brand-600 text-right tabular-nums">{r.totalHours?.toFixed(1)}h</td>
+              <>
+                <div className="px-5 pt-4 pb-1">
+                  <div className="relative w-full max-w-xs">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={summarySearch}
+                      onChange={e => setSummarySearch(e.target.value)}
+                      placeholder="Search employee..."
+                      className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-brand-400"
+                    />
+                  </div>
+                </div>
+                <table className="w-full table-fixed">
+                  <colgroup>
+                    <col className="w-[22%]" /><col className="w-[15%]" /><col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[12%]" /><col className="w-[12%]" /><col className="w-[12%]" />
+                  </colgroup>
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="px-4 py-3 text-sm font-semibold text-slate-500 uppercase tracking-wider text-left">Employee</th>
+                      <th className="px-4 py-3 text-sm font-semibold text-slate-500 uppercase tracking-wider text-left">Department</th>
+                      <SortableTh field="present" label="Present" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
+                      <SortableTh field="absent" label="Absent" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
+                      <SortableTh field="late" label="Late" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
+                      <SortableTh field="permissionHours" label="Permission Hrs" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
+                      <SortableTh field="totalHours" label="Total Hours" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
+                      <SortableTh field="rate" label="Attendance %" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {filteredSummary.length === 0 ? <tr><td colSpan={8} className="text-center py-12 text-slate-400">No data available</td></tr> :
+                    filteredSummary.map((r,i) => {
+                      const rate = attendanceRate(r);
+                      const lowAttendance = rate !== null && rate < 75;
+                      const rateColor = rate === null ? 'text-slate-400' : rate >= 90 ? 'text-emerald-600' : rate >= 75 ? 'text-amber-600' : 'text-red-600';
+                      return (
+                      <tr key={i} className={`hover:bg-slate-50 transition-colors ${lowAttendance ? 'bg-red-50/40' : ''}`}>
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">{r.employee?.firstName?.[0]}{r.employee?.lastName?.[0]}</div>
+                            <span className="text-base font-medium text-slate-700 truncate">{r.employee?.firstName} {r.employee?.lastName}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5 text-base text-slate-500 truncate">{r.employee?.department}</td>
+                        <td className="px-4 py-3.5 text-right">
+                          <button onClick={() => openEmpDrilldown(r, 'present')} disabled={!r.present}
+                            className="text-base font-medium text-emerald-600 tabular-nums hover:underline disabled:no-underline disabled:cursor-default">
+                            {r.present}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3.5 text-right">
+                          <button onClick={() => openEmpDrilldown(r, 'absent')} disabled={!r.absent}
+                            className="text-base font-medium text-red-500 tabular-nums hover:underline disabled:no-underline disabled:cursor-default">
+                            {r.absent}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-base font-medium text-amber-600 tabular-nums">{r.late}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-base font-medium text-violet-600 tabular-nums">{clockHours(r.permissionHours)}</span></td>
+                        <td className="px-4 py-3.5 text-base font-semibold text-brand-600 text-right tabular-nums">{r.totalHours?.toFixed(1)}h</td>
+                        <td className={`px-4 py-3.5 text-right text-base font-semibold tabular-nums ${rateColor}`}>{rate === null ? '—' : `${rate.toFixed(0)}%`}</td>
+                      </tr>
+                    );})}
+                  </tbody>
+                </table>
+              </>
             )}
 
             {tab === 'daily' && (
@@ -336,6 +431,29 @@ export default function Reports() {
           </div>
         )}
       </div>
+
+      {empDrilldown && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setEmpDrilldown(null)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 flex-shrink-0">
+              <div>
+                <p className="text-base font-bold text-slate-800">{empDrilldown.empName}</p>
+                <p className="text-sm text-slate-500 capitalize">{empDrilldown.status} days — {empDrilldown.dates.length}</p>
+              </div>
+              <button onClick={() => setEmpDrilldown(null)} className="text-slate-400 hover:text-slate-600"><X size={18}/></button>
+            </div>
+            <div className="overflow-y-auto divide-y divide-slate-50">
+              {empDrilldown.dates.length === 0 ? (
+                <div className="px-5 py-8 text-center text-slate-400 text-base">No matching days</div>
+              ) : empDrilldown.dates.map((d, i) => (
+                <div key={i} className="px-5 py-3 text-base text-slate-700">
+                  {new Date(d).toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

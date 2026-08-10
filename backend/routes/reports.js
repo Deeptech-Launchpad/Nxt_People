@@ -118,9 +118,17 @@ router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager'), as
         COUNT(CASE WHEN a.status IN ('present', 'late') THEN 1 END)::int AS present,
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END)::int AS absent,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END)::int AS late,
-        ROUND(COALESCE(SUM(a.working_hours), 0)::numeric, 2) AS "totalHours"
+        ROUND(COALESCE(SUM(a.working_hours), 0)::numeric, 2) AS "totalHours",
+        COALESCE(MAX(perm.permission_hours), 0) AS "permissionHours"
        FROM employees e
        LEFT JOIN attendance a ON a.employee_id = e.id AND a.date >= $1::date AND a.date <= $2::date
+       LEFT JOIN (
+         SELECT employee_id, SUM(hours) AS permission_hours
+           FROM leaves
+          WHERE leave_type = 'permission' AND status = 'approved'
+            AND start_date >= $1::date AND start_date <= $2::date
+          GROUP BY employee_id
+       ) perm ON perm.employee_id = e.id
        WHERE e.status = 'active'${reportsScope(req.user, 'e', 3).clause}
        GROUP BY e.id, e.first_name, e.last_name, e.department
        ORDER BY e.first_name ASC`,
@@ -132,7 +140,8 @@ router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager'), as
       present: r.present,
       absent: r.absent,
       late: r.late,
-      totalHours: parseFloat(r.totalHours)
+      totalHours: parseFloat(r.totalHours),
+      permissionHours: parseFloat(r.permissionHours) || 0
     }));
 
     res.json({ success: true, data: results });
