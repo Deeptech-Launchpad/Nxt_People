@@ -18,18 +18,28 @@ const DAILY_CATEGORIES = [
 // the lateness itself now shows in the separate Late/Early column.
 const displayStatus = (status) => status === 'late' ? 'present' : status;
 
-// Duration since check-in, formatted like a clock reading (H.MMh) rather than
-// a decimal fraction of an hour — 30 minutes reads as "0.30h", not "0.50h".
-// Still-open sessions (no check-out yet) count up to "now" instead of
-// freezing at 0, so today's in-progress rows show real elapsed time.
-const formatDuration = (checkIn, checkOut) => {
-  if (!checkIn) return '—';
-  const start = new Date(checkIn);
-  const end = checkOut ? new Date(checkOut) : new Date();
-  const diffMin = Math.max(0, Math.round((end - start) / 60000));
-  const h = Math.floor(diffMin / 60);
-  const m = diffMin % 60;
+// Clock-style duration display (H.MMh) rather than a decimal fraction of an
+// hour — 30 minutes reads as "0.30h", not "0.50h".
+const clockHours = (decimalHours) => {
+  const totalMin = Math.max(0, Math.round((parseFloat(decimalHours) || 0) * 60));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
   return `${h}.${String(m).padStart(2, '0')}h`;
+};
+
+// Hours for a Detailed Report row. A still-open session only counts up to
+// "now" when it's TODAY's row — that's the one case where "still working"
+// is real. A past day with no check-out is a forgotten checkout, not a
+// 20+ hour shift; the nightly auto-absent cron (server.js) closes those out
+// to working_hours=0 by the next morning, so past rows always trust the
+// stored value instead of racing the clock against a stale check-in.
+const formatDuration = (r) => {
+  if (!r.checkIn) return '—';
+  if (!r.checkOut && new Date(r.date).toLocaleDateString('en-CA') === todayCA()) {
+    const diffMin = Math.max(0, Math.round((new Date() - new Date(r.checkIn)) / 60000));
+    return `${Math.floor(diffMin / 60)}.${String(diffMin % 60).padStart(2, '0')}h`;
+  }
+  return clockHours(r.workingHours);
 };
 
 // Late = minutes after shift start (already computed server-side). Early =
@@ -112,7 +122,7 @@ export default function Reports() {
             new Date(r.date).toLocaleDateString(),
             r.checkIn ? new Date(r.checkIn).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : '',
             r.checkOut ? new Date(r.checkOut).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' }) : '',
-            formatDuration(r.checkIn, r.checkOut), displayStatus(r.status),
+            formatDuration(r), displayStatus(r.status),
             le ? `${le.text} (${le.kind})` : '',
           ].map(csvField).join(',');
         }).join('\n');
@@ -212,7 +222,7 @@ export default function Reports() {
                       <td className="px-5 py-3.5 text-base text-slate-600">{new Date(r.date).toLocaleDateString('en-US',{day:'2-digit',month:'short',year:'numeric'})}</td>
                       <td className="px-5 py-3.5 text-base text-slate-700">{fmt(r.checkIn)}</td>
                       <td className="px-5 py-3.5 text-base text-slate-700">{fmt(r.checkOut)}</td>
-                      <td className="px-5 py-3.5 text-base text-slate-700 text-right tabular-nums">{formatDuration(r.checkIn, r.checkOut)}</td>
+                      <td className="px-5 py-3.5 text-base text-slate-700 text-right tabular-nums">{formatDuration(r)}</td>
                       <td className="px-5 py-3.5"><span className={`px-2.5 py-1 rounded-full text-sm font-medium capitalize ${STATUS_STYLE[status] || 'bg-slate-100 text-slate-600'}`}>{status}</span></td>
                       <td className="px-5 py-3.5">{le ? <span className={`px-2.5 py-1 rounded-full text-sm font-medium ${le.kind === 'Late' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>{le.text} ({le.kind})</span> : <span className="text-slate-300 text-sm">—</span>}</td>
                     </tr>

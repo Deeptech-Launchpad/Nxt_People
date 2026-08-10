@@ -398,5 +398,37 @@ cron.schedule('30 2 * * *', async () => {
   }
 }, cronOpts);
 
+// 9. Auto-mark Absent for forgotten check-outs (runs daily at 00:10).
+//    An open attendance session (checked in, never checked out) must not be
+//    allowed to bleed into a new day — anything computing "hours since
+//    check-in" for an open session (the live check-in timer, the Reports
+//    Hours column) has no natural stopping point, so a forgotten checkout
+//    from yesterday shows a runaway number like "22h" when viewed today.
+//    Once the day it belongs to has ended, close the book on it: mark it
+//    Absent. The employee raises a Regularization to recover the day —
+//    regularizations.js already recomputes working_hours/status/late_minutes
+//    from the corrected times on approval, so that recovery path needs no
+//    changes here.
+//    `date < today` (not "= yesterday") makes this self-healing: any row
+//    that was already stale before this cron existed gets swept up the
+//    first time it runs, not just ones created going forward.
+cron.schedule('10 0 * * *', async () => {
+  try {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: CRON_TZ });
+    const r = await pool.query(
+      `UPDATE attendance
+          SET status = 'absent', working_hours = 0, updated_at = NOW()
+        WHERE check_in IS NOT NULL AND check_out IS NULL AND date < $1::date
+        RETURNING id`,
+      [today]
+    );
+    if (r.rowCount > 0) {
+      logger.info({ marked: r.rowCount }, 'Auto-marked forgotten check-outs as Absent');
+    }
+  } catch (err) {
+    logger.error({ err }, 'Auto-absent cron failed');
+  }
+}, cronOpts);
+
 module.exports = app;
 
