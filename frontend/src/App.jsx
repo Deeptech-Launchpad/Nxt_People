@@ -10,6 +10,7 @@ import MobileBlocker from './components/layout/MobileBlocker';
 import Layout from './components/layout/Layout';
 import Login from './pages/Login';
 import OnboardingForm from './pages/OnboardingForm';
+import * as ReportConfigs from './pages/reports/reportConfigs';
 
 /* ── Existing pages ─────────────────────────────────────────────────── */
 const Dashboard       = lazy(() => import('./pages/Dashboard'));
@@ -58,6 +59,14 @@ const Timesheets      = lazy(() => import('./pages/Timesheets'));
 const Leave           = lazy(() => import('./pages/Leave'));
 const Reports         = lazy(() => import('./pages/Reports'));
 const ReportsLanding  = lazy(() => import('./pages/reports/ReportsLanding'));
+const TableReportPage  = lazy(() => import('./pages/reports/TableReportPage'));
+const TrendReportPage  = lazy(() => import('./pages/reports/TrendReportPage'));
+const ExportReportPage = lazy(() => import('./pages/reports/ExportReportPage'));
+const EmployeeDashboard = lazy(() => import('./pages/reports/EmployeeDashboard'));
+const Headcount         = lazy(() => import('./pages/reports/Headcount'));
+const Distribution      = lazy(() => import('./pages/reports/Distribution'));
+const ResourceAvailability = lazy(() => import('./pages/reports/ResourceAvailability'));
+const MusterRoll         = lazy(() => import('./pages/reports/MusterRoll'));
 const DailyAttendance = lazy(() => import('./pages/DailyAttendance'));
 const LeaveEncashment = lazy(() => import('./pages/LeaveEncashment'));
 const Weekends        = lazy(() => import('./pages/Weekends'));
@@ -212,6 +221,34 @@ const AppRoutes = () => {
           {/* ── Reports / Admin ──────────────────────────────────────── */}
           <Route path="reports"            element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ReportsLanding/></ProtectedRoute>}/>
           <Route path="reports/attendance" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Reports/></ProtectedRoute>}/>
+
+          {/* ── Reports catalog — Employee Information ─────────────────── */}
+          <Route path="reports/employee/dashboard"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><EmployeeDashboard/></ProtectedRoute>}/>
+          <Route path="reports/employee/headcount"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Headcount/></ProtectedRoute>}/>
+          <Route path="reports/employee/addition-trend"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TrendReportPage {...ReportConfigs.additionTrendConfig}/></ProtectedRoute>}/>
+          <Route path="reports/employee/attrition-trend" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TrendReportPage {...ReportConfigs.attritionTrendConfig}/></ProtectedRoute>}/>
+          <Route path="reports/employee/distribution"    element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Distribution/></ProtectedRoute>}/>
+          <Route path="reports/employee/diversity"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.diversityConfig}/></ProtectedRoute>}/>
+          <Route path="reports/employee/experience-exit" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.experienceExitConfig}/></ProtectedRoute>}/>
+
+          {/* ── Reports catalog — Leave Tracker ─────────────────────────── */}
+          <Route path="reports/leave/daily-status"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.dailyLeaveStatusConfig}/></ProtectedRoute>}/>
+          <Route path="reports/leave/resource-availability" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ResourceAvailability/></ProtectedRoute>}/>
+          <Route path="reports/leave/balance"             element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.leaveBalanceConfig}/></ProtectedRoute>}/>
+          <Route path="reports/leave/booked-balance"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.bookedBalanceConfig}/></ProtectedRoute>}/>
+          <Route path="reports/leave/type-summary"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.leaveTypeSummaryConfig}/></ProtectedRoute>}/>
+          <Route path="reports/leave/encashment"          element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.encashmentConfig}/></ProtectedRoute>}/>
+          <Route path="reports/leave/lop"                 element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.lopConfig}/></ProtectedRoute>}/>
+          <Route path="reports/leave/payroll-export"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ExportReportPage {...ReportConfigs.leavePayrollExportConfig}/></ProtectedRoute>}/>
+
+          {/* ── Reports catalog — Attendance (new dedicated pages only;
+               Daily/Detail/Summary already exist on /reports/attendance) ── */}
+          <Route path="reports/attendance/hours-breakup"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.hoursBreakupConfig}/></ProtectedRoute>}/>
+          <Route path="reports/attendance/payroll-export"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ExportReportPage {...ReportConfigs.attendancePayrollExportConfig}/></ProtectedRoute>}/>
+          <Route path="reports/attendance/muster-roll"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><MusterRoll/></ProtectedRoute>}/>
+          <Route path="reports/attendance/consecutive-absences"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.consecutiveAbsencesConfig}/></ProtectedRoute>}/>
+          <Route path="reports/attendance/expected-vs-worked"    element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.expectedVsWorkedConfig}/></ProtectedRoute>}/>
+
           <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><DailyAttendance/></ProtectedRoute>}/>
           <Route path="payroll/setup"          element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayrollSetup/></ProtectedRoute>}/>
           <Route path="payroll/run"            element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayrollRun/></ProtectedRoute>}/>

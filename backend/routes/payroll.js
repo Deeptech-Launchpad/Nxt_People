@@ -1612,3 +1612,11 @@ router.get('/admin/tax-slabs', authorize(...PAYROLL_ADMIN), async (req, res) => 
 
 module.exports = router;
 module.exports.runMonthlyPayroll = runMonthlyPayroll;
+// Reused by reports.js so the Leave/Attendance reports (Loss of pay,
+// Muster roll, Expected vs Worked Hours) read the working-day calendar and
+// LOP exactly the same way Payroll Run itself computes it — one
+// implementation, not a second copy that could drift.
+module.exports.lopDaysForRange = lopDaysForRange;
+module.exports.listWorkingDays = listWorkingDays;
+module.exports.loadHolidaysAndRules = loadHolidaysAndRules;
+module.exports.workingDaysInRange = workingDaysInRange;

@@ -84,12 +84,20 @@ function SortableTh({ field, label, align = 'right', sortField, sortDir, onSort 
   );
 }
 
+const VALID_TABS = ['detail', 'summary', 'daily'];
+
 export default function Reports() {
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState([]);
   const [daily, setDaily] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState('detail');
+  // Deep-linkable from the Reports landing page catalog (?tab=summary etc.)
+  // so a specific report can be opened directly instead of always landing
+  // on Detailed Report.
+  const [tab, setTab] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return VALID_TABS.includes(t) ? t : 'detail';
+  });
   const [filters, setFilters] = useState({
     startDate: new Date(new Date().setDate(1)).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
