@@ -66,6 +66,12 @@ const EmployeeDashboard = lazy(() => import('./pages/reports/EmployeeDashboard')
 const Headcount         = lazy(() => import('./pages/reports/Headcount'));
 const Distribution      = lazy(() => import('./pages/reports/Distribution'));
 const ResourceAvailability = lazy(() => import('./pages/reports/ResourceAvailability'));
+const DailyLeaveStatus   = lazy(() => import('./pages/reports/DailyLeaveStatus'));
+const LeaveBalanceReport = lazy(() => import('./pages/reports/LeaveBalance'));
+const BookedBalance      = lazy(() => import('./pages/reports/BookedBalance'));
+const LeaveTypeSummary   = lazy(() => import('./pages/reports/LeaveTypeSummary'));
+const LossOfPay          = lazy(() => import('./pages/reports/LossOfPay'));
+const LeavePayrollExport = lazy(() => import('./pages/reports/LeavePayrollExport'));
 const Diversity          = lazy(() => import('./pages/reports/Diversity'));
 const ExperienceExit     = lazy(() => import('./pages/reports/ExperienceExit'));
 const MusterRoll         = lazy(() => import('./pages/reports/MusterRoll'));
@@ -234,14 +240,14 @@ const AppRoutes = () => {
           <Route path="reports/employee/experience-exit" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ExperienceExit/></ProtectedRoute>}/>
 
           {/* ── Reports catalog — Leave Tracker ─────────────────────────── */}
-          <Route path="reports/leave/daily-status"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.dailyLeaveStatusConfig}/></ProtectedRoute>}/>
+          <Route path="reports/leave/daily-status"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><DailyLeaveStatus/></ProtectedRoute>}/>
           <Route path="reports/leave/resource-availability" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ResourceAvailability/></ProtectedRoute>}/>
-          <Route path="reports/leave/balance"             element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.leaveBalanceConfig}/></ProtectedRoute>}/>
-          <Route path="reports/leave/booked-balance"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.bookedBalanceConfig}/></ProtectedRoute>}/>
-          <Route path="reports/leave/type-summary"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.leaveTypeSummaryConfig}/></ProtectedRoute>}/>
+          <Route path="reports/leave/balance"             element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LeaveBalanceReport/></ProtectedRoute>}/>
+          <Route path="reports/leave/booked-balance"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><BookedBalance/></ProtectedRoute>}/>
+          <Route path="reports/leave/type-summary"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LeaveTypeSummary/></ProtectedRoute>}/>
           <Route path="reports/leave/encashment"          element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.encashmentConfig}/></ProtectedRoute>}/>
-          <Route path="reports/leave/lop"                 element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.lopConfig}/></ProtectedRoute>}/>
-          <Route path="reports/leave/payroll-export"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ExportReportPage {...ReportConfigs.leavePayrollExportConfig}/></ProtectedRoute>}/>
+          <Route path="reports/leave/lop"                 element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LossOfPay/></ProtectedRoute>}/>
+          <Route path="reports/leave/payroll-export"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LeavePayrollExport/></ProtectedRoute>}/>
 
           {/* ── Reports catalog — Attendance (new dedicated pages only;
                Daily/Detail/Summary already exist on /reports/attendance) ── */}

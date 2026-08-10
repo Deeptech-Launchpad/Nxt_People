@@ -8,44 +8,13 @@ import React from 'react';
 // area chart) — see Diversity.jsx and ExperienceExit.jsx — not routed
 // through TableReportPage anymore.
 
-export const leaveTypeSummaryConfig = {
-  title: 'Leave Type Wise Summary', subtitle: 'Approved leave requests and days by type', endpoint: '/reports/leave/type-summary', filterType: 'range',
-  columns: [
-    { key: 'leaveType', header: 'Leave Type', format: v => <span className="capitalize">{v}</span> },
-    { key: 'count', header: 'Requests', align: 'right' },
-    { key: 'totalDays', header: 'Total Days', align: 'right' },
-  ],
-};
-
-export const dailyLeaveStatusConfig = {
-  title: 'Daily Leave Status', subtitle: "Who's on approved leave for a given date", endpoint: '/reports/leave/daily-status', filterType: 'date',
-  emptyText: 'Nobody is on leave this date',
-  columns: [
-    { key: 'employee', header: 'Employee' },
-    { key: 'leaveType', header: 'Leave Type', format: (v, row) => <span className="capitalize">{v}{row.isHalfDay ? ' (Half Day)' : ''}</span> },
-  ],
-};
-
-export const leaveBalanceConfig = {
-  title: 'Employee Leave Balance', subtitle: 'Casual, comp-off, and unpaid leave balances for the selected year', endpoint: '/reports/leave/balance-all', filterType: 'year',
-  columns: [
-    { key: 'employee', header: 'Employee' },
-    { key: 'casualAllocated', header: 'Casual Allocated', align: 'right' },
-    { key: 'casualBooked', header: 'Casual Booked', align: 'right' },
-    { key: 'casualBalance', header: 'Casual Balance', align: 'right', format: v => <span className="font-semibold text-emerald-700">{v}</span> },
-    { key: 'compOffAvailable', header: 'Comp-Off Available', align: 'right' },
-    { key: 'unpaidBooked', header: 'Unpaid Booked', align: 'right' },
-  ],
-};
-
-export const bookedBalanceConfig = {
-  title: 'Leave Booked and Balance', subtitle: 'Days booked in the selected period vs. yearly casual allocation', endpoint: '/reports/leave/booked-balance', filterType: 'range',
-  columns: [
-    { key: 'employee', header: 'Employee' },
-    { key: 'daysBooked', header: 'Days Booked (period)', align: 'right' },
-    { key: 'casualAllocated', header: 'Casual Allocated (year)', align: 'right' },
-  ],
-};
+// Daily Leave Status, Resource Availability, Employee Leave Balance, Leave
+// Booked and Balance, and Leave Type Wise Summary are now bespoke pages
+// (DailyLeaveStatus.jsx / ResourceAvailability.jsx / LeaveBalance.jsx /
+// BookedBalance.jsx / LeaveTypeSummary.jsx) — their real Zoho structure
+// (pie+list toggle, calendar grid, employee-picker drilldown, grouped
+// headers, dropdown-filtered ledger) doesn't fit the generic single-table
+// TableReportPage shape.
 
 export const encashmentConfig = {
   title: 'Leave Encashment Details', subtitle: 'All leave encashment requests', endpoint: '/reports/leave/encashment', filterType: 'none',
@@ -61,14 +30,9 @@ export const encashmentConfig = {
   ],
 };
 
-export const lopConfig = {
-  title: 'Loss of Pay Details', subtitle: 'Unpaid LOP days in the selected period — the same calculation Payroll Run uses', endpoint: '/reports/leave/lop', filterType: 'range',
-  emptyText: 'No LOP days in this period',
-  columns: [
-    { key: 'employee', header: 'Employee' },
-    { key: 'lopDays', header: 'LOP Days', align: 'right', format: v => <span className="font-semibold text-amber-700">{v}</span> },
-  ],
-};
+// Loss of Pay Details is now a bespoke page (LossOfPay.jsx) — grouped
+// Previous Period Balance/Booked/Total/Waived Off/Carry Over columns plus
+// a "Push To Payroll" shortcut, matching Zoho's structure.
 
 export const hoursBreakupConfig = {
   title: 'Presence Hours Break-up', subtitle: 'Total and average hours worked per employee', endpoint: '/reports/attendance/hours-breakup', filterType: 'range',
@@ -104,13 +68,9 @@ export const expectedVsWorkedConfig = {
 export const additionTrendConfig = { title: 'Employee Addition Trend', subtitle: 'New hires per month', endpoint: '/reports/employee/addition-trend', barColor: '#10b981', switcherCategory: 'Employee Information' };
 export const attritionTrendConfig = { title: 'Employee Attrition Trend', subtitle: 'Exits per month', endpoint: '/reports/employee/attrition-trend', barColor: '#ef4444', switcherCategory: 'Employee Information' };
 
-export const leavePayrollExportConfig = {
-  title: 'Leave Data for Payroll', subtitle: 'Download approved leave days for the selected period', endpoint: '/reports/leave/payroll-export', sheetName: 'Leave Data', fileStub: 'leave-payroll-export',
-  columns: [
-    { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' }, { key: 'department', header: 'Department' },
-    { key: 'leaveType', header: 'Leave Type' }, { key: 'totalDays', header: 'Days' }, { key: 'startDate', header: 'Start Date' }, { key: 'endDate', header: 'End Date' },
-  ],
-};
+// Leave Data for Payroll is now a bespoke page (LeavePayrollExport.jsx) —
+// a per-employee Total/Loss of Pay/Paid days summary, matching Zoho's
+// actual report structure rather than a raw leave-application list.
 
 export const attendancePayrollExportConfig = {
   title: 'Attendance Data for Payroll', subtitle: 'Download present/absent days and hours for the selected period', endpoint: '/reports/attendance/payroll-export', sheetName: 'Attendance Data', fileStub: 'attendance-payroll-export',

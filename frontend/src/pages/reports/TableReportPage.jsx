@@ -7,15 +7,24 @@ import ReportShell from './ReportShell';
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
 
-function EmployeeCell({ row }) {
+// Every employee-identifying cell shows the employee ID alongside the name —
+// with names alone, two "Rahul Kumar"s are indistinguishable in a table;
+// the ID is what makes each row unique.
+export function EmployeeCell({ row }) {
   return (
     <div className="flex items-center gap-2">
       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
         {row.firstName?.[0]}{row.lastName?.[0]}
       </div>
       <div className="min-w-0">
-        <p className="text-[14px] font-medium text-slate-800 truncate">{row.firstName} {row.lastName}</p>
-        {row.department && <p className="text-[12px] text-slate-400 truncate">{row.department}</p>}
+        <p className="text-[14px] font-medium text-slate-800 truncate">
+          {row.firstName} {row.lastName}
+          {row.employeeCode && <span className="ml-1.5 text-[12px] font-normal text-slate-400">({row.employeeCode})</span>}
+        </p>
+        <p className="text-[12px] text-slate-400 truncate">
+          {row.department || '—'}
+          {row.exitDate && <span className="ml-1.5 text-red-500 font-medium">Exited {new Date(row.exitDate).toLocaleDateString('en-IN')}</span>}
+        </p>
       </div>
     </div>
   );
