@@ -4,6 +4,7 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
+import EmployeeStatusFilter from './EmployeeStatusFilter';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -26,10 +27,11 @@ export default function LeavePayrollExport() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
+  const [employeeStatus, setEmployeeStatus] = useState('all');
 
   const load = () => {
     setLoading(true);
-    api.get(`/reports/leave/payroll-export?startDate=${startDate}&endDate=${endDate}`)
+    api.get(`/reports/leave/payroll-export?startDate=${startDate}&endDate=${endDate}&employeeStatus=${employeeStatus}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
@@ -48,6 +50,7 @@ export default function LeavePayrollExport() {
         <label className="block text-[13px] font-medium text-slate-600 mb-1">To</label>
         <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
       </div>
+      <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
       <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
         <Filter size={14} /> Apply
       </button>

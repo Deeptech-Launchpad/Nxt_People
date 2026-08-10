@@ -4,6 +4,7 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
+import EmployeeStatusFilter from './EmployeeStatusFilter';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -20,17 +21,18 @@ export default function DailyLeaveStatus() {
   const [loading, setLoading] = useState(true);
   const [byType, setByType] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [employeeStatus, setEmployeeStatus] = useState('all');
 
   const load = () => {
     setLoading(true);
-    api.get(`/reports/leave/daily-status?date=${date}`)
+    api.get(`/reports/leave/daily-status?date=${date}&employeeStatus=${employeeStatus}`)
       .then(r => { setByType(r.data.byType || []); setEmployees(r.data.employees || []); })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [date]);
+  useEffect(load, [date, employeeStatus]);
 
   const total = byType.reduce((s, r) => s + Number(r.count), 0);
   const donutData = byType.map(r => ({ label: LEAVE_LABEL[r.leaveType] || r.leaveType, count: r.count }));
@@ -45,6 +47,7 @@ export default function DailyLeaveStatus() {
           <button onClick={() => setDate(d => shiftDay(d, 1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
         </div>
       </div>
+      <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
       <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
         <Filter size={14} /> Apply
       </button>

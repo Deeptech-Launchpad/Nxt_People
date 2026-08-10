@@ -25,6 +25,18 @@ async function loadHolidaysAndRulesRange(startDate, endDate) {
   return { holMap, rules };
 }
 
+// Employee Status filter shared by every Leave Tracker table endpoint below
+// — mirrors Zoho's Active/Ex-Employee filter chip. 'active'/'exited' are
+// the only two real distinctions this schema can make (there's no separate
+// "Active Non-User" or "Login Disabled" concept here) — anything else (or
+// omitted) means no filter, matching this app's previous default behavior.
+function employeeStatusClause(req, alias = 'e') {
+  const status = req.query.employeeStatus;
+  if (status === 'active') return ` AND ${alias}.exit_date IS NULL`;
+  if (status === 'exited') return ` AND ${alias}.exit_date IS NOT NULL`;
+  return '';
+}
+
 // Bug #10 fix: single JOIN+GROUP BY query instead of N+1 loop
 // Bug #20 fix: summary now accepts startDate/endDate OR month/year params
 router.get('/attendance', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -474,7 +486,7 @@ router.get('/leave/daily-status', authorize('admin', 'director', 'hr_admin', 'ma
       pool.query(
         `SELECT l.leave_type AS "leaveType", COUNT(*)::int AS count
            FROM leaves l JOIN employees e ON l.employee_id = e.id
-          WHERE l.status = 'approved' AND l.start_date <= $1::date AND l.end_date >= $1::date${reportsScope(req.user, 'e', 2).clause}
+          WHERE l.status = 'approved' AND l.start_date <= $1::date AND l.end_date >= $1::date${employeeStatusClause(req)}${reportsScope(req.user, 'e', 2).clause}
           GROUP BY l.leave_type`,
         [date, ...reportsScope(req.user, 'e', 2).params]
       ),
@@ -482,7 +494,7 @@ router.get('/leave/daily-status', authorize('admin', 'director', 'hr_admin', 'ma
         `SELECT l.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode",
                 l.leave_type AS "leaveType", l.is_half_day AS "isHalfDay"
            FROM leaves l JOIN employees e ON l.employee_id = e.id
-          WHERE l.status = 'approved' AND l.start_date <= $1::date AND l.end_date >= $1::date${reportsScope(req.user, 'e', 2).clause}
+          WHERE l.status = 'approved' AND l.start_date <= $1::date AND l.end_date >= $1::date${employeeStatusClause(req)}${reportsScope(req.user, 'e', 2).clause}
           ORDER BY e.first_name`,
         [date, ...reportsScope(req.user, 'e', 2).params]
       ),
@@ -505,7 +517,7 @@ router.get('/leave/resource-availability', authorize('admin', 'director', 'hr_ad
     const [empRes, leaveRes, absentRes] = await Promise.all([
       pool.query(
         `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", department, employee_id AS "employeeCode", exit_date AS "exitDate"
-           FROM employees e WHERE 1=1${reportsScope(req.user, 'e', 1).clause} ORDER BY first_name`,
+           FROM employees e WHERE 1=1${employeeStatusClause(req)}${reportsScope(req.user, 'e', 1).clause} ORDER BY first_name`,
         reportsScope(req.user, 'e', 1).params
       ),
       pool.query(
@@ -696,7 +708,7 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
          LEFT JOIN (SELECT employee_id, COUNT(*)::int AS cnt FROM attendance WHERE status='absent' AND date >= $1::date AND date <= $2::date GROUP BY employee_id) absent ON absent.employee_id = e.id
          LEFT JOIN (SELECT employee_id, SUM(days_earned) AS earned, SUM(days_used) AS used FROM comp_offs WHERE status='approved' GROUP BY employee_id) co ON co.employee_id = e.id
          LEFT JOIN (SELECT employee_id, SUM(days_used) AS used FROM comp_offs WHERE status='approved' AND comp_off_date >= $1::date AND comp_off_date <= $2::date GROUP BY employee_id) co_range ON co_range.employee_id = e.id
-        WHERE 1=1${reportsScope(req.user, 'e', 3).clause}
+        WHERE 1=1${employeeStatusClause(req)}${reportsScope(req.user, 'e', 3).clause}
         ORDER BY e.first_name`,
       [start, end, ...reportsScope(req.user, 'e', 3).params]
     );
@@ -747,7 +759,7 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
               COALESCE(SUM(l.hours) FILTER (WHERE l.status='approved'), 0) AS "bookedHours"
          FROM employees e
          LEFT JOIN leaves l ON l.employee_id = e.id AND l.leave_type = $1 AND EXTRACT(YEAR FROM l.start_date) = $2
-        WHERE 1=1${reportsScope(req.user, 'e', 3).clause}
+        WHERE 1=1${employeeStatusClause(req)}${reportsScope(req.user, 'e', 3).clause}
         GROUP BY e.id, e.first_name, e.last_name, e.department, e.employee_id, e.exit_date, e.casual_leave
         ORDER BY e.first_name`,
       [leaveType, year, ...reportsScope(req.user, 'e', 3).params]
@@ -794,7 +806,7 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
 
     const empRes = await pool.query(
       `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", department, employee_id AS "employeeCode", exit_date AS "exitDate"
-         FROM employees e WHERE 1=1${reportsScope(req.user, 'e', 1).clause} ORDER BY first_name`,
+         FROM employees e WHERE 1=1${employeeStatusClause(req)}${reportsScope(req.user, 'e', 1).clause} ORDER BY first_name`,
       reportsScope(req.user, 'e', 1).params
     );
 
@@ -826,7 +838,7 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
     const empRes = await pool.query(
       `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", employee_id AS "employeeCode", department,
               exit_date AS "exitDate", joining_date AS "joiningDate"
-         FROM employees e WHERE 1=1${reportsScope(req.user, 'e', 1).clause} ORDER BY first_name`,
+         FROM employees e WHERE 1=1${employeeStatusClause(req)}${reportsScope(req.user, 'e', 1).clause} ORDER BY first_name`,
       reportsScope(req.user, 'e', 1).params
     );
 

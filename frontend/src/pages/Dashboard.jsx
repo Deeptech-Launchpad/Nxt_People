@@ -1178,8 +1178,9 @@ export default function Dashboard() {
                             const isWeekend = day.isWeekend;
 
                             // Match Zoho People: every past working day carries a status label
-                            // (Present / Half-day / Absent). Today shows Present once the user
-                            // checks in. Future days show no status — just date.
+                            // (Present / Half-day / Absent). Today gets the same label once
+                            // checked out — checked-in-but-not-yet-checked-out shows no label,
+                            // just the live ticking hours below. Future days show no status.
                             // "Late" is never surfaced here — it lives in the detailed attendance view.
                             let label = null;        // text under the date
                             let labelColor = '';     // tailwind class
@@ -1187,7 +1188,7 @@ export default function Dashboard() {
                               label = day.holidayName ? `${day.holidayName}(Holiday)` : 'Holiday'; labelColor = 'text-teal-500';
                             } else if (isWeekend) {
                               label = 'Weekend'; labelColor = 'text-orange-500';
-                            } else if (isPast) {
+                            } else if (isPast || (isToday && isCheckedOut)) {
                               const wh = Number(record?.workingHours) || 0;
                               if (!record || (wh < 4 && record?.status !== 'half-day')) {
                                 label = 'Absent'; labelColor = 'text-red-500';
@@ -1197,11 +1198,8 @@ export default function Dashboard() {
                                 label = 'Present'; labelColor = 'text-emerald-600';
                               }
                             }
-                            // Today: no Present/Absent label — Zoho People convention.
-                            // The blue date pill + live hours below convey the state
-                            // already; the status would be premature ("Present" before
-                            // checkout / "Absent" before the day is over).
-                            // Future: also no status label.
+                            // Today while still checked in (no checkout yet): no status label —
+                            // just the live ticking hours below. Future: also no status label.
 
                             return (
                               <div

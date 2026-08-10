@@ -4,6 +4,7 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
+import EmployeeStatusFilter from './EmployeeStatusFilter';
 import { EmployeeCell } from './TableReportPage';
 
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
@@ -27,6 +28,7 @@ export default function LeaveTypeSummary() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
+  const [employeeStatus, setEmployeeStatus] = useState('all');
 
   useEffect(() => {
     api.get('/reports/leave/types-available')
@@ -42,11 +44,11 @@ export default function LeaveTypeSummary() {
   useEffect(() => {
     if (!selection) return;
     setLoading(true);
-    api.get(`/reports/leave/type-summary?leaveType=${selection.leaveType}&year=${selection.year}`)
+    api.get(`/reports/leave/type-summary?leaveType=${selection.leaveType}&year=${selection.year}&employeeStatus=${employeeStatus}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
-  }, [selection]);
+  }, [selection, employeeStatus]);
 
   const filters = (
     <>
@@ -62,6 +64,7 @@ export default function LeaveTypeSummary() {
           ))}
         </select>
       </div>
+      <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
       <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto">
         <Download size={14} /> Export
       </button>
