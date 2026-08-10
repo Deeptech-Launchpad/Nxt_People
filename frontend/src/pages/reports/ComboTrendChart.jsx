@@ -1,5 +1,7 @@
 import React from 'react';
-import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList } from 'recharts';
+
+const growthLabel = (v) => (v === null || v === undefined ? '' : `${v}%`);
 
 // Bar (count) + line (% growth) dual-axis chart, matching Zoho's combo
 // chart for Headcount/Addition trend/Attrition trend. When the series
@@ -21,8 +23,12 @@ export default function ComboTrendChart({ data, xKey, barColor = '#6366f1', line
         <Tooltip />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         {dividerX && <ReferenceLine x={dividerX} yAxisId="left" stroke="#cbd5e1" strokeDasharray="3 3" />}
-        <Bar yAxisId="left" dataKey="count" name={barLabel} fill={barColor} radius={[4, 4, 0, 0]} />
-        <Line yAxisId="right" dataKey="growth" name={lineLabel} stroke={lineColor} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+        <Bar yAxisId="left" dataKey="count" name={barLabel} fill={barColor} radius={[4, 4, 0, 0]}>
+          <LabelList dataKey="count" position="top" fontSize={11} fill="#475569" />
+        </Bar>
+        <Line yAxisId="right" dataKey="growth" name={lineLabel} stroke={lineColor} strokeWidth={2} dot={{ r: 3 }} connectNulls>
+          <LabelList dataKey="growth" position="top" fontSize={10} fill={lineColor} formatter={growthLabel} />
+        </Line>
       </ComposedChart>
     </ResponsiveContainer>
   );

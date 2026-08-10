@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -8,7 +9,9 @@ import ChartExportMenu from './ChartExportMenu';
 const TYPES = [['department', 'Department'], ['designation', 'Designation'], ['location', 'Location']];
 
 export default function Distribution() {
-  const [by, setBy] = useState('department');
+  const [searchParams] = useSearchParams();
+  const initialBy = TYPES.some(([k]) => k === searchParams.get('by')) ? searchParams.get('by') : 'department';
+  const [by, setBy] = useState(initialBy);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
 

@@ -242,6 +242,9 @@ router.get('/daily', authorize('admin', 'director', 'hr_admin', 'manager'), asyn
 
 // ══════════════════════ Employee Information reports ══════════════════════
 
+// null-safe % growth — avoids Infinity/NaN when the baseline is 0.
+const pctGrowth = (curr, prev) => (prev ? parseFloat((((curr - prev) / prev) * 100).toFixed(2)) : null);
+
 router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const now = new Date();
@@ -249,8 +252,11 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-CA');
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString('en-CA');
     const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).toLocaleDateString('en-CA');
+    const sameMonthLastYearStart = new Date(now.getFullYear() - 1, now.getMonth(), 1).toLocaleDateString('en-CA');
+    const sameMonthLastYearEnd = new Date(now.getFullYear() - 1, now.getMonth() + 1, 0).toLocaleDateString('en-CA');
+    const sameDayLastYear = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).toLocaleDateString('en-CA');
 
-    const [statsRes, deptRes, genderRes, additionRes, attritionRes] = await Promise.all([
+    const [statsRes, deptRes, genderRes, additionSeries, attritionSeries, ageRows, experienceRows] = await Promise.all([
       pool.query(
         `SELECT
            COUNT(*) FILTER (WHERE e.status='active')::int AS active,
@@ -258,9 +264,13 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
            COUNT(*) FILTER (WHERE e.status='active' AND e.joining_date >= $1::date AND e.joining_date <= $2::date)::int AS "newThisMonth",
            COUNT(*) FILTER (WHERE e.exit_date >= $1::date AND e.exit_date <= $2::date)::int AS "exitsThisMonth",
            COUNT(*) FILTER (WHERE e.status='active' AND e.joining_date >= $3::date AND e.joining_date <= $4::date)::int AS "newLastMonth",
-           COUNT(*) FILTER (WHERE e.exit_date >= $3::date AND e.exit_date <= $4::date)::int AS "exitsLastMonth"
-         FROM employees e WHERE 1=1${reportsScope(req.user, 'e', 5).clause}`,
-        [monthStart, monthEnd, prevMonthStart, prevMonthEnd, ...reportsScope(req.user, 'e', 5).params]
+           COUNT(*) FILTER (WHERE e.exit_date >= $3::date AND e.exit_date <= $4::date)::int AS "exitsLastMonth",
+           COUNT(*) FILTER (WHERE e.status='active' AND e.joining_date >= $5::date AND e.joining_date <= $6::date)::int AS "newSameMonthLastYear",
+           COUNT(*) FILTER (WHERE e.exit_date >= $5::date AND e.exit_date <= $6::date)::int AS "exitsSameMonthLastYear",
+           COUNT(*) FILTER (WHERE e.joining_date <= $4::date AND (e.exit_date IS NULL OR e.exit_date > $4::date))::int AS "headcountLastMonth",
+           COUNT(*) FILTER (WHERE e.joining_date <= $7::date AND (e.exit_date IS NULL OR e.exit_date > $7::date))::int AS "headcountSameMonthLastYear"
+         FROM employees e WHERE 1=1${reportsScope(req.user, 'e', 8).clause}`,
+        [monthStart, monthEnd, prevMonthStart, prevMonthEnd, sameMonthLastYearStart, sameMonthLastYearEnd, sameDayLastYear, ...reportsScope(req.user, 'e', 8).params]
       ),
       pool.query(
         `SELECT COALESCE(e.department,'Unassigned') AS label, COUNT(*)::int AS count
@@ -274,31 +284,29 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
           GROUP BY e.gender ORDER BY count DESC`,
         reportsScope(req.user, 'e', 1).params
       ),
-      // Last 6 months addition/attrition — feeds the two mini trend charts,
-      // which deep-link to the full Addition/Attrition Trend reports.
-      pool.query(
-        `SELECT to_char(date_trunc('month', e.joining_date), 'Mon') AS month, COUNT(*)::int AS count
-           FROM employees e
-          WHERE e.joining_date >= (date_trunc('month', CURRENT_DATE) - '5 months'::interval)${reportsScope(req.user, 'e', 1).clause}
-          GROUP BY date_trunc('month', e.joining_date) ORDER BY date_trunc('month', e.joining_date)`,
-        reportsScope(req.user, 'e', 1).params
-      ),
-      pool.query(
-        `SELECT to_char(date_trunc('month', e.exit_date), 'Mon') AS month, COUNT(*)::int AS count
-           FROM employees e
-          WHERE e.exit_date IS NOT NULL AND e.exit_date >= (date_trunc('month', CURRENT_DATE) - '5 months'::interval)${reportsScope(req.user, 'e', 1).clause}
-          GROUP BY date_trunc('month', e.exit_date) ORDER BY date_trunc('month', e.exit_date)`,
-        reportsScope(req.user, 'e', 1).params
-      ),
+      // Last 6 months addition/attrition, with month-over-month growth —
+      // feeds the two mini combo charts, which deep-link to the full
+      // Addition/Attrition Trend reports.
+      monthlySeriesWithGrowth('joining_date', 5, req.user),
+      monthlySeriesWithGrowth('exit_date', 5, req.user),
+      ageOrTenureBuckets('date_of_birth', req.user),
+      ageOrTenureBuckets('joining_date', req.user),
     ]);
+
+    const s = statsRes.rows[0];
     res.json({
       success: true,
       data: {
-        ...statsRes.rows[0],
+        ...s,
+        headcount: { thisMonth: s.active, momGrowth: pctGrowth(s.active, s.headcountLastMonth), yoy: s.headcountSameMonthLastYear, yoyGrowth: pctGrowth(s.active, s.headcountSameMonthLastYear) },
+        addition: { thisMonth: s.newThisMonth, momGrowth: pctGrowth(s.newThisMonth, s.newLastMonth), yoy: s.newSameMonthLastYear, yoyGrowth: pctGrowth(s.newThisMonth, s.newSameMonthLastYear) },
+        attrition: { thisMonth: s.exitsThisMonth, momGrowth: pctGrowth(s.exitsThisMonth, s.exitsLastMonth), yoy: s.exitsSameMonthLastYear, yoyGrowth: pctGrowth(s.exitsThisMonth, s.exitsSameMonthLastYear) },
         byDepartment: deptRes.rows,
         byGender: genderRes.rows,
-        last6MonthsAddition: additionRes.rows,
-        last6MonthsAttrition: attritionRes.rows,
+        byAge: ageRows,
+        byExperience: experienceRows,
+        last6MonthsAddition: additionSeries,
+        last6MonthsAttrition: attritionSeries,
       },
     });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
@@ -395,15 +403,39 @@ router.get('/employee/distribution', authorize('admin', 'director', 'hr_admin', 
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+// 5-year-wide buckets for age (date_of_birth) or current tenure
+// (joining_date) among active employees. Shared by /employee/diversity's
+// age/experience types and the Dashboard's mini widgets, so both always
+// agree on the same bucketing.
+async function ageOrTenureBuckets(dateColumn, user) {
+  const r = await pool.query(
+    `SELECT (FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, e.${dateColumn})) / 5) * 5)::int AS bucket_start, COUNT(*)::int AS count
+       FROM employees e
+      WHERE e.status='active' AND e.${dateColumn} IS NOT NULL${reportsScope(user, 'e', 1).clause}
+      GROUP BY bucket_start ORDER BY bucket_start`,
+    reportsScope(user, 'e', 1).params
+  );
+  return r.rows.map(row => ({ label: `${row.bucket_start}-${row.bucket_start + 4}`, count: row.count }));
+}
+
+// Diversity covers three switchable views, matching Zoho's "Type" selector:
+// gender (default), age (date_of_birth), and experience (current tenure).
 router.get('/employee/diversity', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
+    const type = ['age', 'experience'].includes(req.query.type) ? req.query.type : 'gender';
+    if (type === 'age') {
+      return res.json({ success: true, type, data: await ageOrTenureBuckets('date_of_birth', req.user) });
+    }
+    if (type === 'experience') {
+      return res.json({ success: true, type, data: await ageOrTenureBuckets('joining_date', req.user) });
+    }
     const r = await pool.query(
       `SELECT COALESCE(e.gender,'Unspecified') AS label, COUNT(*)::int AS count
          FROM employees e WHERE e.status='active'${reportsScope(req.user, 'e', 1).clause}
         GROUP BY e.gender ORDER BY count DESC`,
       reportsScope(req.user, 'e', 1).params
     );
-    res.json({ success: true, data: r.rows });
+    res.json({ success: true, type, data: r.rows });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
