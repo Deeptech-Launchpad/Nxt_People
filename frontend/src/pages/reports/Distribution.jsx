@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
+import DonutWithStats from './DonutWithStats';
+import ChartExportMenu from './ChartExportMenu';
+
+const TYPES = [['department', 'Department'], ['designation', 'Designation'], ['location', 'Location']];
 
 export default function Distribution() {
   const [by, setBy] = useState('department');
@@ -16,11 +20,13 @@ export default function Distribution() {
       .finally(() => setLoading(false));
   }, [by]);
 
-  const total = rows.reduce((s, r) => s + Number(r.count), 0) || 1;
+  const total = rows.reduce((s, r) => s + Number(r.count), 0);
+  const top3 = [...rows].sort((a, b) => b.count - a.count).slice(0, 3).reduce((s, r) => s + Number(r.count), 0);
+  const typeLabel = TYPES.find(([k]) => k === by)[1];
 
   const actions = (
     <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
-      {[['department', 'Department'], ['designation', 'Designation']].map(([k, l]) => (
+      {TYPES.map(([k, l]) => (
         <button key={k} onClick={() => setBy(k)}
           className={`px-3 py-1.5 text-[13px] font-semibold rounded-md transition-colors ${by === k ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
           {l}
@@ -30,23 +36,24 @@ export default function Distribution() {
   );
 
   return (
-    <ReportShell title="Distribution" subtitle="Active employees split by department or designation" actions={actions} loading={loading} switcherCategory="Employee Information">
-      <table className="w-full text-[14px]">
-        <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
-          <tr><th className="text-left px-4 py-2.5">{by === 'department' ? 'Department' : 'Designation'}</th><th className="text-right px-4 py-2.5">Count</th><th className="text-right px-4 py-2.5">Share</th></tr>
-        </thead>
-        <tbody className="divide-y divide-slate-50">
-          {rows.length === 0 ? (
-            <tr><td colSpan={3} className="text-center py-10 text-slate-400">No data</td></tr>
-          ) : rows.map((r, i) => (
-            <tr key={i}>
-              <td className="px-4 py-2.5 text-slate-700">{r.label}</td>
-              <td className="px-4 py-2.5 text-right font-semibold tabular-nums">{r.count}</td>
-              <td className="px-4 py-2.5 text-right text-slate-500 tabular-nums">{Math.round((r.count / total) * 100)}%</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <ReportShell title="Distribution" subtitle="Active employees split by department, designation, or location" actions={actions} loading={loading} switcherCategory="Employee Information">
+      {rows.length === 0 ? (
+        <div className="text-center py-16 text-slate-400">No data</div>
+      ) : (
+        <>
+          <div className="flex justify-end px-4 pt-4">
+            <ChartExportMenu rows={rows} columns={[{ key: 'label', header: typeLabel }, { key: 'count', header: 'Count' }]} fileStub={`distribution-${by}`} />
+          </div>
+          <DonutWithStats
+            data={rows}
+            stats={[
+              { label: `Employees in Top 3 ${typeLabel}s`, value: `${total ? ((top3 / total) * 100).toFixed(2) : 0}% (${top3})` },
+              { label: `Total no. of ${typeLabel}s`, value: rows.length },
+              { label: 'Total Employee Count', value: total },
+            ]}
+          />
+        </>
+      )}
     </ReportShell>
   );
 }

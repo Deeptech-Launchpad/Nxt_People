@@ -46,8 +46,15 @@ export default function TableReportPage({ title, subtitle, endpoint, filterType 
       .finally(() => setLoading(false));
   };
 
+  // Re-fetch whenever `endpoint` changes — this component is reused as-is
+  // (same instance, not remounted) when the ReportShell switcher navigates
+  // between two sibling reports that both render TableReportPage, since
+  // React reconciles by type+position, not by route. An empty dep array
+  // here previously left a fetch that only ever ran once, so switching
+  // reports via the dropdown kept showing the PREVIOUS report's data under
+  // the new report's title and columns.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, []);
+  useEffect(load, [endpoint]);
 
   const filters = filterType === 'none' ? null : (
     <>

@@ -304,49 +304,87 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
-router.get('/employee/headcount', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+// Year-over-year headcount trend: how many employees were active as of the
+// end of each year (or "as of today" for the current year), plus % growth
+// vs. the prior year. Point-in-time reconstruction — an employee counts for
+// year Y if they'd joined by then and hadn't exited yet — not just today's
+// active count repeated across years.
+router.get('/employee/headcount-trend', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
-    const [totalRes, deptRes, locRes] = await Promise.all([
-      pool.query(`SELECT COUNT(*)::int AS total FROM employees e WHERE e.status='active'${reportsScope(req.user, 'e', 1).clause}`, reportsScope(req.user, 'e', 1).params),
-      pool.query(`SELECT COALESCE(e.department,'Unassigned') AS label, COUNT(*)::int AS count FROM employees e WHERE e.status='active'${reportsScope(req.user, 'e', 1).clause} GROUP BY e.department ORDER BY count DESC`, reportsScope(req.user, 'e', 1).params),
-      pool.query(`SELECT COALESCE(e.work_location,'Unassigned') AS label, COUNT(*)::int AS count FROM employees e WHERE e.status='active'${reportsScope(req.user, 'e', 1).clause} GROUP BY e.work_location ORDER BY count DESC`, reportsScope(req.user, 'e', 1).params),
-    ]);
-    res.json({ success: true, data: { total: totalRes.rows[0].total, byDepartment: deptRes.rows, byLocation: locRes.rows } });
+    const yearsBack = Math.min(15, Math.max(1, parseInt(req.query.years, 10) || 10));
+    const currentYear = new Date().getFullYear();
+    const startYear = currentYear - yearsBack + 1;
+    const today = new Date().toLocaleDateString('en-CA');
+
+    const counts = [];
+    for (let y = startYear; y <= currentYear; y++) {
+      const asOf = y === currentYear ? today : `${y}-12-31`;
+      // eslint-disable-next-line no-await-in-loop
+      const r = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM employees e
+          WHERE e.joining_date <= $1::date AND (e.exit_date IS NULL OR e.exit_date > $1::date)${reportsScope(req.user, 'e', 2).clause}`,
+        [asOf, ...reportsScope(req.user, 'e', 2).params]
+      );
+      counts.push({ year: y, count: r.rows[0].count });
+    }
+
+    const data = counts.map((row, i) => {
+      const prev = i > 0 ? counts[i - 1].count : null;
+      const growth = prev ? parseFloat((((row.count - prev) / prev) * 100).toFixed(2)) : null;
+      return { ...row, growth };
+    });
+    res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
+
+// Dense month-by-month series (zero-count months included, matching Zoho's
+// continuous axis) with month-over-month % growth. Fetches one extra
+// leading month purely as the growth baseline for the first displayed bar,
+// then drops it from the returned series. dateColumn is always a fixed
+// literal from this file, never user input.
+async function monthlySeriesWithGrowth(dateColumn, months, user) {
+  const r = await pool.query(
+    `SELECT to_char(date_trunc('month', e.${dateColumn}), 'YYYY-MM') AS ym, COUNT(*)::int AS count
+       FROM employees e
+      WHERE e.${dateColumn} >= (date_trunc('month', CURRENT_DATE) - ($1 || ' months')::interval)${reportsScope(user, 'e', 2).clause}
+      GROUP BY 1`,
+    [months + 1, ...reportsScope(user, 'e', 2).params]
+  );
+  const countMap = new Map(r.rows.map(row => [row.ym, row.count]));
+  const now = new Date();
+  const series = [];
+  for (let i = months; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    series.push({ year: d.getFullYear(), month: d.toLocaleDateString('en-US', { month: 'short' }), count: countMap.get(ym) || 0 });
+  }
+  return series.slice(1).map((row, i) => {
+    const prev = series[i].count;
+    const growth = prev > 0 ? parseFloat((((row.count - prev) / prev) * 100).toFixed(2)) : null;
+    return { month: row.month, year: row.year, count: row.count, growth };
+  });
+}
 
 router.get('/employee/addition-trend', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const months = Math.min(24, Math.max(1, parseInt(req.query.months, 10) || 12));
-    const r = await pool.query(
-      `SELECT to_char(date_trunc('month', e.joining_date), 'Mon YYYY') AS month, COUNT(*)::int AS count
-         FROM employees e
-        WHERE e.joining_date >= (date_trunc('month', CURRENT_DATE) - ($1 || ' months')::interval)${reportsScope(req.user, 'e', 2).clause}
-        GROUP BY date_trunc('month', e.joining_date) ORDER BY date_trunc('month', e.joining_date)`,
-      [months, ...reportsScope(req.user, 'e', 2).params]
-    );
-    res.json({ success: true, data: r.rows });
+    const data = await monthlySeriesWithGrowth('joining_date', months, req.user);
+    res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 router.get('/employee/attrition-trend', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const months = Math.min(24, Math.max(1, parseInt(req.query.months, 10) || 12));
-    const r = await pool.query(
-      `SELECT to_char(date_trunc('month', e.exit_date), 'Mon YYYY') AS month, COUNT(*)::int AS count
-         FROM employees e
-        WHERE e.exit_date IS NOT NULL AND e.exit_date >= (date_trunc('month', CURRENT_DATE) - ($1 || ' months')::interval)${reportsScope(req.user, 'e', 2).clause}
-        GROUP BY date_trunc('month', e.exit_date) ORDER BY date_trunc('month', e.exit_date)`,
-      [months, ...reportsScope(req.user, 'e', 2).params]
-    );
-    res.json({ success: true, data: r.rows });
+    const data = await monthlySeriesWithGrowth('exit_date', months, req.user);
+    res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 router.get('/employee/distribution', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     // Whitelisted before interpolation — never accept the column name straight from req.query.
-    const col = req.query.by === 'designation' ? 'e.designation' : 'e.department';
+    const col = req.query.by === 'designation' ? 'e.designation' : req.query.by === 'location' ? 'e.work_location' : 'e.department';
     const r = await pool.query(
       `SELECT COALESCE(${col}, 'Unassigned') AS label, COUNT(*)::int AS count
          FROM employees e WHERE e.status='active'${reportsScope(req.user, 'e', 1).clause}
@@ -369,23 +407,26 @@ router.get('/employee/diversity', authorize('admin', 'director', 'hr_admin', 'ma
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+// Per-year buckets (<1, 1, 2, 3, ...) rather than wide bands, matching
+// Zoho's granularity — banded at 10+ so a handful of very long tenures
+// don't produce a chart with dozens of near-empty buckets.
 router.get('/employee/experience-exit', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT
-         CASE
-           WHEN AGE(e.exit_date, e.joining_date) < INTERVAL '1 year' THEN '< 1 year'
-           WHEN AGE(e.exit_date, e.joining_date) < INTERVAL '3 years' THEN '1-3 years'
-           WHEN AGE(e.exit_date, e.joining_date) < INTERVAL '5 years' THEN '3-5 years'
-           ELSE '5+ years'
-         END AS label,
+         CASE WHEN yrs < 1 THEN '<1' WHEN yrs >= 10 THEN '10+' ELSE yrs::text END AS label,
+         LEAST(yrs, 10) AS sort_key,
          COUNT(*)::int AS count
-        FROM employees e
-       WHERE e.exit_date IS NOT NULL AND e.joining_date IS NOT NULL${reportsScope(req.user, 'e', 1).clause}
-       GROUP BY label`,
+        FROM (
+          SELECT FLOOR(EXTRACT(YEAR FROM AGE(e.exit_date, e.joining_date)))::int AS yrs
+            FROM employees e
+           WHERE e.exit_date IS NOT NULL AND e.joining_date IS NOT NULL${reportsScope(req.user, 'e', 1).clause}
+        ) ranked
+       GROUP BY label, sort_key
+       ORDER BY sort_key`,
       reportsScope(req.user, 'e', 1).params
     );
-    res.json({ success: true, data: r.rows });
+    res.json({ success: true, data: r.rows.map(({ label, count }) => ({ label, count })) });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 

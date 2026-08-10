@@ -66,6 +66,8 @@ const EmployeeDashboard = lazy(() => import('./pages/reports/EmployeeDashboard')
 const Headcount         = lazy(() => import('./pages/reports/Headcount'));
 const Distribution      = lazy(() => import('./pages/reports/Distribution'));
 const ResourceAvailability = lazy(() => import('./pages/reports/ResourceAvailability'));
+const Diversity          = lazy(() => import('./pages/reports/Diversity'));
+const ExperienceExit     = lazy(() => import('./pages/reports/ExperienceExit'));
 const MusterRoll         = lazy(() => import('./pages/reports/MusterRoll'));
 const DailyAttendance = lazy(() => import('./pages/DailyAttendance'));
 const LeaveEncashment = lazy(() => import('./pages/LeaveEncashment'));
@@ -228,8 +230,8 @@ const AppRoutes = () => {
           <Route path="reports/employee/addition-trend"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TrendReportPage {...ReportConfigs.additionTrendConfig}/></ProtectedRoute>}/>
           <Route path="reports/employee/attrition-trend" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TrendReportPage {...ReportConfigs.attritionTrendConfig}/></ProtectedRoute>}/>
           <Route path="reports/employee/distribution"    element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Distribution/></ProtectedRoute>}/>
-          <Route path="reports/employee/diversity"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.diversityConfig}/></ProtectedRoute>}/>
-          <Route path="reports/employee/experience-exit" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.experienceExitConfig}/></ProtectedRoute>}/>
+          <Route path="reports/employee/diversity"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><Diversity/></ProtectedRoute>}/>
+          <Route path="reports/employee/experience-exit" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ExperienceExit/></ProtectedRoute>}/>
 
           {/* ── Reports catalog — Leave Tracker ─────────────────────────── */}
           <Route path="reports/leave/daily-status"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.dailyLeaveStatusConfig}/></ProtectedRoute>}/>

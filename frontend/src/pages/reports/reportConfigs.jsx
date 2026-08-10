@@ -4,23 +4,9 @@ import React from 'react';
 // TrendReportPage / ExportReportPage components in App.jsx's route
 // definitions — keeps App.jsx itself free of large inline JSX props.
 
-export const diversityConfig = {
-  title: 'Diversity', subtitle: 'Active employees by gender', endpoint: '/reports/employee/diversity', filterType: 'none',
-  switcherCategory: 'Employee Information',
-  columns: [
-    { key: 'label', header: 'Gender' },
-    { key: 'count', header: 'Count', align: 'right' },
-  ],
-};
-
-export const experienceExitConfig = {
-  title: 'Experience Wise Exit', subtitle: 'Exited employees banded by tenure at exit', endpoint: '/reports/employee/experience-exit', filterType: 'none',
-  switcherCategory: 'Employee Information',
-  columns: [
-    { key: 'label', header: 'Tenure at Exit' },
-    { key: 'count', header: 'Count', align: 'right' },
-  ],
-};
+// Diversity and Experience Wise Exit are now bespoke pages (donut chart /
+// area chart) — see Diversity.jsx and ExperienceExit.jsx — not routed
+// through TableReportPage anymore.
 
 export const leaveTypeSummaryConfig = {
   title: 'Leave Type Wise Summary', subtitle: 'Approved leave requests and days by type', endpoint: '/reports/leave/type-summary', filterType: 'range',

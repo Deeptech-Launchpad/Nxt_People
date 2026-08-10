@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
+import ComboTrendChart from './ComboTrendChart';
+import ChartExportMenu from './ChartExportMenu';
 
-// Generic month-by-month bar-chart report page — covers Employee addition
-// trend and Employee attrition trend, whose endpoints return [{month, count}].
+// Month-by-month combo chart report page — covers Employee addition trend
+// and Employee attrition trend, whose endpoints return
+// [{month, year, count, growth}].
 export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#2563eb', switcherCategory }) {
   const [months, setMonths] = useState(12);
   const [loading, setLoading] = useState(true);
@@ -19,7 +21,11 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [months]);
+  // `endpoint` in the deps for the same reason as TableReportPage — this
+  // component instance is reused across sibling reports navigated to via
+  // the ReportShell switcher, so a fetch keyed only on `months` would never
+  // re-run when the report itself changes.
+  useEffect(load, [endpoint, months]);
 
   const filters = (
     <div>
@@ -36,15 +42,14 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
         <div className="p-4">
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Bar dataKey="count" fill={barColor} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="flex justify-end mb-1">
+            <ChartExportMenu
+              rows={data}
+              columns={[{ key: 'month', header: 'Month' }, { key: 'year', header: 'Year' }, { key: 'count', header: 'Count' }, { key: 'growth', header: 'Growth %' }]}
+              fileStub={title.toLowerCase().replace(/\s+/g, '-')}
+            />
+          </div>
+          <ComboTrendChart data={data} xKey="month" barColor={barColor} />
         </div>
       )}
     </ReportShell>

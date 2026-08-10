@@ -29,13 +29,19 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
         <div>
           {siblings.length > 0 ? (
             <div className="relative">
-              <button
-                onClick={() => setSwitcherOpen(o => !o)}
-                className="flex items-center gap-1.5 text-[20px] font-bold text-slate-800 hover:text-blue-600 transition-colors"
-              >
-                {title}
-                <ChevronDown size={18} className={`text-slate-400 transition-transform ${switcherOpen ? 'rotate-180' : ''}`} />
-              </button>
+              <div className="flex items-center gap-1.5 text-[20px] font-bold">
+                <button onClick={() => navigate('/reports')} className="text-slate-400 hover:text-slate-600 transition-colors">
+                  {switcherCategory}
+                </button>
+                <span className="text-slate-300">›</span>
+                <button
+                  onClick={() => setSwitcherOpen(o => !o)}
+                  className="flex items-center gap-1.5 text-slate-800 hover:text-blue-600 transition-colors"
+                >
+                  {title}
+                  <ChevronDown size={18} className={`text-slate-400 transition-transform ${switcherOpen ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
               {switcherOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setSwitcherOpen(false)} />
