@@ -3,6 +3,7 @@ import { Search, Phone, ChevronDown } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
+import usePolling from '../../hooks/usePolling';
 
 export default function TeamAttendance() {
   const { user } = useAuth();
@@ -13,17 +14,22 @@ export default function TeamAttendance() {
   const [searchTerm, setSearchTerm] = useState('');
   const [date, setDate] = useState(new Date().toLocaleDateString('en-CA'));
 
-  useEffect(() => {
-    setLoading(true);
+  const fetchTeamAttendance = (silent = false) => {
+    if (!silent) setLoading(true);
     api.get(`/attendance/team?date=${date}`)
       .then(r => {
         setEmployees(r.data.employees || []);
         setAttendance(r.data.data || []);
         setIsWeekend(!!r.data.isWeekend);
       })
-      .catch(err => toast.error(err.response?.data?.message || 'Failed to load team attendance'))
-      .finally(() => setLoading(false));
-  }, [date]);
+      .catch(err => { if (!silent) toast.error(err.response?.data?.message || 'Failed to load team attendance'); })
+      .finally(() => { if (!silent) setLoading(false); });
+  };
+
+  useEffect(fetchTeamAttendance, [date]);
+
+  // Picks up teammates' check-in/check-out without needing a manual refresh.
+  usePolling(() => fetchTeamAttendance(true), 5000, [date]);
 
   /* ── Build a map: employeeId → attendance record ── */
   const attMap = {};

@@ -4,6 +4,7 @@ import { isFullAccess } from '../utils/roles';
 import { useAttendance } from '../context/AttendanceContext';
 import { useWeekendRules } from '../context/WeekendRulesContext';
 import { useNavigate } from 'react-router-dom';
+import usePolling from '../hooks/usePolling';
 
 import {
   Megaphone, Clock, ExternalLink, User as UserIcon,
@@ -599,9 +600,9 @@ export default function Dashboard() {
     // Department Members = everyone in the same department as the logged-in user
     // (self excluded), sourced from the role-open org directory so it's complete
     // for every role — not just the viewer's direct reports.
-    const fetchDeptMembers = () => {
+    const fetchDeptMembers = (silent = false) => {
       if (!profileData?.department) return;
-      setLoadingDeptMembers(true);
+      if (!silent) setLoadingDeptMembers(true);
       const myId = user?._id || profileData?.id;
       api.get('/org/directory')
         .then(r => {
@@ -610,8 +611,8 @@ export default function Dashboard() {
           );
           setDeptMembers(members);
         })
-        .catch(() => setDeptMembers([]))
-        .finally(() => setLoadingDeptMembers(false));
+        .catch(() => { if (!silent) setDeptMembers([]); })
+        .finally(() => { if (!silent) setLoadingDeptMembers(false); });
     };
 
     useEffect(() => {
@@ -619,6 +620,10 @@ export default function Dashboard() {
         fetchDeptMembers();
       }
     }, [profileData?.department, profileData?.manager]);
+
+    // Picks up a teammate's check-in/check-out without needing a manual
+    // page refresh — see usePolling.js for why this is a silent refetch.
+    usePolling(() => fetchDeptMembers(true), 5000, [profileData?.department]);
 
    /* ─ load payslips when tab is active or FY changes */
   useEffect(() => {

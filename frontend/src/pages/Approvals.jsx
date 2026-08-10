@@ -5,6 +5,7 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../components/LeaveDetailModal';
 import { useAuth } from '../context/AuthContext';
+import usePolling from '../hooks/usePolling';
 
 const LEAVE_TYPE_LABELS = {
   casual:   'Casual Leave',
@@ -82,8 +83,8 @@ export default function Approvals() {
     });
   };
 
-  const load = () => {
-    setLoading(true);
+  const load = (silent = false) => {
+    if (!silent) setLoading(true);
     api.get('/approvals/pending')
       .then(res => {
         const d = res.data.data || {};
@@ -105,11 +106,14 @@ export default function Approvals() {
           total: d.total || 0,
         });
       })
-      .catch(err => toast.error(err.response?.data?.message || 'Failed to load approvals'))
-      .finally(() => setLoading(false));
+      .catch(err => { if (!silent) toast.error(err.response?.data?.message || 'Failed to load approvals'); })
+      .finally(() => { if (!silent) setLoading(false); });
   };
 
   useEffect(load, []);
+
+  // Picks up newly submitted / approved requests without a manual refresh.
+  usePolling(() => load(true), 5000);
 
   /* ── Auto-open modal from ?openId= URL param (email/notification deep-link) ── */
   useEffect(() => {
