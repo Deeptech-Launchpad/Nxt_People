@@ -60,12 +60,13 @@ const lateEarly = (r) => {
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 
-// % of working days present out of (present + absent) — null when there's
-// no data either way, so a genuinely blank row doesn't read as "0%".
-const attendanceRate = (r) => {
-  const total = (r.present || 0) + (r.absent || 0);
-  return total > 0 ? (r.present / total) * 100 : null;
-};
+// % present out of the actual working days elapsed so far in the selected
+// period (weekends/holidays excluded, same calendar Payroll's LOP calc
+// uses) — a shared denominator for every employee, not each person's own
+// present+absent count. Null when no working days have elapsed yet, so a
+// genuinely blank row doesn't read as "0%".
+const attendanceRate = (present, workingDaysElapsed) =>
+  workingDaysElapsed > 0 ? ((present || 0) / workingDaysElapsed) * 100 : null;
 
 // Clickable, sortable Summary Report column header.
 function SortableTh({ field, label, align = 'right', sortField, sortDir, onSort }) {
@@ -100,6 +101,7 @@ export default function Reports() {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
   const [empDrilldown, setEmpDrilldown] = useState(null); // { empName, status, dates: [] }
+  const [workingDays, setWorkingDays] = useState({ total: 0, elapsed: 0 });
 
   const load = () => {
     setLoading(true);
@@ -108,7 +110,7 @@ export default function Reports() {
       api.get(`/reports/attendance?${params}`),
       // Bug #20 fix: pass the same date range to summary so it's not stuck on current month
       api.get(`/reports/summary?${params}`)
-    ]).then(([r1, r2]) => { setRecords(r1.data.data); setSummary(r2.data.data); })
+    ]).then(([r1, r2]) => { setRecords(r1.data.data); setSummary(r2.data.data); setWorkingDays(r2.data.workingDays || { total: 0, elapsed: 0 }); })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report')).finally(() => setLoading(false));
   };
 
@@ -149,7 +151,7 @@ export default function Reports() {
       rows = [
         ['Employee', 'Department', 'Present', 'Absent', 'Late', 'Permission Hours', 'Total Hours', 'Attendance %'],
         ...data.map(r => {
-          const rate = attendanceRate(r);
+          const rate = attendanceRate(r.present, workingDays.elapsed);
           return [
             `${r.employee?.firstName} ${r.employee?.lastName}`, r.employee?.department,
             r.present, r.absent, r.late, clockHours(r.permissionHours), r.totalHours,
@@ -180,13 +182,13 @@ export default function Reports() {
     });
     if (sortField) {
       rows = [...rows].sort((a, b) => {
-        const va = sortField === 'rate' ? (attendanceRate(a) ?? -1) : (a[sortField] ?? 0);
-        const vb = sortField === 'rate' ? (attendanceRate(b) ?? -1) : (b[sortField] ?? 0);
+        const va = sortField === 'rate' ? (attendanceRate(a.present, workingDays.elapsed) ?? -1) : (a[sortField] ?? 0);
+        const vb = sortField === 'rate' ? (attendanceRate(b.present, workingDays.elapsed) ?? -1) : (b[sortField] ?? 0);
         return sortDir === 'asc' ? va - vb : vb - va;
       });
     }
     return rows;
-  }, [summary, summarySearch, sortField, sortDir]);
+  }, [summary, summarySearch, sortField, sortDir, workingDays.elapsed]);
 
   // Present/Absent cells in the Summary table are clickable — this pulls the
   // matching dates straight from the already-fetched Detailed Report data
@@ -194,8 +196,14 @@ export default function Reports() {
   const openEmpDrilldown = (r, status) => {
     const empId = r.employee?._id;
     const empName = `${r.employee?.firstName || ''} ${r.employee?.lastName || ''}`.trim();
+    // "Late" is a subset of Present (the Summary present count already folds
+    // late in), so it needs the raw status, not the Present-collapsed one
+    // displayStatus() produces for the Status column.
+    const matches = status === 'late'
+      ? (rec) => rec.status === 'late'
+      : (rec) => displayStatus(rec.status) === status;
     const dates = records
-      .filter(rec => rec.employee?._id === empId && displayStatus(rec.status) === status)
+      .filter(rec => rec.employee?._id === empId && matches(rec))
       .map(rec => rec.date)
       .sort((a, b) => new Date(b) - new Date(a));
     setEmpDrilldown({ empName, status, dates });
@@ -287,7 +295,7 @@ export default function Reports() {
 
             {tab === 'summary' && (
               <>
-                <div className="px-5 pt-4 pb-1">
+                <div className="px-5 pt-4 pb-1 flex flex-wrap items-center justify-between gap-3">
                   <div className="relative w-full max-w-xs">
                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
@@ -298,6 +306,11 @@ export default function Reports() {
                       className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-brand-400"
                     />
                   </div>
+                  <p className="text-sm text-slate-500">
+                    Working Days: <span className="font-semibold text-slate-700">{workingDays.elapsed}</span> of {workingDays.total} elapsed this period
+                    <span className="text-slate-300 mx-1.5">·</span>
+                    Attendance % is measured against the {workingDays.elapsed} elapsed working day{workingDays.elapsed === 1 ? '' : 's'}
+                  </p>
                 </div>
                 <table className="w-full table-fixed">
                   <colgroup>
@@ -318,7 +331,7 @@ export default function Reports() {
                   <tbody className="divide-y divide-slate-50">
                     {filteredSummary.length === 0 ? <tr><td colSpan={8} className="text-center py-12 text-slate-400">No data available</td></tr> :
                     filteredSummary.map((r,i) => {
-                      const rate = attendanceRate(r);
+                      const rate = attendanceRate(r.present, workingDays.elapsed);
                       const lowAttendance = rate !== null && rate < 75;
                       const rateColor = rate === null ? 'text-slate-400' : rate >= 90 ? 'text-emerald-600' : rate >= 75 ? 'text-amber-600' : 'text-red-600';
                       return (
@@ -331,18 +344,23 @@ export default function Reports() {
                         </td>
                         <td className="px-4 py-3.5 text-base text-slate-500 truncate">{r.employee?.department}</td>
                         <td className="px-4 py-3.5 text-right">
-                          <button onClick={() => openEmpDrilldown(r, 'present')} disabled={!r.present}
-                            className="text-base font-medium text-emerald-600 tabular-nums hover:underline disabled:no-underline disabled:cursor-default">
+                          <button onClick={() => openEmpDrilldown(r, 'present')}
+                            className="text-base font-medium text-emerald-600 tabular-nums hover:underline cursor-pointer">
                             {r.present}
                           </button>
                         </td>
                         <td className="px-4 py-3.5 text-right">
-                          <button onClick={() => openEmpDrilldown(r, 'absent')} disabled={!r.absent}
-                            className="text-base font-medium text-red-500 tabular-nums hover:underline disabled:no-underline disabled:cursor-default">
+                          <button onClick={() => openEmpDrilldown(r, 'absent')}
+                            className="text-base font-medium text-red-500 tabular-nums hover:underline cursor-pointer">
                             {r.absent}
                           </button>
                         </td>
-                        <td className="px-4 py-3.5 text-right"><span className="text-base font-medium text-amber-600 tabular-nums">{r.late}</span></td>
+                        <td className="px-4 py-3.5 text-right">
+                          <button onClick={() => openEmpDrilldown(r, 'late')}
+                            className="text-base font-medium text-amber-600 tabular-nums hover:underline cursor-pointer">
+                            {r.late}
+                          </button>
+                        </td>
                         <td className="px-4 py-3.5 text-right"><span className="text-base font-medium text-violet-600 tabular-nums">{clockHours(r.permissionHours)}</span></td>
                         <td className="px-4 py-3.5 text-base font-semibold text-brand-600 text-right tabular-nums">{r.totalHours?.toFixed(1)}h</td>
                         <td className={`px-4 py-3.5 text-right text-base font-semibold tabular-nums ${rateColor}`}>{rate === null ? '—' : `${rate.toFixed(0)}%`}</td>

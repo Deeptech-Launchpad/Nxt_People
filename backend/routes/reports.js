@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
+const { countWorkingDays } = require('../utils/workingDays');
 router.use(protect);
 
 // Bug #10 fix: single JOIN+GROUP BY query instead of N+1 loop
@@ -144,7 +145,19 @@ router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager'), as
       permissionHours: parseFloat(r.permissionHours) || 0
     }));
 
-    res.json({ success: true, data: results });
+    // Attendance % needs one shared denominator (actual working days that
+    // have elapsed so far), not each employee's own present+absent count —
+    // otherwise two people with a different number of recorded days can
+    // both land on "100%". Reuses the same weekend-rules/holidays-aware
+    // working-day calendar Payroll's LOP calculation already relies on.
+    const today = new Date().toLocaleDateString('en-CA');
+    const elapsedEnd = end < today ? end : today;
+    const [totalWorkingDays, elapsedWorkingDays] = await Promise.all([
+      countWorkingDays(start, end),
+      start <= elapsedEnd ? countWorkingDays(start, elapsedEnd) : Promise.resolve(0),
+    ]);
+
+    res.json({ success: true, data: results, workingDays: { total: totalWorkingDays, elapsed: elapsedWorkingDays } });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
