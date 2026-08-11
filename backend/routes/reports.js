@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
@@ -370,7 +370,7 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
       monthlySeriesWithGrowth('joining_date', 5, req.user),
       monthlySeriesWithGrowth('exit_date', 5, req.user),
       ageOrTenureBuckets('date_of_birth', req.user),
-      ageOrTenureBuckets('joining_date', req.user),
+      experienceTenureBuckets(req.user),
       experienceExitBuckets(req.user),
     ]);
 
@@ -599,6 +599,29 @@ async function ageOrTenureBuckets(dateColumn, user, extra = { clause: '', params
   return r.rows.map(row => ({ label: `${row.bucket_start}-${row.bucket_start + 4}`, count: row.count }));
 }
 
+// Per-year tenure buckets (<1, 1, 2, 3, ... 10+) for active employees —
+// gives meaningful diversity breakdown for experience even in young
+// companies where everyone has < 5 years tenure. Used by Diversity
+// (type=experience) and the Dashboard's Experience mini-donut.
+async function experienceTenureBuckets(user, extra = { clause: '', params: [] }) {
+  const scope = reportsScope(user, 'e', 1 + extra.params.length);
+  const r = await pool.query(
+    `SELECT
+       CASE WHEN yrs < 1 THEN '<1' WHEN yrs >= 10 THEN '10+' ELSE yrs::text END AS label,
+       LEAST(yrs, 10) AS sort_key,
+       COUNT(*)::int AS count
+      FROM (
+        SELECT FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, e.joining_date)))::int AS yrs
+          FROM employees e
+         WHERE e.status='active' AND e.joining_date IS NOT NULL${extra.clause}${scope.clause}
+      ) ranked
+     GROUP BY label, sort_key
+     ORDER BY sort_key`,
+    [...extra.params, ...scope.params]
+  );
+  return r.rows.map(({ label, count }) => ({ label, count }));
+}
+
 // Diversity covers three switchable views, matching Zoho's "Type" selector:
 // gender (default), age (date_of_birth), and experience (current tenure).
 router.get('/employee/diversity', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -609,7 +632,7 @@ router.get('/employee/diversity', authorize('admin', 'director', 'hr_admin', 'ma
       return res.json({ success: true, type, data: await ageOrTenureBuckets('date_of_birth', req.user, extra) });
     }
     if (type === 'experience') {
-      return res.json({ success: true, type, data: await ageOrTenureBuckets('joining_date', req.user, extra) });
+      return res.json({ success: true, type, data: await experienceTenureBuckets(req.user, extra) });
     }
     const scope = reportsScope(req.user, 'e', 1 + extra.params.length);
     const r = await pool.query(
