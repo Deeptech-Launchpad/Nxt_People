@@ -317,12 +317,14 @@ function listWorkingDays(start, end, holMap, rules) {
 }
 
 // LOP (Loss of Pay) days for an employee inside a date range. A working day
-// is unpaid unless something on file accounts for it:
-//   - attendance row with status 'present' or 'late'          → paid
-//   - approved WFH request covering the date                  → paid
-//   - approved leave covering the date, ANY type but 'unpaid'  → paid
-//   - approved leave covering the date, type 'unpaid'          → LOP (0.5 if half-day)
-//   - nothing at all (or attendance status 'absent')            → LOP
+// is LOP *only* when explicitly covered by an approved 'unpaid' leave
+// application (the employee themselves chose Leave Without Pay).
+//
+// Bare absences (forgot to check in, cron-marked 'absent') and unaccounted
+// days are NOT LOP — the employee may regularize attendance or apply for
+// leave retroactively. Pending leave applications also protect the day
+// from being counted as LOP, since the employee has already acted.
+//
 // Only days strictly before today are judged — an in-progress or future day
 // has no verdict yet, so it's never counted as LOP.
 async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, queryRunner = pool) {
@@ -337,10 +339,6 @@ async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, qu
 
   // Sequential, not Promise.all — queryRunner may be a single client inside
   // a transaction (runMonthlyPayroll), which can't run concurrent queries.
-  const attRes = await queryRunner.query(
-    `SELECT date, status FROM attendance WHERE employee_id = $1 AND date >= $2::date AND date <= $3::date`,
-    [employeeId, start, end]
-  );
   const leaveRes = await queryRunner.query(
     `SELECT leave_type, start_date, end_date, is_half_day
        FROM leaves
@@ -348,13 +346,7 @@ async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, qu
         AND start_date <= $3::date AND end_date >= $2::date`,
     [employeeId, start, end]
   );
-  const wfhRes = await queryRunner.query(
-    `SELECT date FROM wfh_requests WHERE employee_id = $1 AND status = 'approved' AND date >= $2::date AND date <= $3::date`,
-    [employeeId, start, end]
-  );
 
-  const attMap = new Map(attRes.rows.map(r => [new Date(r.date).toDateString(), r.status]));
-  const wfhSet = new Set(wfhRes.rows.map(r => new Date(r.date).toDateString()));
   const leaves = leaveRes.rows.map(r => ({
     type: r.leave_type,
     start: new Date(r.start_date),
@@ -364,19 +356,12 @@ async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, qu
 
   let lop = 0;
   for (const day of pastWorkingDates) {
-    const key = day.toDateString();
-    const attStatus = attMap.get(key);
-    if (attStatus === 'present' || attStatus === 'late' || attStatus === 'half-day') continue;
-    if (wfhSet.has(key)) continue;
-
     const coveringLeave = leaves.find(l => day >= l.start && day <= l.end);
-    if (coveringLeave) {
-      if (coveringLeave.type === 'unpaid') lop += coveringLeave.isHalfDay ? 0.5 : 1;
-      continue; // any other approved leave type is paid — not LOP
+    if (coveringLeave && coveringLeave.type === 'unpaid') {
+      lop += coveringLeave.isHalfDay ? 0.5 : 1;
     }
-
-    // Attendance says 'absent', or nothing on file accounts for this day.
-    lop += 1;
+    // Any other situation (absent, no record, paid leave, pending leave,
+    // WFH, etc.) is NOT LOP — only explicit approved unpaid leave counts.
   }
   return lop;
 }

@@ -116,24 +116,24 @@ export default function EmployeeDashboard() {
     <ReportShell title="Dashboard" subtitle="Headcount snapshot as of now" loading={loading} switcherCategory="Employee Information">
       {data && (
         <div className="p-5 space-y-6">
-          <div className="grid sm:grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             <MetricCard title="Headcount & Growth Rate" metric={data.headcount} monthLabel={monthLabel} />
             <MetricCard title="Employee Addition & Growth Rate" metric={data.addition} monthLabel={monthLabel} />
             <MetricCard title="Employee Attrition & Growth Rate" metric={data.attrition} monthLabel={monthLabel} />
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid lg:grid-cols-2 gap-4">
             <MiniTrend title="Employee Addition (Last 6 Months)" data={data.last6MonthsAddition} color="#10b981" to="/reports/employee/addition-trend" navigate={navigate} />
             <MiniTrend title="Employee Attrition (Last 6 Months)" data={data.last6MonthsAttrition} color="#ef4444" to="/reports/employee/attrition-trend" navigate={navigate} />
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             <MiniDonut title="Designation" data={data.byDesignation} to="/reports/employee/distribution?by=designation" />
             <MiniDonut title="Department" data={data.byDepartment} to="/reports/employee/distribution?by=department" />
             <MiniDonut title="Location" data={data.byLocation} to="/reports/employee/distribution?by=location" />
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             <MiniDonut title="Age" data={data.byAge} to="/reports/employee/diversity?type=age" />
             <MiniDonut title="Gender" data={data.byGender} to="/reports/employee/diversity?type=gender" />
             <MiniDonut title="Experience" data={data.byExperience} to="/reports/employee/diversity?type=experience" />

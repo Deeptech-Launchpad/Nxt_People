@@ -320,10 +320,7 @@ export default function Reports() {
                     Attendance % is measured against the {workingDays.elapsed} elapsed working day{workingDays.elapsed === 1 ? '' : 's'}
                   </p>
                 </div>
-                <table className="w-full table-fixed">
-                  <colgroup>
-                    <col className="w-[22%]" /><col className="w-[15%]" /><col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[12%]" /><col className="w-[12%]" /><col className="w-[12%]" />
-                  </colgroup>
+                <table className="w-full">
                   <thead>
                     <tr className="bg-slate-50">
                       <th className="px-4 py-3 text-sm font-semibold text-slate-500 uppercase tracking-wider text-left">Employee</th>

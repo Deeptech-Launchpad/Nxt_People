@@ -19,7 +19,7 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
   const siblings = catalogEntry ? catalogEntry.reports.filter(r => r.to.split('?')[0] !== location.pathname) : [];
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5 pb-10">
+    <div className="max-w-6xl mx-auto px-4 space-y-5 pb-10">
       <div className="pt-5">
         <button onClick={() => navigate('/reports')} className="flex items-center gap-1.5 text-slate-500 hover:text-slate-700 text-sm font-medium transition-colors">
           <ChevronLeft size={16} /> Reports
