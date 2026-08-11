@@ -11,6 +11,7 @@ import DirectReportsToggle from './DirectReportsToggle';
 import UnitToggle from './UnitToggle';
 import DateChip from './DateChip';
 import PeriodPresetChip from './PeriodPresetChip';
+import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -30,10 +31,6 @@ const HOUR_EXPORT_COLUMNS = [
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
-// Grouped Paid (Casual) / Unpaid / Compensatory Off / Total columns in Day
-// mode; Permission-only Booked/Balance in Hour mode — matches Zoho's Leave
-// Booked and Balance table structure, including its Day/Hour unit toggle.
-// All filters are always visible (no toggle), matching Zoho's layout.
 export default function BookedBalance() {
   const [startDate, setStartDate] = useState(monthStartCA());
   const [endDate, setEndDate] = useState(todayCA());
@@ -45,6 +42,8 @@ export default function BookedBalance() {
   const [employee, setEmployee] = useState(null);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showExEmployees, setShowExEmployees] = useState(true);
 
   const load = () => {
     setLoading(true);
@@ -56,7 +55,6 @@ export default function BookedBalance() {
     api.get(`/reports/leave/booked-balance?${params}`)
       .then(r => {
         const raw = Array.isArray(r.data.data) ? r.data.data : [];
-        // Compute Total (Booked / Balance) per row — frontend-only.
         const enriched = raw.map(row => ({
           ...row,
           totalBooked: (Number(row.casualBooked) || 0) + (Number(row.absentBooked) || 0) + (Number(row.lwpBooked) || 0) + (Number(row.compOffBooked) || 0),
@@ -76,19 +74,22 @@ export default function BookedBalance() {
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 
-  const actions = <UnitToggle value={unit} onChange={setUnit} />;
+  const actions = (
+    <div className="flex items-center gap-2">
+      <UnitToggle value={unit} onChange={setUnit} />
+      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+    </div>
+  );
 
-  const filters = (
+  const filters = filtersOpen ? (
     <>
-      {/* Row 1: Period preset, dates, employee, actions */}
       <PeriodPresetChip onSelect={({ start, end }) => { setStartDate(start); setEndDate(end); }} />
       <DateChip label="From Date" value={startDate} onChange={setStartDate} />
       <DateChip label="To Date" value={endDate} onChange={setEndDate} />
       <EmployeeFilter value={employee} onChange={setEmployee} />
+      <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+      <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Download size={14} /> Export
-        </button>
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Filter size={14} /> Submit
         </button>
@@ -96,17 +97,15 @@ export default function BookedBalance() {
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {/* Row 2: Direct reports + org-hierarchy filters */}
-      <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-        <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-      </div>
-      {/* Row 3: Employee status */}
-      <div className="w-full flex flex-wrap items-center gap-1.5">
+      <div className="w-full flex flex-wrap items-center gap-2">
         <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+        <label className="flex items-center gap-1.5 px-1 py-1.5 text-[12.5px] text-slate-600 cursor-pointer select-none whitespace-nowrap">
+          <input type="checkbox" checked={showExEmployees} onChange={e => setShowExEmployees(e.target.checked)} className="rounded border-slate-300 text-blue-600" />
+          Show selective ex-employees
+        </label>
       </div>
     </>
-  );
+  ) : null;
 
   return (
     <ReportShell title="Leave Booked and Balance" subtitle="Days booked in the selected period vs. yearly allocation" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
@@ -157,21 +156,15 @@ export default function BookedBalance() {
                 <th colSpan={2} className="text-center px-4 py-1.5 border-l border-slate-200">Total</th>
               </tr>
               <tr>
-                {/* Paid — Casual Leave */}
                 <th className="text-right px-4 py-2 border-l border-slate-200">Booked</th>
                 <th className="text-right px-4 py-2">Balance</th>
-                {/* Unpaid — Absent */}
                 <th className="text-right px-4 py-2 border-l border-slate-200">Absent</th>
-                {/* Unpaid — LWP */}
                 <th className="text-right px-4 py-2">LWP Booked</th>
                 <th className="text-right px-4 py-2">LWP Balance</th>
-                {/* Unpaid total */}
                 <th className="text-right px-4 py-2">Unpaid Total</th>
                 <th className="text-right px-4 py-2">Unpaid Balance</th>
-                {/* Comp Off */}
                 <th className="text-right px-4 py-2 border-l border-slate-200">Booked</th>
                 <th className="text-right px-4 py-2">Balance</th>
-                {/* Total across all */}
                 <th className="text-right px-4 py-2 border-l border-slate-200">Booked</th>
                 <th className="text-right px-4 py-2">Balance</th>
               </tr>

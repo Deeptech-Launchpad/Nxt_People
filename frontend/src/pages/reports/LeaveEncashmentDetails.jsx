@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, Download, ArrowRight, RotateCcw } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Filter, Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -10,25 +9,19 @@ import FilterRow from './FilterRow';
 import EmployeeFilter from './EmployeeFilter';
 import DirectReportsToggle from './DirectReportsToggle';
 import UnitToggle from './UnitToggle';
-import DateChip from './DateChip';
-import PeriodPresetChip from './PeriodPresetChip';
 import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
 
-const todayCA = () => new Date().toLocaleDateString('en-CA');
-const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
-const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
-
 const EXPORT_COLUMNS = [
   { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  { key: 'previousPeriodBalance', header: 'Previous Period Balance' }, { key: 'booked', header: 'Booked' }, { key: 'total', header: 'Total' },
-  { key: 'waivedOff', header: 'Waived Off' }, { key: 'carryOver', header: 'Carry Over' }, { key: 'reason', header: 'Reason' }, { key: 'lopDays', header: 'LOP' },
+  { key: 'leaveType', header: 'Leave Type' }, { key: 'days', header: 'Days' }, { key: 'status', header: 'Status' },
+  { key: 'reason', header: 'Reason' }, { key: 'createdAt', header: 'Requested' },
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
+const STATUS_STYLE = { approved: 'bg-emerald-100 text-emerald-700', rejected: 'bg-red-100 text-red-700', pending: 'bg-amber-100 text-amber-700' };
+const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
 
-export default function LossOfPay() {
-  const [startDate, setStartDate] = useState(monthStartCA());
-  const [endDate, setEndDate] = useState(todayCA());
+export default function LeaveEncashmentDetails() {
   const [unit, setUnit] = useState('day');
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
@@ -39,17 +32,22 @@ export default function LossOfPay() {
   const [dimFilters, setDimFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
-  const navigate = useNavigate();
 
   const load = () => {
     setLoading(true);
     const params = new URLSearchParams({
-      startDate, endDate, employeeStatus, directReportsOnly: String(directReportsOnly),
+      employeeStatus, directReportsOnly: String(directReportsOnly),
       ...(employee ? { employeeId: employee._id } : {}),
       ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
     });
-    api.get(`/reports/leave/lop?${params}`)
-      .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
+    api.get(`/reports/leave/encashment?${params}`)
+      .then(r => {
+        const data = Array.isArray(r.data.data) ? r.data.data : [];
+        setRows(data.map(row => ({
+          ...row,
+          employee: `${row.firstName} ${row.lastName}`,
+        })));
+      })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
@@ -58,14 +56,13 @@ export default function LossOfPay() {
   useEffect(load, [employeeStatus, employee, directReportsOnly, dimFilters]);
 
   const reset = () => {
-    setStartDate(monthStartCA()); setEndDate(todayCA()); setEmployee(null);
-    setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
+    setEmployee(null); setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 
   const actions = (
     <div className="flex items-center gap-2">
       <UnitToggle value={unit} onChange={setUnit} />
-      <button onClick={() => navigate('/payroll/run')} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+      <button onClick={load} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
         Regenerate Report
       </button>
       <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
@@ -74,9 +71,6 @@ export default function LossOfPay() {
 
   const filters = filtersOpen ? (
     <>
-      <PeriodPresetChip onSelect={({ start, end }) => { setStartDate(start); setEndDate(end); }} />
-      <DateChip label="From Date" value={startDate} onChange={setStartDate} />
-      <DateChip label="To Date" value={endDate} onChange={setEndDate} />
       <EmployeeFilter value={employee} onChange={setEmployee} />
       <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
       <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
@@ -102,49 +96,40 @@ export default function LossOfPay() {
   ) : null;
 
   return (
-    <ReportShell title="Loss of Pay Details" subtitle="Unpaid LOP days in the selected period — the same calculation Payroll Run uses" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Leave Encashment Details" subtitle="All leave encashment requests" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {rows.length === 0 ? (
-        <div className="text-center py-16 text-slate-400">No LOP days in this period</div>
+        <div className="text-center py-16 text-slate-400">No encashment requests</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
               <tr>
                 <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-right px-4 py-2.5">Booked Absent + Unpaid</th>
-                <th className="text-right px-4 py-2.5">Total Previous + Taken</th>
-                <th className="text-right px-4 py-2.5">Waived Off</th>
-                <th className="text-right px-4 py-2.5">Carry Over</th>
+                <th className="text-left px-4 py-2.5">Type</th>
+                <th className="text-right px-4 py-2.5">Days</th>
+                <th className="text-left px-4 py-2.5">Status</th>
                 <th className="text-left px-4 py-2.5">Reason</th>
-                <th className="text-right px-4 py-2.5">LOP</th>
+                <th className="text-left px-4 py-2.5">Requested</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              <tr className="bg-slate-50/60 font-semibold text-slate-700">
-                <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'booked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'total')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'waivedOff')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'carryOver')}</td>
-                <td className="px-4 py-2.5"></td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'lopDays')}</td>
-              </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.booked}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.total}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.waivedOff}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.carryOver}</td>
+                  <td className="px-4 py-2.5 capitalize">{LEAVE_LABEL[row.leaveType] || row.leaveType}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{row.days}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full capitalize ${STATUS_STYLE[row.status] || STATUS_STYLE.pending}`}>{row.status}</span>
+                  </td>
                   <td className="px-4 py-2.5 max-w-xs truncate text-slate-500" title={row.reason}>{row.reason || '—'}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700">{row.lopDays}</td>
+                  <td className="px-4 py-2.5 text-slate-600">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`lop-details_${startDate}_to_${endDate}`} />
+      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub="leave-encashment-details" />
     </ReportShell>
   );
 }

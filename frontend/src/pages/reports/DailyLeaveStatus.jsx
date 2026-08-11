@@ -9,6 +9,7 @@ import FilterRow from './FilterRow';
 import LeaveTypeFilter from './LeaveTypeFilter';
 import LeaveExportModal from './LeaveExportModal';
 import DirectReportsToggle from './DirectReportsToggle';
+import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -17,6 +18,7 @@ const shiftDay = (dateStr, delta) => {
   d.setDate(d.getDate() + delta);
   return d.toLocaleDateString('en-CA');
 };
+const formatDate = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
 
 const EXPORT_COLUMNS = [
@@ -36,7 +38,9 @@ export default function DailyLeaveStatus() {
   const [leaveType, setLeaveType] = useState('');
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [showExEmployees, setShowExEmployees] = useState(true);
 
   const load = () => {
     setLoading(true);
@@ -62,27 +66,31 @@ export default function DailyLeaveStatus() {
   };
 
   const actions = (
-    <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
-      {[['chart', 'Chart'], ['list', 'List']].map(([k, l]) => (
-        <button key={k} onClick={() => setView(k)}
-          className={`px-3 py-1.5 text-[13px] font-semibold rounded-md transition-colors ${view === k ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
-          {l}
-        </button>
-      ))}
+    <div className="flex items-center gap-2">
+      {/* Date nav in header like Zoho */}
+      <button onClick={() => setDate(d => shiftDay(d, -1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
+      <span className="text-[14px] font-medium text-slate-700">{formatDate(date)}</span>
+      <button onClick={() => setDate(d => shiftDay(d, 1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
+      <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5 ml-2">
+        {[['chart', 'Chart'], ['list', 'List']].map(([k, l]) => (
+          <button key={k} onClick={() => setView(k)}
+            className={`px-3 py-1.5 text-[13px] font-semibold rounded-md transition-colors ${view === k ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
     </div>
   );
 
-  const filters = (
+  const filters = filtersOpen ? (
     <>
-      {/* Row 1: Date nav, leave type, actions */}
       <div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setDate(d => shiftDay(d, -1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
-          <button onClick={() => setDate(d => shiftDay(d, 1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
-        </div>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
       </div>
       <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
+      <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+      <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
@@ -94,17 +102,15 @@ export default function DailyLeaveStatus() {
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {/* Row 2: Direct reports + org filters */}
-      <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-        <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-      </div>
-      {/* Row 3: Employee status */}
-      <div className="w-full flex flex-wrap items-center gap-1.5">
+      <div className="w-full flex flex-wrap items-center gap-2">
         <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+        <label className="flex items-center gap-1.5 px-1 py-1.5 text-[12.5px] text-slate-600 cursor-pointer select-none whitespace-nowrap">
+          <input type="checkbox" checked={showExEmployees} onChange={e => setShowExEmployees(e.target.checked)} className="rounded border-slate-300 text-blue-600" />
+          Show selective ex-employees
+        </label>
       </div>
     </>
-  );
+  ) : null;
 
   return (
     <ReportShell title="Daily Leave Status" subtitle="Who's on approved or pending leave for a given date" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">

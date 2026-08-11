@@ -1,4 +1,4 @@
-﻿import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -72,6 +72,7 @@ const BookedBalance      = lazy(() => import('./pages/reports/BookedBalance'));
 const LeaveTypeSummary   = lazy(() => import('./pages/reports/LeaveTypeSummary'));
 const LossOfPay          = lazy(() => import('./pages/reports/LossOfPay'));
 const LeavePayrollExport = lazy(() => import('./pages/reports/LeavePayrollExport'));
+const LeaveEncashmentDetails = lazy(() => import('./pages/reports/LeaveEncashmentDetails'));
 const Diversity          = lazy(() => import('./pages/reports/Diversity'));
 const ExperienceExit     = lazy(() => import('./pages/reports/ExperienceExit'));
 const MusterRoll         = lazy(() => import('./pages/reports/MusterRoll'));
@@ -245,7 +246,7 @@ const AppRoutes = () => {
           <Route path="reports/leave/balance"             element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LeaveBalanceReport/></ProtectedRoute>}/>
           <Route path="reports/leave/booked-balance"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><BookedBalance/></ProtectedRoute>}/>
           <Route path="reports/leave/type-summary"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LeaveTypeSummary/></ProtectedRoute>}/>
-          <Route path="reports/leave/encashment"          element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.encashmentConfig}/></ProtectedRoute>}/>
+          <Route path="reports/leave/encashment"          element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LeaveEncashmentDetails/></ProtectedRoute>}/>
           <Route path="reports/leave/lop"                 element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LossOfPay/></ProtectedRoute>}/>
           <Route path="reports/leave/payroll-export"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LeavePayrollExport/></ProtectedRoute>}/>
 

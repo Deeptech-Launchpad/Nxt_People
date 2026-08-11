@@ -11,6 +11,7 @@ import DirectReportsToggle from './DirectReportsToggle';
 import UnitToggle from './UnitToggle';
 import DateChip from './DateChip';
 import PeriodPresetChip from './PeriodPresetChip';
+import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -59,9 +60,6 @@ const exportColumns = (reportType, unit) => {
 };
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
-// Per-employee payroll-period summary. Default = Total/Loss of Pay/Paid.
-// Detailed adds Weekend/Holidays/Payable/On Duty and a Leave breakdown.
-// All filters are always visible (no toggle), matching Zoho's layout.
 export default function LeavePayrollExport() {
   const [startDate, setStartDate] = useState(monthStartCA());
   const [endDate, setEndDate] = useState(todayCA());
@@ -74,6 +72,8 @@ export default function LeavePayrollExport() {
   const [employee, setEmployee] = useState(null);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showExEmployees, setShowExEmployees] = useState(true);
 
   const load = () => {
     setLoading(true);
@@ -99,16 +99,22 @@ export default function LeavePayrollExport() {
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 
-  const actions = <UnitToggle value={unit} onChange={setUnit} />;
+  const actions = (
+    <div className="flex items-center gap-2">
+      <UnitToggle value={unit} onChange={setUnit} />
+      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+    </div>
+  );
 
-  const filters = (
+  const filters = filtersOpen ? (
     <>
-      {/* Row 1: Period, dates, report type, employee, actions */}
       <PeriodPresetChip onSelect={({ start, end }) => { setStartDate(start); setEndDate(end); }} />
       <DateChip label="From Date" value={startDate} onChange={setStartDate} />
       <DateChip label="To Date" value={endDate} onChange={setEndDate} />
       <ReportTypeDropdown value={reportType} onChange={setReportType} />
       <EmployeeFilter value={employee} onChange={setEmployee} />
+      <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+      <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
@@ -120,17 +126,15 @@ export default function LeavePayrollExport() {
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {/* Row 2: Direct reports + org filters */}
-      <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-        <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-      </div>
-      {/* Row 3: Employee status */}
-      <div className="w-full flex flex-wrap items-center gap-1.5">
+      <div className="w-full flex flex-wrap items-center gap-2">
         <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+        <label className="flex items-center gap-1.5 px-1 py-1.5 text-[12.5px] text-slate-600 cursor-pointer select-none whitespace-nowrap">
+          <input type="checkbox" checked={showExEmployees} onChange={e => setShowExEmployees(e.target.checked)} className="rounded border-slate-300 text-blue-600" />
+          Show selective ex-employees
+        </label>
       </div>
     </>
-  );
+  ) : null;
 
   return (
     <ReportShell title="Leave Data for Payroll" subtitle="Total, loss of pay, and paid days per employee for the selected pay period" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">

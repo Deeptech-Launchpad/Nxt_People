@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, RotateCcw } from 'lucide-react';
+import { Filter, Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -8,10 +8,14 @@ import EmployeeStatusFilter from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
 import EmployeeFilter from './EmployeeFilter';
 import DirectReportsToggle from './DirectReportsToggle';
+import DateChip from './DateChip';
+import PeriodPresetChip from './PeriodPresetChip';
+import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
 
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
 const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+const y = new Date().getFullYear();
 
 const EXPORT_COLUMNS = [
   { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
@@ -20,15 +24,11 @@ const EXPORT_COLUMNS = [
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
-// Per-employee ledger for one leave type + year, matching Zoho's Leave
-// Type Wise Summary. The type dropdown is year-versioned ("Casual Leave
-// 2025", "Casual Leave 2024", ...), sourced from /leave/types-available so
-// it only ever lists years that actually have data, per the explicit
-// instruction that our system should accumulate the same way Zoho's does.
-// All filters are always visible (no toggle), matching Zoho's layout.
 export default function LeaveTypeSummary() {
   const [available, setAvailable] = useState([]);
-  const [selection, setSelection] = useState(null); // { leaveType, year }
+  const [selection, setSelection] = useState(null);
+  const [startDate, setStartDate] = useState(new Date(y, 0, 1).toLocaleDateString('en-CA'));
+  const [endDate, setEndDate] = useState(new Date(y, 11, 31).toLocaleDateString('en-CA'));
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
@@ -36,6 +36,8 @@ export default function LeaveTypeSummary() {
   const [employee, setEmployee] = useState(null);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showExEmployees, setShowExEmployees] = useState(true);
 
   useEffect(() => {
     api.get('/reports/leave/types-available')
@@ -52,7 +54,7 @@ export default function LeaveTypeSummary() {
     if (!selection) return;
     setLoading(true);
     const params = new URLSearchParams({
-      leaveType: selection.leaveType, year: selection.year, employeeStatus, directReportsOnly: String(directReportsOnly),
+      leaveType: selection.leaveType, year: selection.year, startDate, endDate, employeeStatus, directReportsOnly: String(directReportsOnly),
       ...(employee ? { employeeId: employee._id } : {}),
       ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
     });
@@ -60,49 +62,68 @@ export default function LeaveTypeSummary() {
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
-  }, [selection, employeeStatus, employee, directReportsOnly, dimFilters]);
+  }, [selection, startDate, endDate, employeeStatus, employee, directReportsOnly, dimFilters]);
 
   const reset = () => {
     setEmployee(null); setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
+    setStartDate(new Date(y, 0, 1).toLocaleDateString('en-CA'));
+    setEndDate(new Date(y, 11, 31).toLocaleDateString('en-CA'));
   };
 
-  const filters = (
+  const leaveTypeLabel = selection
+    ? `${LEAVE_LABEL[selection.leaveType] || selection.leaveType} ${selection.year !== y ? selection.year : ''}`
+    : '';
+
+  const actions = (
+    <div className="flex items-center gap-2">
+      <span className="text-[14px] font-medium text-slate-600">Leave type: <span className="text-slate-800">{leaveTypeLabel || '—'}</span></span>
+      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+    </div>
+  );
+
+  const filters = filtersOpen ? (
     <>
-      {/* Row 1: Leave type selector, employee, actions */}
-      <div>
-        <select
-          value={selection ? `${selection.leaveType}|${selection.year}` : ''}
-          onChange={e => { const [leaveType, year] = e.target.value.split('|'); setSelection({ leaveType, year: Number(year) }); }}
-          className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400 min-w-[200px]"
-        >
-          {available.map(a => (
-            <option key={`${a.leaveType}|${a.year}`} value={`${a.leaveType}|${a.year}`}>{LEAVE_LABEL[a.leaveType] || a.leaveType} {a.year}</option>
-          ))}
-        </select>
-      </div>
+      <PeriodPresetChip defaultKey="thisYear" onSelect={({ start, end }) => { setStartDate(start); setEndDate(end); }} />
+      <DateChip label="From Date" value={startDate} onChange={setStartDate} />
+      <DateChip label="To Date" value={endDate} onChange={setEndDate} />
       <EmployeeFilter value={employee} onChange={setEmployee} />
+      <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+      <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
+        </button>
+        <button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors"
+          onClick={() => { /* triggers via useEffect */ }}>
+          <Filter size={14} /> Submit
         </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {/* Row 2: Direct reports + org filters */}
-      <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-        <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-      </div>
-      {/* Row 3: Employee status */}
-      <div className="w-full flex flex-wrap items-center gap-1.5">
+      <div className="w-full flex flex-wrap items-center gap-2">
+        <div>
+          <select
+            value={selection ? `${selection.leaveType}|${selection.year}` : ''}
+            onChange={e => { const [leaveType, yr] = e.target.value.split('|'); setSelection({ leaveType, year: Number(yr) }); }}
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400 min-w-[200px]"
+          >
+            {available.map(a => (
+              <option key={`${a.leaveType}|${a.year}`} value={`${a.leaveType}|${a.year}`}>{LEAVE_LABEL[a.leaveType] || a.leaveType} {a.year}</option>
+            ))}
+          </select>
+        </div>
         <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+        <label className="flex items-center gap-1.5 px-1 py-1.5 text-[12.5px] text-slate-600 cursor-pointer select-none whitespace-nowrap">
+          <input type="checkbox" checked={showExEmployees} onChange={e => setShowExEmployees(e.target.checked)} className="rounded border-slate-300 text-blue-600" />
+          Show selective ex-employees
+        </label>
       </div>
     </>
-  );
+  ) : null;
 
   return (
-    <ReportShell title="Leave Type Wise Summary" subtitle="Per-employee ledger for the selected leave type and year" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Leave Type Wise Summary" subtitle="Per-employee ledger for the selected leave type and year" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {!available.length ? (
         <div className="text-center py-16 text-slate-400">No leave records yet</div>
       ) : (
@@ -113,8 +134,7 @@ export default function LeaveTypeSummary() {
                 <th className="text-left px-4 py-2.5">Employee</th>
                 <th className="text-right px-4 py-2.5">Opening Balance</th>
                 <th className="text-right px-4 py-2.5">Granted</th>
-                <th className="text-right px-4 py-2.5">Booked (Days)</th>
-                <th className="text-right px-4 py-2.5">Booked (Hours)</th>
+                <th className="text-right px-4 py-2.5">Booked</th>
                 <th className="text-right px-4 py-2.5">Closing Balance</th>
                 <th className="text-right px-4 py-2.5">Lapsed</th>
               </tr>
@@ -125,7 +145,6 @@ export default function LeaveTypeSummary() {
                 <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'openingBalance')}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'granted')}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'booked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'bookedHours')}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'closingBalance')}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'lapsed')}</td>
               </tr>
@@ -135,7 +154,6 @@ export default function LeaveTypeSummary() {
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.openingBalance}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.granted ?? '—'}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.booked}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.bookedHours}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.closingBalance ?? '—'}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.lapsed}</td>
                 </tr>

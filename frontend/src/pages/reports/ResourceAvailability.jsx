@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -7,7 +7,8 @@ import EmployeeStatusFilter from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
 import LeaveTypeFilter from './LeaveTypeFilter';
 import DirectReportsToggle from './DirectReportsToggle';
-import PeriodFilter from './PeriodFilter';
+import PeriodPresetChip from './PeriodPresetChip';
+import FilterToggleButton from './FilterToggleButton';
 import LeaveExportModal from './LeaveExportModal';
 
 const LEGEND = { CL: 'Casual Leave', CO: 'Comp-Off', LWP: 'Leave Without Pay', PM: 'Permission', A: 'Absent', H: 'Holiday', WO: 'Weekly Off' };
@@ -20,40 +21,40 @@ const codeStyle = code => CODE_STYLE[code?.replace('½', '')] || '';
 
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
-const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
-const startOfWeek = d => { const r = new Date(d); r.setDate(r.getDate() - r.getDay()); return r; };
-const endOfWeek = d => { const r = startOfWeek(d); r.setDate(r.getDate() + 6); return r; };
-
-const PERIOD_OPTIONS = [
-  { key: 'thisWeek', label: 'This Week', value: range(startOfWeek(now), endOfWeek(now)) },
-  { key: 'lastMonth', label: 'Last Month', value: range(new Date(y, m - 1, 1), new Date(y, m, 0)) },
-  { key: 'thisMonth', label: 'This Month', value: range(new Date(y, m, 1), new Date(y, m + 1, 0)) },
-];
+const monthStartCA = () => new Date(y, m, 1).toLocaleDateString('en-CA');
+const monthEndCA = () => new Date(y, m + 1, 0).toLocaleDateString('en-CA');
+const formatRange = (s, e) => `${new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} - ${new Date(e).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
 
 const EXPORT_COLUMNS = [
   { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
-// Day-by-day leave calendar grid (employee rows × date columns) — same
-// walk pattern as Attendance's Muster Roll, but cells carry a leave-type
-// code instead of a present/absent code.
-// All filters are always visible (no toggle), matching Zoho's layout.
 export default function ResourceAvailability() {
-  const [periodKey, setPeriodKey] = useState('thisMonth');
-  const [range_, setRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisMonth').value);
+  const [startDate, setStartDate] = useState(monthStartCA());
+  const [endDate, setEndDate] = useState(monthEndCA());
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [employeeStatus, setEmployeeStatus] = useState('all');
   const [leaveType, setLeaveType] = useState('');
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [showExEmployees, setShowExEmployees] = useState(true);
+
+  const shiftMonth = delta => {
+    const d = new Date(startDate);
+    d.setMonth(d.getMonth() + delta);
+    const s = new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString('en-CA');
+    const e = new Date(d.getFullYear(), d.getMonth() + 1, 0).toLocaleDateString('en-CA');
+    setStartDate(s); setEndDate(e);
+  };
 
   const load = () => {
     setLoading(true);
     const params = new URLSearchParams({
-      startDate: range_.start, endDate: range_.end, employeeStatus, directReportsOnly: String(directReportsOnly),
+      startDate, endDate, employeeStatus, directReportsOnly: String(directReportsOnly),
       ...(leaveType ? { leaveType } : {}),
       ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
     });
@@ -64,48 +65,58 @@ export default function ResourceAvailability() {
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [range_, employeeStatus, leaveType, directReportsOnly, dimFilters]);
+  useEffect(load, [startDate, endDate, employeeStatus, leaveType, directReportsOnly, dimFilters]);
 
   const exportRows = data ? data.data.map(emp => ({ ...emp, cells: emp.days.filter(Boolean).join(', ') })) : [];
 
   const reset = () => {
-    setPeriodKey('thisMonth'); setRange(PERIOD_OPTIONS.find(o => o.key === 'thisMonth').value);
+    setStartDate(monthStartCA()); setEndDate(monthEndCA());
     setEmployeeStatus('all'); setLeaveType(''); setDirectReportsOnly(false); setDimFilters({});
   };
 
-  const filters = (
+  const actions = (
+    <div className="flex items-center gap-2">
+      <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
+      <span className="text-[14px] font-medium text-slate-700">{formatRange(startDate, endDate)}</span>
+      <button onClick={() => shiftMonth(1)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
+      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+    </div>
+  );
+
+  const filters = filtersOpen ? (
     <>
-      {/* Row 1: Period selector, leave type, actions */}
-      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(value, key) => { setPeriodKey(key); setRange(value); }} />
+      <PeriodPresetChip defaultKey="thisMonth" onSelect={({ start, end }) => { setStartDate(start); setEndDate(end); }} />
       <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
+      <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+      <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
+        </button>
+        <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          Submit
         </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {/* Row 2: Direct reports + org filters */}
-      <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-        <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-      </div>
-      {/* Row 3: Employee status */}
-      <div className="w-full flex flex-wrap items-center gap-1.5">
+      <div className="w-full flex flex-wrap items-center gap-2">
         <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+        <label className="flex items-center gap-1.5 px-1 py-1.5 text-[12.5px] text-slate-600 cursor-pointer select-none whitespace-nowrap">
+          <input type="checkbox" checked={showExEmployees} onChange={e => setShowExEmployees(e.target.checked)} className="rounded border-slate-300 text-blue-600" />
+          Show selective ex-employees
+        </label>
       </div>
-      {/* Legend */}
       <div className="flex items-center gap-3 text-[12px] text-slate-500 flex-wrap w-full pt-1">
         {Object.entries(LEGEND).map(([code, label]) => (
           <span key={code} className="flex items-center gap-1"><span className={`px-1.5 py-0.5 rounded font-semibold ${CODE_STYLE[code]}`}>{code}</span>{label}</span>
         ))}
       </div>
     </>
-  );
+  ) : null;
 
   return (
-    <ReportShell title="Resource Availability" subtitle="Leave calendar for the selected period" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Resource Availability" subtitle="Leave calendar for the selected period" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {!data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
@@ -146,7 +157,7 @@ export default function ResourceAvailability() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={exportRows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`resource-availability_${range_.start}_to_${range_.end}`} />
+      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={exportRows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`resource-availability_${startDate}_to_${endDate}`} />
     </ReportShell>
   );
 }
