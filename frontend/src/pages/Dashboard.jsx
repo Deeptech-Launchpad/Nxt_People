@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { isFullAccess } from '../utils/roles';
 import { useAttendance } from '../context/AttendanceContext';
@@ -653,7 +653,11 @@ export default function Dashboard() {
          ];
          setPendingApprovals(allPending);
        })
-       .catch(err => toast.error('Failed to load pending approvals'))
+       .catch(err => {
+         // 403 = employee role without approver access — show empty state, not error
+         if (err.response?.status === 403) { setPendingApprovals([]); }
+         else toast.error('Failed to load pending approvals');
+       })
        .finally(() => setLoadingApprovals(false));
    }, [activeTab]);
 
