@@ -1,44 +1,103 @@
-import React, { useState, useEffect } from 'react';
-import { Filter, Download } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Filter, Download, ChevronDown } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
+import FilterRow from './FilterRow';
+import FilterToggleButton from './FilterToggleButton';
+import EmployeeFilter from './EmployeeFilter';
+import DirectReportsToggle from './DirectReportsToggle';
+import UnitToggle from './UnitToggle';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
 const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
 
-const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  { key: 'totalDays', header: 'Total Days' }, { key: 'lopDays', header: 'Loss of Pay' }, { key: 'paidDays', header: 'Paid Days' },
-];
+function ReportTypeDropdown({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const onClick = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium border border-slate-200 bg-white text-slate-700 hover:border-slate-300 transition-colors">
+        Report Type: {value === 'detailed' ? 'Detailed' : 'Default'} <ChevronDown size={13} />
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+          {[['default', 'Default'], ['detailed', 'Detailed']].map(([k, l]) => (
+            <button key={k} onClick={() => { onChange(k); setOpen(false); }} className={`w-full text-left px-3 py-2 text-[13px] transition-colors ${value === k ? 'text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const unitLabel = (unit, word) => `${word} (${unit === 'hour' ? 'Hrs' : 'Days'})`;
+
+const exportColumns = (reportType, unit) => {
+  const base = [
+    { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
+  ];
+  if (reportType === 'detailed') {
+    return [...base,
+      { key: 'totalDays', header: unitLabel(unit, 'Total') }, { key: 'weekendCount', header: unitLabel(unit, 'Weekend') }, { key: 'holidayCount', header: unitLabel(unit, 'Holidays') },
+      { key: 'payableDays', header: unitLabel(unit, 'Payable') }, { key: 'onDutyDays', header: unitLabel(unit, 'On Duty') },
+      { key: 'leavePaid', header: unitLabel(unit, 'Leave Paid') }, { key: 'leaveUnpaid', header: unitLabel(unit, 'Leave Unpaid') }, { key: 'leaveComp', header: unitLabel(unit, 'Leave Comp-Off') }, { key: 'leaveTotal', header: unitLabel(unit, 'Leave Total') },
+      { key: 'lopDays', header: unitLabel(unit, 'Loss of Pay') }, { key: 'paidDays', header: unitLabel(unit, 'Paid') },
+    ];
+  }
+  return [...base, { key: 'totalDays', header: unitLabel(unit, 'Total') }, { key: 'lopDays', header: unitLabel(unit, 'Loss of Pay') }, { key: 'paidDays', header: unitLabel(unit, 'Paid') }];
+};
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
-// Per-employee payroll-period summary — Total days / Loss of Pay / Paid
-// days — matching Zoho's actual Leave Data for Payroll report. Total days
-// is capped by joining/exit date, so a mid-period joiner or exit shows
-// their real partial-period count, not the full period length.
+// Per-employee payroll-period summary. Default = Total/Loss of Pay/Paid.
+// Detailed adds Weekend/Holidays/Payable/On Duty and a Leave Paid/Unpaid/
+// Comp/Total breakdown, matching Zoho's Report Type toggle. On Duty is
+// always 0 — that leave type doesn't exist in this system yet, so the
+// column is honestly empty rather than a fabricated figure; it's kept in
+// the layout so the report needs no rework once On Duty is built. Day/Hour
+// toggle converts everything via a flat 8-hours-per-workday assumption —
+// this app doesn't track shift-specific hour totals for payroll days.
 export default function LeavePayrollExport() {
   const [startDate, setStartDate] = useState(monthStartCA());
   const [endDate, setEndDate] = useState(todayCA());
+  const [reportType, setReportType] = useState('default');
+  const [unit, setUnit] = useState('day');
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
   const [employeeStatus, setEmployeeStatus] = useState('all');
+  const [employee, setEmployee] = useState(null);
+  const [directReportsOnly, setDirectReportsOnly] = useState(false);
+  const [dimFilters, setDimFilters] = useState({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
-    api.get(`/reports/leave/payroll-export?startDate=${startDate}&endDate=${endDate}&employeeStatus=${employeeStatus}`)
+    const params = new URLSearchParams({
+      startDate, endDate, reportType, unit, employeeStatus, directReportsOnly: String(directReportsOnly),
+      ...(employee ? { employeeId: employee._id } : {}),
+      ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
+    });
+    api.get(`/reports/leave/payroll-export?${params}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, []);
+  useEffect(load, [reportType, unit, employeeStatus, employee, directReportsOnly, dimFilters]);
+
+  const totalLabel = unitLabel(unit, 'Total'), payableLabel = unitLabel(unit, 'Payable'), onDutyLabel = unitLabel(unit, 'On Duty');
+  const lopLabel = unitLabel(unit, 'Loss of Pay'), paidLabel = unitLabel(unit, 'Paid');
 
   const filters = (
     <>
@@ -50,29 +109,97 @@ export default function LeavePayrollExport() {
         <label className="block text-[13px] font-medium text-slate-600 mb-1">To</label>
         <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
       </div>
-      <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+      <ReportTypeDropdown value={reportType} onChange={setReportType} />
+      <UnitToggle value={unit} onChange={setUnit} />
+      {filtersOpen && (
+        <>
+          <EmployeeFilter value={employee} onChange={setEmployee} />
+          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+        </>
+      )}
       <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
         <Filter size={14} /> Apply
       </button>
-      <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto">
-        <Download size={14} /> Export
-      </button>
+      <div className="flex items-center gap-2 ml-auto">
+        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <Download size={14} /> Export
+        </button>
+        <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+      </div>
     </>
   );
 
   return (
     <ReportShell title="Leave Data for Payroll" subtitle="Total, loss of pay, and paid days per employee for the selected pay period" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+      {filtersOpen && <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />}
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
+      ) : reportType === 'detailed' ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[14px]">
+            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
+              <tr>
+                <th rowSpan={2} className="text-left px-4 py-2.5 align-bottom">Employee</th>
+                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom border-l border-slate-200">{totalLabel}</th>
+                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom">Weekend</th>
+                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom">Holidays</th>
+                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom">{payableLabel}</th>
+                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom">{onDutyLabel}</th>
+                <th colSpan={4} className="text-center px-4 py-1.5 border-l border-slate-200">Leave</th>
+                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom border-l border-slate-200">{lopLabel}</th>
+                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom">{paidLabel}</th>
+              </tr>
+              <tr>
+                <th className="text-right px-4 py-2 border-l border-slate-200">Paid</th>
+                <th className="text-right px-4 py-2">Unpaid</th>
+                <th className="text-right px-4 py-2">Comp</th>
+                <th className="text-right px-4 py-2">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              <tr className="bg-slate-50/60 font-semibold text-slate-700">
+                <td className="px-4 py-2.5">Total</td>
+                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'totalDays')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'weekendCount')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'holidayCount')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'payableDays')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'onDutyDays')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'leavePaid')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'leaveUnpaid')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'leaveComp')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'leaveTotal')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'lopDays')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'paidDays')}</td>
+              </tr>
+              {rows.map(row => (
+                <tr key={row._id}>
+                  <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
+                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.totalDays}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{row.weekendCount}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{row.holidayCount}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{row.payableDays}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{row.onDutyDays}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.leavePaid}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{row.leaveUnpaid}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{row.leaveComp}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{row.leaveTotal}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700 border-l border-slate-100">{row.lopDays}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.paidDays}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
               <tr>
                 <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-right px-4 py-2.5">Total Days</th>
-                <th className="text-right px-4 py-2.5">Loss of Pay</th>
-                <th className="text-right px-4 py-2.5">Paid Days</th>
+                <th className="text-right px-4 py-2.5">{totalLabel}</th>
+                <th className="text-right px-4 py-2.5">{lopLabel}</th>
+                <th className="text-right px-4 py-2.5">{paidLabel}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -94,7 +221,7 @@ export default function LeavePayrollExport() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`leave-data-for-payroll_${startDate}_to_${endDate}`} />
+      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={exportColumns(reportType, unit)} extraColumns={EXPORT_EXTRA} fileStub={`leave-data-for-payroll_${startDate}_to_${endDate}`} />
     </ReportShell>
   );
 }

@@ -5,6 +5,10 @@ import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
+import FilterRow from './FilterRow';
+import FilterToggleButton from './FilterToggleButton';
+import EmployeeFilter from './EmployeeFilter';
+import DirectReportsToggle from './DirectReportsToggle';
 import { EmployeeCell } from './TableReportPage';
 
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
@@ -29,6 +33,10 @@ export default function LeaveTypeSummary() {
   const [rows, setRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
   const [employeeStatus, setEmployeeStatus] = useState('all');
+  const [employee, setEmployee] = useState(null);
+  const [directReportsOnly, setDirectReportsOnly] = useState(false);
+  const [dimFilters, setDimFilters] = useState({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     api.get('/reports/leave/types-available')
@@ -44,11 +52,16 @@ export default function LeaveTypeSummary() {
   useEffect(() => {
     if (!selection) return;
     setLoading(true);
-    api.get(`/reports/leave/type-summary?leaveType=${selection.leaveType}&year=${selection.year}&employeeStatus=${employeeStatus}`)
+    const params = new URLSearchParams({
+      leaveType: selection.leaveType, year: selection.year, employeeStatus, directReportsOnly: String(directReportsOnly),
+      ...(employee ? { employeeId: employee._id } : {}),
+      ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
+    });
+    api.get(`/reports/leave/type-summary?${params}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
-  }, [selection, employeeStatus]);
+  }, [selection, employeeStatus, employee, directReportsOnly, dimFilters]);
 
   const filters = (
     <>
@@ -64,15 +77,25 @@ export default function LeaveTypeSummary() {
           ))}
         </select>
       </div>
-      <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-      <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto">
-        <Download size={14} /> Export
-      </button>
+      {filtersOpen && (
+        <>
+          <EmployeeFilter value={employee} onChange={setEmployee} />
+          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+        </>
+      )}
+      <div className="flex items-center gap-2 ml-auto">
+        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <Download size={14} /> Export
+        </button>
+        <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+      </div>
     </>
   );
 
   return (
     <ReportShell title="Leave Type Wise Summary" subtitle="Per-employee ledger for the selected leave type and year" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+      {filtersOpen && <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />}
       {!available.length ? (
         <div className="text-center py-16 text-slate-400">No leave records yet</div>
       ) : (

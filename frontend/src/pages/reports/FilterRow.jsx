@@ -5,6 +5,7 @@ import api from '../../utils/api';
 const DIMENSIONS = [
   ['department', 'Department'], ['designation', 'Designation'], ['company', 'Company'],
   ['division', 'Division'], ['workLocation', 'Location'], ['employmentType', 'Employment Type'],
+  ['role', 'Role'],
 ];
 
 function FilterChip({ label, options, value, onChange }) {
@@ -37,12 +38,12 @@ function FilterChip({ label, options, value, onChange }) {
   );
 }
 
-// Secondary narrowing filter row shown on Distribution/Diversity — matches
-// Zoho's row of dimension chips below the "Type" selector. `exclude` hides
-// whichever dimension is currently the page's own grouping ("Type") so it
-// isn't offered twice. Business Unit isn't offered — this schema has no
-// such column, and a filter chip wired to nothing would be worse than not
-// having it.
+// Secondary narrowing filter row shown on Distribution/Diversity and every
+// Leave Tracker report — matches Zoho's row of dimension chips. `exclude`
+// hides whichever dimension is currently the page's own grouping ("Type")
+// so it isn't offered twice. Business Unit isn't offered — this schema has
+// no such column, and a filter chip wired to nothing would be worse than
+// not having it.
 export default function FilterRow({ value, onChange, exclude = [] }) {
   const [options, setOptions] = useState(null);
 

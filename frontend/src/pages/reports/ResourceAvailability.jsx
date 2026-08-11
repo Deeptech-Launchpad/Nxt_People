@@ -1,9 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Filter } from 'lucide-react';
+import { Download } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
+import FilterRow from './FilterRow';
+import FilterToggleButton from './FilterToggleButton';
+import LeaveTypeFilter from './LeaveTypeFilter';
+import PeriodFilter from './PeriodFilter';
+import LeaveExportModal from './LeaveExportModal';
 
 const LEGEND = { CL: 'Casual Leave', CO: 'Comp-Off', LWP: 'Leave Without Pay', PM: 'Permission', A: 'Absent', H: 'Holiday', WO: 'Weekly Off' };
 const CODE_STYLE = {
@@ -13,48 +18,70 @@ const CODE_STYLE = {
 };
 const codeStyle = code => CODE_STYLE[code?.replace('½', '')] || '';
 
-const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
-const monthEndCA = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0).toLocaleDateString('en-CA');
-};
+const now = new Date();
+const y = now.getFullYear(), m = now.getMonth();
+const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
+const startOfWeek = d => { const r = new Date(d); r.setDate(r.getDate() - r.getDay()); return r; };
+const endOfWeek = d => { const r = startOfWeek(d); r.setDate(r.getDate() + 6); return r; };
+
+const PERIOD_OPTIONS = [
+  { key: 'thisWeek', label: 'This Week', value: range(startOfWeek(now), endOfWeek(now)) },
+  { key: 'lastMonth', label: 'Last Month', value: range(new Date(y, m - 1, 1), new Date(y, m, 0)) },
+  { key: 'thisMonth', label: 'This Month', value: range(new Date(y, m, 1), new Date(y, m + 1, 0)) },
+];
+
+const EXPORT_COLUMNS = [
+  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
+];
+const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
 // Day-by-day leave calendar grid (employee rows × date columns) — same
 // walk pattern as Attendance's Muster Roll, but cells carry a leave-type
 // code instead of a present/absent code.
 export default function ResourceAvailability() {
-  const [startDate, setStartDate] = useState(monthStartCA());
-  const [endDate, setEndDate] = useState(monthEndCA());
+  const [periodKey, setPeriodKey] = useState('thisMonth');
+  const [range_, setRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisMonth').value);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [employeeStatus, setEmployeeStatus] = useState('all');
+  const [leaveType, setLeaveType] = useState('');
+  const [dimFilters, setDimFilters] = useState({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
-    api.get(`/reports/leave/resource-availability?startDate=${startDate}&endDate=${endDate}&employeeStatus=${employeeStatus}`)
+    const params = new URLSearchParams({
+      startDate: range_.start, endDate: range_.end, employeeStatus, ...(leaveType ? { leaveType } : {}),
+      ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
+    });
+    api.get(`/reports/leave/resource-availability?${params}`)
       .then(r => setData(r.data))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, []);
+  useEffect(load, [range_, employeeStatus, leaveType, dimFilters]);
+
+  const exportRows = data ? data.data.map(emp => ({ ...emp, cells: emp.days.filter(Boolean).join(', ') })) : [];
 
   const filters = (
     <>
-      <div>
-        <label className="block text-[13px] font-medium text-slate-600 mb-1">From</label>
-        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
+      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(value, key) => { setPeriodKey(key); setRange(value); }} />
+      {filtersOpen && (
+        <>
+          <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
+          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+        </>
+      )}
+      <div className="flex items-center gap-2 ml-auto">
+        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <Download size={14} /> Export
+        </button>
+        <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
       </div>
-      <div>
-        <label className="block text-[13px] font-medium text-slate-600 mb-1">To</label>
-        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
-      </div>
-      <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-      <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-        <Filter size={14} /> Apply
-      </button>
-      <div className="flex items-center gap-3 text-[12px] text-slate-500 ml-auto flex-wrap">
+      <div className="flex items-center gap-3 text-[12px] text-slate-500 flex-wrap w-full">
         {Object.entries(LEGEND).map(([code, label]) => (
           <span key={code} className="flex items-center gap-1"><span className={`px-1.5 py-0.5 rounded font-semibold ${CODE_STYLE[code]}`}>{code}</span>{label}</span>
         ))}
@@ -64,6 +91,7 @@ export default function ResourceAvailability() {
 
   return (
     <ReportShell title="Resource Availability" subtitle="Leave calendar for the selected period" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+      {filtersOpen && <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />}
       {!data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
@@ -104,6 +132,7 @@ export default function ResourceAvailability() {
           </table>
         </div>
       )}
+      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={exportRows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`resource-availability_${range_.start}_to_${range_.end}`} />
     </ReportShell>
   );
 }

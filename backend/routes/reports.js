@@ -37,6 +37,42 @@ function employeeStatusClause(req, alias = 'e') {
   return '';
 }
 
+// "Show only direct reportees" toggle — Zoho lets even full-access roles
+// (admin/hr/director) voluntarily narrow a report to just their own direct
+// reports, on top of reportsScope()'s automatic manager-only scoping. This
+// is a separate, opt-in clause rather than a reportsScope() change, since
+// reportsScope() intentionally never restricts full-access roles by default.
+function directReportsClause(req, alias, paramIndex) {
+  if (req.query.directReportsOnly !== 'true') return { clause: '', params: [] };
+  return { clause: ` AND ${alias}.reporting_manager_id = $${paramIndex}`, params: [req.user._id] };
+}
+
+// Single-employee narrowing filter for the multi-employee table reports —
+// Booked & Balance, Leave Type Summary, LOP, Payroll export.
+function employeeIdClause(req, alias, paramIndex) {
+  if (!req.query.employeeId) return { clause: '', params: [] };
+  return { clause: ` AND ${alias}.id = $${paramIndex}`, params: [req.query.employeeId] };
+}
+
+// Composes the full standard employee-narrowing filter set (Employee
+// Status + dimension filters + direct-reports toggle + single-employee
+// filter + role scope) shared by every Leave Tracker table report, using
+// the running-index pattern so callers never hand-compute $N positions.
+// Returns {clause, params, nextIndex} — nextIndex is the first free $N
+// for anything the caller still needs to add after this.
+function standardEmployeeFilters(req, alias, startIndex) {
+  let idx = startIndex;
+  const extra = extraEmployeeFilters(req.query, alias, idx); idx += extra.params.length;
+  const directReports = directReportsClause(req, alias, idx); idx += directReports.params.length;
+  const employeeId = employeeIdClause(req, alias, idx); idx += employeeId.params.length;
+  const scope = reportsScope(req.user, alias, idx); idx += scope.params.length;
+  return {
+    clause: `${employeeStatusClause(req, alias)}${extra.clause}${directReports.clause}${employeeId.clause}${scope.clause}`,
+    params: [...extra.params, ...directReports.params, ...employeeId.params, ...scope.params],
+    nextIndex: idx,
+  };
+}
+
 // Bug #10 fix: single JOIN+GROUP BY query instead of N+1 loop
 // Bug #20 fix: summary now accepts startDate/endDate OR month/year params
 router.get('/attendance', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -383,10 +419,11 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
 // vs. the prior year. Point-in-time reconstruction — an employee counts for
 // year Y if they'd joined by then and hadn't exited yet — not just today's
 // active count repeated across years.
-// Distinct values for the Distribution/Diversity secondary filter row —
-// Department, Designation, Company, Division, Location, Employment Type.
-// Scoped the same way as everything else in this file (a manager only sees
-// values that exist among their own reports).
+// Distinct values for the secondary filter row (used by both Employee
+// Information and Leave Tracker pages) — Department, Designation, Company,
+// Division, Location, Employment Type, Role. Scoped the same way as
+// everything else in this file (a manager only sees values that exist
+// among their own reports).
 router.get('/employee/filter-options', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const scope = reportsScope(req.user, 'e', 1);
@@ -397,11 +434,11 @@ router.get('/employee/filter-options', authorize('admin', 'director', 'hr_admin'
       );
       return r.rows.map(row => row.v);
     };
-    const [department, designation, company, division, workLocation, employmentType] = await Promise.all([
+    const [department, designation, company, division, workLocation, employmentType, role] = await Promise.all([
       distinctCol('department'), distinctCol('designation'), distinctCol('company'),
-      distinctCol('division'), distinctCol('work_location'), distinctCol('employment_type'),
+      distinctCol('division'), distinctCol('work_location'), distinctCol('employment_type'), distinctCol('role'),
     ]);
-    res.json({ success: true, data: { department, designation, company, division, workLocation, employmentType } });
+    res.json({ success: true, data: { department, designation, company, division, workLocation, employmentType, role } });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -490,17 +527,18 @@ async function monthlySeriesWithGrowth(dateColumn, months, user, employmentType)
   return withPercentage;
 }
 
-// Shared narrowing filters for Distribution/Diversity's secondary filter
-// row — Department, Designation, Company, Division, Location, Employment
-// Type. All six are real, populated columns on `employees`. Business Unit
-// has no equivalent column in this schema, so it's deliberately not
-// offered here (see catalogData.js / the frontend filter row for the same
-// note) rather than wired up to nothing. Returns {clause, params} in the
-// same shape reportsScope() uses.
+// Shared narrowing filters for the secondary filter row — Department,
+// Designation, Company, Division, Location, Employment Type, Role. All
+// seven are real, populated columns on `employees`. Business Unit has no
+// equivalent column in this schema, so it's deliberately not offered here
+// (see catalogData.js / the frontend filter row for the same note) rather
+// than wired up to nothing. Returns {clause, params} in the same shape
+// reportsScope() uses.
 function extraEmployeeFilters(query, alias, paramIndex) {
   const FIELDS = [
     ['department', 'department'], ['designation', 'designation'], ['company', 'company'],
     ['division', 'division'], ['workLocation', 'work_location'], ['employmentType', 'employment_type'],
+    ['role', 'role'],
   ];
   let clause = '';
   const params = [];
@@ -627,27 +665,50 @@ router.get('/employee/experience-exit', authorize('admin', 'director', 'hr_admin
 // Pie-by-leave-type for the day, plus the underlying employee list for the
 // "list" view toggle — Zoho's Daily Leave Status is a type breakdown, not
 // a flat name list.
+const LEAVE_CATEGORY = { casual: 'Paid', comp_off: 'Paid', permission: 'Paid', unpaid: 'Unpaid' };
+
+// Approved AND pending requests both count here — Zoho's Daily Leave Status
+// tracks who's requested/booked leave for the day, not just confirmed
+// leave, and shows an Approval Status column so the distinction is visible
+// rather than hidden.
 router.get('/leave/daily-status', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const date = req.query.date || new Date().toLocaleDateString('en-CA');
+    const leaveTypeFilter = ['casual', 'comp_off', 'unpaid', 'permission'].includes(req.query.leaveType) ? req.query.leaveType : null;
+
+    // Running-index composition: each clause builder is handed the next
+    // free $N and reports back how many params it consumed, so the next
+    // builder always starts in the right place — avoids hand-computed
+    // index arithmetic (a real off-by-one risk once 3+ filters combine).
+    let idx = 2; // $1 is always `date`
+    const extra = extraEmployeeFilters(req.query, 'e', idx); idx += extra.params.length;
+    const directReports = directReportsClause(req, 'e', idx); idx += directReports.params.length;
+    let leaveTypeClause = '', leaveTypeParams = [];
+    if (leaveTypeFilter) { leaveTypeParams = [leaveTypeFilter]; leaveTypeClause = ` AND l.leave_type = $${idx}`; idx += 1; }
+    const scope = reportsScope(req.user, 'e', idx);
+
+    const baseParams = [date, ...extra.params, ...directReports.params, ...leaveTypeParams, ...scope.params];
+    const whereTail = `${employeeStatusClause(req)}${extra.clause}${directReports.clause}${leaveTypeClause}${scope.clause}`;
+
     const [typeRes, listRes] = await Promise.all([
       pool.query(
         `SELECT l.leave_type AS "leaveType", COUNT(*)::int AS count
            FROM leaves l JOIN employees e ON l.employee_id = e.id
-          WHERE l.status = 'approved' AND l.start_date <= $1::date AND l.end_date >= $1::date${employeeStatusClause(req)}${reportsScope(req.user, 'e', 2).clause}
+          WHERE l.status IN ('approved','pending') AND l.start_date <= $1::date AND l.end_date >= $1::date${whereTail}
           GROUP BY l.leave_type`,
-        [date, ...reportsScope(req.user, 'e', 2).params]
+        baseParams
       ),
       pool.query(
         `SELECT l.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode",
-                l.leave_type AS "leaveType", l.is_half_day AS "isHalfDay"
+                l.leave_type AS "leaveType", l.is_half_day AS "isHalfDay", l.reason, l.status AS "approvalStatus"
            FROM leaves l JOIN employees e ON l.employee_id = e.id
-          WHERE l.status = 'approved' AND l.start_date <= $1::date AND l.end_date >= $1::date${employeeStatusClause(req)}${reportsScope(req.user, 'e', 2).clause}
+          WHERE l.status IN ('approved','pending') AND l.start_date <= $1::date AND l.end_date >= $1::date${whereTail}
           ORDER BY e.first_name`,
-        [date, ...reportsScope(req.user, 'e', 2).params]
+        baseParams
       ),
     ]);
-    res.json({ success: true, date, byType: typeRes.rows, employees: listRes.rows });
+    const employees = listRes.rows.map(row => ({ ...row, category: LEAVE_CATEGORY[row.leaveType] || null }));
+    res.json({ success: true, date, byType: typeRes.rows, employees });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -662,16 +723,28 @@ router.get('/leave/resource-availability', authorize('admin', 'director', 'hr_ad
     const startD = new Date(start), endD = new Date(end);
     const { holMap, rules } = await loadHolidaysAndRulesRange(startD, endD);
 
+    let empIdx = 1;
+    const extra = extraEmployeeFilters(req.query, 'e', empIdx); empIdx += extra.params.length;
+    const directReports = directReportsClause(req, 'e', empIdx); empIdx += directReports.params.length;
+    const scope = reportsScope(req.user, 'e', empIdx);
+    const empParams = [...extra.params, ...directReports.params, ...scope.params];
+    const empWhereTail = `${employeeStatusClause(req)}${extra.clause}${directReports.clause}${scope.clause}`;
+
+    const leaveTypeFilter = ['casual', 'comp_off', 'unpaid', 'permission'].includes(req.query.leaveType) ? req.query.leaveType : null;
+    const leaveParams = [start, end];
+    let leaveTypeClause = '';
+    if (leaveTypeFilter) { leaveParams.push(leaveTypeFilter); leaveTypeClause = ` AND leave_type = $3`; }
+
     const [empRes, leaveRes, absentRes] = await Promise.all([
       pool.query(
         `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", department, employee_id AS "employeeCode", exit_date AS "exitDate"
-           FROM employees e WHERE 1=1${employeeStatusClause(req)}${reportsScope(req.user, 'e', 1).clause} ORDER BY first_name`,
-        reportsScope(req.user, 'e', 1).params
+           FROM employees e WHERE 1=1${empWhereTail} ORDER BY first_name`,
+        empParams
       ),
       pool.query(
         `SELECT employee_id, leave_type, start_date, end_date, is_half_day
-           FROM leaves WHERE status='approved' AND start_date <= $2::date AND end_date >= $1::date`,
-        [start, end]
+           FROM leaves WHERE status='approved' AND start_date <= $2::date AND end_date >= $1::date${leaveTypeClause}`,
+        leaveParams
       ),
       // Plain attendance-marked absences (no approved leave covering the day)
       // get their own 'A' code — Zoho's calendar marks these too, not just
@@ -734,7 +807,7 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
     const emp = empRes.rows[0];
     if (!emp) return res.status(404).json({ success: false, message: 'Employee not found' });
 
-    const [leaveRes, compRes] = await Promise.all([
+    const [leaveRes, compRes, absentRes] = await Promise.all([
       pool.query(
         `SELECT leave_type AS "leaveType", COALESCE(SUM(total_days),0) AS days, COALESCE(SUM(hours),0) AS hours
            FROM leaves WHERE employee_id = $1 AND status = 'approved' AND EXTRACT(YEAR FROM start_date) = $2
@@ -746,6 +819,10 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
            FROM comp_offs WHERE employee_id = $1 AND status = 'approved' AND EXTRACT(YEAR FROM worked_date) = $2`,
         [employeeId, year]
       ),
+      pool.query(
+        `SELECT COUNT(*)::int AS count FROM attendance WHERE employee_id = $1 AND status = 'absent' AND EXTRACT(YEAR FROM date) = $2`,
+        [employeeId, year]
+      ),
     ]);
 
     const byType = new Map(leaveRes.rows.map(r => [r.leaveType, r]));
@@ -755,14 +832,23 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
     const permissionHours = parseFloat(byType.get('permission')?.hours) || 0;
     const compEarned = parseFloat(compRes.rows[0].earned) || 0;
     const compUsed = parseFloat(compRes.rows[0].used) || 0;
+    const absentCount = absentRes.rows[0].count;
 
-    const data = [
-      { leaveType: 'casual', label: 'Casual Leave', grantedDays: casualAllocated, bookedDays: casualBooked, balanceDays: Math.max(0, casualAllocated - casualBooked), grantedHours: null, bookedHours: 0, balanceHours: null },
-      { leaveType: 'comp_off', label: 'Compensatory Off', grantedDays: compEarned, bookedDays: compUsed, balanceDays: Math.max(0, compEarned - compUsed), grantedHours: null, bookedHours: 0, balanceHours: null },
-      { leaveType: 'unpaid', label: 'Leave Without Pay', grantedDays: null, bookedDays: unpaidBooked, balanceDays: null, grantedHours: null, bookedHours: 0, balanceHours: null },
-      { leaveType: 'permission', label: 'Permission', grantedDays: null, bookedDays: 0, balanceDays: null, grantedHours: null, bookedHours: permissionHours, balanceHours: null },
+    // Split by unit like Zoho's Day/Hour toggle — Day mode never shows
+    // Permission (it's hour-only) and Hour mode shows nothing else, rather
+    // than merging both units into one row per type.
+    const dayData = [
+      // Absent has no grant/balance concept — it's just a running count of
+      // attendance-marked absences, shown the same way Zoho shows it.
+      { leaveType: 'absent', label: 'Absent', granted: null, booked: absentCount, balance: null },
+      { leaveType: 'casual', label: 'Casual Leave', granted: casualAllocated, booked: casualBooked, balance: Math.max(0, casualAllocated - casualBooked) },
+      { leaveType: 'comp_off', label: 'Compensatory Off', granted: compEarned, booked: compUsed, balance: Math.max(0, compEarned - compUsed) },
+      { leaveType: 'unpaid', label: 'Leave Without Pay', granted: null, booked: unpaidBooked, balance: null },
     ];
-    res.json({ success: true, employee: emp, year, data });
+    const hourData = [
+      { leaveType: 'permission', label: 'Permission', granted: null, booked: permissionHours, balance: null },
+    ];
+    res.json({ success: true, employee: emp, year, dayData, hourData });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -842,6 +928,41 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
   try {
     const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
+    const unit = req.query.unit === 'hour' ? 'hour' : 'day';
+    const filters = standardEmployeeFilters(req, 'e', 3);
+
+    if (unit === 'hour') {
+      // Hour mode shows only Permission — the only hour-based leave type —
+      // same convention as Zoho's Hour toggle, which drops the day-based
+      // Casual/Unpaid/Comp-Off columns entirely rather than mixing units.
+      // Permission's real rule is 4h per CALENDAR MONTH with no carry-over
+      // (see leaves.js), so the allocation for an arbitrary range is
+      // 4h x (number of distinct calendar months the range touches).
+      const monthsTouched = (() => {
+        const s = new Date(start), e = new Date(end);
+        const set = new Set();
+        for (const d = new Date(s.getFullYear(), s.getMonth(), 1); d <= e; d.setMonth(d.getMonth() + 1)) {
+          set.add(`${d.getFullYear()}-${d.getMonth()}`);
+        }
+        return set.size;
+      })();
+      const r = await pool.query(
+        `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate",
+                COALESCE(perm.hours, 0) AS "permissionBooked"
+           FROM employees e
+           LEFT JOIN (SELECT employee_id, SUM(hours) AS hours FROM leaves WHERE status='approved' AND leave_type='permission' AND start_date <= $2::date AND end_date >= $1::date GROUP BY employee_id) perm ON perm.employee_id = e.id
+          WHERE 1=1${filters.clause}
+          ORDER BY e.first_name`,
+        [start, end, ...filters.params]
+      );
+      const data = r.rows.map(row => {
+        const permissionBooked = parseFloat(row.permissionBooked) || 0;
+        const permissionAllocated = monthsTouched * 4;
+        return { ...row, permissionBooked, permissionAllocated, permissionBalance: Math.max(0, permissionAllocated - permissionBooked) };
+      });
+      return res.json({ success: true, data, unit, startDate: start, endDate: end });
+    }
+
     const r = await pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate",
               COALESCE(e.casual_leave, 0) AS "casualAllocated",
@@ -856,9 +977,9 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
          LEFT JOIN (SELECT employee_id, COUNT(*)::int AS cnt FROM attendance WHERE status='absent' AND date >= $1::date AND date <= $2::date GROUP BY employee_id) absent ON absent.employee_id = e.id
          LEFT JOIN (SELECT employee_id, SUM(days_earned) AS earned, SUM(days_used) AS used FROM comp_offs WHERE status='approved' GROUP BY employee_id) co ON co.employee_id = e.id
          LEFT JOIN (SELECT employee_id, SUM(days_used) AS used FROM comp_offs WHERE status='approved' AND comp_off_date >= $1::date AND comp_off_date <= $2::date GROUP BY employee_id) co_range ON co_range.employee_id = e.id
-        WHERE 1=1${employeeStatusClause(req)}${reportsScope(req.user, 'e', 3).clause}
+        WHERE 1=1${filters.clause}
         ORDER BY e.first_name`,
-      [start, end, ...reportsScope(req.user, 'e', 3).params]
+      [start, end, ...filters.params]
     );
     const data = r.rows.map(row => {
       const casualAllocated = parseFloat(row.casualAllocated) || 0;
@@ -874,7 +995,7 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
         compOffBalance: parseFloat(row.compOffBalance) || 0,
       };
     });
-    res.json({ success: true, data, startDate: start, endDate: end });
+    res.json({ success: true, data, unit, startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -900,6 +1021,7 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
   try {
     const leaveType = ['casual', 'comp_off', 'unpaid', 'permission'].includes(req.query.leaveType) ? req.query.leaveType : 'casual';
     const year = parseInt(req.query.year, 10) || new Date().getFullYear();
+    const filters = standardEmployeeFilters(req, 'e', 3);
     const r = await pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate",
               ${leaveType === 'casual' ? 'COALESCE(e.casual_leave,0)' : 'NULL'} AS granted,
@@ -907,10 +1029,10 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
               COALESCE(SUM(l.hours) FILTER (WHERE l.status='approved'), 0) AS "bookedHours"
          FROM employees e
          LEFT JOIN leaves l ON l.employee_id = e.id AND l.leave_type = $1 AND EXTRACT(YEAR FROM l.start_date) = $2
-        WHERE 1=1${employeeStatusClause(req)}${reportsScope(req.user, 'e', 3).clause}
+        WHERE 1=1${filters.clause}
         GROUP BY e.id, e.first_name, e.last_name, e.department, e.employee_id, e.exit_date, e.casual_leave
         ORDER BY e.first_name`,
-      [leaveType, year, ...reportsScope(req.user, 'e', 3).params]
+      [leaveType, year, ...filters.params]
     );
     const data = r.rows.map(row => {
       const granted = row.granted !== null ? parseFloat(row.granted) : null;
@@ -952,10 +1074,11 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
     const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
     const { holMap, rules } = await loadHolidaysAndRulesRange(startDate, endDate);
 
+    const filters = standardEmployeeFilters(req, 'e', 1);
     const empRes = await pool.query(
       `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", department, employee_id AS "employeeCode", exit_date AS "exitDate"
-         FROM employees e WHERE 1=1${employeeStatusClause(req)}${reportsScope(req.user, 'e', 1).clause} ORDER BY first_name`,
-      reportsScope(req.user, 'e', 1).params
+         FROM employees e WHERE 1=1${filters.clause} ORDER BY first_name`,
+      filters.params
     );
 
     const data = [];
@@ -981,13 +1104,20 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
     const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
     const startD = new Date(start), endD = new Date(end);
+    const reportType = req.query.reportType === 'detailed' ? 'detailed' : 'default';
+    const unit = req.query.unit === 'hour' ? 'hour' : 'day';
+    // Hour mode is a flat 8-hours-per-day conversion of the day figures —
+    // this app doesn't track shift-specific hour totals for payroll days,
+    // so a standard workday is the only non-fabricated basis available.
+    const HOURS_PER_DAY = 8;
     const { holMap, rules } = await loadHolidaysAndRulesRange(startD, endD);
 
+    const filters = standardEmployeeFilters(req, 'e', 1);
     const empRes = await pool.query(
       `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", employee_id AS "employeeCode", department,
               exit_date AS "exitDate", joining_date AS "joiningDate"
-         FROM employees e WHERE 1=1${employeeStatusClause(req)}${reportsScope(req.user, 'e', 1).clause} ORDER BY first_name`,
-      reportsScope(req.user, 'e', 1).params
+         FROM employees e WHERE 1=1${filters.clause} ORDER BY first_name`,
+      filters.params
     );
 
     const data = [];
@@ -996,10 +1126,52 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
       const effEnd = emp.exitDate && new Date(emp.exitDate) < endD ? new Date(emp.exitDate) : endD;
       if (effEnd < effStart) continue; // not on rolls at any point in this period
       const totalDays = Math.round((effEnd - effStart) / 86400000) + 1;
+      // eslint-disable-next-line no-await-in-loop
       const lopDays = await lopDaysForRange(emp._id, effStart, effEnd, holMap, rules, pool);
-      data.push({ ...emp, totalDays, lopDays, paidDays: Math.max(0, totalDays - lopDays) });
+      const paidDays = Math.max(0, totalDays - lopDays);
+      const row = { ...emp, totalDays, lopDays, paidDays };
+
+      if (reportType === 'detailed') {
+        let weekendCount = 0, holidayCount = 0;
+        for (const d = new Date(effStart); d <= effEnd; d.setDate(d.getDate() + 1)) {
+          const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+          const holType = holMap.get(key);
+          if (holType && holType !== 'working_day') holidayCount++;
+          else if (!holType && rules.some(rule => ruleMatchesDate(rule, d))) weekendCount++;
+        }
+        // eslint-disable-next-line no-await-in-loop
+        const leaveRes = await pool.query(
+          `SELECT leave_type, COALESCE(SUM(total_days), 0) AS days
+             FROM leaves WHERE employee_id = $1 AND status = 'approved' AND leave_type IN ('casual','unpaid','comp_off')
+               AND start_date <= $3::date AND end_date >= $2::date
+             GROUP BY leave_type`,
+          [emp._id, effStart.toLocaleDateString('en-CA'), effEnd.toLocaleDateString('en-CA')]
+        );
+        const byType = Object.fromEntries(leaveRes.rows.map(r => [r.leave_type, parseFloat(r.days) || 0]));
+        const leavePaid = byType.casual || 0, leaveUnpaid = byType.unpaid || 0, leaveComp = byType.comp_off || 0;
+        // On Duty is always 0 — that leave type doesn't exist in this
+        // system yet (no application flow writes it), so the column is
+        // honestly empty rather than a fabricated figure. Kept in the
+        // response now so the report's structure matches Zoho's and needs
+        // no rework once On Duty is actually built.
+        Object.assign(row, {
+          weekendCount, holidayCount, payableDays: paidDays, onDutyDays: 0,
+          leavePaid, leaveUnpaid, leaveComp, leaveTotal: leavePaid + leaveUnpaid + leaveComp,
+        });
+      }
+      data.push(row);
     }
-    res.json({ success: true, data, startDate: start, endDate: end });
+
+    const numericKeys = ['totalDays', 'lopDays', 'paidDays', 'weekendCount', 'holidayCount', 'payableDays', 'onDutyDays', 'leavePaid', 'leaveUnpaid', 'leaveComp', 'leaveTotal'];
+    const finalData = unit === 'hour'
+      ? data.map(row => {
+          const converted = { ...row };
+          for (const k of numericKeys) if (k in converted) converted[k] = converted[k] * HOURS_PER_DAY;
+          return converted;
+        })
+      : data;
+
+    res.json({ success: true, data: finalData, reportType, unit, startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
