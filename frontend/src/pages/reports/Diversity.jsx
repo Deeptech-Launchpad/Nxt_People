@@ -7,7 +7,6 @@ import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
 import ChartExportMenu from './ChartExportMenu';
 import FilterRow from './FilterRow';
-import FilterToggleButton from './FilterToggleButton';
 
 const TYPES = [['gender', 'Gender'], ['age', 'Age'], ['experience', 'Experience']];
 
@@ -41,15 +40,18 @@ export default function Diversity() {
   const initialType = TYPES.some(([k]) => k === searchParams.get('type')) ? searchParams.get('type') : 'gender';
   const [type, setType] = useState(initialType);
   const [filters, setFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const [totalActive, setTotalActive] = useState(0);
 
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams({ type, ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) });
     api.get(`/reports/employee/diversity?${params}`)
-      .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
+      .then(r => {
+        setRows(Array.isArray(r.data.data) ? r.data.data : []);
+        setTotalActive(r.data.totalActive || 0);
+      })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   }, [type, filters]);
@@ -58,22 +60,32 @@ export default function Diversity() {
   // "Unspecified" only applies to the gender view — that's the existing
   // catch-all the backend already uses for a NULL gender.
   const withoutGender = rows.find(r => r.label === 'Unspecified')?.count || 0;
+  // For age/experience, "without" = total active employees minus those
+  // that appear in the buckets (missing date_of_birth or joining_date).
+  const withoutData = (type === 'age' || type === 'experience') ? (totalActive || total) - total : 0;
   const typeLabel = TYPES.find(([k]) => k === type)[1];
 
-  const actions = (
-    <div className="flex items-center gap-2">
-      <TypeDropdown type={type} setType={setType} />
-      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
-    </div>
-  );
+  const WITHOUT_LABELS = { age: 'Employees without date of birth', experience: 'Employees without joining date' };
+
+  const buildStats = () => {
+    const stats = [{ label: 'Total Employee Count', value: totalActive || total }];
+    if (type === 'gender') {
+      stats.push({ label: 'Employees without gender specified', value: `${total ? ((withoutGender / total) * 100).toFixed(2) : 0}% (${withoutGender})` });
+    } else if (withoutData > 0) {
+      const pct = totalActive ? ((withoutData / totalActive) * 100).toFixed(2) : 0;
+      stats.push({ label: WITHOUT_LABELS[type], value: `${pct}% (${withoutData})` });
+    }
+    return stats;
+  };
+
+  const actions = <TypeDropdown type={type} setType={setType} />;
 
   return (
     <ReportShell title="Diversity" subtitle="Active employees by gender, age, or experience" actions={actions} loading={loading} switcherCategory="Employee Information">
-      {filtersOpen && (
-        <div className="px-4 pt-4">
-          <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} />
-        </div>
-      )}
+      {/* Org filters — always visible */}
+      <div className="px-4 pt-4">
+        <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} />
+      </div>
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>
       ) : (
@@ -83,12 +95,7 @@ export default function Diversity() {
           </div>
           <DonutWithStats
             data={rows}
-            stats={type === 'gender' ? [
-              { label: 'Total Employee Count', value: total },
-              { label: 'Employees without gender specified', value: `${total ? ((withoutGender / total) * 100).toFixed(2) : 0}% (${withoutGender})` },
-            ] : [
-              { label: 'Total Employee Count', value: total },
-            ]}
+            stats={buildStats()}
           />
         </>
       )}

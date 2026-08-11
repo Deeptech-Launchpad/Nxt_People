@@ -628,11 +628,17 @@ router.get('/employee/diversity', authorize('admin', 'director', 'hr_admin', 'ma
   try {
     const type = ['age', 'experience'].includes(req.query.type) ? req.query.type : 'gender';
     const extra = extraEmployeeFilters(req.query, 'e', 1);
-    if (type === 'age') {
-      return res.json({ success: true, type, data: await ageOrTenureBuckets('date_of_birth', req.user, extra) });
-    }
-    if (type === 'experience') {
-      return res.json({ success: true, type, data: await experienceTenureBuckets(req.user, extra) });
+    if (type === 'age' || type === 'experience') {
+      const scope = reportsScope(req.user, 'e', 1 + extra.params.length);
+      const totalRes = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM employees e WHERE e.status='active'${extra.clause}${scope.clause}`,
+        [...extra.params, ...scope.params]
+      );
+      const totalActive = totalRes.rows[0]?.count || 0;
+      const data = type === 'age'
+        ? await ageOrTenureBuckets('date_of_birth', req.user, extra)
+        : await experienceTenureBuckets(req.user, extra);
+      return res.json({ success: true, type, data, totalActive });
     }
     const scope = reportsScope(req.user, 'e', 1 + extra.params.length);
     const r = await pool.query(
