@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download } from 'lucide-react';
+import { Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -63,6 +63,12 @@ export default function LeaveTypeSummary() {
       .finally(() => setLoading(false));
   }, [selection, employeeStatus, employee, directReportsOnly, dimFilters]);
 
+  const reset = () => {
+    setEmployee(null); setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
+  };
+
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
+
   const filters = (
     <>
       <div>
@@ -77,25 +83,31 @@ export default function LeaveTypeSummary() {
           ))}
         </select>
       </div>
+      <EmployeeFilter value={employee} onChange={setEmployee} />
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
         </button>
-        <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+        <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <RotateCcw size={14} /> Reset
+        </button>
       </div>
       {filtersOpen && (
-        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-          <EmployeeFilter value={employee} onChange={setEmployee} />
-          <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        </div>
+        <>
+          <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+            <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+            <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+          </div>
+          <div className="w-full flex flex-wrap items-center gap-1.5">
+            <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+          </div>
+        </>
       )}
     </>
   );
 
   return (
-    <ReportShell title="Leave Type Wise Summary" subtitle="Per-employee ledger for the selected leave type and year" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Leave Type Wise Summary" subtitle="Per-employee ledger for the selected leave type and year" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {!available.length ? (
         <div className="text-center py-16 text-slate-400">No leave records yet</div>
       ) : (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download } from 'lucide-react';
+import { Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -66,6 +66,13 @@ export default function ResourceAvailability() {
 
   const exportRows = data ? data.data.map(emp => ({ ...emp, cells: emp.days.filter(Boolean).join(', ') })) : [];
 
+  const reset = () => {
+    setPeriodKey('thisMonth'); setRange(PERIOD_OPTIONS.find(o => o.key === 'thisMonth').value);
+    setEmployeeStatus('all'); setLeaveType(''); setDimFilters({});
+  };
+
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
+
   const filters = (
     <>
       <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(value, key) => { setPeriodKey(key); setRange(value); }} />
@@ -73,14 +80,20 @@ export default function ResourceAvailability() {
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
         </button>
-        <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+        <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <RotateCcw size={14} /> Reset
+        </button>
       </div>
       {filtersOpen && (
-        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-          <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
-          <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-        </div>
+        <>
+          <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+            <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
+            <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+          </div>
+          <div className="w-full flex flex-wrap items-center gap-1.5">
+            <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+          </div>
+        </>
       )}
       <div className="flex items-center gap-3 text-[12px] text-slate-500 flex-wrap w-full pt-1">
         {Object.entries(LEGEND).map(([code, label]) => (
@@ -91,7 +104,7 @@ export default function ResourceAvailability() {
   );
 
   return (
-    <ReportShell title="Resource Availability" subtitle="Leave calendar for the selected period" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Resource Availability" subtitle="Leave calendar for the selected period" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {!data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (

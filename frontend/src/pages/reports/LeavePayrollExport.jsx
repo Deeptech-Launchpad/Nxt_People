@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Filter, Download, ChevronDown } from 'lucide-react';
+import { Filter, Download, ChevronDown, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -10,6 +10,7 @@ import FilterToggleButton from './FilterToggleButton';
 import EmployeeFilter from './EmployeeFilter';
 import DirectReportsToggle from './DirectReportsToggle';
 import UnitToggle from './UnitToggle';
+import DateChip from './DateChip';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -26,13 +27,13 @@ function ReportTypeDropdown({ value, onChange }) {
   }, []);
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium border border-slate-200 bg-white text-slate-700 hover:border-slate-300 transition-colors">
-        Report Type: {value === 'detailed' ? 'Detailed' : 'Default'} <ChevronDown size={13} />
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12.5px] font-medium border border-slate-200 bg-white text-slate-700 hover:border-slate-300 transition-colors whitespace-nowrap">
+        Report Type: {value === 'detailed' ? 'Detailed' : 'Default'} <ChevronDown size={12} />
       </button>
       {open && (
         <div className="absolute z-20 mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
           {[['default', 'Default'], ['detailed', 'Detailed']].map(([k, l]) => (
-            <button key={k} onClick={() => { onChange(k); setOpen(false); }} className={`w-full text-left px-3 py-2 text-[13px] transition-colors ${value === k ? 'text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
+            <button key={k} onClick={() => { onChange(k); setOpen(false); }} className={`w-full text-left px-3 py-1.5 text-[12.5px] transition-colors ${value === k ? 'text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
           ))}
         </div>
       )}
@@ -99,40 +100,51 @@ export default function LeavePayrollExport() {
   const totalLabel = unitLabel(unit, 'Total'), payableLabel = unitLabel(unit, 'Payable'), onDutyLabel = unitLabel(unit, 'On Duty');
   const lopLabel = unitLabel(unit, 'Loss of Pay'), paidLabel = unitLabel(unit, 'Paid');
 
+  const reset = () => {
+    setStartDate(monthStartCA()); setEndDate(todayCA()); setReportType('default'); setEmployee(null);
+    setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
+  };
+
+  const actions = (
+    <div className="flex items-center gap-2">
+      <UnitToggle value={unit} onChange={setUnit} />
+      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+    </div>
+  );
+
   const filters = (
     <>
-      <div>
-        <label className="block text-[13px] font-medium text-slate-600 mb-1">From</label>
-        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
-      </div>
-      <div>
-        <label className="block text-[13px] font-medium text-slate-600 mb-1">To</label>
-        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
-      </div>
+      <DateChip label="From Date" value={startDate} onChange={setStartDate} />
+      <DateChip label="To Date" value={endDate} onChange={setEndDate} />
       <ReportTypeDropdown value={reportType} onChange={setReportType} />
-      <UnitToggle value={unit} onChange={setUnit} />
-      <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-        <Filter size={14} /> Apply
-      </button>
+      <EmployeeFilter value={employee} onChange={setEmployee} />
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
         </button>
-        <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+        <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <Filter size={14} /> Apply
+        </button>
+        <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <RotateCcw size={14} /> Reset
+        </button>
       </div>
       {filtersOpen && (
-        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-          <EmployeeFilter value={employee} onChange={setEmployee} />
-          <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        </div>
+        <>
+          <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+            <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+            <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+          </div>
+          <div className="w-full flex flex-wrap items-center gap-1.5">
+            <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+          </div>
+        </>
       )}
     </>
   );
 
   return (
-    <ReportShell title="Leave Data for Payroll" subtitle="Total, loss of pay, and paid days per employee for the selected pay period" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Leave Data for Payroll" subtitle="Total, loss of pay, and paid days per employee for the selected pay period" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : reportType === 'detailed' ? (

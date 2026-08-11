@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { Filter, ChevronLeft, ChevronRight, Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -56,6 +56,24 @@ export default function DailyLeaveStatus() {
   const total = byType.reduce((s, r) => s + Number(r.count), 0);
   const donutData = byType.map(r => ({ label: LEAVE_LABEL[r.leaveType] || r.leaveType, count: r.count }));
 
+  const reset = () => {
+    setDate(todayCA()); setEmployeeStatus('all'); setLeaveType(''); setDimFilters({});
+  };
+
+  const actions = (
+    <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+        {[['chart', 'Chart'], ['list', 'List']].map(([k, l]) => (
+          <button key={k} onClick={() => setView(k)}
+            className={`px-3 py-1.5 text-[13px] font-semibold rounded-md transition-colors ${view === k ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+    </div>
+  );
+
   const filters = (
     <>
       <div>
@@ -66,35 +84,33 @@ export default function DailyLeaveStatus() {
           <button onClick={() => setDate(d => shiftDay(d, 1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
         </div>
       </div>
-      <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-        <Filter size={14} /> Apply
-      </button>
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
         </button>
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
-          {[['chart', 'Chart'], ['list', 'List']].map(([k, l]) => (
-            <button key={k} onClick={() => setView(k)}
-              className={`px-3 py-1.5 text-[13px] font-semibold rounded-md transition-colors ${view === k ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
-        <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+        <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <Filter size={14} /> Apply
+        </button>
+        <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <RotateCcw size={14} /> Reset
+        </button>
       </div>
       {filtersOpen && (
-        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-          <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
-          <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-        </div>
+        <>
+          <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+            <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
+            <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+          </div>
+          <div className="w-full flex flex-wrap items-center gap-1.5">
+            <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+          </div>
+        </>
       )}
     </>
   );
 
   return (
-    <ReportShell title="Daily Leave Status" subtitle="Who's on approved or pending leave for a given date" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Daily Leave Status" subtitle="Who's on approved or pending leave for a given date" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {total === 0 ? (
         <div className="text-center py-16 text-slate-400">Nobody is on leave this date</div>
       ) : view === 'chart' ? (

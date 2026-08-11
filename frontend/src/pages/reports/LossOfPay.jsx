@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, Download, ArrowRight } from 'lucide-react';
+import { Filter, Download, ArrowRight, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
@@ -10,6 +10,7 @@ import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
 import EmployeeFilter from './EmployeeFilter';
 import DirectReportsToggle from './DirectReportsToggle';
+import DateChip from './DateChip';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -60,19 +61,18 @@ export default function LossOfPay() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, [employeeStatus, employee, directReportsOnly, dimFilters]);
 
+  const reset = () => {
+    setStartDate(monthStartCA()); setEndDate(todayCA()); setEmployee(null);
+    setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
+  };
+
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
+
   const filters = (
     <>
-      <div>
-        <label className="block text-[13px] font-medium text-slate-600 mb-1">From</label>
-        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
-      </div>
-      <div>
-        <label className="block text-[13px] font-medium text-slate-600 mb-1">To</label>
-        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
-      </div>
-      <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-        <Filter size={14} /> Apply
-      </button>
+      <DateChip label="From Date" value={startDate} onChange={setStartDate} />
+      <DateChip label="To Date" value={endDate} onChange={setEndDate} />
+      <EmployeeFilter value={employee} onChange={setEmployee} />
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
@@ -80,21 +80,29 @@ export default function LossOfPay() {
         <button onClick={() => navigate('/payroll/run')} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           Push To Payroll <ArrowRight size={14} />
         </button>
-        <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+        <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <Filter size={14} /> Apply
+        </button>
+        <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <RotateCcw size={14} /> Reset
+        </button>
       </div>
       {filtersOpen && (
-        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-          <EmployeeFilter value={employee} onChange={setEmployee} />
-          <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        </div>
+        <>
+          <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+            <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+            <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+          </div>
+          <div className="w-full flex flex-wrap items-center gap-1.5">
+            <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+          </div>
+        </>
       )}
     </>
   );
 
   return (
-    <ReportShell title="Loss of Pay Details" subtitle="Unpaid LOP days in the selected period — the same calculation Payroll Run uses" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Loss of Pay Details" subtitle="Unpaid LOP days in the selected period — the same calculation Payroll Run uses" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No LOP days in this period</div>
       ) : (

@@ -110,6 +110,17 @@ export default function LeaveBalance() {
   // count, and doesn't read as a bar alongside the capped/allocated types.
   const chartRows = rows.filter(r => r.leaveType !== 'absent').map(r => ({ ...r, bookedVal: r.booked, balanceVal: r.balance ?? 0 }));
 
+  const actions = (
+    <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+      {[['chart', 'Chart'], ['list', 'List']].map(([k, l]) => (
+        <button key={k} onClick={() => setView(k)}
+          className={`px-3 py-1.5 text-[13px] font-semibold rounded-md transition-colors ${view === k ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+
   const filters = (
     <>
       <EmployeeFilter value={employee} onChange={selectEmployee} />
@@ -120,26 +131,16 @@ export default function LeaveBalance() {
         </select>
       </div>
       <UnitToggle value={unit} onChange={setUnit} />
-      <div className="flex items-center gap-2 ml-auto">
-        {employee && (
-          <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-            Export
-          </button>
-        )}
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
-          {[['chart', 'Chart'], ['list', 'List']].map(([k, l]) => (
-            <button key={k} onClick={() => setView(k)}
-              className={`px-3 py-1.5 text-[13px] font-semibold rounded-md transition-colors ${view === k ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
-      </div>
+      {employee && (
+        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto">
+          Export
+        </button>
+      )}
     </>
   );
 
   return (
-    <ReportShell title="Employee Leave Balance" subtitle="Casual, comp-off, unpaid, and permission balances for the selected employee and year" filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Employee Leave Balance" subtitle="Casual, comp-off, unpaid, and permission balances for the selected employee and year" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {!employee ? (
         <div className="text-center py-16 text-slate-400">Search for an employee to view their leave balance</div>
       ) : view === 'chart' ? (
