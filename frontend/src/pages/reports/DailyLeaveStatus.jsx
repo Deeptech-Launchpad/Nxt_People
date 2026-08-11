@@ -66,12 +66,6 @@ export default function DailyLeaveStatus() {
           <button onClick={() => setDate(d => shiftDay(d, 1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
         </div>
       </div>
-      {filtersOpen && (
-        <>
-          <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
-          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-        </>
-      )}
       <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
         <Filter size={14} /> Apply
       </button>
@@ -89,12 +83,18 @@ export default function DailyLeaveStatus() {
         </div>
         <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
       </div>
+      {filtersOpen && (
+        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+          <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
+          <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+        </div>
+      )}
     </>
   );
 
   return (
     <ReportShell title="Daily Leave Status" subtitle="Who's on approved or pending leave for a given date" filters={filters} loading={loading} switcherCategory="Leave Tracker">
-      {filtersOpen && <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />}
       {total === 0 ? (
         <div className="text-center py-16 text-slate-400">Nobody is on leave this date</div>
       ) : view === 'chart' ? (

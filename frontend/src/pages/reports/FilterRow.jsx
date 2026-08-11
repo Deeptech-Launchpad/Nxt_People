@@ -22,15 +22,15 @@ function FilterChip({ label, options, value, onChange }) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[13px] font-medium border transition-colors ${value ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
+        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12.5px] font-medium border transition-colors whitespace-nowrap ${value ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
       >
-        {label}{value ? `: ${value}` : ''} <ChevronDown size={13} />
+        <span className="max-w-[130px] truncate">{label}{value ? `: ${value}` : ''}</span> <ChevronDown size={12} className="flex-shrink-0" />
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-64 overflow-y-auto">
-          <button onClick={() => { onChange(''); setOpen(false); }} className="w-full text-left px-3 py-2 text-[13px] text-slate-500 hover:bg-slate-50 transition-colors">All</button>
+        <div className="absolute z-20 mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-64 overflow-y-auto">
+          <button onClick={() => { onChange(''); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-[12.5px] text-slate-500 hover:bg-slate-50 transition-colors">All</button>
           {options.map(o => (
-            <button key={o} onClick={() => { onChange(o); setOpen(false); }} className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors">{o}</button>
+            <button key={o} onClick={() => { onChange(o); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-[12.5px] text-slate-700 hover:bg-slate-50 transition-colors">{o}</button>
           ))}
         </div>
       )}
@@ -56,7 +56,7 @@ export default function FilterRow({ value, onChange, exclude = [] }) {
   if (visible.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-2 flex-wrap px-4 pt-4">
+    <div className="flex items-center gap-1.5 flex-wrap">
       {visible.map(([key, label]) => (
         <FilterChip key={key} label={label} options={options[key] || []} value={value[key] || ''} onChange={v => onChange(key, v)} />
       ))}

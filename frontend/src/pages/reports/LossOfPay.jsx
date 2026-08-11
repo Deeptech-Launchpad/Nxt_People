@@ -70,13 +70,6 @@ export default function LossOfPay() {
         <label className="block text-[13px] font-medium text-slate-600 mb-1">To</label>
         <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
       </div>
-      {filtersOpen && (
-        <>
-          <EmployeeFilter value={employee} onChange={setEmployee} />
-          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        </>
-      )}
       <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
         <Filter size={14} /> Apply
       </button>
@@ -89,12 +82,19 @@ export default function LossOfPay() {
         </button>
         <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
       </div>
+      {filtersOpen && (
+        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+          <EmployeeFilter value={employee} onChange={setEmployee} />
+          <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+        </div>
+      )}
     </>
   );
 
   return (
     <ReportShell title="Loss of Pay Details" subtitle="Unpaid LOP days in the selected period — the same calculation Payroll Run uses" filters={filters} loading={loading} switcherCategory="Leave Tracker">
-      {filtersOpen && <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />}
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No LOP days in this period</div>
       ) : (

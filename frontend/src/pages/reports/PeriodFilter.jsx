@@ -32,8 +32,8 @@ export default function PeriodFilter({ options, selectedKey, onSubmit }) {
 
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium border border-slate-200 bg-white text-slate-700 hover:border-slate-300 transition-colors">
-        Period: {current?.label || '—'} <ChevronDown size={13} />
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12.5px] font-medium border border-slate-200 bg-white text-slate-700 hover:border-slate-300 transition-colors whitespace-nowrap">
+        <span className="max-w-[140px] truncate">Period: {current?.label || '—'}</span> <ChevronDown size={12} className="flex-shrink-0" />
       </button>
       {open && (
         <div className="absolute z-20 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg py-2">

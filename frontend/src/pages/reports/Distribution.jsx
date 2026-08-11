@@ -73,7 +73,9 @@ export default function Distribution() {
   return (
     <ReportShell title="Distribution" subtitle="Active employees split by department, designation, or location" actions={actions} loading={loading} switcherCategory="Employee Information">
       {filtersOpen && (
-        <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} exclude={[BY_TO_FILTER_KEY[by]]} />
+        <div className="px-4 pt-4">
+          <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} exclude={[BY_TO_FILTER_KEY[by]]} />
+        </div>
       )}
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>

@@ -72,13 +72,6 @@ export default function BookedBalance() {
         <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
       </div>
       <UnitToggle value={unit} onChange={setUnit} />
-      {filtersOpen && (
-        <>
-          <EmployeeFilter value={employee} onChange={setEmployee} />
-          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        </>
-      )}
       <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
         <Filter size={14} /> Apply
       </button>
@@ -88,12 +81,19 @@ export default function BookedBalance() {
         </button>
         <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
       </div>
+      {filtersOpen && (
+        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+          <EmployeeFilter value={employee} onChange={setEmployee} />
+          <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+        </div>
+      )}
     </>
   );
 
   return (
     <ReportShell title="Leave Booked and Balance" subtitle="Days booked in the selected period vs. yearly allocation" filters={filters} loading={loading} switcherCategory="Leave Tracker">
-      {filtersOpen && <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />}
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : unit === 'hour' ? (

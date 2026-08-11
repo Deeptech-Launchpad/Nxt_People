@@ -70,7 +70,9 @@ export default function Diversity() {
   return (
     <ReportShell title="Diversity" subtitle="Active employees by gender, age, or experience" actions={actions} loading={loading} switcherCategory="Employee Information">
       {filtersOpen && (
-        <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} />
+        <div className="px-4 pt-4">
+          <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} />
+        </div>
       )}
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>

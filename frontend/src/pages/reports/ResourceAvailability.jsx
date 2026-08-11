@@ -69,19 +69,20 @@ export default function ResourceAvailability() {
   const filters = (
     <>
       <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(value, key) => { setPeriodKey(key); setRange(value); }} />
-      {filtersOpen && (
-        <>
-          <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
-          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-        </>
-      )}
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
         </button>
         <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
       </div>
-      <div className="flex items-center gap-3 text-[12px] text-slate-500 flex-wrap w-full">
+      {filtersOpen && (
+        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+          <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
+          <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+        </div>
+      )}
+      <div className="flex items-center gap-3 text-[12px] text-slate-500 flex-wrap w-full pt-1">
         {Object.entries(LEGEND).map(([code, label]) => (
           <span key={code} className="flex items-center gap-1"><span className={`px-1.5 py-0.5 rounded font-semibold ${CODE_STYLE[code]}`}>{code}</span>{label}</span>
         ))}
@@ -91,7 +92,6 @@ export default function ResourceAvailability() {
 
   return (
     <ReportShell title="Resource Availability" subtitle="Leave calendar for the selected period" filters={filters} loading={loading} switcherCategory="Leave Tracker">
-      {filtersOpen && <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />}
       {!data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (

@@ -77,25 +77,25 @@ export default function LeaveTypeSummary() {
           ))}
         </select>
       </div>
-      {filtersOpen && (
-        <>
-          <EmployeeFilter value={employee} onChange={setEmployee} />
-          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-        </>
-      )}
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
         </button>
         <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
       </div>
+      {filtersOpen && (
+        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+          <EmployeeFilter value={employee} onChange={setEmployee} />
+          <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+          <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+          <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+        </div>
+      )}
     </>
   );
 
   return (
     <ReportShell title="Leave Type Wise Summary" subtitle="Per-employee ledger for the selected leave type and year" filters={filters} loading={loading} switcherCategory="Leave Tracker">
-      {filtersOpen && <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />}
       {!available.length ? (
         <div className="text-center py-16 text-slate-400">No leave records yet</div>
       ) : (
