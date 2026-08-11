@@ -6,11 +6,11 @@ import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
-import FilterToggleButton from './FilterToggleButton';
 import EmployeeFilter from './EmployeeFilter';
 import DirectReportsToggle from './DirectReportsToggle';
 import UnitToggle from './UnitToggle';
 import DateChip from './DateChip';
+import PeriodPresetChip from './PeriodPresetChip';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -22,6 +22,7 @@ const DAY_EXPORT_COLUMNS = [
   { key: 'casualAllocated', header: 'Casual Allocated' }, { key: 'casualBooked', header: 'Casual Booked' }, { key: 'casualBalance', header: 'Casual Balance' },
   { key: 'absentBooked', header: 'Absent (Days)' }, { key: 'lwpBooked', header: 'Leave Without Pay (Days)' }, { key: 'unpaidTotalBooked', header: 'Unpaid Total (Days)' },
   { key: 'compOffBooked', header: 'Comp-Off Booked' }, { key: 'compOffBalance', header: 'Comp-Off Balance' },
+  { key: 'totalBooked', header: 'Total Booked' }, { key: 'totalBalance', header: 'Total Balance' },
 ];
 const HOUR_EXPORT_COLUMNS = [
   { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
@@ -29,10 +30,10 @@ const HOUR_EXPORT_COLUMNS = [
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
-// Grouped Paid (Casual) / Unpaid / Compensatory Off columns in Day mode;
-// Permission-only Booked/Balance in Hour mode — matches Zoho's Leave
-// Booked and Balance table structure, including its Day/Hour unit toggle
-// (the two modes show entirely different columns, not a relabeled table).
+// Grouped Paid (Casual) / Unpaid / Compensatory Off / Total columns in Day
+// mode; Permission-only Booked/Balance in Hour mode — matches Zoho's Leave
+// Booked and Balance table structure, including its Day/Hour unit toggle.
+// All filters are always visible (no toggle), matching Zoho's layout.
 export default function BookedBalance() {
   const [startDate, setStartDate] = useState(monthStartCA());
   const [endDate, setEndDate] = useState(todayCA());
@@ -44,7 +45,6 @@ export default function BookedBalance() {
   const [employee, setEmployee] = useState(null);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -54,7 +54,16 @@ export default function BookedBalance() {
       ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
     });
     api.get(`/reports/leave/booked-balance?${params}`)
-      .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
+      .then(r => {
+        const raw = Array.isArray(r.data.data) ? r.data.data : [];
+        // Compute Total (Booked / Balance) per row — frontend-only.
+        const enriched = raw.map(row => ({
+          ...row,
+          totalBooked: (Number(row.casualBooked) || 0) + (Number(row.absentBooked) || 0) + (Number(row.lwpBooked) || 0) + (Number(row.compOffBooked) || 0),
+          totalBalance: (Number(row.casualBalance) || 0) + (Number(row.compOffBalance) || 0),
+        }));
+        setRows(enriched);
+      })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
@@ -67,15 +76,12 @@ export default function BookedBalance() {
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 
-  const actions = (
-    <div className="flex items-center gap-2">
-      <UnitToggle value={unit} onChange={setUnit} />
-      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
-    </div>
-  );
+  const actions = <UnitToggle value={unit} onChange={setUnit} />;
 
   const filters = (
     <>
+      {/* Row 1: Period preset, dates, employee, actions */}
+      <PeriodPresetChip onSelect={({ start, end }) => { setStartDate(start); setEndDate(end); }} />
       <DateChip label="From Date" value={startDate} onChange={setStartDate} />
       <DateChip label="To Date" value={endDate} onChange={setEndDate} />
       <EmployeeFilter value={employee} onChange={setEmployee} />
@@ -84,23 +90,21 @@ export default function BookedBalance() {
           <Download size={14} /> Export
         </button>
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Filter size={14} /> Apply
+          <Filter size={14} /> Submit
         </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {filtersOpen && (
-        <>
-          <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-            <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-            <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-          </div>
-          <div className="w-full flex flex-wrap items-center gap-1.5">
-            <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          </div>
-        </>
-      )}
+      {/* Row 2: Direct reports + org-hierarchy filters */}
+      <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+        <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+        <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+      </div>
+      {/* Row 3: Employee status */}
+      <div className="w-full flex flex-wrap items-center gap-1.5">
+        <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+      </div>
     </>
   );
 
@@ -147,17 +151,27 @@ export default function BookedBalance() {
             <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
               <tr>
                 <th rowSpan={2} className="text-left px-4 py-2.5 align-bottom">Employee</th>
-                <th colSpan={3} className="text-center px-4 py-1.5 border-l border-slate-200">Paid (Casual)</th>
-                <th colSpan={3} className="text-center px-4 py-1.5 border-l border-slate-200">Unpaid</th>
+                <th colSpan={2} className="text-center px-4 py-1.5 border-l border-slate-200">Paid</th>
+                <th colSpan={5} className="text-center px-4 py-1.5 border-l border-slate-200">Unpaid</th>
                 <th colSpan={2} className="text-center px-4 py-1.5 border-l border-slate-200">Compensatory Off</th>
+                <th colSpan={2} className="text-center px-4 py-1.5 border-l border-slate-200">Total</th>
               </tr>
               <tr>
-                <th className="text-right px-4 py-2 border-l border-slate-200">Allocated</th>
-                <th className="text-right px-4 py-2">Booked</th>
+                {/* Paid — Casual Leave */}
+                <th className="text-right px-4 py-2 border-l border-slate-200">Booked</th>
                 <th className="text-right px-4 py-2">Balance</th>
+                {/* Unpaid — Absent */}
                 <th className="text-right px-4 py-2 border-l border-slate-200">Absent</th>
-                <th className="text-right px-4 py-2">LWP</th>
-                <th className="text-right px-4 py-2">Total</th>
+                {/* Unpaid — LWP */}
+                <th className="text-right px-4 py-2">LWP Booked</th>
+                <th className="text-right px-4 py-2">LWP Balance</th>
+                {/* Unpaid total */}
+                <th className="text-right px-4 py-2">Unpaid Total</th>
+                <th className="text-right px-4 py-2">Unpaid Balance</th>
+                {/* Comp Off */}
+                <th className="text-right px-4 py-2 border-l border-slate-200">Booked</th>
+                <th className="text-right px-4 py-2">Balance</th>
+                {/* Total across all */}
                 <th className="text-right px-4 py-2 border-l border-slate-200">Booked</th>
                 <th className="text-right px-4 py-2">Balance</th>
               </tr>
@@ -165,26 +179,32 @@ export default function BookedBalance() {
             <tbody className="divide-y divide-slate-50">
               <tr className="bg-slate-50/60 font-semibold text-slate-700">
                 <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'casualAllocated')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'casualBooked')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'casualBooked')}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'casualBalance')}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'absentBooked')}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'lwpBooked')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">N/A</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'unpaidTotalBooked')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">N/A</td>
                 <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'compOffBooked')}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'compOffBalance')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'totalBooked')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'totalBalance')}</td>
               </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.casualAllocated}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.casualBooked}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.casualBooked}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.casualBalance}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.absentBooked}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.lwpBooked}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-slate-400">N/A</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{row.unpaidTotalBooked}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-slate-400">N/A</td>
                   <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.compOffBooked}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.compOffBalance}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100 font-semibold">{row.totalBooked}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.totalBalance}</td>
                 </tr>
               ))}
             </tbody>

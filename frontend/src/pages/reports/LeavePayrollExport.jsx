@@ -6,11 +6,11 @@ import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
-import FilterToggleButton from './FilterToggleButton';
 import EmployeeFilter from './EmployeeFilter';
 import DirectReportsToggle from './DirectReportsToggle';
 import UnitToggle from './UnitToggle';
 import DateChip from './DateChip';
+import PeriodPresetChip from './PeriodPresetChip';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -60,13 +60,8 @@ const exportColumns = (reportType, unit) => {
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
 // Per-employee payroll-period summary. Default = Total/Loss of Pay/Paid.
-// Detailed adds Weekend/Holidays/Payable/On Duty and a Leave Paid/Unpaid/
-// Comp/Total breakdown, matching Zoho's Report Type toggle. On Duty is
-// always 0 — that leave type doesn't exist in this system yet, so the
-// column is honestly empty rather than a fabricated figure; it's kept in
-// the layout so the report needs no rework once On Duty is built. Day/Hour
-// toggle converts everything via a flat 8-hours-per-workday assumption —
-// this app doesn't track shift-specific hour totals for payroll days.
+// Detailed adds Weekend/Holidays/Payable/On Duty and a Leave breakdown.
+// All filters are always visible (no toggle), matching Zoho's layout.
 export default function LeavePayrollExport() {
   const [startDate, setStartDate] = useState(monthStartCA());
   const [endDate, setEndDate] = useState(todayCA());
@@ -79,7 +74,6 @@ export default function LeavePayrollExport() {
   const [employee, setEmployee] = useState(null);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -105,15 +99,12 @@ export default function LeavePayrollExport() {
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 
-  const actions = (
-    <div className="flex items-center gap-2">
-      <UnitToggle value={unit} onChange={setUnit} />
-      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
-    </div>
-  );
+  const actions = <UnitToggle value={unit} onChange={setUnit} />;
 
   const filters = (
     <>
+      {/* Row 1: Period, dates, report type, employee, actions */}
+      <PeriodPresetChip onSelect={({ start, end }) => { setStartDate(start); setEndDate(end); }} />
       <DateChip label="From Date" value={startDate} onChange={setStartDate} />
       <DateChip label="To Date" value={endDate} onChange={setEndDate} />
       <ReportTypeDropdown value={reportType} onChange={setReportType} />
@@ -123,23 +114,21 @@ export default function LeavePayrollExport() {
           <Download size={14} /> Export
         </button>
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Filter size={14} /> Apply
+          <Filter size={14} /> Submit
         </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {filtersOpen && (
-        <>
-          <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-            <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-            <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-          </div>
-          <div className="w-full flex flex-wrap items-center gap-1.5">
-            <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          </div>
-        </>
-      )}
+      {/* Row 2: Direct reports + org filters */}
+      <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+        <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+        <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+      </div>
+      {/* Row 3: Employee status */}
+      <div className="w-full flex flex-wrap items-center gap-1.5">
+        <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+      </div>
     </>
   );
 

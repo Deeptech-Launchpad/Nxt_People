@@ -5,8 +5,8 @@ import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
-import FilterToggleButton from './FilterToggleButton';
 import LeaveTypeFilter from './LeaveTypeFilter';
+import DirectReportsToggle from './DirectReportsToggle';
 import PeriodFilter from './PeriodFilter';
 import LeaveExportModal from './LeaveExportModal';
 
@@ -38,6 +38,7 @@ const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 // Day-by-day leave calendar grid (employee rows × date columns) — same
 // walk pattern as Attendance's Muster Roll, but cells carry a leave-type
 // code instead of a present/absent code.
+// All filters are always visible (no toggle), matching Zoho's layout.
 export default function ResourceAvailability() {
   const [periodKey, setPeriodKey] = useState('thisMonth');
   const [range_, setRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisMonth').value);
@@ -45,14 +46,15 @@ export default function ResourceAvailability() {
   const [data, setData] = useState(null);
   const [employeeStatus, setEmployeeStatus] = useState('all');
   const [leaveType, setLeaveType] = useState('');
+  const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
     const params = new URLSearchParams({
-      startDate: range_.start, endDate: range_.end, employeeStatus, ...(leaveType ? { leaveType } : {}),
+      startDate: range_.start, endDate: range_.end, employeeStatus, directReportsOnly: String(directReportsOnly),
+      ...(leaveType ? { leaveType } : {}),
       ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
     });
     api.get(`/reports/leave/resource-availability?${params}`)
@@ -62,20 +64,20 @@ export default function ResourceAvailability() {
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [range_, employeeStatus, leaveType, dimFilters]);
+  useEffect(load, [range_, employeeStatus, leaveType, directReportsOnly, dimFilters]);
 
   const exportRows = data ? data.data.map(emp => ({ ...emp, cells: emp.days.filter(Boolean).join(', ') })) : [];
 
   const reset = () => {
     setPeriodKey('thisMonth'); setRange(PERIOD_OPTIONS.find(o => o.key === 'thisMonth').value);
-    setEmployeeStatus('all'); setLeaveType(''); setDimFilters({});
+    setEmployeeStatus('all'); setLeaveType(''); setDirectReportsOnly(false); setDimFilters({});
   };
-
-  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const filters = (
     <>
+      {/* Row 1: Period selector, leave type, actions */}
       <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(value, key) => { setPeriodKey(key); setRange(value); }} />
+      <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
@@ -84,17 +86,16 @@ export default function ResourceAvailability() {
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {filtersOpen && (
-        <>
-          <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-            <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
-            <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-          </div>
-          <div className="w-full flex flex-wrap items-center gap-1.5">
-            <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          </div>
-        </>
-      )}
+      {/* Row 2: Direct reports + org filters */}
+      <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+        <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+        <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+      </div>
+      {/* Row 3: Employee status */}
+      <div className="w-full flex flex-wrap items-center gap-1.5">
+        <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+      </div>
+      {/* Legend */}
       <div className="flex items-center gap-3 text-[12px] text-slate-500 flex-wrap w-full pt-1">
         {Object.entries(LEGEND).map(([code, label]) => (
           <span key={code} className="flex items-center gap-1"><span className={`px-1.5 py-0.5 rounded font-semibold ${CODE_STYLE[code]}`}>{code}</span>{label}</span>
@@ -104,7 +105,7 @@ export default function ResourceAvailability() {
   );
 
   return (
-    <ReportShell title="Resource Availability" subtitle="Leave calendar for the selected period" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Resource Availability" subtitle="Leave calendar for the selected period" filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {!data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (

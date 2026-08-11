@@ -6,9 +6,9 @@ import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
-import FilterToggleButton from './FilterToggleButton';
 import LeaveTypeFilter from './LeaveTypeFilter';
 import LeaveExportModal from './LeaveExportModal';
+import DirectReportsToggle from './DirectReportsToggle';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -34,14 +34,15 @@ export default function DailyLeaveStatus() {
   const [employees, setEmployees] = useState([]);
   const [employeeStatus, setEmployeeStatus] = useState('all');
   const [leaveType, setLeaveType] = useState('');
+  const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
     const params = new URLSearchParams({
-      date, employeeStatus, ...(leaveType ? { leaveType } : {}),
+      date, employeeStatus, directReportsOnly: String(directReportsOnly),
+      ...(leaveType ? { leaveType } : {}),
       ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
     });
     api.get(`/reports/leave/daily-status?${params}`)
@@ -51,61 +52,57 @@ export default function DailyLeaveStatus() {
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [date, employeeStatus, leaveType, dimFilters]);
+  useEffect(load, [date, employeeStatus, leaveType, directReportsOnly, dimFilters]);
 
   const total = byType.reduce((s, r) => s + Number(r.count), 0);
   const donutData = byType.map(r => ({ label: LEAVE_LABEL[r.leaveType] || r.leaveType, count: r.count }));
 
   const reset = () => {
-    setDate(todayCA()); setEmployeeStatus('all'); setLeaveType(''); setDimFilters({});
+    setDate(todayCA()); setEmployeeStatus('all'); setLeaveType(''); setDirectReportsOnly(false); setDimFilters({});
   };
 
   const actions = (
-    <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
-        {[['chart', 'Chart'], ['list', 'List']].map(([k, l]) => (
-          <button key={k} onClick={() => setView(k)}
-            className={`px-3 py-1.5 text-[13px] font-semibold rounded-md transition-colors ${view === k ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
-            {l}
-          </button>
-        ))}
-      </div>
-      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+    <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+      {[['chart', 'Chart'], ['list', 'List']].map(([k, l]) => (
+        <button key={k} onClick={() => setView(k)}
+          className={`px-3 py-1.5 text-[13px] font-semibold rounded-md transition-colors ${view === k ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
+          {l}
+        </button>
+      ))}
     </div>
   );
 
   const filters = (
     <>
+      {/* Row 1: Date nav, leave type, actions */}
       <div>
-        <label className="block text-[13px] font-medium text-slate-600 mb-1">Date</label>
         <div className="flex items-center gap-1">
           <button onClick={() => setDate(d => shiftDay(d, -1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
           <button onClick={() => setDate(d => shiftDay(d, 1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
         </div>
       </div>
+      <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Download size={14} /> Export
         </button>
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Filter size={14} /> Apply
+          <Filter size={14} /> Submit
         </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {filtersOpen && (
-        <>
-          <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-            <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
-            <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-          </div>
-          <div className="w-full flex flex-wrap items-center gap-1.5">
-            <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          </div>
-        </>
-      )}
+      {/* Row 2: Direct reports + org filters */}
+      <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+        <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+        <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+      </div>
+      {/* Row 3: Employee status */}
+      <div className="w-full flex flex-wrap items-center gap-1.5">
+        <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+      </div>
     </>
   );
 

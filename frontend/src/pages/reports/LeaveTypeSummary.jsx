@@ -6,7 +6,6 @@ import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
-import FilterToggleButton from './FilterToggleButton';
 import EmployeeFilter from './EmployeeFilter';
 import DirectReportsToggle from './DirectReportsToggle';
 import { EmployeeCell } from './TableReportPage';
@@ -26,6 +25,7 @@ const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 // 2025", "Casual Leave 2024", ...), sourced from /leave/types-available so
 // it only ever lists years that actually have data, per the explicit
 // instruction that our system should accumulate the same way Zoho's does.
+// All filters are always visible (no toggle), matching Zoho's layout.
 export default function LeaveTypeSummary() {
   const [available, setAvailable] = useState([]);
   const [selection, setSelection] = useState(null); // { leaveType, year }
@@ -36,7 +36,6 @@ export default function LeaveTypeSummary() {
   const [employee, setEmployee] = useState(null);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     api.get('/reports/leave/types-available')
@@ -67,12 +66,10 @@ export default function LeaveTypeSummary() {
     setEmployee(null); setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 
-  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
-
   const filters = (
     <>
+      {/* Row 1: Leave type selector, employee, actions */}
       <div>
-        <label className="block text-[13px] font-medium text-slate-600 mb-1">Leave Type</label>
         <select
           value={selection ? `${selection.leaveType}|${selection.year}` : ''}
           onChange={e => { const [leaveType, year] = e.target.value.split('|'); setSelection({ leaveType, year: Number(year) }); }}
@@ -92,22 +89,20 @@ export default function LeaveTypeSummary() {
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {filtersOpen && (
-        <>
-          <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
-            <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
-            <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
-          </div>
-          <div className="w-full flex flex-wrap items-center gap-1.5">
-            <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
-          </div>
-        </>
-      )}
+      {/* Row 2: Direct reports + org filters */}
+      <div className="w-full flex flex-wrap items-center gap-1.5 pt-1">
+        <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
+        <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+      </div>
+      {/* Row 3: Employee status */}
+      <div className="w-full flex flex-wrap items-center gap-1.5">
+        <EmployeeStatusFilter value={employeeStatus} onChange={setEmployeeStatus} />
+      </div>
     </>
   );
 
   return (
-    <ReportShell title="Leave Type Wise Summary" subtitle="Per-employee ledger for the selected leave type and year" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Leave Type Wise Summary" subtitle="Per-employee ledger for the selected leave type and year" filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {!available.length ? (
         <div className="text-center py-16 text-slate-400">No leave records yet</div>
       ) : (
