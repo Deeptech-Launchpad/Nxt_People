@@ -24,10 +24,15 @@ export default function ComboTrendChart({ data, xKey, barColor = '#6366f1', line
         <Legend wrapperStyle={{ fontSize: 12 }} />
         {dividerX && <ReferenceLine x={dividerX} yAxisId="left" stroke="#cbd5e1" strokeDasharray="3 3" />}
         <Bar yAxisId="left" dataKey="count" name={barLabel} fill={barColor} radius={[4, 4, 0, 0]}>
-          <LabelList dataKey="count" position="top" fontSize={11} fill="#475569" />
+          <LabelList dataKey="count" position="top" offset={6} fontSize={11} fill="#475569" />
         </Bar>
+        {/* The count and growth% labels sit on two independent y-axis
+            scales, so a bar's top and a line's point can coincidentally
+            land at the same pixel height. A much larger offset on the
+            growth% label keeps the two from rendering on top of each
+            other (garbled/overlapping text) when that happens. */}
         <Line yAxisId="right" dataKey="growth" name={lineLabel} stroke={lineColor} strokeWidth={2} dot={{ r: 3 }} connectNulls>
-          <LabelList dataKey="growth" position="top" fontSize={10} fill={lineColor} formatter={growthLabel} />
+          <LabelList dataKey="growth" position="top" offset={20} fontSize={10} fill={lineColor} formatter={growthLabel} />
         </Line>
       </ComposedChart>
     </ResponsiveContainer>

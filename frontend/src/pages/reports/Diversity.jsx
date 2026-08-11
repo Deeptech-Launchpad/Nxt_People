@@ -7,6 +7,7 @@ import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
 import ChartExportMenu from './ChartExportMenu';
 import FilterRow from './FilterRow';
+import FilterToggleButton from './FilterToggleButton';
 
 const TYPES = [['gender', 'Gender'], ['age', 'Age'], ['experience', 'Experience']];
 
@@ -40,6 +41,7 @@ export default function Diversity() {
   const initialType = TYPES.some(([k]) => k === searchParams.get('type')) ? searchParams.get('type') : 'gender';
   const [type, setType] = useState(initialType);
   const [filters, setFilters] = useState({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
 
@@ -58,11 +60,18 @@ export default function Diversity() {
   const withoutGender = rows.find(r => r.label === 'Unspecified')?.count || 0;
   const typeLabel = TYPES.find(([k]) => k === type)[1];
 
-  const actions = <TypeDropdown type={type} setType={setType} />;
+  const actions = (
+    <div className="flex items-center gap-2">
+      <TypeDropdown type={type} setType={setType} />
+      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+    </div>
+  );
 
   return (
     <ReportShell title="Diversity" subtitle="Active employees by gender, age, or experience" actions={actions} loading={loading} switcherCategory="Employee Information">
-      <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} />
+      {filtersOpen && (
+        <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} />
+      )}
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>
       ) : (

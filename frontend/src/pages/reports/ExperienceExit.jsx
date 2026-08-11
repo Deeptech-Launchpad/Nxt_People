@@ -6,6 +6,7 @@ import ReportShell from './ReportShell';
 import ChartExportMenu from './ChartExportMenu';
 import PeriodFilter from './PeriodFilter';
 import EmploymentTypeFilter from './EmploymentTypeFilter';
+import FilterToggleButton from './FilterToggleButton';
 
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
@@ -30,6 +31,7 @@ export default function ExperienceExit() {
   const [periodKey, setPeriodKey] = useState('thisYear');
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisYear').value);
   const [employmentType, setEmploymentType] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const load = (range = dateRange, et = employmentType) => {
     setLoading(true);
@@ -42,7 +44,7 @@ export default function ExperienceExit() {
 
   useEffect(() => load(dateRange, employmentType), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filters = (
+  const filters = filtersOpen ? (
     <>
       <PeriodFilter
         options={PERIOD_OPTIONS}
@@ -51,7 +53,9 @@ export default function ExperienceExit() {
       />
       <EmploymentTypeFilter value={employmentType} onChange={v => { setEmploymentType(v); load(dateRange, v); }} />
     </>
-  );
+  ) : null;
+
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const total = rows.reduce((s, r) => s + Number(r.count), 0) || 1;
   const pointLabel = ({ x, y, index }) => {
@@ -64,7 +68,7 @@ export default function ExperienceExit() {
   };
 
   return (
-    <ReportShell title="Experience Wise Exit" subtitle="Exited employees banded by years of experience at exit" filters={filters} loading={loading} switcherCategory="Employee Information">
+    <ReportShell title="Experience Wise Exit" subtitle="Exited employees banded by years of experience at exit" actions={actions} filters={filters} loading={loading} switcherCategory="Employee Information">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>
       ) : (

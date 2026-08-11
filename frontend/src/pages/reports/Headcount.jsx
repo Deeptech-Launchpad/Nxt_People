@@ -5,6 +5,7 @@ import ReportShell from './ReportShell';
 import ComboTrendChart from './ComboTrendChart';
 import ChartExportMenu from './ChartExportMenu';
 import PeriodFilter from './PeriodFilter';
+import FilterToggleButton from './FilterToggleButton';
 
 const PERIOD_OPTIONS = [5, 10, 15].map(y => ({ key: String(y), label: `Last ${y} Years`, value: y }));
 
@@ -12,6 +13,7 @@ export default function Headcount() {
   const [years, setYears] = useState(10);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const load = (y = years) => {
     setLoading(true);
@@ -23,16 +25,18 @@ export default function Headcount() {
 
   useEffect(() => load(years), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filters = (
+  const filters = filtersOpen ? (
     <PeriodFilter
       options={PERIOD_OPTIONS}
       selectedKey={String(years)}
       onSubmit={(value) => { setYears(value); load(value); }}
     />
-  );
+  ) : null;
+
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   return (
-    <ReportShell title="Headcount" subtitle="Active employees at year-end, year over year" filters={filters} loading={loading} switcherCategory="Employee Information">
+    <ReportShell title="Headcount" subtitle="Active employees at year-end, year over year" actions={actions} filters={filters} loading={loading} switcherCategory="Employee Information">
       {data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>
       ) : (

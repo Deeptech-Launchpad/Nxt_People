@@ -21,8 +21,13 @@ export default function MiniDonut({ title, data, to }) {
         <div className="text-center py-10 text-slate-400 text-[13px]">No data</div>
       ) : (
         <ResponsiveContainer width="100%" height={200}>
-          <PieChart>
-            <Pie data={data} dataKey="count" nameKey="label" cx="50%" cy="50%" innerRadius={45} outerRadius={80} paddingAngle={1} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine={false}>
+          {/* recharts' default Pie startAngle puts the first (often
+              largest) slice's midpoint right at 12 o'clock, so its label
+              needs headroom above the chart or it clips/overlaps the
+              card's top edge — hence the top margin and slightly smaller
+              radius versus the chart's own height. */}
+          <PieChart margin={{ top: 18, right: 4, bottom: 4, left: 4 }}>
+            <Pie data={data} dataKey="count" nameKey="label" cx="50%" cy="50%" innerRadius={42} outerRadius={74} paddingAngle={1} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine={false}>
               {data.map((d, i) => <Cell key={d.label} fill={COLORS[i % COLORS.length]} />)}
             </Pie>
             <Tooltip formatter={(value, name) => [value, name]} />

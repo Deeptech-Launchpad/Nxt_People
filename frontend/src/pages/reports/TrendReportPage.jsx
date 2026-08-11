@@ -6,6 +6,7 @@ import ComboTrendChart from './ComboTrendChart';
 import ChartExportMenu from './ChartExportMenu';
 import PeriodFilter from './PeriodFilter';
 import EmploymentTypeFilter from './EmploymentTypeFilter';
+import FilterToggleButton from './FilterToggleButton';
 
 const PERIOD_OPTIONS = [3, 6, 12, 24].map(m => ({ key: String(m), label: `Last ${m === 12 ? 'Twelve' : m} Months`, value: m }));
 
@@ -18,6 +19,7 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
   const [employmentType, setEmploymentType] = useState('');
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const load = (m = months, et = employmentType) => {
     setLoading(true);
@@ -36,7 +38,7 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => load(months, employmentType), [endpoint]);
 
-  const filters = (
+  const filters = filtersOpen ? (
     <>
       <PeriodFilter
         options={PERIOD_OPTIONS}
@@ -47,10 +49,12 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
         <EmploymentTypeFilter value={employmentType} onChange={v => { setEmploymentType(v); load(months, v); }} />
       )}
     </>
-  );
+  ) : null;
+
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   return (
-    <ReportShell title={title} subtitle={subtitle} filters={filters} loading={loading} switcherCategory={switcherCategory}>
+    <ReportShell title={title} subtitle={subtitle} actions={actions} filters={filters} loading={loading} switcherCategory={switcherCategory}>
       {data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
