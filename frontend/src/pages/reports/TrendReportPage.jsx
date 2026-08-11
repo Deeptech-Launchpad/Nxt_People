@@ -62,11 +62,14 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
           <div className="flex justify-end mb-1">
             <ChartExportMenu
               rows={data}
-              columns={[{ key: 'month', header: 'Month' }, { key: 'year', header: 'Year' }, { key: 'count', header: 'Count' }, { key: 'growth', header: 'Growth %' }]}
+              columns={[{ key: 'month', header: 'Month' }, { key: 'year', header: 'Year' }, { key: 'count', header: 'Count' }, { key: 'growth', header: 'Percentage' }]}
               fileStub={title.toLowerCase().replace(/\s+/g, '-')}
             />
           </div>
-          <ComboTrendChart data={data} xKey="month" barColor={barColor} />
+          {/* growth is each month's count as a % of that month's active
+              headcount (an addition/attrition rate), not a month-over-month
+              change — see monthlySeriesWithGrowth() on the backend. */}
+          <ComboTrendChart data={data} xKey="month" barColor={barColor} lineLabel="Percentage" />
         </div>
       )}
     </ReportShell>

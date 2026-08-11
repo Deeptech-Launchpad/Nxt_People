@@ -66,7 +66,7 @@ function MiniTrend({ title, data, color, to, navigate }) {
       {data.length === 0 ? (
         <div className="text-center py-10 text-slate-400 text-[13px]">No data in the last 6 months</div>
       ) : (
-        <ComboTrendChart data={data} xKey="month" barColor={color} />
+        <ComboTrendChart data={data} xKey="month" barColor={color} lineLabel="Percentage" />
       )}
     </div>
   );

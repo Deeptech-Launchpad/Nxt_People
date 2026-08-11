@@ -7,7 +7,7 @@ const growthLabel = (v) => (v === null || v === undefined ? '' : `${v}%`);
 // chart for Headcount/Addition trend/Attrition trend. When the series
 // crosses a calendar-year boundary (month-keyed data only), a dotted
 // reference line marks where one year ends and the next begins.
-export default function ComboTrendChart({ data, xKey, barColor = '#6366f1', lineColor = '#84cc16', barLabel = 'Count', lineLabel = 'Growth %' }) {
+export default function ComboTrendChart({ data, xKey, barColor = '#6366f1', lineColor = '#65a30d', barLabel = 'Count', lineLabel = 'Growth %' }) {
   let dividerX = null;
   for (let i = 1; i < data.length; i++) {
     if (data[i].year !== data[i - 1].year) { dividerX = data[i][xKey]; break; }

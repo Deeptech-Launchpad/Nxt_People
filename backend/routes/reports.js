@@ -454,17 +454,40 @@ async function monthlySeriesWithGrowth(dateColumn, months, user, employmentType)
   );
   const countMap = new Map(r.rows.map(row => [row.ym, row.count]));
   const now = new Date();
+  const today = now.toLocaleDateString('en-CA');
   const series = [];
   for (let i = months; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    series.push({ year: d.getFullYear(), month: d.toLocaleDateString('en-US', { month: 'short' }), count: countMap.get(ym) || 0 });
+    const asOf = i === 0 ? today : new Date(d.getFullYear(), d.getMonth() + 1, 0).toLocaleDateString('en-CA');
+    series.push({ year: d.getFullYear(), month: d.toLocaleDateString('en-US', { month: 'short' }), count: countMap.get(ym) || 0, asOf });
   }
-  return series.slice(1).map((row, i) => {
-    const prev = series[i].count;
-    const growth = prev > 0 ? parseFloat((((row.count - prev) / prev) * 100).toFixed(2)) : null;
-    return { month: row.month, year: row.year, count: row.count, growth };
-  });
+
+  // Percentage = this month's count as a share of the active headcount at
+  // that month's end (point-in-time reconstruction, same technique as
+  // /employee/headcount-trend) — matches Zoho's "Percentage" series, which
+  // is an addition/attrition RATE, not a month-over-month change in the
+  // raw count. A month-over-month delta is wildly unstable on small counts
+  // (one extra hire on a base of 1 reads as "1000%"), which is why the
+  // line used to look like it was jumping around independent of the data.
+  const hcParams = [];
+  let hcClause = '';
+  if (employmentType) { hcParams.push(employmentType); hcClause = ` AND e.employment_type = $2`; }
+  const hcScope = reportsScope(user, 'e', hcParams.length + 2);
+
+  const withPercentage = [];
+  for (const row of series.slice(1)) {
+    // eslint-disable-next-line no-await-in-loop
+    const hcRes = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM employees e
+        WHERE e.joining_date <= $1::date AND (e.exit_date IS NULL OR e.exit_date > $1::date)${hcClause}${hcScope.clause}`,
+      [row.asOf, ...hcParams, ...hcScope.params]
+    );
+    const headcount = hcRes.rows[0].count;
+    const growth = headcount > 0 ? parseFloat(((row.count / headcount) * 100).toFixed(2)) : null;
+    withPercentage.push({ month: row.month, year: row.year, count: row.count, growth });
+  }
+  return withPercentage;
 }
 
 // Shared narrowing filters for Distribution/Diversity's secondary filter
