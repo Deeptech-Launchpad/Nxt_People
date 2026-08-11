@@ -4,18 +4,25 @@ import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import ComboTrendChart from './ComboTrendChart';
 import ChartExportMenu from './ChartExportMenu';
+import PeriodFilter from './PeriodFilter';
+import EmploymentTypeFilter from './EmploymentTypeFilter';
+
+const PERIOD_OPTIONS = [3, 6, 12, 24].map(m => ({ key: String(m), label: `Last ${m === 12 ? 'Twelve' : m} Months`, value: m }));
 
 // Month-by-month combo chart report page — covers Employee addition trend
 // and Employee attrition trend, whose endpoints return
-// [{month, year, count, growth}].
-export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#2563eb', switcherCategory }) {
+// [{month, year, count, growth}]. `showEmploymentType` is only passed for
+// Attrition Trend — Zoho's own Addition Trend has no such filter either.
+export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#2563eb', switcherCategory, showEmploymentType = false }) {
   const [months, setMonths] = useState(12);
+  const [employmentType, setEmploymentType] = useState('');
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
 
-  const load = () => {
+  const load = (m = months, et = employmentType) => {
     setLoading(true);
-    api.get(`${endpoint}?months=${months}`)
+    const params = new URLSearchParams({ months: m, ...(et ? { employmentType: et } : {}) });
+    api.get(`${endpoint}?${params}`)
       .then(r => setData(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
@@ -23,17 +30,23 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
 
   // `endpoint` in the deps for the same reason as TableReportPage — this
   // component instance is reused across sibling reports navigated to via
-  // the ReportShell switcher, so a fetch keyed only on `months` would never
-  // re-run when the report itself changes.
-  useEffect(load, [endpoint, months]);
+  // the ReportShell switcher, so a fetch keyed only on `endpoint` alone
+  // wouldn't re-run for a fresh report; months/employmentType changes are
+  // applied explicitly via Submit, not auto-reload.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => load(months, employmentType), [endpoint]);
 
   const filters = (
-    <div>
-      <label className="block text-[13px] font-medium text-slate-600 mb-1">Range</label>
-      <select value={months} onChange={e => setMonths(Number(e.target.value))} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400">
-        {[6, 12, 24].map(m => <option key={m} value={m}>Last {m} months</option>)}
-      </select>
-    </div>
+    <>
+      <PeriodFilter
+        options={PERIOD_OPTIONS}
+        selectedKey={String(months)}
+        onSubmit={(value) => { setMonths(value); load(value, employmentType); }}
+      />
+      {showEmploymentType && (
+        <EmploymentTypeFilter value={employmentType} onChange={v => { setEmploymentType(v); load(months, v); }} />
+      )}
+    </>
   );
 
   return (

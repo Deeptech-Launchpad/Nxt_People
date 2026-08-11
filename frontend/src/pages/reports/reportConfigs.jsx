@@ -66,7 +66,7 @@ export const expectedVsWorkedConfig = {
 };
 
 export const additionTrendConfig = { title: 'Employee Addition Trend', subtitle: 'New hires per month', endpoint: '/reports/employee/addition-trend', barColor: '#10b981', switcherCategory: 'Employee Information' };
-export const attritionTrendConfig = { title: 'Employee Attrition Trend', subtitle: 'Exits per month', endpoint: '/reports/employee/attrition-trend', barColor: '#ef4444', switcherCategory: 'Employee Information' };
+export const attritionTrendConfig = { title: 'Employee Attrition Trend', subtitle: 'Exits per month', endpoint: '/reports/employee/attrition-trend', barColor: '#ef4444', switcherCategory: 'Employee Information', showEmploymentType: true };
 
 // Leave Data for Payroll is now a bespoke page (LeavePayrollExport.jsx) —
 // a per-employee Total/Loss of Pay/Paid days summary, matching Zoho's

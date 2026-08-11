@@ -4,17 +4,54 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import ChartExportMenu from './ChartExportMenu';
+import PeriodFilter from './PeriodFilter';
+import EmploymentTypeFilter from './EmploymentTypeFilter';
+
+const now = new Date();
+const y = now.getFullYear(), m = now.getMonth();
+const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
+
+// Date-range presets matching Zoho's Period dropdown on Experience Wise
+// Exit. "Custom" (an arbitrary picked range) isn't offered here — only
+// these fixed presets — to keep the filter panel a straightforward preset
+// list rather than adding a separate date-picker sub-form.
+const PERIOD_OPTIONS = [
+  { key: 'yesterday', label: 'Yesterday', value: range(new Date(y, m, now.getDate() - 1), new Date(y, m, now.getDate() - 1)) },
+  { key: 'today', label: 'Today', value: range(now, now) },
+  { key: 'lastMonth', label: 'Last Month', value: range(new Date(y, m - 1, 1), new Date(y, m, 0)) },
+  { key: 'thisMonth', label: 'This Month', value: range(new Date(y, m, 1), new Date(y, m + 1, 0)) },
+  { key: 'lastYear', label: 'Last Year', value: range(new Date(y - 1, 0, 1), new Date(y - 1, 11, 31)) },
+  { key: 'thisYear', label: 'This Year', value: range(new Date(y, 0, 1), new Date(y, 11, 31)) },
+];
 
 export default function ExperienceExit() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const [periodKey, setPeriodKey] = useState('thisYear');
+  const [dateRange, setDateRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisYear').value);
+  const [employmentType, setEmploymentType] = useState('');
 
-  useEffect(() => {
-    api.get('/reports/employee/experience-exit')
+  const load = (range = dateRange, et = employmentType) => {
+    setLoading(true);
+    const params = new URLSearchParams({ startDate: range.start, endDate: range.end, ...(et ? { employmentType: et } : {}) });
+    api.get(`/reports/employee/experience-exit?${params}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => load(dateRange, employmentType), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filters = (
+    <>
+      <PeriodFilter
+        options={PERIOD_OPTIONS}
+        selectedKey={periodKey}
+        onSubmit={(value, key) => { setPeriodKey(key); setDateRange(value); load(value, employmentType); }}
+      />
+      <EmploymentTypeFilter value={employmentType} onChange={v => { setEmploymentType(v); load(dateRange, v); }} />
+    </>
+  );
 
   const total = rows.reduce((s, r) => s + Number(r.count), 0) || 1;
   const pointLabel = ({ x, y, index }) => {
@@ -27,7 +64,7 @@ export default function ExperienceExit() {
   };
 
   return (
-    <ReportShell title="Experience Wise Exit" subtitle="Exited employees banded by years of experience at exit" loading={loading} switcherCategory="Employee Information">
+    <ReportShell title="Experience Wise Exit" subtitle="Exited employees banded by years of experience at exit" filters={filters} loading={loading} switcherCategory="Employee Information">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>
       ) : (

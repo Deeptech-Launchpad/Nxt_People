@@ -4,29 +4,31 @@ import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import ComboTrendChart from './ComboTrendChart';
 import ChartExportMenu from './ChartExportMenu';
+import PeriodFilter from './PeriodFilter';
+
+const PERIOD_OPTIONS = [5, 10, 15].map(y => ({ key: String(y), label: `Last ${y} Years`, value: y }));
 
 export default function Headcount() {
   const [years, setYears] = useState(10);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
 
-  const load = () => {
+  const load = (y = years) => {
     setLoading(true);
-    api.get(`/reports/employee/headcount-trend?years=${years}`)
+    api.get(`/reports/employee/headcount-trend?years=${y}`)
       .then(r => setData(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [years]);
+  useEffect(() => load(years), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filters = (
-    <div>
-      <label className="block text-[13px] font-medium text-slate-600 mb-1">Range</label>
-      <select value={years} onChange={e => setYears(Number(e.target.value))} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400">
-        {[5, 10, 15].map(y => <option key={y} value={y}>Last {y} years</option>)}
-      </select>
-    </div>
+    <PeriodFilter
+      options={PERIOD_OPTIONS}
+      selectedKey={String(years)}
+      onSubmit={(value) => { setYears(value); load(value); }}
+    />
   );
 
   return (
