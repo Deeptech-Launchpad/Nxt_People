@@ -48,7 +48,10 @@ function computeLabelSlots(data) {
 // `denom` is passed in rather than summed from the slices so charts whose
 // buckets exclude people with a missing field (age, tenure) still divide by
 // the real headcount and agree with the stat panel beside them.
-export function makeSliceLabel(denom, data, chartHeight = 360) {
+// `labelText` swaps the default two-line "Name:" / "12.34% (56)" for a
+// caller-supplied single line — Daily Leave Status labels its slices
+// "Casual Leave,1", with no percentage at all.
+export function makeSliceLabel(denom, data, chartHeight = 360, labelText = null) {
   const slots = computeLabelSlots(data);
 
   return function SliceLabel({ cx, cy, midAngle, outerRadius, name, value, index }) {
@@ -84,7 +87,9 @@ export function makeSliceLabel(denom, data, chartHeight = 360) {
           x={anchorX} y={y} textAnchor={slot.right ? 'start' : 'end'}
           dominantBaseline="central" fontSize={compact ? 10 : 11} fill="#334155"
         >
-          {compact ? (
+          {labelText ? (
+            <tspan>{labelText(head, value, pct)}</tspan>
+          ) : compact ? (
             <tspan>{head}: {pct}% ({value})</tspan>
           ) : (
             <>
