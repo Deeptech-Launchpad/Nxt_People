@@ -1,0 +1,121 @@
+import React, { useState, useEffect } from 'react';
+import { Download, RotateCcw } from 'lucide-react';
+import api from '../../utils/api';
+import toast from 'react-hot-toast';
+import ReportShell from './ReportShell';
+import FilterToggleButton from './FilterToggleButton';
+import StandardFilterRows from './StandardFilterRows';
+import PeriodFilter from './PeriodFilter';
+import LeaveExportModal from './LeaveExportModal';
+import useReportFilters from '../../hooks/useReportFilters';
+import { EmployeeCell } from './TableReportPage';
+
+const now = new Date();
+const y = now.getFullYear(), m = now.getMonth();
+const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
+
+const PERIOD_OPTIONS = [
+  { key: 'thisMonth', label: 'This Month', value: range(new Date(y, m, 1), new Date(y, m + 1, 0)) },
+  { key: 'lastMonth', label: 'Last Month', value: range(new Date(y, m - 1, 1), new Date(y, m, 0)) },
+  { key: 'thisYear', label: 'This Year', value: range(new Date(y, 0, 1), new Date(y, 11, 31)) },
+];
+
+const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+const fmtH = h => `${h > 0 ? '+' : ''}${(Number(h) || 0).toFixed(2)}h`;
+
+const EXPORT_COLUMNS = [
+  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
+  { key: 'shiftName', header: 'Shift' }, { key: 'expectedHours', header: 'Expected Hours' },
+  { key: 'workedHours', header: 'Worked Hours' }, { key: 'variance', header: 'Variance' },
+];
+const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
+
+// Expected (shift length × working days in range) vs actually logged hours.
+// Zoho's version is a carry-forward overtime bank with a Previous Balance
+// rolled between pay periods; this system has no time-bank or pay-period
+// model, so the report stays an honest single-period comparison rather than
+// showing a fabricated balance.
+export default function ExpectedVsWorked() {
+  const f = useReportFilters();
+  const [periodKey, setPeriodKey] = useState('thisMonth');
+  const [dateRange, setDateRange] = useState(PERIOD_OPTIONS[0].value);
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]);
+  const [workingDays, setWorkingDays] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    const params = new URLSearchParams({ startDate: dateRange.start, endDate: dateRange.end, ...f.params() });
+    api.get(`/reports/attendance/expected-vs-worked?${params}`)
+      .then(r => { setRows(Array.isArray(r.data.data) ? r.data.data : []); setWorkingDays(r.data.workingDays || 0); })
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
+      .finally(() => setLoading(false));
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, [dateRange, ...f.deps]);
+
+  const reset = () => { setPeriodKey('thisMonth'); setDateRange(PERIOD_OPTIONS[0].value); f.reset(); };
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
+
+  const filters = (
+    <>
+      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
+      <span className="text-[12.5px] text-slate-500 px-1 py-1.5 whitespace-nowrap">
+        Working days in range: <span className="font-semibold text-slate-700">{workingDays}</span>
+      </span>
+      <div className="flex items-center gap-2 ml-auto">
+        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <Download size={14} /> Export
+        </button>
+        <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <RotateCcw size={14} /> Reset
+        </button>
+      </div>
+      {filtersOpen && <StandardFilterRows f={f} />}
+    </>
+  );
+
+  return (
+    <ReportShell title="Expected vs Worked Hours" subtitle="Expected hours from shift × working days vs. actual hours logged" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+      {rows.length === 0 ? (
+        <div className="text-center py-16 text-slate-400">No data for this period</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[14px]">
+            <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
+              <tr>
+                <th className="text-left px-4 py-2.5">Employee</th>
+                <th className="text-left px-4 py-2.5">Shift(s)</th>
+                <th className="text-right px-4 py-2.5">Expected Hours</th>
+                <th className="text-right px-4 py-2.5">Worked Hours</th>
+                <th className="text-right px-4 py-2.5">Variance</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              <tr className="bg-slate-50/60 font-semibold text-slate-700">
+                <td className="px-4 py-2.5">Total</td>
+                <td className="px-4 py-2.5"></td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'expectedHours').toFixed(2)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'workedHours').toFixed(2)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtH(sum(rows, 'variance'))}</td>
+              </tr>
+              {rows.map(row => (
+                <tr key={row._id}>
+                  <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
+                  <td className="px-4 py-2.5 text-slate-500">{row.shiftName || '—'}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{row.expectedHours}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{row.workedHours}</td>
+                  <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${row.variance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtH(row.variance)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`expected-vs-worked_${dateRange.start}_to_${dateRange.end}`} />
+    </ReportShell>
+  );
+}

@@ -31,9 +31,9 @@ export const REPORT_CATALOG = [
   {
     category: 'Attendance',
     reports: [
-      { label: 'Daily attendance status',              to: '/reports/attendance?tab=daily' },
-      { label: 'Early/late check-in and check-out',    to: '/reports/attendance?tab=detail' },
-      { label: 'Employee present/absent status',       to: '/reports/attendance?tab=summary' },
+      { label: 'Daily attendance status',              to: '/reports/attendance/daily-status' },
+      { label: 'Early/late check-in and check-out',    to: '/reports/attendance/early-late' },
+      { label: 'Employee present/absent status',       to: '/reports/attendance/present-absent' },
       { label: 'Presence hours break-up',               to: '/reports/attendance/hours-breakup' },
       { label: 'Attendance data for payroll',           to: '/reports/attendance/payroll-export' },
       { label: 'Muster roll',                            to: '/reports/attendance/muster-roll' },

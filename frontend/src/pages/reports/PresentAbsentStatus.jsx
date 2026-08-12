@@ -23,15 +23,14 @@ const PERIOD_OPTIONS = [
 
 const EXPORT_COLUMNS = [
   { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' },
-  { key: 'employeeCode', header: 'Employee ID' }, { key: 'shiftName', header: 'Shift' },
-  { key: 'codes', header: 'Daily Status' },
+  { key: 'employeeCode', header: 'Employee ID' }, { key: 'codes', header: 'Daily Codes' },
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
-// Muster Roll pairs the rostered Shift with the resulting Status under each
-// date — that pairing is what distinguishes it from Present/Absent Status,
-// which shows status alone.
-export default function MusterRoll() {
+// Employee × date grid of attendance codes — the report Zoho calls Employee
+// Present/Absent Status. Our previous "summary" tab was an aggregate table,
+// which is a different report entirely.
+export default function PresentAbsentStatus() {
   const f = useReportFilters();
   const [periodKey, setPeriodKey] = useState('thisMonth');
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisMonth').value);
@@ -43,7 +42,7 @@ export default function MusterRoll() {
   const load = () => {
     setLoading(true);
     const params = new URLSearchParams({ startDate: dateRange.start, endDate: dateRange.end, ...f.params() });
-    api.get(`/reports/attendance/muster-roll?${params}`)
+    api.get(`/reports/attendance/present-absent?${params}`)
       .then(r => setData(r.data))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
@@ -58,7 +57,7 @@ export default function MusterRoll() {
     f.reset();
   };
 
-  const exportRows = (data?.data || []).map(e => ({ ...e, codes: e.days.map(d => d.code).join(' ') }));
+  const exportRows = (data?.data || []).map(e => ({ ...e, codes: e.days.join(' ') }));
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const filters = (
@@ -84,7 +83,7 @@ export default function MusterRoll() {
   );
 
   return (
-    <ReportShell title="Muster Roll" subtitle="Rostered shift and resulting status, day by day" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell title="Employee Present/Absent Status" subtitle="Day-by-day attendance grid for the selected period" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {!data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
@@ -92,24 +91,16 @@ export default function MusterRoll() {
           <table className="text-[13px] border-collapse">
             <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
               <tr>
-                <th rowSpan={2} className="text-left px-3 py-2.5 sticky left-0 bg-slate-50 z-10 whitespace-nowrap align-bottom">Employee</th>
+                <th className="text-left px-3 py-2.5 sticky left-0 bg-slate-50 z-10 whitespace-nowrap">Employee</th>
                 {data.dayLabels.map(d => {
                   const dd = new Date(d);
                   return (
-                    <th key={d} colSpan={2} className="px-1.5 py-1.5 text-center border-l border-slate-200 leading-tight">
+                    <th key={d} className="px-1.5 py-2.5 text-center w-14 leading-tight">
                       <div>{dd.getDate()} {dd.toLocaleDateString('en-US', { month: 'short' })}</div>
                       <div className="text-slate-400 font-normal normal-case">{dd.toLocaleDateString('en-US', { weekday: 'short' })}</div>
                     </th>
                   );
                 })}
-              </tr>
-              <tr>
-                {data.dayLabels.map(d => (
-                  <React.Fragment key={d}>
-                    <th className="px-1.5 py-1.5 text-center font-medium text-slate-400 border-l border-slate-200">Shift</th>
-                    <th className="px-1.5 py-1.5 text-center font-medium text-slate-400">Status</th>
-                  </React.Fragment>
-                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -125,17 +116,12 @@ export default function MusterRoll() {
                       {emp.exitDate && <span className="ml-1.5 text-red-500 font-medium">Exited {new Date(emp.exitDate).toLocaleDateString('en-IN')}</span>}
                     </p>
                   </td>
-                  {emp.days.map((cell, i) => (
-                    <React.Fragment key={i}>
-                      <td className="px-1.5 py-2 text-center text-[10px] text-slate-500 border-l border-slate-100 max-w-[70px] truncate" title={cell.shift || ''}>
-                        {cell.shift || '—'}
-                      </td>
-                      <td className="px-1 py-2 text-center">
-                        {cell.code && cell.code !== '-'
-                          ? <span className={`inline-block min-w-8 px-1 rounded text-[10px] font-semibold py-0.5 ${codeStyle(cell.code)}`}>{cell.code}</span>
-                          : <span className="text-slate-300">-</span>}
-                      </td>
-                    </React.Fragment>
+                  {emp.days.map((code, i) => (
+                    <td key={i} className="px-1 py-2 text-center">
+                      {code && code !== '-'
+                        ? <span className={`inline-block min-w-8 px-1 rounded text-[10px] font-semibold py-0.5 ${codeStyle(code)}`}>{code}</span>
+                        : <span className="text-slate-300">-</span>}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -143,7 +129,7 @@ export default function MusterRoll() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={exportRows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`muster-roll_${dateRange.start}_to_${dateRange.end}`} />
+      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={exportRows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`present-absent_${dateRange.start}_to_${dateRange.end}`} />
     </ReportShell>
   );
 }

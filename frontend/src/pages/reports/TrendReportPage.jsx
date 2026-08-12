@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -48,6 +49,12 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
       {showEmploymentType && (
         <EmploymentTypeFilter value={employmentType} onChange={v => { setEmploymentType(v); load(months, v); }} />
       )}
+      <button
+        onClick={() => { setMonths(12); setEmploymentType(''); load(12, ''); }}
+        className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto"
+      >
+        <RotateCcw size={14} /> Reset
+      </button>
     </>
   ) : null;
 

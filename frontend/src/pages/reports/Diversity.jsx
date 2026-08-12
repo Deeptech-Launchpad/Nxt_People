@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -80,12 +80,19 @@ export default function Diversity() {
 
   const actions = <TypeDropdown type={type} setType={setType} />;
 
+  // Org filters stay always-visible here (not behind the funnel) — that's how
+  // Zoho lays out Distribution/Diversity, unlike the Leave Tracker pages.
+  const filterPanel = (
+    <>
+      <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} />
+      <button onClick={() => setFilters({})} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto">
+        <RotateCcw size={14} /> Reset
+      </button>
+    </>
+  );
+
   return (
-    <ReportShell title="Diversity" subtitle="Active employees by gender, age, or experience" actions={actions} loading={loading} switcherCategory="Employee Information">
-      {/* Org filters — always visible */}
-      <div className="px-4 pt-4">
-        <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} />
-      </div>
+    <ReportShell title="Diversity" subtitle="Active employees by gender, age, or experience" actions={actions} filters={filterPanel} loading={loading} switcherCategory="Employee Information">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>
       ) : (

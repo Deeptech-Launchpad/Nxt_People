@@ -5,7 +5,6 @@ import * as XLSX from 'xlsx';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 
-const DEPTS = ['All','Engineering','HR','Sales','Marketing','Finance','Design','Product'];
 const STATUS_STYLE = { present:'bg-emerald-100 text-emerald-700', absent:'bg-red-100 text-red-700', 'half-day':'bg-blue-100 text-blue-700', leave:'bg-purple-100 text-purple-700' };
 const DAILY_CATEGORIES = [
   { key: 'checked-in',      name: 'Checked In',       color: '#0ea5e9' },
@@ -110,6 +109,11 @@ export default function Reports() {
   const [sortDir, setSortDir] = useState('desc');
   const [empDrilldown, setEmpDrilldown] = useState(null); // { empName, status, dates: [] }
   const [workingDays, setWorkingDays] = useState({ total: 0, elapsed: 0 });
+  // Departments come from the database, not a hardcoded list — the previous
+  // hardcoded set (Engineering/Sales/Marketing/Finance/Design/Product) didn't
+  // match a single real department in this org, so the filter silently
+  // returned nothing for six of its seven options.
+  const [departments, setDepartments] = useState([]);
 
   const load = () => {
     setLoading(true);
@@ -133,6 +137,11 @@ export default function Reports() {
 
   useEffect(load, []);
   useEffect(() => { if (tab === 'daily' && !daily) loadDaily(); }, [tab]);
+  useEffect(() => {
+    api.get('/reports/employee/filter-options')
+      .then(r => setDepartments(r.data.data?.department || []))
+      .catch(() => setDepartments([]));
+  }, []);
 
   const applyFilters = () => tab === 'daily' ? loadDaily() : load();
 
@@ -247,7 +256,8 @@ export default function Reports() {
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1.5">Department</label>
             <select value={filters.department} onChange={e=>setFilters({...filters,department:e.target.value})} className="border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400">
-              {DEPTS.map(d=><option key={d}>{d}</option>)}
+              <option value="">All</option>
+              {departments.map(d=><option key={d} value={d}>{d}</option>)}
             </select>
           </div>
           <button onClick={applyFilters} disabled={loading}

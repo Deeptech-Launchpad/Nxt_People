@@ -434,11 +434,15 @@ router.get('/employee/filter-options', authorize('admin', 'director', 'hr_admin'
       );
       return r.rows.map(row => row.v);
     };
-    const [department, designation, company, division, workLocation, employmentType, role] = await Promise.all([
+    const [department, designation, company, division, workLocation, employmentType, role, shiftRes] = await Promise.all([
       distinctCol('department'), distinctCol('designation'), distinctCol('company'),
       distinctCol('division'), distinctCol('work_location'), distinctCol('employment_type'), distinctCol('role'),
+      // Shifts come from their own table, so they're {value: id, label: name}
+      // objects rather than bare strings — the filter has to send shift_id.
+      pool.query('SELECT id, name FROM shifts ORDER BY name'),
     ]);
-    res.json({ success: true, data: { department, designation, company, division, workLocation, employmentType, role } });
+    const shiftId = shiftRes.rows.map(r => ({ value: r.id, label: r.name }));
+    res.json({ success: true, data: { department, designation, company, division, workLocation, employmentType, role, shiftId } });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -538,7 +542,7 @@ function extraEmployeeFilters(query, alias, paramIndex) {
   const FIELDS = [
     ['department', 'department'], ['designation', 'designation'], ['company', 'company'],
     ['division', 'division'], ['workLocation', 'work_location'], ['employmentType', 'employment_type'],
-    ['role', 'role'],
+    ['role', 'role'], ['shiftId', 'shift_id'],
   ];
   let clause = '';
   const params = [];
@@ -1204,110 +1208,436 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
-// ══════════════════════════ Attendance reports (new) ═══════════════════════
-// Daily attendance status, Employee present/absent status, and Early/late
-// check-in and check-out are already covered by the existing Attendance
-// Reports page's Daily/Summary/Detailed tabs (deep-linked via ?tab=) — no
-// need to duplicate them here.
+// ══════════════════════════ Attendance reports ═════════════════════════════
 
+// Leave-type → grid code, matching the Leave Tracker calendar so the same
+// leave reads identically in both report families.
+const ATT_LEAVE_CODE = { casual: 'CL', comp_off: 'CO', unpaid: 'LWP', permission: 'PM' };
+const ATT_STATUS_LABEL = {
+  present: 'Present', onDuty: 'On Duty', paidLeave: 'Paid Leave',
+  absent: 'Absent', unpaidLeave: 'Unpaid Leave', holiday: 'Holidays', weekend: 'Weekend',
+};
+
+// Shift length in hours. Falls back to a standard 8h day when an employee has
+// no shift assigned — this app has no per-employee hour contract, so a
+// standard workday is the only non-fabricated basis available.
+function shiftHoursOf(startTime, endTime, fallback = 8) {
+  if (!startTime || !endTime) return fallback;
+  const [sh, sm] = String(startTime).split(':').map(Number);
+  const [eh, em] = String(endTime).split(':').map(Number);
+  if ([sh, eh].some(Number.isNaN)) return fallback;
+  let h = ((eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))) / 60;
+  if (h <= 0) h += 24; // overnight shift
+  return h;
+}
+
+// Minutes past midnight for a 'HH:MM' shift boundary.
+function shiftMinutes(t) {
+  if (!t) return null;
+  const [h, m] = String(t).split(':').map(Number);
+  return Number.isNaN(h) ? null : h * 60 + (m || 0);
+}
+
+// Single source of truth for "what happened on this day for this employee",
+// shared by every calendar/summary attendance report so Muster Roll, Present/
+// Absent Status, Presence Hours Break-up and Attendance Data for Payroll can
+// never disagree about whether a day was a holiday, a weekend, leave, or an
+// absence. `kind` drives the numeric summaries; `code` is the grid cell text.
+// On Duty is never produced — that leave type doesn't exist in this system
+// yet, so its counters stay honestly 0 rather than being invented.
+function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, isFuture }) {
+  if (isFuture) return { code: '-', kind: 'future' };
+  const holType = holMap.get(`${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`);
+  if (holType && holType !== 'working_day') return { code: 'H', kind: 'holiday' };
+  if (!holType && rules.some(rule => ruleMatchesDate(rule, date))) return { code: 'W', kind: 'weekend' };
+  if (leave) {
+    const code = ATT_LEAVE_CODE[leave.leaveType] || 'L';
+    return {
+      code: leave.isHalfDay ? `0.5${code}/0.5P` : code,
+      kind: leave.leaveType === 'unpaid' ? 'unpaidLeave' : 'paidLeave',
+      fraction: leave.isHalfDay ? 0.5 : 1,
+    };
+  }
+  if (attStatus === 'present' || attStatus === 'late') return { code: 'P', kind: 'present' };
+  if (attStatus === 'half-day') return { code: 'HD', kind: 'present', fraction: 0.5 };
+  return { code: 'A', kind: 'absent' };
+}
+
+// Loads everything the day-grid attendance reports need for a range in one
+// place: filtered employees (with their shift), their attendance rows, their
+// approved leaves, and the holiday/weekend rule set.
+async function loadAttendanceContext(req, start, end) {
+  const filters = standardEmployeeFilters(req, 'e', 1);
+  const [empRes, attRes, leaveRes, cal] = await Promise.all([
+    pool.query(
+      `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
+              e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.joining_date AS "joiningDate",
+              s.name AS "shiftName", s.start_time AS "shiftStart", s.end_time AS "shiftEnd"
+         FROM employees e
+         LEFT JOIN shifts s ON e.shift_id = s.id
+        WHERE 1=1${filters.clause}
+        ORDER BY e.first_name`,
+      filters.params
+    ),
+    pool.query(
+      `SELECT employee_id, date::text AS date, check_in AS "checkIn", check_out AS "checkOut",
+              working_hours AS "workingHours", status, late_minutes AS "lateMinutes"
+         FROM attendance WHERE date >= $1::date AND date <= $2::date`,
+      [start, end]
+    ),
+    pool.query(
+      `SELECT employee_id, leave_type AS "leaveType", start_date, end_date, is_half_day AS "isHalfDay"
+         FROM leaves WHERE status='approved' AND start_date <= $2::date AND end_date >= $1::date`,
+      [start, end]
+    ),
+    loadHolidaysAndRulesRange(new Date(start), new Date(end)),
+  ]);
+
+  const attByKey = new Map(attRes.rows.map(r => [`${r.employee_id}|${r.date}`, r]));
+  const leavesByEmp = new Map();
+  leaveRes.rows.forEach(l => {
+    if (!leavesByEmp.has(l.employee_id)) leavesByEmp.set(l.employee_id, []);
+    leavesByEmp.get(l.employee_id).push({ ...l, start: new Date(l.start_date), end: new Date(l.end_date) });
+  });
+  const leaveOn = (empId, date) => (leavesByEmp.get(empId) || []).find(l => date >= l.start && date <= l.end);
+
+  const days = [];
+  const endD = new Date(end);
+  for (const d = new Date(start); d <= endD; d.setDate(d.getDate() + 1)) days.push(new Date(d));
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // An employee only "has" days between joining and exit — outside that range
+  // they aren't absent, they simply weren't on rolls.
+  const onRolls = (emp, date) =>
+    !(emp.joiningDate && new Date(emp.joiningDate) > date) &&
+    !(emp.exitDate && new Date(emp.exitDate) < date);
+
+  return { employees: empRes.rows, attByKey, leaveOn, days, today, onRolls, holMap: cal.holMap, rules: cal.rules };
+}
+
+// Local clock minutes for a timestamp — used to compare an actual punch
+// against the shift's HH:MM boundary.
+const clockMinutes = (ts) => { const d = new Date(ts); return d.getHours() * 60 + d.getMinutes(); };
+
+// Applies the "Total Hours: All / Lesser than / Greater than N" comparator
+// that Zoho puts on several attendance reports.
+function totalHoursMatches(query, hours) {
+  const mode = query.totalHours;
+  if (mode !== 'lt' && mode !== 'gt') return true;
+  const threshold = parseFloat(query.totalHoursValue);
+  if (Number.isNaN(threshold)) return true;
+  return mode === 'lt' ? hours < threshold : hours > threshold;
+}
+
+// Pie of attendance status for one date + the separate current-day presence
+// donut (In / Out / Yet to check-in), plus the underlying employee list —
+// matching Zoho's Daily Attendance Status, which shows those as two distinct
+// charts rather than one mixed pie.
+router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const date = req.query.date || new Date().toLocaleDateString('en-CA');
+    const ctx = await loadAttendanceContext(req, date, date);
+    const day = new Date(date);
+    const isFuture = day > ctx.today;
+    const statusFilter = [].concat(req.query.status || []).filter(Boolean);
+
+    const counts = { present: 0, onDuty: 0, paidLeave: 0, absent: 0, unpaidLeave: 0, holiday: 0, weekend: 0 };
+    const presence = { in: 0, out: 0, yetToCheckIn: 0 };
+    let employees = [];
+
+    for (const emp of ctx.employees) {
+      if (!ctx.onRolls(emp, day)) continue;
+      const att = ctx.attByKey.get(`${emp._id}|${date}`);
+      const cls = classifyAttendanceDay({
+        date: day, holMap: ctx.holMap, rules: ctx.rules,
+        attStatus: att?.status, leave: ctx.leaveOn(emp._id, day), isFuture,
+      });
+      if (cls.kind !== 'future') counts[cls.kind] = (counts[cls.kind] || 0) + 1;
+
+      const presenceKey = att?.checkIn && !att?.checkOut ? 'in' : att?.checkIn ? 'out' : 'yetToCheckIn';
+      // Only working days can leave someone "yet to check in" — nobody is
+      // pending a punch on a holiday or weekend.
+      if (presenceKey !== 'yetToCheckIn' || cls.kind === 'present' || cls.kind === 'absent') presence[presenceKey]++;
+
+      employees.push({
+        _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
+        employeeCode: emp.employeeCode, department: emp.department, exitDate: emp.exitDate,
+        firstIn: att?.checkIn || null, lastOut: att?.checkOut || null,
+        totalHours: parseFloat(att?.workingHours) || 0,
+        statusKey: cls.kind, status: ATT_STATUS_LABEL[cls.kind] || null,
+        presenceKey, shiftName: emp.shiftName || null,
+      });
+    }
+
+    const totalUsers = employees.length;
+    if (statusFilter.length) {
+      employees = employees.filter(r => statusFilter.includes(r.statusKey) || statusFilter.includes(r.presenceKey));
+    }
+    employees = employees.filter(r => totalHoursMatches(req.query, r.totalHours));
+
+    const byStatus = Object.entries(counts).map(([key, count]) => ({ key, label: ATT_STATUS_LABEL[key], count }));
+    res.json({ success: true, date, totalUsers, byStatus, presence, employees });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+// Entry (Early | Late) and Exit (Early | Late) against each employee's shift,
+// plus net hours vs the shift length — Zoho's Early/Late Check-in and
+// Check-out. One row per employee per day in range, so "Not recorded" days
+// are visible rather than silently dropped.
+router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const start = req.query.startDate || new Date().toLocaleDateString('en-CA');
+    const end = req.query.endDate || start;
+    const ctx = await loadAttendanceContext(req, start, end);
+    const { firstCheckIn, lastCheckOut } = req.query;
+
+    const data = [];
+    for (const emp of ctx.employees) {
+      const shiftStartMin = shiftMinutes(emp.shiftStart);
+      const shiftEndMin = shiftMinutes(emp.shiftEnd);
+      const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
+
+      for (const d of ctx.days) {
+        if (d > ctx.today || !ctx.onRolls(emp, d)) continue;
+        const ymd = d.toLocaleDateString('en-CA');
+        const cls = classifyAttendanceDay({
+          date: d, holMap: ctx.holMap, rules: ctx.rules,
+          attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
+          leave: ctx.leaveOn(emp._id, d), isFuture: false,
+        });
+        // Non-working days have no shift to be early or late against.
+        if (cls.kind === 'holiday' || cls.kind === 'weekend') continue;
+
+        const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
+        const inMin = att?.checkIn ? clockMinutes(att.checkIn) : null;
+        const outMin = att?.checkOut ? clockMinutes(att.checkOut) : null;
+        const totalHours = parseFloat(att?.workingHours) || 0;
+
+        const entryEarly = inMin !== null && shiftStartMin !== null && inMin < shiftStartMin ? shiftStartMin - inMin : null;
+        const entryLate = inMin !== null && shiftStartMin !== null && inMin > shiftStartMin ? inMin - shiftStartMin : null;
+        const exitEarly = outMin !== null && shiftEndMin !== null && outMin < shiftEndMin ? shiftEndMin - outMin : null;
+        const exitLate = outMin !== null && shiftEndMin !== null && outMin > shiftEndMin ? outMin - shiftEndMin : null;
+
+        if (firstCheckIn === 'not_recorded' && inMin !== null) continue;
+        if (firstCheckIn === 'before_shift' && entryEarly === null) continue;
+        if (firstCheckIn === 'after_shift' && entryLate === null) continue;
+        if (lastCheckOut === 'not_recorded' && outMin !== null) continue;
+        if (lastCheckOut === 'before_shift' && exitEarly === null) continue;
+        if (lastCheckOut === 'after_shift' && exitLate === null) continue;
+        if (!totalHoursMatches(req.query, totalHours)) continue;
+
+        data.push({
+          _id: `${emp._id}|${ymd}`, employeeId: emp._id,
+          firstName: emp.firstName, lastName: emp.lastName, employeeCode: emp.employeeCode,
+          department: emp.department, exitDate: emp.exitDate, date: ymd,
+          firstIn: att?.checkIn || null, lastOut: att?.checkOut || null,
+          totalHours, entryEarly, entryLate, exitEarly, exitLate,
+          netMinutes: att?.checkIn ? Math.round((totalHours - shiftHours) * 60) : null,
+          shiftName: emp.shiftName || null,
+        });
+      }
+    }
+    res.json({ success: true, data, startDate: start, endDate: end });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+// Employee × date calendar grid of attendance codes — Zoho's Employee
+// Present/Absent Status. Same shape as Leave Tracker's Resource Availability
+// but attendance-first (P/A dominate, leave codes layer on top).
+router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const now = new Date();
+    const start = req.query.startDate || new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-CA');
+    const end = req.query.endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-CA');
+    const ctx = await loadAttendanceContext(req, start, end);
+
+    const data = ctx.employees.map(emp => ({
+      _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
+      employeeCode: emp.employeeCode, department: emp.department, exitDate: emp.exitDate,
+      days: ctx.days.map(d => {
+        if (!ctx.onRolls(emp, d)) return '-';
+        const ymd = d.toLocaleDateString('en-CA');
+        return classifyAttendanceDay({
+          date: d, holMap: ctx.holMap, rules: ctx.rules,
+          attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
+          leave: ctx.leaveOn(emp._id, d), isFuture: d > ctx.today,
+        }).code;
+      }),
+    }));
+
+    res.json({ success: true, data, dayLabels: ctx.days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+// Per-employee day-by-day presence ledger + a Day/Hour summary — Zoho's
+// Presence Hours Break-up is a single-employee drilldown, not an
+// all-employees aggregate. Payable hours = the shift length on any day the
+// company pays for (worked, paid leave, holiday, weekend); 0 on absence and
+// unpaid leave.
 router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
-    const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
+    const { employeeId } = req.query;
+    if (!employeeId) return res.status(400).json({ success: false, message: 'employeeId is required' });
+    const now = new Date();
+    const start = req.query.startDate || new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
-    const r = await pool.query(
-      `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
-              COUNT(*) FILTER (WHERE a.status IN ('present','late'))::int AS "presentDays",
-              ROUND(COALESCE(SUM(a.working_hours), 0)::numeric, 2) AS "totalHours"
-         FROM employees e
-         LEFT JOIN attendance a ON a.employee_id = e.id AND a.date >= $1::date AND a.date <= $2::date
-        WHERE e.status='active'${reportsScope(req.user, 'e', 3).clause}
-        GROUP BY e.id, e.first_name, e.last_name, e.department
-        ORDER BY e.first_name`,
-      [start, end, ...reportsScope(req.user, 'e', 3).params]
-    );
-    const data = r.rows.map(row => {
-      const totalHours = parseFloat(row.totalHours) || 0;
-      return { ...row, totalHours, avgHoursPerDay: row.presentDays > 0 ? parseFloat((totalHours / row.presentDays).toFixed(2)) : 0 };
-    });
-    res.json({ success: true, data, startDate: start, endDate: end });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
-});
-
-router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
-  try {
-    const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
-    const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
-    const r = await pool.query(
-      `SELECT e.first_name AS "firstName", e.last_name AS "lastName", e.employee_id AS "employeeCode", e.department,
-              COUNT(*) FILTER (WHERE a.status IN ('present','late'))::int AS "presentDays",
-              COUNT(*) FILTER (WHERE a.status = 'absent')::int AS "absentDays",
-              ROUND(COALESCE(SUM(a.working_hours), 0)::numeric, 2) AS "totalHours"
-         FROM employees e
-         LEFT JOIN attendance a ON a.employee_id = e.id AND a.date >= $1::date AND a.date <= $2::date
-        WHERE e.status='active'${reportsScope(req.user, 'e', 3).clause}
-        GROUP BY e.id, e.first_name, e.last_name, e.employee_id, e.department
-        ORDER BY e.first_name`,
-      [start, end, ...reportsScope(req.user, 'e', 3).params]
-    );
-    const data = r.rows.map(row => ({ ...row, totalHours: parseFloat(row.totalHours) || 0 }));
-    res.json({ success: true, data, startDate: start, endDate: end });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
-});
-
-// Day-by-day grid for one calendar month: P (present), HD (half-day),
-// A (absent), L (leave), WO (weekly off), H (holiday), - (future/no data).
-router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
-  try {
-    const month = Math.min(12, Math.max(1, parseInt(req.query.month, 10) || (new Date().getMonth() + 1)));
-    const year = parseInt(req.query.year, 10) || new Date().getFullYear();
-    const { holMap, rules } = await loadHolidaysAndRules(month, year);
-
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const start = new Date(year, month - 1, 1).toLocaleDateString('en-CA');
-    const end = new Date(year, month - 1, daysInMonth).toLocaleDateString('en-CA');
 
     const empRes = await pool.query(
-      `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", department, employee_id AS "employeeCode"
-         FROM employees e WHERE e.status='active'${reportsScope(req.user, 'e', 1).clause} ORDER BY first_name`,
-      reportsScope(req.user, 'e', 1).params
+      `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
+              e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.joining_date AS "joiningDate",
+              s.name AS "shiftName", s.start_time AS "shiftStart", s.end_time AS "shiftEnd"
+         FROM employees e LEFT JOIN shifts s ON e.shift_id = s.id WHERE e.id = $1`,
+      [employeeId]
     );
-    const [attRes, leaveRes] = await Promise.all([
-      pool.query(`SELECT employee_id, date::text AS date, status FROM attendance WHERE date >= $1::date AND date <= $2::date`, [start, end]),
-      pool.query(`SELECT employee_id, start_date, end_date FROM leaves WHERE status='approved' AND start_date <= $2::date AND end_date >= $1::date`, [start, end]),
+    const emp = empRes.rows[0];
+    if (!emp) return res.status(404).json({ success: false, message: 'Employee not found' });
+
+    const [attRes, leaveRes, cal] = await Promise.all([
+      pool.query(
+        `SELECT date::text AS date, check_in AS "checkIn", check_out AS "checkOut",
+                working_hours AS "workingHours", status
+           FROM attendance WHERE employee_id = $1 AND date >= $2::date AND date <= $3::date`,
+        [employeeId, start, end]
+      ),
+      pool.query(
+        `SELECT leave_type AS "leaveType", start_date, end_date, is_half_day AS "isHalfDay"
+           FROM leaves WHERE employee_id = $1 AND status='approved' AND start_date <= $3::date AND end_date >= $2::date`,
+        [employeeId, start, end]
+      ),
+      loadHolidaysAndRulesRange(new Date(start), new Date(end)),
     ]);
 
-    const attMap = new Map(attRes.rows.map(r => [`${r.employee_id}_${r.date}`, r.status]));
-    const leavesByEmp = new Map();
-    leaveRes.rows.forEach(l => {
-      if (!leavesByEmp.has(l.employee_id)) leavesByEmp.set(l.employee_id, []);
-      leavesByEmp.get(l.employee_id).push({ start: new Date(l.start_date), end: new Date(l.end_date) });
-    });
-
+    const attByDate = new Map(attRes.rows.map(r => [r.date, r]));
+    const leaves = leaveRes.rows.map(l => ({ ...l, start: new Date(l.start_date), end: new Date(l.end_date) }));
+    const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const data = empRes.rows.map(emp => {
-      const days = [];
-      for (let d = 1; d <= daysInMonth; d++) {
-        const dateObj = new Date(year, month - 1, d);
-        const ymd = dateObj.toLocaleDateString('en-CA');
-        const holType = holMap.get(`${year}-${month}-${d}`);
-        let code;
-        if (dateObj > today) code = '-';
-        else if (holType && holType !== 'working_day') code = 'H';
-        else if (!holType && rules.some(rule => ruleMatchesDate(rule, dateObj))) code = 'WO';
-        else {
-          const attStatus = attMap.get(`${emp._id}_${ymd}`);
-          const onLeave = (leavesByEmp.get(emp._id) || []).some(l => dateObj >= l.start && dateObj <= l.end);
-          if (attStatus === 'present' || attStatus === 'late') code = 'P';
-          else if (attStatus === 'half-day') code = 'HD';
-          else if (onLeave) code = 'L';
-          else code = 'A';
-        }
-        days.push(code);
+
+    const summaryDays = { payableDays: 0, present: 0, onDuty: 0, paidLeave: 0, holiday: 0, weekend: 0, absent: 0, unpaidLeave: 0 };
+    const rows = [];
+    const endD = new Date(end);
+    for (const d = new Date(start); d <= endD; d.setDate(d.getDate() + 1)) {
+      const day = new Date(d);
+      if (emp.joiningDate && new Date(emp.joiningDate) > day) continue;
+      if (emp.exitDate && new Date(emp.exitDate) < day) continue;
+      const ymd = day.toLocaleDateString('en-CA');
+      const att = attByDate.get(ymd);
+      const cls = classifyAttendanceDay({
+        date: day, holMap: cal.holMap, rules: cal.rules,
+        attStatus: att?.status, leave: leaves.find(l => day >= l.start && day <= l.end),
+        isFuture: day > today,
+      });
+      if (cls.kind === 'future') continue;
+
+      const isPayable = ['present', 'paidLeave', 'holiday', 'weekend'].includes(cls.kind);
+      summaryDays[cls.kind] = (summaryDays[cls.kind] || 0) + 1;
+      if (isPayable) summaryDays.payableDays += 1;
+
+      rows.push({
+        date: ymd, firstIn: att?.checkIn || null, lastOut: att?.checkOut || null,
+        totalHours: parseFloat(att?.workingHours) || 0,
+        payableHours: isPayable ? shiftHours : 0,
+        statusKey: cls.kind, status: ATT_STATUS_LABEL[cls.kind] || null, code: cls.code,
+        shiftName: emp.shiftName || null,
+      });
+    }
+
+    const filtered = rows.filter(r => totalHoursMatches(req.query, r.totalHours));
+    // Hour summary is the day summary × the shift length — this app has no
+    // per-category hour tracking, so the shift is the only honest basis.
+    const summaryHours = Object.fromEntries(Object.entries(summaryDays).map(([k, v]) => [k, parseFloat((v * shiftHours).toFixed(2))]));
+
+    res.json({ success: true, employee: emp, data: filtered, summaryDays, summaryHours, shiftHours, startDate: start, endDate: end });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+// Grouped payroll summary per employee — Payable / Expected / Worked / Paid
+// Off / Unpaid Off, in Day or Hour mode, matching Zoho's Attendance Data for
+// Payroll. `simple=true` collapses it to the headline columns only.
+// On Duty is always 0 (that leave type isn't modelled yet) and hour figures
+// are day figures × the employee's shift length, since this app tracks no
+// per-category hour totals.
+router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const now = new Date();
+    const start = req.query.startDate || new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-CA');
+    const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
+    const unit = req.query.unit === 'hour' ? 'hour' : 'day';
+    const simple = req.query.simple === 'true';
+    const ctx = await loadAttendanceContext(req, start, end);
+
+    const data = ctx.employees.map(emp => {
+      const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
+      const c = { present: 0, onDuty: 0, paidLeave: 0, holiday: 0, weekend: 0, absent: 0, unpaidLeave: 0 };
+      let totalWorkedHours = 0;
+
+      for (const d of ctx.days) {
+        if (d > ctx.today || !ctx.onRolls(emp, d)) continue;
+        const ymd = d.toLocaleDateString('en-CA');
+        const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
+        const cls = classifyAttendanceDay({
+          date: d, holMap: ctx.holMap, rules: ctx.rules,
+          attStatus: att?.status, leave: ctx.leaveOn(emp._id, d), isFuture: false,
+        });
+        if (cls.kind === 'future') continue;
+        c[cls.kind] = (c[cls.kind] || 0) + 1;
+        totalWorkedHours += parseFloat(att?.workingHours) || 0;
       }
-      return { ...emp, days };
+
+      const workedTotal = c.present + c.onDuty;
+      const paidOffTotal = c.paidLeave + c.holiday + c.weekend;
+      const unpaidTotal = c.unpaidLeave + c.absent;
+      const payableTotal = workedTotal + paidOffTotal;
+      const expectedWorkingDays = workedTotal + unpaidTotal;
+      const expectedPayableDays = payableTotal + unpaidTotal;
+
+      const days = {
+        expectedPayableDays, payableWorked: workedTotal, payablePaidOff: paidOffTotal, payableTotal,
+        expectedWorkingDays, workedPresent: c.present, workedOnDuty: c.onDuty, workedTotal,
+        paidLeave: c.paidLeave, paidHolidays: c.holiday, paidWeekend: c.weekend, paidOffTotal,
+        unpaidLeave: c.unpaidLeave, unpaidAbsent: c.absent, unpaidTotal,
+      };
+      const scaled = unit === 'hour'
+        ? Object.fromEntries(Object.entries(days).map(([k, v]) => [k, parseFloat((v * shiftHours).toFixed(2))]))
+        : days;
+
+      return {
+        _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
+        employeeCode: emp.employeeCode, department: emp.department, exitDate: emp.exitDate,
+        totalWorkedHours: parseFloat(totalWorkedHours.toFixed(2)), shiftHours, ...scaled,
+      };
     });
 
-    res.json({ success: true, data, month, year, daysInMonth });
+    res.json({ success: true, data, unit, simple, startDate: start, endDate: end });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+// Day-by-day grid showing BOTH the rostered shift and the resulting status
+// per date, over an arbitrary range — Zoho's Muster Roll pairs the two under
+// each date rather than showing status alone.
+router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const now = new Date();
+    const start = req.query.startDate || new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-CA');
+    const end = req.query.endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-CA');
+    const ctx = await loadAttendanceContext(req, start, end);
+
+    const data = ctx.employees.map(emp => ({
+      _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
+      employeeCode: emp.employeeCode, department: emp.department, exitDate: emp.exitDate,
+      shiftName: emp.shiftName || null,
+      days: ctx.days.map(d => {
+        if (!ctx.onRolls(emp, d)) return { shift: null, code: '-' };
+        const ymd = d.toLocaleDateString('en-CA');
+        const cls = classifyAttendanceDay({
+          date: d, holMap: ctx.holMap, rules: ctx.rules,
+          attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
+          leave: ctx.leaveOn(emp._id, d), isFuture: d > ctx.today,
+        });
+        return { shift: emp.shiftName || null, code: cls.code };
+      }),
+    }));
+
+    res.json({ success: true, data, dayLabels: ctx.days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -1315,17 +1645,22 @@ router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'h
   try {
     const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
-    const minDays = Math.max(2, parseInt(req.query.minDays, 10) || 2);
+    const minDays = Math.max(1, parseInt(req.query.minDays, 10) || 3);
+    const filters = standardEmployeeFilters(req, 'e', 3);
 
     const r = await pool.query(
-      `SELECT a.employee_id AS "_id", a.date::text AS date, e.first_name AS "firstName", e.last_name AS "lastName", e.department
+      `SELECT a.employee_id AS "_id", a.date::text AS date, e.first_name AS "firstName", e.last_name AS "lastName",
+              e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate"
          FROM attendance a JOIN employees e ON a.employee_id = e.id
-        WHERE a.status = 'absent' AND a.date >= $1::date AND a.date <= $2::date${reportsScope(req.user, 'e', 3).clause}
+        WHERE a.status = 'absent' AND a.date >= $1::date AND a.date <= $2::date${filters.clause}
         ORDER BY a.employee_id, a.date`,
-      [start, end, ...reportsScope(req.user, 'e', 3).params]
+      [start, end, ...filters.params]
     );
 
     // Run-length detection of consecutive calendar-day absences per employee.
+    // `minDays` is an inclusive floor (a streak of exactly minDays counts) —
+    // the frontend labels it "at least N day(s)" so the boundary isn't
+    // ambiguous the way "more than" would be.
     const streaks = [];
     let cur = null;
     for (const row of r.rows) {
@@ -1334,13 +1669,17 @@ router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'h
         cur.lastDate = d; cur.count++; cur.endDate = row.date;
       } else {
         if (cur && cur.count >= minDays) streaks.push(cur);
-        cur = { employeeId: row._id, firstName: row.firstName, lastName: row.lastName, department: row.department, startDate: row.date, endDate: row.date, lastDate: d, count: 1 };
+        cur = {
+          employeeId: row._id, firstName: row.firstName, lastName: row.lastName,
+          department: row.department, employeeCode: row.employeeCode, exitDate: row.exitDate,
+          startDate: row.date, endDate: row.date, lastDate: d, count: 1,
+        };
       }
     }
     if (cur && cur.count >= minDays) streaks.push(cur);
 
     const data = streaks.map(({ lastDate, employeeId, ...rest }) => ({ _id: employeeId, ...rest }));
-    res.json({ success: true, data, startDate: start, endDate: end });
+    res.json({ success: true, data, minDays, startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -1351,30 +1690,30 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
     const { holMap, rules } = await loadHolidaysAndRulesRange(new Date(start), new Date(end));
     const workingDaysCount = listWorkingDays(new Date(start), new Date(end), holMap, rules).length;
 
+    const filters = standardEmployeeFilters(req, 'e', 3);
     const r = await pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
-              s.start_time AS "shiftStart", s.end_time AS "shiftEnd",
+              e.employee_id AS "employeeCode", e.exit_date AS "exitDate",
+              s.name AS "shiftName", s.start_time AS "shiftStart", s.end_time AS "shiftEnd",
               ROUND(COALESCE(SUM(a.working_hours), 0)::numeric, 2) AS "workedHours"
          FROM employees e
          LEFT JOIN shifts s ON e.shift_id = s.id
          LEFT JOIN attendance a ON a.employee_id = e.id AND a.date >= $1::date AND a.date <= $2::date
-        WHERE e.status='active'${reportsScope(req.user, 'e', 3).clause}
-        GROUP BY e.id, e.first_name, e.last_name, e.department, s.start_time, s.end_time
+        WHERE 1=1${filters.clause}
+        GROUP BY e.id, e.first_name, e.last_name, e.department, e.employee_id, e.exit_date, s.name, s.start_time, s.end_time
         ORDER BY e.first_name`,
-      [start, end, ...reportsScope(req.user, 'e', 3).params]
+      [start, end, ...filters.params]
     );
 
     const data = r.rows.map(row => {
-      let shiftHours = 9; // sane default when no shift is assigned
-      if (row.shiftStart && row.shiftEnd) {
-        const [sh, sm] = row.shiftStart.split(':').map(Number);
-        const [eh, em] = row.shiftEnd.split(':').map(Number);
-        shiftHours = ((eh * 60 + em) - (sh * 60 + sm)) / 60;
-        if (shiftHours <= 0) shiftHours += 24;
-      }
+      const shiftHours = shiftHoursOf(row.shiftStart, row.shiftEnd, 9);
       const expectedHours = parseFloat((shiftHours * workingDaysCount).toFixed(2));
       const workedHours = parseFloat(row.workedHours) || 0;
-      return { _id: row._id, firstName: row.firstName, lastName: row.lastName, department: row.department, expectedHours, workedHours, variance: parseFloat((workedHours - expectedHours).toFixed(2)) };
+      return {
+        _id: row._id, firstName: row.firstName, lastName: row.lastName, department: row.department,
+        employeeCode: row.employeeCode, exitDate: row.exitDate, shiftName: row.shiftName,
+        expectedHours, workedHours, variance: parseFloat((workedHours - expectedHours).toFixed(2)),
+      };
     });
     res.json({ success: true, data, startDate: start, endDate: end, workingDays: workingDaysCount });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }

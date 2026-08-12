@@ -5,8 +5,13 @@ import api from '../../utils/api';
 const DIMENSIONS = [
   ['department', 'Department'], ['designation', 'Designation'], ['company', 'Company'],
   ['division', 'Division'], ['workLocation', 'Location'], ['employmentType', 'Employment Type'],
-  ['role', 'Role'],
+  ['role', 'Role'], ['shiftId', 'Shift'],
 ];
+
+// Options arrive either as bare strings (the plain `employees` columns) or as
+// {value,label} objects (Shift, where the filter sends a shift_id but the chip
+// has to show the shift's name). Normalising here keeps every chip identical.
+const normalize = o => (typeof o === 'string' ? { value: o, label: o } : o);
 
 function FilterChip({ label, options, value, onChange }) {
   const [open, setOpen] = useState(false);
@@ -18,19 +23,22 @@ function FilterChip({ label, options, value, onChange }) {
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
 
+  const opts = options.map(normalize);
+  const selectedLabel = opts.find(o => o.value === value)?.label;
+
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
         className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12.5px] font-medium border transition-colors whitespace-nowrap ${value ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
       >
-        <span className="max-w-[130px] truncate">{label}{value ? `: ${value}` : ''}</span> <ChevronDown size={12} className="flex-shrink-0" />
+        <span className="max-w-[130px] truncate">{label}{selectedLabel ? `: ${selectedLabel}` : ''}</span> <ChevronDown size={12} className="flex-shrink-0" />
       </button>
       {open && (
         <div className="absolute z-20 mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-64 overflow-y-auto">
           <button onClick={() => { onChange(''); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-[12.5px] text-slate-500 hover:bg-slate-50 transition-colors">All</button>
-          {options.map(o => (
-            <button key={o} onClick={() => { onChange(o); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-[12.5px] text-slate-700 hover:bg-slate-50 transition-colors">{o}</button>
+          {opts.map(o => (
+            <button key={o.value} onClick={() => { onChange(o.value); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-[12.5px] text-slate-700 hover:bg-slate-50 transition-colors">{o.label}</button>
           ))}
         </div>
       )}

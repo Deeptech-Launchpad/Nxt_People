@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { RotateCcw } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
@@ -52,6 +53,15 @@ export default function ExperienceExit() {
         onSubmit={(value, key) => { setPeriodKey(key); setDateRange(value); load(value, employmentType); }}
       />
       <EmploymentTypeFilter value={employmentType} onChange={v => { setEmploymentType(v); load(dateRange, v); }} />
+      <button
+        onClick={() => {
+          const def = PERIOD_OPTIONS.find(o => o.key === 'thisYear');
+          setPeriodKey('thisYear'); setDateRange(def.value); setEmploymentType(''); load(def.value, '');
+        }}
+        className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto"
+      >
+        <RotateCcw size={14} /> Reset
+      </button>
     </>
   ) : null;
 

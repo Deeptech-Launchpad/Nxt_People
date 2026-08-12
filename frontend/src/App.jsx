@@ -76,6 +76,13 @@ const LeaveEncashmentDetails = lazy(() => import('./pages/reports/LeaveEncashmen
 const Diversity          = lazy(() => import('./pages/reports/Diversity'));
 const ExperienceExit     = lazy(() => import('./pages/reports/ExperienceExit'));
 const MusterRoll         = lazy(() => import('./pages/reports/MusterRoll'));
+const AttendanceDailyStatus = lazy(() => import('./pages/reports/AttendanceDailyStatus'));
+const EarlyLateCheckInOut   = lazy(() => import('./pages/reports/EarlyLateCheckInOut'));
+const PresentAbsentStatus   = lazy(() => import('./pages/reports/PresentAbsentStatus'));
+const PresenceHoursBreakup  = lazy(() => import('./pages/reports/PresenceHoursBreakup'));
+const AttendancePayrollData = lazy(() => import('./pages/reports/AttendancePayrollData'));
+const ConsecutiveAbsences   = lazy(() => import('./pages/reports/ConsecutiveAbsences'));
+const ExpectedVsWorked      = lazy(() => import('./pages/reports/ExpectedVsWorked'));
 const DailyAttendance = lazy(() => import('./pages/DailyAttendance'));
 const LeaveEncashment = lazy(() => import('./pages/LeaveEncashment'));
 const Weekends        = lazy(() => import('./pages/Weekends'));
@@ -250,13 +257,15 @@ const AppRoutes = () => {
           <Route path="reports/leave/lop"                 element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LossOfPay/></ProtectedRoute>}/>
           <Route path="reports/leave/payroll-export"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><LeavePayrollExport/></ProtectedRoute>}/>
 
-          {/* ── Reports catalog — Attendance (new dedicated pages only;
-               Daily/Detail/Summary already exist on /reports/attendance) ── */}
-          <Route path="reports/attendance/hours-breakup"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.hoursBreakupConfig}/></ProtectedRoute>}/>
-          <Route path="reports/attendance/payroll-export"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ExportReportPage {...ReportConfigs.attendancePayrollExportConfig}/></ProtectedRoute>}/>
+          {/* ── Reports catalog — Attendance ─────────────────────────────── */}
+          <Route path="reports/attendance/daily-status"          element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><AttendanceDailyStatus/></ProtectedRoute>}/>
+          <Route path="reports/attendance/early-late"            element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><EarlyLateCheckInOut/></ProtectedRoute>}/>
+          <Route path="reports/attendance/present-absent"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><PresentAbsentStatus/></ProtectedRoute>}/>
+          <Route path="reports/attendance/hours-breakup"        element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><PresenceHoursBreakup/></ProtectedRoute>}/>
+          <Route path="reports/attendance/payroll-export"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><AttendancePayrollData/></ProtectedRoute>}/>
           <Route path="reports/attendance/muster-roll"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><MusterRoll/></ProtectedRoute>}/>
-          <Route path="reports/attendance/consecutive-absences"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.consecutiveAbsencesConfig}/></ProtectedRoute>}/>
-          <Route path="reports/attendance/expected-vs-worked"    element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><TableReportPage {...ReportConfigs.expectedVsWorkedConfig}/></ProtectedRoute>}/>
+          <Route path="reports/attendance/consecutive-absences"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ConsecutiveAbsences/></ProtectedRoute>}/>
+          <Route path="reports/attendance/expected-vs-worked"    element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ExpectedVsWorked/></ProtectedRoute>}/>
 
           <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><DailyAttendance/></ProtectedRoute>}/>
           <Route path="payroll/setup"          element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayrollSetup/></ProtectedRoute>}/>

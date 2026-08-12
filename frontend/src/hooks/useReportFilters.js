@@ -1,0 +1,37 @@
+import { useState } from 'react';
+
+// Owns the four narrowing filters every Leave Tracker / Attendance report
+// shares (single employee, employee status, direct-reportees, org-hierarchy
+// chips) so each page doesn't re-declare the same four useStates, the same
+// query-param assembly, and the same reset. `params()` produces exactly the
+// query keys the backend's standardEmployeeFilters() reads.
+export default function useReportFilters() {
+  const [employee, setEmployee] = useState(null);
+  const [employeeStatus, setEmployeeStatus] = useState('all');
+  const [directReportsOnly, setDirectReportsOnly] = useState(false);
+  const [dimFilters, setDimFilters] = useState({});
+
+  const params = () => ({
+    employeeStatus,
+    directReportsOnly: String(directReportsOnly),
+    ...(employee ? { employeeId: employee._id } : {}),
+    ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
+  });
+
+  const reset = () => {
+    setEmployee(null);
+    setEmployeeStatus('all');
+    setDirectReportsOnly(false);
+    setDimFilters({});
+  };
+
+  return {
+    employee, setEmployee,
+    employeeStatus, setEmployeeStatus,
+    directReportsOnly, setDirectReportsOnly,
+    dimFilters, setDimFilters,
+    params, reset,
+    // Spread into a useEffect dep array so any filter change refetches.
+    deps: [employeeStatus, directReportsOnly, employee, dimFilters],
+  };
+}

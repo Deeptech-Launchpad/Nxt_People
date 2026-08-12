@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
 import ChartExportMenu from './ChartExportMenu';
 import FilterRow from './FilterRow';
-import FilterToggleButton from './FilterToggleButton';
 
 const TYPES = [['department', 'Department'], ['designation', 'Designation'], ['location', 'Location']];
 
@@ -46,7 +45,6 @@ export default function Distribution() {
   const initialBy = TYPES.some(([k]) => k === searchParams.get('by')) ? searchParams.get('by') : 'department';
   const [by, setBy] = useState(initialBy);
   const [filters, setFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
 
@@ -63,20 +61,21 @@ export default function Distribution() {
   const top3 = [...rows].sort((a, b) => b.count - a.count).slice(0, 3).reduce((s, r) => s + Number(r.count), 0);
   const typeLabel = TYPES.find(([k]) => k === by)[1];
 
-  const actions = (
-    <div className="flex items-center gap-2">
-      <TypeDropdown by={by} setBy={setBy} />
-      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
-    </div>
+  const actions = <TypeDropdown by={by} setBy={setBy} />;
+
+  // Org filters stay always-visible here (not behind the funnel) — that's how
+  // Zoho lays out Distribution/Diversity, unlike the Leave Tracker pages.
+  const filterPanel = (
+    <>
+      <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} exclude={[BY_TO_FILTER_KEY[by]]} />
+      <button onClick={() => setFilters({})} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto">
+        <RotateCcw size={14} /> Reset
+      </button>
+    </>
   );
 
   return (
-    <ReportShell title="Distribution" subtitle="Active employees split by department, designation, or location" actions={actions} loading={loading} switcherCategory="Employee Information">
-      {filtersOpen && (
-        <div className="px-4 pt-4">
-          <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} exclude={[BY_TO_FILTER_KEY[by]]} />
-        </div>
-      )}
+    <ReportShell title="Distribution" subtitle="Active employees split by department, designation, or location" actions={actions} filters={filterPanel} loading={loading} switcherCategory="Employee Information">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>
       ) : (
