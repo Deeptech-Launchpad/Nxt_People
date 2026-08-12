@@ -9,39 +9,91 @@ export const CHART_COLORS = [
 
 const RADIAN = Math.PI / 180;
 
-// Zoho labels each slice outside the chart with a leader line, reading
-// "Content: 60.34% (35)" — name, percentage to two decimals, then the raw
-// count. Two behaviours matter for legibility on crowded pies:
+// Assign every slice a collision-free vertical slot.
 //
-//  - `denom` is passed in rather than summed from the slices, so charts whose
-//    buckets exclude people with a missing field (age, tenure) still divide
-//    by the real headcount and agree with the stat panel beside them.
-//  - Thin slices are pushed progressively further out. Without this, a run of
-//    1.72% slices all resolve to nearly the same angle and their labels stack
-//    on top of each other into an unreadable block, which is exactly what the
-//    Department and Designation pies were doing.
-export function makeSliceLabel(denom, baseOffset = 22) {
-  return function SliceLabel({ cx, cy, midAngle, outerRadius, name, value, index }) {
-    const share = value / (denom || 1);
-    // Slices under ~4% get a staircase of extra radius, alternating depth so
-    // neighbours in a crowded run never land on the same ring.
-    const crowded = share < 0.04;
-    const stagger = crowded ? (index % 3) * 16 : 0;
-    const r = outerRadius + baseOffset + stagger;
+// Placing each label at its own slice's angle is what made the Department and
+// Designation pies unreadable: a run of 1.72% slices spans barely a degree
+// each, so their labels all resolved to nearly the same y and printed on top
+// of one another. Instead, labels on each side of the pie are ordered by
+// angle and then spread evenly down that side, with a leader line bending
+// from the slice edge across to the label. Geometry here mirrors recharts'
+// own default sweep (startAngle 0 → endAngle 360, angles counter-clockwise
+// from 3 o'clock) so a slot lines up with the slice it belongs to.
+function computeLabelSlots(data) {
+  const total = data.reduce((s, d) => s + Number(d.count), 0) || 1;
+  let acc = 0;
+  const items = data.map((d, i) => {
+    const startFrac = acc / total;
+    acc += Number(d.count);
+    const midAngle = 360 * ((startFrac + acc / total) / 2);
+    return {
+      i,
+      dy: Math.sin(-midAngle * RADIAN),          // negative = above centre
+      right: Math.cos(-midAngle * RADIAN) >= 0,
+    };
+  });
 
-    const x = cx + r * Math.cos(-midAngle * RADIAN);
-    const y = cy + r * Math.sin(-midAngle * RADIAN);
-    const anchor = x > cx ? 'start' : 'end';
+  const slots = new Array(items.length);
+  [true, false].forEach(isRight => {
+    const side = items.filter(it => it.right === isRight).sort((a, b) => a.dy - b.dy);
+    side.forEach((it, rank) => { slots[it.i] = { right: isRight, rank, count: side.length }; });
+  });
+  return slots;
+}
+
+// Renders "Content: 60.34% (35)" outside the pie with its own leader line.
+// Callers must set `labelLine={false}` — the line is drawn here so it tracks
+// the de-collided label position rather than recharts' original one.
+//
+// `denom` is passed in rather than summed from the slices so charts whose
+// buckets exclude people with a missing field (age, tenure) still divide by
+// the real headcount and agree with the stat panel beside them.
+export function makeSliceLabel(denom, data, chartHeight = 360) {
+  const slots = computeLabelSlots(data);
+
+  return function SliceLabel({ cx, cy, midAngle, outerRadius, name, value, index }) {
+    const slot = slots[index] || { right: true, rank: 0, count: 1 };
+    const dir = slot.right ? 1 : -1;
+
+    // Share the available height between the labels on this side; drop to a
+    // single tighter line when a crowded side can't afford two.
+    const usable = Math.max(chartHeight - 16, 60);
+    const gap = Math.min(30, usable / Math.max(slot.count, 1));
+    const compact = gap < 26;
+    const y = cy + (slot.rank - (slot.count - 1) / 2) * gap;
+
+    const edge = outerRadius + 2;
+    const x0 = cx + edge * Math.cos(-midAngle * RADIAN);
+    const y0 = cy + edge * Math.sin(-midAngle * RADIAN);
+    const elbowX = cx + dir * (outerRadius + 20);
+    const textX = cx + dir * (outerRadius + 28);
 
     const label = String(name ?? '');
-    const head = label.length > 24 ? `${label.slice(0, 24)}…` : label;
-    const pct = (share * 100).toFixed(2);
+    const maxChars = compact ? 20 : 26;
+    const head = label.length > maxChars ? `${label.slice(0, maxChars)}…` : label;
+    const pct = ((value / (denom || 1)) * 100).toFixed(2);
+    const anchorX = textX + dir * 4;
 
     return (
-      <text x={x} y={y} textAnchor={anchor} dominantBaseline="central" fontSize={11} fill="#334155">
-        <tspan x={x} dy="-0.4em">{head}:</tspan>
-        <tspan x={x} dy="1.15em" fontWeight="600">{pct}% ({value})</tspan>
-      </text>
+      <g>
+        <polyline
+          points={`${x0},${y0} ${elbowX},${y} ${textX},${y}`}
+          stroke="#cbd5e1" strokeWidth={1} fill="none"
+        />
+        <text
+          x={anchorX} y={y} textAnchor={slot.right ? 'start' : 'end'}
+          dominantBaseline="central" fontSize={compact ? 10 : 11} fill="#334155"
+        >
+          {compact ? (
+            <tspan>{head}: {pct}% ({value})</tspan>
+          ) : (
+            <>
+              <tspan x={anchorX} dy="-0.4em">{head}:</tspan>
+              <tspan x={anchorX} dy="1.15em" fontWeight="600">{pct}% ({value})</tspan>
+            </>
+          )}
+        </text>
+      </g>
     );
   };
 }

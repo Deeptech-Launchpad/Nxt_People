@@ -27,15 +27,15 @@ export default function MiniDonut({ title, data, to, donut = true, total }) {
       {(!data || data.length === 0) ? (
         <div className="text-center py-10 text-slate-400 text-[13px]">No data</div>
       ) : (
-        <ResponsiveContainer width="100%" height={230}>
+        <ResponsiveContainer width="100%" height={250}>
           {/* Generous side margins: the slice labels sit outside the chart
               with leader lines, so the plot area has to leave room for them
               rather than letting them clip against the card edge. */}
-          <PieChart margin={{ top: 26, right: 76, bottom: 26, left: 76 }}>
+          <PieChart margin={{ top: 12, right: 92, bottom: 12, left: 92 }}>
             <Pie
               data={data} dataKey="count" nameKey="label" cx="50%" cy="50%"
               innerRadius={donut ? 34 : 0} outerRadius={58} paddingAngle={donut ? 1 : 0}
-              label={makeSliceLabel(denom, 18)} labelLine={{ stroke: '#cbd5e1' }} isAnimationActive={false}
+              label={makeSliceLabel(denom, data, 250)} labelLine={false} isAnimationActive={false}
             >
               {data.map((d, i) => <Cell key={d.label} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
             </Pie>

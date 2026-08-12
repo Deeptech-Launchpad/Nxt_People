@@ -12,12 +12,12 @@ export default function DonutWithStats({ data, stats, donut = true, total }) {
   return (
     <div className="flex flex-col lg:flex-row items-center gap-6 p-6">
       <div className="w-full lg:flex-1 min-w-0">
-        <ResponsiveContainer width="100%" height={420}>
-          <PieChart margin={{ top: 40, right: 150, bottom: 40, left: 150 }}>
+        <ResponsiveContainer width="100%" height={440}>
+          <PieChart margin={{ top: 20, right: 170, bottom: 20, left: 170 }}>
             <Pie
               data={data} dataKey="count" nameKey="label" cx="50%" cy="50%"
               innerRadius={donut ? 62 : 0} outerRadius={108} paddingAngle={donut ? 1 : 0}
-              label={makeSliceLabel(denom)} labelLine={{ stroke: '#cbd5e1' }} isAnimationActive={false}
+              label={makeSliceLabel(denom, data, 440)} labelLine={false} isAnimationActive={false}
             >
               {data.map((d, i) => <Cell key={d.label} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
             </Pie>
