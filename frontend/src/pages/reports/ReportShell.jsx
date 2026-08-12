@@ -23,7 +23,11 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
   const siblings = catalogEntry ? catalogEntry.reports.filter(r => r.to.split('?')[0] !== location.pathname) : [];
 
   return (
-    <div className="max-w-6xl mx-auto px-4 space-y-4 pb-10 report-shell">
+    // Full viewport width, not a centred max-w-6xl column: the calendar grids
+    // are as wide as the period being viewed, and capping the page at 1152px
+    // meant a month of days scrolled inside a narrow box with dead margins on
+    // either side. Charts and tables read fine at full width; the grids need it.
+    <div className="w-full px-4 space-y-4 pb-10 report-shell">
       {/* One header bar: home, breadcrumb, a centred period navigator, then
           the icon cluster (view toggles, funnel, overflow menu) — the layout
           every report page in the reference shares. */}

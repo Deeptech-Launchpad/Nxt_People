@@ -183,11 +183,11 @@ export default function ResourceAvailability() {
           {/* A fixed-height scroll pane rather than a table that grows down the
               page: the day headers and the frozen Employee column stay put
               while you scroll a month of data in either direction. */}
-          <div className="overflow-auto max-h-[62vh] border-b border-slate-200">
+          <div className="overflow-auto max-h-[66vh] border-b border-slate-200">
             <table className="text-[13px] border-collapse">
               <thead className="sticky top-0 z-20">
                 <tr>
-                  <th className="text-left px-4 py-3 sticky left-0 z-30 bg-slate-100 whitespace-nowrap border-r border-slate-200 min-w-[240px]">
+                  <th className="text-left px-4 py-3 sticky left-0 z-30 bg-slate-100 whitespace-nowrap border-r border-slate-200 min-w-[270px]">
                     <button
                       onClick={() => setSortAsc(s => !s)}
                       className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 hover:text-slate-900"
@@ -202,7 +202,7 @@ export default function ResourceAvailability() {
                     return (
                       <th
                         key={d}
-                        className={`px-2 py-2 text-center w-[74px] min-w-[74px] leading-tight font-medium border-r border-slate-100 ${weekend ? 'bg-[#fdf6e3]' : d === todayCA ? 'bg-slate-100' : 'bg-slate-50'}`}
+                        className={`px-2 py-2 text-center w-[64px] min-w-[64px] leading-tight font-medium border-r border-slate-100 ${weekend ? 'bg-[#fdf6e3]' : d === todayCA ? 'bg-slate-100' : 'bg-slate-50'}`}
                       >
                         <div className="text-[12.5px] text-slate-600">
                           {String(dd.getDate()).padStart(2, '0')} {dd.toLocaleDateString('en-US', { month: 'short' })}
