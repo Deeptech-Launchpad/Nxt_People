@@ -43,7 +43,7 @@ export default function PeriodPresetChip({ onSelect, defaultKey }) {
         Period: {currentLabel} <ChevronDown size={12} />
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+        <div className="absolute z-50 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
           {PRESETS.map(p => (
             <button key={p.key} onClick={() => {
               setCurrent(p.key);

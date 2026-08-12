@@ -28,7 +28,7 @@ export default function HoursComparatorFilter({ label = 'Total Hours', value, on
         <span className="max-w-[150px] truncate">{label}: {summary}</span> <ChevronDown size={12} className="flex-shrink-0" />
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+        <div className="absolute z-50 mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
           {MODES.map(([k, l]) => (
             <button
               key={k}

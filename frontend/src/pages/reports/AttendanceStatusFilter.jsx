@@ -53,7 +53,7 @@ export default function AttendanceStatusFilter({ value = [], onChange }) {
         <ChevronDown size={12} className="flex-shrink-0" />
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-72 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-72 overflow-y-auto">
           <div className="px-3 py-2">
             <input
               value={search} onChange={e => setSearch(e.target.value)} placeholder="Search"

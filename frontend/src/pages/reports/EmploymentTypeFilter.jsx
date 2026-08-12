@@ -28,7 +28,7 @@ export default function EmploymentTypeFilter({ value, onChange }) {
         Employment Type : {value || 'All'} <ChevronDown size={13} className="text-slate-400" />
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg">
+        <div className="absolute z-50 mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg">
           <div className="p-2">
             <input
               value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" autoFocus

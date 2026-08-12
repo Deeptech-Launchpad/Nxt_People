@@ -51,7 +51,7 @@ function FilterChip({ label, options, value, onChange }) {
         )}
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 w-60 bg-white border border-slate-200 rounded-lg shadow-lg">
+        <div className="absolute z-50 mt-1 w-60 bg-white border border-slate-200 rounded-lg shadow-lg">
           <div className="p-2">
             <input
               value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" autoFocus

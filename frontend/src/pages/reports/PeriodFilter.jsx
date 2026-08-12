@@ -51,7 +51,7 @@ export default function PeriodFilter({ options, selectedKey, onChange, onSubmit 
         <ChevronDown size={13} className="text-slate-400 flex-shrink-0" />
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-80 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-80 overflow-y-auto">
           {groups.map(g => (
             <div key={g.name || '_'}>
               {g.name && (

@@ -28,7 +28,7 @@ function TypeChip({ by, setBy }) {
         Type : {label} <ChevronDown size={13} className="text-slate-400" />
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+        <div className="absolute z-50 mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
           {TYPES.map(([k, l]) => (
             <button key={k} onClick={() => { setBy(k); setOpen(false); }} className={`w-full text-left px-4 py-2 text-[13px] transition-colors ${by === k ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
           ))}

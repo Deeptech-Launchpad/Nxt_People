@@ -33,7 +33,7 @@ function ReportTypeDropdown({ value, onChange }) {
         Report Type: {value === 'detailed' ? 'Detailed' : 'Default'} <ChevronDown size={12} />
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+        <div className="absolute z-50 mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
           {[['default', 'Default'], ['detailed', 'Detailed']].map(([k, l]) => (
             <button key={k} onClick={() => { onChange(k); setOpen(false); }} className={`w-full text-left px-3 py-1.5 text-[12.5px] transition-colors ${value === k ? 'text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
           ))}

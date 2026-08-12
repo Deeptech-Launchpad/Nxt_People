@@ -56,7 +56,7 @@ export default function EmployeeFilter({ value, onChange }) {
         />
       </div>
       {showResults && results.length > 0 && (
-        <div className="absolute z-20 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-64 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-64 overflow-y-auto">
           {results.map(emp => (
             <button key={emp._id} onClick={() => select(emp)} className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors">
               <span className="font-medium">{emp.firstName} {emp.lastName}</span>

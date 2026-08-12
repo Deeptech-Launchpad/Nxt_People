@@ -62,7 +62,7 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
               {switcherOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setSwitcherOpen(false)} />
-                  <div className="absolute z-20 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-2">
+                  <div className="absolute z-50 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-2">
                     {siblings.map(r => (
                       <button
                         key={r.to}

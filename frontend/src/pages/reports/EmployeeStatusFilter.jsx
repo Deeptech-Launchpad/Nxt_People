@@ -80,7 +80,7 @@ export default function EmployeeStatusFilter({ value, onChange }) {
         </span>
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+        <div className="absolute z-50 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
           <div className="px-3 py-2">
             <input
               value={search} onChange={e => setSearch(e.target.value)}
