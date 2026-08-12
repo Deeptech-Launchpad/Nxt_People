@@ -28,11 +28,9 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
     // meant a month of days scrolled inside a narrow box with dead margins on
     // either side. Charts and tables read fine at full width; the grids need it.
     //
-    // min-w-0 + overflow-x-clip matter as much as the width: without them a
-    // wide grid stretches the page itself, so the whole document scrolls
-    // sideways and the header's funnel and ⋯ get pushed off-screen. The grid
-    // has to scroll inside its own pane, leaving the chrome anchored.
-    <div className="w-full max-w-full min-w-0 overflow-x-clip px-4 space-y-4 pb-10 report-shell">
+    // Containment comes from Layout's flex column carrying min-w-0; clipping
+    // here instead would cut off filter dropdowns that overhang the right edge.
+    <div className="w-full max-w-full min-w-0 px-4 space-y-4 pb-10 report-shell">
       {/* One header bar: home, breadcrumb, a centred period navigator, then
           the icon cluster (view toggles, funnel, overflow menu) — the layout
           every report page in the reference shares. */}

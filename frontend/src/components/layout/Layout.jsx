@@ -43,7 +43,13 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen bg-[#f2f3f7]">
       <Sidebar />
-      <div className="flex-1 ml-[72px] flex flex-col min-h-screen">
+      {/* min-w-0 is load-bearing: a flex item defaults to min-width:auto, so
+          without it this column refuses to shrink below its widest child. A
+          wide report grid then stretched the whole page, the document scrolled
+          sideways, and the frozen employee column and header scrolled away
+          with it — main's overflow-x-hidden couldn't help, because the column
+          around it had already been widened. */}
+      <div className="flex-1 min-w-0 ml-[72px] flex flex-col min-h-screen">
         <Topbar />
         <main className="flex-1 overflow-y-auto overflow-x-hidden pb-10">
           <Outlet />
