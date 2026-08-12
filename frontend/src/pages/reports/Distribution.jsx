@@ -53,6 +53,8 @@ export default function Distribution() {
   const [applied, setApplied] = useState({});
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const [totalActive, setTotalActive] = useState(0);
+  const [without, setWithout] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
@@ -60,12 +62,17 @@ export default function Distribution() {
     const params = new URLSearchParams({ by });
     Object.entries(applied).forEach(([k, vals]) => (vals || []).forEach(v => params.append(k, v)));
     api.get(`/reports/employee/distribution?${params}`)
-      .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
+      .then(r => {
+        setRows(Array.isArray(r.data.data) ? r.data.data : []);
+        setTotalActive(r.data.totalActive || 0);
+        setWithout(r.data.without || 0);
+      })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   }, [by, applied]);
 
-  const total = rows.reduce((s, r) => s + Number(r.count), 0);
+  const assigned = rows.reduce((s, r) => s + Number(r.count), 0);
+  const total = totalActive || assigned;
   const top3 = [...rows].sort((a, b) => b.count - a.count).slice(0, 3).reduce((s, r) => s + Number(r.count), 0);
   const typeLabel = TYPES.find(([k]) => k === by)[1];
 
@@ -108,8 +115,12 @@ export default function Distribution() {
           <DonutWithStats
             data={rows}
             donut={false}
+            total={total}
             stats={[
               { label: `Employees in Top 3 ${typeLabel}s`, value: `${total ? ((top3 / total) * 100).toFixed(2) : 0}% (${top3})` },
+              ...(without > 0
+                ? [{ label: `Employees without ${typeLabel.toLowerCase()}`, value: `${total ? ((without / total) * 100).toFixed(2) : 0}% (${without})` }]
+                : []),
               { label: `Total no. of ${typeLabel}s`, value: rows.length },
               { label: 'Total Employee Count', value: total },
             ]}

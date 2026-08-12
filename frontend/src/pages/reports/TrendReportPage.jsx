@@ -25,7 +25,7 @@ const PERIOD_OPTIONS = [
 // Employee attrition trend, whose endpoints return
 // [{month, year, count, growth}]. `showEmploymentType` is only passed for
 // Attrition Trend — Zoho's own Addition Trend has no such filter either.
-export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#8b8fd4', switcherCategory, showEmploymentType = false }) {
+export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#8b8fd4', lineColor = '#a5c249', switcherCategory, showEmploymentType = false }) {
   const [periodKey, setPeriodKey] = useState('12');
   const [months, setMonths] = useState(12);
   const [employmentType, setEmploymentType] = useState('');
@@ -93,7 +93,7 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
           {/* growth is each month's count as a % of that month's active
               headcount (an addition/attrition rate), not a month-over-month
               change — see monthlySeriesWithGrowth() on the backend. */}
-          <ComboTrendChart data={data} xKey="month" barColor={barColor} lineLabel="Percentage" />
+          <ComboTrendChart data={data} xKey="month" barColor={barColor} lineColor={lineColor} lineLabel="Percentage" />
         </div>
       )}
     </ReportShell>

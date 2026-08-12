@@ -34,8 +34,10 @@ export const encashmentConfig = {
 // Previous Period Balance/Booked/Total/Waived Off/Carry Over columns plus
 // a "Push To Payroll" shortcut, matching Zoho's structure.
 
-export const additionTrendConfig = { title: 'Employee Addition Trend', subtitle: 'New hires per month', endpoint: '/reports/employee/addition-trend', barColor: '#10b981', switcherCategory: 'Employee Information' };
-export const attritionTrendConfig = { title: 'Employee Attrition Trend', subtitle: 'Exits per month', endpoint: '/reports/employee/attrition-trend', barColor: '#ef4444', switcherCategory: 'Employee Information', showEmploymentType: true };
+// Zoho draws both trend pages with the same periwinkle bars and distinguishes
+// them by line colour only — green for additions, red for attrition.
+export const additionTrendConfig = { title: 'Employee Addition Trend', subtitle: 'New hires per month', endpoint: '/reports/employee/addition-trend', barColor: '#8b8fd4', lineColor: '#a5c249', switcherCategory: 'Employee Information' };
+export const attritionTrendConfig = { title: 'Employee Attrition Trend', subtitle: 'Exits per month', endpoint: '/reports/employee/attrition-trend', barColor: '#8b8fd4', lineColor: '#e15759', switcherCategory: 'Employee Information', showEmploymentType: true };
 
 // Leave Data for Payroll is now a bespoke page (LeavePayrollExport.jsx) —
 // a per-employee Total/Loss of Pay/Paid days summary, matching Zoho's

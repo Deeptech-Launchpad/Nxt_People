@@ -125,7 +125,10 @@ export default function Diversity() {
           <div className="flex px-4 pt-4">
             <ChartExportMenu rows={rows} columns={[{ key: 'label', header: typeLabel }, { key: 'count', header: 'Count' }]} fileStub={`diversity-${type}`} />
           </div>
-          <DonutWithStats data={rows} stats={buildStats()} />
+          {/* Age and Experience only bucket people who have a date of birth /
+              joining date, but the percentages divide by the full headcount —
+              18 of 58 reads 31.03%, matching the stat panel beside it. */}
+          <DonutWithStats data={rows} total={totalActive || total} stats={buildStats()} />
         </>
       )}
     </ReportShell>

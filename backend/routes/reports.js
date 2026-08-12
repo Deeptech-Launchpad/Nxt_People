@@ -393,13 +393,35 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
       },
     });
 
+    // Addition and attrition cards show a RATE — the month's count as a share
+    // of the headcount at that point — not a month-over-month delta, matching
+    // the Percentage series on the trend charts. The delta form turned an
+    // empty month into "-100%", which read as a catastrophic drop when it
+    // only ever meant "nobody joined/left". Headcount keeps the delta, since
+    // there "growth rate" genuinely is the change in the count.
+    const rate = (count, headcount) =>
+      headcount ? parseFloat(((count / headcount) * 100).toFixed(2)) : 0;
+    const rateTable = (thisMonth, sameMonthLastYear, twoYearsAgoSameMonth, hcNow, hcLastYear, hcTwoYearsAgo) => ({
+      thisYear: {
+        year: now.getFullYear(),
+        month: { value: thisMonth, growth: rate(thisMonth, hcNow) },
+        yoy: { value: sameMonthLastYear, growth: rate(sameMonthLastYear, hcLastYear) },
+      },
+      lastYear: {
+        year: now.getFullYear() - 1,
+        month: { value: sameMonthLastYear, growth: rate(sameMonthLastYear, hcLastYear) },
+        yoy: { value: twoYearsAgoSameMonth, growth: rate(twoYearsAgoSameMonth, hcTwoYearsAgo) },
+      },
+    });
+
     res.json({
       success: true,
       data: {
         ...s,
+        totalActive: s.active,
         headcount: metricTable(s.active, s.headcountLastMonth, s.headcountSameMonthLastYear, s.headcountPrevYearPrevMonth, s.headcountTwoYearsAgoSameMonth),
-        addition: metricTable(s.newThisMonth, s.newLastMonth, s.newSameMonthLastYear, s.newPrevYearPrevMonth, s.newTwoYearsAgoSameMonth),
-        attrition: metricTable(s.exitsThisMonth, s.exitsLastMonth, s.exitsSameMonthLastYear, s.exitsPrevYearPrevMonth, s.exitsTwoYearsAgoSameMonth),
+        addition: rateTable(s.newThisMonth, s.newSameMonthLastYear, s.newTwoYearsAgoSameMonth, s.active, s.headcountSameMonthLastYear, s.headcountTwoYearsAgoSameMonth),
+        attrition: rateTable(s.exitsThisMonth, s.exitsSameMonthLastYear, s.exitsTwoYearsAgoSameMonth, s.active, s.headcountSameMonthLastYear, s.headcountTwoYearsAgoSameMonth),
         byDepartment: deptRes.rows,
         byDesignation: designationRes.rows,
         byLocation: locationRes.rows,
@@ -445,8 +467,12 @@ router.get('/employee/filter-options', authorize('admin', 'director', 'hr_admin'
       // the bands that actually have people in them.
       pool.query(
         `SELECT DISTINCT
-            CASE WHEN yrs < 1 THEN '<1' WHEN yrs >= 10 THEN '10+' ELSE yrs::text END AS label,
-            LEAST(yrs, 10) AS sort_key
+            CASE WHEN yrs < 1 THEN '<1' WHEN yrs <= 3 THEN yrs::text
+                 WHEN yrs <= 5 THEN '4-5' WHEN yrs <= 7 THEN '6-7'
+                 WHEN yrs <= 9 THEN '8-9' ELSE '10+' END AS label,
+            CASE WHEN yrs < 1 THEN 0 WHEN yrs <= 3 THEN yrs
+                 WHEN yrs <= 5 THEN 4 WHEN yrs <= 7 THEN 6
+                 WHEN yrs <= 9 THEN 8 ELSE 10 END AS sort_key
            FROM (SELECT FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, e.joining_date)))::int AS yrs
                    FROM employees e WHERE e.joining_date IS NOT NULL${scope.clause}) t
           ORDER BY sort_key`,
@@ -590,10 +616,16 @@ function extraEmployeeFilters(query, alias, paramIndex) {
   // the employees the "2" slice of the Experience chart is drawn from.
   const expValues = [].concat(query.experience || []).filter(Boolean);
   if (expValues.length) {
+    // Must mirror experienceTenureBuckets()'s banding exactly, or selecting
+    // the "4-5" slice would match no rows.
+    const yrsExpr = `FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${alias}.joining_date)))`;
     clause += ` AND (CASE
-        WHEN FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${alias}.joining_date))) < 1 THEN '<1'
-        WHEN FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${alias}.joining_date))) >= 10 THEN '10+'
-        ELSE FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${alias}.joining_date)))::text
+        WHEN ${yrsExpr} < 1 THEN '<1'
+        WHEN ${yrsExpr} <= 3 THEN ${yrsExpr}::text
+        WHEN ${yrsExpr} <= 5 THEN '4-5'
+        WHEN ${yrsExpr} <= 7 THEN '6-7'
+        WHEN ${yrsExpr} <= 9 THEN '8-9'
+        ELSE '10+'
       END) = ANY($${idx})`;
     params.push(expValues);
     idx++;
@@ -624,13 +656,25 @@ router.get('/employee/distribution', authorize('admin', 'director', 'hr_admin', 
     const col = req.query.by === 'designation' ? 'e.designation' : req.query.by === 'location' ? 'e.work_location' : 'e.department';
     const extra = extraEmployeeFilters(req.query, 'e', 1);
     const scope = reportsScope(req.user, 'e', 1 + extra.params.length);
+    // Employees with the field blank are reported separately as "Employees
+    // without <dimension>" (as Zoho does) rather than folded into the chart
+    // as an "Unassigned" slice — otherwise they inflate "Total no. of
+    // Departments" by one for a category that isn't a real department.
     const r = await pool.query(
-      `SELECT COALESCE(${col}, 'Unassigned') AS label, COUNT(*)::int AS count
-         FROM employees e WHERE e.status='active'${extra.clause}${scope.clause}
+      `SELECT ${col} AS label, COUNT(*)::int AS count
+         FROM employees e
+        WHERE e.status='active' AND ${col} IS NOT NULL AND ${col} != ''${extra.clause}${scope.clause}
         GROUP BY ${col} ORDER BY count DESC`,
       [...extra.params, ...scope.params]
     );
-    res.json({ success: true, data: r.rows });
+    const totalRes = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM employees e
+        WHERE e.status='active'${extra.clause}${scope.clause}`,
+      [...extra.params, ...scope.params]
+    );
+    const totalActive = totalRes.rows[0]?.count || 0;
+    const assigned = r.rows.reduce((s, row) => s + row.count, 0);
+    res.json({ success: true, data: r.rows, totalActive, without: totalActive - assigned });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -659,8 +703,27 @@ async function experienceTenureBuckets(user, extra = { clause: '', params: [] })
   const scope = reportsScope(user, 'e', 1 + extra.params.length);
   const r = await pool.query(
     `SELECT
-       CASE WHEN yrs < 1 THEN '<1' WHEN yrs >= 10 THEN '10+' ELSE yrs::text END AS label,
-       LEAST(yrs, 10) AS sort_key,
+       -- Single years up to 3, then two-year bands, matching Zoho's tenure
+       -- banding (its chart reads "<1, 1, 2, 3, 4-5"). Banding the tail keeps
+       -- a handful of long tenures from producing dozens of empty buckets.
+       CASE
+         WHEN yrs < 1 THEN '<1'
+         WHEN yrs <= 3 THEN yrs::text
+         WHEN yrs <= 5 THEN '4-5'
+         WHEN yrs <= 7 THEN '6-7'
+         WHEN yrs <= 9 THEN '8-9'
+         ELSE '10+'
+       END AS label,
+       -- Sort by the band's first year, not the raw year: otherwise 4 and 5
+       -- keep distinct sort keys and GROUP BY emits "4-5" twice.
+       CASE
+         WHEN yrs < 1 THEN 0
+         WHEN yrs <= 3 THEN yrs
+         WHEN yrs <= 5 THEN 4
+         WHEN yrs <= 7 THEN 6
+         WHEN yrs <= 9 THEN 8
+         ELSE 10
+       END AS sort_key,
        COUNT(*)::int AS count
       FROM (
         SELECT FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, e.joining_date)))::int AS yrs
@@ -724,8 +787,27 @@ async function experienceExitBuckets(user, { startDate, endDate, employmentType,
   const scope = reportsScope(user, 'e', params.length + 1);
   const r = await pool.query(
     `SELECT
-       CASE WHEN yrs < 1 THEN '<1' WHEN yrs >= 10 THEN '10+' ELSE yrs::text END AS label,
-       LEAST(yrs, 10) AS sort_key,
+       -- Single years up to 3, then two-year bands, matching Zoho's tenure
+       -- banding (its chart reads "<1, 1, 2, 3, 4-5"). Banding the tail keeps
+       -- a handful of long tenures from producing dozens of empty buckets.
+       CASE
+         WHEN yrs < 1 THEN '<1'
+         WHEN yrs <= 3 THEN yrs::text
+         WHEN yrs <= 5 THEN '4-5'
+         WHEN yrs <= 7 THEN '6-7'
+         WHEN yrs <= 9 THEN '8-9'
+         ELSE '10+'
+       END AS label,
+       -- Sort by the band's first year, not the raw year: otherwise 4 and 5
+       -- keep distinct sort keys and GROUP BY emits "4-5" twice.
+       CASE
+         WHEN yrs < 1 THEN 0
+         WHEN yrs <= 3 THEN yrs
+         WHEN yrs <= 5 THEN 4
+         WHEN yrs <= 7 THEN 6
+         WHEN yrs <= 9 THEN 8
+         ELSE 10
+       END AS sort_key,
        COUNT(*)::int AS count
       FROM (
         SELECT FLOOR(EXTRACT(YEAR FROM AGE(e.exit_date, e.joining_date)))::int AS yrs

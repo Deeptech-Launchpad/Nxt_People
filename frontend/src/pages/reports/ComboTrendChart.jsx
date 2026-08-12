@@ -14,8 +14,12 @@ export default function ComboTrendChart({ data, xKey, barColor = '#6366f1', line
   const wrapRef = useRef(null);
   const [wide, setWide] = useState(true);
 
+  // Zoho labels every point even on its small dashboard widgets, so the
+  // threshold is set to the narrowest the dashboard's two-up grid gets rather
+  // than 600px — at 600 the mini trends fell just under it and rendered with
+  // no labels at all, which is the most useful part of the chart.
   const measure = useCallback(() => {
-    if (wrapRef.current) setWide(wrapRef.current.offsetWidth >= 600);
+    if (wrapRef.current) setWide(wrapRef.current.offsetWidth >= 340);
   }, []);
 
   useEffect(() => {
@@ -25,9 +29,17 @@ export default function ComboTrendChart({ data, xKey, barColor = '#6366f1', line
     return () => ro.disconnect();
   }, [measure]);
 
+  // Zoho marks the calendar-year boundary with a dotted rule labelled with
+  // the year on each side, so a 12-month window spanning Dec→Jan reads
+  // unambiguously.
   let dividerX = null;
+  let dividerYears = null;
   for (let i = 1; i < data.length; i++) {
-    if (data[i].year !== data[i - 1].year) { dividerX = data[i][xKey]; break; }
+    if (data[i].year !== data[i - 1].year) {
+      dividerX = data[i][xKey];
+      dividerYears = { prev: data[i - 1].year, next: data[i].year };
+      break;
+    }
   }
 
   return (
@@ -40,7 +52,14 @@ export default function ComboTrendChart({ data, xKey, barColor = '#6366f1', line
           <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} tickFormatter={v => `${v}%`} />
           <Tooltip />
           <Legend wrapperStyle={{ fontSize: 12 }} />
-          {dividerX && <ReferenceLine x={dividerX} yAxisId="left" stroke="#cbd5e1" strokeDasharray="3 3" />}
+          {dividerX && (
+            <ReferenceLine
+              x={dividerX} yAxisId="left" stroke="#64748b" strokeDasharray="3 3"
+              label={wide && dividerYears
+                ? { value: `${dividerYears.prev}  |  ${dividerYears.next}`, position: 'top', fontSize: 11, fill: '#475569' }
+                : undefined}
+            />
+          )}
           <Bar yAxisId="left" dataKey="count" name={barLabel} fill={barColor} radius={[4, 4, 0, 0]}>
             {wide && <LabelList dataKey="count" position="top" offset={6} fontSize={11} fill="#475569" />}
           </Bar>
