@@ -62,12 +62,14 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
               {switcherOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setSwitcherOpen(false)} />
-                  <div className="absolute z-50 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-2">
+                  {/* This bar sets whitespace-nowrap for the breadcrumb, which
+                      inherits into the panel and would stop these stacking. */}
+                  <div className="absolute z-50 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-2 whitespace-normal">
                     {siblings.map(r => (
                       <button
                         key={r.to}
                         onClick={() => { setSwitcherOpen(false); navigate(r.to); }}
-                        className="w-full text-left px-4 py-2.5 text-[14px] text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors"
+                        className="block w-full text-left px-4 py-2.5 text-[14px] text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors"
                       >
                         {r.label}
                       </button>

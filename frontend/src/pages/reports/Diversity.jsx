@@ -29,10 +29,13 @@ function TypeChip({ type, setType }) {
       <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 px-3 py-1 rounded text-[13px] font-medium border border-slate-300 bg-white text-slate-700 hover:border-slate-400 transition-colors">
         Type : {label} <ChevronDown size={13} className="text-slate-400" />
       </button>
+      {/* whitespace-normal + block below: the breadcrumb bar sets
+          whitespace-nowrap, which inherits in here and stops inline-block
+          items wrapping, so the options spilled sideways instead of stacking. */}
       {open && (
-        <div className="absolute z-50 mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+        <div className="absolute z-50 mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1 whitespace-normal">
           {TYPES.map(([k, l]) => (
-            <button key={k} onClick={() => { setType(k); setOpen(false); }} className={`w-full text-left px-4 py-2 text-[13px] transition-colors ${type === k ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
+            <button key={k} onClick={() => { setType(k); setOpen(false); }} className={`block w-full text-left px-4 py-2 text-[13px] transition-colors ${type === k ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
           ))}
         </div>
       )}
