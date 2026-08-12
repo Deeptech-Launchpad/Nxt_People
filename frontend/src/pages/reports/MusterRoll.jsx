@@ -22,12 +22,43 @@ const PERIOD_OPTIONS = [
   { key: 'thisMonth', label: 'This Month', value: range(new Date(y, m, 1), new Date(y, m + 1, 0)) },
 ];
 
-const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' },
-  { key: 'employeeCode', header: 'Employee ID' }, { key: 'shiftName', header: 'Shift' },
-  { key: 'codes', header: 'Daily Status' },
+// The reference's Muster Roll is a Shift/Status pair per day under a merged
+// day banner, then six roll-up columns. Codes are counted client-side because
+// the grid the page already renders carries everything needed.
+const dayHeader = d => {
+  const dt = new Date(d);
+  return `${dt.getDate()} - ${dt.toLocaleDateString('en-US', { month: 'short' })}`;
+};
+const isPaidOff = c => ['H', 'W'].includes(c) || ['CL', 'CO', 'PM'].includes(String(c).replace(/^[\d.]+/, '').split('/')[0]);
+
+const musterColumns = (dayLabels) => {
+  const cols = [];
+  dayLabels.forEach((d, i) => {
+    cols.push({ key: `shift_${i}`, header: 'Shift', value: r => r.days[i]?.shift || '' });
+    cols.push({ key: `status_${i}`, header: 'Status', value: r => r.days[i]?.code || '' });
+  });
+  const count = (r, pred) => r.days.filter(x => x.code && x.code !== '-' && pred(x.code)).length;
+  cols.push({ key: 'workedDays', header: 'Worked Days', value: r => count(r, c => c === 'P' || c === 'HD') });
+  cols.push({ key: 'weekend', header: 'Weekend', value: r => count(r, c => c === 'W') });
+  cols.push({ key: 'holidays', header: 'Holidays', value: r => count(r, c => c === 'H') });
+  cols.push({ key: 'paidOff', header: 'Paid Off ', value: r => count(r, isPaidOff) });
+  cols.push({ key: 'unpayable', header: 'Unpayable Days', value: r => count(r, c => c === 'A' || String(c).startsWith('LWP')) });
+  cols.push({ key: 'payable', header: 'Payable Days', value: r => count(r, c => c === 'P' || c === 'HD' || isPaidOff(c)) });
+  return cols;
+};
+
+// Each day's banner straddles its Shift+Status pair; the six roll-ups sit
+// under a blank span, as does the identity block.
+const musterGroups = (dayLabels, identityWidth) => [
+  { label: null, span: identityWidth },
+  ...dayLabels.map(d => ({ label: dayHeader(d), span: 2 })),
+  { label: null, span: 6 },
 ];
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
+
+const MUSTER_LEGEND = [[
+  ['P', 'Present'], ['A', 'Absent'], ['H', 'Holidays'], ['W', 'Weekend'],
+  ['CL', 'Casual Leave'], ['CO', 'Compensatory Off'], ['PM', 'Permission'], ['LWP', 'Leave Without Pay'],
+]];
 
 // Muster Roll pairs the rostered Shift with the resulting Status under each
 // date — that pairing is what distinguishes it from Present/Absent Status,
@@ -60,7 +91,6 @@ export default function MusterRoll() {
     f.reset();
   };
 
-  const exportRows = (data?.data || []).map(e => ({ ...e, codes: e.days.map(d => d.code).join(' ') }));
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const filters = (
@@ -145,7 +175,17 @@ export default function MusterRoll() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={exportRows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`muster-roll_${dateRange.start}_to_${dateRange.end}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={data?.data || []}
+        withIdentity
+        columns={musterColumns(data?.dayLabels || [])}
+        groups={w => musterGroups(data?.dayLabels || [], w)}
+        legend={MUSTER_LEGEND}
+        sheetName="Muster roll"
+        meta={[['Start Date', dateRange.start], ['End Date', dateRange.end]]}
+        formats={['XLS', 'XLSX', 'CSV']}
+        fileStub="Attendance_Musterroll_Report"
+      />
     </ReportShell>
   );
 }

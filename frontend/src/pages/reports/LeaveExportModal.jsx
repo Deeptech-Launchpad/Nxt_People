@@ -27,7 +27,7 @@ export default function LeaveExportModal({
   open, onClose, rows, baseColumns, columns, extraColumns = [], fileStub,
   withIdentity = false, meta = [], legend = [], groups = null,
   sheetName = 'Report', hourColumns = null, hourSheetName = null,
-  formats = LEAVE_FORMATS, extraControls = null,
+  formats = LEAVE_FORMATS, extraControls = null, kv = null,
 }) {
   const [format, setFormat] = useState('XLS');
   const [includeExtra, setIncludeExtra] = useState(false);
@@ -50,6 +50,11 @@ export default function LeaveExportModal({
   };
 
   const download = () => {
+    if (kv) {
+      downloadWorkbook([{ name: sheetName, ws: buildSheet({ meta, kv }) }], format, fileStub);
+      onClose();
+      return;
+    }
     if (!rows?.length) { onClose(); return; }
     // The banner row has to know how many identity columns actually got
     // written — ticking the optional fields widens the block from 3 to 8 and

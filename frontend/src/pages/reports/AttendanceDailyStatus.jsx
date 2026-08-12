@@ -220,7 +220,22 @@ export default function AttendanceDailyStatus() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={data?.employees || []} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`daily-attendance-status_${date}`} />
+      {/* This report exports as a vertical label/value sheet, not a table —
+          the reference lists the status tallies down column A. */}
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)}
+        sheetName="Attendance"
+        kv={[
+          ['Total Users', data?.totalUsers ?? 0],
+          ...(data?.byStatus || []).map(s => [s.label, s.count]),
+          ['In', data?.presence?.in ?? 0],
+          ['Out', data?.presence?.out ?? 0],
+          ['Yet to check-in', data?.presence?.yetToCheckIn ?? 0],
+        ]}
+        meta={[['Date', date]]}
+        formats={['XLS', 'XLSX', 'CSV']}
+        fileStub="Daily attendance status"
+      />
     </ReportShell>
   );
 }

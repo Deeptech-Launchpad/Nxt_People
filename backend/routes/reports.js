@@ -1631,6 +1631,7 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
     const empRes = await pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
               e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.joining_date AS "joiningDate",
+              ${EMP_IDENTITY_SQL},
               s.name AS "shiftName", s.start_time AS "shiftStart", s.end_time AS "shiftEnd"
          FROM employees e LEFT JOIN shifts s ON e.shift_id = s.id WHERE e.id = $1`,
       [employeeId]

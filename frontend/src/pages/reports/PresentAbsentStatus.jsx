@@ -22,11 +22,22 @@ const PERIOD_OPTIONS = [
   { key: 'thisMonth', label: 'This Month', value: range(new Date(y, m, 1), new Date(y, m + 1, 0)) },
 ];
 
-const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' },
-  { key: 'employeeCode', header: 'Employee ID' }, { key: 'codes', header: 'Daily Codes' },
-];
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
+// One column per day, headed "1 - Aug". Note this differs from Resource
+// Availability's "01 Aug (Sat)" — the reference uses two different date
+// header conventions and they aren't interchangeable.
+const dayColumns = dayLabels => dayLabels.map((d, i) => {
+  const dt = new Date(d);
+  return {
+    key: `d${i}`,
+    header: `${dt.getDate()} - ${dt.toLocaleDateString('en-US', { month: 'short' })}`,
+    value: r => (r.days[i] && r.days[i] !== '-' ? r.days[i] : ''),
+  };
+});
+
+const GRID_LEGEND = [[
+  ['P', 'Present'], ['A', 'Absent'], ['H', 'Holidays'], ['W', 'Weekend'],
+  ['CL', 'Casual Leave'], ['CO', 'Compensatory Off'], ['PM', 'Permission'], ['LWP', 'Leave Without Pay'],
+]];
 
 // Employee × date grid of attendance codes — the report Zoho calls Employee
 // Present/Absent Status. Our previous "summary" tab was an aggregate table,
@@ -59,7 +70,6 @@ export default function PresentAbsentStatus() {
     f.reset();
   };
 
-  const exportRows = (data?.data || []).map(e => ({ ...e, codes: e.days.join(' ') }));
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const filters = (
@@ -131,7 +141,15 @@ export default function PresentAbsentStatus() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={exportRows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`present-absent_${dateRange.start}_to_${dateRange.end}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={data?.data || []}
+        withIdentity columns={dayColumns(data?.dayLabels || [])}
+        legend={GRID_LEGEND}
+        sheetName="Present status"
+        meta={[['Start Date', dateRange.start], ['End Date', dateRange.end]]}
+        formats={['XLS', 'XLSX', 'CSV']}
+        fileStub="Employee present_absent status"
+      />
     </ReportShell>
   );
 }

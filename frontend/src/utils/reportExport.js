@@ -36,11 +36,21 @@ const cellValue = (col, row) => {
 //   columns   → the leaf headers and their accessors
 //
 // Returns a worksheet with merges and per-cell number formats applied.
-export function buildSheet({ meta = [], legend = [], groups = null, columns, rows }) {
+export function buildSheet({ meta = [], legend = [], groups = null, columns, rows, kv = null }) {
   const aoa = [];
   const merges = [];
 
   meta.forEach(([label, value]) => aoa.push([label, value]));
+
+  // Daily attendance status and Daily leave status aren't tables at all in
+  // the reference — they're vertical label/value sheets. `kv` short-circuits
+  // the whole header/column machinery for those.
+  if (kv) {
+    kv.forEach(([label, value]) => aoa.push([label, value]));
+    const wsKv = XLSX.utils.aoa_to_sheet(aoa);
+    wsKv['!cols'] = [{ wch: 22 }, { wch: 16 }];
+    return wsKv;
+  }
   legend.forEach(pairs => {
     // Legend pairs render as alternating code/meaning cells, matching how the
     // reference spreads its key across a single row.

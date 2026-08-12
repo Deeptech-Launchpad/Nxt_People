@@ -37,13 +37,49 @@ const STATUS_COLOR = {
 const fmtTime = t => (t ? new Date(t).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-');
 const fmtHrs = h => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
 
-const EXPORT_COLUMNS = [
+// Unlike every other export, Date leads here — it sits before the identity
+// block in the reference. Columns this system doesn't capture (punch source,
+// notes, shift allowance, time zone) are emitted blank rather than dropped,
+// so the sheet lines up with the reference column-for-column.
+const presenceColumns = (emp, decimal) => [
   { key: 'date', header: 'Date' },
-  { key: 'firstIn', header: 'First In', value: r => fmtTime(r.firstIn) },
-  { key: 'lastOut', header: 'Last Out', value: r => fmtTime(r.lastOut) },
-  { key: 'totalHours', header: 'Total Hours', value: r => fmtHrs(r.totalHours) },
-  { key: 'payableHours', header: 'Payable Hours', value: r => fmtHrs(r.payableHours) },
-  { key: 'status', header: 'Status' }, { key: 'shiftName', header: 'Shift' },
+  { key: 'employeeCode', header: 'Employee Id', value: () => emp?.employeeCode || '' },
+  { key: 'employeeName', header: 'Employee Name', value: () => `${emp?.firstName || ''} ${emp?.lastName || ''}`.trim() },
+  { key: 'email', header: 'Email ID', value: () => emp?.email || '' },
+  { key: 'reportingTo', header: 'Reporting To', value: () => emp?.reportingTo || '' },
+  { key: 'department', header: 'Department', value: () => emp?.department || '' },
+  { key: 'designation', header: 'Designation', value: () => emp?.designation || '' },
+  { key: 'workLocation', header: 'Location', value: () => emp?.workLocation || '' },
+  { key: 'role', header: 'Role', value: () => emp?.role || '' },
+  { key: 'checkIn', header: 'Check-in', value: r => fmtTime(r.firstIn) },
+  { key: 'checkInSource', header: 'Check-in Source', value: () => '' },
+  { key: 'checkOut', header: 'Check-out', value: r => fmtTime(r.lastOut) },
+  { key: 'checkOutSource', header: 'Check-out Source', value: () => '' },
+  { key: 'checkInNotes', header: 'Check-in Notes', value: () => '' },
+  { key: 'checkOutNotes', header: 'Check-out Notes', value: () => '' },
+  { key: 'earlyEntry', header: 'Early Entry', value: () => '-' },
+  { key: 'lateEntry', header: 'Late Entry', value: () => '-' },
+  { key: 'earlyExit', header: 'Early Exit', value: () => '-' },
+  { key: 'lateExit', header: 'Late Exit', value: () => '-' },
+  { key: 'checkInLocation', header: 'Check-in Location', value: () => '' },
+  { key: 'checkOutLocation', header: 'Check-out Location', value: () => '' },
+  { key: 'totalHours', header: 'Total Hours', value: r => (decimal ? (Number(r.totalHours) || 0).toFixed(2) : fmtHrs(r.totalHours)) },
+  { key: 'payableHours', header: 'Payable Hours', value: r => (decimal ? (Number(r.payableHours) || 0).toFixed(2) : fmtHrs(r.payableHours)) },
+  { key: 'status', header: 'Status' },
+  { key: 'coreExpected', header: 'Expected', value: () => '-' },
+  { key: 'coreWorked', header: 'Worked  ', value: () => '-' },
+  { key: 'coreDeviation', header: 'Deviation', value: () => '-' },
+  { key: 'shiftName', header: 'Shift(s)' },
+  { key: 'shiftAllowance', header: 'Shift Allowance', value: () => '' },
+  { key: 'totalShiftAllowance', header: 'Total Shift Allowance', value: () => '' },
+  { key: 'timeZone', header: 'Time zone', value: () => '' },
+];
+
+// "Core Hours" straddles Expected / Worked / Deviation (columns 25-27).
+const PRESENCE_GROUPS = [
+  { label: null, span: 24 },
+  { label: 'Core Hours', span: 3 },
+  { label: null, span: 4 },
 ];
 
 // Single-employee day-by-day presence ledger with a Day/Hour summary strip —
@@ -157,7 +193,15 @@ export default function PresenceHoursBreakup() {
           )}
         </>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={data?.data || []} baseColumns={EXPORT_COLUMNS} fileStub={`presence-hours_${employee?.employeeId}_${dateRange.start}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={data?.data || []}
+        columns={presenceColumns(data?.employee, false)}
+        hourColumns={presenceColumns(data?.employee, true)}
+        groups={PRESENCE_GROUPS}
+        sheetName="Presence hours"
+        formats={['XLS', 'XLSX', 'CSV']}
+        fileStub={`Presence hours break-up_${data?.employee?.employeeCode || ''}`}
+      />
     </ReportShell>
   );
 }
