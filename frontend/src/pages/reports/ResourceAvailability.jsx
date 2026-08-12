@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Download, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, RotateCcw, ArrowUpDown } from 'lucide-react';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
@@ -12,13 +12,21 @@ import PeriodPresetChip from './PeriodPresetChip';
 import FilterToggleButton from './FilterToggleButton';
 import LeaveExportModal from './LeaveExportModal';
 
-const LEGEND = { CL: 'Casual Leave', CO: 'Comp-Off', LWP: 'Leave Without Pay', PM: 'Permission', A: 'Absent', H: 'Holiday', WO: 'Weekly Off' };
-const CODE_STYLE = {
-  CL: 'bg-blue-100 text-blue-700', CO: 'bg-purple-100 text-purple-700',
-  LWP: 'bg-red-100 text-red-700', PM: 'bg-cyan-100 text-cyan-700',
-  A: 'bg-rose-100 text-rose-700', H: 'bg-amber-100 text-amber-700', WO: 'bg-slate-100 text-slate-500',
+// Codes render as plain text over a coloured underline rather than a filled
+// pill — with a month of data on screen, filled badges turn the grid into a
+// wall of colour and bury the handful of cells that actually matter.
+const CODE_COLOR = {
+  CL: '#e8a33d', CO: '#70ad47', LWP: '#e15759',
+  PM: '#e8a33d', A: '#e15759', H: '#5b9bd5',
 };
-const codeStyle = code => CODE_STYLE[code?.replace('½', '')] || '';
+const LEGEND = [
+  ['CL', 'Casual Leave'], ['PM', 'Permission'], ['A', 'Absent'],
+  ['LWP', 'Leave Without Pay'], ['CO', 'Comp-Off'],
+];
+const codeColor = code => CODE_COLOR[String(code || '').replace('½', '').replace(/^[\d.]+/, '').split('/')[0]] || '#94a3b8';
+
+const isWeekendDay = d => [0, 6].includes(new Date(d).getDay());
+const todayCA = new Date().toLocaleDateString('en-CA');
 
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
@@ -26,10 +34,26 @@ const monthStartCA = () => new Date(y, m, 1).toLocaleDateString('en-CA');
 const monthEndCA = () => new Date(y, m + 1, 0).toLocaleDateString('en-CA');
 const formatRange = (s, e) => `${new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} - ${new Date(e).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
 
-const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-];
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
+// The reference export writes one column per day headed "01 Aug (Sat)" — note
+// this differs from the Present/Absent grid's "1 - Aug" — and spells the value
+// out in full ("Weekend", "Casual Leave") rather than using the grid's codes.
+const CODE_WORD = {
+  CL: 'Casual Leave', CO: 'Compensatory Off', LWP: 'Leave Without Pay',
+  PM: 'Permission', A: 'Absent', H: 'Holiday', WO: 'Weekend',
+};
+const codeWord = code => {
+  if (!code) return '';
+  const base = String(code).replace('½', '').replace(/^[\d.]+/, '').split('/')[0];
+  return CODE_WORD[base] || code;
+};
+const exportDayColumns = dayLabels => dayLabels.map((d, i) => {
+  const dt = new Date(d);
+  return {
+    key: `d${i}`,
+    header: `${String(dt.getDate()).padStart(2, '0')} ${dt.toLocaleDateString('en-US', { month: 'short' })} (${dt.toLocaleDateString('en-US', { weekday: 'short' })})`,
+    value: r => codeWord(r.days[i]),
+  };
+});
 
 export default function ResourceAvailability() {
   const [startDate, setStartDate] = useState(monthStartCA());
@@ -42,6 +66,7 @@ export default function ResourceAvailability() {
   const [dimFilters, setDimFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [sortAsc, setSortAsc] = useState(true);
   const [showExEmployees, setShowExEmployees] = useState(true);
 
   const shiftMonth = delta => {
@@ -68,7 +93,15 @@ export default function ResourceAvailability() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, [startDate, endDate, employeeStatus, leaveType, directReportsOnly, dimFilters]);
 
-  const exportRows = data ? data.data.map(emp => ({ ...emp, cells: emp.days.filter(Boolean).join(', ') })) : [];
+  // Sorting is client-side on the already-loaded page — the grid is one
+  // request's worth of rows, so there's nothing to re-fetch.
+  const rows = data
+    ? [...data.data].sort((a, b) => {
+        const an = `${a.firstName} ${a.lastName}`.toLowerCase();
+        const bn = `${b.firstName} ${b.lastName}`.toLowerCase();
+        return sortAsc ? an.localeCompare(bn) : bn.localeCompare(an);
+      })
+    : [];
 
   const reset = () => {
     setStartDate(monthStartCA()); setEndDate(monthEndCA());
@@ -108,11 +141,6 @@ export default function ResourceAvailability() {
           Show selective ex-employees
         </label>
       </div>
-      <div className="flex items-center gap-3 text-[12px] text-slate-500 flex-wrap w-full pt-1">
-        {Object.entries(LEGEND).map(([code, label]) => (
-          <span key={code} className="flex items-center gap-1"><span className={`px-1.5 py-0.5 rounded font-semibold ${CODE_STYLE[code]}`}>{code}</span>{label}</span>
-        ))}
-      </div>
     </>
   ) : null;
 
@@ -121,44 +149,102 @@ export default function ResourceAvailability() {
       {!data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="text-[13px] border-collapse">
-            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
-              <tr>
-                <th className="text-left px-3 py-2.5 sticky left-0 bg-slate-50 z-10 whitespace-nowrap">Employee</th>
-                {data.dayLabels.map(d => {
-                  const dd = new Date(d);
-                  return (
-                    <th key={d} className="px-1.5 py-2.5 text-center w-11 leading-tight">
-                      <div>{dd.getDate()} {dd.toLocaleDateString('en-US', { month: 'short' })}</div>
-                      <div className="text-slate-400 font-normal normal-case">{dd.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {data.data.map(emp => (
-                <tr key={emp._id} className="hover:bg-slate-50">
-                  <td className="px-3 py-2 sticky left-0 bg-white whitespace-nowrap">
-                    <p className="font-medium text-slate-700">{emp.firstName} {emp.lastName} {emp.employeeCode && <span className="text-[11px] font-normal text-slate-400">({emp.employeeCode})</span>}</p>
-                    <p className="text-[11px] text-slate-400">
-                      {emp.department || '—'}
-                      {emp.exitDate && <span className="ml-1.5 text-red-500 font-medium">Exited {new Date(emp.exitDate).toLocaleDateString('en-IN')}</span>}
-                    </p>
-                  </td>
-                  {emp.days.map((code, i) => (
-                    <td key={i} className="px-1 py-2 text-center">
-                      {code && <span className={`inline-block min-w-7 px-1 rounded text-[10px] font-semibold py-0.5 ${codeStyle(code)}`}>{code}</span>}
-                    </td>
-                  ))}
+        <>
+          {/* A fixed-height scroll pane rather than a table that grows down the
+              page: the day headers and the frozen Employee column stay put
+              while you scroll a month of data in either direction. */}
+          <div className="overflow-auto max-h-[62vh] border-b border-slate-200">
+            <table className="text-[13px] border-collapse">
+              <thead className="sticky top-0 z-20">
+                <tr>
+                  <th className="text-left px-4 py-3 sticky left-0 z-30 bg-slate-100 whitespace-nowrap border-r border-slate-200 min-w-[240px]">
+                    <button
+                      onClick={() => setSortAsc(s => !s)}
+                      className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 hover:text-slate-900"
+                      title="Sort by employee"
+                    >
+                      Employee <ArrowUpDown size={13} className="text-slate-400" />
+                    </button>
+                  </th>
+                  {data.dayLabels.map(d => {
+                    const dd = new Date(d);
+                    const weekend = isWeekendDay(d);
+                    return (
+                      <th
+                        key={d}
+                        className={`px-2 py-2 text-center w-[74px] min-w-[74px] leading-tight font-medium border-r border-slate-100 ${weekend ? 'bg-[#fdf6e3]' : d === todayCA ? 'bg-slate-100' : 'bg-slate-50'}`}
+                      >
+                        <div className="text-[12.5px] text-slate-600">
+                          {String(dd.getDate()).padStart(2, '0')} {dd.toLocaleDateString('en-US', { month: 'short' })}
+                        </div>
+                        <div className="text-[11.5px] text-slate-400 font-normal">
+                          {dd.toLocaleDateString('en-US', { weekday: 'short' })}
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows.map(emp => (
+                  <tr key={emp._id} className="border-b border-slate-100 hover:bg-slate-50/60 group">
+                    <td className="px-4 py-2.5 sticky left-0 z-10 bg-white group-hover:bg-slate-50 whitespace-nowrap border-r border-slate-200">
+                      <span className="text-[13.5px] text-slate-700">
+                        <span className="text-slate-400 mr-1.5">{emp.employeeCode}</span>
+                        {emp.firstName} {emp.lastName}
+                      </span>
+                      {emp.exitDate && (
+                        <span className="ml-2 text-[11px] text-red-500 font-medium">
+                          Exited {new Date(emp.exitDate).toLocaleDateString('en-IN')}
+                        </span>
+                      )}
+                    </td>
+                    {emp.days.map((code, i) => {
+                      const d = data.dayLabels[i];
+                      const weekend = isWeekendDay(d);
+                      // Weekends are shown by tinting the column, not by
+                      // stamping a code in every cell — that filled ~9 columns
+                      // per month with badges carrying no information.
+                      const show = code && code !== 'WO';
+                      return (
+                        <td
+                          key={i}
+                          className={`px-1 py-2.5 text-center border-r border-slate-100 ${weekend ? 'bg-[#fdf6e3]' : d === todayCA ? 'bg-slate-50' : ''}`}
+                        >
+                          {show && (
+                            <span
+                              className="inline-block text-[12px] text-slate-700 pb-0.5"
+                              style={{ borderBottom: `2px solid ${codeColor(code)}` }}
+                            >
+                              {code}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Legend sits below the scroll pane so it stays visible while the
+              grid scrolls, instead of scrolling away with the filter panel. */}
+          <div className="flex items-center gap-6 flex-wrap px-4 py-3">
+            {LEGEND.map(([code, label]) => (
+              <span key={code} className="flex items-center gap-2 text-[12.5px] text-slate-600">
+                <span className="inline-block w-0.5 h-4 rounded" style={{ background: CODE_COLOR[code] }} />
+                {code} - {label}
+              </span>
+            ))}
+          </div>
+        </>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={exportRows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`resource-availability_${startDate}_to_${endDate}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
+        withIdentity columns={exportDayColumns(data?.dayLabels || [])}
+        sheetName="Leave"
+        fileStub="Resource_availability"
+      />
     </ReportShell>
   );
 }
