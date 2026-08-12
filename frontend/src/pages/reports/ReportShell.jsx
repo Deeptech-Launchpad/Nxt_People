@@ -27,7 +27,12 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
     // are as wide as the period being viewed, and capping the page at 1152px
     // meant a month of days scrolled inside a narrow box with dead margins on
     // either side. Charts and tables read fine at full width; the grids need it.
-    <div className="w-full px-4 space-y-4 pb-10 report-shell">
+    //
+    // min-w-0 + overflow-x-clip matter as much as the width: without them a
+    // wide grid stretches the page itself, so the whole document scrolls
+    // sideways and the header's funnel and ⋯ get pushed off-screen. The grid
+    // has to scroll inside its own pane, leaving the chrome anchored.
+    <div className="w-full max-w-full min-w-0 overflow-x-clip px-4 space-y-4 pb-10 report-shell">
       {/* One header bar: home, breadcrumb, a centred period navigator, then
           the icon cluster (view toggles, funnel, overflow menu) — the layout
           every report page in the reference shares. */}
@@ -92,7 +97,7 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
           {filters}
         </div>
       )}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden min-w-0">
         {loading ? (
           <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>
         ) : children}

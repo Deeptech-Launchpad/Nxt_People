@@ -65,7 +65,10 @@ export default function ResourceAvailability() {
   const [leaveType, setLeaveType] = useState('');
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  // The reference shows this filter row on load rather than behind the funnel
+  // — opening the report to a bare grid with no visible controls made it look
+  // like the filters didn't exist.
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
   const [sortAsc, setSortAsc] = useState(true);
   const [showExEmployees, setShowExEmployees] = useState(true);
@@ -187,7 +190,7 @@ export default function ResourceAvailability() {
             <table className="text-[13px] border-collapse">
               <thead className="sticky top-0 z-20">
                 <tr>
-                  <th className="text-left px-4 py-3 sticky left-0 z-30 bg-slate-100 whitespace-nowrap border-r border-slate-200 min-w-[270px]">
+                  <th className="text-left px-4 py-3 sticky left-0 z-30 bg-slate-100 whitespace-nowrap border-r border-slate-200 w-[280px] max-w-[280px]">
                     <button
                       onClick={() => setSortAsc(s => !s)}
                       className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 hover:text-slate-900"
@@ -218,16 +221,24 @@ export default function ResourceAvailability() {
               <tbody>
                 {rows.map(emp => (
                   <tr key={emp._id} className="border-b border-slate-100 hover:bg-slate-50/60 group">
-                    <td className="px-4 py-2.5 sticky left-0 z-10 bg-white group-hover:bg-slate-50 whitespace-nowrap border-r border-slate-200">
-                      <span className="text-[13.5px] text-slate-700">
-                        <span className="text-slate-400 mr-1.5">{emp.employeeCode}</span>
-                        {emp.firstName} {emp.lastName}
-                      </span>
-                      {emp.exitDate && (
-                        <span className="ml-2 text-[11px] text-red-500 font-medium">
-                          Exited {new Date(emp.exitDate).toLocaleDateString('en-IN')}
+                    {/* Fixed width with truncation — a long name plus an exit
+                        badge was stretching this column past 450px and shoving
+                        the calendar off the right of the screen. */}
+                    <td className="px-4 py-2.5 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r border-slate-200 w-[280px] max-w-[280px]">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
+                          {(emp.firstName?.[0] || '')}{(emp.lastName?.[0] || '')}
                         </span>
-                      )}
+                        <span className="text-[13.5px] text-slate-700 truncate" title={`${emp.employeeCode} ${emp.firstName} ${emp.lastName}`}>
+                          <span className="text-slate-400 mr-1.5">{emp.employeeCode}</span>
+                          {emp.firstName} {emp.lastName}
+                        </span>
+                        {emp.exitDate && (
+                          <span className="text-[10px] text-red-500 font-medium flex-shrink-0" title={`Exited ${new Date(emp.exitDate).toLocaleDateString('en-IN')}`}>
+                            Exited
+                          </span>
+                        )}
+                      </div>
                     </td>
                     {emp.days.map((code, i) => {
                       const d = data.dayLabels[i];
