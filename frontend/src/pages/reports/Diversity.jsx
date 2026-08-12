@@ -8,6 +8,7 @@ import DonutWithStats from './DonutWithStats';
 import ChartExportMenu from './ChartExportMenu';
 import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
+import SliceDrilldown from './SliceDrilldown';
 
 const TYPES = [['age', 'Age'], ['gender', 'Gender'], ['experience', 'Experience']];
 
@@ -54,6 +55,7 @@ export default function Diversity() {
   const [rows, setRows] = useState([]);
   const [totalActive, setTotalActive] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [drill, setDrill] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -128,7 +130,15 @@ export default function Diversity() {
           {/* Age and Experience only bucket people who have a date of birth /
               joining date, but the percentages divide by the full headcount —
               18 of 58 reads 31.03%, matching the stat panel beside it. */}
-          <DonutWithStats data={rows} total={totalActive || total} stats={buildStats()} />
+          {/* Only Gender drills down — Age and Experience group by a computed
+              band, so a slice there has no column value to look up. */}
+          <DonutWithStats
+            data={rows} total={totalActive || total} stats={buildStats()}
+            onSliceClick={type === 'gender' ? (label => setDrill(label)) : undefined}
+          />
+          {type === 'gender' && (
+            <SliceDrilldown by="gender" value={drill} label="Gender" onClose={() => setDrill(null)} />
+          )}
         </>
       )}
     </ReportShell>

@@ -678,6 +678,39 @@ router.get('/employee/distribution', authorize('admin', 'director', 'hr_admin', 
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+// Employees behind one slice of a Distribution/Diversity chart — clicking a
+// slice should answer "who are these three people?", which the chart alone
+// can't. Only plain columns are drillable; the age and tenure charts group by
+// a computed band, so a value there wouldn't map back to a column.
+const DRILL_COLUMNS = {
+  department: 'e.department',
+  designation: 'e.designation',
+  location: 'e.work_location',
+  gender: 'e.gender',
+};
+
+router.get('/employee/drilldown', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const col = DRILL_COLUMNS[req.query.by];
+    if (!col) return res.status(400).json({ success: false, message: 'Unsupported drilldown dimension' });
+    const value = req.query.value;
+    if (!value) return res.status(400).json({ success: false, message: 'value is required' });
+
+    const extra = extraEmployeeFilters(req.query, 'e', 2);
+    const scope = reportsScope(req.user, 'e', 2 + extra.params.length);
+    const r = await pool.query(
+      `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName",
+              e.employee_id AS "employeeCode", e.email, e.department, e.designation,
+              e.employment_type AS "employmentType", e.work_location AS "workLocation"
+         FROM employees e
+        WHERE e.status='active' AND ${col} = $1${extra.clause}${scope.clause}
+        ORDER BY e.first_name`,
+      [value, ...extra.params, ...scope.params]
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
 // 5-year-wide buckets for age (date_of_birth) or current tenure
 // (joining_date) among active employees. Shared by /employee/diversity's
 // age/experience types and the Dashboard's mini widgets, so both always

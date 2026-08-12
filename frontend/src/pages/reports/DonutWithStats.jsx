@@ -7,7 +7,7 @@ import { CHART_COLORS, makeSliceLabel } from './chartLabels';
 // the percentage denominator — Age and Experience bucket only the people who
 // have a date of birth / joining date, but Zoho still divides by the full
 // headcount, so 18 of 58 reads 31.03% rather than 31.58% of the 57 bucketed.
-export default function DonutWithStats({ data, stats, donut = true, total }) {
+export default function DonutWithStats({ data, stats, donut = true, total, onSliceClick }) {
   const denom = total || data.reduce((s, d) => s + Number(d.count), 0) || 1;
   return (
     <div className="flex flex-col lg:flex-row items-center gap-6 p-6">
@@ -18,6 +18,8 @@ export default function DonutWithStats({ data, stats, donut = true, total }) {
               data={data} dataKey="count" nameKey="label" cx="50%" cy="50%"
               innerRadius={donut ? 62 : 0} outerRadius={108} paddingAngle={donut ? 1 : 0}
               label={makeSliceLabel(denom, data, 440)} labelLine={false} isAnimationActive={false}
+              onClick={onSliceClick ? (d) => onSliceClick(d?.payload?.label ?? d?.label) : undefined}
+              className={onSliceClick ? 'cursor-pointer' : undefined}
             >
               {data.map((d, i) => <Cell key={d.label} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
             </Pie>

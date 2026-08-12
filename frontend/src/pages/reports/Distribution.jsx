@@ -8,6 +8,7 @@ import DonutWithStats from './DonutWithStats';
 import ChartExportMenu from './ChartExportMenu';
 import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
+import SliceDrilldown from './SliceDrilldown';
 
 const TYPES = [['designation', 'Designation'], ['department', 'Department'], ['location', 'Location']];
 
@@ -56,6 +57,7 @@ export default function Distribution() {
   const [totalActive, setTotalActive] = useState(0);
   const [without, setWithout] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [drill, setDrill] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -116,6 +118,7 @@ export default function Distribution() {
             data={rows}
             donut={false}
             total={total}
+            onSliceClick={label => setDrill(label)}
             stats={[
               { label: `Employees in Top 3 ${typeLabel}s`, value: `${total ? ((top3 / total) * 100).toFixed(2) : 0}% (${top3})` },
               ...(without > 0
@@ -125,6 +128,7 @@ export default function Distribution() {
               { label: 'Total Employee Count', value: total },
             ]}
           />
+          <SliceDrilldown by={by} value={drill} label={typeLabel} onClose={() => setDrill(null)} />
         </>
       )}
     </ReportShell>
