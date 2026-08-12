@@ -11,6 +11,7 @@ import DirectReportsToggle from './DirectReportsToggle';
 import PeriodPresetChip from './PeriodPresetChip';
 import FilterToggleButton from './FilterToggleButton';
 import LeaveExportModal from './LeaveExportModal';
+import { downloadIcs } from '../../utils/reportIcs';
 
 // Codes render as plain text over a coloured underline rather than a filled
 // pill — with a month of data on screen, filled badges turn the grid into a
@@ -108,14 +109,45 @@ export default function ResourceAvailability() {
     setEmployeeStatus('all'); setLeaveType(''); setDirectReportsOnly(false); setDimFilters({});
   };
 
-  const actions = (
+  const periodNav = (
     <div className="flex items-center gap-2">
-      <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
-      <span className="text-[14px] font-medium text-slate-700">{formatRange(startDate, endDate)}</span>
-      <button onClick={() => shiftMonth(1)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
-      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+      <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
+      <span className="text-[14px] text-slate-700 whitespace-nowrap">{formatRange(startDate, endDate)}</span>
+      <button onClick={() => shiftMonth(1)} className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
     </div>
   );
+
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
+
+  // Every entry does real work. Print and PDF share the browser's print
+  // pipeline — the print stylesheet drops the app chrome and expands the
+  // grid's scroll pane so the whole month reaches the page. "Permissions" is
+  // not offered: this app has no per-report access control, and a menu item
+  // that does nothing is worse than an absent one.
+  const menuItems = [
+    { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+    {
+      key: 'ics',
+      label: 'Download as ICS',
+      onClick: () => {
+        const events = [];
+        rows.forEach(emp => {
+          (emp.days || []).forEach((code, i) => {
+            if (!code || code === 'WO') return;
+            events.push({
+              date: data.dayLabels[i],
+              summary: `${emp.firstName} ${emp.lastName} — ${codeWord(code)}`,
+              uid: `ra-${emp._id}-${data.dayLabels[i]}@nxtpeople`,
+            });
+          });
+        });
+        if (!events.length) { toast('Nothing to add to a calendar for this period'); return; }
+        downloadIcs(events, `Resource_availability_${startDate}_to_${endDate}`, 'Resource Availability');
+      },
+    },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+  ];
 
   const filters = filtersOpen ? (
     <>
@@ -123,10 +155,8 @@ export default function ResourceAvailability() {
       <LeaveTypeFilter value={leaveType} onChange={setLeaveType} />
       <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
       <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
+      {/* Export lives in the ⋯ menu now, so it isn't repeated here. */}
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Download size={14} /> Export
-        </button>
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           Submit
         </button>
@@ -145,7 +175,7 @@ export default function ResourceAvailability() {
   ) : null;
 
   return (
-    <ReportShell title="Resource Availability" subtitle="Leave calendar for the selected period" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell title="Resource Availability" actions={actions} periodNav={periodNav} menuItems={menuItems} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {!data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (

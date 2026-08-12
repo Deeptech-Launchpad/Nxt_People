@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronDown } from 'lucide-react';
+import { ChevronDown, Home } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { REPORT_CATALOG } from './catalogData';
+import ReportMenu from './ReportMenu';
 
 // Shared page frame for every dedicated report page — back link, title
 // (optionally a switcher dropdown), an optional filter bar, and a
@@ -13,7 +14,7 @@ import { REPORT_CATALOG } from './catalogData';
 // `breadcrumbChip` renders inline after the report name, matching where Zoho
 // puts the "Type : Location" selector on Distribution/Diversity — it's part
 // of the breadcrumb trail there, not part of the filter panel.
-export default function ReportShell({ title, subtitle, filters, actions, loading, children, switcherCategory, breadcrumbChip }) {
+export default function ReportShell({ title, subtitle, filters, actions, loading, children, switcherCategory, breadcrumbChip, periodNav, menuItems = [] }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -22,17 +23,22 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
   const siblings = catalogEntry ? catalogEntry.reports.filter(r => r.to.split('?')[0] !== location.pathname) : [];
 
   return (
-    <div className="max-w-6xl mx-auto px-4 space-y-5 pb-10">
-      <div className="pt-5">
-        <button onClick={() => navigate('/reports')} className="flex items-center gap-1.5 text-slate-500 hover:text-slate-700 text-sm font-medium transition-colors">
-          <ChevronLeft size={16} /> Reports
+    <div className="max-w-6xl mx-auto px-4 space-y-4 pb-10 report-shell">
+      {/* One header bar: home, breadcrumb, a centred period navigator, then
+          the icon cluster (view toggles, funnel, overflow menu) — the layout
+          every report page in the reference shares. */}
+      <div className="flex items-center gap-3 pt-5 report-hide-print">
+        <button
+          onClick={() => navigate('/reports')}
+          title="All reports"
+          className="p-2 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors flex-shrink-0"
+        >
+          <Home size={16} />
         </button>
-      </div>
-      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           {siblings.length > 0 ? (
             <div className="relative">
-              <div className="flex items-center gap-1.5 text-[20px] font-bold">
+              <div className="flex items-center gap-1.5 text-[17px] font-semibold whitespace-nowrap">
                 <button onClick={() => navigate('/reports')} className="text-slate-400 hover:text-slate-600 transition-colors">
                   {switcherCategory}
                 </button>
@@ -64,14 +70,21 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
               )}
             </div>
           ) : (
-            <h1 className="text-[20px] font-bold text-slate-800">{title}</h1>
+            <h1 className="text-[17px] font-semibold text-slate-800">{title}</h1>
           )}
-          {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
         </div>
-        {actions}
+
+        {/* Period navigator sits centred between the breadcrumb and the icons. */}
+        <div className="flex-1 flex justify-center min-w-0">{periodNav}</div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {actions}
+          <ReportMenu items={menuItems} />
+        </div>
       </div>
+      {subtitle && <p className="text-sm text-slate-500 -mt-2 report-hide-print">{subtitle}</p>}
       {filters && (
-        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-end gap-3">
+        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-end gap-3 report-hide-print">
           {filters}
         </div>
       )}

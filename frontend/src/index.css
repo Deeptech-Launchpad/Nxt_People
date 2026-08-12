@@ -458,3 +458,36 @@ html.dark .bg-white.p-4.border-b { background-color: #1f2937 !important; }
 html.dark .bg-white.border-b     { background-color: #1f2937 !important; }
 html.dark .bg-white.z-10         { background-color: #1f2937 !important; }
 html.dark .bg-white.p-8          { background-color: #1f2937 !important; }
+
+/* ── Report printing ────────────────────────────────────────────────────────
+   Print and "Download as PDF" both go through the browser's print pipeline,
+   so the printed sheet has to shed the app chrome: nav, filter panel and the
+   header's controls. The grid also has to drop its fixed-height scroll pane,
+   or printing would emit only the ~10 rows that happened to be visible. */
+@media print {
+  .report-hide-print,
+  nav, aside, header.app-header { display: none !important; }
+
+  .report-shell {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  /* Let scroll panes expand so every row reaches the paper. */
+  .report-shell .overflow-auto,
+  .report-shell .overflow-x-auto,
+  .report-shell .overflow-y-auto {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .report-shell table { width: 100% !important; font-size: 9pt !important; }
+  .report-shell thead { display: table-header-group; }  /* repeat headers per page */
+  .report-shell tr { break-inside: avoid; }
+
+  /* Sticky cells become normal cells on paper — position:sticky prints as a
+     smear of overlapping text otherwise. */
+  .report-shell .sticky { position: static !important; }
+
+  body { background: #fff !important; }
+}
