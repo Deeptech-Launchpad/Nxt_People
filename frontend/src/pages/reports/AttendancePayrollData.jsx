@@ -33,26 +33,49 @@ const fmt = (v, unit) => {
   return `${String(Math.floor(n)).padStart(2, '0')}:${String(Math.round((n % 1) * 60)).padStart(2, '0')}`;
 };
 
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
+// The reference puts a banner row above the leaf headers so "Payable Day(s)"
+// straddles its three sub-columns, "Worked Day(s)" its three, and so on. The
+// identity block sits under a blank span of the same banner.
 const exportColumns = (simple, unit) => {
-  const base = [
-    { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  ];
-  const u = unit === 'hour' ? 'Hours' : 'Days';
+  const u = unit === 'hour' ? 'Hour(s)' : 'Day(s)';
   if (simple) {
-    return [...base,
+    return [
       { key: 'payableTotal', header: `Payable ${u}` },
       { key: 'expectedWorkingDays', header: `Expected Working ${u}` },
       { key: 'workedTotal', header: `Worked ${u}` },
     ];
   }
-  return [...base,
+  return [
     { key: 'expectedPayableDays', header: `Expected Payable ${u}` },
-    { key: 'payableWorked', header: `Payable Worked ${u}` }, { key: 'payablePaidOff', header: `Payable Paid Off ${u}` }, { key: 'payableTotal', header: `Payable Total ${u}` },
+    { key: 'payableWorked', header: `Worked ${u}` },
+    { key: 'payablePaidOff', header: `Paid Off ${u}` },
+    { key: 'payableTotal', header: 'Total' },
     { key: 'expectedWorkingDays', header: `Expected Working ${u}` },
-    { key: 'workedPresent', header: 'Worked Present' }, { key: 'workedOnDuty', header: 'Worked On Duty' }, { key: 'workedTotal', header: 'Worked Total' },
-    { key: 'paidLeave', header: 'Paid Off Leave' }, { key: 'paidHolidays', header: 'Paid Off Holidays' }, { key: 'paidWeekend', header: 'Paid Off Weekend' }, { key: 'paidOffTotal', header: 'Paid Off Total' },
-    { key: 'unpaidLeave', header: 'Unpaid Leave' }, { key: 'unpaidAbsent', header: 'Unpaid Absent' }, { key: 'unpaidTotal', header: 'Unpaid Total' },
+    { key: 'workedPresent', header: 'Present' },
+    { key: 'workedOnDuty', header: 'On Duty' },
+    { key: 'workedTotal', header: 'Total' },
+    { key: 'paidLeave', header: 'Leave' },
+    { key: 'paidHolidays', header: 'Holidays' },
+    { key: 'paidWeekend', header: 'Weekend' },
+    { key: 'paidOffTotal', header: 'Total' },
+    { key: 'unpaidLeave', header: 'Leave' },
+    { key: 'unpaidAbsent', header: 'Absent' },
+    { key: 'unpaidTotal', header: 'Total' },
+  ];
+};
+
+// identityWidth is however many identity columns the dialog ends up writing;
+// the banner leaves that span blank, then labels each metric group.
+const exportGroups = (simple, unit, identityWidth) => {
+  if (simple) return null;
+  const u = unit === 'hour' ? 'Hour(s)' : 'Day(s)';
+  return [
+    { label: null, span: identityWidth + 1 },   // identity + Expected Payable
+    { label: `Payable ${u}`, span: 3 },
+    { label: null, span: 1 },                   // Expected Working
+    { label: `Worked ${u}`, span: 3 },
+    { label: `Paid Off ${u}`, span: 4 },
+    { label: `Unpaid Off ${u}`, span: 3 },
   ];
 };
 
@@ -226,7 +249,15 @@ export default function AttendancePayrollData() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={exportColumns(simple, unit)} extraColumns={EXPORT_EXTRA} fileStub={`attendance-payroll_${dateRange.start}_to_${dateRange.end}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
+        withIdentity columns={exportColumns(simple, unit)}
+        groups={w => exportGroups(simple, unit, w)}
+        sheetName="Attendance Data"
+        meta={[['Start Date', dateRange.start], ['End Date', dateRange.end]]}
+        formats={['XLS', 'XLSX', 'CSV']}
+        fileStub="Attendance data for payroll"
+      />
     </ReportShell>
   );
 }

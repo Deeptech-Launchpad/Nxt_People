@@ -1346,6 +1346,15 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
 
 // ══════════════════════════ Attendance reports ═════════════════════════════
 
+// The identity block every employee-level export opens with. Kept as one
+// fragment so a report can't drift into exporting a different set of columns
+// than its siblings — "Reporting To" in particular needs a self-join that's
+// easy to get subtly wrong per query.
+const EMP_IDENTITY_SQL = `e.email,
+  e.designation, e.work_location AS "workLocation", e.role,
+  (SELECT TRIM(COALESCE(m.first_name,'') || ' ' || COALESCE(m.last_name,''))
+     FROM employees m WHERE m.id = e.reporting_manager_id) AS "reportingTo"`;
+
 // Leave-type → grid code, matching the Leave Tracker calendar so the same
 // leave reads identically in both report families.
 const ATT_LEAVE_CODE = { casual: 'CL', comp_off: 'CO', unpaid: 'LWP', permission: 'PM' };
@@ -1408,6 +1417,7 @@ async function loadAttendanceContext(req, start, end) {
     pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
               e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.joining_date AS "joiningDate",
+              ${EMP_IDENTITY_SQL},
               s.name AS "shiftName", s.start_time AS "shiftStart", s.end_time AS "shiftEnd"
          FROM employees e
          LEFT JOIN shifts s ON e.shift_id = s.id

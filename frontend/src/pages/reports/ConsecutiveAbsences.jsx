@@ -23,11 +23,10 @@ const PERIOD_OPTIONS = [
 
 const fmtDate = d => new Date(d).toLocaleDateString('en-GB');
 const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  { key: 'period', header: 'Absence Period', value: r => `${fmtDate(r.startDate)} - ${fmtDate(r.endDate)}` },
+  { key: 'startDate', header: 'From Date', value: r => fmtDate(r.startDate) },
+  { key: 'endDate', header: 'To Date', value: r => fmtDate(r.endDate) },
   { key: 'count', header: 'Number of Days' },
 ];
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
 // The "at least N days" threshold was previously hardcoded to 2 because the
 // page never sent minDays — it's now an editable control wired to the query.
@@ -115,7 +114,14 @@ export default function ConsecutiveAbsences() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`consecutive-absences_${dateRange.start}_to_${dateRange.end}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
+        withIdentity columns={EXPORT_COLUMNS}
+        sheetName="Consecutive absences Report"
+        meta={[['From Date', fmtDate(dateRange.start)], ['To Date', fmtDate(dateRange.end)]]}
+        formats={['XLS', 'XLSX', 'CSV']}
+        fileStub="Attendance_ConsecutiveAbsent"
+      />
     </ReportShell>
   );
 }

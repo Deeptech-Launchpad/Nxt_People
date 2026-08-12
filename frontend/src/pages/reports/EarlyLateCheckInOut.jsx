@@ -64,19 +64,25 @@ const fmtDelta = (min, sign) => {
   return `${sign}${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 };
 
-const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  { key: 'date', header: 'Date' },
-  { key: 'firstIn', header: 'First In', value: r => fmtTime(r.firstIn) }, { key: 'lastOut', header: 'Last Out', value: r => fmtTime(r.lastOut) },
-  { key: 'totalHours', header: 'Total Hours', value: r => fmtHrs(r.totalHours) },
-  { key: 'entryEarly', header: 'Entry Early', value: r => fmtDelta(r.entryEarly, '+') },
-  { key: 'entryLate', header: 'Entry Late', value: r => fmtDelta(r.entryLate, '-') },
-  { key: 'exitEarly', header: 'Exit Early', value: r => fmtDelta(r.exitEarly, '-') },
-  { key: 'exitLate', header: 'Exit Late', value: r => fmtDelta(r.exitLate, '+') },
-  { key: 'netMinutes', header: 'Net Hours', value: r => fmtDelta(r.netMinutes, r.netMinutes >= 0 ? '+' : '-') },
-  { key: 'shiftName', header: 'Shift' },
+// Column order follows the reference export exactly. The (Hours) sheet
+// renders durations as HH:MM and the (Decimal) sheet as fractional hours —
+// same rows, same columns, two representations.
+const hoursCols = (decimal) => [
+  { key: 'firstIn', header: 'First In', value: r => fmtTime(r.firstIn) },
+  { key: 'lastOut', header: 'Last Out', value: r => fmtTime(r.lastOut) },
+  { key: 'totalHours', header: 'Total Hours', value: r => (decimal ? (Number(r.totalHours) || 0).toFixed(2) : fmtHrs(r.totalHours)) },
+  { key: 'entryEarly', header: 'Early Entry', value: r => (decimal ? decMin(r.entryEarly) : fmtDelta(r.entryEarly, '')) },
+  { key: 'entryLate', header: 'Late Entry', value: r => (decimal ? decMin(r.entryLate, true) : fmtDelta(r.entryLate, '-')) },
+  { key: 'exitEarly', header: 'Early Exit', value: r => (decimal ? decMin(r.exitEarly, true) : fmtDelta(r.exitEarly, '-')) },
+  { key: 'exitLate', header: 'Late Exit', value: r => (decimal ? decMin(r.exitLate) : fmtDelta(r.exitLate, '')) },
+  { key: 'netMinutes', header: 'Net hours', value: r => (decimal ? decMin(r.netMinutes) : fmtDelta(r.netMinutes, r.netMinutes >= 0 ? '+' : '-')) },
+  { key: 'shiftName', header: 'Shift name' },
 ];
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
+const decMin = (min, negative = false) => {
+  if (min === null || min === undefined) return '-';
+  const v = (Math.abs(min) / 60).toFixed(2);
+  return negative ? `-${v}` : v;
+};
 
 // Entry/Exit earliness and lateness measured against each employee's shift.
 // Employees with no shift assigned fall back to a standard 8h day on the
@@ -186,7 +192,16 @@ export default function EarlyLateCheckInOut() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`early-late_${dateRange.start}_to_${dateRange.end}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
+        withIdentity
+        columns={hoursCols(false)}
+        hourColumns={hoursCols(true)}
+        sheetName="Early_Late Report"
+        meta={[['Date', dateRange.start === dateRange.end ? dateRange.start : `${dateRange.start} - ${dateRange.end}`]]}
+        formats={['XLS', 'XLSX', 'CSV']}
+        fileStub={`Early_late check-in and check-out`}
+      />
     </ReportShell>
   );
 }

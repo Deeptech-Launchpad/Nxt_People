@@ -24,12 +24,20 @@ const PERIOD_OPTIONS = [
 const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
 const fmtH = h => `${h > 0 ? '+' : ''}${(Number(h) || 0).toFixed(2)}h`;
 
-const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  { key: 'shiftName', header: 'Shift' }, { key: 'expectedHours', header: 'Expected Hours' },
-  { key: 'workedHours', header: 'Worked Hours' }, { key: 'variance', header: 'Variance' },
+// HH:MM on the "(Hours)" sheet, fractional on "(Decimal)" — the reference
+// ships both. Previous Balance is always 0: this system has no carry-forward
+// time bank, so the column exists for column-parity and stays honest.
+const hhmm = h => {
+  const n = Math.abs(Number(h) || 0);
+  const s = `${String(Math.floor(n)).padStart(2, '0')}:${String(Math.round((n % 1) * 60)).padStart(2, '0')}`;
+  return (Number(h) || 0) < 0 ? `-${s}` : s;
+};
+const exportCols = (decimal) => [
+  { key: 'previousBalance', header: 'Previous Balance', value: () => (decimal ? '0.00' : '00:00') },
+  { key: 'expectedHours', header: 'Expected Hours', value: r => (decimal ? (Number(r.expectedHours) || 0).toFixed(2) : hhmm(r.expectedHours)) },
+  { key: 'workedHours', header: 'Payable Hours', value: r => (decimal ? (Number(r.workedHours) || 0).toFixed(2) : hhmm(r.workedHours)) },
+  { key: 'variance', header: 'Balance Hours', value: r => (decimal ? (Number(r.variance) || 0).toFixed(2) : hhmm(r.variance)) },
 ];
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
 // Expected (shift length × working days in range) vs actually logged hours.
 // Zoho's version is a carry-forward overtime bank with a Previous Balance
@@ -117,7 +125,14 @@ export default function ExpectedVsWorked() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`expected-vs-worked_${dateRange.start}_to_${dateRange.end}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
+        withIdentity columns={exportCols(false)} hourColumns={exportCols(true)}
+        sheetName="Expected vs Worked"
+        meta={[['From Date', dateRange.start], ['To Date', dateRange.end]]}
+        formats={['XLS', 'XLSX', 'CSV']}
+        fileStub="Expected vs Worked Hours"
+      />
     </ReportShell>
   );
 }
