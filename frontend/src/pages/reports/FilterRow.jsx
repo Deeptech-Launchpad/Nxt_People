@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../utils/api';
+import ExperienceFilter from './ExperienceFilter';
 
 // Chip order matches Zoho's filter row. `businessUnit` has no backing column
 // in this schema — the chip is rendered so the row matches the reference
@@ -8,7 +9,7 @@ import api from '../../utils/api';
 const DIMENSIONS = [
   ['department', 'Department'], ['workLocation', 'Location'], ['designation', 'Designation'],
   ['company', 'Company'], ['businessUnit', 'Business Unit'], ['division', 'Division'],
-  ['gender', 'Gender'], ['employmentType', 'Employment Type'], ['experience', 'Experience'],
+  ['gender', 'Gender'], ['employmentType', 'Employment Type'],
   ['role', 'Role'], ['shiftId', 'Shift'],
 ];
 
@@ -80,7 +81,7 @@ function FilterChip({ label, options, value, onChange }) {
 // Zoho's dimension filter row. `exclude` hides whichever dimension is
 // currently the page's own grouping ("Type") so it isn't offered twice.
 // Values are arrays — a dimension with an empty array is simply not filtered.
-export default function FilterRow({ value, onChange, exclude = [] }) {
+export default function FilterRow({ value, onChange, exclude = [], experience, onExperienceChange }) {
   const [options, setOptions] = useState(null);
 
   useEffect(() => {
@@ -99,6 +100,12 @@ export default function FilterRow({ value, onChange, exclude = [] }) {
           value={value[key] || []} onChange={v => onChange(key, v)}
         />
       ))}
+      {/* Experience is a numeric comparator rather than a value list, so it
+          isn't one of the DIMENSIONS chips — it only renders when the page
+          supplies a handler for it. */}
+      {onExperienceChange && !exclude.includes('experience') && (
+        <ExperienceFilter value={experience} onChange={onExperienceChange} />
+      )}
     </>
   );
 }

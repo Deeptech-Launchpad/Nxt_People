@@ -611,24 +611,27 @@ function extraEmployeeFilters(query, alias, paramIndex) {
     idx++;
   }
 
-  // Experience is a tenure band, not a column — the same CASE expression
-  // experienceTenureBuckets() groups by, so filtering by "2" selects exactly
-  // the employees the "2" slice of the Experience chart is drawn from.
-  const expValues = [].concat(query.experience || []).filter(Boolean);
-  if (expValues.length) {
-    // Must mirror experienceTenureBuckets()'s banding exactly, or selecting
-    // the "4-5" slice would match no rows.
+  // Experience is a numeric comparator, not a band list: Zoho's chip reads
+  // "Experience : Greater than 3 Year(s)". Bands are how the chart groups
+  // people; the filter works on raw years, so a threshold doesn't have to
+  // land on a band boundary. Operator is whitelisted — it reaches SQL.
+  const OPS = { is: '=', lt: '<', gt: '>' };
+  const expOp = query.experienceOp;
+  const expFrom = query.experienceFrom;
+  if ((OPS[expOp] || expOp === 'between') && expFrom !== undefined && expFrom !== '') {
     const yrsExpr = `FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${alias}.joining_date)))`;
-    clause += ` AND (CASE
-        WHEN ${yrsExpr} < 1 THEN '<1'
-        WHEN ${yrsExpr} <= 3 THEN ${yrsExpr}::text
-        WHEN ${yrsExpr} <= 5 THEN '4-5'
-        WHEN ${yrsExpr} <= 7 THEN '6-7'
-        WHEN ${yrsExpr} <= 9 THEN '8-9'
-        ELSE '10+'
-      END) = ANY($${idx})`;
-    params.push(expValues);
-    idx++;
+    if (expOp === 'between') {
+      const expTo = query.experienceTo;
+      if (expTo !== undefined && expTo !== '') {
+        clause += ` AND ${yrsExpr} BETWEEN $${idx} AND $${idx + 1}`;
+        params.push(Number(expFrom), Number(expTo));
+        idx += 2;
+      }
+    } else {
+      clause += ` AND ${yrsExpr} ${OPS[expOp]} $${idx}`;
+      params.push(Number(expFrom));
+      idx++;
+    }
   }
 
   return { clause, params };

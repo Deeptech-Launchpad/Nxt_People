@@ -31,7 +31,8 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
   const [employmentType, setEmploymentType] = useState('');
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  // Zoho shows this filter row on load rather than behind the funnel.
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [draft, setDraft] = useState({});
   const [applied, setApplied] = useState({});
 

@@ -56,7 +56,8 @@ export default function Distribution() {
   const [rows, setRows] = useState([]);
   const [totalActive, setTotalActive] = useState(0);
   const [without, setWithout] = useState(0);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  // Zoho shows this filter row on load rather than behind the funnel.
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [drill, setDrill] = useState(null);
 
   useEffect(() => {
