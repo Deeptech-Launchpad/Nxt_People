@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Filter, Download, ArrowRight, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
@@ -46,8 +47,8 @@ export default function LossOfPay() {
     const params = new URLSearchParams({
       startDate, endDate, employeeStatus, directReportsOnly: String(directReportsOnly),
       ...(employee ? { employeeId: employee._id } : {}),
-      ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
     });
+    appendDimensionFilters(params, dimFilters);
     api.get(`/reports/leave/lop?${params}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Filter, Download, RotateCcw, ChevronDown } from 'lucide-react';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import FilterToggleButton from './FilterToggleButton';
@@ -99,6 +100,7 @@ export default function EarlyLateCheckInOut() {
       ...(firstCheckIn ? { firstCheckIn } : {}), ...(lastCheckOut ? { lastCheckOut } : {}),
       ...(hours.mode !== 'all' && hours.amount ? { totalHours: hours.mode, totalHoursValue: hours.amount } : {}),
     });
+    appendDimensionFilters(params, f.dimFilters);
     api.get(`/reports/attendance/early-late?${params}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))

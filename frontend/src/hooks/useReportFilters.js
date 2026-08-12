@@ -11,11 +11,13 @@ export default function useReportFilters() {
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
 
+  // Scalar params only. Dimension filters are multi-select arrays and must be
+  // appended one value at a time, so callers pass `dimFilters` through
+  // appendDimensionFilters() after building their URLSearchParams.
   const params = () => ({
     employeeStatus,
     directReportsOnly: String(directReportsOnly),
     ...(employee ? { employeeId: employee._id } : {}),
-    ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
   });
 
   const reset = () => {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Filter, ChevronLeft, ChevronRight, Download, RotateCcw } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import FilterToggleButton from './FilterToggleButton';
@@ -60,6 +61,7 @@ export default function AttendanceDailyStatus() {
       date, ...f.params(),
       ...(hours.mode !== 'all' && hours.amount ? { totalHours: hours.mode, totalHoursValue: hours.amount } : {}),
     });
+    appendDimensionFilters(params, f.dimFilters);
     status.forEach(s => params.append('status', s));
     api.get(`/reports/attendance/daily-status?${params}`)
       .then(r => setData(r.data))

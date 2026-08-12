@@ -123,14 +123,14 @@ export default function EmployeeDashboard() {
           </div>
 
           <div className="grid lg:grid-cols-2 gap-4">
-            <MiniTrend title="Employee Addition (Last 6 Months)" data={data.last6MonthsAddition} color="#10b981" to="/reports/employee/addition-trend" navigate={navigate} />
-            <MiniTrend title="Employee Attrition (Last 6 Months)" data={data.last6MonthsAttrition} color="#ef4444" to="/reports/employee/attrition-trend" navigate={navigate} />
+            <MiniTrend title="Employee addition trend (Last Six Months)" data={data.last6MonthsAddition} color="#a7e8d0" to="/reports/employee/addition-trend" navigate={navigate} />
+            <MiniTrend title="Employee attrition trend (Last Six Months)" data={data.last6MonthsAttrition} color="#a8c8ec" to="/reports/employee/attrition-trend" navigate={navigate} />
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <MiniDonut title="Designation" data={data.byDesignation} to="/reports/employee/distribution?by=designation" />
-            <MiniDonut title="Department" data={data.byDepartment} to="/reports/employee/distribution?by=department" />
-            <MiniDonut title="Location" data={data.byLocation} to="/reports/employee/distribution?by=location" />
+            <MiniDonut title="Designations (Top 10)" data={data.byDesignation} to="/reports/employee/distribution?by=designation" />
+            <MiniDonut title="Department (Top 10)" data={data.byDepartment} to="/reports/employee/distribution?by=department" />
+            <MiniDonut title="Location (Top 10)" data={data.byLocation} to="/reports/employee/distribution?by=location" />
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">

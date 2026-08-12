@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronDown, RotateCcw } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
 import ChartExportMenu from './ChartExportMenu';
 import FilterRow from './FilterRow';
+import FilterToggleButton from './FilterToggleButton';
 
-const TYPES = [['department', 'Department'], ['designation', 'Designation'], ['location', 'Location']];
+const TYPES = [['designation', 'Designation'], ['department', 'Department'], ['location', 'Location']];
 
-function TypeDropdown({ by, setBy }) {
+// The "Type" selector sits in the breadcrumb trail in Zoho, reading
+// "Distribution › Type : Location", not in the filter panel below.
+function TypeChip({ by, setBy }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -21,13 +24,13 @@ function TypeDropdown({ by, setBy }) {
   const label = TYPES.find(([k]) => k === by)[1];
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium border border-slate-200 bg-white text-slate-700 hover:border-slate-300 transition-colors">
-        Type: {label} <ChevronDown size={13} />
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 px-3 py-1 rounded text-[13px] font-medium border border-slate-300 bg-white text-slate-700 hover:border-slate-400 transition-colors">
+        Type : {label} <ChevronDown size={13} className="text-slate-400" />
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+        <div className="absolute z-30 mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
           {TYPES.map(([k, l]) => (
-            <button key={k} onClick={() => { setBy(k); setOpen(false); }} className={`w-full text-left px-3 py-2 text-[13px] transition-colors ${by === k ? 'text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
+            <button key={k} onClick={() => { setBy(k); setOpen(false); }} className={`w-full text-left px-4 py-2 text-[13px] transition-colors ${by === k ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
           ))}
         </div>
       )}
@@ -36,7 +39,7 @@ function TypeDropdown({ by, setBy }) {
 }
 
 // "by" ("Type") maps to work_location for the 'location' option — same
-// key extraEmployeeFilters() uses on the backend for the secondary filter
+// key extraEmployeeFilters() uses on the backend for the dimension filter
 // row, so the row correctly excludes whichever dimension is the current Type.
 const BY_TO_FILTER_KEY = { department: 'department', designation: 'designation', location: 'workLocation' };
 
@@ -44,47 +47,67 @@ export default function Distribution() {
   const [searchParams] = useSearchParams();
   const initialBy = TYPES.some(([k]) => k === searchParams.get('by')) ? searchParams.get('by') : 'department';
   const [by, setBy] = useState(initialBy);
-  const [filters, setFilters] = useState({});
+  // `draft` is what the chips edit; `applied` is what's actually queried.
+  // Zoho only runs the query when Submit is pressed.
+  const [draft, setDraft] = useState({});
+  const [applied, setApplied] = useState({});
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    const params = new URLSearchParams({ by, ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) });
+    const params = new URLSearchParams({ by });
+    Object.entries(applied).forEach(([k, vals]) => (vals || []).forEach(v => params.append(k, v)));
     api.get(`/reports/employee/distribution?${params}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
-  }, [by, filters]);
+  }, [by, applied]);
 
   const total = rows.reduce((s, r) => s + Number(r.count), 0);
   const top3 = [...rows].sort((a, b) => b.count - a.count).slice(0, 3).reduce((s, r) => s + Number(r.count), 0);
   const typeLabel = TYPES.find(([k]) => k === by)[1];
 
-  const actions = <TypeDropdown by={by} setBy={setBy} />;
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
-  // Org filters stay always-visible here (not behind the funnel) — that's how
-  // Zoho lays out Distribution/Diversity, unlike the Leave Tracker pages.
-  const filterPanel = (
+  const filters = filtersOpen ? (
     <>
-      <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} exclude={[BY_TO_FILTER_KEY[by]]} />
-      <button onClick={() => setFilters({})} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto">
-        <RotateCcw size={14} /> Reset
+      <FilterRow
+        value={draft}
+        onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))}
+        exclude={[BY_TO_FILTER_KEY[by]]}
+      />
+      <button
+        onClick={() => setApplied(draft)}
+        className="ml-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-1.5 rounded text-[13px] font-medium transition-colors"
+      >
+        Submit
       </button>
     </>
-  );
+  ) : null;
 
   return (
-    <ReportShell title="Distribution" subtitle="Active employees split by department, designation, or location" actions={actions} filters={filterPanel} loading={loading} switcherCategory="Employee Information">
+    <ReportShell
+      title="Distribution"
+      subtitle="Active employees split by department, designation, or location"
+      breadcrumbChip={<TypeChip by={by} setBy={setBy} />}
+      actions={actions}
+      filters={filters}
+      loading={loading}
+      switcherCategory="Employee Information"
+    >
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>
       ) : (
         <>
-          <div className="flex justify-end px-4 pt-4">
+          <div className="flex px-4 pt-4">
             <ChartExportMenu rows={rows} columns={[{ key: 'label', header: typeLabel }, { key: 'count', header: 'Count' }]} fileStub={`distribution-${by}`} />
           </div>
+          {/* Distribution draws a solid pie in Zoho; Diversity draws a donut. */}
           <DonutWithStats
             data={rows}
+            donut={false}
             stats={[
               { label: `Employees in Top 3 ${typeLabel}s`, value: `${total ? ((top3 / total) * 100).toFixed(2) : 0}% (${top3})` },
               { label: `Total no. of ${typeLabel}s`, value: rows.length },

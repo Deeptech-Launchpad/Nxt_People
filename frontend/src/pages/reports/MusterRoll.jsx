@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import FilterToggleButton from './FilterToggleButton';
@@ -43,6 +44,7 @@ export default function MusterRoll() {
   const load = () => {
     setLoading(true);
     const params = new URLSearchParams({ startDate: dateRange.start, endDate: dateRange.end, ...f.params() });
+    appendDimensionFilters(params, f.dimFilters);
     api.get(`/reports/attendance/muster-roll?${params}`)
       .then(r => setData(r.data))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))

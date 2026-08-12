@@ -1,62 +1,79 @@
 import React, { useState, useEffect } from 'react';
-import { RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import ComboTrendChart from './ComboTrendChart';
 import ChartExportMenu from './ChartExportMenu';
 import PeriodFilter from './PeriodFilter';
 import EmploymentTypeFilter from './EmploymentTypeFilter';
+import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
 
-const PERIOD_OPTIONS = [3, 6, 12, 24].map(m => ({ key: String(m), label: `Last ${m === 12 ? 'Twelve' : m} Months`, value: m }));
+// Zoho groups these under a MONTH(S) heading, with the year-scale presets
+// ungrouped above it.
+const PERIOD_OPTIONS = [
+  { key: 'lastYear', label: 'Last Year', value: 12 },
+  { key: 'quarterly', label: 'quarterly', value: 3 },
+  { key: '3', label: 'Last Three Months', value: 3, group: 'Month(s)' },
+  { key: '6', label: 'Last Six Months', value: 6, group: 'Month(s)' },
+  { key: '12', label: 'Last Twelve Months(incl. current month)', value: 12, group: 'Month(s)' },
+  { key: '24', label: 'Last Twenty Four Months', value: 24, group: 'Month(s)' },
+];
 
-// Month-by-month combo chart report page — covers Employee addition trend
-// and Employee attrition trend, whose endpoints return
+// Month-by-month combo chart page — covers Employee addition trend and
+// Employee attrition trend, whose endpoints return
 // [{month, year, count, growth}]. `showEmploymentType` is only passed for
 // Attrition Trend — Zoho's own Addition Trend has no such filter either.
-export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#2563eb', switcherCategory, showEmploymentType = false }) {
+export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#8b8fd4', switcherCategory, showEmploymentType = false }) {
+  const [periodKey, setPeriodKey] = useState('12');
   const [months, setMonths] = useState(12);
   const [employmentType, setEmploymentType] = useState('');
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draft, setDraft] = useState({});
+  const [applied, setApplied] = useState({});
 
-  const load = (m = months, et = employmentType) => {
+  const load = (m = months, et = employmentType, dims = applied) => {
     setLoading(true);
-    const params = new URLSearchParams({ months: m, ...(et ? { employmentType: et } : {}) });
+    const params = new URLSearchParams({ months: String(m), ...(et ? { employmentType: et } : {}) });
+    appendDimensionFilters(params, dims);
     api.get(`${endpoint}?${params}`)
       .then(r => setData(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
 
-  // `endpoint` in the deps for the same reason as TableReportPage — this
-  // component instance is reused across sibling reports navigated to via
-  // the ReportShell switcher, so a fetch keyed only on `endpoint` alone
-  // wouldn't re-run for a fresh report; months/employmentType changes are
-  // applied explicitly via Submit, not auto-reload.
+  // `endpoint` in the deps because this component instance is reused across
+  // sibling reports navigated to via the ReportShell switcher, so a fetch
+  // keyed on nothing wouldn't re-run for a fresh report.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => load(months, employmentType), [endpoint]);
+  useEffect(() => load(months, employmentType, applied), [endpoint]);
 
-  const filters = filtersOpen ? (
+  const filters = (
     <>
       <PeriodFilter
         options={PERIOD_OPTIONS}
-        selectedKey={String(months)}
-        onSubmit={(value) => { setMonths(value); load(value, employmentType); }}
+        selectedKey={periodKey}
+        onChange={(value, key) => { setPeriodKey(key); setMonths(value); load(value, employmentType, applied); }}
       />
       {showEmploymentType && (
-        <EmploymentTypeFilter value={employmentType} onChange={v => { setEmploymentType(v); load(months, v); }} />
+        <EmploymentTypeFilter value={employmentType} onChange={v => { setEmploymentType(v); load(months, v, applied); }} />
       )}
       <button
-        onClick={() => { setMonths(12); setEmploymentType(''); load(12, ''); }}
-        className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto"
+        onClick={() => { setApplied(draft); load(months, employmentType, draft); }}
+        className="ml-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-1.5 rounded text-[13px] font-medium transition-colors"
       >
-        <RotateCcw size={14} /> Reset
+        Submit
       </button>
+      {filtersOpen && (
+        <div className="w-full flex flex-wrap items-center gap-2 pt-1 order-first">
+          <FilterRow value={draft} onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))} exclude={showEmploymentType ? ['employmentType'] : []} />
+        </div>
+      )}
     </>
-  ) : null;
+  );
 
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
@@ -66,7 +83,7 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
         <div className="p-4">
-          <div className="flex justify-end mb-1">
+          <div className="flex mb-1">
             <ChartExportMenu
               rows={data}
               columns={[{ key: 'month', header: 'Month' }, { key: 'year', header: 'Year' }, { key: 'count', header: 'Count' }, { key: 'growth', header: 'Percentage' }]}

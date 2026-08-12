@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Filter, Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
@@ -38,8 +39,8 @@ export default function LeaveEncashmentDetails() {
     const params = new URLSearchParams({
       employeeStatus, directReportsOnly: String(directReportsOnly),
       ...(employee ? { employeeId: employee._id } : {}),
-      ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
     });
+    appendDimensionFilters(params, dimFilters);
     api.get(`/reports/leave/encashment?${params}`)
       .then(r => {
         const data = Array.isArray(r.data.data) ? r.data.data : [];

@@ -1,22 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { RotateCcw } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import ChartExportMenu from './ChartExportMenu';
 import PeriodFilter from './PeriodFilter';
 import EmploymentTypeFilter from './EmploymentTypeFilter';
+import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
+import DateChip from './DateChip';
 
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
 
-// Date-range presets matching Zoho's Period dropdown on Experience Wise
-// Exit. "Custom" (an arbitrary picked range) isn't offered here — only
-// these fixed presets — to keep the filter panel a straightforward preset
-// list rather than adding a separate date-picker sub-form.
+// Zoho's Period list on Experience Wise Exit, in its own order. "Custom"
+// hands control to the From/To chips instead of a preset range.
 const PERIOD_OPTIONS = [
   { key: 'yesterday', label: 'Yesterday', value: range(new Date(y, m, now.getDate() - 1), new Date(y, m, now.getDate() - 1)) },
   { key: 'today', label: 'Today', value: range(now, now) },
@@ -24,6 +24,7 @@ const PERIOD_OPTIONS = [
   { key: 'thisMonth', label: 'This Month', value: range(new Date(y, m, 1), new Date(y, m + 1, 0)) },
   { key: 'lastYear', label: 'Last Year', value: range(new Date(y - 1, 0, 1), new Date(y - 1, 11, 31)) },
   { key: 'thisYear', label: 'This Year', value: range(new Date(y, 0, 1), new Date(y, 11, 31)) },
+  { key: 'custom', label: 'Custom', value: null },
 ];
 
 export default function ExperienceExit() {
@@ -33,45 +34,63 @@ export default function ExperienceExit() {
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisYear').value);
   const [employmentType, setEmploymentType] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draft, setDraft] = useState({});
+  const [applied, setApplied] = useState({});
 
-  const load = (range = dateRange, et = employmentType) => {
+  const isCustom = periodKey === 'custom';
+
+  const load = (rng = dateRange, et = employmentType, dims = applied) => {
     setLoading(true);
-    const params = new URLSearchParams({ startDate: range.start, endDate: range.end, ...(et ? { employmentType: et } : {}) });
+    const params = new URLSearchParams({ startDate: rng.start, endDate: rng.end, ...(et ? { employmentType: et } : {}) });
+    appendDimensionFilters(params, dims);
     api.get(`/reports/employee/experience-exit?${params}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => load(dateRange, employmentType), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => load(dateRange, employmentType, applied), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filters = filtersOpen ? (
+  // Choosing Custom keeps whatever range is on screen and just unlocks the
+  // date chips — it shouldn't blank the chart out.
+  const pickPeriod = (value, key) => {
+    setPeriodKey(key);
+    if (value) { setDateRange(value); load(value, employmentType, applied); }
+  };
+
+  const filters = (
     <>
-      <PeriodFilter
-        options={PERIOD_OPTIONS}
-        selectedKey={periodKey}
-        onSubmit={(value, key) => { setPeriodKey(key); setDateRange(value); load(value, employmentType); }}
+      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onChange={pickPeriod} />
+      <DateChip
+        label="From" value={dateRange.start} disabled={!isCustom}
+        onChange={v => setDateRange(r => ({ ...r, start: v }))}
       />
-      <EmploymentTypeFilter value={employmentType} onChange={v => { setEmploymentType(v); load(dateRange, v); }} />
+      <DateChip
+        label="To" value={dateRange.end} disabled={!isCustom}
+        onChange={v => setDateRange(r => ({ ...r, end: v }))}
+      />
+      <EmploymentTypeFilter value={employmentType} onChange={v => { setEmploymentType(v); load(dateRange, v, applied); }} />
       <button
-        onClick={() => {
-          const def = PERIOD_OPTIONS.find(o => o.key === 'thisYear');
-          setPeriodKey('thisYear'); setDateRange(def.value); setEmploymentType(''); load(def.value, '');
-        }}
-        className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto"
+        onClick={() => { setApplied(draft); load(dateRange, employmentType, draft); }}
+        className="ml-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-1.5 rounded text-[13px] font-medium transition-colors"
       >
-        <RotateCcw size={14} /> Reset
+        Submit
       </button>
+      {filtersOpen && (
+        <div className="w-full flex flex-wrap items-center gap-2 pt-1 order-first">
+          <FilterRow value={draft} onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))} exclude={['employmentType', 'experience']} />
+        </div>
+      )}
     </>
-  ) : null;
+  );
 
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const total = rows.reduce((s, r) => s + Number(r.count), 0) || 1;
-  const pointLabel = ({ x, y, index }) => {
+  const pointLabel = ({ x, y: py, index }) => {
     const r = rows[index];
     return (
-      <text x={x} y={y - 10} textAnchor="middle" fontSize={11} fill="#b91c1c">
+      <text x={x} y={py - 10} textAnchor="middle" fontSize={11} fill="#b91c1c" fontWeight="600">
         {`${((r.count / total) * 100).toFixed(2)}% (${r.count})`}
       </text>
     );
@@ -83,16 +102,16 @@ export default function ExperienceExit() {
         <div className="text-center py-16 text-slate-400">No data</div>
       ) : (
         <div className="p-4">
-          <div className="flex justify-end mb-1">
+          <div className="flex mb-1">
             <ChartExportMenu rows={rows} columns={[{ key: 'label', header: 'Experience' }, { key: 'count', header: 'Count' }]} fileStub="experience-wise-exit" />
           </div>
           <ResponsiveContainer width="100%" height={340}>
             <AreaChart data={rows} margin={{ top: 30, right: 20, left: 10, bottom: 24 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} label={{ value: 'Experience (years)', position: 'bottom', offset: 8, fontSize: 12 }} />
+              <XAxis dataKey="label" tick={{ fontSize: 12 }} label={{ value: 'Experience', position: 'bottom', offset: 8, fontSize: 12 }} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12 }} label={{ value: 'Users Count', angle: -90, position: 'insideLeft', offset: 10, fontSize: 12 }} />
               <Tooltip />
-              <Area type="monotone" dataKey="count" stroke="#ef4444" fill="#fecaca" strokeWidth={2}>
+              <Area type="linear" dataKey="count" stroke="#ef4444" fill="#fecaca" strokeWidth={2}>
                 <LabelList dataKey="count" content={pointLabel} />
               </Area>
             </AreaChart>

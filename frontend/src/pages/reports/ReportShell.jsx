@@ -10,7 +10,10 @@ import { REPORT_CATALOG } from './catalogData';
 // switcher is different: a collapsed, click-to-open dropdown scoped to one
 // category, not a persistently-visible list, so it lets you jump straight
 // to a sibling report without leaving this page.
-export default function ReportShell({ title, subtitle, filters, actions, loading, children, switcherCategory }) {
+// `breadcrumbChip` renders inline after the report name, matching where Zoho
+// puts the "Type : Location" selector on Distribution/Diversity — it's part
+// of the breadcrumb trail there, not part of the filter panel.
+export default function ReportShell({ title, subtitle, filters, actions, loading, children, switcherCategory, breadcrumbChip }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -41,6 +44,7 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
                   {title}
                   <ChevronDown size={18} className={`text-slate-400 transition-transform ${switcherOpen ? 'rotate-180' : ''}`} />
                 </button>
+                {breadcrumbChip && <><span className="text-slate-300">›</span>{breadcrumbChip}</>}
               </div>
               {switcherOpen && (
                 <>

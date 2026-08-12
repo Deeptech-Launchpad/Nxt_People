@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Filter, ChevronLeft, ChevronRight, Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
@@ -47,8 +48,8 @@ export default function DailyLeaveStatus() {
     const params = new URLSearchParams({
       date, employeeStatus, directReportsOnly: String(directReportsOnly),
       ...(leaveType ? { leaveType } : {}),
-      ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
     });
+    appendDimensionFilters(params, dimFilters);
     api.get(`/reports/leave/daily-status?${params}`)
       .then(r => { setByType(r.data.byType || []); setEmployees(r.data.employees || []); })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))

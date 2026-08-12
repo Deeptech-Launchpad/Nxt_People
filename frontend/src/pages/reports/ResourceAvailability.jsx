@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
@@ -56,8 +57,8 @@ export default function ResourceAvailability() {
     const params = new URLSearchParams({
       startDate, endDate, employeeStatus, directReportsOnly: String(directReportsOnly),
       ...(leaveType ? { leaveType } : {}),
-      ...Object.fromEntries(Object.entries(dimFilters).filter(([, v]) => v)),
     });
+    appendDimensionFilters(params, dimFilters);
     api.get(`/reports/leave/resource-availability?${params}`)
       .then(r => setData(r.data))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))

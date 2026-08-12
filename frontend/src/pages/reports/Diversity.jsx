@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronDown, RotateCcw } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
 import ChartExportMenu from './ChartExportMenu';
 import FilterRow from './FilterRow';
+import FilterToggleButton from './FilterToggleButton';
 
-const TYPES = [['gender', 'Gender'], ['age', 'Age'], ['experience', 'Experience']];
+const TYPES = [['age', 'Age'], ['gender', 'Gender'], ['experience', 'Experience']];
 
-function TypeDropdown({ type, setType }) {
+// Zoho's Type selector lives in the breadcrumb trail, reading
+// "Diversity › Type : Gender".
+function TypeChip({ type, setType }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -21,13 +24,13 @@ function TypeDropdown({ type, setType }) {
   const label = TYPES.find(([k]) => k === type)[1];
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium border border-slate-200 bg-white text-slate-700 hover:border-slate-300 transition-colors">
-        Type: {label} <ChevronDown size={13} />
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 px-3 py-1 rounded text-[13px] font-medium border border-slate-300 bg-white text-slate-700 hover:border-slate-400 transition-colors">
+        Type : {label} <ChevronDown size={13} className="text-slate-400" />
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+        <div className="absolute z-30 mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
           {TYPES.map(([k, l]) => (
-            <button key={k} onClick={() => { setType(k); setOpen(false); }} className={`w-full text-left px-3 py-2 text-[13px] transition-colors ${type === k ? 'text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
+            <button key={k} onClick={() => { setType(k); setOpen(false); }} className={`w-full text-left px-4 py-2 text-[13px] transition-colors ${type === k ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
           ))}
         </div>
       )}
@@ -35,18 +38,27 @@ function TypeDropdown({ type, setType }) {
   );
 }
 
+// The dimension chip row never offers the dimension the chart is already
+// grouped by — Zoho drops Gender from the row when Type is Gender.
+const TYPE_TO_FILTER_KEY = { gender: 'gender', experience: 'experience', age: null };
+
 export default function Diversity() {
   const [searchParams] = useSearchParams();
   const initialType = TYPES.some(([k]) => k === searchParams.get('type')) ? searchParams.get('type') : 'gender';
   const [type, setType] = useState(initialType);
-  const [filters, setFilters] = useState({});
+  // `draft` is what the chips edit; `applied` is what's actually queried —
+  // Zoho only runs the query when Submit is pressed.
+  const [draft, setDraft] = useState({});
+  const [applied, setApplied] = useState({});
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [totalActive, setTotalActive] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    const params = new URLSearchParams({ type, ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) });
+    const params = new URLSearchParams({ type });
+    Object.entries(applied).forEach(([k, vals]) => (vals || []).forEach(v => params.append(k, v)));
     api.get(`/reports/employee/diversity?${params}`)
       .then(r => {
         setRows(Array.isArray(r.data.data) ? r.data.data : []);
@@ -54,7 +66,7 @@ export default function Diversity() {
       })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
-  }, [type, filters]);
+  }, [type, applied]);
 
   const total = rows.reduce((s, r) => s + Number(r.count), 0);
   // "Unspecified" only applies to the gender view — that's the existing
@@ -78,32 +90,42 @@ export default function Diversity() {
     return stats;
   };
 
-  const actions = <TypeDropdown type={type} setType={setType} />;
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
-  // Org filters stay always-visible here (not behind the funnel) — that's how
-  // Zoho lays out Distribution/Diversity, unlike the Leave Tracker pages.
-  const filterPanel = (
+  const filterPanel = filtersOpen ? (
     <>
-      <FilterRow value={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} />
-      <button onClick={() => setFilters({})} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto">
-        <RotateCcw size={14} /> Reset
+      <FilterRow
+        value={draft}
+        onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))}
+        exclude={[TYPE_TO_FILTER_KEY[type]].filter(Boolean)}
+      />
+      <button
+        onClick={() => setApplied(draft)}
+        className="ml-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-1.5 rounded text-[13px] font-medium transition-colors"
+      >
+        Submit
       </button>
     </>
-  );
+  ) : null;
 
   return (
-    <ReportShell title="Diversity" subtitle="Active employees by gender, age, or experience" actions={actions} filters={filterPanel} loading={loading} switcherCategory="Employee Information">
+    <ReportShell
+      title="Diversity"
+      subtitle="Active employees by gender, age, or experience"
+      breadcrumbChip={<TypeChip type={type} setType={setType} />}
+      actions={actions}
+      filters={filterPanel}
+      loading={loading}
+      switcherCategory="Employee Information"
+    >
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data</div>
       ) : (
         <>
-          <div className="flex justify-end px-4 pt-4">
+          <div className="flex px-4 pt-4">
             <ChartExportMenu rows={rows} columns={[{ key: 'label', header: typeLabel }, { key: 'count', header: 'Count' }]} fileStub={`diversity-${type}`} />
           </div>
-          <DonutWithStats
-            data={rows}
-            stats={buildStats()}
-          />
+          <DonutWithStats data={rows} stats={buildStats()} />
         </>
       )}
     </ReportShell>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Filter, Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import FilterToggleButton from './FilterToggleButton';
@@ -45,6 +46,7 @@ export default function ConsecutiveAbsences() {
     const params = new URLSearchParams({
       startDate: dateRange.start, endDate: dateRange.end, minDays: String(minDays || 1), ...f.params(),
     });
+    appendDimensionFilters(params, f.dimFilters);
     api.get(`/reports/attendance/consecutive-absences?${params}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))

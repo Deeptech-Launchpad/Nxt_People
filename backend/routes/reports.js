@@ -434,15 +434,34 @@ router.get('/employee/filter-options', authorize('admin', 'director', 'hr_admin'
       );
       return r.rows.map(row => row.v);
     };
-    const [department, designation, company, division, workLocation, employmentType, role, shiftRes] = await Promise.all([
+    const [department, designation, company, division, workLocation, employmentType, role, gender, shiftRes, expRes] = await Promise.all([
       distinctCol('department'), distinctCol('designation'), distinctCol('company'),
       distinctCol('division'), distinctCol('work_location'), distinctCol('employment_type'), distinctCol('role'),
+      distinctCol('gender'),
       // Shifts come from their own table, so they're {value: id, label: name}
       // objects rather than bare strings — the filter has to send shift_id.
       pool.query('SELECT id, name FROM shifts ORDER BY name'),
+      // Experience is a tenure band rather than a column, so its options are
+      // the bands that actually have people in them.
+      pool.query(
+        `SELECT DISTINCT
+            CASE WHEN yrs < 1 THEN '<1' WHEN yrs >= 10 THEN '10+' ELSE yrs::text END AS label,
+            LEAST(yrs, 10) AS sort_key
+           FROM (SELECT FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, e.joining_date)))::int AS yrs
+                   FROM employees e WHERE e.joining_date IS NOT NULL${scope.clause}) t
+          ORDER BY sort_key`,
+        scope.params
+      ),
     ]);
     const shiftId = shiftRes.rows.map(r => ({ value: r.id, label: r.name }));
-    res.json({ success: true, data: { department, designation, company, division, workLocation, employmentType, role, shiftId } });
+    const experience = expRes.rows.map(r => r.label);
+    // Business Unit is in Zoho's filter row but has no column in this schema,
+    // so it's returned empty rather than omitted — the chip renders, and its
+    // list is empty exactly as Zoho shows it when none are configured.
+    res.json({
+      success: true,
+      data: { department, designation, company, division, workLocation, employmentType, role, gender, shiftId, experience, businessUnit: [] },
+    });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -453,14 +472,17 @@ router.get('/employee/headcount-trend', authorize('admin', 'director', 'hr_admin
     const startYear = currentYear - yearsBack + 1;
     const today = new Date().toLocaleDateString('en-CA');
 
+    const extra = extraEmployeeFilters(req.query, 'e', 2);
+    const scope = reportsScope(req.user, 'e', 2 + extra.params.length);
+
     const counts = [];
     for (let y = startYear; y <= currentYear; y++) {
       const asOf = y === currentYear ? today : `${y}-12-31`;
       // eslint-disable-next-line no-await-in-loop
       const r = await pool.query(
         `SELECT COUNT(*)::int AS count FROM employees e
-          WHERE e.joining_date <= $1::date AND (e.exit_date IS NULL OR e.exit_date > $1::date)${reportsScope(req.user, 'e', 2).clause}`,
-        [asOf, ...reportsScope(req.user, 'e', 2).params]
+          WHERE e.joining_date <= $1::date AND (e.exit_date IS NULL OR e.exit_date > $1::date)${extra.clause}${scope.clause}`,
+        [asOf, ...extra.params, ...scope.params]
       );
       counts.push({ year: y, count: r.rows[0].count });
     }
@@ -481,10 +503,12 @@ router.get('/employee/headcount-trend', authorize('admin', 'director', 'hr_admin
 // literal from this file, never user input. employmentType (optional) is
 // only ever passed by Attrition Trend, matching Zoho — Addition Trend has
 // no such filter in Zoho's own UI either.
-async function monthlySeriesWithGrowth(dateColumn, months, user, employmentType) {
-  const params = [months + 1];
-  let extraClause = '';
-  if (employmentType) { params.push(employmentType); extraClause = ` AND e.employment_type = $2`; }
+// `query` (optional) is the raw req.query, so the dimension filter chips
+// narrow both the monthly counts and the headcount denominator identically.
+async function monthlySeriesWithGrowth(dateColumn, months, user, employmentType, query = {}) {
+  const dims = extraEmployeeFilters({ ...query, employmentType: employmentType || query.employmentType }, 'e', 2);
+  const params = [months + 1, ...dims.params];
+  const extraClause = dims.clause;
   const scope = reportsScope(user, 'e', params.length + 1);
   const r = await pool.query(
     `SELECT to_char(date_trunc('month', e.${dateColumn}), 'YYYY-MM') AS ym, COUNT(*)::int AS count
@@ -511,9 +535,9 @@ async function monthlySeriesWithGrowth(dateColumn, months, user, employmentType)
   // raw count. A month-over-month delta is wildly unstable on small counts
   // (one extra hire on a base of 1 reads as "1000%"), which is why the
   // line used to look like it was jumping around independent of the data.
-  const hcParams = [];
-  let hcClause = '';
-  if (employmentType) { hcParams.push(employmentType); hcClause = ` AND e.employment_type = $2`; }
+  const hcDims = extraEmployeeFilters({ ...query, employmentType: employmentType || query.employmentType }, 'e', 2);
+  const hcParams = hcDims.params;
+  const hcClause = hcDims.clause;
   const hcScope = reportsScope(user, 'e', hcParams.length + 2);
 
   const withPercentage = [];
@@ -538,26 +562,50 @@ async function monthlySeriesWithGrowth(dateColumn, months, user, employmentType)
 // (see catalogData.js / the frontend filter row for the same note) rather
 // than wired up to nothing. Returns {clause, params} in the same shape
 // reportsScope() uses.
+// Each dimension accepts MULTIPLE values (Zoho's filter chips are
+// checkbox lists, not single-select), so every clause is `= ANY($n)` over a
+// text[]. A query string can deliver one value as a bare string and several
+// as an array, so both shapes are normalised to an array here.
 function extraEmployeeFilters(query, alias, paramIndex) {
   const FIELDS = [
     ['department', 'department'], ['designation', 'designation'], ['company', 'company'],
     ['division', 'division'], ['workLocation', 'work_location'], ['employmentType', 'employment_type'],
-    ['role', 'role'], ['shiftId', 'shift_id'],
+    ['role', 'role'], ['shiftId', 'shift_id'], ['gender', 'gender'],
   ];
   let clause = '';
   const params = [];
   let idx = paramIndex;
   for (const [q, col] of FIELDS) {
-    const v = query[q];
-    if (v) { clause += ` AND ${alias}.${col} = $${idx}`; params.push(v); idx++; }
+    const values = [].concat(query[q] || []).filter(v => v !== '' && v !== undefined && v !== null);
+    if (!values.length) continue;
+    // shift_id is a uuid column — the text[] has to be cast to match it.
+    const cast = col === 'shift_id' ? '::uuid[]' : '';
+    clause += ` AND ${alias}.${col} = ANY($${idx}${cast})`;
+    params.push(values);
+    idx++;
   }
+
+  // Experience is a tenure band, not a column — the same CASE expression
+  // experienceTenureBuckets() groups by, so filtering by "2" selects exactly
+  // the employees the "2" slice of the Experience chart is drawn from.
+  const expValues = [].concat(query.experience || []).filter(Boolean);
+  if (expValues.length) {
+    clause += ` AND (CASE
+        WHEN FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${alias}.joining_date))) < 1 THEN '<1'
+        WHEN FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${alias}.joining_date))) >= 10 THEN '10+'
+        ELSE FLOOR(EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${alias}.joining_date)))::text
+      END) = ANY($${idx})`;
+    params.push(expValues);
+    idx++;
+  }
+
   return { clause, params };
 }
 
 router.get('/employee/addition-trend', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const months = Math.min(24, Math.max(1, parseInt(req.query.months, 10) || 12));
-    const data = await monthlySeriesWithGrowth('joining_date', months, req.user);
+    const data = await monthlySeriesWithGrowth('joining_date', months, req.user, null, req.query);
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
@@ -565,7 +613,7 @@ router.get('/employee/addition-trend', authorize('admin', 'director', 'hr_admin'
 router.get('/employee/attrition-trend', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const months = Math.min(24, Math.max(1, parseInt(req.query.months, 10) || 12));
-    const data = await monthlySeriesWithGrowth('exit_date', months, req.user, req.query.employmentType);
+    const data = await monthlySeriesWithGrowth('exit_date', months, req.user, req.query.employmentType, req.query);
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
@@ -661,12 +709,18 @@ router.get('/employee/diversity', authorize('admin', 'director', 'hr_admin', 'ma
 // Shared by the Dashboard widget (no filters, all-time) and the full
 // Experience Wise Exit report page (optional exit-date range + employment
 // type). startDate/endDate/employmentType are all optional.
-async function experienceExitBuckets(user, { startDate, endDate, employmentType } = {}) {
+async function experienceExitBuckets(user, { startDate, endDate, employmentType, query = {} } = {}) {
   const params = [];
   let extraClause = '';
   if (startDate) { params.push(startDate); extraClause += ` AND e.exit_date >= $${params.length}::date`; }
   if (endDate) { params.push(endDate); extraClause += ` AND e.exit_date <= $${params.length}::date`; }
   if (employmentType) { params.push(employmentType); extraClause += ` AND e.employment_type = $${params.length}`; }
+  // Dimension chips. employmentType is handled above as its own dedicated
+  // filter, so it's stripped here to avoid applying the same clause twice.
+  const { employmentType: _omit, experience: _omitExp, ...dimQuery } = query;
+  const dims = extraEmployeeFilters(dimQuery, 'e', params.length + 1);
+  params.push(...dims.params);
+  extraClause += dims.clause;
   const scope = reportsScope(user, 'e', params.length + 1);
   const r = await pool.query(
     `SELECT
@@ -688,7 +742,7 @@ async function experienceExitBuckets(user, { startDate, endDate, employmentType 
 router.get('/employee/experience-exit', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { startDate, endDate, employmentType } = req.query;
-    const data = await experienceExitBuckets(req.user, { startDate, endDate, employmentType });
+    const data = await experienceExitBuckets(req.user, { startDate, endDate, employmentType, query: req.query });
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
