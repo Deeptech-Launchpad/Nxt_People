@@ -42,73 +42,85 @@ export const AttendanceProvider = ({ children }) => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }, []);
 
-   /* ── Fetch today's record on mount and when user changes ────────── */
-    useEffect(() => {
-      const token = localStorage.getItem('nxt_token');
-      if (!token) { 
-        setRecord(null);
-        setElapsed(0);
-        setLoading(false);
-        return; 
-      }
-
-      setLoadError(null);
-      api.get('/attendance/today')
-        .then(r => {
-          const rec = r.data.data;
-          setRecord(rec);
-          if (rec?.checkIn && !rec?.checkOut) {
-            // Include any previously worked hours today as base for cumulative timer
-            const baseHours = parseFloat(rec.workingHours || 0);
-            const baseSeconds = Math.round(baseHours * 3600);
-            startTimer(rec.checkIn, baseSeconds);
-          } else if (rec?.checkOut) {
-            // Show total worked hours (static, no live tick)
-            const prev = parseFloat(rec.workingHours || 0);
-            setElapsed(Math.round(prev * 3600));
-            stopTimer();
-          } else {
-            stopTimer();
-            setElapsed(0);
-          }
-        })
-        .catch((err) => {
-          setRecord(null);
-          setElapsed(0);
-          // Surface the failure so consumers can render a "couldn't load
-          // today's attendance — try refresh" banner instead of pretending
-          // the user simply hasn't checked in.
-          setLoadError(err?.response?.data?.message || err?.message || 'Failed to load attendance');
-        })
-        .finally(() => setLoading(false));
-
-      return () => stopTimer();
-    }, [user?._id]); // Re-fetch when user changes
-
-  /* ── Re-fetch when IST date rolls over (app kept open overnight) ─── */
-  useEffect(() => {
-    const id = setInterval(() => {
-      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-      if (today === currentDateRef.current) return;
-      currentDateRef.current = today;
+  /* ── Load today's record (shared by mount, date rollover, and refocus) ── */
+  const refresh = useCallback(() => {
+    const token = localStorage.getItem('nxt_token');
+    if (!token) {
       stopTimer();
       setRecord(null);
       setElapsed(0);
-      api.get('/attendance/today')
-        .then(r => {
-          const rec = r.data.data;
-          setRecord(rec);
-          if (rec?.checkIn && !rec?.checkOut) {
-            startTimer(rec.checkIn, Math.round(parseFloat(rec.workingHours || 0) * 3600));
-          } else if (rec?.checkOut) {
-            setElapsed(Math.round(parseFloat(rec.workingHours || 0) * 3600));
-            stopTimer();
-          }
-        })
-        .catch(() => {});
+      setLoading(false);
+      return Promise.resolve();
+    }
+
+    setLoadError(null);
+    return api.get('/attendance/today')
+      .then(r => {
+        const rec = r.data.data;
+        setRecord(rec);
+        if (rec?.checkIn && !rec?.checkOut) {
+          // Include any previously worked hours today as base for cumulative timer
+          const baseSeconds = Math.round(parseFloat(rec.workingHours || 0) * 3600);
+          startTimer(rec.checkIn, baseSeconds);
+        } else if (rec?.checkOut) {
+          // Show total worked hours (static, no live tick)
+          setElapsed(Math.round(parseFloat(rec.workingHours || 0) * 3600));
+          stopTimer();
+        } else {
+          stopTimer();
+          setElapsed(0);
+        }
+      })
+      .catch((err) => {
+        stopTimer();
+        setRecord(null);
+        setElapsed(0);
+        // Surface the failure so consumers can render a "couldn't load
+        // today's attendance — try refresh" banner instead of pretending
+        // the user simply hasn't checked in.
+        setLoadError(err?.response?.data?.message || err?.message || 'Failed to load attendance');
+      })
+      .finally(() => setLoading(false));
+  }, [startTimer, stopTimer]);
+
+  /* ── Fetch today's record on mount and when user changes ────────── */
+  useEffect(() => {
+    refresh();
+    return () => stopTimer();
+  }, [user?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Re-sync on date rollover AND on regaining focus ───────────────
+     /attendance/today only ever returns the row for the day it's asked
+     about, so a tab left open overnight keeps live-ticking yesterday's
+     check-in — a check-in at 10:15 still reads "24:16:28" the next
+     morning. A 60s interval alone can't fix that: a slept or frozen tab
+     fires no timers at all, so the stale timer stays on screen until the
+     tab wakes. Re-syncing on visibilitychange/focus catches exactly that
+     case, which previously only a manual reload could clear. */
+  useEffect(() => {
+    const resync = () => {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      if (today !== currentDateRef.current) {
+        currentDateRef.current = today;
+        stopTimer();
+        setRecord(null);
+        setElapsed(0);
+      }
+      refresh();
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') resync(); };
+    const id = setInterval(() => {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      if (today !== currentDateRef.current) resync();
     }, 60000);
-    return () => clearInterval(id);
-  }, [stopTimer, startTimer]);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [refresh, stopTimer]);
 
   /* ── Additive location log ──────────────────────────────────────────
      Records where the check-in/out happened to the location-history table.
@@ -124,36 +136,45 @@ export const AttendanceProvider = ({ children }) => {
     }).catch(() => { /* additive — ignore */ });
   };
 
+  /* ── Location consent + GPS, entirely off the attendance critical path ──
+     Consent is a modal the user may never answer, and awaiting it before
+     the punch meant a pending (or invisible, or orphaned) prompt silently
+     swallowed the whole check-in/check-out: the request was never sent, the
+     button spun forever, and the day was left open — which the nightly cron
+     then marked Absent. A browser-level location block was even worse: it
+     returned early and refused to record attendance at all, even though the
+     backend happily accepts GPS-less punches unless require_gps is set.
+
+     Attendance is now recorded first; location is patched on afterwards if
+     and when consent and a fix arrive. Location is additive, so every
+     failure here stays silent rather than surfacing as an attendance error. */
+  const captureLocationInBackground = (type) => {
+    Promise.resolve()
+      .then(() => startLocationCapture())
+      .then(({ gpsPromise, permissionStatus }) => {
+        if (permissionStatus === 'browser_denied') return;
+        return gpsPromise.then(coords => {
+          if (!coords) return;
+          api.patch('/attendance/location', { type, latitude: coords.latitude, longitude: coords.longitude }).catch(() => {});
+          logLocation(type, coords, permissionStatus);
+        });
+      })
+      .catch(() => { /* additive — never breaks the punch */ });
+  };
+
   /* ── Check In ─────────────────────────────────────────────────── */
   const checkIn = async () => {
     setActionLoading(true);
     try {
-      // Consent check + start GPS — returns immediately after user decision.
-      // GPS acquisition runs in the background; API call fires right after.
-      const { gpsPromise, permissionStatus } = await startLocationCapture();
-      if (permissionStatus === 'browser_denied') {
-        toast.error('Location is blocked. Click the lock icon in the address bar → Location → Allow, then try again.', { duration: 7000 });
-        return;
-      }
-
-      // Fire API immediately — no GPS wait
       const r = await api.post('/attendance/checkin', { location: 'Office', latitude: null, longitude: null });
       const rec = r.data.data;
       setRecord(rec);
 
-      const prevHours = parseFloat(rec.workingHours || 0);
-      const baseSeconds = Math.round(prevHours * 3600);
+      const baseSeconds = Math.round(parseFloat(rec.workingHours || 0) * 3600);
       startTimer(rec.checkIn, baseSeconds);
       toast.success(r.data.lateMessage || 'Checked in successfully!');
 
-      // GPS resolves in background — patch location silently, never blocks UI
-      gpsPromise.then(coords => {
-        if (coords) {
-          api.patch('/attendance/location', { type: 'checkin', latitude: coords.latitude, longitude: coords.longitude }).catch(() => {});
-          logLocation('checkin', coords, permissionStatus);
-        }
-      });
-
+      captureLocationInBackground('checkin');
       return rec;
     } catch (err) {
       toast.error(err.response?.data?.message || 'Check-in failed');
@@ -165,29 +186,14 @@ export const AttendanceProvider = ({ children }) => {
   const checkOut = async () => {
     setActionLoading(true);
     try {
-      const { gpsPromise, permissionStatus } = await startLocationCapture();
-      if (permissionStatus === 'browser_denied') {
-        toast.error('Location is blocked. Click the lock icon in the address bar → Location → Allow, then try again.', { duration: 7000 });
-        return;
-      }
-
-      // Fire API immediately — no GPS wait
       const r = await api.post('/attendance/checkout', { location: 'Office', latitude: null, longitude: null });
       const rec = r.data.data;
       setRecord(rec);
       stopTimer();
-      const prev = parseFloat(rec.workingHours || 0);
-      setElapsed(Math.round(prev * 3600));
+      setElapsed(Math.round(parseFloat(rec.workingHours || 0) * 3600));
       toast.success('Checked out successfully!');
 
-      // GPS resolves in background
-      gpsPromise.then(coords => {
-        if (coords) {
-          api.patch('/attendance/location', { type: 'checkout', latitude: coords.latitude, longitude: coords.longitude }).catch(() => {});
-          logLocation('checkout', coords, permissionStatus);
-        }
-      });
-
+      captureLocationInBackground('checkout');
       return rec;
     } catch (err) {
       toast.error(err.response?.data?.message || 'Check-out failed');

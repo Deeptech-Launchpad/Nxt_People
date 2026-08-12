@@ -14,13 +14,27 @@ export default function GeoPermissionModal() {
   const [open, setOpen] = useState(false);
   const [browserDenied, setBrowserDenied] = useState(false);
   const resolveRef = useRef(null);
+  const pendingRef = useRef(null);
 
   useEffect(() => {
-    _registerGeoHandler(() => new Promise((resolve) => {
-      resolveRef.current = resolve;
-      setOpen(true);
-    }));
-    return () => _registerGeoHandler(null);
+    _registerGeoHandler(() => {
+      // A second ask while one is still open used to overwrite resolveRef,
+      // orphaning the first promise forever — whoever was awaiting it hung
+      // for the life of the page. Hand back the in-flight ask instead.
+      if (pendingRef.current) return pendingRef.current;
+      pendingRef.current = new Promise((resolve) => {
+        resolveRef.current = resolve;
+        setOpen(true);
+      });
+      return pendingRef.current;
+    });
+    return () => {
+      _registerGeoHandler(null);
+      // Never leave a caller awaiting a promise this modal can no longer resolve.
+      resolveRef.current?.('deny');
+      resolveRef.current = null;
+      pendingRef.current = null;
+    };
   }, []);
 
   // Check for a browser-level permanent denial whenever the modal opens, so
@@ -41,6 +55,7 @@ export default function GeoPermissionModal() {
     setOpen(false);
     const r = resolveRef.current;
     resolveRef.current = null;
+    pendingRef.current = null;
     r?.(choice);
   };
 

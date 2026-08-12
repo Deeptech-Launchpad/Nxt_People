@@ -22,6 +22,22 @@ export const resetGeoPref = () => setGeoPref(null);
 let askHandler = null;
 export const _registerGeoHandler = (fn) => { askHandler = fn; };
 
+// How long to wait on the consent modal before giving up on location.
+const CONSENT_TIMEOUT_MS = 120000;
+
+/** Resolve with `fallback` if `p` hasn't settled within `ms`. Never rejects. */
+function withTimeout(p, ms, fallback) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v) => { if (!settled) { settled = true; resolve(v); } };
+    const t = setTimeout(() => finish(fallback), ms);
+    Promise.resolve(p).then(
+      (v) => { clearTimeout(t); finish(v); },
+      () => { clearTimeout(t); finish(fallback); }
+    );
+  });
+}
+
 /**
  * Handle consent only — start GPS capture immediately after, return the
  * running promise without awaiting it. Lets callers fire the API call in
@@ -44,7 +60,10 @@ export async function startLocationCapture() {
     return { gpsPromise: capturePosition(), permissionStatus: 'always' };
   }
 
-  const choice = askHandler ? await askHandler() : 'once';
+  // The consent modal is a prompt the user may simply never answer. Cap the
+  // wait so an ignored prompt can't leave a caller pending for the life of
+  // the page — treat silence as "no location this time", never as consent.
+  const choice = askHandler ? await withTimeout(askHandler(), CONSENT_TIMEOUT_MS, 'deny') : 'once';
 
   if (choice === 'deny') {
     return { gpsPromise: Promise.resolve(null), permissionStatus: 'denied' };
@@ -96,8 +115,9 @@ export async function requestLocation() {
     return { coords, permissionStatus: coords ? 'always' : 'unavailable' };
   }
 
-  // No stored preference — show the modal to ask
-  const choice = askHandler ? await askHandler() : 'once';   // 'always' | 'once' | 'deny'
+  // No stored preference — show the modal to ask. Same timeout guard as
+  // startLocationCapture(): silence must never hang the caller.
+  const choice = askHandler ? await withTimeout(askHandler(), CONSENT_TIMEOUT_MS, 'deny') : 'once';
 
   if (choice === 'deny') {
     // Do NOT store 'denied' — next check-in will ask again

@@ -415,15 +415,25 @@ cron.schedule('30 2 * * *', async () => {
 cron.schedule('10 0 * * *', async () => {
   try {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: CRON_TZ });
+    // These are days the employee actually checked in for — they only look
+    // like absences because a check-out never landed. Log exactly who and
+    // which date, so a run of them points at a check-out failure rather than
+    // at genuine absenteeism, and HR can chase the regularisations. Logged
+    // at warn precisely because a silent count hid a real bug for weeks.
     const r = await pool.query(
-      `UPDATE attendance
+      `UPDATE attendance a
           SET status = 'absent', working_hours = 0, updated_at = NOW()
-        WHERE check_in IS NOT NULL AND check_out IS NULL AND date < $1::date
-        RETURNING id`,
+         FROM employees e
+        WHERE e.id = a.employee_id
+          AND a.check_in IS NOT NULL AND a.check_out IS NULL AND a.date < $1::date
+        RETURNING a.date::text AS date, e.employee_id AS code`,
       [today]
     );
     if (r.rowCount > 0) {
-      logger.info({ marked: r.rowCount }, 'Auto-marked forgotten check-outs as Absent');
+      logger.warn(
+        { marked: r.rowCount, affected: r.rows.map(x => `${x.code}@${x.date}`) },
+        'Auto-marked forgotten check-outs as Absent — worked days with a missing check-out; these need regularisation'
+      );
     }
   } catch (err) {
     logger.error({ err }, 'Auto-absent cron failed');
