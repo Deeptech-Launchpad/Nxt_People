@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 import api from '../../utils/api';
+import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
@@ -63,7 +64,7 @@ export default function Distribution() {
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams({ by });
-    Object.entries(applied).forEach(([k, vals]) => (vals || []).forEach(v => params.append(k, v)));
+    appendDimensionFilters(params, applied);
     api.get(`/reports/employee/distribution?${params}`)
       .then(r => {
         setRows(Array.isArray(r.data.data) ? r.data.data : []);
@@ -86,6 +87,8 @@ export default function Distribution() {
       <FilterRow
         value={draft}
         onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))}
+        experience={draft.experience}
+        onExperienceChange={v => setDraft(f => ({ ...f, experience: v }))}
         exclude={[BY_TO_FILTER_KEY[by]]}
       />
       <button

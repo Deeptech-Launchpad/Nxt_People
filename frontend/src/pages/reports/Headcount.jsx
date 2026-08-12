@@ -54,7 +54,7 @@ export default function Headcount() {
       </button>
       {filtersOpen && (
         <div className="w-full flex flex-wrap items-center gap-2 pt-1 order-first">
-          <FilterRow value={draft} onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))} />
+          <FilterRow value={draft} onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))} experience={draft.experience} onExperienceChange={v => setDraft(f => ({ ...f, experience: v }))} />
         </div>
       )}
     </>

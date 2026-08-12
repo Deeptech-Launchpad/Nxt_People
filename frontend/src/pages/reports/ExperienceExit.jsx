@@ -79,7 +79,7 @@ export default function ExperienceExit() {
       </button>
       {filtersOpen && (
         <div className="w-full flex flex-wrap items-center gap-2 pt-1 order-first">
-          <FilterRow value={draft} onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))} exclude={['employmentType', 'experience']} />
+          <FilterRow value={draft} onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))} exclude={['employmentType', 'experience']} experience={draft.experience} onExperienceChange={v => setDraft(f => ({ ...f, experience: v }))} />
         </div>
       )}
     </>
