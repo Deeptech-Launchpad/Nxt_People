@@ -1598,6 +1598,31 @@ const ATT_STATUS_LABEL = {
   absent: 'Absent', unpaidLeave: 'Unpaid Leave', holiday: 'Holidays', weekend: 'Weekend',
 };
 
+// Full leave names for the Status column. The bucket label ("Paid Leave") is
+// what the pie counts; the column itself names the actual record, the way the
+// reference reads "Casual Leave(Second Half)" rather than "Paid Leave".
+const ATT_LEAVE_NAME = {
+  casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission',
+};
+const HALF_DAY_LABEL = { first_half: 'First Half', second_half: 'Second Half' };
+
+const hhmm = h => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+
+// "Casual Leave(Second Half)", "Permission(01:00 hours)", comma-joined when a
+// day carries more than one record. A permission is hours off inside a working
+// day, so it is qualified by its duration rather than by a half-day marker.
+function leaveStatusText(leaves) {
+  return leaves.map(l => {
+    const name = ATT_LEAVE_NAME[l.leaveType] || l.leaveType;
+    if (l.leaveType === 'permission') {
+      const hrs = parseFloat(l.hours);
+      return hrs > 0 ? `${name}(${hhmm(hrs)} hours)` : name;
+    }
+    const half = l.isHalfDay ? HALF_DAY_LABEL[l.halfDayType] : null;
+    return half ? `${name}(${half})` : name;
+  }).join(', ');
+}
+
 // Shift length in hours. Falls back to a standard 8h day when an employee has
 // no shift assigned — this app has no per-employee hour contract, so a
 // standard workday is the only non-fabricated basis available.
@@ -1667,8 +1692,10 @@ async function loadAttendanceContext(req, start, end) {
       [start, end]
     ),
     pool.query(
-      `SELECT employee_id, leave_type AS "leaveType", start_date, end_date, is_half_day AS "isHalfDay"
-         FROM leaves WHERE status='approved' AND start_date <= $2::date AND end_date >= $1::date`,
+      `SELECT employee_id, leave_type AS "leaveType", start_date, end_date,
+              is_half_day AS "isHalfDay", half_day_type AS "halfDayType", hours
+         FROM leaves WHERE status='approved' AND start_date <= $2::date AND end_date >= $1::date
+        ORDER BY start_date, leave_type`,
       [start, end]
     ),
     loadHolidaysAndRulesRange(new Date(start), new Date(end)),
@@ -1681,6 +1708,9 @@ async function loadAttendanceContext(req, start, end) {
     leavesByEmp.get(l.employee_id).push({ ...l, start: new Date(l.start_date), end: new Date(l.end_date) });
   });
   const leaveOn = (empId, date) => (leavesByEmp.get(empId) || []).find(l => date >= l.start && date <= l.end);
+  // Every record on the day, not just the first — a person can hold a
+  // permission and a half-day leave at once, and the Status column names both.
+  const leavesOn = (empId, date) => (leavesByEmp.get(empId) || []).filter(l => date >= l.start && date <= l.end);
 
   const days = [];
   const endD = new Date(end);
@@ -1693,7 +1723,7 @@ async function loadAttendanceContext(req, start, end) {
     !(emp.joiningDate && new Date(emp.joiningDate) > date) &&
     !(emp.exitDate && new Date(emp.exitDate) < date);
 
-  return { employees: empRes.rows, attByKey, leaveOn, days, today, onRolls, holMap: cal.holMap, rules: cal.rules };
+  return { employees: empRes.rows, attByKey, leaveOn, leavesOn, days, today, onRolls, holMap: cal.holMap, rules: cal.rules };
 }
 
 // Local clock minutes for a timestamp — used to compare an actual punch
@@ -1754,7 +1784,13 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
     const date = req.query.date || new Date().toLocaleDateString('en-CA');
     const ctx = await loadAttendanceContext(req, date, date);
     const day = new Date(date);
-    const isFuture = day > ctx.today;
+    // Compare calendar dates as strings, not Date objects. `new Date('2026-08-13')`
+    // is UTC midnight while ctx.today is local midnight, so east of Greenwich the
+    // Date comparison made today itself look like the future and the whole report
+    // came back empty. ISO date strings sort correctly and carry no zone.
+    const todayStr = ctx.today.toLocaleDateString('en-CA');
+    const isFuture = date > todayStr;
+    const isToday = date === todayStr;
     const statusFilter = [].concat(req.query.status || []).filter(Boolean);
 
     const counts = { present: 0, onDuty: 0, paidLeave: 0, absent: 0, unpaidLeave: 0, holiday: 0, weekend: 0 };
@@ -1764,23 +1800,41 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
     for (const emp of ctx.employees) {
       if (!ctx.onRolls(emp, day)) continue;
       const att = ctx.attByKey.get(`${emp._id}|${date}`);
+      const dayLeaves = ctx.leavesOn(emp._id, day);
       const cls = classifyAttendanceDay({
         date: day, holMap: ctx.holMap, rules: ctx.rules,
-        attStatus: att?.status, leave: ctx.leaveOn(emp._id, day), isFuture,
+        // A permission is hours off inside a working day, so when it sits
+        // alongside a real leave the leave is what classifies the day.
+        attStatus: att?.status,
+        leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+        isFuture,
       });
-      if (cls.kind !== 'future') counts[cls.kind] = (counts[cls.kind] || 0) + 1;
+
+      // An absence is only settled once the day is over. On the current date
+      // someone with no punch and no leave has not failed to attend yet — they
+      // are still pending a check-in, so they stay out of the status pie and
+      // show only in the presence donut. Past dates settle normally.
+      const kind = cls.kind === 'absent' && isToday ? 'pending' : cls.kind;
+      if (kind !== 'future' && kind !== 'pending') counts[kind] = (counts[kind] || 0) + 1;
 
       const presenceKey = att?.checkIn && !att?.checkOut ? 'in' : att?.checkIn ? 'out' : 'yetToCheckIn';
       // Only working days can leave someone "yet to check in" — nobody is
       // pending a punch on a holiday or weekend.
-      if (presenceKey !== 'yetToCheckIn' || cls.kind === 'present' || cls.kind === 'absent') presence[presenceKey]++;
+      if (presenceKey !== 'yetToCheckIn' || kind === 'present' || kind === 'absent' || kind === 'pending') presence[presenceKey]++;
+
+      // Hours are N/A, not zero, on a day nobody was expected to work and
+      // nothing was punched — a full day of leave, a holiday or a weekend.
+      const hoursApply = !!att || kind === 'present' || kind === 'absent' || kind === 'pending';
 
       employees.push({
         _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
         employeeCode: emp.employeeCode, department: emp.department, exitDate: emp.exitDate,
         firstIn: att?.checkIn || null, lastOut: att?.checkOut || null,
-        totalHours: parseFloat(att?.workingHours) || 0,
-        statusKey: cls.kind, status: ATT_STATUS_LABEL[cls.kind] || null,
+        totalHours: hoursApply ? parseFloat(att?.workingHours) || 0 : null,
+        statusKey: kind,
+        // The column names the actual leave records when there are any, and
+        // falls back to the bucket label otherwise.
+        status: dayLeaves.length ? leaveStatusText(dayLeaves) : (ATT_STATUS_LABEL[kind] || null),
         presenceKey, shiftName: emp.shiftName || null,
       });
     }

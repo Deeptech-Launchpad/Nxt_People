@@ -11,27 +11,21 @@ const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('e
 // with names alone, two "Rahul Kumar"s are indistinguishable in a table;
 // the ID is what makes each row unique.
 export function EmployeeCell({ row }) {
+  // Employee id leads, then the name, on one line — the reference reads
+  // "ANXT220059 Dhanalakshmi", with no initials avatar and no department. The
+  // avatar carried no information the id and name didn't already give, and the
+  // department was a second line under every row on every table report, which
+  // is a lot of ink for a value the dimension filters already narrow by.
   return (
-    <div className="flex items-center gap-2">
-      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
-        {row.firstName?.[0]}{row.lastName?.[0]}
-      </div>
-      {/* Employee id leads, then the name, on one line — the reference reads
-          "ANXT220059 Dhanalakshmi" and carries no department. The department
-          was a second line under every row on every table report, which is a
-          lot of ink for a value the dimension filters already narrow by. */}
-      <div className="min-w-0">
-        <p className="text-[14px] text-slate-800 truncate">
-          {row.employeeCode && <span className="text-slate-400 mr-1.5">{row.employeeCode}</span>}
-          {row.firstName} {row.lastName}
-          {row.exitDate && (
-            <span className="ml-1.5 text-[12px] text-slate-400">
-              ( Exit Date - {new Date(row.exitDate).toLocaleDateString('en-IN')} )
-            </span>
-          )}
-        </p>
-      </div>
-    </div>
+    <p className="text-[14px] text-slate-800 truncate">
+      {row.employeeCode && <span className="text-slate-400 mr-1.5">{row.employeeCode}</span>}
+      {row.firstName} {row.lastName}
+      {row.exitDate && (
+        <span className="ml-1.5 text-[12px] text-slate-400">
+          ( Exit Date - {new Date(row.exitDate).toLocaleDateString('en-IN')} )
+        </span>
+      )}
+    </p>
   );
 }
 
