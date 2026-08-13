@@ -368,7 +368,11 @@ export default function LeaveBalance() {
   // count, and doesn't read as a bar alongside the capped/allocated types.
   const chartRows = rows.filter(r => r.leaveType !== 'absent').map(r => ({ ...r, bookedVal: r.booked, balanceVal: r.balance ?? 0 }));
 
-  const sortValue = (row, key) => (key === 'label' ? row.label : (row.balance ?? row.booked ?? 0));
+  const sortValue = (row, key) => {
+    if (key === 'label') return row.label;
+    if (key === 'booked') return Number(row.booked) || 0;
+    return row.balance ?? row.booked ?? 0;
+  };
   const sortedRows = useMemo(() => {
     const dir = sort.dir === 'asc' ? 1 : -1;
     return [...rows].sort((a, b) => {
@@ -467,7 +471,8 @@ export default function LeaveBalance() {
           <thead className="bg-slate-100 text-[13px] font-medium text-slate-600">
             <tr>
               <th className="w-14" />
-              {sortHeader('label', 'Leave Type')}
+              {sortHeader('label', 'Leavetype')}
+              {sortHeader('booked', 'Booked')}
               {sortHeader('balance', 'Current Balance')}
             </tr>
           </thead>
@@ -486,7 +491,13 @@ export default function LeaveBalance() {
                     <button onClick={() => setDrill({ ...row, mode: 'summary' })} className="text-slate-700 hover:text-blue-600 hover:underline">{row.label}</button>
                   </span>
                 </td>
-                <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance ?? row.booked}</td>
+                {/* Booked stands on its own column now. Absent and Leave
+                    Without Pay have no entitlement to draw down, so their
+                    Current Balance is 0 and the only number that says anything
+                    is what was taken — which used to be reachable only by
+                    opening the drilldown. */}
+                <td className="px-4 py-2.5 tabular-nums text-slate-700">{dash(row.booked)}</td>
+                <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance ?? '-'}</td>
               </tr>
             ))}
           </tbody>
