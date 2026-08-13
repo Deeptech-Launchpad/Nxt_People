@@ -9,8 +9,16 @@ import { CalendarCheck, CalendarDays, Repeat, Gift, Wallet, ChevronRight } from 
 // product puts them.
 //
 // Rows are only listed once the thing they configure exists. A configuration
-// entry that opens nothing reads as broken, so unbuilt items are absent
-// rather than greyed out.
+// entry that opens nothing reads as broken, so unbuilt items are named in the
+// pending list at the bottom rather than shown as dead rows — absent entirely
+// made a partial page look finished.
+const PENDING = [
+  ['Methods', 'How leave is applied for and approved, and the approval chain.'],
+  ['Reports', 'Who can see which Leave Tracker report.'],
+  ['Leave Request', 'What a request form asks for, and attachment rules.'],
+  ['Additional Options', 'Encashment, carry-forward and year-end handling.'],
+];
+
 const SECTIONS = [
   {
     key: 'leave-policy',
@@ -88,6 +96,18 @@ export default function LeaveTrackerConfiguration() {
             </Link>
           </div>
         ))}
+      </div>
+
+      <div>
+        <p className="text-[13px] text-slate-500 mb-2">Not built yet</p>
+        <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden opacity-75">
+          {PENDING.map(([title, description]) => (
+            <div key={title} className="px-5 py-3.5">
+              <span className="text-[14px] text-slate-600">{title}</span>
+              <p className="text-[12.5px] text-slate-400 mt-0.5">{description}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

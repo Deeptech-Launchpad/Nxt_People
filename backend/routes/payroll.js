@@ -888,7 +888,8 @@ router.get('/my', async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT id AS "_id", slip_number AS "slipNumber", pay_month AS "payMonth", pay_year AS "payYear",
-              status, gross_earnings AS "grossEarnings", net_pay AS "netPay", locked_at AS "lockedAt", paid_at AS "paidAt"
+              status, gross_earnings AS "grossEarnings", net_pay AS "netPay", locked_at AS "lockedAt", paid_at AS "paidAt",
+              reimbursement, total_deductions AS "totalDeductions"
          FROM payroll_payslips
         WHERE employee_id = $1 AND status IN ('locked','paid') AND superseded_by IS NULL
         ORDER BY pay_year DESC, pay_month DESC`,

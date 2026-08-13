@@ -40,8 +40,10 @@ export default function LeaveEncashmentDetails() {
 
   // Encashment is processed per pay period, so a period with the flag off has
   // nothing to report. Saying that beats an empty table, which reads as data
-  // that failed to load.
-  const encashmentOff = !!payPeriod && !payPeriod.processEncashment;
+  // that failed to load. No pay period at all lands here too — that is the case
+  // where the guidance matters most, and it used to fall through to a bare
+  // "No encashment requests" that read as a broken page.
+  const encashmentOff = !payPeriod || !payPeriod.processEncashment;
 
   const load = () => {
     setLoading(true);
@@ -114,11 +116,13 @@ export default function LeaveEncashmentDetails() {
             <Settings size={24} className="text-slate-400" strokeWidth={1.6} />
           </div>
           <p className="text-[14px] text-slate-600 max-w-md mx-auto">
-            Enable <span className="font-semibold">Process leave encashment</span> on the
-            “{payPeriod.name}” pay period to view Leave encashment details.
+            Enable <span className="font-semibold">Process leave encashment</span>{' '}
+            {payPeriod
+              ? <>on the “{payPeriod.name}” pay period to view Leave encashment details.</>
+              : <>in Pay Period settings to view Leave encashment details.</>}
           </p>
           <button
-            onClick={() => navigate('/settings/pay-periods')}
+            onClick={() => navigate('/reports/configuration/pay-periods')}
             className="mt-4 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors"
           >
             Configuration

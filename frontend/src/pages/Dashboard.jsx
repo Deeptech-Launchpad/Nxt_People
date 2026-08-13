@@ -467,6 +467,25 @@ export default function Dashboard() {
    });
     const [fyList, setFyList] = useState([]);
     const [payslipsLoading, setPayslipsLoading] = useState(false);
+    const [payslipDownloading, setPayslipDownloading] = useState(null);
+
+    // The PDF endpoint is authenticated, so it cannot be a plain href — it has
+    // to come back as a blob through the api client that carries the token.
+    const downloadPayslip = async (id) => {
+      if (payslipDownloading) return;
+      setPayslipDownloading(id);
+      try {
+        const r = await api.get(`/payroll/my/${id}/pdf`, { responseType: 'blob' });
+        const url = URL.createObjectURL(r.data);
+        const a = document.createElement('a');
+        a.href = url; a.download = `payslip-${id}.pdf`; a.click();
+        URL.revokeObjectURL(url);
+      } catch {
+        toast.error('PDF download failed');
+      } finally {
+        setPayslipDownloading(null);
+      }
+    };
 
     /* ─ Department members state ─ */
     const [deptMembers, setDeptMembers] = useState([]);
@@ -629,13 +648,34 @@ export default function Dashboard() {
   useEffect(() => {
     if (activeTab !== 'payslips') return;
     setPayslipsLoading(true);
-    Promise.all([
-      api.get('/payslips?fy=' + payslipFY),
-      api.get('/payslips/fy-list').catch(() => ({ data: { data: [] } })),
-    ]).then(([p, fl]) => {
-      setPayslips(p.data.data || []);
-      setFyList(fl.data.data || []);
-    }).catch(() => toast.error('Failed to load payslips')).finally(() => setPayslipsLoading(false));
+    // /payslips was removed with the legacy payslip archive when the payroll
+    // module was rebuilt; this tab kept calling it and 404'd on every load.
+    // /payroll/my is the live source. It returns every locked or paid slip
+    // rather than one year's, so the financial year is filtered here and the
+    // year list derived from the same rows — there is no fy-list endpoint to
+    // replace the second call that was also 404ing.
+    api.get('/payroll/my')
+      .then(r => {
+        const all = r.data.data || [];
+        // Indian financial year: April to March, labelled "2026-27".
+        const fyOf = s => {
+          const y = Number(s.payYear), m = Number(s.payMonth);
+          const start = m >= 4 ? y : y - 1;
+          return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+        };
+        setFyList([...new Set(all.map(fyOf))].sort().reverse());
+        setPayslips(all.filter(s => !payslipFY || fyOf(s) === payslipFY).map(s => ({
+          _id: s._id,
+          month: Number(s.payMonth),
+          year: Number(s.payYear),
+          grossPay: s.grossEarnings,
+          reimbursements: s.reimbursement,
+          deductions: s.totalDeductions,
+          takeHome: s.netPay,
+        })));
+      })
+      .catch(() => toast.error('Failed to load payslips'))
+      .finally(() => setPayslipsLoading(false));
    }, [activeTab, payslipFY]);
 
    /* ─ load pending approvals when tab is active */
@@ -1810,9 +1850,13 @@ export default function Dashboard() {
                                 <td className="px-5 py-3.5 text-[15px] text-slate-700 text-right tabular-nums">{fmtINR(p.deductions)}</td>
                                 <td className="px-5 py-3.5 text-[13.5px] font-bold text-slate-800 text-right tabular-nums">{fmtINR(p.takeHome)}</td>
                                 <td className="px-5 py-3.5">
-                                  {p.payslipUrl
-                                    ? <a href={p.payslipUrl} target="_blank" rel="noreferrer" className="text-[15px] font-semibold text-[#1a73e8] hover:underline">View</a>
-                                    : <span className="text-[14px] text-slate-400">—</span>}
+                                  <button
+                                    onClick={() => downloadPayslip(p._id)}
+                                    disabled={payslipDownloading === p._id}
+                                    className="text-[15px] font-semibold text-[#1a73e8] hover:underline disabled:opacity-40"
+                                  >
+                                    {payslipDownloading === p._id ? 'Downloading…' : 'View'}
+                                  </button>
                                 </td>
                                 <td className="px-5 py-3.5">
                                   {p.taxWorksheetUrl
