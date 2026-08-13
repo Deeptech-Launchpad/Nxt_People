@@ -35,10 +35,20 @@ export default function CompOff() {
   const [expanded, setExpanded] = useState(null); // request id whose timeline is open
   const [viewItem, setViewItem] = useState(null); // item open in CompOffDetailModal
 
+  // Validity window is configured under Configuration → Compensatory Off, so
+  // the form's bounds and copy follow the setting instead of restating 3.
+  const [expiryMonths, setExpiryMonths] = useState(3);
+  useEffect(() => {
+    api.get('/settings')
+      .then(r => setExpiryMonths(parseInt(r.data.data?.compOffExpiryMonths, 10) || 3))
+      .catch(() => {});
+  }, []);
+
   const canApproveAll = ['admin', 'director', 'manager', 'hr_admin'].includes(user?.role);
   const today = new Date();
   const tomorrow = new Date(today.getTime() + 86400000);
-  const threeMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 3, today.getDate());
+  const earliestWorkedDate = new Date(today.getFullYear(), today.getMonth() - expiryMonths, today.getDate());
+  const monthsLabel = `${expiryMonths} month${expiryMonths === 1 ? '' : 's'}`;
 
   const load = () => {
     setLoading(true);
@@ -108,7 +118,7 @@ export default function CompOff() {
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
           <div>
             <h3 className="font-display font-semibold text-slate-800">Compensatory Off</h3>
-            <p className="text-slate-400 text-base mt-0.5">Work a weekend or holiday, earn a comp-off, use it within 3 months</p>
+            <p className="text-slate-400 text-base mt-0.5">Work a weekend or holiday, earn a comp-off, use it within {monthsLabel}</p>
           </div>
           <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
             <Plus size={16} /> Apply Comp-Off
@@ -190,8 +200,8 @@ export default function CompOff() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Worked Date (weekend / holiday) *</label>
-                <input type="date" value={form.workedDate} onChange={e => setForm({ ...form, workedDate: e.target.value })} required min={ymd(threeMonthsAgo)} max={ymd(today)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
-                <p className="text-[13px] text-slate-400 mt-1">Must be a Saturday, Sunday, or approved holiday you actually worked, within the last 3 months.</p>
+                <input type="date" value={form.workedDate} onChange={e => setForm({ ...form, workedDate: e.target.value })} required min={ymd(earliestWorkedDate)} max={ymd(today)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
+                <p className="text-[13px] text-slate-400 mt-1">Must be a weekend or holiday you actually worked, within the last {monthsLabel}.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Reason / Work Details *</label>
@@ -200,7 +210,7 @@ export default function CompOff() {
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Requested Comp-Off Date *</label>
                 <input type="date" value={form.compOffDate} onChange={e => setForm({ ...form, compOffDate: e.target.value })} required min={ymd(tomorrow)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
-                <p className="text-[13px] text-slate-400 mt-1">A future working day (Mon–Fri), within 3 months of the worked date.</p>
+                <p className="text-[13px] text-slate-400 mt-1">A future working day, within {monthsLabel} of the worked date.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Days to Claim *</label>

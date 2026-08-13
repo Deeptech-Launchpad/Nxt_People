@@ -13,6 +13,7 @@ import DirectReportsToggle from './DirectReportsToggle';
 import UnitToggle from './UnitToggle';
 import DateChip from './DateChip';
 import PeriodPresetChip from './PeriodPresetChip';
+import PayPeriodChip from './PayPeriodChip';
 import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
 
@@ -40,7 +41,16 @@ export default function LossOfPay() {
   const [dimFilters, setDimFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
+  const [payPeriod, setPayPeriod] = useState(null);
   const navigate = useNavigate();
+
+  // Picking a pay period drives the range from its dates; the From/To chips
+  // grey out to show they aren't the active control, the same way the period
+  // presets do. Clearing it hands the dates back.
+  const selectPayPeriod = (p) => {
+    setPayPeriod(p);
+    if (p) { setStartDate(p.startDate); setEndDate(p.endDate); }
+  };
 
   const load = () => {
     setLoading(true);
@@ -59,6 +69,7 @@ export default function LossOfPay() {
   useEffect(load, [employeeStatus, employee, directReportsOnly, dimFilters]);
 
   const reset = () => {
+    setPayPeriod(null);
     setStartDate(monthStartCA()); setEndDate(todayCA()); setEmployee(null);
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
@@ -75,9 +86,10 @@ export default function LossOfPay() {
 
   const filters = filtersOpen ? (
     <>
-      <PeriodPresetChip onSelect={({ start, end }) => { setStartDate(start); setEndDate(end); }} />
-      <DateChip label="From Date" value={startDate} onChange={setStartDate} />
-      <DateChip label="To Date" value={endDate} onChange={setEndDate} />
+      <PayPeriodChip value={payPeriod} onChange={selectPayPeriod} />
+      <PeriodPresetChip onSelect={({ start, end }) => { setPayPeriod(null); setStartDate(start); setEndDate(end); }} />
+      <DateChip label="From Date" value={startDate} onChange={setStartDate} disabled={!!payPeriod} />
+      <DateChip label="To Date" value={endDate} onChange={setEndDate} disabled={!!payPeriod} />
       <EmployeeFilter value={employee} onChange={setEmployee} />
       <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
       <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />

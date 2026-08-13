@@ -9,6 +9,7 @@ const {
   createLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson,
 } = require('../utils/leaveApproval');
 const { DEFAULT_TZ } = require('../utils/timezone');
+const { ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
 router.use(protect);
 
 // Comp-Off approval chain as JSON for the shared ApprovalTimeline (same engine
@@ -17,20 +18,41 @@ router.use(protect);
 const COMPOFF_LEVELS_JSON = approvalLevelsJson('comp_off', 'c', 'id');
 
 /* ── Eligibility helpers ──────────────────────────────────────────────────
- *  Comp-Off is EARNED only for working on a Saturday, Sunday, or approved
- *  holiday, and may be USED only on a future regular working day (Mon–Fri that
- *  is not a holiday). All date maths runs in SQL on DATE values so there is no
- *  timezone drift from JS Date parsing. */
+ *  Comp-Off is EARNED only for working a non-working day, and may be USED
+ *  only on a future working day. Both questions are the same question, and
+ *  it is answered by the work calendar — the weekend rules plus the holiday
+ *  calendar — not by a fixed Sat/Sun assumption. With rules like "Sundays,
+ *  1st & 3rd Saturdays, 2nd Mondays" the two differ constantly: a 2nd
+ *  Saturday is a working day and a 2nd Monday is not.
+ *
+ *  Dates are handled as YYYY-MM-DD strings and only ever turned into a Date
+ *  at local midnight, so nothing drifts across the IST offset. */
 
-// Is `date` a weekend (Sat/Sun) or a configured holiday? → eligible to EARN.
-async function isWeekendOrHoliday(db, date) {
-  const r = await db.query(
-    `SELECT EXTRACT(DOW FROM $1::date) AS dow,
-            EXISTS (SELECT 1 FROM holidays WHERE date = $1::date) AS is_holiday`,
-    [date]
-  );
-  const dow = Number(r.rows[0].dow); // 0 = Sunday … 6 = Saturday
-  return dow === 0 || dow === 6 || r.rows[0].is_holiday;
+// Is `ymd` a non-working day under the current work calendar? → eligible to
+// EARN comp-off, and ineligible to take it.
+async function isNonWorkingDate(db, ymd) {
+  const [hol, rules] = await Promise.all([
+    db.query('SELECT type FROM holidays WHERE date = $1::date', [ymd]),
+    db.query(
+      `SELECT days_of_week, weeks_of_month, interval_weeks, start_date,
+              end_type, end_date, end_count, is_active
+         FROM weekend_rules WHERE is_active = TRUE`
+    ),
+  ]);
+  const holType = hol.rows[0]?.type;
+  if (holidayClosesOffice(holType)) return true;
+  // A Working Day Exception is a working day even if a weekend rule matches;
+  // a restricted holiday is optional and leaves the rules to decide.
+  if (holType === 'working_day') return false;
+  const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return rules.rows.some(rule => ruleMatchesDate(rule, date));
+}
+
+// How long an earned credit stays usable — Configuration → Compensatory Off.
+async function compOffExpiryMonths(db) {
+  const r = await db.query('SELECT comp_off_expiry_months FROM settings LIMIT 1');
+  return parseInt(r.rows[0]?.comp_off_expiry_months, 10) || 3;
 }
 
 // Did the employee actually work (a recorded check-in) on `date`?
@@ -65,7 +87,7 @@ router.get('/my', async (req, res) => {
          FROM comp_offs c WHERE c.employee_id = $1 ORDER BY c.created_at DESC`,
       [req.user._id]
     );
-    // Available balance = approved credits still inside their 3-month validity.
+    // Available balance = approved credits still inside their validity window.
     const balance = r.rows
       .filter(x => x.status === 'approved' && !x.expired)
       .reduce((s, x) => s + (parseFloat(x.daysEarned) - parseFloat(x.daysUsed)), 0);
@@ -106,7 +128,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
 });
 
 // POST apply comp-off — validates the worked day, attendance, the requested
-// comp-off day, and the 3-month validity window, then builds the approval chain.
+// comp-off day, and the configured validity window, then builds the approval chain.
 router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
   const client = await pool.connect();
   try {
@@ -119,29 +141,34 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
     if (workedDate > today) {
       return res.status(400).json({ success: false, message: 'The worked date cannot be in the future.' });
     }
-    // Earned only for weekend/holiday work.
-    if (!(await isWeekendOrHoliday(client, workedDate))) {
-      return res.status(400).json({ success: false, message: 'Comp-Off can only be earned for working on a Saturday, Sunday, or an approved holiday.' });
+    // Earned only for working a day the work calendar says is non-working.
+    if (!(await isNonWorkingDate(client, workedDate))) {
+      return res.status(400).json({ success: false, message: 'Comp-Off can only be earned for working on a weekend or holiday, as set by the work calendar.' });
     }
     // Attendance must prove the employee actually worked that day.
     if (!(await workedOn(client, req.user._id, workedDate))) {
       return res.status(400).json({ success: false, message: 'No attendance is recorded for you on that date. Comp-Off needs a recorded check-in on the worked day.' });
     }
-    // Requested comp-off day must be a FUTURE regular working day (Mon–Fri, not a holiday).
+    // Requested comp-off day must be a FUTURE working day.
     if (compOffDate <= today) {
       return res.status(400).json({ success: false, message: 'The comp-off date must be a future date.' });
     }
-    if (await isWeekendOrHoliday(client, compOffDate)) {
-      return res.status(400).json({ success: false, message: 'Comp-Off can only be taken on a regular working day (Monday–Friday, excluding holidays).' });
+    if (await isNonWorkingDate(client, compOffDate)) {
+      return res.status(400).json({ success: false, message: 'Comp-Off can only be taken on a working day — that date is already a weekend or holiday.' });
     }
-    // Validity: the credit expires 3 months after the worked date. Compare as
-    // ISO strings (YYYY-MM-DD) to avoid any JS Date timezone drift.
+    // Validity window is configurable. Compare as ISO strings (YYYY-MM-DD)
+    // to avoid any JS Date timezone drift.
+    const expiryMonths = await compOffExpiryMonths(client);
     const expRes = await client.query(
-      `SELECT to_char(($1::date) + INTERVAL '3 months', 'YYYY-MM-DD') AS exp`, [workedDate]
+      `SELECT to_char(($1::date) + ($2 || ' months')::interval, 'YYYY-MM-DD') AS exp`,
+      [workedDate, expiryMonths]
     );
     const expiresAt = expRes.rows[0].exp; // 'YYYY-MM-DD'
     if (compOffDate > expiresAt) {
-      return res.status(400).json({ success: false, message: 'Comp-Off must be used within 3 months of the worked date. Please pick an earlier date.' });
+      return res.status(400).json({
+        success: false,
+        message: `Comp-Off must be used within ${expiryMonths} month${expiryMonths === 1 ? '' : 's'} of the worked date. Please pick an earlier date.`,
+      });
     }
 
     await client.query('BEGIN');

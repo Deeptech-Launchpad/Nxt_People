@@ -251,7 +251,9 @@ export default function Leave() {
                       <input type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
                     </div>
                   </div>
-                  <p className="text-[13px] text-purple-600 -mt-1">Permission is hourly — up to 4 hours per month, no carry-forward.</p>
+                  <p className="text-[13px] text-purple-600 -mt-1">
+                    Permission is hourly — up to {balanceCards.find(c => c.code === 'permission')?.monthlyLimit ?? 4} hours per month, no carry-forward.
+                  </p>
                 </>
               ) : (
                 <>

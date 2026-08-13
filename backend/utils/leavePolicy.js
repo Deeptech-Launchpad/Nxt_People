@@ -1,0 +1,124 @@
+/**
+ * utils/leavePolicy.js
+ *
+ * Where the balance reports get their accrual rules.
+ *
+ * `leave_types.accrual_mode` / `accrual_amount` were added by
+ * migrate_leave_policy.js and shown on the Leave Policy configuration screen,
+ * but nothing read them: the reports carried their own copy of the rules
+ * ("casual is granted once, permission is 4 hours a month, comp-off is
+ * earned"). Editing a policy changed the screen and nothing else. These
+ * helpers are the one place that policy is read, shared by the balance
+ * summary, the monthly drilldown and the history ledger — a grant the ledger
+ * disagreed with would make both untrustworthy.
+ *
+ * Modes:
+ *   annual   the whole amount granted once, on the entitlement start date
+ *   monthly  the amount granted every calendar month from joining
+ *   earned   credited by its own events (comp-off worked days); no schedule
+ *   none     no entitlement at all, which is why those rows report a blank
+ *            Granted rather than a zero
+ */
+const pool = require('../db');
+
+// The reports address compensatory off as `comp_off`; the seeded leave type
+// spells it `compoff`. One canonical spelling either side of this boundary.
+const CODE_ALIASES = { compoff: 'comp_off' };
+const canonicalCode = code => CODE_ALIASES[code] || code;
+
+// Rows the reports show that have no leave_types record — `absent` is
+// attendance data rather than a leave type — fall back to no entitlement,
+// which is exactly how they behaved when the rules were hardcoded.
+const NO_POLICY = { unit: 'days', payType: 'unpaid', accrualMode: 'none', accrualAmount: 0 };
+
+// Read fresh per request rather than cached: the Leave Policy screen writes
+// this table, and a report still quoting the previous policy for the next
+// minute would look like a bug in the report.
+async function getLeavePolicies() {
+  const r = await pool.query(
+    `SELECT code, name, unit, pay_type, accrual_mode, accrual_amount FROM leave_types`
+  );
+  const map = new Map();
+  for (const row of r.rows) {
+    const code = canonicalCode(row.code);
+    map.set(code, {
+      code,
+      name: row.name,
+      unit: row.unit,
+      payType: row.pay_type,
+      accrualMode: row.accrual_mode,
+      accrualAmount: parseFloat(row.accrual_amount) || 0,
+    });
+  }
+  return { get: code => map.get(code) || { code, name: code, ...NO_POLICY } };
+}
+
+// The date a year's entitlement starts for this employee: their joining date
+// if they joined mid-year, otherwise January 1st. An annual allocation is
+// granted whole on that date — it's a flat allocation in this system, and the
+// reference grants it in full to a mid-year joiner too.
+function entitlementStart(year, joiningDate) {
+  const iso = joiningDate ? String(joiningDate).slice(0, 10) : null;
+  return iso && Number(iso.slice(0, 4)) === year ? iso : `${year}-01-01`;
+}
+
+/**
+ * Every grant this policy makes to this employee in this year, up to
+ * `upToMonth` — an accrual that hasn't happened yet isn't spendable.
+ *
+ * `annualAmount` overrides the policy's amount for annual grants. Casual is
+ * the one type with a per-employee allocation (`employees.casual_leave`), so
+ * that column stays its source; every other type takes accrual_amount.
+ *
+ * Returns [{ month, amount, date }]. Months before joining produce nothing at
+ * all rather than a zero row.
+ */
+function accrualEvents(policy, { year, upToMonth, joiningDate, annualAmount = null }) {
+  const [jy, jm, jd] = joiningDate ? String(joiningDate).slice(0, 10).split('-').map(Number) : [];
+  if (jy > year) return [];
+
+  if (policy.accrualMode === 'annual') {
+    // Not bounded by upToMonth: an annual allocation is the year's, granted
+    // whole and available from the start of the entitlement — including for
+    // someone whose joining date is still ahead of today, whose balance has
+    // always read as their full allocation.
+    const amount = annualAmount === null || annualAmount === undefined
+      ? policy.accrualAmount : annualAmount;
+    const date = entitlementStart(year, joiningDate);
+    return [{ month: Number(date.slice(5, 7)), amount, date }];
+  }
+
+  if (policy.accrualMode === 'monthly') {
+    const startMonth = jy === year ? jm : 1;
+    const out = [];
+    for (let m = startMonth; m <= upToMonth; m++) {
+      // The first entry is dated the joining day and the rest the 1st, so the
+      // ledger's accrual rows land where the entitlement actually arrived.
+      const day = jy === year && m === jm ? jd : 1;
+      out.push({
+        month: m,
+        amount: policy.accrualAmount,
+        date: `${year}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+      });
+    }
+    return out;
+  }
+
+  // earned: credited by its own events, counted where those events live.
+  // none: no entitlement.
+  return [];
+}
+
+const round2 = n => Math.round(n * 100) / 100;
+
+// Total granted for the year so far. Null means "this type has no entitlement"
+// — the reports print a blank Granted for those rather than a zero, which
+// would read as an exhausted allowance. `earnedAmount` is what an `earned`
+// policy has actually accrued from its own events.
+function grantedToDate(policy, opts) {
+  if (policy.accrualMode === 'none') return null;
+  if (policy.accrualMode === 'earned') return round2(opts.earnedAmount || 0);
+  return round2(accrualEvents(policy, opts).reduce((sum, a) => sum + a.amount, 0));
+}
+
+module.exports = { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 };

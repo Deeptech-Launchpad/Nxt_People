@@ -365,6 +365,11 @@ export default function Holidays() {
                     <option value="restricted">Restricted Holiday</option>
                     <option value="working_day">Working Day Exception</option>
                   </select>
+                  {form.type === 'restricted' && (
+                    <p className="text-[13px] text-slate-400 mt-1">
+                      Optional — the office stays open and the day still counts as a working day.
+                    </p>
+                  )}
                 </div>
               </div>
 

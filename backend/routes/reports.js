@@ -3,8 +3,9 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
-const { countWorkingDays, ruleMatchesDate } = require('../utils/workingDays');
+const { countWorkingDays, ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
 const { lopDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
+const { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
 router.use(protect);
 
 // Merges loadHolidaysAndRules() across every month a [startDate, endDate]
@@ -975,8 +976,8 @@ router.get('/leave/resource-availability', authorize('admin', 'director', 'hr_ad
       const cells = days.map(day => {
         const key = `${day.getFullYear()}-${day.getMonth() + 1}-${day.getDate()}`;
         const holType = holMap.get(key);
-        if (holType && holType !== 'working_day') return 'H';
-        if (!holType && rules.some(rule => ruleMatchesDate(rule, day))) return 'WO';
+        if (holidayClosesOffice(holType)) return 'H';
+        if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, day))) return 'WO';
         const leave = (leavesByEmp.get(emp._id) || []).find(l => day >= l.start && day <= l.end);
         if (leave) return `${leave.code}${leave.isHalfDay ? '½' : ''}`;
         if (absentByEmp.has(`${emp._id}|${day.toLocaleDateString('en-CA')}`)) return 'A';
@@ -999,36 +1000,13 @@ router.get('/leave/resource-availability', authorize('admin', 'director', 'hr_ad
 // app's leave flow (see /leaves/balance). employees.sick_leave/earned_leave
 // exist as columns but no application flow ever reads/writes them for a
 // real balance, so showing them would just be fake numbers.
-// Permission accrues a flat 4 hours per calendar month — the joining month is
-// NOT pro-rated. Someone starting on the 3rd still earns the whole 4 for that
-// January; the entitlement is granted per month, not earned per day.
-// Months before joining accrue nothing at all rather than a zero row.
-//
-// The first entry is dated the joining day and the rest the 1st, so the
-// ledger's accrual rows land where the entitlement actually arrived. Shared by
-// all three balance endpoints — a monthly figure that disagreed with the
-// ledger behind it would make both untrustworthy.
-function permissionAccruals(year, upToMonth, joiningDate) {
-  const [jy, jm, jd] = joiningDate ? String(joiningDate).slice(0, 10).split('-').map(Number) : [];
-  if (jy > year) return [];
-  const startMonth = jy === year ? jm : 1;
-  const out = [];
-  for (let m = startMonth; m <= upToMonth; m++) {
-    const day = jy === year && m === jm ? jd : 1;
-    out.push({ month: m, hours: 4, date: `${year}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}` });
-  }
-  return out;
-}
-
-// The date a year's entitlement starts for this employee: their joining date
-// if they joined mid-year, otherwise January 1st. Casual is granted whole on
-// that date — it's a flat annual allocation in this system, and the reference
-// grants it in full to a mid-year joiner too.
-function entitlementStart(year, joiningDate) {
-  const iso = joiningDate ? String(joiningDate).slice(0, 10) : null;
-  return iso && Number(iso.slice(0, 4)) === year ? iso : `${year}-01-01`;
-}
-
+// How much accrues, when, and for which types is read from the Leave Policy
+// table (leave_types.accrual_mode / accrual_amount) via utils/leavePolicy —
+// see that file for the modes. Seeded so the behaviour is unchanged: casual
+// is annual, permission accrues 4 hours a month, comp-off is earned, unpaid
+// has no entitlement. Shared by all three balance endpoints below, so the
+// summary, the monthly drilldown and the ledger cannot disagree about what
+// was granted.
 router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { employeeId } = req.query;
@@ -1060,6 +1038,7 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
       ),
     ]);
 
+    const policies = await getLeavePolicies();
     const byType = new Map(leaveRes.rows.map(r => [r.leaveType, r]));
     const casualBooked = parseFloat(byType.get('casual')?.days) || 0;
     const casualAllocated = parseFloat(emp.casualAllocated) || 0;
@@ -1069,30 +1048,45 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
     const compUsed = parseFloat(compRes.rows[0].used) || 0;
     const absentCount = absentRes.rows[0].count;
 
+    // Only accruals up to today count — one that hasn't happened yet isn't
+    // spendable.
+    const upToMonth = year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12;
+    const granted = (code, opts = {}) =>
+      grantedToDate(policies.get(code), { year, upToMonth, joiningDate: emp.joiningDate, ...opts });
+
+    // Casual is the one type whose allocation is per-employee
+    // (employees.casual_leave); the policy supplies the schedule, that column
+    // the amount.
+    const casualGranted = granted('casual', { annualAmount: casualAllocated });
+    const compGranted = granted('comp_off', { earnedAmount: compEarned });
+    const unpaidGranted = granted('unpaid');
+    const absentGranted = granted('absent');
+    // A null granted means the type has no entitlement to draw down, so its
+    // Current Balance is 0 rather than a negative running total.
+    const balanceOf = (g, booked) => (g === null ? 0 : round2(Math.max(0, g - booked)));
+
     // Split by unit like Zoho's Day/Hour toggle — Day mode never shows
     // Permission (it's hour-only) and Hour mode shows nothing else, rather
     // than merging both units into one row per type.
     const dayData = [
-      // Absent has no grant or balance — it's a count of attendance-marked
-      // absences, so its Current Balance is 0 rather than the count. Leave
-      // Without Pay is the same shape: unlimited by definition, nothing to
-      // draw down.
-      { leaveType: 'absent', label: 'Absent', granted: null, booked: absentCount, balance: 0 },
-      { leaveType: 'casual', label: 'Casual Leave', granted: casualAllocated, booked: casualBooked, balance: Math.max(0, casualAllocated - casualBooked) },
-      { leaveType: 'comp_off', label: 'Compensatory Off', granted: compEarned, booked: compUsed, balance: Math.max(0, compEarned - compUsed) },
-      { leaveType: 'unpaid', label: 'Leave Without Pay', granted: null, booked: unpaidBooked, balance: 0 },
+      // Absent is a count of attendance-marked absences with no grant behind
+      // it. Leave Without Pay is the same shape: unlimited by definition,
+      // nothing to draw down.
+      { leaveType: 'absent', label: 'Absent', granted: absentGranted, booked: absentCount, balance: balanceOf(absentGranted, absentCount) },
+      { leaveType: 'casual', label: 'Casual Leave', granted: casualGranted, booked: casualBooked, balance: balanceOf(casualGranted, casualBooked) },
+      { leaveType: 'comp_off', label: 'Compensatory Off', granted: compGranted, booked: compUsed, balance: balanceOf(compGranted, compUsed) },
+      { leaveType: 'unpaid', label: 'Leave Without Pay', granted: unpaidGranted, booked: unpaidBooked, balance: balanceOf(unpaidGranted, unpaidBooked) },
     ];
-    // Permission does have a balance: 4h a month accrues, and what isn't
-    // taken stays. Only months up to today count — an accrual that hasn't
-    // happened yet isn't spendable.
-    const upToMonth = year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12;
-    const permissionGranted = permissionAccruals(year, upToMonth, emp.joiningDate).reduce((s, a) => s + a.hours, 0);
+    // Permission does have a balance: what accrues and isn't taken stays.
+    // It is not clamped at 0 — permission can be booked past the accrual and
+    // the report should show that rather than hide it.
+    const permissionGranted = granted('permission') || 0;
     const hourData = [
       {
         leaveType: 'permission', label: 'Permission',
-        granted: Math.round(permissionGranted * 100) / 100,
+        granted: permissionGranted,
         booked: permissionHours,
-        balance: Math.round((permissionGranted - permissionHours) * 100) / 100,
+        balance: round2(permissionGranted - permissionHours),
       },
     ];
     res.json({ success: true, employee: emp, year, dayData, hourData });
@@ -1100,14 +1094,13 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
 });
 
 // Month-by-month drilldown for one employee + one leave type — the modal
-// Zoho opens when you click a leave type row. Granted is only shown where
-// this app actually has a real monthly/annual grant rule: Casual is a flat
-// annual allocation (granted once, in January — this system has no monthly
-// accrual schedule for it, so spreading it out would be fabricated data);
-// Permission is a real 4h/calendar-month allowance (see leaves.js); Comp-Off
-// is granted per worked_date event, so its monthly figure is a real sum of
-// whatever was earned that month. Unpaid has no grant concept at all, so its
-// granted/balance stay null every month, same as the summary table.
+// Zoho opens when you click a leave type row. Granted follows the type's
+// configured accrual mode: an annual policy puts the whole allocation in the
+// entitlement month and 0 after (this system has no schedule to spread it
+// over, so spreading it would be fabricated data), a monthly policy repeats
+// its amount, an earned policy (Comp-Off) sums what its own worked_date
+// events credited that month, and a type with no accrual keeps
+// granted/balance null every month, same as the summary table.
 //
 // "absent" is not a leave type — it's days marked absent on the attendance
 // register, with no grant or balance behind it. It's drillable all the same,
@@ -1125,12 +1118,19 @@ router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admi
 
     const empRes = await pool.query('SELECT joining_date::text AS "joiningDate", COALESCE(casual_leave,0) AS "casualAllocated" FROM employees WHERE id = $1', [employeeId]);
     if (!empRes.rows[0]) return res.status(404).json({ success: false, message: 'Employee not found' });
+    const { joiningDate } = empRes.rows[0];
     const casualAllocated = parseFloat(empRes.rows[0].casualAllocated) || 0;
-    const startIso = entitlementStart(year, empRes.rows[0].joiningDate);
+    const startIso = entitlementStart(year, joiningDate);
     // Nothing accrues before someone joins, so the ledger opens in their
     // joining month rather than listing months they weren't employed for.
     const firstMonth = Number(startIso.slice(5, 7));
-    const permissionByMonth = new Map(permissionAccruals(year, monthsCount, empRes.rows[0].joiningDate).map(a => [a.month, a.hours]));
+
+    const policy = (await getLeavePolicies()).get(leaveType);
+    const grantedByMonth = new Map();
+    accrualEvents(policy, {
+      year, upToMonth: monthsCount, joiningDate,
+      annualAmount: leaveType === 'casual' ? casualAllocated : null,
+    }).forEach(a => grantedByMonth.set(a.month, (grantedByMonth.get(a.month) || 0) + a.amount));
 
     const bookedRes = leaveType === 'absent'
       ? await pool.query(
@@ -1147,8 +1147,10 @@ router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admi
         );
     const bookedByMonth = new Map(bookedRes.rows.map(r => [r.month, r]));
 
+    // An earned policy has no schedule — what it granted in a month is
+    // whatever its own events credited there.
     let compOffGrantedByMonth = new Map();
-    if (leaveType === 'comp_off') {
+    if (policy.accrualMode === 'earned' && leaveType === 'comp_off') {
       const g = await pool.query(
         `SELECT EXTRACT(MONTH FROM worked_date)::int AS month, COALESCE(SUM(days_earned),0) AS earned
            FROM comp_offs WHERE employee_id = $1 AND status = 'approved' AND EXTRACT(YEAR FROM worked_date) = $2
@@ -1166,9 +1168,8 @@ router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admi
       const bookedHours = bookedRow ? parseFloat(bookedRow.hours) || 0 : 0;
 
       let granted = null;
-      if (leaveType === 'casual') granted = m === firstMonth ? casualAllocated : 0;
-      else if (leaveType === 'permission') granted = permissionByMonth.get(m) || 0;
-      else if (leaveType === 'comp_off') granted = compOffGrantedByMonth.get(m) || 0;
+      if (policy.accrualMode === 'earned') granted = compOffGrantedByMonth.get(m) || 0;
+      else if (policy.accrualMode !== 'none') granted = grantedByMonth.get(m) || 0;
 
       let balance = null;
       if (granted !== null) {
@@ -1192,12 +1193,12 @@ router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admi
 // "History" view. Each row moves the running balance: an opening marker, the
 // accruals, and every booking.
 //
-// This is derived rather than stored: there is no accrual-history table. That
-// is exact rather than a reconstruction, because this system holds one flat
-// allocation per employee with no policy history to have changed — casual is
-// granted once in January, permission accrues 4 a month, comp-off accrues as
-// it's earned. If per-year or mid-year leave policies are ever introduced,
-// this derivation stops being faithful and needs a real ledger table.
+// This is derived rather than stored: there is no accrual-history table. It
+// replays the type's current accrual policy over the year. That is exact
+// rather than a reconstruction only because leave_types holds one policy with
+// no history — editing a policy rewrites the past ledger as well as the
+// future. If per-year or dated policies are ever introduced, this derivation
+// stops being faithful and needs a real ledger table.
 //
 // "absent" is included so every row on the report opens. It has no accrual,
 // so Added is empty throughout and the running figure counts absences rather
@@ -1242,16 +1243,18 @@ router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_adm
     ]);
     if (!empRes.rows[0]) return res.status(404).json({ success: false, message: 'Employee not found' });
 
+    const policy = (await getLeavePolicies()).get(leaveType);
     const events = [];
-    if (leaveType === 'casual') {
-      // Dated when the entitlement actually starts — a mid-year joiner's
-      // allocation arrives on their joining date, not the preceding January.
-      events.push({ date: entitlementStart(year, empRes.rows[0].joiningDate), type: 'Accrual', added: parseFloat(empRes.rows[0].casualAllocated) || 0 });
-    } else if (leaveType === 'permission') {
-      permissionAccruals(year, upToMonth, empRes.rows[0].joiningDate)
-        .forEach(a => events.push({ date: a.date, type: 'Accrual', added: a.hours }));
-    } else if (leaveType === 'comp_off') {
+    if (policy.accrualMode === 'earned') {
       compRes.rows.forEach(r => events.push({ date: r.date, type: 'Accrual', added: parseFloat(r.earned) || 0 }));
+    } else {
+      // Scheduled accruals, dated where the entitlement actually arrived — a
+      // mid-year joiner's annual allocation lands on their joining date, not
+      // the preceding January.
+      accrualEvents(policy, {
+        year, upToMonth, joiningDate: empRes.rows[0].joiningDate,
+        annualAmount: leaveType === 'casual' ? parseFloat(empRes.rows[0].casualAllocated) || 0 : null,
+      }).forEach(a => events.push({ date: a.date, type: 'Accrual', added: a.amount }));
     }
     takenRes.rows.forEach(r => events.push({
       date: r.date, type: leaveType === 'absent' ? 'Absent' : 'Leave Taken',
@@ -1495,8 +1498,8 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
         for (const d = new Date(effStart); d <= effEnd; d.setDate(d.getDate() + 1)) {
           const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
           const holType = holMap.get(key);
-          if (holType && holType !== 'working_day') holidayCount++;
-          else if (!holType && rules.some(rule => ruleMatchesDate(rule, d))) weekendCount++;
+          if (holidayClosesOffice(holType)) holidayCount++;
+          else if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, d))) weekendCount++;
         }
         // eslint-disable-next-line no-await-in-loop
         const leaveRes = await pool.query(
@@ -1583,8 +1586,8 @@ function shiftMinutes(t) {
 function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, isFuture }) {
   if (isFuture) return { code: '-', kind: 'future' };
   const holType = holMap.get(`${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`);
-  if (holType && holType !== 'working_day') return { code: 'H', kind: 'holiday' };
-  if (!holType && rules.some(rule => ruleMatchesDate(rule, date))) return { code: 'W', kind: 'weekend' };
+  if (holidayClosesOffice(holType)) return { code: 'H', kind: 'holiday' };
+  if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, date))) return { code: 'W', kind: 'weekend' };
   if (leave) {
     const code = ATT_LEAVE_CODE[leave.leaveType] || 'L';
     return {

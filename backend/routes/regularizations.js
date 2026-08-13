@@ -197,13 +197,14 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
       if (result.allApproved) {
         // Final approval — patch attendance + recalculate working_hours, status, late_minutes.
         const [settingsRes, shiftRes] = await Promise.all([
-          client.query('SELECT half_day_hours, late_after_minutes FROM settings LIMIT 1'),
+          client.query('SELECT half_day_hours, full_day_hours, late_after_minutes FROM settings LIMIT 1'),
           client.query(
             'SELECT s.start_time FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.id = $1',
             [reg.employee_id]
           ),
         ]);
         const halfDayHours = parseFloat(settingsRes.rows[0]?.half_day_hours) || 4;
+        const fullDayHours = parseFloat(settingsRes.rows[0]?.full_day_hours) || 7.5;
         const lateAfterMins = parseInt(settingsRes.rows[0]?.late_after_minutes, 10) || 570;
         const shiftStartRaw = shiftRes.rows[0]?.start_time || null;
         const shiftStartMins = shiftStartRaw
@@ -227,7 +228,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
               workingHours = parseFloat((diffMs / 3600000).toFixed(8));
               if (workingHours < halfDayHours) {
                 newStatus = 'absent';
-              } else if (workingHours < 7.5) {
+              } else if (workingHours < fullDayHours) {
                 newStatus = 'half-day';
               } else {
                 newStatus = (minsLate > 15) ? 'late' : 'present';

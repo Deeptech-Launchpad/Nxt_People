@@ -234,12 +234,12 @@ function getCurrentWeek(workingDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], holid
         return hStr === dateStr;
       });
 
+      // A restricted holiday is optional rather than a closure, so it leaves
+      // the day as the weekend rules found it.
+      const closes = !!exception && !['working_day', 'restricted'].includes(exception.type);
       if (exception) {
-        if (exception.type === 'working_day') {
-          isWeekend = false;
-        } else {
-          isWeekend = true; // Treat holidays as weekends for absent-mark prevention.
-        }
+        if (exception.type === 'working_day') isWeekend = false;
+        else if (closes) isWeekend = true; // Treat holidays as weekends for absent-mark prevention.
       }
 
       week.push({
@@ -247,8 +247,8 @@ function getCurrentWeek(workingDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], holid
         day: dayStr,
         dateNum: day,
         isWeekend,
-        isHoliday: !!exception && exception.type !== 'working_day',
-        holidayName: (exception && exception.type !== 'working_day') ? exception.name : null,
+        isHoliday: closes,
+        holidayName: closes ? exception.name : null,
         dateObj: d
       });
     }

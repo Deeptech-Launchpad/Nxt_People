@@ -312,7 +312,9 @@ export default function MyAttendance() {
     const exception = holidays.find(h => isoDate(new Date(h.date)) === ymd);
     if (exception) {
       if (exception.type === 'working_day') return false;       // override → working day
-      return true;                                              // any other holiday → non-working
+      // A restricted holiday is optional, so it doesn't close the day for
+      // anyone who hasn't taken it — fall through to the weekend rules.
+      if (exception.type !== 'restricted') return true;         // closure
     }
     return isWeekendByRule(date);
   };

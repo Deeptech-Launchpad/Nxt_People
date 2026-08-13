@@ -19,7 +19,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { logAudit } = require('../utils/audit');
 const { sendMail } = require('../utils/mailer');
-const { ruleMatchesDate } = require('../utils/workingDays');
+const { ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
 const {
   resolveComplianceSettings, resolveSalaryStructure,
   computePF, computeEmployerPF, computeESIEmployee, computeEmployerESI, computePT,
@@ -284,7 +284,7 @@ function workingDaysInRange(start, end, holMap, rules) {
     const holType = holMap.get(key);
     if (holType === 'working_day') {
       working++;
-    } else if (!holType) {
+    } else if (!holidayClosesOffice(holType)) {
       const isWeekend = rules.some(rule => ruleMatchesDate(rule, cursor));
       if (!isWeekend) working++;
     }
@@ -307,7 +307,7 @@ function listWorkingDays(start, end, holMap, rules) {
     const holType = holMap.get(key);
     if (holType === 'working_day') {
       days.push(new Date(cursor));
-    } else if (!holType) {
+    } else if (!holidayClosesOffice(holType)) {
       const isWeekend = rules.some(rule => ruleMatchesDate(rule, cursor));
       if (!isWeekend) days.push(new Date(cursor));
     }

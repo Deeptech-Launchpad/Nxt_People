@@ -15,6 +15,8 @@ const SELECT_COLS = `
   working_days as "workingDays",
   late_after_minutes as "lateAfterMinutes",
   half_day_hours as "halfDayHours",
+  full_day_hours as "fullDayHours",
+  comp_off_expiry_months as "compOffExpiryMonths",
   allow_remote_check_in as "allowRemoteCheckIn",
   leave_policy as "leavePolicy",
   leave_accrual_enabled as "leaveAccrualEnabled",
@@ -45,7 +47,8 @@ router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => 
     const {
       companyName, companyEmail, timezone,
       workStartTime, workEndTime, workingDays,
-      lateAfterMinutes, halfDayHours, allowRemoteCheckIn,
+      lateAfterMinutes, halfDayHours, fullDayHours, allowRemoteCheckIn,
+      compOffExpiryMonths,
       leavePolicy,
       leaveAccrualEnabled, casualAccrualPerMonth, sickAccrualPerMonth, earnedAccrualPerMonth,
       officeLatitude, officeLongitude, gpsRadiusMeters, requireGps,
@@ -59,12 +62,31 @@ router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => 
       ? mfaRequiredRoles.filter(r => typeof r === 'string' && ALLOWED_ROLES.has(r))
       : undefined;
 
-    let result = await pool.query('SELECT id FROM settings LIMIT 1');
+    let result = await pool.query('SELECT id, half_day_hours, full_day_hours FROM settings LIMIT 1');
     if (result.rows.length === 0) {
       await pool.query('INSERT INTO settings DEFAULT VALUES');
-      result = await pool.query('SELECT id FROM settings LIMIT 1');
+      result = await pool.query('SELECT id, half_day_hours, full_day_hours FROM settings LIMIT 1');
     }
     const id = result.rows[0].id;
+
+    // The two day-length thresholds are one rule between them: below half is
+    // absent, below full is half-day, at or above full is present. Crossing
+    // them over would make 'half-day' unreachable, so it is rejected here
+    // rather than surfacing as a raw constraint violation.
+    const effHalf = halfDayHours === undefined ? parseFloat(result.rows[0].half_day_hours) : Number(halfDayHours);
+    const effFull = fullDayHours === undefined ? parseFloat(result.rows[0].full_day_hours) : Number(fullDayHours);
+    if (Number.isNaN(effHalf) || Number.isNaN(effFull) || effHalf < 0) {
+      return res.status(400).json({ success: false, message: 'Day-length thresholds must be numbers' });
+    }
+    if (effFull < effHalf) {
+      return res.status(400).json({ success: false, message: 'Full day hours cannot be less than half day hours' });
+    }
+    if (compOffExpiryMonths !== undefined) {
+      const m = Number(compOffExpiryMonths);
+      if (!Number.isInteger(m) || m < 1 || m > 60) {
+        return res.status(400).json({ success: false, message: 'Comp-off validity must be a whole number of months between 1 and 60' });
+      }
+    }
 
     const up = await pool.query(`
       UPDATE settings SET
@@ -88,6 +110,8 @@ router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => 
         require_gps = COALESCE($18, require_gps),
         require_manager_approval_before_lock = COALESCE($19, require_manager_approval_before_lock),
         mfa_required_roles = COALESCE($20, mfa_required_roles),
+        full_day_hours = COALESCE($22, full_day_hours),
+        comp_off_expiry_months = COALESCE($23, comp_off_expiry_months),
         updated_at = NOW()
       WHERE id = $21
       RETURNING ${SELECT_COLS}
@@ -101,7 +125,9 @@ router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => 
       officeLatitude ?? null, officeLongitude ?? null, gpsRadiusMeters, requireGps,
       requireManagerApprovalBeforeLock === undefined ? null : !!requireManagerApprovalBeforeLock,
       safeMfaRoles ? JSON.stringify(safeMfaRoles) : null,
-      id
+      id,
+      fullDayHours === undefined ? null : fullDayHours,
+      compOffExpiryMonths === undefined ? null : compOffExpiryMonths,
     ]);
 
     await logAudit(req, {

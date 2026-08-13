@@ -77,6 +77,9 @@ const Diversity          = lazy(() => import('./pages/reports/Diversity'));
 const ExperienceExit     = lazy(() => import('./pages/reports/ExperienceExit'));
 const MusterRoll         = lazy(() => import('./pages/reports/MusterRoll'));
 const LeavePolicy        = lazy(() => import('./pages/settings/LeavePolicy'));
+const LeaveTrackerConfiguration = lazy(() => import('./pages/leavetracker/Configuration'));
+const CompOffPolicy      = lazy(() => import('./pages/settings/CompOffPolicy'));
+const PayPeriods         = lazy(() => import('./pages/settings/PayPeriods'));
 const AttendanceDailyStatus = lazy(() => import('./pages/reports/AttendanceDailyStatus'));
 const EarlyLateCheckInOut   = lazy(() => import('./pages/reports/EarlyLateCheckInOut'));
 const PresentAbsentStatus   = lazy(() => import('./pages/reports/PresentAbsentStatus'));
@@ -218,6 +221,7 @@ const AppRoutes = () => {
           <Route path="leave-tracker/all"        element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerAdmin/></ProtectedRoute>}/>
           <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
           <Route path="leave-tracker/weekends"   element={<ProtectedRoute roles={['admin','director','hr_admin']}><Weekends/></ProtectedRoute>}/>
+          <Route path="leave-tracker/configuration" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerConfiguration/></ProtectedRoute>}/>
 
           {/* ── Performance ──────────────────────────────────────────── */}
           <Route path="performance/goals"  element={<PerformanceGoals/>}/>
@@ -312,6 +316,8 @@ const AppRoutes = () => {
           <Route path="my-apps"          element={<MyApps/>}/>
           <Route path="settings"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><Settings/></ProtectedRoute>}/>
           <Route path="settings/leave-policy" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeavePolicy/></ProtectedRoute>}/>
+          <Route path="settings/comp-off-policy" element={<ProtectedRoute roles={['admin','director','hr_admin']}><CompOffPolicy/></ProtectedRoute>}/>
+          <Route path="settings/pay-periods" element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayPeriods/></ProtectedRoute>}/>
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace/>}/>

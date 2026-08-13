@@ -47,8 +47,10 @@ export const WeekendRulesProvider = ({ children }) => {
   /**
    * Final weekend decision, matching the backend `isNonWorkingDay()` precedence:
    *   1. Holiday row with type='working_day' → forced WORKING DAY
-   *   2. Any other holiday row → non-working
-   *   3. Otherwise → consult the weekend rules
+   *   2. A holiday row that closes the office → non-working
+   *   3. Otherwise (no row, or an optional 'restricted' one) → consult the
+   *      weekend rules. A restricted holiday is offered, not imposed, so it
+   *      leaves the day as it was for anyone who hasn't taken it.
    *
    * Falls back to the legacy hardcoded rule during the initial fetch so UI
    * doesn't misclassify days while the API is in flight.
@@ -60,7 +62,7 @@ export const WeekendRulesProvider = ({ children }) => {
       const exception = holidays.find(h => h.date && isoDate(new Date(h.date)) === ymd);
       if (exception) {
         if (exception.type === 'working_day') return false; // override wins
-        return true;                                        // any other holiday → non-working
+        if (exception.type !== 'restricted') return true;   // closure
       }
       const active = rules.filter(r => r.isActive !== false);
       return active.length > 0

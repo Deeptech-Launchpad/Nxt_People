@@ -14,6 +14,23 @@ const pool = require('../db');
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
+// Not every holidays row closes the office.
+//   working_day  a positive override — a working day even if a weekend rule
+//                would otherwise match it
+//   restricted   an optional holiday: offered to employees to take if they
+//                want it, not imposed on everyone. The Holidays screen has
+//                always offered this type, but every consumer read "any type
+//                other than working_day" as a company-wide closure, which
+//                made choosing it silently shut the office. The day stays an
+//                ordinary working day for anyone who hasn't taken it.
+// Anything else (company, national, …) is a closure.
+const NON_CLOSING_HOLIDAY_TYPES = new Set(['working_day', 'restricted']);
+
+/** True when a holidays row of this type closes the office for everyone. */
+function holidayClosesOffice(type) {
+  return !!type && !NON_CLOSING_HOLIDAY_TYPES.has(type);
+}
+
 function atMidnight(d) {
   const out = new Date(d);
   out.setHours(0, 0, 0, 0);
@@ -68,12 +85,12 @@ function ruleMatchesDate(rule, date) {
 async function isNonWorkingDay(date = new Date()) {
   const ymd = atMidnight(date).toISOString().slice(0, 10);
   try {
-    // Holiday override beats everything else.
+    // A closure or an explicit working-day override beats everything else.
     const h = await pool.query(`SELECT type FROM holidays WHERE date = $1::date`, [ymd]);
-    if (h.rows.length > 0) {
-      return h.rows[0].type !== 'working_day';   // explicit override → working day
-    }
-    // No holiday row — fall back to the active weekend rules.
+    const holType = h.rows[0]?.type;
+    if (holidayClosesOffice(holType)) return true;
+    if (holType === 'working_day') return false;
+    // No holiday row, or an optional one — fall back to the weekend rules.
     const r = await pool.query(
       `SELECT days_of_week, weeks_of_month, interval_weeks, start_date, end_type, end_date, end_count, is_active
        FROM weekend_rules WHERE is_active = TRUE`
@@ -136,8 +153,10 @@ async function countWorkingDays(startDate, endDate) {
     const ymd = cur.toISOString().slice(0, 10);
     const holType = holidayMap.get(ymd);
     let isWorkingDay;
-    if (holType !== undefined) {
-      isWorkingDay = holType === 'working_day';
+    if (holidayClosesOffice(holType)) {
+      isWorkingDay = false;
+    } else if (holType === 'working_day') {
+      isWorkingDay = true;
     } else {
       const isWeekend = rules.some(rule => ruleMatchesDate(rule, cur));
       isWorkingDay = !isWeekend;
@@ -148,4 +167,4 @@ async function countWorkingDays(startDate, endDate) {
   return count;
 }
 
-module.exports = { isNonWorkingDay, ruleMatchesDate, countWorkingDays };
+module.exports = { isNonWorkingDay, ruleMatchesDate, countWorkingDays, holidayClosesOffice };

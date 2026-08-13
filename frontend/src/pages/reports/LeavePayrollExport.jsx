@@ -12,6 +12,7 @@ import DirectReportsToggle from './DirectReportsToggle';
 import UnitToggle from './UnitToggle';
 import DateChip from './DateChip';
 import PeriodPresetChip from './PeriodPresetChip';
+import PayPeriodChip from './PayPeriodChip';
 import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
 
@@ -64,6 +65,14 @@ const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 export default function LeavePayrollExport() {
   const [startDate, setStartDate] = useState(monthStartCA());
   const [endDate, setEndDate] = useState(todayCA());
+  const [payPeriod, setPayPeriod] = useState(null);
+
+  // Picking a pay period drives the range from its dates; clearing it hands
+  // the From/To chips back.
+  const selectPayPeriod = (p) => {
+    setPayPeriod(p);
+    if (p) { setStartDate(p.startDate); setEndDate(p.endDate); }
+  };
   const [reportType, setReportType] = useState('default');
   const [unit, setUnit] = useState('day');
   const [loading, setLoading] = useState(true);
@@ -96,6 +105,7 @@ export default function LeavePayrollExport() {
   const lopLabel = unitLabel(unit, 'Loss of Pay'), paidLabel = unitLabel(unit, 'Paid');
 
   const reset = () => {
+    setPayPeriod(null);
     setStartDate(monthStartCA()); setEndDate(todayCA()); setReportType('default'); setEmployee(null);
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
@@ -109,9 +119,10 @@ export default function LeavePayrollExport() {
 
   const filters = filtersOpen ? (
     <>
-      <PeriodPresetChip onSelect={({ start, end }) => { setStartDate(start); setEndDate(end); }} />
-      <DateChip label="From Date" value={startDate} onChange={setStartDate} />
-      <DateChip label="To Date" value={endDate} onChange={setEndDate} />
+      <PayPeriodChip value={payPeriod} onChange={selectPayPeriod} />
+      <PeriodPresetChip onSelect={({ start, end }) => { setPayPeriod(null); setStartDate(start); setEndDate(end); }} />
+      <DateChip label="From Date" value={startDate} onChange={setStartDate} disabled={!!payPeriod} />
+      <DateChip label="To Date" value={endDate} onChange={setEndDate} disabled={!!payPeriod} />
       <ReportTypeDropdown value={reportType} onChange={setReportType} />
       <EmployeeFilter value={employee} onChange={setEmployee} />
       <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />

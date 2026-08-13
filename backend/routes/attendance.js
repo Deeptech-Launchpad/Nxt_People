@@ -280,8 +280,9 @@ router.post('/checkout', async (req, res) => {
     // honours the same GPS rule as check-in. Previously this route blocked
     // every check-out when GPS was missing, even though check-in defaults
     // to allowing GPS-less attendance unless settings.require_gps = TRUE.
-    const settingsRes = await pool.query('SELECT half_day_hours FROM settings LIMIT 1');
-    const halfDayHours = settingsRes.rows[0]?.half_day_hours || 4;
+    const settingsRes = await pool.query('SELECT half_day_hours, full_day_hours FROM settings LIMIT 1');
+    const halfDayHours = parseFloat(settingsRes.rows[0]?.half_day_hours) || 4;
+    const fullDayHours = parseFloat(settingsRes.rows[0]?.full_day_hours) || 7.5;
 
     const now = new Date();
     const location = req.body.location ||
@@ -314,7 +315,7 @@ router.post('/checkout', async (req, res) => {
     if (isFinite(workingHours) && record.status !== 'on_duty') {
       if (workingHours < halfDayHours) {
         status = 'absent';
-      } else if (workingHours < 7.5) {
+      } else if (workingHours < fullDayHours) {
         status = 'half-day';
       } else {
         status = record.late_minutes > 0 ? 'late' : 'present';

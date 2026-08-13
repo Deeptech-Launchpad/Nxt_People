@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Save, Building2, Clock, Calendar, Shield, MapPin, RefreshCw, TrendingUp, Repeat, Wallet } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -11,7 +12,15 @@ export default function Settings() {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('company');
+  // ?tab= lets the Leave Tracker Configuration hub land on the right section
+  // instead of dropping the user on Company and leaving them to hunt.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'company');
+
+  const selectTab = (id) => {
+    setActiveTab(id);
+    setSearchParams(id === 'company' ? {} : { tab: id }, { replace: true });
+  };
 
   useEffect(() => {
     api.get('/settings').then(r => setSettings(r.data.data)).catch((err) => {
@@ -56,7 +65,7 @@ export default function Settings() {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="flex border-b border-slate-100">
           {tabs.map(t => (
-            <button key={t.id} onClick={() => setActiveTab(t.id)}
+            <button key={t.id} onClick={() => selectTab(t.id)}
               className={`flex items-center gap-2 px-6 py-4 text-base font-medium border-b-2 transition-colors ${activeTab===t.id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
               <t.icon size={15}/> {t.label}
             </button>
@@ -126,8 +135,14 @@ export default function Settings() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1.5">Half Day if less than (hours)</label>
-                    <input type="number" value={settings?.halfDayHours||4} onChange={e=>{ const v = parseFloat(e.target.value); setSettings({...settings,halfDayHours: Number.isNaN(v) ? settings.halfDayHours : v}); }} min={1} max={8} step={0.5}
+                    <input type="number" value={settings?.halfDayHours??4} onChange={e=>{ const v = parseFloat(e.target.value); setSettings({...settings,halfDayHours: Number.isNaN(v) ? settings.halfDayHours : v}); }} min={1} max={8} step={0.5}
                       className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Full Day at least (hours)</label>
+                    <input type="number" value={settings?.fullDayHours??7.5} onChange={e=>{ const v = parseFloat(e.target.value); setSettings({...settings,fullDayHours: Number.isNaN(v) ? settings.fullDayHours : v}); }} min={1} max={12} step={0.5}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                    <p className="text-sm text-slate-400 mt-1">Below this counts as a half day; below the half-day figure counts as absent.</p>
                   </div>
                   <label className="flex items-center gap-3 cursor-pointer">
                     <input type="checkbox" checked={settings?.allowRemoteCheckIn||false} onChange={e=>setSettings({...settings,allowRemoteCheckIn:e.target.checked})} className="w-4 h-4 rounded accent-brand-600"/>

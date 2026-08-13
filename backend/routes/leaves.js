@@ -9,6 +9,7 @@ const { createLevels, getLevels, canUserAct, applyApproval, applyApproveAll, app
 const { sendMail, sendLeaveApprovalEmail, sendLeaveStatusEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const { countWorkingDays } = require('../utils/workingDays');
+const { getLeavePolicies } = require('../utils/leavePolicy');
 const logger = require('../logger');
 
 router.use(protect);
@@ -189,13 +190,25 @@ router.post('/', [
       return res.status(400).json({ success: false, message: 'Cannot apply for leave in the past' });
     }
 
-    // ── Permission = hourly leave (4h per calendar month, NO carry-forward) ──
+    // ── Permission = hourly leave, capped per calendar month, NO carry-forward ──
     // Captured as a single date + start/end time. Day-based balance machinery
     // below is skipped for permission; the cap is enforced per calendar month.
+    //
+    // The cap is the Leave Policy accrual for the type (Configuration → Leave
+    // Policy), not a literal — the same figure the balance reports grant, so
+    // what an employee may apply for and what their balance says they have
+    // cannot disagree.
     const isPermission = leaveType === 'permission';
     const endDateVal = isPermission ? startDate : endDate;   // permission is single-day
-    let permStartTime = null, permEndTime = null, permHours = 0;
+    let permStartTime = null, permEndTime = null, permHours = 0, permMonthlyCap = 0;
     if (isPermission) {
+      const policy = (await getLeavePolicies()).get('permission');
+      // A scheduled policy sets the allowance; 'earned' and 'none' have no
+      // allowance to spend, so there is nothing to apply against.
+      permMonthlyCap = ['monthly', 'annual'].includes(policy.accrualMode) ? policy.accrualAmount : 0;
+      if (permMonthlyCap <= 0) {
+        return res.status(400).json({ success: false, message: 'Permission has no allowance configured. Ask HR to set one under Leave Policy.' });
+      }
       permStartTime = req.body.startTime;
       permEndTime   = req.body.endTime;
       if (!permStartTime || !permEndTime) {
@@ -207,11 +220,11 @@ router.post('/', [
         return res.status(400).json({ success: false, message: 'Permission end time must be after the start time.' });
       }
       permHours = Math.round((diffMin / 60) * 100) / 100;
-      if (permHours > 4) {
-        return res.status(400).json({ success: false, message: 'A single permission cannot exceed 4 hours.' });
+      if (permHours > permMonthlyCap) {
+        return res.status(400).json({ success: false, message: `A single permission cannot exceed ${permMonthlyCap} hours.` });
       }
       // Pending + approved permission hours already used in the SAME calendar
-      // month as the requested date. No carry-forward → each month starts at 4h.
+      // month as the requested date. No carry-forward → each month starts full.
       const usedRes = await pool.query(
         `SELECT COALESCE(SUM(hours), 0) AS used FROM leaves
           WHERE employee_id = $1 AND leave_type = 'permission'
@@ -220,9 +233,9 @@ router.post('/', [
         [req.user._id, startDate]
       );
       const usedHrs = parseFloat(usedRes.rows[0].used) || 0;
-      if (usedHrs + permHours > 4) {
-        const left = Math.max(0, 4 - usedHrs);
-        return res.status(400).json({ success: false, message: `Monthly permission limit is 4 hours. You have ${left.toFixed(2)}h remaining this month.` });
+      if (usedHrs + permHours > permMonthlyCap) {
+        const left = Math.max(0, permMonthlyCap - usedHrs);
+        return res.status(400).json({ success: false, message: `Monthly permission limit is ${permMonthlyCap} hours. You have ${left.toFixed(2)}h remaining this month.` });
       }
     }
 
@@ -293,10 +306,10 @@ router.post('/', [
           [req.user._id, startDate]
         );
         const usedHrs = parseFloat(recheck.rows[0].used) || 0;
-        if (usedHrs + permHours > 4) {
+        if (usedHrs + permHours > permMonthlyCap) {
           await client.query('ROLLBACK');
-          const left = Math.max(0, 4 - usedHrs);
-          return res.status(400).json({ success: false, message: `Monthly permission limit is 4 hours. You have ${left.toFixed(2)}h remaining this month.` });
+          const left = Math.max(0, permMonthlyCap - usedHrs);
+          return res.status(400).json({ success: false, message: `Monthly permission limit is ${permMonthlyCap} hours. You have ${left.toFixed(2)}h remaining this month.` });
         }
       } else {
         const recheck = await client.query(
@@ -878,8 +891,11 @@ router.get('/balance', async (req, res) => {
     const booked = {};
     bookedRes.rows.forEach(r => { booked[r.leave_type] = parseFloat(r.used); });
 
-    // Permission is hourly: 4h per CURRENT calendar month, no carry-forward.
-    // Used = pending + approved permission hours dated in the current month.
+    // Permission is hourly and capped per CURRENT calendar month with no
+    // carry-forward, at whatever Leave Policy sets as its accrual.
+    // Used = approved permission hours dated in the current month.
+    const permPolicy = (await getLeavePolicies()).get('permission');
+    const permMonthly = ['monthly', 'annual'].includes(permPolicy.accrualMode) ? permPolicy.accrualAmount : 0;
     const permRes = await pool.query(
       `SELECT COALESCE(SUM(hours), 0) AS used FROM leaves
         WHERE employee_id = $1 AND leave_type = 'permission'
@@ -890,10 +906,10 @@ router.get('/balance', async (req, res) => {
     // Round to 2 dp so 4 - 1.03 shows 2.97, not 2.9699999999999998 (JS float).
     const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
     const permUsed = round2(parseFloat(permRes.rows[0].used) || 0);
-    const permAvailable = round2(Math.max(0, 4 - permUsed));
+    const permAvailable = round2(Math.max(0, permMonthly - permUsed));
 
     // Comp-Off is an earned-credit system in its own table: available =
-    // approved credits still within their 3-month validity, minus any used.
+    // approved credits still within their validity window, minus any used.
     const coRes = await pool.query(
       `SELECT COALESCE(SUM(days_earned - days_used), 0) AS avail
          FROM comp_offs
@@ -936,8 +952,9 @@ router.get('/balance', async (req, res) => {
       },
       {
         code: 'permission', name: 'Permission', icon: '🔑', color: '#8b5cf6',
-        // Hours, not days: this month's remaining out of a 4h monthly allowance.
-        unit: 'hours', monthlyLimit: 4,
+        // Hours, not days: this month's remaining out of the configured
+        // monthly allowance.
+        unit: 'hours', monthlyLimit: permMonthly,
         available: permAvailable,
         booked: permUsed,
       },

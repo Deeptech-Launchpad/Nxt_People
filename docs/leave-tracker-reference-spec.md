@@ -66,6 +66,15 @@ this system stores a single flat allocation per employee
 (`employees.casual_leave` and siblings) with no policy history, so the
 derivation is exact for our model rather than a reconstruction.
 
+These rules are no longer written into the report code. `leave_types` carries
+`accrual_mode` (annual / monthly / earned / none) and `accrual_amount`, edited
+on Configuration → Leave Policy, and `utils/leavePolicy.js` is the single place
+that reads them for all three endpoints. Casual keeps `employees.casual_leave`
+as its amount — that column is the per-employee allocation and the policy only
+supplies the schedule. `leaves.js` reads the same policy for the permission
+monthly cap, so what an employee may apply for and what their balance says
+they have cannot disagree.
+
 Accrual differs by type, and the reference shows both shapes:
 - **Casual Leave** — whole annual allocation granted once, then `Granted` is
   blank for later months. Granted **on the joining date** for a mid-year
@@ -124,11 +133,24 @@ Loss of pay, Leave encashment, and Leave data for payroll all carry a
 `Pay Period : ANXT Payroll` chip (a searchable dropdown) and a **Regenerate
 Report** button, instead of a date-range navigator.
 
-**DECIDED — defer.** The pay-period entity is to be built later as part of the
-payroll module. Do not stub a chip for it in the meantime; these three pages
-keep their date-range navigator until that entity exists.
+**DECISION REVERSED — built.** The earlier call was to defer the pay-period
+entity until the payroll module needed it. That was overruled: the entity is
+now its own thing (`pay_periods` — name, date range, `process_encashment`,
+active flag) under Configuration → Pay Period, rather than something payroll
+owns.
 
-Status: **DEFERRED**.
+Two divergences from the reference, both deliberate:
+- The chip **adds to** the date-range navigator instead of replacing it. Its
+  first option is `Custom range`, which hands the From/To chips back. A range
+  you can't get out of is a worse filter than one you can.
+- Nothing is selected by default and the chip hides itself entirely when no
+  period exists, so the three reports behave exactly as before until someone
+  creates one and picks it.
+
+**Regenerate Report** is still not wired to the entity — it re-runs the report,
+which is what it already did.
+
+Status: **DONE**.
 
 ---
 
@@ -153,7 +175,11 @@ Shows an illustration plus *"Enable 'Process leave encashment' in Pay Period
 settings to view Leave encashment details"* and a **Configuration** button.
 The filter row and `⋯` remain available above it.
 
-Status: **TODO** — worth copying; a real empty state beats a blank table.
+Status: **DONE** — shown when the selected pay period has `process_encashment`
+off, with the Configuration button routing to Configuration → Pay Period. It
+is not shown when no period is selected: with no period picked there is no
+flag to be off, and claiming otherwise would be a lie about why the table is
+empty. An icon stands in for the reference's illustration.
 
 ---
 
@@ -175,7 +201,46 @@ Status: **CLOSED — no work needed.**
 
 ---
 
-## 8. Confirmed already-correct
+## 8. Configuration — the seven items
+
+The reference gathers the Leave Tracker's rules under a Configuration section.
+Ours lives at `/leave-tracker/configuration`; before it existed the Leave
+Policy screen had a route and nothing anywhere linked to it.
+
+**DECIDED — hub, not duplicate screens.** Work Calendar, Holidays and
+Compensatory Off already had working screens elsewhere in the app. The hub
+points at those and each item's work is to expose the rules the code still
+hardcoded, in the same spirit as Leave Policy. Rows are only listed once the
+thing they open exists.
+
+| # | Item | Status | What it turned out to be |
+|---|---|---|---|
+| 1 | Leave Policy | **DONE** | `accrual_mode` / `accrual_amount`, now read by the balance endpoints and the permission cap in `leaves.js` |
+| 2 | Work Calendar | **DONE** | `settings.full_day_hours` — attendance and regularizations both hardcoded a 7.5-hour full day while the half-day figure beside it was configurable |
+| 3 | Holidays | **PARTIAL** | The Holidays screen offered **Restricted Holiday** but every consumer treated any type other than `working_day` as a company-wide closure, so picking it silently shut the office. Restricted now leaves the day as the weekend rules found it |
+| 4 | Compensatory Off | **DONE** | Eligibility now reads the work calendar instead of assuming Sat/Sun, and `settings.comp_off_expiry_months` replaces the hardcoded 3 |
+| 5 | Reports | **BLOCKED** | see below |
+| 6 | Pay Period | **DONE** | see §4 |
+| 7 | Leave Request | **DONE** | the permission monthly and per-request caps now come from the Leave Policy accrual rather than a literal 4 |
+
+**Item 3 remainder.** A restricted holiday is now correctly optional, but there
+is no way for an employee to opt into one and no per-year cap on how many they
+may take. That is a feature (a table, an apply flow, and a limit), not a
+hardcoded rule waiting to be exposed, so it was not built under this item. The
+cap setting was deliberately *not* added in the meantime: an unenforced limit
+on a settings screen is the dead-entry problem from §1.
+
+**Item 5 is blocked on a decision.** The reference's Configuration → Reports is
+per-report Permissions, and §1 already records the decision not to implement
+per-report ACLs because none exists in this app. Building it means building an
+authorization system, not wiring a knob. Either that decision stands and item 5
+is closed as out of scope, or it is reversed the way Pay Period was — but it
+should be an explicit call, not something smuggled in under a configuration
+screen.
+
+---
+
+## 9. Confirmed already-correct
 
 - Export dialog: illustration, radio format group defaulting to **XLS**,
   `Include additional employee fields` with Reporting To / Department /
