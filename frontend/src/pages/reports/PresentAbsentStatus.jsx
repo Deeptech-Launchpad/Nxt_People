@@ -9,7 +9,7 @@ import StandardFilterRows from './StandardFilterRows';
 import PeriodFilter from './PeriodFilter';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
-import { CODE_STYLE, LEGEND, codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
+import { LEGEND, codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
 
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
@@ -206,17 +206,23 @@ export default function PresentAbsentStatus() {
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
         <>
-        <div className="overflow-x-auto">
+        {/* The grid scrolls inside a bounded box rather than growing the page.
+            With 150+ rows the horizontal scrollbar and the legend sat at the
+            end of the table, which meant both disappeared the moment you
+            scrolled — exactly when you need them. Bounding the height keeps
+            the scrollbar, the legend and the column headings all on screen.
+            The panel loses ~130px more when the filter panel is open. */}
+        <div className={`overflow-auto ${filtersOpen ? 'max-h-[calc(100vh-430px)]' : 'max-h-[calc(100vh-300px)]'}`}>
           <table className="text-[13px] border-collapse">
-            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600 sticky top-0 z-20">
               <tr>
-                <th className="text-left px-3 py-2.5 sticky left-0 bg-slate-50 z-10 whitespace-nowrap border-r border-slate-200">Employee</th>
+                <th className="text-left px-3 py-2.5 sticky left-0 bg-slate-50 z-30 whitespace-nowrap border-r border-slate-200">Employee</th>
                 {data.dayLabels.map((d, i) => {
                   const dd = new Date(d);
                   return (
                     // "Aug 01" over "Sat" — month first, as in the reference.
                     <th key={d} style={weekendCols.has(i) ? WEEKEND_HATCH : undefined}
-                      className={`px-2 py-2.5 text-center leading-tight border-r border-slate-200 whitespace-nowrap ${unit === 'hour' ? 'min-w-[92px]' : 'w-14'}`}>
+                      className={`px-2 py-2.5 text-center leading-tight border-r border-slate-200 whitespace-nowrap bg-slate-50 ${unit === 'hour' ? 'min-w-[92px]' : 'w-14'}`}>
                       <div>{dd.toLocaleDateString('en-US', { month: 'short' })} {String(dd.getDate()).padStart(2, '0')}</div>
                       <div className="text-slate-400 font-normal normal-case">{dd.toLocaleDateString('en-US', { weekday: 'short' })}</div>
                     </th>
@@ -257,13 +263,25 @@ export default function PresentAbsentStatus() {
           </table>
         </div>
         {/* The legend belongs under the grid it explains, not above the filter
-            panel where it was competing with the controls for attention. */}
-        <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap px-4 py-3 border-t border-slate-200 bg-slate-50 text-[12px] text-slate-500">
+            panel where it was competing with the controls. Each code gets a
+            coloured bar in its own cell colour, so a key here can never
+            disagree with the pill it explains, and the trailing "…" opens the
+            full status list — which was previously only reachable from inside
+            a filter panel that starts closed. */}
+        <div className="flex items-center gap-x-1 gap-y-1.5 flex-wrap px-4 py-3 border-t border-slate-200 bg-white text-[12.5px] text-slate-600">
           {LEGEND.map(([code, label]) => (
-            <span key={code} className="flex items-center gap-1.5">
-              <span className={`px-1.5 py-0.5 rounded font-semibold ${CODE_STYLE[code]}`}>{code}</span>{label}
+            <span key={code} className="flex items-center gap-2 pr-3 border-r border-slate-200 last:border-r-0">
+              <span className="w-[3px] h-4 rounded-sm flex-shrink-0" style={{ background: BAR_COLOR[code] || '#94a3b8' }} />
+              <span className="whitespace-nowrap"><span className="font-medium text-slate-700">{code}</span> - {label}</span>
             </span>
           ))}
+          <button
+            onClick={() => setStatusOpen(true)}
+            title="All statuses" aria-label="All statuses"
+            className="ml-1 px-2 py-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors leading-none text-[15px]"
+          >
+            …
+          </button>
         </div>
         </>
       )}
