@@ -126,7 +126,7 @@ export default function PresenceHoursBreakup() {
 
   const filters = (
     <>
-      <EmployeeFilter value={employee} onChange={setEmployee} />
+      <EmployeeFilter value={employee} onChange={setEmployee} multiple={false} />
       <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
       {filtersOpen && <HoursComparatorFilter value={hours} onChange={setHours} />}
       <div className="flex items-center gap-2 ml-auto">

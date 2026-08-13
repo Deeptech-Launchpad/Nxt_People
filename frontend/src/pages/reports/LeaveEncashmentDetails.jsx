@@ -30,7 +30,7 @@ export default function LeaveEncashmentDetails() {
   const [rows, setRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
   const [employeeStatus, setEmployeeStatus] = useState('all');
-  const [employee, setEmployee] = useState(null);
+  const [employee, setEmployee] = useState([]);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -49,9 +49,11 @@ export default function LeaveEncashmentDetails() {
     setLoading(true);
     const params = new URLSearchParams({
       employeeStatus, directReportsOnly: String(directReportsOnly),
-      ...(employee ? { employeeId: employee._id } : {}),
     });
     appendDimensionFilters(params, dimFilters);
+    // Repeated employeeId params — Express parses them into the array the
+    // backend's ANY() clause expects.
+    employee.forEach(e => params.append('employeeId', e._id));
     api.get(`/reports/leave/encashment?${params}`)
       .then(r => {
         const data = Array.isArray(r.data.data) ? r.data.data : [];
@@ -68,7 +70,7 @@ export default function LeaveEncashmentDetails() {
   useEffect(load, [employeeStatus, employee, directReportsOnly, dimFilters]);
 
   const reset = () => {
-    setEmployee(null); setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
+    setEmployee([]); setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 
   // Export, Print and PDF belong beside the funnel, not inside the filter

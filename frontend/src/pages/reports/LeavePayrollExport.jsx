@@ -94,7 +94,7 @@ export default function LeavePayrollExport() {
   const [rows, setRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
   const [employeeStatus, setEmployeeStatus] = useState('all');
-  const [employee, setEmployee] = useState(null);
+  const [employee, setEmployee] = useState([]);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -104,9 +104,11 @@ export default function LeavePayrollExport() {
     setLoading(true);
     const params = new URLSearchParams({
       startDate, endDate, reportType, unit, employeeStatus, directReportsOnly: String(directReportsOnly),
-      ...(employee ? { employeeId: employee._id } : {}),
     });
     appendDimensionFilters(params, dimFilters);
+    // Repeated employeeId params — Express parses them into the array the
+    // backend's ANY() clause expects.
+    employee.forEach(e => params.append('employeeId', e._id));
     api.get(`/reports/leave/payroll-export?${params}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
@@ -121,7 +123,7 @@ export default function LeavePayrollExport() {
 
   const reset = () => {
     setPayPeriod(null);
-    setStartDate(monthStartCA()); setEndDate(todayCA()); setReportType('default'); setEmployee(null);
+    setStartDate(monthStartCA()); setEndDate(todayCA()); setReportType('default'); setEmployee([]);
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 

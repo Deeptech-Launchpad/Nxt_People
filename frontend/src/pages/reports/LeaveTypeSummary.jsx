@@ -34,7 +34,7 @@ export default function LeaveTypeSummary() {
   const [rows, setRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
   const [employeeStatus, setEmployeeStatus] = useState('all');
-  const [employee, setEmployee] = useState(null);
+  const [employee, setEmployee] = useState([]);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -56,9 +56,11 @@ export default function LeaveTypeSummary() {
     setLoading(true);
     const params = new URLSearchParams({
       leaveType: selection.leaveType, year: selection.year, startDate, endDate, employeeStatus, directReportsOnly: String(directReportsOnly),
-      ...(employee ? { employeeId: employee._id } : {}),
     });
     appendDimensionFilters(params, dimFilters);
+    // Repeated employeeId params — Express parses them into the array the
+    // backend's ANY() clause expects.
+    employee.forEach(e => params.append('employeeId', e._id));
     api.get(`/reports/leave/type-summary?${params}`)
       .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
@@ -66,7 +68,7 @@ export default function LeaveTypeSummary() {
   }, [selection, startDate, endDate, employeeStatus, employee, directReportsOnly, dimFilters]);
 
   const reset = () => {
-    setEmployee(null); setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
+    setEmployee([]); setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
     setStartDate(new Date(y, 0, 1).toLocaleDateString('en-CA'));
     setEndDate(new Date(y, 11, 31).toLocaleDateString('en-CA'));
   };

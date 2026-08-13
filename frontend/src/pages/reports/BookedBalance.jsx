@@ -76,7 +76,7 @@ export default function BookedBalance() {
   const [rows, setRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
   const [employeeStatus, setEmployeeStatus] = useState('all');
-  const [employee, setEmployee] = useState(null);
+  const [employee, setEmployee] = useState([]);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -89,9 +89,11 @@ export default function BookedBalance() {
     setLoading(true);
     const params = new URLSearchParams({
       startDate, endDate, unit, employeeStatus, directReportsOnly: String(directReportsOnly),
-      ...(employee ? { employeeId: employee._id } : {}),
     });
     appendDimensionFilters(params, dimFilters);
+    // Repeated employeeId params — Express parses them into the array the
+    // backend's ANY() clause expects.
+    employee.forEach(e => params.append('employeeId', e._id));
     api.get(`/reports/leave/booked-balance?${params}`)
       .then(r => {
         const raw = Array.isArray(r.data.data) ? r.data.data : [];
@@ -110,7 +112,7 @@ export default function BookedBalance() {
   useEffect(load, [unit, employeeStatus, employee, directReportsOnly, dimFilters]);
 
   const reset = () => {
-    setStartDate(monthStartCA()); setEndDate(todayCA()); setEmployee(null);
+    setStartDate(monthStartCA()); setEndDate(todayCA()); setEmployee([]);
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
     setPayTypeFilter('');
   };

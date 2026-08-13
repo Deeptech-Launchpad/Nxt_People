@@ -52,11 +52,18 @@ function directReportsClause(req, alias, paramIndex) {
   return { clause: ` AND ${alias}.reporting_manager_id = $${paramIndex}`, params: [req.user._id] };
 }
 
-// Single-employee narrowing filter for the multi-employee table reports —
-// Booked & Balance, Leave Type Summary, LOP, Payroll export.
+// Employee narrowing filter for the multi-employee table reports — Booked &
+// Balance, Leave Type Summary, LOP, Payroll export.
+//
+// Accepts one id or many: the chip is a multi-select, and a repeated query
+// parameter arrives as an array. Ids are uuids, so the array is cast rather
+// than compared as text, which also rejects a malformed id at the database
+// instead of silently matching nothing.
 function employeeIdClause(req, alias, paramIndex) {
-  if (!req.query.employeeId) return { clause: '', params: [] };
-  return { clause: ` AND ${alias}.id = $${paramIndex}`, params: [req.query.employeeId] };
+  const ids = [].concat(req.query.employeeId || [])
+    .filter(v => v !== '' && v !== undefined && v !== null);
+  if (!ids.length) return { clause: '', params: [] };
+  return { clause: ` AND ${alias}.id = ANY($${paramIndex}::uuid[])`, params: [ids] };
 }
 
 // Composes the full standard employee-narrowing filter set (Employee
