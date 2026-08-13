@@ -46,6 +46,21 @@ function ReportTypeDropdown({ value, onChange }) {
 
 const unitLabel = (unit, word) => `${word} (${unit === 'hour' ? 'Hrs' : 'Days'})`;
 
+// Hours print as HH:MM, matching the reference — 248:00, not 248. A bare
+// decimal beside a Days column invites reading it as days, and 0.27 hours is
+// meaningless to anyone reconciling a payroll sheet.
+const fmtUnit = (v, unit) => {
+  if (unit !== 'hour') return v;
+  const n = Number(v) || 0;
+  const sign = n < 0 ? '-' : '';
+  const abs = Math.abs(n);
+  let h = Math.floor(abs);
+  let mm = Math.round((abs - h) * 60);
+  // Rounding 7.999 must not produce 7:60.
+  if (mm === 60) { h += 1; mm = 0; }
+  return `${sign}${h}:${String(mm).padStart(2, '0')}`;
+};
+
 const exportColumns = (reportType, unit) => {
   const base = [
     { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
@@ -184,32 +199,32 @@ export default function LeavePayrollExport() {
             <tbody className="divide-y divide-slate-50">
               <tr className="bg-slate-50/60 font-semibold text-slate-700">
                 <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'totalDays')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'weekendCount')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'holidayCount')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'payableDays')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'onDutyDays')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'leavePaid')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'leaveUnpaid')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'leaveComp')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'leaveTotal')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'lopDays')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'paidDays')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{fmtUnit(sum(rows, 'totalDays'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'weekendCount'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'holidayCount'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'payableDays'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'onDutyDays'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{fmtUnit(sum(rows, 'leavePaid'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'leaveUnpaid'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'leaveComp'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'leaveTotal'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{fmtUnit(sum(rows, 'lopDays'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'paidDays'), unit)}</td>
               </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.totalDays}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.weekendCount}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.holidayCount}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.payableDays}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.onDutyDays}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.leavePaid}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.leaveUnpaid}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.leaveComp}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{row.leaveTotal}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700 border-l border-slate-100">{row.lopDays}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.paidDays}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{fmtUnit(row.totalDays, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(row.weekendCount, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(row.holidayCount, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(row.payableDays, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(row.onDutyDays, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{fmtUnit(row.leavePaid, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(row.leaveUnpaid, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(row.leaveComp, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{fmtUnit(row.leaveTotal, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700 border-l border-slate-100">{fmtUnit(row.lopDays, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{fmtUnit(row.paidDays, unit)}</td>
                 </tr>
               ))}
             </tbody>
@@ -229,16 +244,16 @@ export default function LeavePayrollExport() {
             <tbody className="divide-y divide-slate-50">
               <tr className="bg-slate-50/60 font-semibold text-slate-700">
                 <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'totalDays')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'lopDays')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'paidDays')}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'totalDays'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'lopDays'), unit)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'paidDays'), unit)}</td>
               </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.totalDays}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700">{row.lopDays}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.paidDays}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(row.totalDays, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700">{fmtUnit(row.lopDays, unit)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{fmtUnit(row.paidDays, unit)}</td>
                 </tr>
               ))}
             </tbody>

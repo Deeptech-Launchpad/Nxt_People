@@ -177,7 +177,7 @@ export default function DailyLeaveStatus() {
             <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
               <tr>
                 <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-left px-4 py-2.5">Leave Type</th>
+                <th className="text-left px-4 py-2.5">Leavetype</th>
                 <th className="text-left px-4 py-2.5">Type</th>
                 <th className="text-left px-4 py-2.5">Reason</th>
                 <th className="text-left px-4 py-2.5">Approval Status</th>

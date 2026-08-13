@@ -26,8 +26,29 @@ const LEGEND = [
 ];
 const codeColor = code => CODE_COLOR[String(code || '').replace('½', '').replace(/^[\d.]+/, '').split('/')[0]] || '#94a3b8';
 
-const isWeekendDay = d => [0, 6].includes(new Date(d).getDay());
-const todayCA = new Date().toLocaleDateString('en-CA');
+// Which columns are weekends comes from the data, not from the weekday.
+// Assuming Saturday and Sunday is wrong here: the work week is Mon-Sat with
+// only the 1st and 3rd Saturday off, so a hardcoded [0,6] tinted four working
+// Saturdays a month as weekend. The server already stamps 'WO' on the days it
+// treats as non-working, which is the same source every count uses.
+const weekendColumns = rows => {
+  const set = new Set();
+  for (const emp of rows) {
+    (emp.days || []).forEach((code, i) => { if (code === 'WO') set.add(i); });
+  }
+  return set;
+};
+
+// Three tints, matching the reference: weekends carry a warm tint, today and
+// everything after it a cool one, and past working days stay plain. The
+// future tint is what makes the grid readable — without it there is no visual
+// line between what happened and what is only planned.
+const dayTint = (weekend, day, part) => {
+  const today = new Date().toLocaleDateString('en-CA');
+  if (weekend) return 'bg-[#fdf6e3]';
+  if (day >= today) return part === 'head' ? 'bg-slate-100' : 'bg-slate-50/70';
+  return part === 'head' ? 'bg-slate-50' : '';
+};
 
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
@@ -106,6 +127,8 @@ export default function ResourceAvailability() {
         return sortAsc ? an.localeCompare(bn) : bn.localeCompare(an);
       })
     : [];
+
+  const weekendCols = weekendColumns(rows);
 
   const reset = () => {
     setStartDate(monthStartCA()); setEndDate(monthEndCA());
@@ -199,13 +222,13 @@ export default function ResourceAvailability() {
                       Employee <ArrowUpDown size={13} className="text-slate-400" />
                     </button>
                   </th>
-                  {data.dayLabels.map(d => {
+                  {data.dayLabels.map((d, i) => {
                     const dd = new Date(d);
-                    const weekend = isWeekendDay(d);
+                    const weekend = weekendCols.has(i);
                     return (
                       <th
                         key={d}
-                        className={`px-2 py-2 text-center w-[64px] min-w-[64px] leading-tight font-medium border-r border-slate-100 ${weekend ? 'bg-[#fdf6e3]' : d === todayCA ? 'bg-slate-100' : 'bg-slate-50'}`}
+                        className={`px-2 py-2 text-center w-[64px] min-w-[64px] leading-tight font-medium border-r border-slate-100 ${dayTint(weekend, d, 'head')}`}
                       >
                         <div className="text-[12.5px] text-slate-600">
                           {String(dd.getDate()).padStart(2, '0')} {dd.toLocaleDateString('en-US', { month: 'short' })}
@@ -242,7 +265,7 @@ export default function ResourceAvailability() {
                     </td>
                     {emp.days.map((code, i) => {
                       const d = data.dayLabels[i];
-                      const weekend = isWeekendDay(d);
+                      const weekend = weekendCols.has(i);
                       // Weekends are shown by tinting the column, not by
                       // stamping a code in every cell — that filled ~9 columns
                       // per month with badges carrying no information.
@@ -250,7 +273,7 @@ export default function ResourceAvailability() {
                       return (
                         <td
                           key={i}
-                          className={`px-1 py-2.5 text-center border-r border-slate-100 ${weekend ? 'bg-[#fdf6e3]' : d === todayCA ? 'bg-slate-50' : ''}`}
+                          className={`px-1 py-2.5 text-center border-r border-slate-100 ${dayTint(weekend, d, 'body')}`}
                         >
                           {show && (
                             <span

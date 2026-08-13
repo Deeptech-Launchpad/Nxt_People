@@ -32,6 +32,42 @@ const HOUR_EXPORT_COLUMNS = [
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
+// The Day table is described rather than hand-written so the Type filter can
+// show and hide whole groups. Sub-groups sit under a pay-type banner, matching
+// the reference — note Total belongs to Unpaid there (the unpaid total), not to
+// the table as a whole.
+//
+// An unpaid type has no entitlement to draw down, so its balance is the
+// negative of what was booked: taking leave without pay puts you in deficit
+// rather than consuming an allocation. The reference shows exactly that.
+const negate = key => row => -(Number(row[key]) || 0);
+const DAY_GROUPS = [
+  {
+    key: 'paid', label: 'Paid',
+    subs: [{ label: 'Casual Leave', booked: 'casualBooked', balance: 'casualBalance' }],
+  },
+  {
+    key: 'unpaid', label: 'Unpaid',
+    subs: [
+      { label: 'Absent', booked: 'absentBooked', balance: negate('absentBooked') },
+      { label: 'Leave Without Pay', booked: 'lwpBooked', balance: negate('lwpBooked') },
+      { label: 'Total', booked: 'unpaidTotalBooked', balance: negate('unpaidTotalBooked') },
+    ],
+  },
+  {
+    key: 'comp_off', label: 'Compensatory Off',
+    subs: [{ label: 'Compensatory Off', booked: 'compOffBooked', balance: 'compOffBalance' }],
+  },
+];
+
+// On Duty and Restricted Holidays are offered by the reference but not
+// modelled here, so they are left out rather than added as options that
+// silently filter to an empty table.
+const TYPE_OPTIONS = [['', 'All'], ...DAY_GROUPS.map(g => [g.key, g.label])];
+
+const cellValue = (row, spec) => (typeof spec === 'function' ? spec(row) : row[spec]);
+const groupTotal = (rows, spec) => rows.reduce((s, r) => s + (Number(cellValue(r, spec)) || 0), 0);
+
 export default function BookedBalance() {
   const [startDate, setStartDate] = useState(monthStartCA());
   const [endDate, setEndDate] = useState(todayCA());
@@ -45,6 +81,9 @@ export default function BookedBalance() {
   const [dimFilters, setDimFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
+  // Type narrows which pay-type groups the Day table shows. It is purely a
+  // column filter — the rows are unchanged, so it does not refetch.
+  const [payTypeFilter, setPayTypeFilter] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -73,7 +112,12 @@ export default function BookedBalance() {
   const reset = () => {
     setStartDate(monthStartCA()); setEndDate(todayCA()); setEmployee(null);
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
+    setPayTypeFilter('');
   };
+
+  const visibleGroups = payTypeFilter
+    ? DAY_GROUPS.filter(g => g.key === payTypeFilter)
+    : DAY_GROUPS;
 
   // The export modal existed but nothing opened it — there was no entry point
   // on the page at all, so the report could not be exported.
@@ -95,6 +139,19 @@ export default function BookedBalance() {
       <PeriodPresetChip onSelect={({ start, end }) => { setStartDate(start); setEndDate(end); }} />
       <DateChip label="From Date" value={startDate} onChange={setStartDate} />
       <DateChip label="To Date" value={endDate} onChange={setEndDate} />
+      {/* Hour mode shows only Permission, which has no groups to narrow. */}
+      {unit === 'day' && (
+        <label className="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-1.5 text-[13.5px] text-slate-600 bg-white">
+          <span className="text-slate-500">Type :</span>
+          <select
+            value={payTypeFilter}
+            onChange={e => setPayTypeFilter(e.target.value)}
+            className="bg-transparent text-slate-700 focus:outline-none cursor-pointer"
+          >
+            {TYPE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+      )}
       <EmployeeFilter value={employee} onChange={setEmployee} />
       <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
       <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
@@ -158,55 +215,57 @@ export default function BookedBalance() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
               <tr>
-                <th rowSpan={2} className="text-left px-4 py-2.5 align-bottom">Employee</th>
-                <th colSpan={2} className="text-center px-4 py-1.5 border-l border-slate-200">Paid</th>
-                <th colSpan={5} className="text-center px-4 py-1.5 border-l border-slate-200">Unpaid</th>
-                <th colSpan={2} className="text-center px-4 py-1.5 border-l border-slate-200">Compensatory Off</th>
-                <th colSpan={2} className="text-center px-4 py-1.5 border-l border-slate-200">Total</th>
+                <th rowSpan={3} className="text-left px-4 py-2.5 align-bottom">Employee</th>
+                {visibleGroups.map(g => (
+                  <th key={g.key} colSpan={g.subs.length * 2} className="text-center px-4 py-1.5 border-l border-slate-200">
+                    {g.label}
+                  </th>
+                ))}
               </tr>
               <tr>
-                <th className="text-right px-4 py-2 border-l border-slate-200">Booked</th>
-                <th className="text-right px-4 py-2">Balance</th>
-                <th className="text-right px-4 py-2 border-l border-slate-200">Absent</th>
-                <th className="text-right px-4 py-2">LWP Booked</th>
-                <th className="text-right px-4 py-2">LWP Balance</th>
-                <th className="text-right px-4 py-2">Unpaid Total</th>
-                <th className="text-right px-4 py-2">Unpaid Balance</th>
-                <th className="text-right px-4 py-2 border-l border-slate-200">Booked</th>
-                <th className="text-right px-4 py-2">Balance</th>
-                <th className="text-right px-4 py-2 border-l border-slate-200">Booked</th>
-                <th className="text-right px-4 py-2">Balance</th>
+                {visibleGroups.flatMap(g => g.subs.map((s, i) => (
+                  <th key={`${g.key}-${s.label}`} colSpan={2}
+                    className={`text-center px-4 py-1.5 ${i === 0 ? 'border-l border-slate-200' : ''}`}>
+                    {s.label}
+                  </th>
+                )))}
+              </tr>
+              <tr>
+                {visibleGroups.flatMap(g => g.subs.flatMap((s, i) => ([
+                  <th key={`${g.key}-${s.label}-b`} className={`text-right px-4 py-2 ${i === 0 ? 'border-l border-slate-200' : ''}`}>Booked</th>,
+                  <th key={`${g.key}-${s.label}-l`} className="text-right px-4 py-2">Balance</th>,
+                ])))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               <tr className="bg-slate-50/60 font-semibold text-slate-700">
                 <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'casualBooked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'casualBalance')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'absentBooked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'lwpBooked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">N/A</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'unpaidTotalBooked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">N/A</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'compOffBooked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'compOffBalance')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'totalBooked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'totalBalance')}</td>
+                {visibleGroups.flatMap(g => g.subs.flatMap((s, i) => ([
+                  <td key={`${g.key}-${s.label}-tb`} className={`px-4 py-2.5 text-right tabular-nums ${i === 0 ? 'border-l border-slate-200' : ''}`}>
+                    {groupTotal(rows, s.booked)}
+                  </td>,
+                  <td key={`${g.key}-${s.label}-tl`} className="px-4 py-2.5 text-right tabular-nums">
+                    {groupTotal(rows, s.balance)}
+                  </td>,
+                ])))}
               </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.casualBooked}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.casualBalance}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.absentBooked}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.lwpBooked}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-slate-400">N/A</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{row.unpaidTotalBooked}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-slate-400">N/A</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.compOffBooked}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.compOffBalance}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100 font-semibold">{row.totalBooked}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.totalBalance}</td>
+                  {visibleGroups.flatMap(g => g.subs.flatMap((s, i) => {
+                    const balance = cellValue(row, s.balance);
+                    return [
+                      <td key={`${g.key}-${s.label}-b`} className={`px-4 py-2.5 text-right tabular-nums ${i === 0 ? 'border-l border-slate-100' : ''}`}>
+                        {cellValue(row, s.booked)}
+                      </td>,
+                      // A negative balance is a deficit, not a surplus, so it
+                      // must not wear the same green as an unused allocation.
+                      <td key={`${g.key}-${s.label}-l`}
+                        className={`px-4 py-2.5 text-right tabular-nums font-semibold ${Number(balance) < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                        {balance}
+                      </td>,
+                    ];
+                  }))}
                 </tr>
               ))}
             </tbody>
