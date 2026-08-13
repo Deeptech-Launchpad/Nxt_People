@@ -2130,21 +2130,36 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
     const simple = req.query.simple === 'true';
     const ctx = await loadAttendanceContext(req, start, end);
 
+    const todayYmd = ctx.today.toLocaleDateString('en-CA');
+
     const data = ctx.employees.map(emp => {
       const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
       const c = { present: 0, onDuty: 0, paidLeave: 0, holiday: 0, weekend: 0, absent: 0, unpaidLeave: 0 };
       let totalWorkedHours = 0;
+      // The two "Expected" figures come from the calendar, not from the
+      // outcome: every day on rolls could be paid, and every one of those that
+      // is neither a weekend nor a holiday is a day work was expected. Adding
+      // up the outcome columns instead — as this did — made them shrink
+      // whenever a day had not been settled yet.
+      let expectedPayableDays = 0;
+      let expectedWorkingDays = 0;
 
       for (const d of ctx.days) {
-        if (d > ctx.today || !ctx.onRolls(emp, d)) continue;
+        if (!ctx.onRolls(emp, d)) continue;
         const ymd = d.toLocaleDateString('en-CA');
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           attStatus: att?.status, leave: ctx.leaveOn(emp._id, d), isFuture: false,
         });
-        if (cls.kind === 'future') continue;
-        c[cls.kind] = (c[cls.kind] || 0) + 1;
+
+        expectedPayableDays += 1;
+        if (cls.kind !== 'weekend' && cls.kind !== 'holiday') expectedWorkingDays += 1;
+
+        // A working day still to come is not an absence, so it counts towards
+        // what was expected but towards none of the outcomes.
+        const pending = ymd >= todayYmd && cls.kind === 'absent';
+        if (!pending) c[cls.kind] = (c[cls.kind] || 0) + 1;
         totalWorkedHours += parseFloat(att?.workingHours) || 0;
       }
 
@@ -2152,8 +2167,6 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
       const paidOffTotal = c.paidLeave + c.holiday + c.weekend;
       const unpaidTotal = c.unpaidLeave + c.absent;
       const payableTotal = workedTotal + paidOffTotal;
-      const expectedWorkingDays = workedTotal + unpaidTotal;
-      const expectedPayableDays = payableTotal + unpaidTotal;
 
       const days = {
         expectedPayableDays, payableWorked: workedTotal, payablePaidOff: paidOffTotal, payableTotal,
