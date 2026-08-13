@@ -1129,6 +1129,84 @@ router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admi
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+// Transaction-level ledger behind the monthly summary above — the reference's
+// "History" view. Each row moves the running balance: an opening marker, the
+// accruals, and every booking.
+//
+// This is derived rather than stored: there is no accrual-history table. That
+// is exact rather than a reconstruction, because this system holds one flat
+// allocation per employee with no policy history to have changed — casual is
+// granted once in January, permission accrues 4 a month, comp-off accrues as
+// it's earned. If per-year or mid-year leave policies are ever introduced,
+// this derivation stops being faithful and needs a real ledger table.
+router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const { employeeId, leaveType } = req.query;
+    if (!employeeId || !['casual', 'comp_off', 'unpaid', 'permission'].includes(leaveType)) {
+      return res.status(400).json({ success: false, message: 'employeeId and a valid leaveType are required' });
+    }
+    const now = new Date();
+    const year = parseInt(req.query.year, 10) || now.getFullYear();
+    const upToMonth = year === now.getFullYear() ? now.getMonth() + 1 : 12;
+    const isHours = leaveType === 'permission';
+
+    const [empRes, takenRes, compRes] = await Promise.all([
+      pool.query('SELECT COALESCE(casual_leave,0) AS "casualAllocated" FROM employees WHERE id = $1', [employeeId]),
+      pool.query(
+        `SELECT start_date::text AS date, COALESCE(total_days,0) AS days, COALESCE(hours,0) AS hours
+           FROM leaves
+          WHERE employee_id = $1 AND leave_type = $2 AND status = 'approved'
+            AND EXTRACT(YEAR FROM start_date) = $3
+          ORDER BY start_date`,
+        [employeeId, leaveType, year]
+      ),
+      leaveType === 'comp_off'
+        ? pool.query(
+            `SELECT worked_date::text AS date, COALESCE(days_earned,0) AS earned
+               FROM comp_offs WHERE employee_id = $1 AND status='approved' AND EXTRACT(YEAR FROM worked_date) = $2
+              ORDER BY worked_date`,
+            [employeeId, year]
+          )
+        : Promise.resolve({ rows: [] }),
+    ]);
+    if (!empRes.rows[0]) return res.status(404).json({ success: false, message: 'Employee not found' });
+
+    const events = [];
+    if (leaveType === 'casual') {
+      events.push({ date: `${year}-01-01`, type: 'Accrual', added: parseFloat(empRes.rows[0].casualAllocated) || 0 });
+    } else if (leaveType === 'permission') {
+      for (let m = 1; m <= upToMonth; m++) {
+        events.push({ date: `${year}-${String(m).padStart(2, '0')}-01`, type: 'Accrual', added: 4 });
+      }
+    } else if (leaveType === 'comp_off') {
+      compRes.rows.forEach(r => events.push({ date: r.date, type: 'Accrual', added: parseFloat(r.earned) || 0 }));
+    }
+    takenRes.rows.forEach(r => events.push({
+      date: r.date, type: 'Leave Taken',
+      booked: isHours ? (parseFloat(r.hours) || 0) : (parseFloat(r.days) || 0),
+    }));
+
+    // Accruals settle before bookings on the same date, so a same-day grant is
+    // available to spend rather than pushing the balance negative.
+    events.sort((a, b) => (a.date === b.date
+      ? (a.type === 'Accrual' ? -1 : 1)
+      : a.date.localeCompare(b.date)));
+
+    let balance = 0;
+    const data = [{ date: `${year}-01-01`, type: 'Report Initiated', added: null, booked: null, balance: 0 }];
+    events.forEach(e => {
+      balance += (e.added || 0) - (e.booked || 0);
+      data.push({
+        date: e.date, type: e.type,
+        added: e.added ?? null, booked: e.booked ?? null,
+        balance: parseFloat(balance.toFixed(4)),
+      });
+    });
+
+    res.json({ success: true, data, leaveType, year, unit: isHours ? 'hours' : 'days' });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
 router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');

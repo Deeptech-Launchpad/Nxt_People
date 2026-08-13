@@ -59,9 +59,22 @@ type. A `⋯` per row opens **Summary** and **History**.
 `Date | Type | Added | Booked | Balance`. `Type` values seen: `Report
 Initiated`, `Accrual`, `Leave Taken`.
 
-Status: **TODO**. Needs a backend ledger endpoint — we have no accrual history
-table, so `Accrual` rows would have to be derived from the leave-type policy.
-**Flag before building:** this may not be reconstructable from current schema.
+**DECIDED — build it.** Summary is the monthly roll-up; History is the
+transaction-level detail behind it. My earlier concern (that deriving accrual
+rows would misreport anyone whose policy changed mid-year) does not apply here:
+this system stores a single flat allocation per employee
+(`employees.casual_leave` and siblings) with no policy history, so the
+derivation is exact for our model rather than a reconstruction.
+
+Accrual differs by type, and the reference shows both shapes:
+- **Casual Leave** — whole annual allocation granted once in January, then
+  `Granted` is blank for later months.
+- **Permission** — 4 accrued every month (matches the existing "4h × months
+  touched" rule already used elsewhere in this codebase).
+
+`Lapsed` stays `-`: there is no lapse policy, and the reference shows `-` too.
+
+Status: **TODO** (unblocked).
 
 ---
 
@@ -86,8 +99,11 @@ Loss of pay, Leave encashment, and Leave data for payroll all carry a
 `Pay Period : ANXT Payroll` chip (a searchable dropdown) and a **Regenerate
 Report** button, instead of a date-range navigator.
 
-Status: **TODO**. We have no pay-period entity; this is a payroll-module
-concept. Needs a decision before building.
+**DECIDED — defer.** The pay-period entity is to be built later as part of the
+payroll module. Do not stub a chip for it in the meantime; these three pages
+keep their date-range navigator until that entity exists.
+
+Status: **DEFERRED**.
 
 ---
 
@@ -122,12 +138,15 @@ The reference has **year-suffixed leave types**: `Casual Leave`, `Casual Leave
 2023`, `Casual Leave 2024`, `Casual Leave2025`, `Permission`, `Permission2022`,
 `Compensatory Off`, `Leave Without Pay`, `Absent`.
 
-Ours has four flat types (`casual`, `comp_off`, `unpaid`, `permission`), so
-codes will never match one-for-one. Pulling the real catalogue via the existing
-Zoho API integration (`utils/zoho.js`, `ZOHO_REFRESH_TOKEN`) is the only way to
-reconcile these.
+**DECIDED — do not replicate.** Those suffixes are an artefact of the reference
+product having been in use for several years; it creates a fresh leave type
+each year, so the list is history rather than design. Our four flat types
+(`casual`, `comp_off`, `unpaid`, `permission`) are the intended model.
 
-Status: **TODO** — decision needed on whether to model per-year leave types.
+Consequence to accept deliberately: grid codes will read `CL`/`PM` where the
+reference reads `CL6`/`PM6`. That is correct for our data, not a gap to close.
+
+Status: **CLOSED — no work needed.**
 
 ---
 
