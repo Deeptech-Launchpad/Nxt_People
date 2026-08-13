@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, ArrowRight, RotateCcw } from 'lucide-react';
+import { Filter, ArrowRight, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
@@ -68,7 +68,10 @@ export default function LossOfPay() {
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [employeeStatus, employee, directReportsOnly, dimFilters]);
+  // startDate/endDate belong here: the header arrows change the range without
+  // going through Submit, so leaving them out left the table showing the old
+  // month's figures under the new month's heading.
+  useEffect(load, [startDate, endDate, employeeStatus, employee, directReportsOnly, dimFilters]);
 
   const reset = () => {
     setPayPeriod(null);
@@ -85,6 +88,28 @@ export default function LossOfPay() {
     { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
     { key: 'print', label: 'Print', onClick: () => window.print() },
   ];
+
+  // The range the report covers belongs in the header, not only inside the
+  // filter panel — without it the page gives no indication of what period the
+  // figures are for until you open filters. The arrows step whole months,
+  // which is how this report is read.
+  const shiftMonth = delta => {
+    setPayPeriod(null);
+    const d = new Date(startDate);
+    d.setMonth(d.getMonth() + delta);
+    setStartDate(new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString('en-CA'));
+    setEndDate(new Date(d.getFullYear(), d.getMonth() + 1, 0).toLocaleDateString('en-CA'));
+  };
+  const fmtRange = (s, e) =>
+    `${new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} - ${new Date(e).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+
+  const periodNav = (
+    <div className="flex items-center gap-2">
+      <button onClick={() => shiftMonth(-1)} aria-label="Previous month" className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
+      <span className="text-[14px] text-slate-700 whitespace-nowrap">{fmtRange(startDate, endDate)}</span>
+      <button onClick={() => shiftMonth(1)} aria-label="Next month" className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
+    </div>
+  );
 
   const actions = (
     <div className="flex items-center gap-2">
@@ -124,9 +149,9 @@ export default function LossOfPay() {
   ) : null;
 
   return (
-    <ReportShell menuItems={menuItems} title="Loss of Pay Details" subtitle="Unpaid LOP days in the selected period — the same calculation Payroll Run uses" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell menuItems={menuItems} title="Loss of Pay Details" periodNav={periodNav} subtitle="Unpaid LOP days in the selected period — the same calculation Payroll Run uses" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {rows.length === 0 ? (
-        <div className="text-center py-16 text-slate-400">No LOP days in this period</div>
+        <div className="text-center py-16 text-slate-400">No employees match these filters</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">

@@ -1477,9 +1477,11 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
     const data = [];
     for (const emp of empRes.rows) {
       const lopDays = await lopDaysForRange(emp._id, startDate, endDate, holMap, rules, pool);
-      if (lopDays > 0) {
-        data.push({ ...emp, previousPeriodBalance: 0, booked: lopDays, total: lopDays, waivedOff: 0, carryOver: 0, reason: null, lopDays, lopHours: 0 });
-      }
+      // Every employee is listed, including those with no loss of pay. This
+      // report is read to confirm a payroll figure, and "nobody had LOP" and
+      // "the report failed to load" look identical if the rows are dropped —
+      // a table of zeros is the answer, not an empty state.
+      data.push({ ...emp, previousPeriodBalance: 0, booked: lopDays, total: lopDays, waivedOff: 0, carryOver: 0, reason: null, lopDays, lopHours: 0 });
     }
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
