@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Pencil, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 
@@ -46,6 +46,70 @@ function Field({ label, required, children }) {
   );
 }
 
+// Multi-select with removable chips. A pay period applies to a set of real
+// values, so the options come from the employee directory rather than free
+// text — a typo'd department would silently match nobody.
+function ChipSelect({ options, values, onChange, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const away = e => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, [open]);
+
+  const remaining = options.filter(o =>
+    !values.includes(o) && o.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <div ref={boxRef} className="relative flex-1 min-w-[220px]">
+      <div
+        onClick={() => setOpen(true)}
+        className="flex flex-wrap items-center gap-1.5 min-h-[34px] rounded border border-slate-300 bg-white px-2 py-1.5 cursor-text"
+      >
+        {values.map(v => (
+          <span key={v} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 text-[12.5px] rounded px-2 py-0.5">
+            {v}
+            <button
+              onClick={e => { e.stopPropagation(); onChange(values.filter(x => x !== v)); }}
+              aria-label={`Remove ${v}`} className="text-slate-400 hover:text-slate-700"
+            >
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+        <input
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          placeholder={values.length ? '' : placeholder}
+          className="flex-1 min-w-[80px] text-[13.5px] outline-none bg-transparent"
+        />
+      </div>
+
+      {open && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-[200px] overflow-y-auto">
+          {remaining.length === 0 ? (
+            <p className="px-3 py-2.5 text-[13px] text-slate-400">
+              {options.length ? 'No matches' : 'No values available'}
+            </p>
+          ) : remaining.map(o => (
+            <button
+              key={o}
+              onClick={() => { onChange([...values, o]); setQuery(''); }}
+              className="block w-full text-left px-3 py-2 text-[13.5px] text-slate-700 hover:bg-slate-50"
+            >
+              {o}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Check({ checked, onChange, disabled, children }) {
   return (
     <label className={`flex items-start gap-2.5 text-[14px] ${disabled ? 'text-slate-400' : 'text-slate-700 cursor-pointer'}`}>
@@ -57,7 +121,7 @@ function Check({ checked, onChange, disabled, children }) {
   );
 }
 
-function PeriodDialog({ initial, onClose, onSaved }) {
+function PeriodDialog({ initial, options, onClose, onSaved }) {
   const [form, setForm] = useState(() => ({ ...blank(), ...initial }));
   const [saving, setSaving] = useState(false);
   const set = changes => setForm(f => ({ ...f, ...changes }));
@@ -179,16 +243,11 @@ function PeriodDialog({ initial, onClose, onSaved }) {
                 {applicable.field && (
                   <>
                     <span className="text-[13.5px] text-slate-500">is</span>
-                    <input
-                      value={(applicable.values || []).join(', ')}
-                      onChange={e => set({
-                        applicableTo: {
-                          field: applicable.field,
-                          values: e.target.value.split(',').map(s => s.trim()).filter(Boolean),
-                        },
-                      })}
+                    <ChipSelect
+                      options={options[applicable.field] || []}
+                      values={applicable.values || []}
                       placeholder="Select"
-                      className="flex-1 min-w-[180px] text-[13.5px] rounded border border-slate-300 px-2 py-1.5 bg-white"
+                      onChange={values => set({ applicableTo: { field: applicable.field, values } })}
                     />
                   </>
                 )}
@@ -239,6 +298,22 @@ export default function PayPeriods() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState(null);
+  const [options, setOptions] = useState({});
+
+  // The Applicable-to values are real directory values, so a period can never
+  // be scoped to a department or location that does not exist.
+  useEffect(() => {
+    api.get('/reports/employee/filter-options')
+      .then(r => {
+        const d = r.data.data || {};
+        setOptions({
+          location: d.workLocation || [],
+          department: d.department || [],
+          employee_type: d.employmentType || [],
+        });
+      })
+      .catch(() => setOptions({}));
+  }, []);
 
   const load = () => {
     setLoading(true);
@@ -314,6 +389,7 @@ export default function PayPeriods() {
       {dialog && (
         <PeriodDialog
           initial={dialog}
+          options={options}
           onClose={() => setDialog(null)}
           onSaved={() => { setDialog(null); load(); }}
         />

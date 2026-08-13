@@ -167,4 +167,54 @@ async function countWorkingDays(startDate, endDate) {
   return count;
 }
 
-module.exports = { isNonWorkingDay, ruleMatchesDate, countWorkingDays, holidayClosesOffice };
+/**
+ * Returns an isWeekend(date) predicate for the whole app.
+ *
+ * Weekend rules win when any exist — they are the richer source, able to say
+ * "the 1st and 3rd Saturday". With none configured, the fallback is the work
+ * calendar's work week: any day outside work_week_start..work_week_end.
+ *
+ * That fallback used to be a hardcoded Mon-Fri, which is wrong here — this
+ * organisation works Mon-Sat, so every Saturday was silently counted as a
+ * weekend and dropped out of working-day totals wherever the fallback applied.
+ *
+ * Falls back to "Sunday only" if neither source is readable, which is the
+ * safer error: it over-counts working days rather than quietly losing a sixth
+ * of the working week.
+ */
+async function loadWeekendResolver() {
+  let rules = [];
+  let workWeek = null;
+  try {
+    const [r, c] = await Promise.all([
+      pool.query(
+        `SELECT days_of_week, weeks_of_month, interval_weeks, start_date, end_type, end_date, end_count
+           FROM weekend_rules WHERE is_active = TRUE`
+      ),
+      // The Default calendar (no location) is the org-wide work week.
+      pool.query(
+        `SELECT work_week_start, work_week_end FROM work_calendars
+          WHERE location IS NULL AND is_active = TRUE LIMIT 1`
+      ),
+    ]);
+    rules = r.rows;
+    workWeek = c.rows[0] || null;
+  } catch (err) { /* tables may not exist yet — fall through to Sunday-only */ }
+
+  const start = workWeek ? Number(workWeek.work_week_start) : 1;
+  const end = workWeek ? Number(workWeek.work_week_end) : 6;
+
+  // A work week can wrap the week boundary (e.g. Saturday through Wednesday),
+  // so membership is a range test in both directions rather than start <= d <= end.
+  const isWorkDay = dow => (start <= end ? dow >= start && dow <= end : dow >= start || dow <= end);
+
+  return {
+    hasRules: rules.length > 0,
+    isWeekend(date) {
+      if (rules.length > 0) return rules.some(rule => ruleMatchesDate(rule, date));
+      return !isWorkDay(date.getDay());
+    },
+  };
+}
+
+module.exports = { isNonWorkingDay, ruleMatchesDate, countWorkingDays, holidayClosesOffice, loadWeekendResolver };

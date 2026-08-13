@@ -6,6 +6,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { sendCheckOutReminderEmail } = require('../utils/mailer');
 const { DEFAULT_TZ } = require('../utils/timezone');
+const { loadWeekendResolver } = require('../utils/workingDays');
 
 router.use(protect);
 
@@ -549,7 +550,7 @@ router.get('/team', authorize('admin', 'director', 'hr_admin', 'manager', 'team_
     if (department) { empQuery += ` AND e.department = $${empIdx++}`; empParams.push(department); }
     if (['manager', 'team_incharge'].includes(req.user.role)) { empQuery += ` AND e.reporting_manager_id = $${empIdx++}`; empParams.push(req.user._id); }
 
-    const [employeesRes, wrRes, sRes] = await Promise.all([
+    const [employeesRes, weekend] = await Promise.all([
       pool.query(
         `SELECT e.id as "_id", e.first_name as "firstName", e.last_name as "lastName",
          e.department, e.employee_id as "employeeId", e.designation, e.photo_url as "photoUrl",
@@ -560,20 +561,14 @@ router.get('/team', authorize('admin', 'director', 'hr_admin', 'manager', 'team_
          ${empQuery}`,
         empParams
       ),
-      pool.query(`SELECT days_of_week, weeks_of_month, interval_weeks, start_date FROM weekend_rules WHERE is_active = TRUE`),
-      pool.query(`SELECT working_days FROM settings LIMIT 1`),
+      loadWeekendResolver(),
     ]);
 
     // Same weekend determination as /summary — org-wide rule, so one flag
-    // covers the whole team view rather than a per-employee lookup.
-    const workingDays = Array.isArray(sRes.rows[0]?.working_days)
-      ? sRes.rows[0].working_days.map(d => String(d).toLowerCase().slice(0, 3))
-      : ['mon','tue','wed','thu','fri'];
-    const dayMap = ['sun','mon','tue','wed','thu','fri','sat'];
-    const targetDateObj = new Date(targetDate);
-    const isWeekendDay = wrRes.rows.length > 0
-      ? wrRes.rows.some(rule => ruleMatches(rule, targetDateObj))
-      : !workingDays.includes(dayMap[targetDateObj.getDay()]);
+    // covers the whole team view rather than a per-employee lookup. The
+    // resolver prefers weekend_rules and falls back to the work calendar's
+    // work week, which is Mon-Sat here rather than the old hardcoded Mon-Fri.
+    const isWeekendDay = weekend.isWeekend(new Date(targetDate));
 
     let attQuery = 'WHERE a.date = $1::date';
     let attParams = [targetDate];
@@ -650,7 +645,7 @@ router.get('/summary', async (req, res) => {
     // Pull attendance + holidays + settings + weekend_rules in parallel.
     // settings.working_days is the simplest weekend source; if weekend_rules
     // is populated we prefer that (richer recurrence patterns).
-    const [attRes, hRes, sRes, wrRes, leavesRes] = await Promise.all([
+    const [attRes, hRes, weekend, leavesRes] = await Promise.all([
       pool.query(
         'SELECT date, status, working_hours, late_minutes, check_in, check_out FROM attendance WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date',
         [empId, start, end]
@@ -659,9 +654,7 @@ router.get('/summary', async (req, res) => {
         `SELECT date FROM holidays WHERE date >= $1::date AND date <= $2::date`,
         [start, end]
       ),
-      pool.query(`SELECT working_days FROM settings LIMIT 1`),
-      pool.query(`SELECT days_of_week, weeks_of_month, interval_weeks, start_date
-                    FROM weekend_rules WHERE is_active = TRUE`),
+      loadWeekendResolver(),
       // Approved leaves overlapping the range, clipped to it and prorated the
       // same way payroll's lopDaysForRange does — a leave that only partially
       // falls inside [start,end] shouldn't count its full total_days here.
@@ -684,21 +677,10 @@ router.get('/summary', async (req, res) => {
       ),
     ]);
 
-    const workingDays = Array.isArray(sRes.rows[0]?.working_days)
-      ? sRes.rows[0].working_days.map(d => String(d).toLowerCase().slice(0, 3))
-      : ['mon','tue','wed','thu','fri'];
-    const weekendRules = wrRes.rows;
-    const dayMap = ['sun','mon','tue','wed','thu','fri','sat'];
-
-    const isWeekend = (d) => {
-      // weekend_rules takes precedence when any row exists. Each rule says
-      // "this date IS a weekend" — we OR them together.
-      if (weekendRules.length > 0) {
-        return weekendRules.some(rule => ruleMatches(rule, d));
-      }
-      // Fall back to settings.working_days: weekend ⇔ day is NOT a working day.
-      return !workingDays.includes(dayMap[d.getDay()]);
-    };
+    // weekend_rules takes precedence; with none configured this falls back to
+    // the work calendar's work week rather than a hardcoded Mon-Fri, which
+    // was counting every Saturday as a weekend in a Mon-Sat organisation.
+    const isWeekend = d => weekend.isWeekend(d);
 
     // Iterate every day in the range to compute weekend/holiday/payable counts.
     const holidayDates = new Set(hRes.rows.map(r => toDateStr(new Date(r.date))));
