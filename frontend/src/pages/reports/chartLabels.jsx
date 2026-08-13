@@ -1,4 +1,22 @@
 import React from 'react';
+import { Sector } from 'recharts';
+
+// Hover feedback has to follow the mark's own geometry. Recharts' default
+// tooltip cursor is a rectangle — on a pie it drew a box across whatever
+// slice you were over, which reads as a selection of the wrong region.
+// Pass `cursor={false}` to <Tooltip> and this as the Pie's `activeShape`:
+// the hovered sector grows a little along its own arc instead.
+export function ActiveSlice({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill }) {
+  return (
+    <Sector
+      cx={cx} cy={cy}
+      innerRadius={innerRadius}
+      outerRadius={outerRadius + 6}
+      startAngle={startAngle} endAngle={endAngle}
+      fill={fill}
+    />
+  );
+}
 
 // Zoho's chart palette: a muted blue lead, charcoal, green, orange, violet,
 // cyan, red, lime — distinct enough that adjacent thin slices stay separable.

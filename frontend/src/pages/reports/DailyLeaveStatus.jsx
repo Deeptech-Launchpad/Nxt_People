@@ -5,7 +5,7 @@ import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
-import { CHART_COLORS, makeSliceLabel } from './chartLabels';
+import { CHART_COLORS, makeSliceLabel, ActiveSlice } from './chartLabels';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
 import LeaveTypeFilter from './LeaveTypeFilter';
@@ -135,10 +135,11 @@ export default function DailyLeaveStatus() {
                       innerRadius={0} outerRadius={92} isAnimationActive={false}
                       label={makeSliceLabel(total, chartData, 320, (name, value) => `${name},${value}`)}
                       labelLine={false}
+                      activeShape={ActiveSlice}
                     >
                       {chartData.map((d, i) => <Cell key={d.label} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                     </Pie>
-                    <Tooltip formatter={(value, name) => [value, name]} />
+                    <Tooltip cursor={false} formatter={(value, name) => [value, name]} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>

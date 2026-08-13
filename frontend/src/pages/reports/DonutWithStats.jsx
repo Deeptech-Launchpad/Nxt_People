@@ -1,6 +1,6 @@
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { CHART_COLORS, makeSliceLabel } from './chartLabels';
+import { CHART_COLORS, makeSliceLabel, ActiveSlice } from './chartLabels';
 
 // Chart + right-side stat panel. `donut` picks between Zoho's two shapes:
 // Distribution draws a solid pie, Diversity draws a donut. `total` overrides
@@ -18,12 +18,13 @@ export default function DonutWithStats({ data, stats, donut = true, total, onSli
               data={data} dataKey="count" nameKey="label" cx="50%" cy="50%"
               innerRadius={donut ? 62 : 0} outerRadius={108} paddingAngle={donut ? 1 : 0}
               label={makeSliceLabel(denom, data, 440)} labelLine={false} isAnimationActive={false}
+              activeShape={ActiveSlice}
               onClick={onSliceClick ? (d) => onSliceClick(d?.payload?.label ?? d?.label) : undefined}
               className={onSliceClick ? 'cursor-pointer' : undefined}
             >
               {data.map((d, i) => <Cell key={d.label} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
             </Pie>
-            <Tooltip formatter={(value, name) => [`${value} (${((value / denom) * 100).toFixed(2)}%)`, name]} />
+            <Tooltip cursor={false} formatter={(value, name) => [`${value} (${((value / denom) * 100).toFixed(2)}%)`, name]} />
           </PieChart>
         </ResponsiveContainer>
       </div>

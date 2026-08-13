@@ -12,6 +12,7 @@ import HoursComparatorFilter from './HoursComparatorFilter';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import { EmployeeCell } from './TableReportPage';
+import { ActiveSlice } from './chartLabels';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const shiftDay = (dateStr, delta) => {
@@ -129,10 +130,10 @@ export default function AttendanceDailyStatus() {
                 ) : (
                   <ResponsiveContainer width="100%" height={260}>
                     <PieChart margin={{ top: 16, right: 8, bottom: 8, left: 8 }}>
-                      <Pie data={statusPie} dataKey="count" nameKey="label" cx="50%" cy="50%" outerRadius={92} paddingAngle={1}>
+                      <Pie data={statusPie} dataKey="count" nameKey="label" cx="50%" cy="50%" outerRadius={92} paddingAngle={1} activeShape={ActiveSlice}>
                         {statusPie.map(s => <Cell key={s.key} fill={s.color} />)}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip cursor={false} />
                     </PieChart>
                   </ResponsiveContainer>
                 )}
@@ -164,10 +165,10 @@ export default function AttendanceDailyStatus() {
                 ) : (
                   <ResponsiveContainer width="100%" height={260}>
                     <PieChart margin={{ top: 16, right: 8, bottom: 8, left: 8 }}>
-                      <Pie data={presencePie} dataKey="count" nameKey="label" cx="50%" cy="50%" innerRadius={62} outerRadius={92} paddingAngle={1}>
+                      <Pie data={presencePie} dataKey="count" nameKey="label" cx="50%" cy="50%" innerRadius={62} outerRadius={92} paddingAngle={1} activeShape={ActiveSlice}>
                         {presencePie.map(p => <Cell key={p.key} fill={p.color} />)}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip cursor={false} />
                     </PieChart>
                   </ResponsiveContainer>
                 )}
