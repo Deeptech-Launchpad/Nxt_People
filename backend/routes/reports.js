@@ -1898,7 +1898,13 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
           department: emp.department, exitDate: emp.exitDate, date: ymd,
           firstIn: att?.checkIn || null, lastOut: att?.checkOut || null,
           totalHours, entryEarly, entryLate, exitEarly, exitLate,
-          netMinutes: att?.checkIn ? Math.round((totalHours - shiftHours) * 60) : null,
+          // Net hours is worked-vs-expected, so it needs a real shift to be
+          // measured against. Without one it used to fall back to a standard
+          // 8h day and report everybody half an hour up, while Entry and Exit
+          // — measured against the same missing shift — honestly showed "-".
+          netMinutes: att?.checkIn && shiftStartMin !== null && shiftEndMin !== null
+            ? Math.round((totalHours - shiftHours) * 60)
+            : null,
           shiftName: emp.shiftName || null,
         });
       }

@@ -47,7 +47,10 @@ export default function PeriodFilter({ options, selectedKey, onChange, onSubmit 
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 px-3 py-1.5 rounded text-[13px] border border-slate-300 bg-white text-slate-700 hover:border-slate-400 transition-colors whitespace-nowrap"
       >
-        <span className="max-w-[190px] truncate">Period : {current?.label || '—'}</span>
+        {/* "Custom", not "—", when the range matches no preset: stepping the
+            header's period navigator lands on ranges no preset names, and a
+            dash reads as "unset" rather than "set to something specific". */}
+        <span className="max-w-[190px] truncate">Period : {current?.label || 'Custom'}</span>
         <ChevronDown size={13} className="text-slate-400 flex-shrink-0" />
       </button>
       {open && (
