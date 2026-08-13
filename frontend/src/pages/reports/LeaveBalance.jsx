@@ -459,9 +459,17 @@ export default function LeaveBalance() {
                   <Label value={unit === 'hour' ? 'Hour Leave Chart' : 'Day Leave Chart'} angle={-90} position="insideLeft"
                     style={{ fontSize: 12, fill: '#64748b', textAnchor: 'middle' }} />
                 </YAxis>
-                <Tooltip cursor={{ fill: '#f8fafc' }} formatter={(v, name) => [v, name === 'bookedVal' ? 'Booked' : 'Balance']} />
-                <Bar dataKey="bookedVal" stackId="a" name="Booked" fill="#f5a623" maxBarSize={90} />
-                <Bar dataKey="balanceVal" stackId="a" name="Balance" fill="#d9d9d9" maxBarSize={90} />
+                {/* recharts hands the formatter the Bar's `name`, not its
+                    dataKey, so comparing against 'bookedVal' never matched and
+                    both rows printed "Balance". The names are already correct
+                    on the bars, so the value passes straight through. */}
+                <Tooltip cursor={{ fill: '#f8fafc' }} formatter={(v, name) => [v, name]} />
+                {/* #d9d9d9 sat at 1.37:1 against the surface — below the 3:1
+                    floor, which is why the remaining-balance segment was
+                    unreadable. This pair clears every check: both above 3:1,
+                    and ΔE 20.4 apart under protanopia. */}
+                <Bar dataKey="bookedVal" stackId="a" name="Booked" fill="#C2701C" maxBarSize={90} />
+                <Bar dataKey="balanceVal" stackId="a" name="Balance" fill="#3E7CB1" maxBarSize={90} />
               </BarChart>
             </ResponsiveContainer>
           </div>
