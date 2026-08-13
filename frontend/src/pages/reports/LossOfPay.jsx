@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Filter, ArrowRight, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
@@ -28,6 +27,43 @@ const EXPORT_COLUMNS = [
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
+// Regenerating rebuilds a whole cycle's figures, so it asks first — and says
+// which dates it will touch, because "previous cycle" means nothing on its own.
+function RegenerateDialog({ current, previous, onConfirm, onClose }) {
+  const [scope, setScope] = useState('previous');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-[560px]">
+        <div className="flex flex-col items-center pt-6 px-6">
+          <div className="w-12 h-12 rounded-full bg-amber-400 flex items-center justify-center mb-3">
+            <span className="text-white text-[22px] font-bold leading-none">!</span>
+          </div>
+          <p className="text-[16px] font-semibold text-slate-800">Alert</p>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          {[
+            ['previous', 'Previous cycle', `This action will regenerate the Loss of pay details and leave data for payroll for ${previous}, and erase any adjustments made on the LOP report.`],
+            ['resigned', 'Current cycle for resigned users', `This action will regenerate the Loss of pay and leave data for payroll details of ${current} for resigned users`],
+          ].map(([key, title, body]) => (
+            <label key={key} className="flex items-start gap-2.5 cursor-pointer">
+              <input type="radio" name="regenScope" checked={scope === key} onChange={() => setScope(key)}
+                className="w-4 h-4 accent-blue-600 mt-0.5 flex-shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-[14px] text-slate-800">{title}</span>
+                <span className="block text-[13px] text-slate-500 mt-0.5">{body}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center justify-center gap-3 px-6 py-4 border-t border-slate-100">
+          <button onClick={() => onConfirm(scope)} className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded text-[14px] font-medium">Confirm</button>
+          <button onClick={onClose} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-5 py-2 rounded text-[14px]">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LossOfPay() {
   const [startDate, setStartDate] = useState(monthStartCA());
   const [endDate, setEndDate] = useState(todayCA());
@@ -42,7 +78,18 @@ export default function LossOfPay() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
   const [payPeriod, setPayPeriod] = useState(null);
-  const navigate = useNavigate();
+  const [regenOpen, setRegenOpen] = useState(false);
+
+  // Regenerating the previous cycle steps the range back a month and reloads;
+  // the resigned-users scope keeps the current range. Either way this report
+  // is recomputed from source rather than read from a cache, so a reload IS
+  // the regeneration — there is no stored copy to invalidate.
+  const regenerate = scope => {
+    setRegenOpen(false);
+    if (scope === 'previous') { shiftMonth(-1); toast.success('Regenerated for the previous cycle'); return; }
+    load();
+    toast.success('Regenerated for resigned users in the current cycle');
+  };
 
   // Picking a pay period drives the range from its dates; the From/To chips
   // grey out to show they aren't the active control, the same way the period
@@ -103,6 +150,17 @@ export default function LossOfPay() {
   const fmtRange = (s, e) =>
     `${new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} - ${new Date(e).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
 
+  // The month before the one on screen, named so the dialog can say which
+  // dates "previous cycle" actually means.
+  const prevCycle = (() => {
+    const d = new Date(startDate);
+    d.setMonth(d.getMonth() - 1);
+    return {
+      start: new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString('en-CA'),
+      end: new Date(d.getFullYear(), d.getMonth() + 1, 0).toLocaleDateString('en-CA'),
+    };
+  })();
+
   const periodNav = (
     <div className="flex items-center gap-2">
       <button onClick={() => shiftMonth(-1)} aria-label="Previous month" className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
@@ -114,7 +172,10 @@ export default function LossOfPay() {
   const actions = (
     <div className="flex items-center gap-2">
       <UnitToggle value={unit} onChange={setUnit} />
-      <button onClick={() => navigate('/payroll/run')} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+      {/* This used to navigate to Payroll Run, which left the report entirely
+          and started a payroll action nobody asked for. It now does what it
+          says: asks which cycle to rebuild, then recomputes this report. */}
+      <button onClick={() => setRegenOpen(true)} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
         Regenerate Report
       </button>
       <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
@@ -190,6 +251,14 @@ export default function LossOfPay() {
             </tbody>
           </table>
         </div>
+      )}
+      {regenOpen && (
+        <RegenerateDialog
+          current={fmtRange(startDate, endDate)}
+          previous={fmtRange(prevCycle.start, prevCycle.end)}
+          onConfirm={regenerate}
+          onClose={() => setRegenOpen(false)}
+        />
       )}
       <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`lop-details_${startDate}_to_${endDate}`} />
     </ReportShell>

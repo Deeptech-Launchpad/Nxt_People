@@ -86,10 +86,10 @@ export default function ResourceAvailability() {
   const [leaveType, setLeaveType] = useState('');
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
-  // The reference shows this filter row on load rather than behind the funnel
-  // — opening the report to a bare grid with no visible controls made it look
-  // like the filters didn't exist.
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  // Closed on load, behind the funnel. An earlier comment here claimed the
+  // reference opens this row by default; it does not — the report opens to the
+  // grid and the funnel reveals the filters.
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [sortAsc, setSortAsc] = useState(true);
   const [showExEmployees, setShowExEmployees] = useState(true);

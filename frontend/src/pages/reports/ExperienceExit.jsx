@@ -34,7 +34,7 @@ export default function ExperienceExit() {
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisYear').value);
   const [employmentType, setEmploymentType] = useState('');
   // Zoho shows this filter row on load rather than behind the funnel.
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [draft, setDraft] = useState({});
   const [applied, setApplied] = useState({});
 

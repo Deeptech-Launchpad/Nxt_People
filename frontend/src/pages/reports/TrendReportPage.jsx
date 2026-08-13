@@ -32,7 +32,7 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   // Zoho shows this filter row on load rather than behind the funnel.
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [draft, setDraft] = useState({});
   const [applied, setApplied] = useState({});
 

@@ -18,7 +18,7 @@ export default function Headcount() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   // Zoho shows this filter row on load rather than behind the funnel.
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   // Chips edit `draft`; Submit promotes it to `applied`, which is what runs.
   const [draft, setDraft] = useState({});
   const [applied, setApplied] = useState({});
