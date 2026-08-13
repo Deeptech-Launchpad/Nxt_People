@@ -32,3 +32,26 @@ export const codeStyle = (code) => {
   const base = String(code).replace(/^[\d.]+/, '').split('/')[0];
   return CODE_STYLE[base] || 'bg-slate-100 text-slate-600';
 };
+
+// Which columns are weekends comes from the data — the server stamps 'W' on
+// the days its weekend rules match. Deriving it from the weekday instead would
+// be wrong here: the work week is Mon-Sat with only the 1st and 3rd Saturday
+// off, so a [0,6] test would mark four working Saturdays a month as weekend.
+export const weekendColumns = (rows) => {
+  const set = new Set();
+  for (const emp of rows || []) {
+    (emp.days || []).forEach((code, i) => {
+      if (String(code || '').split('/')[0].replace(/^[\d.]+/, '') === 'W') set.add(i);
+    });
+  }
+  return set;
+};
+
+// Weekends are striped rather than flat-tinted, matching the reference. A
+// diagonal hatch reads as "not a working day" without competing with the
+// status pills the column still has to carry.
+export const WEEKEND_HATCH = {
+  backgroundImage:
+    'repeating-linear-gradient(45deg, rgba(148,163,184,0.16) 0 4px, transparent 4px 8px)',
+  backgroundColor: 'rgba(241,245,249,0.7)',
+};

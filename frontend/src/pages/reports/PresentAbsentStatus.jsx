@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, X } from 'lucide-react';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
@@ -9,7 +9,7 @@ import StandardFilterRows from './StandardFilterRows';
 import PeriodFilter from './PeriodFilter';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
-import { CODE_STYLE, LEGEND, codeStyle } from './attendanceCodes';
+import { CODE_STYLE, LEGEND, codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
 
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
@@ -39,6 +39,41 @@ const GRID_LEGEND = [[
   ['CL', 'Casual Leave'], ['CO', 'Compensatory Off'], ['PM', 'Permission'], ['LWP', 'Leave Without Pay'],
 ]];
 
+// The full code list, as a slide-over. The footer legend only has room for the
+// common codes, so the reference puts the complete set behind a "Status" chip
+// rather than wrapping the legend over three lines.
+//
+// Colours come from the same CODE_STYLE map the cells use, so a bar here can
+// never disagree with the pill it explains.
+const BAR_COLOR = {
+  P: '#059669', HD: '#0d9488', A: '#dc2626', W: '#d97706', H: '#0284c7',
+  CL: '#2563eb', CO: '#9333ea', LWP: '#e11d48', PM: '#0891b2', L: '#7c3aed',
+};
+
+function StatusPanel({ onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-slate-900/20" />
+      <div onClick={e => e.stopPropagation()} className="relative bg-white w-full max-w-[320px] h-full shadow-xl flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+          <h3 className="text-[15px] font-semibold text-slate-800">Status</h3>
+          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto py-2">
+          {LEGEND.map(([code, label]) => (
+            <div key={code} className="flex items-center gap-3 px-5 py-2.5">
+              <span className="w-1 h-5 rounded-sm flex-shrink-0" style={{ background: BAR_COLOR[code] || '#94a3b8' }} />
+              <span className="text-[13.5px] text-slate-700">
+                <span className="font-medium">{code}</span> - {label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Employee × date grid of attendance codes — the report Zoho calls Employee
 // Present/Absent Status. Our previous "summary" tab was an aggregate table,
 // which is a different report entirely.
@@ -50,6 +85,7 @@ export default function PresentAbsentStatus() {
   const [data, setData] = useState(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -79,11 +115,19 @@ export default function PresentAbsentStatus() {
     { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
   ];
 
+  const weekendCols = weekendColumns(data?.data);
+
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const filters = (
     <>
       <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
+      <button
+        onClick={() => setStatusOpen(true)}
+        className="px-3 py-1.5 rounded text-[13px] border border-slate-300 bg-white text-slate-600 hover:border-slate-400 transition-colors whitespace-nowrap"
+      >
+        Status
+      </button>
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
@@ -110,10 +154,11 @@ export default function PresentAbsentStatus() {
             <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
               <tr>
                 <th className="text-left px-3 py-2.5 sticky left-0 bg-slate-50 z-10 whitespace-nowrap">Employee</th>
-                {data.dayLabels.map(d => {
+                {data.dayLabels.map((d, i) => {
                   const dd = new Date(d);
                   return (
-                    <th key={d} className="px-1.5 py-2.5 text-center w-14 leading-tight">
+                    <th key={d} style={weekendCols.has(i) ? WEEKEND_HATCH : undefined}
+                      className="px-1.5 py-2.5 text-center w-14 leading-tight">
                       <div>{dd.getDate()} {dd.toLocaleDateString('en-US', { month: 'short' })}</div>
                       <div className="text-slate-400 font-normal normal-case">{dd.toLocaleDateString('en-US', { weekday: 'short' })}</div>
                     </th>
@@ -135,7 +180,8 @@ export default function PresentAbsentStatus() {
                     </p>
                   </td>
                   {emp.days.map((code, i) => (
-                    <td key={i} className="px-1 py-2 text-center">
+                    <td key={i} style={weekendCols.has(i) ? WEEKEND_HATCH : undefined}
+                      className="px-1 py-2 text-center">
                       {code && code !== '-'
                         ? <span className={`inline-block min-w-8 px-1 rounded text-[10px] font-semibold py-0.5 ${codeStyle(code)}`}>{code}</span>
                         : <span className="text-slate-300">-</span>}
@@ -147,6 +193,7 @@ export default function PresentAbsentStatus() {
           </table>
         </div>
       )}
+      {statusOpen && <StatusPanel onClose={() => setStatusOpen(false)} />}
       <LeaveExportModal
         open={exportOpen} onClose={() => setExportOpen(false)} rows={data?.data || []}
         withIdentity columns={dayColumns(data?.dayLabels || [])}

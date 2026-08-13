@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, X, MoreHorizontal } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -25,10 +25,20 @@ const PERIOD_OPTIONS = [
   { key: 'lastMonth', label: 'Last Month', value: range(new Date(y, m - 1, 1), new Date(y, m, 0)) },
 ];
 
-const SUMMARY_KEYS = [
-  ['payableDays', 'Payable'], ['present', 'Present'], ['onDuty', 'On Duty'], ['paidLeave', 'PaidLeave'],
-  ['holiday', 'Holidays'], ['weekend', 'Weekend'], ['absent', 'Absent'], ['unpaidLeave', 'UnpaidLeave'],
-];
+// The two tabs show different things, not the same figures in another unit.
+// Hour mode leads with Total Hours — what was actually clocked — and drops
+// Absent, which has no hours behind it. Day mode has no Total row at all.
+const SUMMARY_KEYS = {
+  day: [
+    ['payableDays', 'Payable Days'], ['present', 'Present'], ['onDuty', 'On Duty'], ['paidLeave', 'PaidLeave'],
+    ['holiday', 'Holidays'], ['weekend', 'Weekend'], ['absent', 'Absent'], ['unpaidLeave', 'UnpaidLeave'],
+  ],
+  hour: [
+    ['totalHours', 'Total Hours'], ['payableDays', 'Payable Hours'], ['present', 'Present Hours'],
+    ['onDuty', 'On Duty'], ['paidLeave', 'PaidLeave'], ['holiday', 'Holidays'],
+    ['weekend', 'Weekend'], ['unpaidLeave', 'UnpaidLeave'],
+  ],
+};
 const STATUS_COLOR = {
   present: 'text-emerald-600', paidLeave: 'text-amber-600', holiday: 'text-sky-600',
   weekend: 'text-yellow-600', absent: 'text-red-600', unpaidLeave: 'text-rose-600', onDuty: 'text-violet-600',
@@ -82,6 +92,40 @@ const PRESENCE_GROUPS = [
   { label: null, span: 4 },
 ];
 
+// The strip's "..." opens the same figures stacked, which is the only way to
+// read them all when the window is too narrow for eight side by side.
+function SummaryPanel({ unit, setUnit, rows, valueOf, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-slate-900/20" />
+      <div onClick={e => e.stopPropagation()} className="relative bg-white w-full max-w-[340px] h-full shadow-xl flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+          <h3 className="text-[15px] font-semibold text-slate-800">Attendance Report</h3>
+          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
+        </div>
+        <div className="flex border-b border-slate-200">
+          {[['day', 'Day(s)'], ['hour', 'Hour(s)']].map(([k, l]) => (
+            <button
+              key={k} onClick={() => setUnit(k)}
+              className={`flex-1 py-2.5 text-[13.5px] transition-colors ${unit === k ? 'text-blue-600 font-semibold border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1 overflow-y-auto py-2">
+          {rows.map(([key, label]) => (
+            <div key={key} className="px-5 py-2.5 border-l-2 border-slate-300 ml-3 my-1">
+              <p className="text-[12px] text-slate-500">{label}</p>
+              <p className={`text-[14px] font-semibold tabular-nums ${STATUS_COLOR[key] || 'text-slate-700'}`}>{valueOf(key)}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Single-employee day-by-day presence ledger with a Day/Hour summary strip —
 // Zoho's Presence Hours Break-up is a drilldown, not an all-employees table.
 export default function PresenceHoursBreakup() {
@@ -94,6 +138,7 @@ export default function PresenceHoursBreakup() {
   const [data, setData] = useState(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
 
   useEffect(() => {
     if (!employee) { setData(null); return; }
@@ -115,7 +160,14 @@ export default function PresenceHoursBreakup() {
   };
 
   const summary = unit === 'hour' ? data?.summaryHours : data?.summaryDays;
-  const unitSuffix = unit === 'hour' ? 'Hrs' : 'Day(s)';
+  const summaryRows = SUMMARY_KEYS[unit === 'hour' ? 'hour' : 'day'];
+  // Hours read as HH:MM with an Hrs/Hr suffix; days as a plain count. The
+  // singular matters — the reference writes "0 Day" and "00:00 Hr".
+  const summaryValue = key => {
+    const v = summary?.[key] ?? 0;
+    if (unit !== 'hour') return `${v} ${Math.abs(v) === 1 ? 'Day' : 'Days'}`;
+    return `${fmtHrs(v)} ${Math.abs(v) === 1 ? 'Hr' : 'Hrs'}`;
+  };
 
   // Export, Print and PDF belong beside the funnel, not inside the filter
   // panel — they are not filter actions and were unreachable until you opened
@@ -188,18 +240,43 @@ export default function PresenceHoursBreakup() {
           </div>
 
           {summary && (
-            <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3 flex flex-wrap gap-x-6 gap-y-2">
-              {SUMMARY_KEYS.map(([key, label]) => (
-                <div key={key} className="border-l-2 border-slate-300 pl-2">
-                  <p className="text-[11px] text-slate-500">{label}</p>
-                  <p className={`text-[13px] font-bold tabular-nums ${STATUS_COLOR[key] || 'text-slate-700'}`}>
-                    {summary[key] ?? 0} {unitSuffix}
-                  </p>
-                </div>
-              ))}
+            <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3 flex items-start gap-5">
+              {/* The tabs live in the strip, not only in the header toggle —
+                  the reference switches the summary independently of the
+                  table, so you can read hours without changing the grid. */}
+              <div className="flex-shrink-0 flex flex-col border-r border-slate-200 pr-4">
+                {[['day', 'Day(s)'], ['hour', 'Hour(s)']].map(([k, l]) => (
+                  <button
+                    key={k} onClick={() => setUnit(k)}
+                    className={`text-left text-[12.5px] px-2.5 py-1 rounded transition-colors ${unit === k ? 'bg-white font-semibold text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <div className="flex-1 min-w-0 flex flex-wrap gap-x-6 gap-y-2">
+                {summaryRows.map(([key, label]) => (
+                  <div key={key} className="border-l-2 border-slate-300 pl-2">
+                    <p className="text-[11px] text-slate-500">{label}</p>
+                    <p className={`text-[13px] font-bold tabular-nums ${STATUS_COLOR[key] || 'text-slate-700'}`}>
+                      {summaryValue(key)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => setSummaryOpen(true)}
+                aria-label="Open the full attendance report"
+                className="flex-shrink-0 text-slate-400 hover:text-slate-700 px-1"
+              >
+                <MoreHorizontal size={18} />
+              </button>
             </div>
           )}
         </>
+      )}
+      {summaryOpen && (
+        <SummaryPanel unit={unit} setUnit={setUnit} rows={summaryRows} valueOf={summaryValue} onClose={() => setSummaryOpen(false)} />
       )}
       <LeaveExportModal
         open={exportOpen} onClose={() => setExportOpen(false)} rows={data?.data || []}

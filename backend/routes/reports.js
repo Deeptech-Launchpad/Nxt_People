@@ -1691,6 +1691,41 @@ const clockMinutes = (ts) => { const d = new Date(ts); return d.getHours() * 60 
 
 // Applies the "Total Hours: All / Lesser than / Greater than N" comparator
 // that Zoho puts on several attendance reports.
+// Punch-time filter for Early/late check-in and check-out.
+//
+// Six modes, matching the reference. Two are relative to the shift and take a
+// duration in minutes ("before shift by 30"); two are absolute and take a
+// clock time ("before 09:30"); the other two take nothing.
+//
+// A mode that needs a value but has none is treated as no filter rather than
+// as "matches nothing" — a half-set filter should show everything, not an
+// empty table that looks like missing data.
+function punchMatches(mode, rawValue, punchMin, earlyBy, lateBy) {
+  if (!mode) return true;
+  if (mode === 'not_recorded') return punchMin === null;
+  // Every remaining mode describes a punch, so a missing one cannot match.
+  if (punchMin === null) return false;
+
+  if (mode === 'before_shift') return earlyBy !== null;
+  if (mode === 'after_shift') return lateBy !== null;
+
+  if (mode === 'before_shift_by' || mode === 'after_shift_by') {
+    const mins = Number(rawValue);
+    if (!Number.isFinite(mins) || mins < 0) return true;
+    const delta = mode === 'before_shift_by' ? earlyBy : lateBy;
+    return delta !== null && delta >= mins;
+  }
+
+  if (mode === 'before' || mode === 'after') {
+    // "HH:MM" — anything else is an unset filter, not a match of nothing.
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(rawValue || ''));
+    if (!m) return true;
+    const at = Number(m[1]) * 60 + Number(m[2]);
+    return mode === 'before' ? punchMin < at : punchMin > at;
+  }
+  return true;
+}
+
 function totalHoursMatches(query, hours) {
   const mode = query.totalHours;
   if (mode !== 'lt' && mode !== 'gt') return true;
@@ -1788,12 +1823,8 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
         const exitEarly = outMin !== null && shiftEndMin !== null && outMin < shiftEndMin ? shiftEndMin - outMin : null;
         const exitLate = outMin !== null && shiftEndMin !== null && outMin > shiftEndMin ? outMin - shiftEndMin : null;
 
-        if (firstCheckIn === 'not_recorded' && inMin !== null) continue;
-        if (firstCheckIn === 'before_shift' && entryEarly === null) continue;
-        if (firstCheckIn === 'after_shift' && entryLate === null) continue;
-        if (lastCheckOut === 'not_recorded' && outMin !== null) continue;
-        if (lastCheckOut === 'before_shift' && exitEarly === null) continue;
-        if (lastCheckOut === 'after_shift' && exitLate === null) continue;
+        if (!punchMatches(firstCheckIn, req.query.firstCheckInValue, inMin, entryEarly, entryLate)) continue;
+        if (!punchMatches(lastCheckOut, req.query.lastCheckOutValue, outMin, exitEarly, exitLate)) continue;
         if (!totalHoursMatches(req.query, totalHours)) continue;
 
         data.push({
@@ -1916,6 +1947,13 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
     // Hour summary is the day summary × the shift length — this app has no
     // per-category hour tracking, so the shift is the only honest basis.
     const summaryHours = Object.fromEntries(Object.entries(summaryDays).map(([k, v]) => [k, parseFloat((v * shiftHours).toFixed(2))]));
+    // Every other figure is a day count scaled by the shift length, which
+    // makes them expectations rather than measurements. Total Hours is the
+    // one real number here: what the employee actually clocked. Without it
+    // the Hour tab shows only what was owed, never what was worked.
+    summaryHours.totalHours = parseFloat(
+      filtered.reduce((s, r) => s + (Number(r.totalHours) || 0), 0).toFixed(2)
+    );
 
     res.json({ success: true, employee: emp, data: filtered, summaryDays, summaryHours, shiftHours, startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }

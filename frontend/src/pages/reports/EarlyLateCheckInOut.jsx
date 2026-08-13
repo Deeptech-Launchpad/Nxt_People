@@ -26,10 +26,21 @@ const PERIOD_OPTIONS = [
   { key: 'lastMonth', label: 'Last Month', value: range(new Date(y, m - 1, 1), new Date(y, m, 0)) },
 ];
 
+// Two of these take a value: the "by" modes take minutes relative to the
+// shift, and Before/After take a clock time. The rest take nothing, so the
+// input only appears when the chosen mode actually uses one.
 const PUNCH_OPTIONS = [
-  ['', 'All'], ['before_shift', 'Before shift'], ['after_shift', 'After shift'], ['not_recorded', 'Not recorded'],
+  ['', 'All', null],
+  ['before_shift_by', 'Before shift by', 'mins'],
+  ['after_shift_by', 'After shift by', 'mins'],
+  ['before', 'Before', 'time'],
+  ['after', 'After', 'time'],
+  ['not_recorded', 'Not recorded', null],
 ];
 
+// `value` is {mode, amount}. Older callers passed a bare mode string, so that
+// shape is still read — a stale bundle mid-deploy keeps filtering rather than
+// silently ignoring the chip.
 function PunchFilter({ label, value, onChange }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -38,17 +49,41 @@ function PunchFilter({ label, value, onChange }) {
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
-  const current = PUNCH_OPTIONS.find(([k]) => k === value)?.[1] || 'All';
+  const mode = typeof value === 'string' ? value : (value?.mode || '');
+  const amount = typeof value === 'string' ? '' : (value?.amount ?? '');
+  const opt = PUNCH_OPTIONS.find(([k]) => k === mode);
+  const needs = opt?.[2] || null;
+  const summary = !mode ? 'All' : `${opt?.[1] || mode}${amount ? ` ${amount}` : ''}`;
+
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(o => !o)} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12.5px] font-medium border transition-colors whitespace-nowrap ${value ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'}`}>
-        {label}: {current} <ChevronDown size={12} />
+      <button onClick={() => setOpen(o => !o)} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12.5px] font-medium border transition-colors whitespace-nowrap ${mode ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'}`}>
+        <span className="max-w-[190px] truncate">{label}: {summary}</span> <ChevronDown size={12} className="flex-shrink-0" />
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
-          {PUNCH_OPTIONS.map(([k, l]) => (
-            <button key={k || 'all'} onClick={() => { onChange(k); setOpen(false); }} className={`w-full text-left px-3 py-1.5 text-[12.5px] transition-colors ${value === k ? 'text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>{l}</button>
+        <div className="absolute z-50 mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+          {PUNCH_OPTIONS.map(([k, l, kind]) => (
+            <button
+              key={k || 'all'}
+              onClick={() => { onChange({ mode: k, amount: '' }); if (!kind) setOpen(false); }}
+              className={`w-full text-left px-3 py-1.5 text-[12.5px] transition-colors ${mode === k ? 'text-blue-600 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}
+            >
+              {l}
+            </button>
           ))}
+          {needs && (
+            <div className="px-3 py-2 border-t border-slate-100 mt-1">
+              <input
+                type={needs === 'time' ? 'time' : 'number'}
+                min={needs === 'mins' ? 0 : undefined}
+                value={amount}
+                autoFocus
+                onChange={e => onChange({ mode, amount: e.target.value })}
+                placeholder={needs === 'mins' ? 'minutes' : ''}
+                className="w-full border border-slate-200 rounded px-2 py-1 text-[12.5px] focus:outline-none focus:border-blue-400"
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -91,8 +126,8 @@ export default function EarlyLateCheckInOut() {
   const f = useReportFilters();
   const [periodKey, setPeriodKey] = useState('today');
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS[0].value);
-  const [firstCheckIn, setFirstCheckIn] = useState('');
-  const [lastCheckOut, setLastCheckOut] = useState('');
+  const [firstCheckIn, setFirstCheckIn] = useState({ mode: '', amount: '' });
+  const [lastCheckOut, setLastCheckOut] = useState({ mode: '', amount: '' });
   const [hours, setHours] = useState({ mode: 'all', amount: '' });
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
@@ -103,7 +138,8 @@ export default function EarlyLateCheckInOut() {
     setLoading(true);
     const params = new URLSearchParams({
       startDate: dateRange.start, endDate: dateRange.end, ...f.params(),
-      ...(firstCheckIn ? { firstCheckIn } : {}), ...(lastCheckOut ? { lastCheckOut } : {}),
+      ...(firstCheckIn.mode ? { firstCheckIn: firstCheckIn.mode, firstCheckInValue: firstCheckIn.amount } : {}),
+      ...(lastCheckOut.mode ? { lastCheckOut: lastCheckOut.mode, lastCheckOutValue: lastCheckOut.amount } : {}),
       ...(hours.mode !== 'all' && hours.amount ? { totalHours: hours.mode, totalHoursValue: hours.amount } : {}),
     });
     appendDimensionFilters(params, f.dimFilters);
@@ -118,7 +154,7 @@ export default function EarlyLateCheckInOut() {
 
   const reset = () => {
     setPeriodKey('today'); setDateRange(PERIOD_OPTIONS[0].value);
-    setFirstCheckIn(''); setLastCheckOut(''); setHours({ mode: 'all', amount: '' }); f.reset();
+    setFirstCheckIn({ mode: '', amount: '' }); setLastCheckOut({ mode: '', amount: '' }); setHours({ mode: 'all', amount: '' }); f.reset();
   };
 
   // Export, Print and PDF belong beside the funnel, not inside the filter
