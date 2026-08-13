@@ -1943,19 +1943,52 @@ router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admi
     const end = req.query.endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-CA');
     const ctx = await loadAttendanceContext(req, start, end);
 
-    const data = ctx.employees.map(emp => ({
-      _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
-      employeeCode: emp.employeeCode, department: emp.department, exitDate: emp.exitDate,
-      days: ctx.days.map(d => {
-        if (!ctx.onRolls(emp, d)) return '-';
+    const todayYmd = ctx.today.toLocaleDateString('en-CA');
+
+    // Two readings of the same grid. `days` carries the status code, `hours`
+    // the time actually punched — null where there is no attendance row at
+    // all, because hours don't apply to a day nobody recorded, whereas 00:00
+    // means a day that was recorded and came to nothing.
+    const data = ctx.employees.map(emp => {
+      const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
+      const days = [], hours = [];
+
+      for (const d of ctx.days) {
+        if (!ctx.onRolls(emp, d)) { days.push('-'); hours.push(null); continue; }
         const ymd = d.toLocaleDateString('en-CA');
-        return classifyAttendanceDay({
+        const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
+        const dayLeaves = ctx.leavesOn(emp._id, d);
+        const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
-          attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
-          leave: ctx.leaveOn(emp._id, d), isFuture: d > ctx.today,
-        }).code;
-      }),
-    }));
+          attStatus: att?.status,
+          leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          isFuture: ymd > todayYmd,
+        });
+
+        const worked = parseFloat(att?.workingHours) || 0;
+        const permHours = dayLeaves
+          .filter(l => l.leaveType === 'permission')
+          .reduce((s, l) => s + (parseFloat(l.hours) || 0), 0);
+
+        // A permission taken on a day that was also worked is not the whole
+        // story of that day, so the cell tells both halves — the reference
+        // splits it the same way ("0.06PM/0.94P", "00:30(PM)/07:30(P)").
+        if (permHours > 0 && att?.checkIn) {
+          const frac = Math.min(1, permHours / (shiftHours || 8));
+          days.push(`${frac.toFixed(2)}PM/${(1 - frac).toFixed(2)}P`);
+          hours.push(`${hhmm(permHours)}(PM)/${hhmm(worked)}(P)`);
+        } else {
+          days.push(cls.code);
+          hours.push(att ? hhmm(worked) : null);
+        }
+      }
+
+      return {
+        _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
+        employeeCode: emp.employeeCode, department: emp.department, exitDate: emp.exitDate,
+        days, hours,
+      };
+    });
 
     res.json({ success: true, data, dayLabels: ctx.days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
