@@ -174,7 +174,7 @@ export default function DailyLeaveStatus() {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
-            <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <th className="text-left px-4 py-2.5">Employee</th>
                 <th className="text-left px-4 py-2.5">Leavetype</th>
@@ -191,7 +191,7 @@ export default function DailyLeaveStatus() {
                   <td className="px-4 py-2.5">{row.category || '—'}</td>
                   <td className="px-4 py-2.5 max-w-xs truncate" title={row.reason}>{row.reason || '—'}</td>
                   <td className="px-4 py-2.5">
-                    <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full capitalize ${row.approvalStatus === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{row.approvalStatus}</span>
+                    <span className="capitalize">{row.approvalStatus}</span>
                   </td>
                 </tr>
               ))}

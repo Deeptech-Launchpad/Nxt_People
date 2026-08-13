@@ -414,7 +414,12 @@ export default function LeaveBalance() {
   // Print only, matching the reference — this page offers no Export or ICS
   // in the overflow menu. Print goes through the browser pipeline and the
   // print stylesheet, so "Download as PDF" would be the same action twice.
-  const menuItems = [{ key: 'print', label: 'Print', onClick: () => window.print() }];
+  // Export joins the menu rather than sitting beside the Year selector, so
+  // every report offers its actions from the same place.
+  const menuItems = [
+    ...(employee ? [{ key: 'export', label: 'Export', onClick: () => setExportOpen(true) }] : []),
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+  ];
 
   // No employee picker here — it's the breadcrumb chip now, where the
   // reference puts it, and two pickers driving one selection is a trap.
@@ -426,11 +431,6 @@ export default function LeaveBalance() {
           {[now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
-      {employee && (
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors ml-auto">
-          Export
-        </button>
-      )}
     </>
   );
 

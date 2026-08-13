@@ -16,14 +16,19 @@ export function EmployeeCell({ row }) {
       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
         {row.firstName?.[0]}{row.lastName?.[0]}
       </div>
+      {/* Employee id leads, then the name, on one line — the reference reads
+          "ANXT220059 Dhanalakshmi" and carries no department. The department
+          was a second line under every row on every table report, which is a
+          lot of ink for a value the dimension filters already narrow by. */}
       <div className="min-w-0">
-        <p className="text-[14px] font-medium text-slate-800 truncate">
+        <p className="text-[14px] text-slate-800 truncate">
+          {row.employeeCode && <span className="text-slate-400 mr-1.5">{row.employeeCode}</span>}
           {row.firstName} {row.lastName}
-          {row.employeeCode && <span className="ml-1.5 text-[12px] font-normal text-slate-400">({row.employeeCode})</span>}
-        </p>
-        <p className="text-[12px] text-slate-400 truncate">
-          {row.department || '—'}
-          {row.exitDate && <span className="ml-1.5 text-red-500 font-medium">Exited {new Date(row.exitDate).toLocaleDateString('en-IN')}</span>}
+          {row.exitDate && (
+            <span className="ml-1.5 text-[12px] text-slate-400">
+              ( Exit Date - {new Date(row.exitDate).toLocaleDateString('en-IN')} )
+            </span>
+          )}
         </p>
       </div>
     </div>

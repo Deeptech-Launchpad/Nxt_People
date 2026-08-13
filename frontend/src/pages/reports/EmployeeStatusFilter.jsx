@@ -59,9 +59,14 @@ export default function EmployeeStatusFilter({ value, onChange }) {
     onChange('all');
   };
 
-  const summaryLabel = checked.length === DEFAULT_CHECKED.length
-    ? checked.map(k => OPTIONS.find(o => o.key === k)?.label.split(' ')[0]).join(', ') + ', ...'
-    : checked.map(k => OPTIONS.find(o => o.key === k)?.label).join(', ');
+  // Full labels, truncated by the chip. Shortening each to its first word
+  // collapsed "Active Users" and "Active Non-Users" into the same string, so
+  // the chip read "Active, Active, Ex-Employe..." — two of the three selections
+  // looked identical and the reader could not tell what was actually on.
+  const summaryLabel = checked
+    .map(k => OPTIONS.find(o => o.key === k)?.label)
+    .filter(Boolean)
+    .join(', ');
 
   const filtered = search.trim()
     ? OPTIONS.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))

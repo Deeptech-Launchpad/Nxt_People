@@ -121,10 +121,13 @@ export default function ResourceAvailability() {
   // Sorting is client-side on the already-loaded page — the grid is one
   // request's worth of rows, so there's nothing to re-fetch.
   const rows = data
+    // Sorted by employee id, matching the reference. Sorting by first name put
+    // the grid in an order nobody reading a roster works in — people are looked
+    // up by code, and the code is the first thing in the cell.
     ? [...data.data].sort((a, b) => {
-        const an = `${a.firstName} ${a.lastName}`.toLowerCase();
-        const bn = `${b.firstName} ${b.lastName}`.toLowerCase();
-        return sortAsc ? an.localeCompare(bn) : bn.localeCompare(an);
+        const ac = String(a.employeeCode || '');
+        const bc = String(b.employeeCode || '');
+        return sortAsc ? ac.localeCompare(bc, undefined, { numeric: true }) : bc.localeCompare(ac, undefined, { numeric: true });
       })
     : [];
 
