@@ -2304,39 +2304,86 @@ router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'h
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+// A running hour ledger per employee, as in the reference: what the period
+// owed, what it paid for, and the balance that carries in and out.
+//
+//   Expected Hours = every day the employee was on rolls x their shift length
+//   Payable Hours  = the days the company pays for x their shift length
+//                    (worked, paid leave, holiday, weekend)
+//   Balance Hours  = Previous Balance + Payable - Expected
+//
+// Expected counts every day rather than only working days, matching Attendance
+// Data for Payroll's Expected Payable column — the two reports would otherwise
+// disagree about the same period.
+//
+// This system stores no carried-forward hour bank, so Previous Balance is the
+// same Payable - Expected sum run over every day from the employee's joining
+// date up to the day before the period. It is therefore derived from our own
+// attendance rather than migrated from anywhere, and will not match a balance
+// accumulated in another system.
 router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
-    const { holMap, rules } = await loadHolidaysAndRulesRange(new Date(start), new Date(end));
-    const workingDaysCount = listWorkingDays(new Date(start), new Date(end), holMap, rules).length;
 
-    const filters = standardEmployeeFilters(req, 'e', 3);
-    const r = await pool.query(
-      `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
-              e.employee_id AS "employeeCode", e.exit_date AS "exitDate",
-              s.name AS "shiftName", s.start_time AS "shiftStart", s.end_time AS "shiftEnd",
-              ROUND(COALESCE(SUM(a.working_hours), 0)::numeric, 2) AS "workedHours"
-         FROM employees e
-         LEFT JOIN shifts s ON e.shift_id = s.id
-         LEFT JOIN attendance a ON a.employee_id = e.id AND a.date >= $1::date AND a.date <= $2::date
-        WHERE 1=1${filters.clause}
-        GROUP BY e.id, e.first_name, e.last_name, e.department, e.employee_id, e.exit_date, s.name, s.start_time, s.end_time
-        ORDER BY e.employee_id`,
-      [start, end, ...filters.params]
+    // How far back the ledger runs. One context covering history plus the
+    // period, rather than two loads over overlapping ranges.
+    //
+    // It begins when this system began recording, not at the joining date.
+    // Before there is any attendance at all there is no evidence either way,
+    // and scoring those days as absences would invent a deficit of thousands
+    // of hours for anyone who joined before the data starts.
+    const boundsRes = await pool.query(
+      `SELECT (SELECT MIN(joining_date)::text FROM employees WHERE deleted_at IS NULL) AS "joined",
+              (SELECT MIN(date)::text FROM attendance) AS "recorded"`
     );
+    const { joined, recorded } = boundsRes.rows[0] || {};
+    const earliest = joined && recorded ? (joined > recorded ? joined : recorded) : (recorded || joined);
+    const ledgerStart = earliest && earliest < start ? earliest : start;
 
-    const data = r.rows.map(row => {
-      const shiftHours = shiftHoursOf(row.shiftStart, row.shiftEnd, 9);
-      const expectedHours = parseFloat((shiftHours * workingDaysCount).toFixed(2));
-      const workedHours = parseFloat(row.workedHours) || 0;
+    const ctx = await loadAttendanceContext(req, ledgerStart, end);
+    const todayYmd = ctx.today.toLocaleDateString('en-CA');
+    const PAYABLE = new Set(['present', 'onDuty', 'paidLeave', 'holiday', 'weekend']);
+
+    const data = ctx.employees.map(emp => {
+      const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
+      let prevExpected = 0, prevPayable = 0, expected = 0, payable = 0;
+
+      for (const d of ctx.days) {
+        if (!ctx.onRolls(emp, d)) continue;
+        const ymd = d.toLocaleDateString('en-CA');
+        // A day that has not happened yet owes nothing and pays nothing.
+        if (ymd > todayYmd) continue;
+        const dayLeaves = ctx.leavesOn(emp._id, d);
+        const cls = classifyAttendanceDay({
+          date: d, holMap: ctx.holMap, rules: ctx.rules,
+          attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
+          leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          isFuture: false,
+        });
+        const isPayable = PAYABLE.has(cls.kind);
+        if (ymd < start) {
+          prevExpected += shiftHours;
+          if (isPayable) prevPayable += shiftHours;
+        } else {
+          expected += shiftHours;
+          if (isPayable) payable += shiftHours;
+        }
+      }
+
+      const round = n => parseFloat(n.toFixed(2));
+      const previousBalance = round(prevPayable - prevExpected);
       return {
-        _id: row._id, firstName: row.firstName, lastName: row.lastName, department: row.department,
-        employeeCode: row.employeeCode, exitDate: row.exitDate, shiftName: row.shiftName,
-        expectedHours, workedHours, variance: parseFloat((workedHours - expectedHours).toFixed(2)),
+        _id: emp._id, firstName: emp.firstName, lastName: emp.lastName, department: emp.department,
+        employeeCode: emp.employeeCode, exitDate: emp.exitDate, shiftName: emp.shiftName,
+        previousBalance,
+        expectedHours: round(expected),
+        payableHours: round(payable),
+        balanceHours: round(previousBalance + payable - expected),
       };
     });
-    res.json({ success: true, data, startDate: start, endDate: end, workingDays: workingDaysCount });
+
+    res.json({ success: true, data, startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 

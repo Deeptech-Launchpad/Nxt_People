@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Download, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Filter, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
@@ -9,6 +9,7 @@ import StandardFilterRows from './StandardFilterRows';
 import PeriodFilter from './PeriodFilter';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
+import useFitToViewport from '../../hooks/useFitToViewport';
 import { EmployeeCell } from './TableReportPage';
 
 const now = new Date();
@@ -21,45 +22,63 @@ const PERIOD_OPTIONS = [
   { key: 'thisYear', label: 'This Year', value: range(new Date(y, 0, 1), new Date(y, 11, 31)) },
 ];
 
-const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
-const fmtH = h => `${h > 0 ? '+' : ''}${(Number(h) || 0).toFixed(2)}h`;
+const fmtDate = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-// HH:MM on the "(Hours)" sheet, fractional on "(Decimal)" — the reference
-// ships both. Previous Balance is always 0: this system has no carry-forward
-// time bank, so the column exists for column-parity and stays honest.
+// A balance runs to thousands of hours, so the hour part is not capped at 24 —
+// "4625:35" is a legitimate reading. Negative balances keep their sign.
 const hhmm = h => {
-  const n = Math.abs(Number(h) || 0);
-  const s = `${String(Math.floor(n)).padStart(2, '0')}:${String(Math.round((n % 1) * 60)).padStart(2, '0')}`;
-  return (Number(h) || 0) < 0 ? `-${s}` : s;
+  const v = Number(h) || 0;
+  const n = Math.abs(v);
+  const mins = Math.round((n % 1) * 60);
+  const hrs = Math.floor(n) + (mins === 60 ? 1 : 0);
+  return `${v < 0 ? '-' : ''}${String(hrs).padStart(2, '0')}:${String(mins === 60 ? 0 : mins).padStart(2, '0')}`;
 };
-const exportCols = (decimal) => [
-  { key: 'previousBalance', header: 'Previous Balance', value: () => (decimal ? '0.00' : '00:00') },
-  { key: 'expectedHours', header: 'Expected Hours', value: r => (decimal ? (Number(r.expectedHours) || 0).toFixed(2) : hhmm(r.expectedHours)) },
-  { key: 'workedHours', header: 'Payable Hours', value: r => (decimal ? (Number(r.workedHours) || 0).toFixed(2) : hhmm(r.workedHours)) },
-  { key: 'variance', header: 'Balance Hours', value: r => (decimal ? (Number(r.variance) || 0).toFixed(2) : hhmm(r.variance)) },
-];
 
-// Expected (shift length × working days in range) vs actually logged hours.
-// Zoho's version is a carry-forward overtime bank with a Previous Balance
-// rolled between pay periods; this system has no time-bank or pay-period
-// model, so the report stays an honest single-period comparison rather than
-// showing a fabricated balance.
+// Step by the span on screen: a month moves a month, a year a year.
+const shiftRange = ({ start, end }, n) => {
+  const s = new Date(start), e = new Date(end);
+  const monthEnd = new Date(e.getFullYear(), e.getMonth() + 1, 0);
+  if (s.getDate() === 1 && e.getDate() === monthEnd.getDate() && s.getMonth() === e.getMonth()) {
+    const t = new Date(s.getFullYear(), s.getMonth() + n, 1);
+    return range(t, new Date(t.getFullYear(), t.getMonth() + 1, 0));
+  }
+  const span = Math.round((e - s) / 86400000) + 1;
+  const shift = d => { const r = new Date(d); r.setDate(r.getDate() + n * span); return r; };
+  return range(shift(s), shift(e));
+};
+
+const COLUMNS = [
+  ['previousBalance', 'Previous Balance'],
+  ['expectedHours', 'Expected Hours'],
+  ['payableHours', 'Payable Hours'],
+  ['balanceHours', 'Balance Hours'],
+];
+const exportCols = (decimal) => COLUMNS.map(([key, header]) => ({
+  key, header, value: r => (decimal ? (Number(r[key]) || 0).toFixed(2) : hhmm(r[key])),
+}));
+
+// A running hour ledger: what the period owed, what it paid for, and the
+// balance carried in and out. Previous Balance is the same Payable - Expected
+// sum over everything before the period rather than a stored bank, so it is
+// derived from this system's own attendance and will not match a balance
+// accumulated elsewhere.
 export default function ExpectedVsWorked() {
   const f = useReportFilters();
   const [periodKey, setPeriodKey] = useState('thisMonth');
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS[0].value);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
-  const [workingDays, setWorkingDays] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const gridRef = useRef(null);
+  const gridHeight = useFitToViewport(gridRef, null, [filtersOpen, rows]);
 
   const load = () => {
     setLoading(true);
     const params = new URLSearchParams({ startDate: dateRange.start, endDate: dateRange.end, ...f.params() });
     appendDimensionFilters(params, f.dimFilters);
     api.get(`/reports/attendance/expected-vs-worked?${params}`)
-      .then(r => { setRows(Array.isArray(r.data.data) ? r.data.data : []); setWorkingDays(r.data.workingDays || 0); })
+      .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
@@ -68,10 +87,10 @@ export default function ExpectedVsWorked() {
   useEffect(load, [dateRange, ...f.deps]);
 
   const reset = () => { setPeriodKey('thisMonth'); setDateRange(PERIOD_OPTIONS[0].value); f.reset(); };
+
   // Export, Print and PDF beside the funnel, matching every other report.
-  // Import on Expected vs Worked is deliberately absent: nothing in this app
-  // ingests an hours file, and a menu entry that does nothing is worse than
-  // no entry.
+  // Import is deliberately absent: nothing in this app ingests an hours file,
+  // and a menu entry that does nothing is worse than no entry.
   const menuItems = [
     { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
     { key: 'print', label: 'Print', onClick: () => window.print() },
@@ -80,52 +99,61 @@ export default function ExpectedVsWorked() {
 
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
-  const filters = (
+  const step = n => {
+    const next = shiftRange(dateRange, n);
+    setDateRange(next);
+    setPeriodKey(PERIOD_OPTIONS.find(o => o.value.start === next.start && o.value.end === next.end)?.key || 'custom');
+  };
+
+  const periodNav = (
+    <div className="flex items-center gap-2">
+      <button onClick={() => step(-1)} aria-label="Previous period" className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
+      <span className="text-[14px] text-slate-700 whitespace-nowrap tabular-nums">{fmtDate(dateRange.start)} - {fmtDate(dateRange.end)}</span>
+      <button onClick={() => step(1)} aria-label="Next period" className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
+    </div>
+  );
+
+  const filters = filtersOpen ? (
     <>
       <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
-      <span className="text-[12.5px] text-slate-500 px-1 py-1.5 whitespace-nowrap">
-        Working days in range: <span className="font-semibold text-slate-700">{workingDays}</span>
-      </span>
       <div className="flex items-center gap-2 ml-auto">
+        <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <Filter size={14} /> Submit
+        </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {filtersOpen && <StandardFilterRows f={f} />}
+      <StandardFilterRows f={f} />
     </>
-  );
+  ) : null;
 
   return (
-    <ReportShell menuItems={menuItems} title="Expected vs Worked Hours" subtitle="Expected hours from shift × working days vs. actual hours logged" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Expected vs Worked Hours" periodNav={periodNav} subtitle="Hours owed, hours payable, and the balance carried in and out" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-[14px]">
-            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
-              <tr>
-                <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-left px-4 py-2.5">Shift(s)</th>
-                <th className="text-right px-4 py-2.5">Expected Hours</th>
-                <th className="text-right px-4 py-2.5">Worked Hours</th>
-                <th className="text-right px-4 py-2.5">Variance</th>
+        <div ref={gridRef} className="overflow-auto" style={gridHeight ? { height: gridHeight } : undefined}>
+          <table className="w-full text-[14px] border-collapse">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600 sticky top-0 z-20">
+              <tr className="border-b border-slate-200">
+                <th className="text-left px-4 py-2.5 border-r border-slate-200">Employee</th>
+                {COLUMNS.map(([key, header]) => (
+                  <th key={key} className="text-left px-4 py-2.5 border-r border-slate-200 last:border-r-0 whitespace-nowrap">{header}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
-              <tr className="bg-slate-50/60 font-semibold text-slate-700">
-                <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5"></td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'expectedHours').toFixed(2)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'workedHours').toFixed(2)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtH(sum(rows, 'variance'))}</td>
-              </tr>
+            <tbody>
               {rows.map(row => (
-                <tr key={row._id}>
-                  <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5 text-slate-500">{row.shiftName || '—'}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.expectedHours}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.workedHours}</td>
-                  <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${row.variance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtH(row.variance)}</td>
+                <tr key={row._id} className="border-b border-slate-200">
+                  <td className="px-4 py-2.5 border-r border-slate-200"><EmployeeCell row={row} /></td>
+                  {COLUMNS.map(([key]) => (
+                    // A negative balance is the one figure worth colouring —
+                    // it means hours owed, not banked.
+                    <td key={key} className={`px-4 py-2.5 tabular-nums border-r border-slate-200 last:border-r-0 ${key === 'balanceHours' && row[key] < 0 ? 'text-red-600' : 'text-slate-700'}`}>
+                      {hhmm(row[key])}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
