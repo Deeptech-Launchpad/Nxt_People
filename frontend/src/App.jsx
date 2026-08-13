@@ -76,6 +76,7 @@ const LeaveEncashmentDetails = lazy(() => import('./pages/reports/LeaveEncashmen
 const Diversity          = lazy(() => import('./pages/reports/Diversity'));
 const ExperienceExit     = lazy(() => import('./pages/reports/ExperienceExit'));
 const MusterRoll         = lazy(() => import('./pages/reports/MusterRoll'));
+const LeavePolicy        = lazy(() => import('./pages/settings/LeavePolicy'));
 const AttendanceDailyStatus = lazy(() => import('./pages/reports/AttendanceDailyStatus'));
 const EarlyLateCheckInOut   = lazy(() => import('./pages/reports/EarlyLateCheckInOut'));
 const PresentAbsentStatus   = lazy(() => import('./pages/reports/PresentAbsentStatus'));
@@ -310,6 +311,7 @@ const AppRoutes = () => {
           <Route path="api-connections"element={<ProtectedRoute roles={['admin','director','hr_admin']}><ApiConnections/></ProtectedRoute>}/>
           <Route path="my-apps"          element={<MyApps/>}/>
           <Route path="settings"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><Settings/></ProtectedRoute>}/>
+          <Route path="settings/leave-policy" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeavePolicy/></ProtectedRoute>}/>
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace/>}/>

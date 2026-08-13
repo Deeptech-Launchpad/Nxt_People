@@ -18,6 +18,75 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// GET /api/leave-types/policies — the Leave Policy configuration screen.
+// Unlike GET / this returns disabled policies too, because the point of the
+// screen is to turn them on and off. Ordered so the screen and the reports
+// agree on sequence.
+router.get('/policies', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id AS "_id", name, code, icon, color, is_active AS "isActive",
+              pay_type AS "payType", unit, accrual_mode AS "accrualMode",
+              accrual_amount AS "accrualAmount", carry_forward AS "carryForward",
+              max_days_per_year AS "maxDaysPerYear", sort_order AS "sortOrder"
+         FROM leave_types ORDER BY sort_order, name`
+    );
+    res.json({ success: true, data: r.rows.map(x => ({ ...x, accrualAmount: parseFloat(x.accrualAmount) || 0 })) });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+// PATCH /api/leave-types/policies/:id — partial update from that screen.
+// Only the listed fields are writable, and each is validated: these values
+// drive how leave accrues and how balances are reported, so a bad enum here
+// would quietly corrupt every balance figure rather than fail loudly.
+const PAY_TYPES = ['paid', 'unpaid', 'comp_off'];
+const UNITS = ['days', 'hours'];
+const ACCRUAL_MODES = ['annual', 'monthly', 'earned', 'none'];
+
+router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const { name, color, isActive, payType, unit, accrualMode, accrualAmount, carryForward } = req.body;
+
+    if (payType !== undefined && !PAY_TYPES.includes(payType)) {
+      return res.status(400).json({ success: false, message: 'Invalid pay type' });
+    }
+    if (unit !== undefined && !UNITS.includes(unit)) {
+      return res.status(400).json({ success: false, message: 'Invalid unit' });
+    }
+    if (accrualMode !== undefined && !ACCRUAL_MODES.includes(accrualMode)) {
+      return res.status(400).json({ success: false, message: 'Invalid accrual mode' });
+    }
+    if (accrualAmount !== undefined && (Number.isNaN(Number(accrualAmount)) || Number(accrualAmount) < 0)) {
+      return res.status(400).json({ success: false, message: 'Accrual amount must be a non-negative number' });
+    }
+
+    const sets = [];
+    const params = [];
+    const add = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+    if (name !== undefined) add('name', name);
+    if (color !== undefined) add('color', color);
+    if (isActive !== undefined) add('is_active', !!isActive);
+    if (payType !== undefined) add('pay_type', payType);
+    if (unit !== undefined) add('unit', unit);
+    if (accrualMode !== undefined) add('accrual_mode', accrualMode);
+    if (accrualAmount !== undefined) add('accrual_amount', Number(accrualAmount));
+    if (carryForward !== undefined) add('carry_forward', !!carryForward);
+    if (!sets.length) return res.status(400).json({ success: false, message: 'Nothing to update' });
+
+    sets.push('updated_at = NOW()');
+    params.push(req.params.id);
+    const r = await pool.query(
+      `UPDATE leave_types SET ${sets.join(', ')} WHERE id = $${params.length}
+       RETURNING id AS "_id", name, code, color, is_active AS "isActive",
+                 pay_type AS "payType", unit, accrual_mode AS "accrualMode",
+                 accrual_amount AS "accrualAmount", carry_forward AS "carryForward"`,
+      params
+    );
+    if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Leave policy not found' });
+    res.json({ success: true, data: { ...r.rows[0], accrualAmount: parseFloat(r.rows[0].accrualAmount) || 0 } });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
 // GET /api/leave-types/balances?year=2025&employeeId=  (employee sees own, admin can pass id)
 router.get('/balances', async (req, res) => {
   try {
