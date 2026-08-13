@@ -18,7 +18,6 @@ import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
-const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
 
 function ReportTypeDropdown({ value, onChange }) {
   const [open, setOpen] = useState(false);
@@ -179,7 +178,7 @@ export default function LeavePayrollExport() {
       ) : reportType === 'detailed' ? (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
-            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <th rowSpan={2} className="text-left px-4 py-2.5 align-bottom">Employee</th>
                 <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom border-l border-slate-200">{totalLabel}</th>
@@ -199,20 +198,6 @@ export default function LeavePayrollExport() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              <tr className="bg-slate-50/60 font-semibold text-slate-700">
-                <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{fmtUnit(sum(rows, 'totalDays'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'weekendCount'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'holidayCount'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'payableDays'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'onDutyDays'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{fmtUnit(sum(rows, 'leavePaid'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'leaveUnpaid'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'leaveComp'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'leaveTotal'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{fmtUnit(sum(rows, 'lopDays'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'paidDays'), unit)}</td>
-              </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
@@ -235,7 +220,7 @@ export default function LeavePayrollExport() {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
-            <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <th className="text-left px-4 py-2.5">Employee</th>
                 <th className="text-right px-4 py-2.5">{totalLabel}</th>
@@ -244,12 +229,6 @@ export default function LeavePayrollExport() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              <tr className="bg-slate-50/60 font-semibold text-slate-700">
-                <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'totalDays'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'lopDays'), unit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(sum(rows, 'paidDays'), unit)}</td>
-              </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>

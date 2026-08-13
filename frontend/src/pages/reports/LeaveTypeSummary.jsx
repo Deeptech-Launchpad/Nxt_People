@@ -15,7 +15,6 @@ import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
 
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
-const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
 const y = new Date().getFullYear();
 
 const EXPORT_COLUMNS = [
@@ -139,7 +138,7 @@ export default function LeaveTypeSummary() {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
-            <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <th className="text-left px-4 py-2.5">Employee</th>
                 <th className="text-right px-4 py-2.5">Opening Balance</th>
@@ -150,14 +149,6 @@ export default function LeaveTypeSummary() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              <tr className="bg-slate-50/60 font-semibold text-slate-700">
-                <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'openingBalance')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'granted')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'booked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'closingBalance')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'lapsed')}</td>
-              </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>

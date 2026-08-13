@@ -18,7 +18,6 @@ import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
-const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
 
 const EXPORT_COLUMNS = [
   { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
@@ -216,7 +215,7 @@ export default function LossOfPay() {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
-            <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <th className="text-left px-4 py-2.5">Employee</th>
                 <th className="text-right px-4 py-2.5">Booked Absent + Unpaid</th>
@@ -228,15 +227,6 @@ export default function LossOfPay() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              <tr className="bg-slate-50/60 font-semibold text-slate-700">
-                <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'booked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'total')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'waivedOff')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'carryOver')}</td>
-                <td className="px-4 py-2.5"></td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'lopDays')}</td>
-              </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>

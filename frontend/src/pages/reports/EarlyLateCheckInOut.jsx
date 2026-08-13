@@ -193,7 +193,7 @@ export default function EarlyLateCheckInOut() {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
-            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <th rowSpan={2} className="text-left px-4 py-2.5 align-bottom">Employee</th>
                 <th rowSpan={2} className="text-left px-4 py-2.5 align-bottom">Date</th>

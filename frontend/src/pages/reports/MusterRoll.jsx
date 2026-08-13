@@ -131,7 +131,7 @@ export default function MusterRoll() {
       ) : (
         <div className="overflow-x-auto">
           <table className="text-[13px] border-collapse">
-            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <th rowSpan={2} className="text-left px-3 py-2.5 sticky left-0 bg-slate-50 z-10 whitespace-nowrap align-bottom">Employee</th>
                 {data.dayLabels.map((d, i) => {

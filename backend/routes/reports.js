@@ -271,7 +271,7 @@ router.get('/daily', authorize('admin', 'director', 'hr_admin', 'manager'), asyn
          LEFT JOIN leaves l ON l.employee_id = e.id AND l.status = 'approved'
                             AND l.start_date <= $${dateIdx}::date AND l.end_date >= $${dateIdx}::date
          ${empQuery}
-        ORDER BY e.first_name`,
+        ORDER BY e.employee_id`,
       [...empParams, date]
     );
 
@@ -739,7 +739,7 @@ router.get('/employee/drilldown', authorize('admin', 'director', 'hr_admin', 'ma
               e.employment_type AS "employmentType", e.work_location AS "workLocation"
          FROM employees e
         WHERE e.status='active' AND ${col} = $1${extra.clause}${scope.clause}
-        ORDER BY e.first_name`,
+        ORDER BY e.employee_id`,
       [value, ...extra.params, ...scope.params]
     );
     res.json({ success: true, data: r.rows });
@@ -940,7 +940,7 @@ router.get('/leave/daily-status', authorize('admin', 'director', 'hr_admin', 'ma
                 l.leave_type AS "leaveType", l.is_half_day AS "isHalfDay", l.reason, l.status AS "approvalStatus"
            FROM leaves l JOIN employees e ON l.employee_id = e.id
           WHERE l.status IN ('approved','pending') AND l.start_date <= $1::date AND l.end_date >= $1::date${whereTail}
-          ORDER BY e.first_name`,
+          ORDER BY e.employee_id`,
         baseParams
       ),
     ]);
@@ -1345,7 +1345,7 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
            FROM employees e
            LEFT JOIN (SELECT employee_id, SUM(hours) AS hours FROM leaves WHERE status='approved' AND leave_type='permission' AND start_date <= $2::date AND end_date >= $1::date GROUP BY employee_id) perm ON perm.employee_id = e.id
           WHERE 1=1${filters.clause}
-          ORDER BY e.first_name`,
+          ORDER BY e.employee_id`,
         [start, end, ...filters.params]
       );
       const data = r.rows.map(row => {
@@ -1358,7 +1358,10 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
 
     const r = await pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate",
-              COALESCE(e.casual_leave, 0) AS "casualAllocated",
+              -- NULL means no allocation exists, which is not the same statement as an
+              -- allocation of zero. COALESCE erased that difference; the report
+              -- renders the first as N/A and the second as 0.
+              e.casual_leave AS "casualAllocated",
               COALESCE(casual.days, 0) AS "casualBooked",
               COALESCE(absent.cnt, 0) AS "absentBooked",
               COALESCE(lwp.days, 0) AS "lwpBooked",
@@ -1371,17 +1374,23 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
          LEFT JOIN (SELECT employee_id, SUM(days_earned) AS earned, SUM(days_used) AS used FROM comp_offs WHERE status='approved' GROUP BY employee_id) co ON co.employee_id = e.id
          LEFT JOIN (SELECT employee_id, SUM(days_used) AS used FROM comp_offs WHERE status='approved' AND comp_off_date >= $1::date AND comp_off_date <= $2::date GROUP BY employee_id) co_range ON co_range.employee_id = e.id
         WHERE 1=1${filters.clause}
-        ORDER BY e.first_name`,
+        ORDER BY e.employee_id`,
       [start, end, ...filters.params]
     );
     const data = r.rows.map(row => {
-      const casualAllocated = parseFloat(row.casualAllocated) || 0;
+      // An employee with no allocation row carries null, not zero, all the way
+      // through to the table — the report prints N/A there, which says "this
+      // does not apply" rather than "this is zero".
+      const noAllocation = row.casualAllocated === null || row.casualAllocated === undefined;
+      const casualAllocated = noAllocation ? null : parseFloat(row.casualAllocated) || 0;
       const casualBooked = parseFloat(row.casualBooked) || 0;
       const absentBooked = parseFloat(row.absentBooked) || 0;
       const lwpBooked = parseFloat(row.lwpBooked) || 0;
       return {
         ...row,
-        casualAllocated, casualBooked, casualBalance: Math.max(0, casualAllocated - casualBooked),
+        casualAllocated,
+        casualBooked: noAllocation ? null : casualBooked,
+        casualBalance: noAllocation ? null : Math.max(0, casualAllocated - casualBooked),
         absentBooked, lwpBooked,
         unpaidTotalBooked: absentBooked + lwpBooked,
         compOffBooked: parseFloat(row.compOffBooked) || 0,
@@ -1424,7 +1433,7 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
          LEFT JOIN leaves l ON l.employee_id = e.id AND l.leave_type = $1 AND EXTRACT(YEAR FROM l.start_date) = $2
         WHERE 1=1${filters.clause}
         GROUP BY e.id, e.first_name, e.last_name, e.department, e.employee_id, e.exit_date, e.casual_leave
-        ORDER BY e.first_name`,
+        ORDER BY e.employee_id`,
       [leaveType, year, ...filters.params]
     );
     const data = r.rows.map(row => {
@@ -1648,7 +1657,7 @@ async function loadAttendanceContext(req, start, end) {
          FROM employees e
          LEFT JOIN shifts s ON e.shift_id = s.id
         WHERE 1=1${filters.clause}
-        ORDER BY e.first_name`,
+        ORDER BY e.employee_id`,
       filters.params
     ),
     pool.query(
@@ -2112,7 +2121,7 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
          LEFT JOIN attendance a ON a.employee_id = e.id AND a.date >= $1::date AND a.date <= $2::date
         WHERE 1=1${filters.clause}
         GROUP BY e.id, e.first_name, e.last_name, e.department, e.employee_id, e.exit_date, s.name, s.start_time, s.end_time
-        ORDER BY e.first_name`,
+        ORDER BY e.employee_id`,
       [start, end, ...filters.params]
     );
 

@@ -17,7 +17,6 @@ import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
-const sum = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
 
 const DAY_EXPORT_COLUMNS = [
   { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
@@ -40,7 +39,9 @@ const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 // An unpaid type has no entitlement to draw down, so its balance is the
 // negative of what was booked: taking leave without pay puts you in deficit
 // rather than consuming an allocation. The reference shows exactly that.
-const negate = key => row => -(Number(row[key]) || 0);
+// `|| 0` collapses -0 back to 0 — negating a zero balance otherwise prints
+// "-0", which reads as a defect rather than a nil figure.
+const negate = key => row => (row[key] === null || row[key] === undefined ? null : -(Number(row[key]) || 0) || 0);
 const DAY_GROUPS = [
   {
     key: 'paid', label: 'Paid',
@@ -65,6 +66,9 @@ const DAY_GROUPS = [
 // silently filter to an empty table.
 const TYPE_OPTIONS = [['', 'All'], ...DAY_GROUPS.map(g => [g.key, g.label])];
 
+// null means the employee has no allocation for this type at all, which the
+// reference prints as N/A. A 0 is a real figure and stays a 0.
+const naIfNull = v => (v === null || v === undefined ? 'N/A' : v);
 const cellValue = (row, spec) => (typeof spec === 'function' ? spec(row) : row[spec]);
 const groupTotal = (rows, spec) => rows.reduce((s, r) => s + (Number(cellValue(r, spec)) || 0), 0);
 
@@ -182,7 +186,7 @@ export default function BookedBalance() {
       ) : unit === 'hour' ? (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
-            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <th className="text-left px-4 py-2.5">Employee</th>
                 <th colSpan={3} className="text-center px-4 py-1.5 border-l border-slate-200">Permission</th>
@@ -195,12 +199,6 @@ export default function BookedBalance() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              <tr className="bg-slate-50/60 font-semibold text-slate-700">
-                <td className="px-4 py-2.5">Total</td>
-                <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-200">{sum(rows, 'permissionAllocated')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'permissionBooked')}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{sum(rows, 'permissionBalance')}</td>
-              </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
@@ -215,7 +213,7 @@ export default function BookedBalance() {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]">
-            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
+            <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <th rowSpan={3} className="text-left px-4 py-2.5 align-bottom">Employee</th>
                 {visibleGroups.map(g => (
@@ -240,17 +238,6 @@ export default function BookedBalance() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              <tr className="bg-slate-50/60 font-semibold text-slate-700">
-                <td className="px-4 py-2.5">Total</td>
-                {visibleGroups.flatMap(g => g.subs.flatMap((s, i) => ([
-                  <td key={`${g.key}-${s.label}-tb`} className={`px-4 py-2.5 text-right tabular-nums ${i === 0 ? 'border-l border-slate-200' : ''}`}>
-                    {groupTotal(rows, s.booked)}
-                  </td>,
-                  <td key={`${g.key}-${s.label}-tl`} className="px-4 py-2.5 text-right tabular-nums">
-                    {groupTotal(rows, s.balance)}
-                  </td>,
-                ])))}
-              </tr>
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
@@ -258,13 +245,13 @@ export default function BookedBalance() {
                     const balance = cellValue(row, s.balance);
                     return [
                       <td key={`${g.key}-${s.label}-b`} className={`px-4 py-2.5 text-right tabular-nums ${i === 0 ? 'border-l border-slate-100' : ''}`}>
-                        {cellValue(row, s.booked)}
+                        {naIfNull(cellValue(row, s.booked))}
                       </td>,
                       // A negative balance is a deficit, not a surplus, so it
                       // must not wear the same green as an unused allocation.
                       <td key={`${g.key}-${s.label}-l`}
                         className={`px-4 py-2.5 text-right tabular-nums font-semibold ${Number(balance) < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
-                        {balance}
+                        {naIfNull(balance)}
                       </td>,
                     ];
                   }))}

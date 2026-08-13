@@ -108,7 +108,7 @@ export default function TableReportPage({ title, subtitle, endpoint, filterType 
     <ReportShell title={title} subtitle={subtitle} filters={filters} loading={loading} switcherCategory={switcherCategory}>
       <div className="overflow-x-auto">
         <table className="w-full text-[14px]">
-          <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
+          <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
             <tr>{columns.map(c => <th key={c.key} className={`px-4 py-2.5 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{c.header}</th>)}</tr>
           </thead>
           <tbody className="divide-y divide-slate-50">

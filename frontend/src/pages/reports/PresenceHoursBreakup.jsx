@@ -210,7 +210,7 @@ export default function PresenceHoursBreakup() {
         <>
           <div className="overflow-x-auto">
             <table className="w-full text-[14px]">
-              <thead className="bg-slate-50 text-[12px] font-bold text-slate-500 uppercase">
+              <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
                 <tr>
                   <th className="text-left px-4 py-2.5">Date</th>
                   <th className="text-left px-4 py-2.5">First In</th>
