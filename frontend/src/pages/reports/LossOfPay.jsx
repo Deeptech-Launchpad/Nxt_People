@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, Download, ArrowRight, RotateCcw } from 'lucide-react';
+import { Filter, ArrowRight, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
@@ -74,6 +74,16 @@ export default function LossOfPay() {
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 
+  // Export, Print and PDF belong beside the funnel, not inside the filter
+  // panel — they are not filter actions and were unreachable until you opened
+  // filters. Import and Push To Payroll are deliberately absent: neither
+  // exists in this app, and a menu entry that does nothing is worse than none.
+  const menuItems = [
+    { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+  ];
+
   const actions = (
     <div className="flex items-center gap-2">
       <UnitToggle value={unit} onChange={setUnit} />
@@ -94,9 +104,6 @@ export default function LossOfPay() {
       <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
       <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Download size={14} /> Export
-        </button>
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Filter size={14} /> Submit
         </button>
@@ -115,7 +122,7 @@ export default function LossOfPay() {
   ) : null;
 
   return (
-    <ReportShell title="Loss of Pay Details" subtitle="Unpaid LOP days in the selected period — the same calculation Payroll Run uses" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell menuItems={menuItems} title="Loss of Pay Details" subtitle="Unpaid LOP days in the selected period — the same calculation Payroll Run uses" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No LOP days in this period</div>
       ) : (

@@ -12,7 +12,6 @@ import LeaveTypeFilter from './LeaveTypeFilter';
 import LeaveExportModal from './LeaveExportModal';
 import DirectReportsToggle from './DirectReportsToggle';
 import FilterToggleButton from './FilterToggleButton';
-import ReportMenu from './ReportMenu';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -93,10 +92,6 @@ export default function DailyLeaveStatus() {
         ))}
       </div>
       <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
-      {/* Export, Print and PDF live here rather than inside the filter panel:
-          the reference keeps them reachable without opening filters, and they
-          are not filter actions. */}
-      <ReportMenu items={menuItems} />
     </div>
   );
 
@@ -127,7 +122,7 @@ export default function DailyLeaveStatus() {
   ) : null;
 
   return (
-    <ReportShell title="Daily Leave Status" subtitle="Who's on approved or pending leave for a given date" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell menuItems={menuItems} title="Daily Leave Status" subtitle="Who's on approved or pending leave for a given date" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {total === 0 ? (
         <div className="text-center py-16 text-slate-400">Nobody is on leave this date</div>
       ) : view === 'chart' ? (

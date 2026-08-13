@@ -13,7 +13,6 @@ import UnitToggle from './UnitToggle';
 import DateChip from './DateChip';
 import PeriodPresetChip from './PeriodPresetChip';
 import FilterToggleButton from './FilterToggleButton';
-import ReportMenu from './ReportMenu';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -88,7 +87,6 @@ export default function BookedBalance() {
     <div className="flex items-center gap-2">
       <UnitToggle value={unit} onChange={setUnit} />
       <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
-      <ReportMenu items={menuItems} />
     </div>
   );
 
@@ -119,7 +117,7 @@ export default function BookedBalance() {
   ) : null;
 
   return (
-    <ReportShell title="Leave Booked and Balance" subtitle="Days booked in the selected period vs. yearly allocation" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
+    <ReportShell menuItems={menuItems} title="Leave Booked and Balance" subtitle="Days booked in the selected period vs. yearly allocation" actions={actions} filters={filters} loading={loading} switcherCategory="Leave Tracker">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : unit === 'hour' ? (
