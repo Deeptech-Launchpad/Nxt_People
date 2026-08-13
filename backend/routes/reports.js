@@ -8,6 +8,10 @@ const { lopDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./pa
 const { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
 router.use(protect);
 
+// Sentinel for the "Not Specified" filter option. Deliberately not a value any
+// column could hold, so it can never collide with a real department or role.
+const NOT_SPECIFIED = '__not_specified__';
+
 // Merges loadHolidaysAndRules() across every month a [startDate, endDate]
 // range touches — the payroll version only loads one month at a time
 // (payroll always operates on a single pay-month), but these reports let
@@ -450,12 +454,21 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
 router.get('/employee/filter-options', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const scope = reportsScope(req.user, 'e', 1);
+    // A blank value is offered as "Not Specified" rather than dropped. Without
+    // it the employees carrying that gap are unreachable from the filter row —
+    // they match no option, so no combination of filters can surface them, and
+    // the gap stays invisible. The reference lists it the same way.
     const distinctCol = async (col) => {
       const r = await pool.query(
         `SELECT DISTINCT e.${col} AS v FROM employees e WHERE e.${col} IS NOT NULL AND e.${col} != ''${scope.clause} ORDER BY v`,
         scope.params
       );
-      return r.rows.map(row => row.v);
+      const values = r.rows.map(row => row.v);
+      const blanks = await pool.query(
+        `SELECT 1 FROM employees e WHERE (e.${col} IS NULL OR e.${col} = '')${scope.clause} LIMIT 1`,
+        scope.params
+      );
+      return blanks.rows.length ? [...values, { value: NOT_SPECIFIED, label: 'Not Specified' }] : values;
     };
     const [department, designation, company, division, workLocation, employmentType, role, gender, shiftRes, expRes] = await Promise.all([
       distinctCol('department'), distinctCol('designation'), distinctCol('company'),
@@ -603,13 +616,24 @@ function extraEmployeeFilters(query, alias, paramIndex) {
   const params = [];
   let idx = paramIndex;
   for (const [q, col] of FIELDS) {
-    const values = [].concat(query[q] || []).filter(v => v !== '' && v !== undefined && v !== null);
-    if (!values.length) continue;
+    const all = [].concat(query[q] || []).filter(v => v !== '' && v !== undefined && v !== null);
+    if (!all.length) continue;
+    // "Not Specified" is a sentinel, not a stored value — it has to become an
+    // IS NULL test. Ticking it alongside real values means "these, or blank",
+    // so the two halves are OR'd inside one bracket rather than AND'd.
+    const wantsBlank = all.includes(NOT_SPECIFIED);
+    const values = all.filter(v => v !== NOT_SPECIFIED);
     // shift_id is a uuid column — the text[] has to be cast to match it.
     const cast = col === 'shift_id' ? '::uuid[]' : '';
-    clause += ` AND ${alias}.${col} = ANY($${idx}${cast})`;
-    params.push(values);
-    idx++;
+
+    const parts = [];
+    if (values.length) {
+      parts.push(`${alias}.${col} = ANY($${idx}${cast})`);
+      params.push(values);
+      idx++;
+    }
+    if (wantsBlank) parts.push(`(${alias}.${col} IS NULL OR ${alias}.${col}::text = '')`);
+    if (parts.length) clause += ` AND (${parts.join(' OR ')})`;
   }
 
   // Experience is a numeric comparator, not a band list: Zoho's chip reads

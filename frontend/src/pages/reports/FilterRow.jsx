@@ -2,15 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import api from '../../utils/api';
 import ExperienceFilter from './ExperienceFilter';
 
-// Chip order matches Zoho's filter row. `businessUnit` has no backing column
-// in this schema — the chip is rendered so the row matches the reference
-// design, and its list is simply empty, exactly as Zoho renders it for an
-// org with no business units configured.
+// Chip order matches the reference's filter row exactly — Company through
+// Role. Gender, Employment Type and Shift are ours, not the reference's, so
+// they trail the row rather than interleaving and shifting the chips people
+// are used to reaching for.
+//
+// `businessUnit` has no backing column in this schema. The chip still renders
+// with an empty list, which is exactly what the reference shows for an org
+// with no business units configured.
 const DIMENSIONS = [
-  ['department', 'Department'], ['workLocation', 'Location'], ['designation', 'Designation'],
   ['company', 'Company'], ['businessUnit', 'Business Unit'], ['division', 'Division'],
-  ['gender', 'Gender'], ['employmentType', 'Employment Type'],
-  ['role', 'Role'], ['shiftId', 'Shift'],
+  ['department', 'Department'], ['designation', 'Designation'], ['workLocation', 'Location'],
+  ['role', 'Role'],
+  ['gender', 'Gender'], ['employmentType', 'Employment Type'], ['shiftId', 'Shift'],
 ];
 
 // Options arrive either as bare strings (the plain `employees` columns) or as
@@ -61,7 +65,7 @@ function FilterChip({ label, options, value, onChange }) {
           </div>
           <div className="max-h-56 overflow-y-auto pb-1">
             {filtered.length === 0 ? (
-              <p className="px-3 py-3 text-[12.5px] text-slate-400">No options</p>
+              <p className="px-3 py-3 text-[13px] text-slate-500">No results found</p>
             ) : filtered.map(o => (
               <label key={o.value} className="flex items-center gap-2.5 px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 cursor-pointer transition-colors">
                 <input
