@@ -30,6 +30,13 @@ const SECTIONS = [
   { key: 'additional-options', label: 'Additional Options', element: <LeaveAdditionalOptions /> },
 ];
 
+// This component is mounted on a splat route, and inside one a relative link
+// resolves against the whole matched path — including the splat. A relative
+// "methods" from /reports/configuration/methods becomes .../methods/methods,
+// which stops matching, fires the catch-all redirect, and appends again. Every
+// link and redirect below is therefore absolute.
+const BASE = '/reports/configuration';
+
 export default function LeaveTrackerConfiguration() {
   return (
     <div className="w-full max-w-full min-w-0 flex items-start gap-5 px-4 py-5">
@@ -37,7 +44,7 @@ export default function LeaveTrackerConfiguration() {
         {SECTIONS.map(s => (
           <NavLink
             key={s.key}
-            to={s.key}
+            to={`${BASE}/${s.key}`}
             className={({ isActive }) =>
               `block px-4 py-2.5 text-[14px] rounded-lg transition-colors ${
                 isActive ? 'bg-slate-100 font-semibold text-slate-800' : 'text-slate-600 hover:bg-slate-50'
@@ -56,7 +63,7 @@ export default function LeaveTrackerConfiguration() {
           {SECTIONS.map(s => (
             <NavLink
               key={s.key}
-              to={s.key}
+              to={`${BASE}/${s.key}`}
               className={({ isActive }) =>
                 `px-3 py-2 text-[13.5px] rounded-lg whitespace-nowrap ${
                   isActive ? 'bg-slate-100 font-semibold text-slate-800' : 'text-slate-600'
@@ -71,7 +78,7 @@ export default function LeaveTrackerConfiguration() {
 
       <div className="flex-1 min-w-0">
         <Routes>
-          <Route index element={<Navigate to="methods" replace />} />
+          <Route index element={<Navigate to={`${BASE}/methods`} replace />} />
           {SECTIONS.map(s => (
             <Route
               key={s.key}
@@ -79,7 +86,7 @@ export default function LeaveTrackerConfiguration() {
               element={s.element}
             />
           ))}
-          <Route path="*" element={<Navigate to="methods" replace />} />
+          <Route path="*" element={<Navigate to={`${BASE}/methods`} replace />} />
         </Routes>
       </div>
     </div>
