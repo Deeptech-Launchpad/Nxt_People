@@ -491,3 +491,28 @@ html.dark .bg-white.p-8          { background-color: #1f2937 !important; }
 
   body { background: #fff !important; }
 }
+
+/* ── Chart focus ────────────────────────────────────────────────────────────
+   Recharts makes its wrapper and sectors focusable so keyboard users can
+   reach the data. Clicking one therefore also focuses it, and the browser
+   painted its default outline — a black rectangle around the chart, which on
+   a pie looked like a stray selection box.
+
+   :focus-visible rather than :focus is the whole point: the outline is
+   suppressed for pointer clicks but still drawn for keyboard navigation, so
+   this fixes the artifact without removing a focus indicator. */
+.recharts-wrapper :focus,
+.recharts-wrapper:focus,
+.recharts-surface:focus,
+.recharts-sector:focus,
+.recharts-pie:focus,
+.recharts-pie-sector:focus {
+  outline: none;
+}
+
+.recharts-wrapper:focus-visible,
+.recharts-wrapper :focus-visible {
+  outline: 2px solid #5b9bd5;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
