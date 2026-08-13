@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { RotateCcw, X, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { RotateCcw, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
@@ -9,7 +9,9 @@ import StandardFilterRows from './StandardFilterRows';
 import PeriodFilter from './PeriodFilter';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
-import { LEGEND, codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
+import { codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
+import { LegendBar, StatusPanel } from './AttendanceLegend';
+import useFitToViewport from '../../hooks/useFitToViewport';
 
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
@@ -28,11 +30,6 @@ const PERIOD_OPTIONS = [
 ];
 
 const fmtDate = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-// Layout's Help / Take a Tour strip is fixed to the bottom of the window, so
-// the grid has to stop short of it rather than run underneath.
-const BOTTOM_BAR = 30;
-const MIN_GRID = 220;   // never collapse the grid to nothing on a short window
 
 // "Aug 2026" when the range is exactly one calendar month, the range itself
 // otherwise. A month is what this report is normally read by, and naming it
@@ -76,41 +73,6 @@ const GRID_LEGEND = [[
   ['CL', 'Casual Leave'], ['CO', 'Compensatory Off'], ['PM', 'Permission'], ['LWP', 'Leave Without Pay'],
 ]];
 
-// The full code list, as a slide-over. The footer legend only has room for the
-// common codes, so the reference puts the complete set behind a "Status" chip
-// rather than wrapping the legend over three lines.
-//
-// Colours come from the same CODE_STYLE map the cells use, so a bar here can
-// never disagree with the pill it explains.
-const BAR_COLOR = {
-  P: '#059669', HD: '#0d9488', A: '#dc2626', W: '#d97706', H: '#0284c7',
-  CL: '#2563eb', CO: '#9333ea', LWP: '#e11d48', PM: '#0891b2', L: '#7c3aed',
-};
-
-function StatusPanel({ onClose }) {
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
-      <div className="absolute inset-0 bg-slate-900/20" />
-      <div onClick={e => e.stopPropagation()} className="relative bg-white w-full max-w-[320px] h-full shadow-xl flex flex-col">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
-          <h3 className="text-[15px] font-semibold text-slate-800">Status</h3>
-          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto py-2">
-          {LEGEND.map(([code, label]) => (
-            <div key={code} className="flex items-center gap-3 px-5 py-2.5">
-              <span className="w-1 h-5 rounded-sm flex-shrink-0" style={{ background: BAR_COLOR[code] || '#94a3b8' }} />
-              <span className="text-[13.5px] text-slate-700">
-                <span className="font-medium">{code}</span> - {label}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // Employee × date grid of attendance codes — the report Zoho calls Employee
 // Present/Absent Status. Our previous "summary" tab was an aggregate table,
 // which is a different report entirely.
@@ -125,31 +87,11 @@ export default function PresentAbsentStatus() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [unit, setUnit] = useState('day');
 
-  // The grid has to end exactly above the legend, which ends exactly above the
-  // app's fixed bottom bar. A guessed "100vh minus 300px" cannot do that: it
-  // left a band of dead white under the legend, and would clip instead as soon
-  // as the filter panel opened or the window changed shape. Measure where the
-  // grid actually starts and give it whatever is left.
+  // The grid ends exactly above the legend, which ends exactly above the app's
+  // fixed bottom bar — measured, not guessed. Shared with Muster Roll.
   const gridRef = useRef(null);
   const legendRef = useRef(null);
-  const [gridMax, setGridMax] = useState(null);
-
-  useLayoutEffect(() => {
-    const measure = () => {
-      if (!gridRef.current) return;
-      const top = gridRef.current.getBoundingClientRect().top;
-      // Read the page's own bottom padding rather than hardcoding it — guessing
-      // it left the page scrollable by the difference, which slid the legend
-      // under the fixed bar.
-      const shell = gridRef.current.closest('.report-shell');
-      const pagePad = shell ? parseFloat(getComputedStyle(shell).paddingBottom) || 0 : 0;
-      const reserve = (legendRef.current?.offsetHeight || 44) + BOTTOM_BAR + pagePad;
-      setGridMax(Math.max(MIN_GRID, window.innerHeight - top - reserve));
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [filtersOpen, unit, data]);
+  const gridMax = useFitToViewport(gridRef, legendRef, [filtersOpen, unit, data]);
 
   const load = () => {
     setLoading(true);
@@ -292,27 +234,7 @@ export default function PresentAbsentStatus() {
             </tbody>
           </table>
         </div>
-        {/* The legend belongs under the grid it explains, not above the filter
-            panel where it was competing with the controls. Each code gets a
-            coloured bar in its own cell colour, so a key here can never
-            disagree with the pill it explains, and the trailing "…" opens the
-            full status list — which was previously only reachable from inside
-            a filter panel that starts closed. */}
-        <div ref={legendRef} className="flex items-center gap-x-1 gap-y-1.5 flex-wrap px-4 py-3 border-t border-slate-200 bg-white text-[12.5px] text-slate-600">
-          {LEGEND.map(([code, label]) => (
-            <span key={code} className="flex items-center gap-2 pr-3 border-r border-slate-200 last:border-r-0">
-              <span className="w-[3px] h-4 rounded-sm flex-shrink-0" style={{ background: BAR_COLOR[code] || '#94a3b8' }} />
-              <span className="whitespace-nowrap"><span className="font-medium text-slate-700">{code}</span> - {label}</span>
-            </span>
-          ))}
-          <button
-            onClick={() => setStatusOpen(true)}
-            title="All statuses" aria-label="All statuses"
-            className="ml-1 px-2 py-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors leading-none text-[15px]"
-          >
-            …
-          </button>
-        </div>
+        <LegendBar ref={legendRef} onOpenAll={() => setStatusOpen(true)} />
         </>
       )}
       {statusOpen && <StatusPanel onClose={() => setStatusOpen(false)} />}

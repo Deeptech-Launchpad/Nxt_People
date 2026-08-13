@@ -2199,21 +2199,49 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
     const end = req.query.endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-CA');
     const ctx = await loadAttendanceContext(req, start, end);
 
-    const data = ctx.employees.map(emp => ({
-      _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
-      employeeCode: emp.employeeCode, department: emp.department, exitDate: emp.exitDate,
-      shiftName: emp.shiftName || null,
-      days: ctx.days.map(d => {
-        if (!ctx.onRolls(emp, d)) return { shift: null, code: '-' };
-        const ymd = d.toLocaleDateString('en-CA');
-        const cls = classifyAttendanceDay({
-          date: d, holMap: ctx.holMap, rules: ctx.rules,
-          attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
-          leave: ctx.leaveOn(emp._id, d), isFuture: d > ctx.today,
-        });
-        return { shift: emp.shiftName || null, code: cls.code };
-      }),
-    }));
+    const todayYmd = ctx.today.toLocaleDateString('en-CA');
+
+    // Each cell carries the rostered shift, the status code for the Day view,
+    // and the time actually punched for the Hour view — null where there is no
+    // attendance row at all, because hours do not apply to a day nobody
+    // recorded, whereas 00:00 means recorded and came to nothing.
+    const data = ctx.employees.map(emp => {
+      const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
+      return {
+        _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
+        employeeCode: emp.employeeCode, department: emp.department, exitDate: emp.exitDate,
+        shiftName: emp.shiftName || null,
+        days: ctx.days.map(d => {
+          if (!ctx.onRolls(emp, d)) return { shift: null, code: '-', hours: null };
+          const ymd = d.toLocaleDateString('en-CA');
+          const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
+          const dayLeaves = ctx.leavesOn(emp._id, d);
+          const cls = classifyAttendanceDay({
+            date: d, holMap: ctx.holMap, rules: ctx.rules,
+            attStatus: att?.status,
+            leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+            isFuture: ymd > todayYmd,
+          });
+
+          const worked = parseFloat(att?.workingHours) || 0;
+          const permHours = dayLeaves
+            .filter(l => l.leaveType === 'permission')
+            .reduce((s, l) => s + (parseFloat(l.hours) || 0), 0);
+
+          // A permission on a day that was also worked is two things at once,
+          // and the cell says both — as it does on Present/Absent Status.
+          if (permHours > 0 && att?.checkIn) {
+            const frac = Math.min(1, permHours / (shiftHours || 8));
+            return {
+              shift: emp.shiftName || null,
+              code: `${frac.toFixed(2)}PM/${(1 - frac).toFixed(2)}P`,
+              hours: `${hhmm(permHours)}(PM)/${hhmm(worked)}(P)`,
+            };
+          }
+          return { shift: emp.shiftName || null, code: cls.code, hours: att ? hhmm(worked) : null };
+        }),
+      };
+    });
 
     res.json({ success: true, data, dayLabels: ctx.days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
