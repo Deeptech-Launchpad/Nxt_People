@@ -180,9 +180,23 @@ const NAV = {
     },
   },
   reports: {
+    // Not `isLanding` any more: that flag suppresses the tab row entirely
+    // (see the `!config.isLanding` guard below), which left the Reports bar
+    // empty and Configuration reachable only by typing the URL. Reports now
+    // carries tabs the way Payroll does, with the catalog as the first one.
     label: 'Reports',
-    isLanding: true,
     landingPath: '/reports',
+    primaryTabs: [
+      { key: 'reports', label: 'Reports', to: '/reports' },
+      // Same role gate as the configuration route itself.
+      {
+        key: 'configuration',
+        label: 'Configuration',
+        to: '/leave-tracker/configuration',
+        roles: ['admin', 'director', 'hr_admin'],
+      },
+    ],
+    getActiveTab: () => 'reports',
   },
   payroll: {
     label: 'Payroll',
