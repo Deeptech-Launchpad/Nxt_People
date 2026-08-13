@@ -30,7 +30,10 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
     //
     // Containment comes from Layout's flex column carrying min-w-0; clipping
     // here instead would cut off filter dropdowns that overhang the right edge.
-    <div className="w-full max-w-full min-w-0 px-4 space-y-4 pb-10 report-shell">
+    // pb-4, not pb-10: Layout already keeps a fixed 30px bar at the foot of the
+    // window, so forty more pixels of padding under a report only pushed the
+    // content up and left a dead band above that bar.
+    <div className="w-full max-w-full min-w-0 px-4 space-y-4 pb-4 report-shell">
       {/* One header bar: home, breadcrumb, a centred period navigator, then
           the icon cluster (view toggles, funnel, overflow menu) — the layout
           every report page in the reference shares. */}

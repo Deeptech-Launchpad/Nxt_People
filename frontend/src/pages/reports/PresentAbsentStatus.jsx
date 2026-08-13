@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { RotateCcw, X, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
@@ -28,6 +28,11 @@ const PERIOD_OPTIONS = [
 ];
 
 const fmtDate = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+// Layout's Help / Take a Tour strip is fixed to the bottom of the window, so
+// the grid has to stop short of it rather than run underneath.
+const BOTTOM_BAR = 30;
+const MIN_GRID = 220;   // never collapse the grid to nothing on a short window
 
 // "Aug 2026" when the range is exactly one calendar month, the range itself
 // otherwise. A month is what this report is normally read by, and naming it
@@ -120,6 +125,32 @@ export default function PresentAbsentStatus() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [unit, setUnit] = useState('day');
 
+  // The grid has to end exactly above the legend, which ends exactly above the
+  // app's fixed bottom bar. A guessed "100vh minus 300px" cannot do that: it
+  // left a band of dead white under the legend, and would clip instead as soon
+  // as the filter panel opened or the window changed shape. Measure where the
+  // grid actually starts and give it whatever is left.
+  const gridRef = useRef(null);
+  const legendRef = useRef(null);
+  const [gridMax, setGridMax] = useState(null);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (!gridRef.current) return;
+      const top = gridRef.current.getBoundingClientRect().top;
+      // Read the page's own bottom padding rather than hardcoding it — guessing
+      // it left the page scrollable by the difference, which slid the legend
+      // under the fixed bar.
+      const shell = gridRef.current.closest('.report-shell');
+      const pagePad = shell ? parseFloat(getComputedStyle(shell).paddingBottom) || 0 : 0;
+      const reserve = (legendRef.current?.offsetHeight || 44) + BOTTOM_BAR + pagePad;
+      setGridMax(Math.max(MIN_GRID, window.innerHeight - top - reserve));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [filtersOpen, unit, data]);
+
   const load = () => {
     setLoading(true);
     const params = new URLSearchParams({ startDate: dateRange.start, endDate: dateRange.end, ...f.params() });
@@ -210,9 +241,8 @@ export default function PresentAbsentStatus() {
             With 150+ rows the horizontal scrollbar and the legend sat at the
             end of the table, which meant both disappeared the moment you
             scrolled — exactly when you need them. Bounding the height keeps
-            the scrollbar, the legend and the column headings all on screen.
-            The panel loses ~130px more when the filter panel is open. */}
-        <div className={`overflow-auto ${filtersOpen ? 'max-h-[calc(100vh-430px)]' : 'max-h-[calc(100vh-300px)]'}`}>
+            the scrollbar, the legend and the column headings all on screen. */}
+        <div ref={gridRef} className="overflow-auto" style={gridMax ? { height: gridMax } : undefined}>
           <table className="text-[13px] border-collapse">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600 sticky top-0 z-20">
               <tr>
@@ -268,7 +298,7 @@ export default function PresentAbsentStatus() {
             disagree with the pill it explains, and the trailing "…" opens the
             full status list — which was previously only reachable from inside
             a filter panel that starts closed. */}
-        <div className="flex items-center gap-x-1 gap-y-1.5 flex-wrap px-4 py-3 border-t border-slate-200 bg-white text-[12.5px] text-slate-600">
+        <div ref={legendRef} className="flex items-center gap-x-1 gap-y-1.5 flex-wrap px-4 py-3 border-t border-slate-200 bg-white text-[12.5px] text-slate-600">
           {LEGEND.map(([code, label]) => (
             <span key={code} className="flex items-center gap-2 pr-3 border-r border-slate-200 last:border-r-0">
               <span className="w-[3px] h-4 rounded-sm flex-shrink-0" style={{ background: BAR_COLOR[code] || '#94a3b8' }} />

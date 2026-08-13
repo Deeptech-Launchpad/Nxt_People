@@ -51,7 +51,10 @@ export default function Layout() {
           around it had already been widened. */}
       <div className="flex-1 min-w-0 ml-[72px] flex flex-col min-h-screen">
         <Topbar />
-        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-10">
+        {/* Bottom padding matches the fixed bar below exactly. It was 40px for
+            a 30px bar, and that extra 10 was pure dead space no page could
+            reclaim — enough to leave a report's footer scrollable by a sliver. */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-[30px]">
           <Outlet />
         </main>
 
