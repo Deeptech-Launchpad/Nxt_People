@@ -59,6 +59,16 @@ export default function ConsecutiveAbsences() {
     setPeriodKey('thisMonth'); setDateRange(PERIOD_OPTIONS[0].value); setMinDays(3); f.reset();
   };
 
+  // Export, Print and PDF beside the funnel, matching every other report.
+  // Import on Expected vs Worked is deliberately absent: nothing in this app
+  // ingests an hours file, and a menu entry that does nothing is worse than
+  // no entry.
+  const menuItems = [
+    { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+  ];
+
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const filters = (
@@ -74,9 +84,6 @@ export default function ConsecutiveAbsences() {
         day(s)
       </div>
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Download size={14} /> Export
-        </button>
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Filter size={14} /> Apply
         </button>
@@ -89,7 +96,7 @@ export default function ConsecutiveAbsences() {
   );
 
   return (
-    <ReportShell title="Consecutive Absences" subtitle="Unbroken absence streaks in the selected period" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Consecutive Absences" subtitle="Unbroken absence streaks in the selected period" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No consecutive absence streaks in this period</div>
       ) : (

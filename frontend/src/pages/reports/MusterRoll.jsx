@@ -9,7 +9,7 @@ import StandardFilterRows from './StandardFilterRows';
 import PeriodFilter from './PeriodFilter';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
-import { CODE_STYLE, LEGEND, codeStyle } from './attendanceCodes';
+import { CODE_STYLE, LEGEND, codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
 
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
@@ -91,15 +91,24 @@ export default function MusterRoll() {
     f.reset();
   };
 
+  // Export, Print and PDF beside the funnel, matching every other report.
+  // Import on Expected vs Worked is deliberately absent: nothing in this app
+  // ingests an hours file, and a menu entry that does nothing is worse than
+  // no entry.
+  const menuItems = [
+    { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+  ];
+
+  const weekendCols = weekendColumns(data?.data);
+
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const filters = (
     <>
       <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Download size={14} /> Export
-        </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
@@ -116,7 +125,7 @@ export default function MusterRoll() {
   );
 
   return (
-    <ReportShell title="Muster Roll" subtitle="Rostered shift and resulting status, day by day" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Muster Roll" subtitle="Rostered shift and resulting status, day by day" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {!data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
@@ -125,10 +134,11 @@ export default function MusterRoll() {
             <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase">
               <tr>
                 <th rowSpan={2} className="text-left px-3 py-2.5 sticky left-0 bg-slate-50 z-10 whitespace-nowrap align-bottom">Employee</th>
-                {data.dayLabels.map(d => {
+                {data.dayLabels.map((d, i) => {
                   const dd = new Date(d);
                   return (
-                    <th key={d} colSpan={2} className="px-1.5 py-1.5 text-center border-l border-slate-200 leading-tight">
+                    <th key={d} colSpan={2} style={weekendCols.has(i) ? WEEKEND_HATCH : undefined}
+                      className="px-1.5 py-1.5 text-center border-l border-slate-200 leading-tight">
                       <div>{dd.getDate()} {dd.toLocaleDateString('en-US', { month: 'short' })}</div>
                       <div className="text-slate-400 font-normal normal-case">{dd.toLocaleDateString('en-US', { weekday: 'short' })}</div>
                     </th>
@@ -136,10 +146,10 @@ export default function MusterRoll() {
                 })}
               </tr>
               <tr>
-                {data.dayLabels.map(d => (
+                {data.dayLabels.map((d, i) => (
                   <React.Fragment key={d}>
-                    <th className="px-1.5 py-1.5 text-center font-medium text-slate-400 border-l border-slate-200">Shift</th>
-                    <th className="px-1.5 py-1.5 text-center font-medium text-slate-400">Status</th>
+                    <th style={weekendCols.has(i) ? WEEKEND_HATCH : undefined} className="px-1.5 py-1.5 text-center font-medium text-slate-400 border-l border-slate-200">Shift</th>
+                    <th style={weekendCols.has(i) ? WEEKEND_HATCH : undefined} className="px-1.5 py-1.5 text-center font-medium text-slate-400">Status</th>
                   </React.Fragment>
                 ))}
               </tr>
@@ -159,10 +169,15 @@ export default function MusterRoll() {
                   </td>
                   {emp.days.map((cell, i) => (
                     <React.Fragment key={i}>
-                      <td className="px-1.5 py-2 text-center text-[10px] text-slate-500 border-l border-slate-100 max-w-[70px] truncate" title={cell.shift || ''}>
+                      <td style={weekendCols.has(i) ? WEEKEND_HATCH : undefined}
+                        className="px-1.5 py-2 text-center text-[10px] text-slate-500 border-l border-slate-100 max-w-[70px] truncate" title={cell.shift || ''}>
                         {cell.shift || '—'}
                       </td>
-                      <td className="px-1 py-2 text-center">
+                      {/* The reference truncates a composite code and shows the
+                          whole thing on hover — 00:30(PM6)/07:30(P) never fits
+                          a 60px column. */}
+                      <td style={weekendCols.has(i) ? WEEKEND_HATCH : undefined}
+                        className="px-1 py-2 text-center" title={cell.code && cell.code !== '-' ? cell.code : undefined}>
                         {cell.code && cell.code !== '-'
                           ? <span className={`inline-block min-w-8 px-1 rounded text-[10px] font-semibold py-0.5 ${codeStyle(cell.code)}`}>{cell.code}</span>
                           : <span className="text-slate-300">-</span>}

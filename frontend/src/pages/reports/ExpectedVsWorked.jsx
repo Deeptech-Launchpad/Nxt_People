@@ -68,6 +68,16 @@ export default function ExpectedVsWorked() {
   useEffect(load, [dateRange, ...f.deps]);
 
   const reset = () => { setPeriodKey('thisMonth'); setDateRange(PERIOD_OPTIONS[0].value); f.reset(); };
+  // Export, Print and PDF beside the funnel, matching every other report.
+  // Import on Expected vs Worked is deliberately absent: nothing in this app
+  // ingests an hours file, and a menu entry that does nothing is worse than
+  // no entry.
+  const menuItems = [
+    { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+  ];
+
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const filters = (
@@ -77,9 +87,6 @@ export default function ExpectedVsWorked() {
         Working days in range: <span className="font-semibold text-slate-700">{workingDays}</span>
       </span>
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Download size={14} /> Export
-        </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
@@ -89,7 +96,7 @@ export default function ExpectedVsWorked() {
   );
 
   return (
-    <ReportShell title="Expected vs Worked Hours" subtitle="Expected hours from shift × working days vs. actual hours logged" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Expected vs Worked Hours" subtitle="Expected hours from shift × working days vs. actual hours logged" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (

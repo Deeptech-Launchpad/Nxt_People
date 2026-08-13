@@ -37,10 +37,13 @@ export const codeStyle = (code) => {
 // the days its weekend rules match. Deriving it from the weekday instead would
 // be wrong here: the work week is Mon-Sat with only the 1st and 3rd Saturday
 // off, so a [0,6] test would mark four working Saturdays a month as weekend.
+// A day is a bare code on the Present/Absent grid and a {shift, code} pair on
+// Muster Roll, so both shapes are read rather than duplicating the helper.
 export const weekendColumns = (rows) => {
   const set = new Set();
   for (const emp of rows || []) {
-    (emp.days || []).forEach((code, i) => {
+    (emp.days || []).forEach((day, i) => {
+      const code = day && typeof day === 'object' ? day.code : day;
       if (String(code || '').split('/')[0].replace(/^[\d.]+/, '') === 'W') set.add(i);
     });
   }
