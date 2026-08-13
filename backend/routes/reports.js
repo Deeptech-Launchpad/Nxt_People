@@ -2247,44 +2247,59 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+// Unbroken runs of absence per employee. Absence is derived here exactly as it
+// is everywhere else — a working day with no punch and no leave — rather than
+// read from a stored status. This used to select attendance rows with
+// status='absent', and since nothing in this system ever writes such a row the
+// report was permanently empty.
+//
+// A run is broken by any day that is not an absence, non-working days
+// included: a weekend between two absences ends the first run and starts a
+// second rather than joining them, which is what the reference does.
 router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
-    const minDays = Math.max(1, parseInt(req.query.minDays, 10) || 3);
-    const filters = standardEmployeeFilters(req, 'e', 3);
+    // "Absent consecutively for more than N days" — the threshold is exclusive,
+    // as in the reference, so N=3 lists runs of 4 and up.
+    const minDays = Math.max(0, parseInt(req.query.minDays, 10) || 3);
+    const ctx = await loadAttendanceContext(req, start, end);
+    const todayYmd = ctx.today.toLocaleDateString('en-CA');
 
-    const r = await pool.query(
-      `SELECT a.employee_id AS "_id", a.date::text AS date, e.first_name AS "firstName", e.last_name AS "lastName",
-              e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate"
-         FROM attendance a JOIN employees e ON a.employee_id = e.id
-        WHERE a.status = 'absent' AND a.date >= $1::date AND a.date <= $2::date${filters.clause}
-        ORDER BY a.employee_id, a.date`,
-      [start, end, ...filters.params]
-    );
+    const data = [];
+    for (const emp of ctx.employees) {
+      let run = null;
+      const close = () => {
+        if (run && run.count > minDays) {
+          data.push({
+            _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
+            department: emp.department, employeeCode: emp.employeeCode, exitDate: emp.exitDate,
+            startDate: run.startDate, endDate: run.endDate, count: run.count,
+          });
+        }
+        run = null;
+      };
 
-    // Run-length detection of consecutive calendar-day absences per employee.
-    // `minDays` is an inclusive floor (a streak of exactly minDays counts) —
-    // the frontend labels it "at least N day(s)" so the boundary isn't
-    // ambiguous the way "more than" would be.
-    const streaks = [];
-    let cur = null;
-    for (const row of r.rows) {
-      const d = new Date(row.date);
-      if (cur && cur.employeeId === row._id && (d - cur.lastDate) === 86400000) {
-        cur.lastDate = d; cur.count++; cur.endDate = row.date;
-      } else {
-        if (cur && cur.count >= minDays) streaks.push(cur);
-        cur = {
-          employeeId: row._id, firstName: row.firstName, lastName: row.lastName,
-          department: row.department, employeeCode: row.employeeCode, exitDate: row.exitDate,
-          startDate: row.date, endDate: row.date, lastDate: d, count: 1,
-        };
+      for (const d of ctx.days) {
+        const ymd = d.toLocaleDateString('en-CA');
+        if (!ctx.onRolls(emp, d)) { close(); continue; }
+        const dayLeaves = ctx.leavesOn(emp._id, d);
+        const cls = classifyAttendanceDay({
+          date: d, holMap: ctx.holMap, rules: ctx.rules,
+          attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
+          leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          isFuture: false,
+        });
+        // A working day still to come is not an absence yet, and neither is
+        // today — nobody has failed to attend until the day is over.
+        const absent = cls.kind === 'absent' && ymd < todayYmd;
+        if (!absent) { close(); continue; }
+        if (run) { run.endDate = ymd; run.count += 1; }
+        else run = { startDate: ymd, endDate: ymd, count: 1 };
       }
+      close();
     }
-    if (cur && cur.count >= minDays) streaks.push(cur);
 
-    const data = streaks.map(({ lastDate, employeeId, ...rest }) => ({ _id: employeeId, ...rest }));
     res.json({ success: true, data, minDays, startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
