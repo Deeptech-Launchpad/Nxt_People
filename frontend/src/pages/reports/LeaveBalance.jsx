@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, MoreHorizontal, PieChart, List, Upload, Search, ChevronsUpDown, ChevronUp, ChevronDown } from 'lucide-react';
-import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Label } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Label } from 'recharts';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { fmtDate } from '../../utils/dateFormat';
@@ -174,7 +174,7 @@ function HistoryModal({ employeeId, employeeCode, leaveType, label, year, onClos
                     <td className="px-4 py-2.5 text-slate-700">{row.type}</td>
                     <td className="px-4 py-2.5 tabular-nums text-slate-700">{dash(row.added)}</td>
                     <td className="px-4 py-2.5 tabular-nums text-slate-700">{dash(row.booked)}</td>
-                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance ?? '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -412,19 +412,22 @@ export default function LeaveBalance() {
           <div className="text-center py-16 text-slate-400">No data</div>
         ) : (
           <div className="p-4">
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={chartRows} margin={{ top: 20, right: 20, left: 10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }}>
+            <p className="text-[13px] font-semibold text-slate-700 mb-1">Leave Chart</p>
+            <ResponsiveContainer width="100%" height={340}>
+              {/* Booked is one colour across every type, not the list's per-type
+                  swatch: within a bar the reading is booked-vs-remaining, and
+                  recolouring the lower segment per bar would suggest the two
+                  segments are different measures rather than the same one. */}
+              <BarChart data={chartRows} margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} angle={-45} textAnchor="end" height={80} interval={0} />
+                <YAxis tick={{ fontSize: 12, fill: '#64748b' }}>
                   <Label value={unit === 'hour' ? 'Hour Leave Chart' : 'Day Leave Chart'} angle={-90} position="insideLeft"
                     style={{ fontSize: 12, fill: '#64748b', textAnchor: 'middle' }} />
                 </YAxis>
-                <Tooltip formatter={(v, name) => [v, name === 'bookedVal' ? 'Booked' : 'Balance']} />
-                <Bar dataKey="bookedVal" stackId="a" name="Booked" radius={[0, 0, 0, 0]}>
-                  {chartRows.map(r => <Cell key={r.leaveType} fill={TYPE_COLOR[r.leaveType] || '#f59e0b'} />)}
-                </Bar>
-                <Bar dataKey="balanceVal" stackId="a" name="Balance" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
+                <Tooltip cursor={{ fill: '#f8fafc' }} formatter={(v, name) => [v, name === 'bookedVal' ? 'Booked' : 'Balance']} />
+                <Bar dataKey="bookedVal" stackId="a" name="Booked" fill="#f5a623" maxBarSize={90} />
+                <Bar dataKey="balanceVal" stackId="a" name="Balance" fill="#d9d9d9" maxBarSize={90} />
               </BarChart>
             </ResponsiveContainer>
           </div>

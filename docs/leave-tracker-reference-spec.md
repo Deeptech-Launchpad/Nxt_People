@@ -67,10 +67,16 @@ this system stores a single flat allocation per employee
 derivation is exact for our model rather than a reconstruction.
 
 Accrual differs by type, and the reference shows both shapes:
-- **Casual Leave** — whole annual allocation granted once in January, then
-  `Granted` is blank for later months.
-- **Permission** — 4 accrued every month (matches the existing "4h × months
-  touched" rule already used elsewhere in this codebase).
+- **Casual Leave** — whole annual allocation granted once, then `Granted` is
+  blank for later months. Granted **on the joining date** for a mid-year
+  joiner, not the preceding January, and in full — it is not pro-rated.
+- **Permission** — 4 accrued every month, **pro-rated in the joining month**
+  by the share of it worked: joining 03/01 of a 31-day January accrues
+  4 × 29/31 = `3.74`, then 4 a month after. Months before joining accrue
+  nothing rather than a zero row.
+
+Both figures come from one shared helper, so the monthly Summary and the
+transaction History can't disagree about what was granted.
 
 `Lapsed` stays `-`: there is no lapse policy, and the reference shows `-` too.
 
