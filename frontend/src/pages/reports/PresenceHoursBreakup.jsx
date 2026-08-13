@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { RotateCcw, X, MoreHorizontal } from 'lucide-react';
+import { RotateCcw, X, MoreHorizontal, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import FilterToggleButton from './FilterToggleButton';
 import EmployeeFilter from './EmployeeFilter';
 import PeriodFilter from './PeriodFilter';
-import UnitToggle from './UnitToggle';
 import HoursComparatorFilter from './HoursComparatorFilter';
 import LeaveExportModal from './LeaveExportModal';
 
@@ -43,6 +42,16 @@ const STATUS_COLOR = {
   present: 'text-emerald-600', paidLeave: 'text-amber-600', holiday: 'text-sky-600',
   weekend: 'text-yellow-600', absent: 'text-red-600', unpaidLeave: 'text-rose-600', onDuty: 'text-violet-600',
 };
+// The Status cell is a coloured dot beside plain text, not coloured text —
+// with a full holiday name in the cell, tinting the whole string turns the
+// column into a block of colour.
+const STATUS_DOT = {
+  present: '#22c55e', paidLeave: '#f59e0b', holiday: '#38bdf8', weekend: '#eab308',
+  absent: '#ef4444', unpaidLeave: '#e11d48', onDuty: '#8b5cf6',
+};
+
+const fmtDay = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const addDays = (ymd, n) => { const d = new Date(ymd); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA'); };
 
 const fmtTime = t => (t ? new Date(t).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-');
 const fmtHrs = h => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
@@ -180,30 +189,53 @@ export default function PresenceHoursBreakup() {
     { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
   ];
 
-  const actions = (
+  // Day/Hour lives in the summary strip at the foot, where the reference puts
+  // it — it switches those figures, not the table, so a copy up in the header
+  // only implied it changed the grid too.
+  const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
+
+  const step = n => {
+    const span = Math.round((new Date(dateRange.end) - new Date(dateRange.start)) / 86400000) + 1;
+    const next = { start: addDays(dateRange.start, n * span), end: addDays(dateRange.end, n * span) };
+    setDateRange(next);
+    setPeriodKey(PERIOD_OPTIONS.find(o => o.value.start === next.start && o.value.end === next.end)?.key || 'custom');
+  };
+
+  const periodNav = (
     <div className="flex items-center gap-2">
-      <UnitToggle value={unit} onChange={setUnit} />
-      <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+      <button onClick={() => step(-1)} aria-label="Previous period" className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
+      <span className="text-[14px] text-slate-700 whitespace-nowrap tabular-nums">
+        {dateRange.start === dateRange.end ? fmtDay(dateRange.start) : `${fmtDay(dateRange.start)} - ${fmtDay(dateRange.end)}`}
+      </span>
+      <button onClick={() => step(1)} aria-label="Next period" className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
     </div>
   );
 
-  const filters = (
+  // Who the report is about belongs in the breadcrumb, as in the reference —
+  // it is the subject of the page, not a way of narrowing it. It also has to
+  // stay reachable while the filter panel is shut, which is how the page now
+  // opens; buried in the panel there was no way to pick anyone at all.
+  const breadcrumbChip = <EmployeeFilter value={employee} onChange={setEmployee} multiple={false} compact />;
+
+  const filters = filtersOpen ? (
     <>
-      <EmployeeFilter value={employee} onChange={setEmployee} multiple={false} />
       <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
-      {filtersOpen && <HoursComparatorFilter value={hours} onChange={setHours} />}
+      <HoursComparatorFilter value={hours} onChange={setHours} />
       <div className="flex items-center gap-2 ml-auto">
+        <button onClick={() => setHours(h => ({ ...h }))} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+          <Filter size={14} /> Submit
+        </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
       </div>
     </>
-  );
+  ) : null;
 
   return (
-    <ReportShell menuItems={menuItems} title="Presence Hours Break-up" subtitle="Day-by-day presence and payable hours for one employee" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Presence Hours Break-up" periodNav={periodNav} breadcrumbChip={breadcrumbChip} subtitle="Day-by-day presence and payable hours for one employee" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {!employee ? (
-        <div className="text-center py-16 text-slate-400">Search for an employee to view their presence break-up</div>
+        <div className="text-center py-16 text-slate-400">Pick an employee above to view their presence break-up</div>
       ) : !data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
@@ -231,7 +263,14 @@ export default function PresenceHoursBreakup() {
                     <td className="px-4 py-2.5">{fmtTime(row.lastOut)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{fmtHrs(row.totalHours)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{fmtHrs(row.payableHours)}</td>
-                    <td className={`px-4 py-2.5 font-medium ${STATUS_COLOR[row.statusKey] || 'text-slate-600'}`}>{row.status || '—'}</td>
+                    <td className="px-4 py-2.5">
+                      {row.status ? (
+                        <span className="flex items-center gap-2 text-slate-700">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_DOT[row.statusKey] || '#94a3b8' }} />
+                          <span className="truncate" title={row.status}>{row.status}</span>
+                        </span>
+                      ) : ''}
+                    </td>
                     <td className="px-4 py-2.5 text-slate-500">{row.shiftName || '—'}</td>
                   </tr>
                 ))}

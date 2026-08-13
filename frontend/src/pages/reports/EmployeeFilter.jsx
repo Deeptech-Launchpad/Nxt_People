@@ -15,7 +15,12 @@ import api from '../../utils/api';
 // `multiple={false}` keeps the single-object contract for Presence Hours
 // Break-up, which is a one-employee drilldown rather than a filtered table —
 // picking two people there has no meaning.
-export default function EmployeeFilter({ value, onChange, multiple = true }) {
+//
+// `compact` shows the employee id alone instead of "Employee : ID Full Name".
+// It is for the breadcrumb, where the full label grew wide enough to run into
+// the centred period navigator; the id is what identifies the row anyway, and
+// the full name is one hover away.
+export default function EmployeeFilter({ value, onChange, multiple = true, compact = false }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -60,9 +65,13 @@ export default function EmployeeFilter({ value, onChange, multiple = true }) {
           selected.length ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium' : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
         }`}
       >
-        <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 max-w-[260px]">
+        <button onClick={() => setOpen(o => !o)} className={`flex items-center gap-1.5 ${compact ? 'max-w-[130px]' : 'max-w-[260px]'}`}>
           <span className="truncate" title={summary || 'Employee'}>
-            {selected.length ? `Employee : ${summary}` : 'Employee'}
+            {!selected.length
+              ? 'Employee'
+              : compact
+                ? (selected[0].employeeId || `${selected[0].firstName} ${selected[0].lastName}`)
+                : `Employee : ${summary}`}
           </span>
           {multiple && selected.length > 0 && (
             <span className="bg-blue-600 text-white text-[10px] font-bold rounded px-1.5 py-0.5 leading-none flex-shrink-0">

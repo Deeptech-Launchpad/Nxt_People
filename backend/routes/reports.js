@@ -2026,17 +2026,32 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
         [employeeId, start, end]
       ),
       pool.query(
-        `SELECT leave_type AS "leaveType", start_date, end_date, is_half_day AS "isHalfDay"
-           FROM leaves WHERE employee_id = $1 AND status='approved' AND start_date <= $3::date AND end_date >= $2::date`,
+        `SELECT leave_type AS "leaveType", start_date::text AS "startYmd", end_date::text AS "endYmd",
+                is_half_day AS "isHalfDay", half_day_type AS "halfDayType", hours
+           FROM leaves WHERE employee_id = $1 AND status='approved' AND start_date <= $3::date AND end_date >= $2::date
+          ORDER BY start_date, leave_type`,
         [employeeId, start, end]
       ),
       loadHolidaysAndRulesRange(new Date(start), new Date(end)),
     ]);
 
+    // The Status column names the holiday, not the category — the reference
+    // reads "India Independence Day", not "Holidays". holMap only carries the
+    // type (it drives whether the office closes), so the names come separately.
+    const holNameRes = await pool.query(
+      `SELECT date::text AS ymd, name FROM holidays WHERE date >= $1::date AND date <= $2::date`,
+      [start, end]
+    );
+    const holNames = new Map(holNameRes.rows.map(r => [r.ymd, r.name]));
+
     const attByDate = new Map(attRes.rows.map(r => [r.date, r]));
-    const leaves = leaveRes.rows.map(l => ({ ...l, start: new Date(l.start_date), end: new Date(l.end_date) }));
+    // Match leaves on the calendar date as a string. Comparing Date objects
+    // dropped every single-day leave east of Greenwich, which is why a day of
+    // casual leave was reading as an absence here.
+    const leaves = leaveRes.rows;
+    const leavesOnDay = ymd => leaves.filter(l => ymd >= l.startYmd && ymd <= l.endYmd);
     const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayYmd = new Date().toLocaleDateString('en-CA');
 
     const summaryDays = { payableDays: 0, present: 0, onDuty: 0, paidLeave: 0, holiday: 0, weekend: 0, absent: 0, unpaidLeave: 0 };
     const rows = [];
@@ -2047,22 +2062,39 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
       if (emp.exitDate && new Date(emp.exitDate) < day) continue;
       const ymd = day.toLocaleDateString('en-CA');
       const att = attByDate.get(ymd);
+      const dayLeaves = leavesOnDay(ymd);
+      // Classify the day on its own terms first. A holiday or a weekend is
+      // known in advance and is paid whether or not it has happened yet, so
+      // "future" is not asked here — it only decides what an ordinary working
+      // day means.
       const cls = classifyAttendanceDay({
         date: day, holMap: cal.holMap, rules: cal.rules,
-        attStatus: att?.status, leave: leaves.find(l => day >= l.start && day <= l.end),
-        isFuture: day > today,
+        attStatus: att?.status,
+        leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+        isFuture: false,
       });
-      if (cls.kind === 'future') continue;
 
-      const isPayable = ['present', 'paidLeave', 'holiday', 'weekend'].includes(cls.kind);
-      summaryDays[cls.kind] = (summaryDays[cls.kind] || 0) + 1;
+      // A working day still to come is not an absence — nobody has failed to
+      // attend yet. The reference shows it as a row with no status and nothing
+      // payable, and leaves it out of every count. Same for today.
+      const pending = ymd >= todayYmd && cls.kind === 'absent';
+      const kind = pending ? null : cls.kind;
+
+      const isPayable = ['present', 'paidLeave', 'holiday', 'weekend'].includes(kind);
+      if (kind) summaryDays[kind] = (summaryDays[kind] || 0) + 1;
       if (isPayable) summaryDays.payableDays += 1;
 
       rows.push({
         date: ymd, firstIn: att?.checkIn || null, lastOut: att?.checkOut || null,
         totalHours: parseFloat(att?.workingHours) || 0,
         payableHours: isPayable ? shiftHours : 0,
-        statusKey: cls.kind, status: ATT_STATUS_LABEL[cls.kind] || null, code: cls.code,
+        statusKey: kind,
+        // Name the actual thing: the leave records if there are any, else the
+        // holiday's own name, else the bucket label.
+        status: dayLeaves.length ? leaveStatusText(dayLeaves)
+          : kind === 'holiday' ? (holNames.get(ymd) || ATT_STATUS_LABEL.holiday)
+          : (kind ? ATT_STATUS_LABEL[kind] : null),
+        code: cls.code,
         shiftName: emp.shiftName || null,
       });
     }
