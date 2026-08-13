@@ -999,26 +999,23 @@ router.get('/leave/resource-availability', authorize('admin', 'director', 'hr_ad
 // app's leave flow (see /leaves/balance). employees.sick_leave/earned_leave
 // exist as columns but no application flow ever reads/writes them for a
 // real balance, so showing them would just be fake numbers.
-// Permission accrues 4 hours per calendar month, pro-rated in the month the
-// employee joined: starting on the 3rd of a 31-day January earns 4 × 29/31 =
-// 3.74, not a full 4 for a month two days of which they weren't employed.
+// Permission accrues a flat 4 hours per calendar month — the joining month is
+// NOT pro-rated. Someone starting on the 3rd still earns the whole 4 for that
+// January; the entitlement is granted per month, not earned per day.
 // Months before joining accrue nothing at all rather than a zero row.
 //
-// Returned entries are dated the joining day for that first month and the 1st
-// thereafter, so the ledger's accrual rows land where the entitlement actually
-// arrived. Shared by all three balance endpoints — a monthly figure that
-// disagreed with the ledger behind it would make both untrustworthy.
+// The first entry is dated the joining day and the rest the 1st, so the
+// ledger's accrual rows land where the entitlement actually arrived. Shared by
+// all three balance endpoints — a monthly figure that disagreed with the
+// ledger behind it would make both untrustworthy.
 function permissionAccruals(year, upToMonth, joiningDate) {
   const [jy, jm, jd] = joiningDate ? String(joiningDate).slice(0, 10).split('-').map(Number) : [];
   if (jy > year) return [];
   const startMonth = jy === year ? jm : 1;
   const out = [];
   for (let m = startMonth; m <= upToMonth; m++) {
-    const daysInMonth = new Date(year, m, 0).getDate();
-    const partial = jy === year && m === jm;
-    const day = partial ? jd : 1;
-    const hours = partial ? Math.round((4 * (daysInMonth - day + 1) / daysInMonth) * 100) / 100 : 4;
-    out.push({ month: m, hours, date: `${year}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}` });
+    const day = jy === year && m === jm ? jd : 1;
+    out.push({ month: m, hours: 4, date: `${year}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}` });
   }
   return out;
 }

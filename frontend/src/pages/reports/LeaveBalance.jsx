@@ -265,7 +265,9 @@ function EmployeePicker({ value, onChange }) {
 // and only appears on hover, as it does there.
 function RowMenu({ onSummary, onHistory }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
   const ref = useRef(null);
+  const btnRef = useRef(null);
 
   useEffect(() => {
     const onClick = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -273,23 +275,51 @@ function RowMenu({ onSummary, onHistory }) {
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
 
+  // The report card wraps its content in overflow-hidden for the rounded
+  // corners, which clipped this menu away entirely — with a single leave-type
+  // row the card ends just below the button, so an absolutely-positioned
+  // dropdown had nowhere to render and the ⋯ looked dead. Positioning it
+  // fixed against the button's rect escapes every ancestor's overflow.
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, left: r.left });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onMove = () => place();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [open]);
+
   return (
-    <div className="relative inline-block" ref={ref}>
-      <button onClick={e => { e.stopPropagation(); setOpen(o => !o); }} title="More"
-        className={`p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors ${open ? '' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'}`}>
+    <span className="inline-block" ref={ref}>
+      <button
+        ref={btnRef}
+        onClick={e => { e.stopPropagation(); place(); setOpen(o => !o); }}
+        title="More"
+        className={`p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors ${open ? '' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'}`}
+      >
         <MoreHorizontal size={16} />
       </button>
       {open && (
-        <div className="absolute left-0 z-40 mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1.5">
+        <div
+          className="fixed z-[60] w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1.5"
+          style={{ top: pos.top, left: pos.left }}
+        >
           {[['Summary', onSummary], ['History', onHistory]].map(([label, fn]) => (
             <button key={label} onClick={e => { e.stopPropagation(); setOpen(false); fn(); }}
-              className="w-full text-left px-4 py-2 text-[13.5px] text-slate-700 hover:bg-slate-50 transition-colors">
+              className="block w-full text-left px-4 py-2 text-[13.5px] text-slate-700 hover:bg-slate-50 transition-colors">
               {label}
             </button>
           ))}
         </div>
       )}
-    </div>
+    </span>
   );
 }
 
