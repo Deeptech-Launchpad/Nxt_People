@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
+import { Filter, ChevronLeft, ChevronRight, RotateCcw, PieChart as PieIcon, List as ListIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import FilterToggleButton from './FilterToggleButton';
 import StandardFilterRows from './StandardFilterRows';
+import DateChip from './DateChip';
 import AttendanceStatusFilter from './AttendanceStatusFilter';
 import HoursComparatorFilter from './HoursComparatorFilter';
 import LeaveExportModal from './LeaveExportModal';
@@ -20,6 +21,7 @@ const shiftDay = (dateStr, delta) => {
   d.setDate(d.getDate() + delta);
   return d.toLocaleDateString('en-CA');
 };
+const formatDate = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 const fmtTime = t => (t ? new Date(t).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—');
 // null is "hours don't apply here" — a full day of leave, a holiday, a weekend.
 // It is not the same as a worked day that came to zero, so it prints as a dash.
@@ -123,70 +125,92 @@ export default function AttendanceDailyStatus() {
     { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
   ];
 
+  // The date belongs in the header, centred between the breadcrumb and the
+  // icons — it is what the page is *of*, not something you narrow it by, and
+  // it has to stay reachable while the filter panel is shut. Same slot every
+  // other dated report uses.
+  const periodNav = (
+    <div className="flex items-center gap-2">
+      <button onClick={() => setDate(d => shiftDay(d, -1))} aria-label="Previous day" className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
+      <span className="text-[14px] text-slate-700 whitespace-nowrap tabular-nums">{formatDate(date)}</span>
+      <button onClick={() => setDate(d => shiftDay(d, 1))} aria-label="Next day" className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
+    </div>
+  );
+
   const actions = (
     <div className="flex items-center gap-2">
       <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
-        {[['chart', 'Chart'], ['list', 'List']].map(([k, l]) => (
+        {[['chart', PieIcon, 'Chart'], ['list', ListIcon, 'List']].map(([k, Icon, title]) => (
           // Status and Total Hours have no filter chips on the chart, so
           // leaving them set there would filter the list invisibly the next
           // time you switch back. Going to the chart drops them.
-          <button key={k} onClick={() => { setView(k); if (k === 'chart') { setStatus([]); setHours({ mode: 'all', amount: '' }); } }}
-            className={`px-3 py-1.5 text-[13px] font-semibold rounded-md transition-colors ${view === k ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-800'}`}>{l}</button>
+          <button
+            key={k} title={title} aria-label={title}
+            onClick={() => { setView(k); if (k === 'chart') { setStatus([]); setHours({ mode: 'all', amount: '' }); } }}
+            className={`p-1.5 rounded-md transition-colors ${view === k ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:text-slate-700'}`}
+          >
+            <Icon size={17} />
+          </button>
         ))}
       </div>
       <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
     </div>
   );
 
-  const filters = (
+  // Nothing shows until the funnel is opened. A filter bar that is always on
+  // screen reads as a set of controls you are expected to use before the
+  // report means anything, and the reference keeps the whole panel shut.
+  const filters = filtersOpen ? (
     <>
-      <div className="flex items-center gap-1">
-        <button onClick={() => setDate(d => shiftDay(d, -1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronLeft size={16} /></button>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400" />
-        <button onClick={() => setDate(d => shiftDay(d, 1))} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><ChevronRight size={16} /></button>
-      </div>
+      <DateChip label="Date" value={date} onChange={setDate} />
       {/* Status and Total Hours narrow rows, and the chart has no rows to
           narrow — the reference only offers them on the List view. */}
       {view === 'list' && <AttendanceStatusFilter value={status} onChange={setStatus} />}
       {view === 'list' && <HoursComparatorFilter value={hours} onChange={setHours} />}
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Filter size={14} /> Apply
+          <Filter size={14} /> Submit
         </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
       </div>
-      {filtersOpen && <StandardFilterRows f={f} />}
+      <StandardFilterRows f={f} />
     </>
-  );
+  ) : null;
 
   return (
-    <ReportShell menuItems={menuItems} title="Daily Attendance Status" subtitle="Attendance status and live presence for a given date" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Daily Attendance Status" periodNav={periodNav} subtitle="Attendance status and live presence for a given date" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {!data ? (
         <div className="text-center py-16 text-slate-400">No data for this date</div>
       ) : view === 'chart' ? (
-        <div className="grid lg:grid-cols-2 gap-4 p-5">
-          <div className="border border-slate-100 rounded-xl p-4">
-            <p className="text-[13px] font-bold text-slate-500 uppercase mb-2">Users — Attendance Status</p>
+        // Not a 50/50 split: the status pie carries seven leader-line labels
+        // and the presence donut carries three legend rows, so an even grid
+        // starved the one that needed the room. Two thirds / one third, as in
+        // the reference.
+        <div className="grid lg:grid-cols-3 gap-4 p-5">
+          <div className="lg:col-span-2 border border-slate-100 rounded-xl p-4">
+            <p className="text-[14px] text-slate-700 mb-2">Users - Attendance Status</p>
             <div className="flex flex-col sm:flex-row items-center gap-4">
               <div className="w-full sm:flex-1 min-w-0">
                 {statusTotal === 0 ? (
                   <div className="text-center py-16 text-slate-400 text-[13px]">No data</div>
                 ) : (
-                  <ResponsiveContainer width="100%" height={300}>
-                    {/* Seven leader-line labels need room on both flanks, so the
-                        pie itself stays modest — the labels are the reading, the
-                        area only ranks them. */}
-                    <PieChart margin={{ top: 12, right: 72, bottom: 12, left: 72 }}>
+                  <ResponsiveContainer width="100%" height={320}>
+                    {/* Seven leader-line labels need room on both flanks — the
+                        margins are the label gutters, not padding. */}
+                    <PieChart margin={{ top: 12, right: 96, bottom: 12, left: 96 }}>
                       <Pie
                         data={statusPie} dataKey="count" nameKey="label" cx="50%" cy="50%"
-                        outerRadius={64} isAnimationActive={false}
-                        label={makeSliceLabel(statusTotal, statusPie, 300, (name, value) => `${name},${value}`)}
+                        outerRadius={100} isAnimationActive={false}
+                        label={makeSliceLabel(statusTotal, statusPie, 320, (name, value) => `${name},${value}`)}
                         labelLine={false} activeShape={ActiveSlice}
                         onClick={(_, i) => drill(statusPie[i]?.key)} className="cursor-pointer"
                       >
-                        {statusPie.map(s => <Cell key={s.key} fill={s.color} />)}
+                        {/* A zero slice has no arc, but recharts still strokes
+                            its two coincident radii — which drew a white spoke
+                            across the pie for every empty status. */}
+                        {statusPie.map(s => <Cell key={s.key} fill={s.color} stroke={s.count > 0 ? '#fff' : 'none'} />)}
                       </Pie>
                       <Tooltip cursor={false} formatter={(value, name) => [value, name]} />
                     </PieChart>
@@ -203,20 +227,20 @@ export default function AttendanceDailyStatus() {
           </div>
 
           <div className="border border-slate-100 rounded-xl p-4">
-            <p className="text-[13px] font-bold text-slate-500 uppercase mb-2">Current Day Status</p>
+            <p className="text-[14px] text-slate-700 mb-2">Current Day Status</p>
             <div className="flex flex-col sm:flex-row items-center gap-4">
               <div className="w-full sm:flex-1 min-w-0">
                 {presenceTotal === 0 ? (
                   <div className="text-center py-16 text-slate-400 text-[13px]">No data</div>
                 ) : (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart margin={{ top: 12, right: 12, bottom: 12, left: 12 }}>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                       <Pie
                         data={presencePie} dataKey="count" nameKey="label" cx="50%" cy="50%"
-                        innerRadius={66} outerRadius={98} isAnimationActive={false}
+                        innerRadius={48} outerRadius={74} isAnimationActive={false}
                         activeShape={ActiveSlice} onClick={(_, i) => drill(presencePie[i]?.key)} className="cursor-pointer"
                       >
-                        {presencePie.map(p => <Cell key={p.key} fill={p.color} />)}
+                        {presencePie.map(p => <Cell key={p.key} fill={p.color} stroke={p.count > 0 ? '#fff' : 'none'} />)}
                       </Pie>
                       {/* The reference labels this donut by share, not headcount —
                           "Out, 75.47%" — because the question it answers is how
@@ -229,7 +253,7 @@ export default function AttendanceDailyStatus() {
                   </ResponsiveContainer>
                 )}
               </div>
-              <div className="w-full sm:w-48 flex-shrink-0 space-y-1.5">
+              <div className="w-full sm:w-44 flex-shrink-0 space-y-1.5">
                 {presencePie.map(p => (
                   <LegendRow key={p.key} color={p.color} label={p.label} count={p.count} onClick={() => drill(p.key)} />
                 ))}
