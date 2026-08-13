@@ -1693,6 +1693,7 @@ async function loadAttendanceContext(req, start, end) {
     ),
     pool.query(
       `SELECT employee_id, leave_type AS "leaveType", start_date, end_date,
+              start_date::text AS "startYmd", end_date::text AS "endYmd",
               is_half_day AS "isHalfDay", half_day_type AS "halfDayType", hours
          FROM leaves WHERE status='approved' AND start_date <= $2::date AND end_date >= $1::date
         ORDER BY start_date, leave_type`,
@@ -1707,10 +1708,16 @@ async function loadAttendanceContext(req, start, end) {
     if (!leavesByEmp.has(l.employee_id)) leavesByEmp.set(l.employee_id, []);
     leavesByEmp.get(l.employee_id).push({ ...l, start: new Date(l.start_date), end: new Date(l.end_date) });
   });
-  const leaveOn = (empId, date) => (leavesByEmp.get(empId) || []).find(l => date >= l.start && date <= l.end);
+  // Match on the calendar date as a string, never on Date objects. A DATE
+  // column comes back as local midnight while the day being tested is built
+  // from `new Date('YYYY-MM-DD')` — UTC midnight — so east of Greenwich the
+  // day sat hours *after* the leave's end and every single-day leave was
+  // silently missed. Same date-vs-timezone trap as isFuture.
+  const covers = (l, ymd) => ymd >= l.startYmd && ymd <= l.endYmd;
+  const leaveOn = (empId, date) => (leavesByEmp.get(empId) || []).find(l => covers(l, date.toLocaleDateString('en-CA')));
   // Every record on the day, not just the first — a person can hold a
   // permission and a half-day leave at once, and the Status column names both.
-  const leavesOn = (empId, date) => (leavesByEmp.get(empId) || []).filter(l => date >= l.start && date <= l.end);
+  const leavesOn = (empId, date) => (leavesByEmp.get(empId) || []).filter(l => covers(l, date.toLocaleDateString('en-CA')));
 
   const days = [];
   const endD = new Date(end);
@@ -1863,20 +1870,33 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
 
     const data = [];
     for (const emp of ctx.employees) {
-      const shiftStartMin = shiftMinutes(emp.shiftStart);
+      const baseStartMin = shiftMinutes(emp.shiftStart);
       const shiftEndMin = shiftMinutes(emp.shiftEnd);
-      const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
+      const baseShiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
 
       for (const d of ctx.days) {
         if (d > ctx.today || !ctx.onRolls(emp, d)) continue;
         const ymd = d.toLocaleDateString('en-CA');
+        const dayLeaves = ctx.leavesOn(emp._id, d);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
-          leave: ctx.leaveOn(emp._id, d), isFuture: false,
+          leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          isFuture: false,
         });
         // Non-working days have no shift to be early or late against.
         if (cls.kind === 'holiday' || cls.kind === 'weekend') continue;
+
+        // A permission is approved time off inside the working day, so it
+        // moves the boundary rather than being measured against it: an hour
+        // of permission buys an hour's later start and takes an hour off what
+        // the day owes. Without this, someone who cleared a late arrival in
+        // advance still read as late by the full amount.
+        const permHours = dayLeaves
+          .filter(l => l.leaveType === 'permission')
+          .reduce((s, l) => s + (parseFloat(l.hours) || 0), 0);
+        const shiftStartMin = baseStartMin === null ? null : baseStartMin + Math.round(permHours * 60);
+        const shiftHours = baseShiftHours - permHours;
 
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
         const inMin = att?.checkIn ? clockMinutes(att.checkIn) : null;

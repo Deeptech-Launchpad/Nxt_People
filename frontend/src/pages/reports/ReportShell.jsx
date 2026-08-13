@@ -34,7 +34,7 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
       {/* One header bar: home, breadcrumb, a centred period navigator, then
           the icon cluster (view toggles, funnel, overflow menu) — the layout
           every report page in the reference shares. */}
-      <div className="flex items-center gap-3 pt-5 report-hide-print">
+      <div className="relative flex items-center gap-3 pt-5 report-hide-print">
         <button
           onClick={() => navigate('/reports')}
           title="All reports"
@@ -83,10 +83,18 @@ export default function ReportShell({ title, subtitle, filters, actions, loading
           )}
         </div>
 
-        {/* Period navigator sits centred between the breadcrumb and the icons. */}
-        <div className="flex-1 flex justify-center min-w-0">{periodNav}</div>
+        {/* Centred on the bar, not on the gap between the breadcrumb and the
+            icons. As a flex-1 sibling it was centred inside whatever space the
+            other two left over, so a long report name pushed the date well to
+            the right of the page's actual centre. Absolute positioning pins it
+            to the middle regardless of what flanks it; the spacer below still
+            keeps the icon cluster hard right. */}
+        <div className="flex-1 min-w-0" />
+        <div className="absolute inset-x-0 top-5 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto">{periodNav}</div>
+        </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 relative">
           {actions}
           <ReportMenu items={menuItems} />
         </div>
