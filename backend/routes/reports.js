@@ -1066,10 +1066,15 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
 // is granted per worked_date event, so its monthly figure is a real sum of
 // whatever was earned that month. Unpaid has no grant concept at all, so its
 // granted/balance stay null every month, same as the summary table.
+//
+// "absent" is not a leave type — it's days marked absent on the attendance
+// register, with no grant or balance behind it. It's drillable all the same,
+// because the row is on the report and a row you can't open reads as broken;
+// its Booked column is the count of absences and Granted/Balance stay null.
 router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { employeeId, leaveType } = req.query;
-    if (!employeeId || !['casual', 'comp_off', 'unpaid', 'permission'].includes(leaveType)) {
+    if (!employeeId || !['casual', 'comp_off', 'unpaid', 'permission', 'absent'].includes(leaveType)) {
       return res.status(400).json({ success: false, message: 'employeeId and a valid leaveType are required' });
     }
     const now = new Date();
@@ -1080,12 +1085,19 @@ router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admi
     if (!empRes.rows[0]) return res.status(404).json({ success: false, message: 'Employee not found' });
     const casualAllocated = parseFloat(empRes.rows[0].casualAllocated) || 0;
 
-    const bookedRes = await pool.query(
-      `SELECT EXTRACT(MONTH FROM start_date)::int AS month, COALESCE(SUM(total_days),0) AS days, COALESCE(SUM(hours),0) AS hours
-         FROM leaves WHERE employee_id = $1 AND leave_type = $2 AND status = 'approved' AND EXTRACT(YEAR FROM start_date) = $3
-         GROUP BY month`,
-      [employeeId, leaveType, year]
-    );
+    const bookedRes = leaveType === 'absent'
+      ? await pool.query(
+          `SELECT EXTRACT(MONTH FROM date)::int AS month, COUNT(*)::float AS days, 0 AS hours
+             FROM attendance WHERE employee_id = $1 AND status = 'absent' AND EXTRACT(YEAR FROM date) = $2
+             GROUP BY month`,
+          [employeeId, year]
+        )
+      : await pool.query(
+          `SELECT EXTRACT(MONTH FROM start_date)::int AS month, COALESCE(SUM(total_days),0) AS days, COALESCE(SUM(hours),0) AS hours
+             FROM leaves WHERE employee_id = $1 AND leave_type = $2 AND status = 'approved' AND EXTRACT(YEAR FROM start_date) = $3
+             GROUP BY month`,
+          [employeeId, leaveType, year]
+        );
     const bookedByMonth = new Map(bookedRes.rows.map(r => [r.month, r]));
 
     let compOffGrantedByMonth = new Map();
@@ -1139,10 +1151,15 @@ router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admi
 // granted once in January, permission accrues 4 a month, comp-off accrues as
 // it's earned. If per-year or mid-year leave policies are ever introduced,
 // this derivation stops being faithful and needs a real ledger table.
+//
+// "absent" is included so every row on the report opens. It has no accrual,
+// so Added is empty throughout and the running figure counts absences rather
+// than draining an entitlement — the same number the report's Current Balance
+// column shows for that row.
 router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const { employeeId, leaveType } = req.query;
-    if (!employeeId || !['casual', 'comp_off', 'unpaid', 'permission'].includes(leaveType)) {
+    if (!employeeId || !['casual', 'comp_off', 'unpaid', 'permission', 'absent'].includes(leaveType)) {
       return res.status(400).json({ success: false, message: 'employeeId and a valid leaveType are required' });
     }
     const now = new Date();
@@ -1152,14 +1169,21 @@ router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_adm
 
     const [empRes, takenRes, compRes] = await Promise.all([
       pool.query('SELECT COALESCE(casual_leave,0) AS "casualAllocated" FROM employees WHERE id = $1', [employeeId]),
-      pool.query(
-        `SELECT start_date::text AS date, COALESCE(total_days,0) AS days, COALESCE(hours,0) AS hours
-           FROM leaves
-          WHERE employee_id = $1 AND leave_type = $2 AND status = 'approved'
-            AND EXTRACT(YEAR FROM start_date) = $3
-          ORDER BY start_date`,
-        [employeeId, leaveType, year]
-      ),
+      leaveType === 'absent'
+        ? pool.query(
+            `SELECT date::text AS date, 1 AS days, 0 AS hours
+               FROM attendance WHERE employee_id = $1 AND status = 'absent' AND EXTRACT(YEAR FROM date) = $2
+              ORDER BY date`,
+            [employeeId, year]
+          )
+        : pool.query(
+            `SELECT start_date::text AS date, COALESCE(total_days,0) AS days, COALESCE(hours,0) AS hours
+               FROM leaves
+              WHERE employee_id = $1 AND leave_type = $2 AND status = 'approved'
+                AND EXTRACT(YEAR FROM start_date) = $3
+              ORDER BY start_date`,
+            [employeeId, leaveType, year]
+          ),
       leaveType === 'comp_off'
         ? pool.query(
             `SELECT worked_date::text AS date, COALESCE(days_earned,0) AS earned
@@ -1182,7 +1206,7 @@ router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_adm
       compRes.rows.forEach(r => events.push({ date: r.date, type: 'Accrual', added: parseFloat(r.earned) || 0 }));
     }
     takenRes.rows.forEach(r => events.push({
-      date: r.date, type: 'Leave Taken',
+      date: r.date, type: leaveType === 'absent' ? 'Absent' : 'Leave Taken',
       booked: isHours ? (parseFloat(r.hours) || 0) : (parseFloat(r.days) || 0),
     }));
 
@@ -1195,7 +1219,9 @@ router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_adm
     let balance = 0;
     const data = [{ date: `${year}-01-01`, type: 'Report Initiated', added: null, booked: null, balance: 0 }];
     events.forEach(e => {
-      balance += (e.added || 0) - (e.booked || 0);
+      // Absences accumulate — there's no entitlement for them to drain, so
+      // subtracting would run the column negative down the page.
+      balance += leaveType === 'absent' ? (e.booked || 0) : (e.added || 0) - (e.booked || 0);
       data.push({
         date: e.date, type: e.type,
         added: e.added ?? null, booked: e.booked ?? null,

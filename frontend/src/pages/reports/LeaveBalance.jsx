@@ -338,10 +338,6 @@ export default function LeaveBalance() {
   // count, and doesn't read as a bar alongside the capped/allocated types.
   const chartRows = rows.filter(r => r.leaveType !== 'absent').map(r => ({ ...r, bookedVal: r.booked, balanceVal: r.balance ?? 0 }));
 
-  // Absent is a count off the attendance table, not a leave type the
-  // drilldown endpoints accept, so it carries no Summary/History.
-  const canDrill = row => row.leaveType !== 'absent';
-
   const sortValue = (row, key) => (key === 'label' ? row.label : (row.balance ?? row.booked ?? 0));
   const sortedRows = useMemo(() => {
     const dir = sort.dir === 'asc' ? 1 : -1;
@@ -446,21 +442,15 @@ export default function LeaveBalance() {
             {sortedRows.map(row => (
               <tr key={row.leaveType} className="group hover:bg-slate-50/60">
                 <td className="w-14 px-3 py-2.5">
-                  {canDrill(row) && (
-                    <RowMenu
-                      onSummary={() => setDrill({ ...row, mode: 'summary' })}
-                      onHistory={() => setDrill({ ...row, mode: 'history' })}
-                    />
-                  )}
+                  <RowMenu
+                    onSummary={() => setDrill({ ...row, mode: 'summary' })}
+                    onHistory={() => setDrill({ ...row, mode: 'history' })}
+                  />
                 </td>
                 <td className="px-4 py-2.5">
                   <span className="flex items-center gap-2.5">
                     <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: TYPE_COLOR[row.leaveType] || '#cbd5e1' }} />
-                    {canDrill(row) ? (
-                      <button onClick={() => setDrill({ ...row, mode: 'summary' })} className="text-slate-700 hover:text-blue-600 hover:underline">{row.label}</button>
-                    ) : (
-                      <span className="text-slate-700">{row.label}</span>
-                    )}
+                    <button onClick={() => setDrill({ ...row, mode: 'summary' })} className="text-slate-700 hover:text-blue-600 hover:underline">{row.label}</button>
                   </span>
                 </td>
                 <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance ?? row.booked}</td>

@@ -89,6 +89,12 @@ Two deliberate divergences from the reference:
 The reference's own header reads `Leavetype`; ours says `Leave Type`. That is
 a typo in their product, not a design choice worth copying.
 
+**Absent** is drillable too, though it isn't a leave type — it's attendance
+days with no grant behind it. The reference leaves that row without a `⋯`; a
+row on the report that won't open reads as broken, so both endpoints accept
+`absent`, with Granted/Added empty and the running figure counting absences
+upward instead of draining an entitlement.
+
 ---
 
 ## 3. Leave data for payroll — Report Type
