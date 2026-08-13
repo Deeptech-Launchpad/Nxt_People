@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Filter, Download, RotateCcw, ChevronDown } from 'lucide-react';
+import { Filter, RotateCcw, ChevronDown } from 'lucide-react';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
@@ -121,6 +121,15 @@ export default function EarlyLateCheckInOut() {
     setFirstCheckIn(''); setLastCheckOut(''); setHours({ mode: 'all', amount: '' }); f.reset();
   };
 
+  // Export, Print and PDF belong beside the funnel, not inside the filter
+  // panel — they are not filter actions and were unreachable until you opened
+  // filters. Same menu the Leave Tracker reports use.
+  const menuItems = [
+    { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+  ];
+
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const filters = (
@@ -130,9 +139,6 @@ export default function EarlyLateCheckInOut() {
       <PunchFilter label="Last Check-Out" value={lastCheckOut} onChange={setLastCheckOut} />
       <HoursComparatorFilter value={hours} onChange={setHours} />
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Download size={14} /> Export
-        </button>
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Filter size={14} /> Apply
         </button>
@@ -145,7 +151,7 @@ export default function EarlyLateCheckInOut() {
   );
 
   return (
-    <ReportShell title="Early/Late Check-in and Check-out" subtitle="Entry and exit deltas against each employee's shift" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Early/Late Check-in and Check-out" subtitle="Entry and exit deltas against each employee's shift" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No records for this period</div>
       ) : (

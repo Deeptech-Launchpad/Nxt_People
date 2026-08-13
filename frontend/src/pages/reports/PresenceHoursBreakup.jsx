@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -117,6 +117,17 @@ export default function PresenceHoursBreakup() {
   const summary = unit === 'hour' ? data?.summaryHours : data?.summaryDays;
   const unitSuffix = unit === 'hour' ? 'Hrs' : 'Day(s)';
 
+  // Export, Print and PDF belong beside the funnel, not inside the filter
+  // panel — they are not filter actions and were unreachable until you opened
+  // filters. Same menu the Leave Tracker reports use.
+  const menuItems = [
+    // This report is a per-employee drilldown, so there is nothing to export
+    // until someone has been picked.
+    { key: 'export', label: 'Export', onClick: () => (data ? setExportOpen(true) : toast.error('Pick an employee first')) },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+  ];
+
   const actions = (
     <div className="flex items-center gap-2">
       <UnitToggle value={unit} onChange={setUnit} />
@@ -130,9 +141,6 @@ export default function PresenceHoursBreakup() {
       <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
       {filtersOpen && <HoursComparatorFilter value={hours} onChange={setHours} />}
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} disabled={!data} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors disabled:opacity-50">
-          <Download size={14} /> Export
-        </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
@@ -141,7 +149,7 @@ export default function PresenceHoursBreakup() {
   );
 
   return (
-    <ReportShell title="Presence Hours Break-up" subtitle="Day-by-day presence and payable hours for one employee" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Presence Hours Break-up" subtitle="Day-by-day presence and payable hours for one employee" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {!employee ? (
         <div className="text-center py-16 text-slate-400">Search for an employee to view their presence break-up</div>
       ) : !data || data.data.length === 0 ? (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
@@ -70,15 +70,21 @@ export default function PresentAbsentStatus() {
     f.reset();
   };
 
+  // Export, Print and PDF belong beside the funnel, not inside the filter
+  // panel — they are not filter actions and were unreachable until you opened
+  // filters. Same menu the Leave Tracker reports use.
+  const menuItems = [
+    { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+  ];
+
   const actions = <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />;
 
   const filters = (
     <>
       <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Download size={14} /> Export
-        </button>
         <button onClick={reset} className="flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <RotateCcw size={14} /> Reset
         </button>
@@ -95,7 +101,7 @@ export default function PresentAbsentStatus() {
   );
 
   return (
-    <ReportShell title="Employee Present/Absent Status" subtitle="Day-by-day attendance grid for the selected period" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Employee Present/Absent Status" subtitle="Day-by-day attendance grid for the selected period" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {!data || data.data.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (

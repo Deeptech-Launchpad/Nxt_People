@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, ChevronLeft, ChevronRight, Download, RotateCcw } from 'lucide-react';
+import { Filter, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
@@ -79,6 +79,15 @@ export default function AttendanceDailyStatus() {
     .map(s => ({ ...s, color: STATUS_COLOR[s.key] || '#94a3b8' }));
   const presencePie = PRESENCE.map(p => ({ ...p, count: data?.presence?.[p.key] || 0 })).filter(p => p.count > 0);
 
+  // Export, Print and PDF belong beside the funnel, not inside the filter
+  // panel — they are not filter actions and were unreachable until you opened
+  // filters. Same menu the Leave Tracker reports use.
+  const menuItems = [
+    { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+  ];
+
   const actions = (
     <div className="flex items-center gap-2">
       <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
@@ -101,9 +110,6 @@ export default function AttendanceDailyStatus() {
       <AttendanceStatusFilter value={status} onChange={setStatus} />
       <HoursComparatorFilter value={hours} onChange={setHours} />
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Download size={14} /> Export
-        </button>
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Filter size={14} /> Apply
         </button>
@@ -116,7 +122,7 @@ export default function AttendanceDailyStatus() {
   );
 
   return (
-    <ReportShell title="Daily Attendance Status" subtitle="Attendance status and live presence for a given date" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Daily Attendance Status" subtitle="Attendance status and live presence for a given date" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {!data ? (
         <div className="text-center py-16 text-slate-400">No data for this date</div>
       ) : view === 'chart' ? (
