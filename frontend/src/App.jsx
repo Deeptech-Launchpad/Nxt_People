@@ -221,7 +221,9 @@ const AppRoutes = () => {
           <Route path="leave-tracker/all"        element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerAdmin/></ProtectedRoute>}/>
           <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
           <Route path="leave-tracker/weekends"   element={<ProtectedRoute roles={['admin','director','hr_admin']}><Weekends/></ProtectedRoute>}/>
-          <Route path="leave-tracker/configuration" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerConfiguration/></ProtectedRoute>}/>
+          {/* Configuration lives under Reports so the nav resolves it to the
+              Reports section; the old Leave Tracker path stays as a redirect. */}
+          <Route path="leave-tracker/configuration" element={<Navigate to="/reports/configuration" replace />}/>
 
           {/* ── Performance ──────────────────────────────────────────── */}
           <Route path="performance/goals"  element={<PerformanceGoals/>}/>
@@ -315,9 +317,16 @@ const AppRoutes = () => {
           <Route path="api-connections"element={<ProtectedRoute roles={['admin','director','hr_admin']}><ApiConnections/></ProtectedRoute>}/>
           <Route path="my-apps"          element={<MyApps/>}/>
           <Route path="settings"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><Settings/></ProtectedRoute>}/>
-          <Route path="settings/leave-policy" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeavePolicy/></ProtectedRoute>}/>
-          <Route path="settings/comp-off-policy" element={<ProtectedRoute roles={['admin','director','hr_admin']}><CompOffPolicy/></ProtectedRoute>}/>
-          <Route path="settings/pay-periods" element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayPeriods/></ProtectedRoute>}/>
+          {/* Configuration hub and its screens, all under /reports so the top
+              bar keeps showing Reports rather than switching section mid-flow.
+              The former /settings/* paths redirect. */}
+          <Route path="reports/configuration" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerConfiguration/></ProtectedRoute>}/>
+          <Route path="reports/configuration/leave-policy" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeavePolicy/></ProtectedRoute>}/>
+          <Route path="reports/configuration/comp-off-policy" element={<ProtectedRoute roles={['admin','director','hr_admin']}><CompOffPolicy/></ProtectedRoute>}/>
+          <Route path="reports/configuration/pay-periods" element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayPeriods/></ProtectedRoute>}/>
+          <Route path="settings/leave-policy" element={<Navigate to="/reports/configuration/leave-policy" replace />}/>
+          <Route path="settings/comp-off-policy" element={<Navigate to="/reports/configuration/comp-off-policy" replace />}/>
+          <Route path="settings/pay-periods" element={<Navigate to="/reports/configuration/pay-periods" replace />}/>
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace/>}/>

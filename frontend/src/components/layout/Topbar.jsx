@@ -192,11 +192,11 @@ const NAV = {
       {
         key: 'configuration',
         label: 'Configuration',
-        to: '/leave-tracker/configuration',
+        to: '/reports/configuration',
         roles: ['admin', 'director', 'hr_admin'],
       },
     ],
-    getActiveTab: () => 'reports',
+    getActiveTab: p => (p.startsWith('/reports/configuration') ? 'configuration' : 'reports'),
   },
   payroll: {
     label: 'Payroll',

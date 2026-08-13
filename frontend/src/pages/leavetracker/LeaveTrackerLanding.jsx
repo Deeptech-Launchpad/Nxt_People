@@ -14,7 +14,7 @@ export default function LeaveTrackerLanding() {
     // Configuration is admin-only, matching the route guard. Showing a tile
     // that lands on a permission wall is worse than not showing it.
     ...(isFullAccess(user)
-      ? [{ key: 'configuration', label: 'Configuration', icon: SlidersHorizontal, color: 'text-slate-600', to: '/leave-tracker/configuration' }]
+      ? [{ key: 'configuration', label: 'Configuration', icon: SlidersHorizontal, color: 'text-slate-600', to: '/reports/configuration' }]
       : []),
   ];
 

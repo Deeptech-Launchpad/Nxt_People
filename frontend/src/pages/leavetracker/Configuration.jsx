@@ -17,7 +17,7 @@ const SECTIONS = [
     icon: CalendarCheck,
     title: 'Leave Policy',
     description: 'How each leave type is paid, measured and granted. Accrual mode and amount drive every balance figure in the Leave Tracker reports.',
-    to: '/settings/leave-policy',
+    to: '/reports/configuration/leave-policy',
   },
   {
     key: 'work-calendar',
@@ -41,7 +41,7 @@ const SECTIONS = [
     icon: Gift,
     title: 'Compensatory Off',
     description: 'How long a comp-off credit stays usable, and the work-calendar rules that decide when one can be earned or taken.',
-    to: '/settings/comp-off-policy',
+    to: '/reports/configuration/comp-off-policy',
     also: [
       { label: 'Comp-off requests and balances', to: '/leave-tracker/comp-off' },
     ],
@@ -51,7 +51,7 @@ const SECTIONS = [
     icon: Wallet,
     title: 'Pay Period',
     description: 'The named ranges payroll runs over. Loss of pay, Leave encashment and Leave data for payroll can be run against a period instead of a hand-picked date range.',
-    to: '/settings/pay-periods',
+    to: '/reports/configuration/pay-periods',
   },
 ];
 
