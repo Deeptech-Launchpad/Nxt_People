@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, ChevronLeft, ChevronRight, Download, RotateCcw, PieChart as PieIcon, List as ListIcon } from 'lucide-react';
+import { Filter, ChevronLeft, ChevronRight, RotateCcw, PieChart as PieIcon, List as ListIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
@@ -12,6 +12,7 @@ import LeaveTypeFilter from './LeaveTypeFilter';
 import LeaveExportModal from './LeaveExportModal';
 import DirectReportsToggle from './DirectReportsToggle';
 import FilterToggleButton from './FilterToggleButton';
+import ReportMenu from './ReportMenu';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -68,6 +69,12 @@ export default function DailyLeaveStatus() {
     setDate(todayCA()); setEmployeeStatus('all'); setLeaveType(''); setDirectReportsOnly(false); setDimFilters({});
   };
 
+  const menuItems = [
+    { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+  ];
+
   const actions = (
     <div className="flex items-center gap-2">
       {/* Date nav in header like Zoho */}
@@ -86,6 +93,10 @@ export default function DailyLeaveStatus() {
         ))}
       </div>
       <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+      {/* Export, Print and PDF live here rather than inside the filter panel:
+          the reference keeps them reachable without opening filters, and they
+          are not filter actions. */}
+      <ReportMenu items={menuItems} />
     </div>
   );
 
@@ -98,9 +109,6 @@ export default function DailyLeaveStatus() {
       <DirectReportsToggle value={directReportsOnly} onChange={setDirectReportsOnly} />
       <FilterRow value={dimFilters} onChange={(k, v) => setDimFilters(f => ({ ...f, [k]: v }))} />
       <div className="flex items-center gap-2 ml-auto">
-        <button onClick={() => setExportOpen(true)} className="flex items-center gap-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
-          <Download size={14} /> Export
-        </button>
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Filter size={14} /> Submit
         </button>

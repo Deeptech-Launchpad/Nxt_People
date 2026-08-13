@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, Download, RotateCcw } from 'lucide-react';
+import { Filter, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
@@ -13,6 +13,7 @@ import UnitToggle from './UnitToggle';
 import DateChip from './DateChip';
 import PeriodPresetChip from './PeriodPresetChip';
 import FilterToggleButton from './FilterToggleButton';
+import ReportMenu from './ReportMenu';
 import { EmployeeCell } from './TableReportPage';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -75,10 +76,19 @@ export default function BookedBalance() {
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 
+  // The export modal existed but nothing opened it — there was no entry point
+  // on the page at all, so the report could not be exported.
+  const menuItems = [
+    { key: 'export', label: 'Export', onClick: () => setExportOpen(true) },
+    { key: 'print', label: 'Print', onClick: () => window.print() },
+    { key: 'pdf', label: 'Download as PDF', hint: 'Opens the print dialog — choose "Save as PDF"', onClick: () => window.print() },
+  ];
+
   const actions = (
     <div className="flex items-center gap-2">
       <UnitToggle value={unit} onChange={setUnit} />
       <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
+      <ReportMenu items={menuItems} />
     </div>
   );
 
