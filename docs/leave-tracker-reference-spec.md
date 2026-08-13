@@ -24,8 +24,8 @@ the funnel). Contents are **not** uniform:
 | Loss of pay details | **Import** · Export · Print · **Push To Payroll** |
 | Leave data for payroll | Export · Download as PDF · Print · Permissions |
 
-Status: **PARTIAL** — `ReportMenu` component exists and Resource Availability
-is wired. Remaining pages TODO.
+Status: **PARTIAL** — `ReportMenu` component exists; Resource Availability and
+Employee leave balance are wired. Remaining pages TODO.
 
 Decisions already taken:
 - **Permissions is not implemented** — no per-report ACL exists in this app; a
@@ -74,7 +74,20 @@ Accrual differs by type, and the reference shows both shapes:
 
 `Lapsed` stays `-`: there is no lapse policy, and the reference shows `-` too.
 
-Status: **TODO** (unblocked).
+Status: **DONE** — all three layers built on the existing `balance-user`,
+`balance-user-detail`, and `balance-user-history` endpoints.
+
+Two deliberate divergences from the reference:
+- The page keeps its own **Export** button in the filter row. The reference has
+  no export here at all, but this one already shipped and works; dropping a
+  working action to match a screenshot is a loss, not a fix.
+- Both modals carry the From/To pair, defaulting to Jan 1 → today. It narrows
+  **which rows are listed**; the figures stay the year's running totals,
+  because balance is cumulative — a From/To that recomputed a partial-year
+  balance would report a number that isn't the employee's actual balance.
+
+The reference's own header reads `Leavetype`; ours says `Leave Type`. That is
+a typo in their product, not a design choice worth copying.
 
 ---
 
