@@ -28,6 +28,7 @@ router.get('/policies', authorize('admin', 'director', 'hr_admin'), async (req, 
       `SELECT id AS "_id", name, code, icon, color, is_active AS "isActive",
               pay_type AS "payType", unit, accrual_mode AS "accrualMode",
               accrual_amount AS "accrualAmount", carry_forward AS "carryForward",
+              policy_type AS "policyType",
               max_days_per_year AS "maxDaysPerYear", sort_order AS "sortOrder"
          FROM leave_types ORDER BY sort_order, name`
     );
@@ -42,10 +43,11 @@ router.get('/policies', authorize('admin', 'director', 'hr_admin'), async (req, 
 const PAY_TYPES = ['paid', 'unpaid', 'comp_off'];
 const UNITS = ['days', 'hours'];
 const ACCRUAL_MODES = ['annual', 'monthly', 'earned', 'none'];
+const POLICY_TYPES = ['fixed', 'experience', 'grant', 'attendance'];
 
 router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
-    const { name, color, isActive, payType, unit, accrualMode, accrualAmount, carryForward } = req.body;
+    const { name, color, isActive, payType, unit, accrualMode, accrualAmount, carryForward, policyType } = req.body;
 
     if (payType !== undefined && !PAY_TYPES.includes(payType)) {
       return res.status(400).json({ success: false, message: 'Invalid pay type' });
@@ -59,6 +61,9 @@ router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async 
     if (accrualAmount !== undefined && (Number.isNaN(Number(accrualAmount)) || Number(accrualAmount) < 0)) {
       return res.status(400).json({ success: false, message: 'Accrual amount must be a non-negative number' });
     }
+    if (policyType !== undefined && policyType && !POLICY_TYPES.includes(policyType)) {
+      return res.status(400).json({ success: false, message: 'Invalid policy type' });
+    }
 
     const sets = [];
     const params = [];
@@ -71,6 +76,9 @@ router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async 
     if (accrualMode !== undefined) add('accrual_mode', accrualMode);
     if (accrualAmount !== undefined) add('accrual_amount', Number(accrualAmount));
     if (carryForward !== undefined) add('carry_forward', !!carryForward);
+    // Blank is a real value here: comp-off and no-entitlement types show no
+    // policy type at all, so null has to be settable rather than ignored.
+    if (policyType !== undefined) add('policy_type', policyType || null);
     if (!sets.length) return res.status(400).json({ success: false, message: 'Nothing to update' });
 
     sets.push('updated_at = NOW()');
@@ -79,7 +87,8 @@ router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async 
       `UPDATE leave_types SET ${sets.join(', ')} WHERE id = $${params.length}
        RETURNING id AS "_id", name, code, color, is_active AS "isActive",
                  pay_type AS "payType", unit, accrual_mode AS "accrualMode",
-                 accrual_amount AS "accrualAmount", carry_forward AS "carryForward"`,
+                 accrual_amount AS "accrualAmount", carry_forward AS "carryForward",
+                 policy_type AS "policyType"`,
       params
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Leave policy not found' });
@@ -170,6 +179,33 @@ router.put('/balances/:employeeId', authorize('admin', 'director', 'hr_admin'), 
     );
     res.json({ success: true, message: 'Balance updated' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// GET /api/leave-types/methods — the Methods configuration screen.
+//
+// A method is a way of tracking leave that can be switched off wholesale.
+// Readable by any signed-in user, because whether comp-off exists decides
+// whether the comp-off screens are worth showing to anyone.
+router.get('/methods', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT comp_off_enabled AS "compOffEnabled" FROM settings LIMIT 1');
+    res.json({ success: true, data: r.rows[0] || { compOffEnabled: true } });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+router.patch('/methods', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const { compOffEnabled } = req.body;
+    if (compOffEnabled === undefined) return res.status(400).json({ success: false, message: 'Nothing to update' });
+    const r = await pool.query(
+      `UPDATE settings SET comp_off_enabled = $1, updated_at = NOW()
+        WHERE id = (SELECT id FROM settings LIMIT 1)
+        RETURNING comp_off_enabled AS "compOffEnabled"`,
+      [!!compOffEnabled]
+    );
+    if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Settings row not found' });
+    res.json({ success: true, data: r.rows[0] });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
 module.exports = router;

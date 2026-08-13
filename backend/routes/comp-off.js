@@ -308,4 +308,86 @@ router.post('/:id/use', audit('USE', 'comp_off'), async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+// GET /api/comp-off/config — the Compensatory Off configuration screen.
+//
+// Readable by any signed-in user: the restrictions decide what the request
+// form offers, so the form has to read them before anyone can raise a request.
+router.get('/config', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT comp_off_config AS config FROM settings LIMIT 1');
+    res.json({ success: true, data: r.rows[0]?.config || {} });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+const RAISABLE = ['full_day', 'half_day', 'quarter_day', 'hourly'];
+const EXPIRY_UNITS = ['calendar_days', 'business_days', 'months'];
+
+// PATCH /api/comp-off/config — replaces the whole configuration object.
+//
+// The screen edits one coherent policy, so it saves as a whole. Validating
+// each field here rather than trusting the blob matters more than usual: these
+// values gate what can be requested and when a credit expires, so a bad value
+// would fail at request time instead of loudly on save.
+router.patch('/config', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const modes = b.requestModes || {};
+    if (!modes.manual && !modes.scheduler) {
+      return res.status(400).json({ success: false, message: 'At least one way of requesting comp-off must be allowed' });
+    }
+    const raisable = b.raisableFor || {};
+    if (!RAISABLE.some(k => raisable[k])) {
+      return res.status(400).json({ success: false, message: 'Comp-off must be raisable for at least one duration' });
+    }
+    const ent = b.entitlement || {};
+    for (const k of ['weekend', 'holiday']) {
+      const n = Number(ent[k]);
+      if (!Number.isFinite(n) || n < 0 || n > 5) {
+        return res.status(400).json({ success: false, message: `${k === 'weekend' ? 'Weekend' : 'Holiday'} entitlement must be between 0 and 5` });
+      }
+    }
+    const expiry = b.expiry || {};
+    if (!['calendar_year_end', 'after'].includes(expiry.mode)) {
+      return res.status(400).json({ success: false, message: 'Expiry mode is not valid' });
+    }
+    if (expiry.mode === 'after') {
+      if (!EXPIRY_UNITS.includes(expiry.unit)) {
+        return res.status(400).json({ success: false, message: 'Expiry unit is not valid' });
+      }
+      const n = Number(expiry.amount);
+      if (!Number.isInteger(n) || n < 1 || n > 365) {
+        return res.status(400).json({ success: false, message: 'Expiry period must be between 1 and 365' });
+      }
+    }
+
+    const config = {
+      requestModes: { manual: !!modes.manual, scheduler: !!modes.scheduler },
+      raisableFor: RAISABLE.reduce((o, k) => ({ ...o, [k]: !!raisable[k] }), {}),
+      allowFutureDates: !!b.allowFutureDates,
+      includeTimeInput: !!b.includeTimeInput,
+      reasonMandatory: !!b.reasonMandatory,
+      entitlement: { weekend: Number(ent.weekend), holiday: Number(ent.holiday) },
+      expiry: expiry.mode === 'after'
+        ? { mode: 'after', amount: Number(expiry.amount), unit: expiry.unit }
+        : { mode: 'calendar_year_end' },
+    };
+
+    // comp_off_expiry_months is still read by the expiry job, so it is kept in
+    // step rather than left to drift behind the screen that now owns it.
+    const months = config.expiry.mode === 'after' && config.expiry.unit === 'months'
+      ? config.expiry.amount : null;
+    const r = await pool.query(
+      `UPDATE settings
+          SET comp_off_config = $1::jsonb,
+              comp_off_expiry_months = COALESCE($2, comp_off_expiry_months),
+              updated_at = NOW()
+        WHERE id = (SELECT id FROM settings LIMIT 1)
+        RETURNING comp_off_config AS config`,
+      [JSON.stringify(config), months]
+    );
+    if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Settings row not found' });
+    res.json({ success: true, data: r.rows[0].config });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
 module.exports = router;

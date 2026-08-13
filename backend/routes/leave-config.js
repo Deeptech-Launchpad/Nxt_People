@@ -1,0 +1,127 @@
+/**
+ * routes/leave-config.js
+ * The remaining Leave Tracker configuration sections: Reports, Leave Request
+ * and Additional Options.
+ *
+ * Each section is one JSONB blob on the settings row, read and written whole.
+ * Validation is deliberate rather than trusting the blob: several of these
+ * values gate who can see leave data, and an unchecked enum written straight
+ * to JSONB would fail at read time in a report rather than on save here.
+ *
+ * Readable by any signed-in user — the leave request form reads its own rules
+ * before it can render — but only full-access roles can change them.
+ */
+const express = require('express');
+const router = express.Router();
+const pool = require('../db');
+const { protect, authorize } = require('../middleware/auth');
+
+router.use(protect);
+
+const RESOURCE_ACCESS = ['administrators', 'department_heads', 'employees_own_department', 'all_employees'];
+const UNPAID_LEAVE = ['lop', 'carry_over'];
+const EXTENSION_ROWS = ['past_within_pay_period', 'current_and_upcoming', 'past_within_calendar_year'];
+const EXTENSION_ACTORS = ['self', 'manager', 'approver'];
+const CALENDAR_PARTS = ['employee_id', 'employee_name', 'leave_policy_name', 'leave_type', 'none'];
+
+// A section is (column, validator). The validator returns a clean object, or
+// throws an Error whose message is safe to show the user.
+const SECTIONS = {
+  reports: {
+    column: 'leave_reports_config',
+    clean(b) {
+      if (!RESOURCE_ACCESS.includes(b.resourceAccess)) throw new Error('Access permission is not valid');
+      const p = b.payrollReport || {};
+      const l = b.lossOfPay || {};
+      if (!UNPAID_LEAVE.includes(l.unpaidLeave)) throw new Error('Unpaid leave handling is not valid');
+      // Blank means no cap, which is different from a cap of zero — zero would
+      // forbid every LOP day rather than leaving the limit unset.
+      let maxPerPeriod = null;
+      if (l.maxPerPeriod !== null && l.maxPerPeriod !== undefined && l.maxPerPeriod !== '') {
+        const n = Number(l.maxPerPeriod);
+        if (!Number.isFinite(n) || n < 0 || n > 366) throw new Error('Maximum LOP per pay period must be between 0 and 366');
+        maxPerPeriod = n;
+      }
+      return {
+        resourceAccess: b.resourceAccess,
+        showLeaveTypes: !!b.showLeaveTypes,
+        payrollReport: {
+          enabled: !!p.enabled,
+          includeWeekendsAsPayable: !!p.includeWeekendsAsPayable,
+          includeHolidaysAsPayable: !!p.includeHolidaysAsPayable,
+        },
+        lossOfPay: { unpaidLeave: l.unpaidLeave, maxPerPeriod, reversal: !!l.reversal },
+      };
+    },
+  },
+
+  request: {
+    column: 'leave_request_config',
+    clean(b) {
+      const e = b.extension || {};
+      const years = Number(b.futureRequestYears);
+      if (!Number.isInteger(years) || years < 1 || years > 3) throw new Error('Future request limit must be 1, 2 or 3 years');
+      const permissions = {};
+      for (const row of EXTENSION_ROWS) {
+        const src = (e.permissions || {})[row] || {};
+        permissions[row] = EXTENSION_ACTORS.reduce((o, a) => ({ ...o, [a]: !!src[a] }), {});
+      }
+      const policies = Array.isArray(e.policies)
+        ? [...new Set(e.policies.map(String).filter(Boolean))]
+        : [];
+      return {
+        cancellationReasonMandatory: !!b.cancellationReasonMandatory,
+        extension: { policies, permissions, reasonMandatory: !!e.reasonMandatory },
+        futureRequestYears: years,
+      };
+    },
+  },
+
+  additional: {
+    column: 'leave_additional_config',
+    clean(b) {
+      const s = b.sandwichLeave || {};
+      const c = b.calendarSync || {};
+      const format = Array.isArray(c.format) ? c.format.filter(x => CALENDAR_PARTS.includes(x)) : [];
+      if (!format.length) throw new Error('The calendar display format needs at least one part');
+      return {
+        // Auto-reverse only means anything while the policy is on; storing it
+        // as true with the policy off would resurface silently if re-enabled.
+        sandwichLeave: { enabled: !!s.enabled, autoReverse: !!s.enabled && !!s.autoReverse },
+        passwordProtectExports: !!b.passwordProtectExports,
+        calendarSync: { format, updateEventStatusByType: !!c.updateEventStatusByType },
+      };
+    },
+  },
+};
+
+router.get('/:section', async (req, res) => {
+  const section = SECTIONS[req.params.section];
+  if (!section) return res.status(404).json({ success: false, message: 'Unknown configuration section' });
+  try {
+    const r = await pool.query(`SELECT ${section.column} AS config FROM settings LIMIT 1`);
+    res.json({ success: true, data: r.rows[0]?.config || {} });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+router.patch('/:section', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  const section = SECTIONS[req.params.section];
+  if (!section) return res.status(404).json({ success: false, message: 'Unknown configuration section' });
+
+  let config;
+  try { config = section.clean(req.body || {}); }
+  catch (err) { return res.status(400).json({ success: false, message: err.message }); }
+
+  try {
+    const r = await pool.query(
+      `UPDATE settings SET ${section.column} = $1::jsonb, updated_at = NOW()
+        WHERE id = (SELECT id FROM settings LIMIT 1)
+        RETURNING ${section.column} AS config`,
+      [JSON.stringify(config)]
+    );
+    if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Settings row not found' });
+    res.json({ success: true, data: r.rows[0].config });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+module.exports = router;

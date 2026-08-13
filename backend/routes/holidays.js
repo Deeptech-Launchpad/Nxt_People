@@ -207,4 +207,45 @@ router.post('/:id/notify', authorize('admin', 'director', 'hr_admin'), audit('NO
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+// GET /api/holidays/config — the Holidays configuration screen: the reminder
+// email template, and the classifications that name each holiday type.
+router.get('/config', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT holiday_config AS config FROM settings LIMIT 1');
+    res.json({ success: true, data: r.rows[0]?.config || {} });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+router.patch('/config', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const list = Array.isArray(b.classifications) ? b.classifications : [];
+    if (!list.length) {
+      return res.status(400).json({ success: false, message: 'At least one classification is required' });
+    }
+    const seen = new Set();
+    const classifications = [];
+    for (const c of list) {
+      const key = String(c.key || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+      const label = String(c.label || '').trim();
+      if (!key || !label) return res.status(400).json({ success: false, message: 'Every classification needs a name' });
+      if (label.length > 60) return res.status(400).json({ success: false, message: 'Classification name is too long' });
+      // A duplicate key would make two rows fight over the same holiday type.
+      if (seen.has(key)) return res.status(400).json({ success: false, message: 'Two classifications cannot share a name' });
+      seen.add(key);
+      classifications.push({ key, label });
+    }
+
+    const config = { reminderTemplate: String(b.reminderTemplate || ''), classifications };
+    const r = await pool.query(
+      `UPDATE settings SET holiday_config = $1::jsonb, updated_at = NOW()
+        WHERE id = (SELECT id FROM settings LIMIT 1)
+        RETURNING holiday_config AS config`,
+      [JSON.stringify(config)]
+    );
+    if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Settings row not found' });
+    res.json({ success: true, data: r.rows[0].config });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
 module.exports = router;

@@ -1,113 +1,86 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { CalendarCheck, CalendarDays, Repeat, Gift, Wallet, ChevronRight } from 'lucide-react';
+import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import LeavePolicy from '../settings/LeavePolicy';
+import CompOffPolicy from '../settings/CompOffPolicy';
+import PayPeriods from '../settings/PayPeriods';
+import WorkCalendar from '../settings/WorkCalendar';
+import LeaveMethods from '../settings/LeaveMethods';
+import HolidayConfig from '../settings/HolidayConfig';
+import LeaveReportsConfig from '../settings/LeaveReportsConfig';
+import LeaveRequestConfig from '../settings/LeaveRequestConfig';
+import LeaveAdditionalOptions from '../settings/LeaveAdditionalOptions';
 
-// Leave Tracker → Configuration. The settings that decide how leave behaves
-// were scattered: leave accrual on its own route nothing linked to, weekend
-// rules inside the general Settings page, holidays under the reports nav.
-// This is the one place that gathers them, matching where the reference
-// product puts them.
+// Leave Tracker → Configuration. One screen with a persistent left nav, not a
+// hub that navigates away: the reference product keeps the nav in place so
+// moving between sections never loses your place, and several of these settings
+// are read together when deciding a policy.
 //
-// Rows are only listed once the thing they configure exists. A configuration
-// entry that opens nothing reads as broken, so unbuilt items are named in the
-// pending list at the bottom rather than shown as dead rows — absent entirely
-// made a partial page look finished.
-const PENDING = [
-  ['Methods', 'How leave is applied for and approved, and the approval chain.'],
-  ['Reports', 'Who can see which Leave Tracker report.'],
-  ['Leave Request', 'What a request form asks for, and attachment rules.'],
-  ['Additional Options', 'Encashment, carry-forward and year-end handling.'],
-];
-
+// Every section has a screen. Where a setting's feature is not built yet, the
+// control still saves and says so inline — the alternative, hiding it, made a
+// partial configuration look finished.
 const SECTIONS = [
-  {
-    key: 'leave-policy',
-    icon: CalendarCheck,
-    title: 'Leave Policy',
-    description: 'How each leave type is paid, measured and granted. Accrual mode and amount drive every balance figure in the Leave Tracker reports.',
-    to: '/reports/configuration/leave-policy',
-  },
-  {
-    key: 'work-calendar',
-    icon: Repeat,
-    title: 'Work Calendar',
-    description: 'Which days are weekends, using recurrence rules, plus working-day exceptions that override them.',
-    to: '/leave-tracker/weekends',
-    also: [
-      { label: 'Work week, hours and day-length thresholds', to: '/settings?tab=attendance' },
-    ],
-  },
-  {
-    key: 'holidays',
-    icon: CalendarDays,
-    title: 'Holidays',
-    description: 'The holiday calendar. Holidays are excluded from leave day counts and from working-day totals across attendance and payroll.',
-    to: '/leave-tracker/holidays',
-  },
-  {
-    key: 'comp-off',
-    icon: Gift,
-    title: 'Compensatory Off',
-    description: 'How long a comp-off credit stays usable, and the work-calendar rules that decide when one can be earned or taken.',
-    to: '/reports/configuration/comp-off-policy',
-    also: [
-      { label: 'Comp-off requests and balances', to: '/leave-tracker/comp-off' },
-    ],
-  },
-  {
-    key: 'pay-periods',
-    icon: Wallet,
-    title: 'Pay Period',
-    description: 'The named ranges payroll runs over. Loss of pay, Leave encashment and Leave data for payroll can be run against a period instead of a hand-picked date range.',
-    to: '/reports/configuration/pay-periods',
-  },
+  { key: 'methods', label: 'Methods', element: <LeaveMethods /> },
+  { key: 'leave-policy', label: 'Leave Policy', element: <LeavePolicy /> },
+  { key: 'comp-off-policy', label: 'Compensatory Off', element: <CompOffPolicy /> },
+  { key: 'work-calendar', label: 'Work Calendar', element: <WorkCalendar /> },
+  { key: 'pay-periods', label: 'Pay Period', element: <PayPeriods /> },
+  { key: 'reports', label: 'Reports', element: <LeaveReportsConfig /> },
+  { key: 'leave-request', label: 'Leave Request', element: <LeaveRequestConfig /> },
+  { key: 'holidays', label: 'Holidays', element: <HolidayConfig /> },
+  { key: 'additional-options', label: 'Additional Options', element: <LeaveAdditionalOptions /> },
 ];
 
 export default function LeaveTrackerConfiguration() {
   return (
-    <div className="w-full max-w-full min-w-0 px-4 py-5 space-y-5">
-      <div>
-        <h1 className="text-[17px] font-semibold text-slate-800">Configuration</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          The rules behind the Leave Tracker. Changes here affect balances, day counts
-          and the figures reported across every Leave Tracker report.
-        </p>
-      </div>
-
-      <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
-        {SECTIONS.map(({ key, icon: Icon, title, description, to, also }) => (
-          <div key={key} className="flex items-start gap-4 px-5 py-4 hover:bg-slate-50 transition-colors">
-            <span className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <Icon size={18} className="text-blue-600" strokeWidth={1.8} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <Link to={to} className="text-[14.5px] font-semibold text-slate-800 hover:text-blue-700">
-                {title}
-              </Link>
-              <p className="text-[13px] text-slate-500 mt-0.5">{description}</p>
-              {also?.map(a => (
-                <Link key={a.to} to={a.to} className="inline-block text-[12.5px] text-blue-600 hover:underline mt-1.5">
-                  {a.label} →
-                </Link>
-              ))}
-            </div>
-            <Link to={to} aria-label={`Open ${title}`} className="text-slate-300 hover:text-slate-500 mt-1">
-              <ChevronRight size={18} />
-            </Link>
-          </div>
+    <div className="w-full max-w-full min-w-0 flex items-start gap-5 px-4 py-5">
+      <nav className="w-[200px] flex-shrink-0 hidden md:block">
+        {SECTIONS.map(s => (
+          <NavLink
+            key={s.key}
+            to={s.key}
+            className={({ isActive }) =>
+              `block px-4 py-2.5 text-[14px] rounded-lg transition-colors ${
+                isActive ? 'bg-slate-100 font-semibold text-slate-800' : 'text-slate-600 hover:bg-slate-50'
+              }`
+            }
+          >
+            {s.label}
+          </NavLink>
         ))}
-      </div>
+      </nav>
 
-      <div>
-        <p className="text-[13px] text-slate-500 mb-2">Not built yet</p>
-        <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden opacity-75">
-          {PENDING.map(([title, description]) => (
-            <div key={title} className="px-5 py-3.5">
-              <span className="text-[14px] text-slate-600">{title}</span>
-              <p className="text-[12.5px] text-slate-400 mt-0.5">{description}</p>
-            </div>
+      {/* The nav is a horizontal scroller on narrow screens, where a 200px
+          rail would leave the content pane unusable. */}
+      <div className="md:hidden w-full overflow-x-auto border-b border-slate-200 pb-2 mb-3">
+        <div className="flex gap-1 w-max">
+          {SECTIONS.map(s => (
+            <NavLink
+              key={s.key}
+              to={s.key}
+              className={({ isActive }) =>
+                `px-3 py-2 text-[13.5px] rounded-lg whitespace-nowrap ${
+                  isActive ? 'bg-slate-100 font-semibold text-slate-800' : 'text-slate-600'
+                }`
+              }
+            >
+              {s.label}
+            </NavLink>
           ))}
         </div>
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <Routes>
+          <Route index element={<Navigate to="methods" replace />} />
+          {SECTIONS.map(s => (
+            <Route
+              key={s.key}
+              path={s.key}
+              element={s.element}
+            />
+          ))}
+          <Route path="*" element={<Navigate to="methods" replace />} />
+        </Routes>
       </div>
     </div>
   );

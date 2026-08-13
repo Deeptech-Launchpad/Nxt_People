@@ -76,10 +76,7 @@ const LeaveEncashmentDetails = lazy(() => import('./pages/reports/LeaveEncashmen
 const Diversity          = lazy(() => import('./pages/reports/Diversity'));
 const ExperienceExit     = lazy(() => import('./pages/reports/ExperienceExit'));
 const MusterRoll         = lazy(() => import('./pages/reports/MusterRoll'));
-const LeavePolicy        = lazy(() => import('./pages/settings/LeavePolicy'));
 const LeaveTrackerConfiguration = lazy(() => import('./pages/leavetracker/Configuration'));
-const CompOffPolicy      = lazy(() => import('./pages/settings/CompOffPolicy'));
-const PayPeriods         = lazy(() => import('./pages/settings/PayPeriods'));
 const AttendanceDailyStatus = lazy(() => import('./pages/reports/AttendanceDailyStatus'));
 const EarlyLateCheckInOut   = lazy(() => import('./pages/reports/EarlyLateCheckInOut'));
 const PresentAbsentStatus   = lazy(() => import('./pages/reports/PresentAbsentStatus'));
@@ -89,7 +86,6 @@ const ConsecutiveAbsences   = lazy(() => import('./pages/reports/ConsecutiveAbse
 const ExpectedVsWorked      = lazy(() => import('./pages/reports/ExpectedVsWorked'));
 const DailyAttendance = lazy(() => import('./pages/DailyAttendance'));
 const LeaveEncashment = lazy(() => import('./pages/LeaveEncashment'));
-const Weekends        = lazy(() => import('./pages/Weekends'));
 const Chat            = lazy(() => import('./pages/Chat'));
 
 /* ── New pages — Phase 2: Home ──────────────────────────────────────── */
@@ -220,7 +216,10 @@ const AppRoutes = () => {
           <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
           <Route path="leave-tracker/all"        element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerAdmin/></ProtectedRoute>}/>
           <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
-          <Route path="leave-tracker/weekends"   element={<ProtectedRoute roles={['admin','director','hr_admin']}><Weekends/></ProtectedRoute>}/>
+          {/* The weekend pattern is part of a work calendar now, so the
+              standalone screen redirects into it rather than editing the same
+              rules from two places. */}
+          <Route path="leave-tracker/weekends"   element={<Navigate to="/reports/configuration/work-calendar" replace />}/>
           {/* Configuration lives under Reports so the nav resolves it to the
               Reports section; the old Leave Tracker path stays as a redirect. */}
           <Route path="leave-tracker/configuration" element={<Navigate to="/reports/configuration" replace />}/>
@@ -320,10 +319,9 @@ const AppRoutes = () => {
           {/* Configuration hub and its screens, all under /reports so the top
               bar keeps showing Reports rather than switching section mid-flow.
               The former /settings/* paths redirect. */}
-          <Route path="reports/configuration" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerConfiguration/></ProtectedRoute>}/>
-          <Route path="reports/configuration/leave-policy" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeavePolicy/></ProtectedRoute>}/>
-          <Route path="reports/configuration/comp-off-policy" element={<ProtectedRoute roles={['admin','director','hr_admin']}><CompOffPolicy/></ProtectedRoute>}/>
-          <Route path="reports/configuration/pay-periods" element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayPeriods/></ProtectedRoute>}/>
+          {/* Configuration renders its own left nav and owns every section
+              below it, so the whole subtree is one route. */}
+          <Route path="reports/configuration/*" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerConfiguration/></ProtectedRoute>}/>
           <Route path="settings/leave-policy" element={<Navigate to="/reports/configuration/leave-policy" replace />}/>
           <Route path="settings/comp-off-policy" element={<Navigate to="/reports/configuration/comp-off-policy" replace />}/>
           <Route path="settings/pay-periods" element={<Navigate to="/reports/configuration/pay-periods" replace />}/>
