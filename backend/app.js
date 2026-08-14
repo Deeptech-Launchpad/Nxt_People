@@ -158,6 +158,7 @@ app.use('/api/profile',          require('./routes/profile'));
 app.use('/api/chat',             require('./routes/chat'));
 app.use('/api/team',             require('./routes/team'));
 app.use('/api/regularizations',  require('./routes/regularizations'));
+app.use('/api/on-duty',          require('./routes/on-duty'));
 app.use('/api/wfh',              require('./routes/wfh'));
 app.use('/api/comp-off',         require('./routes/comp-off'));
 app.use('/api/performance',      require('./routes/performance'));

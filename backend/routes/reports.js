@@ -1648,13 +1648,15 @@ function shiftMinutes(t) {
 // Absent Status, Presence Hours Break-up and Attendance Data for Payroll can
 // never disagree about whether a day was a holiday, a weekend, leave, or an
 // absence. `kind` drives the numeric summaries; `code` is the grid cell text.
-// On Duty is never produced — that leave type doesn't exist in this system
-// yet, so its counters stay honestly 0 rather than being invented.
-function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, isFuture }) {
+// On Duty is work done elsewhere — a client visit, or a day worked from home —
+// so it outranks a plain absence but never a holiday, a weekend or approved
+// leave: those say the day was not worked at all.
+function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, isFuture }) {
   if (isFuture) return { code: '-', kind: 'future' };
   const holType = holMap.get(`${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`);
   if (holidayClosesOffice(holType)) return { code: 'H', kind: 'holiday' };
   if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, date))) return { code: 'W', kind: 'weekend' };
+  if (onDuty) return { code: 'OD', kind: 'onDuty' };
   if (leave) {
     const code = ATT_LEAVE_CODE[leave.leaveType] || 'L';
     return {
@@ -1673,7 +1675,7 @@ function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, isFuture
 // approved leaves, and the holiday/weekend rule set.
 async function loadAttendanceContext(req, start, end) {
   const filters = standardEmployeeFilters(req, 'e', 1);
-  const [empRes, attRes, leaveRes, cal] = await Promise.all([
+  const [empRes, attRes, leaveRes, odRes, cal] = await Promise.all([
     pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
               e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.joining_date AS "joiningDate",
@@ -1699,6 +1701,13 @@ async function loadAttendanceContext(req, start, end) {
         ORDER BY start_date, leave_type`,
       [start, end]
     ),
+    pool.query(
+      `SELECT employee_id, start_date::text AS "startYmd", end_date::text AS "endYmd",
+              request_type AS "requestType", unit, hours
+         FROM on_duty_requests
+        WHERE status='approved' AND start_date <= $2::date AND end_date >= $1::date`,
+      [start, end]
+    ),
     loadHolidaysAndRulesRange(new Date(start), new Date(end)),
   ]);
 
@@ -1719,6 +1728,18 @@ async function loadAttendanceContext(req, start, end) {
   // permission and a half-day leave at once, and the Status column names both.
   const leavesOn = (empId, date) => (leavesByEmp.get(empId) || []).filter(l => covers(l, date.toLocaleDateString('en-CA')));
 
+  // Approved on-duty, matched the same way. Only whole-day requests decide the
+  // day's status: an hours request is a few hours spent elsewhere inside a day
+  // that was otherwise worked normally, and calling that whole day On Duty
+  // would overstate it.
+  const odByEmp = new Map();
+  odRes.rows.forEach(o => {
+    if (o.unit === 'hours') return;
+    if (!odByEmp.has(o.employee_id)) odByEmp.set(o.employee_id, []);
+    odByEmp.get(o.employee_id).push(o);
+  });
+  const onDutyOn = (empId, date) => (odByEmp.get(empId) || []).find(o => covers(o, date.toLocaleDateString('en-CA')));
+
   const days = [];
   const endD = new Date(end);
   for (const d = new Date(start); d <= endD; d.setDate(d.getDate() + 1)) days.push(new Date(d));
@@ -1730,7 +1751,7 @@ async function loadAttendanceContext(req, start, end) {
     !(emp.joiningDate && new Date(emp.joiningDate) > date) &&
     !(emp.exitDate && new Date(emp.exitDate) < date);
 
-  return { employees: empRes.rows, attByKey, leaveOn, leavesOn, days, today, onRolls, holMap: cal.holMap, rules: cal.rules };
+  return { employees: empRes.rows, attByKey, leaveOn, leavesOn, onDutyOn, days, today, onRolls, holMap: cal.holMap, rules: cal.rules };
 }
 
 // Local clock minutes for a timestamp — used to compare an actual punch
@@ -1814,6 +1835,7 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
         // alongside a real leave the leave is what classifies the day.
         attStatus: att?.status,
         leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+        onDuty: ctx.onDutyOn(emp._id, day),
         isFuture,
       });
 
@@ -1882,6 +1904,7 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
           leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          onDuty: ctx.onDutyOn(emp._id, d),
           isFuture: false,
         });
         // Non-working days have no shift to be early or late against.
@@ -1962,6 +1985,7 @@ router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admi
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           attStatus: att?.status,
           leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          onDuty: ctx.onDutyOn(emp._id, d),
           isFuture: ymd > todayYmd,
         });
 
@@ -2038,11 +2062,22 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
     // The Status column names the holiday, not the category — the reference
     // reads "India Independence Day", not "Holidays". holMap only carries the
     // type (it drives whether the office closes), so the names come separately.
-    const holNameRes = await pool.query(
-      `SELECT date::text AS ymd, name FROM holidays WHERE date >= $1::date AND date <= $2::date`,
-      [start, end]
-    );
+    const [holNameRes, odRes] = await Promise.all([
+      pool.query(
+        `SELECT date::text AS ymd, name FROM holidays WHERE date >= $1::date AND date <= $2::date`,
+        [start, end]
+      ),
+      // Whole-day on-duty only; an hours request sits inside a normal day.
+      pool.query(
+        `SELECT start_date::text AS "startYmd", end_date::text AS "endYmd", request_type AS "requestType"
+           FROM on_duty_requests
+          WHERE employee_id = $1 AND status = 'approved' AND unit = 'days'
+            AND start_date <= $3::date AND end_date >= $2::date`,
+        [employeeId, start, end]
+      ),
+    ]);
     const holNames = new Map(holNameRes.rows.map(r => [r.ymd, r.name]));
+    const onDutyOnDay = ymd => odRes.rows.find(o => ymd >= o.startYmd && ymd <= o.endYmd);
 
     const attByDate = new Map(attRes.rows.map(r => [r.date, r]));
     // Match leaves on the calendar date as a string. Comparing Date objects
@@ -2071,6 +2106,7 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
         date: day, holMap: cal.holMap, rules: cal.rules,
         attStatus: att?.status,
         leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+        onDuty: onDutyOnDay(ymd),
         isFuture: false,
       });
 
@@ -2080,7 +2116,8 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
       const pending = ymd >= todayYmd && cls.kind === 'absent';
       const kind = pending ? null : cls.kind;
 
-      const isPayable = ['present', 'paidLeave', 'holiday', 'weekend'].includes(kind);
+      // On Duty is worked time, so it is payable like a present day.
+      const isPayable = ['present', 'onDuty', 'paidLeave', 'holiday', 'weekend'].includes(kind);
       if (kind) summaryDays[kind] = (summaryDays[kind] || 0) + 1;
       if (isPayable) summaryDays.payableDays += 1;
 
@@ -2150,7 +2187,8 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
-          attStatus: att?.status, leave: ctx.leaveOn(emp._id, d), isFuture: false,
+          attStatus: att?.status, leave: ctx.leaveOn(emp._id, d),
+          onDuty: ctx.onDutyOn(emp._id, d), isFuture: false,
         });
 
         expectedPayableDays += 1;
@@ -2220,6 +2258,7 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
             date: d, holMap: ctx.holMap, rules: ctx.rules,
             attStatus: att?.status,
             leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+            onDuty: ctx.onDutyOn(emp._id, d),
             isFuture: ymd > todayYmd,
           });
 
@@ -2288,6 +2327,7 @@ router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'h
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
           leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          onDuty: ctx.onDutyOn(emp._id, d),
           isFuture: false,
         });
         // A working day still to come is not an absence yet, and neither is
@@ -2372,6 +2412,7 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           attStatus: att?.status,
           leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          onDuty: ctx.onDutyOn(emp._id, d),
           isFuture: false,
         });
 

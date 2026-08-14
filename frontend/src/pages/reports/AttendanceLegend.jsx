@@ -10,7 +10,7 @@ import { LEGEND } from './attendanceCodes';
 // code's own cell tint, so a bar reads as the same thing the pill does.
 export const BAR_COLOR = {
   P: '#059669', HD: '#0d9488', A: '#dc2626', W: '#d97706', H: '#0284c7',
-  CL: '#2563eb', CO: '#9333ea', LWP: '#e11d48', PM: '#0891b2', L: '#7c3aed',
+  CL: '#2563eb', CO: '#9333ea', LWP: '#e11d48', PM: '#0891b2', OD: '#7c3aed', L: '#7c3aed',
 };
 
 // Sits under the grid it explains, not above the filter panel where it competes

@@ -271,7 +271,7 @@ async function applyRejection(db, requestType, requestId, user) {
   return { ok: true };
 }
 
-const VALID_APPROVAL_REQUEST_TYPES = new Set(['leave', 'regularization', 'comp_off', 'wfh', 'timesheet']);
+const VALID_APPROVAL_REQUEST_TYPES = new Set(['leave', 'regularization', 'comp_off', 'wfh', 'timesheet', 'on_duty']);
 const SAFE_ALIAS_RE = /^[a-z_][a-z0-9_.]*$/i;
 
 /**

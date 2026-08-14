@@ -19,6 +19,7 @@ const CheckInOut      = lazy(() => import('./pages/attendance/CheckInOut'));
 const MyAttendance    = lazy(() => import('./pages/attendance/MyAttendance'));
 const TeamAttendance  = lazy(() => import('./pages/attendance/TeamAttendance'));
 const Regularization  = lazy(() => import('./pages/attendance/Regularization'));
+const OnDuty          = lazy(() => import('./pages/attendance/OnDuty'));
 const AttendanceLocation = lazy(() => import('./pages/attendance/AttendanceLocation'));
 const Employees       = lazy(() => import('./pages/Employees'));
 const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'));
@@ -192,6 +193,7 @@ const AppRoutes = () => {
           <Route path="attendance/my"             element={<MyAttendance/>}/>
           <Route path="attendance/checkin"        element={<CheckInOut/>}/>
           <Route path="attendance/regularization" element={<Regularization/>}/>
+          <Route path="attendance/on-duty" element={<OnDuty/>}/>
           <Route path="attendance/location"       element={<AttendanceLocation/>}/>
           <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><TeamAttendance/></ProtectedRoute>}/>
 

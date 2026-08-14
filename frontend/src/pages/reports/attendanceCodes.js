@@ -11,6 +11,7 @@ export const CODE_STYLE = {
   CO: 'bg-purple-100 text-purple-700',
   LWP: 'bg-rose-100 text-rose-700',
   PM: 'bg-cyan-100 text-cyan-700',
+  OD: 'bg-violet-100 text-violet-700',
   L: 'bg-violet-100 text-violet-700',
 };
 
@@ -22,6 +23,7 @@ export const LEGEND = [
   ['H', 'Holiday'],
   ['CL', 'Casual Leave'],
   ['CO', 'Comp-Off'],
+  ['OD', 'On Duty'],
   ['PM', 'Permission'],
   ['LWP', 'Leave Without Pay'],
 ];
