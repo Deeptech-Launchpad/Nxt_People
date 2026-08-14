@@ -20,9 +20,15 @@ const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
 
 const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  { key: 'previousPeriodBalance', header: 'Previous Period Balance' }, { key: 'booked', header: 'Booked' }, { key: 'total', header: 'Total' },
-  { key: 'waivedOff', header: 'Waived Off' }, { key: 'carryOver', header: 'Carry Over' }, { key: 'reason', header: 'Reason' }, { key: 'lopDays', header: 'LOP' },
+  // The reference's order and wording: Taken rather than Booked, Adjustment
+  // rather than Waived Off, and Carry Over carries its trailing space.
+  { key: 'previousPeriodBalance', header: 'Previous Pay Period Balance' },
+  { key: 'booked', header: 'Taken' },
+  { key: 'total', header: 'Total' },
+  { key: 'waivedOff', header: 'Adjustment' },
+  { key: 'lopDays', header: 'Loss of pay' },
+  { key: 'reason', header: 'Reason' },
+  { key: 'carryOver', header: 'Carry Over ' },
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
@@ -250,7 +256,12 @@ export default function LossOfPay() {
           onClose={() => setRegenOpen(false)}
         />
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`lop-details_${startDate}_to_${endDate}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
+        withIdentity identityVariant="leave" columns={EXPORT_COLUMNS}
+        sheetName="Leave"
+        fileStub={`lop-details_${startDate}_to_${endDate}`}
+      />
     </ReportShell>
   );
 }

@@ -60,21 +60,24 @@ const fmtUnit = (v, unit) => {
   return `${sign}${h}:${String(mm).padStart(2, '0')}`;
 };
 
+// Identity is prepended by the dialog. The simple report is the reference's
+// three columns — Total, Loss of pay, Payable Days — and the detailed one
+// keeps the fuller breakdown this system can produce.
 const exportColumns = (reportType, unit) => {
-  const base = [
-    { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  ];
   if (reportType === 'detailed') {
-    return [...base,
+    return [
       { key: 'totalDays', header: unitLabel(unit, 'Total') }, { key: 'weekendCount', header: unitLabel(unit, 'Weekend') }, { key: 'holidayCount', header: unitLabel(unit, 'Holidays') },
       { key: 'payableDays', header: unitLabel(unit, 'Payable') }, { key: 'onDutyDays', header: unitLabel(unit, 'On Duty') },
       { key: 'leavePaid', header: unitLabel(unit, 'Leave Paid') }, { key: 'leaveUnpaid', header: unitLabel(unit, 'Leave Unpaid') }, { key: 'leaveComp', header: unitLabel(unit, 'Leave Comp-Off') }, { key: 'leaveTotal', header: unitLabel(unit, 'Leave Total') },
       { key: 'lopDays', header: unitLabel(unit, 'Loss of Pay') }, { key: 'paidDays', header: unitLabel(unit, 'Paid') },
     ];
   }
-  return [...base, { key: 'totalDays', header: unitLabel(unit, 'Total') }, { key: 'lopDays', header: unitLabel(unit, 'Loss of Pay') }, { key: 'paidDays', header: unitLabel(unit, 'Paid') }];
+  return [
+    { key: 'totalDays', header: 'Total' },
+    { key: 'lopDays', header: 'Loss of pay' },
+    { key: 'payableDays', header: 'Payable Days' },
+  ];
 };
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
 export default function LeavePayrollExport() {
   const [startDate, setStartDate] = useState(monthStartCA());
@@ -241,7 +244,12 @@ export default function LeavePayrollExport() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={exportColumns(reportType, unit)} extraColumns={EXPORT_EXTRA} fileStub={`leave-data-for-payroll_${startDate}_to_${endDate}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
+        withIdentity identityVariant="leave" columns={exportColumns(reportType, unit)}
+        sheetName="Leave"
+        fileStub={`leave-data-for-payroll_${startDate}_to_${endDate}`}
+      />
     </ReportShell>
   );
 }

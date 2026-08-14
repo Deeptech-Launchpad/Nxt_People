@@ -3,6 +3,10 @@ import * as XLSX from 'xlsx';
 // Every employee-level export in the reference opens with the same eight
 // identity columns. The first three are always written; the remaining five
 // are what the export dialog's "Include additional employee fields" toggles.
+// The reference is not consistent about the third header: its Attendance
+// exports say "Email ID" and its Leave Tracker ones say "Email". Leave type
+// summary goes further and calls the second column "Employee" rather than
+// "Employee Name". Callers pick a variant instead of us guessing one.
 export const IDENTITY_CORE = [
   { key: 'employeeCode', header: 'Employee Id' },
   { key: 'employeeName', header: 'Employee Name', value: r => `${r.firstName || ''} ${r.lastName || ''}`.trim() },
@@ -36,7 +40,12 @@ const cellValue = (col, row) => {
 //   columns   → the leaf headers and their accessors
 //
 // Returns a worksheet with merges and per-cell number formats applied.
-export function buildSheet({ meta = [], legend = [], groups = null, columns, rows, kv = null }) {
+// `stackedIdentity` is the width of a leading block whose headers belong on the
+// first banner row rather than the leaf row, merged down through the banners.
+// Leave booked and balance needs it: every metric is a Booked/Balance pair
+// under two levels of banner, so the reference prints the identity headers once
+// at the top and leaves those cells blank on the rows below.
+export function buildSheet({ meta = [], legend = [], groups = null, columns, rows, kv = null, stackedIdentity = 0 }) {
   const aoa = [];
   const merges = [];
 
@@ -59,22 +68,34 @@ export function buildSheet({ meta = [], legend = [], groups = null, columns, row
     aoa.push(line);
   });
 
+  // One banner row, or several — Leave booked and balance stacks three
+  // (Paid / Unpaid / Compensatory Off, then the leave-type names, then
+  // Booked / Balance), so `groups` accepts an array of banner rows too.
   if (groups) {
-    const groupRow = [];
-    let col = 0;
-    groups.forEach(g => {
-      groupRow.push(g.label || null);
-      for (let i = 1; i < g.span; i++) groupRow.push(null);
-      if (g.span > 1 && g.label) {
-        merges.push({ s: { r: aoa.length, c: col }, e: { r: aoa.length, c: col + g.span - 1 } });
-      }
-      col += g.span;
+    const bannerRows = Array.isArray(groups[0]) ? groups : [groups];
+    const firstBanner = aoa.length;
+    bannerRows.forEach((bands, bi) => {
+      const groupRow = [];
+      let col = 0;
+      bands.forEach(g => {
+        groupRow.push(g.label || null);
+        for (let i = 1; i < g.span; i++) groupRow.push(null);
+        if (g.span > 1 && g.label) {
+          merges.push({ s: { r: aoa.length, c: col }, e: { r: aoa.length, c: col + g.span - 1 } });
+        }
+        col += g.span;
+      });
+      // The stacked block's headers go on the first banner and nowhere else.
+      if (bi === 0) for (let c = 0; c < stackedIdentity; c++) groupRow[c] = columns[c].header;
+      aoa.push(groupRow);
     });
-    aoa.push(groupRow);
+    for (let c = 0; c < stackedIdentity; c++) {
+      merges.push({ s: { r: firstBanner, c }, e: { r: firstBanner + bannerRows.length, c } });
+    }
   }
 
   const headerRow = aoa.length;
-  aoa.push(columns.map(c => c.header));
+  aoa.push(columns.map((c, i) => (i < stackedIdentity ? null : c.header)));
   rows.forEach(r => aoa.push(columns.map(c => cellValue(c, r))));
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -120,6 +141,16 @@ export function downloadWorkbook(sheets, format, fileStub) {
 }
 
 // Resolves the identity block for a given "include additional fields" state.
-export function identityColumns(includeExtra) {
-  return includeExtra ? [...IDENTITY_CORE, ...IDENTITY_OPTIONAL] : [...IDENTITY_CORE];
+// `variant` renames the two headers the reference spells differently between
+// its Attendance and Leave Tracker families:
+//   undefined  Employee Id | Employee Name | Email ID   (Attendance)
+//   'leave'    Employee Id | Employee Name | Email      (Leave Tracker)
+//   'leaveShort'                Employee   | Email      (Leave type summary)
+export function identityColumns(includeExtra, variant) {
+  const core = IDENTITY_CORE.map(c => {
+    if (c.key === 'email' && variant) return { ...c, header: 'Email' };
+    if (c.key === 'employeeName' && variant === 'leaveShort') return { ...c, header: 'Employee' };
+    return c;
+  });
+  return includeExtra ? [...core, ...IDENTITY_OPTIONAL] : core;
 }

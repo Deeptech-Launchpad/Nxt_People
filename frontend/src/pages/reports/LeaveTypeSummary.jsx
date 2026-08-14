@@ -17,12 +17,18 @@ import { EmployeeCell } from './TableReportPage';
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
 const y = new Date().getFullYear();
 
+// The reference's six ledger columns, in its order. Identity is prepended by
+// the dialog. "Availed" is what we call booked; Encashed has no counterpart in
+// this system yet and is written as 0 rather than dropped, so the sheet lines
+// up column-for-column with the reference.
 const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  { key: 'openingBalance', header: 'Opening Balance' }, { key: 'granted', header: 'Granted' }, { key: 'booked', header: 'Booked (Days)' },
-  { key: 'bookedHours', header: 'Booked (Hours)' }, { key: 'closingBalance', header: 'Closing Balance' }, { key: 'lapsed', header: 'Lapsed' },
+  { key: 'openingBalance', header: 'Opening Balance' },
+  { key: 'granted', header: 'Granted' },
+  { key: 'booked', header: 'Availed' },
+  { key: 'closingBalance', header: 'Closing Balance' },
+  { key: 'encashed', header: 'Encashed', value: r => r.encashed ?? 0 },
+  { key: 'lapsed', header: 'Lapsed' },
 ];
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
 export default function LeaveTypeSummary() {
   const [available, setAvailable] = useState([]);
@@ -163,7 +169,12 @@ export default function LeaveTypeSummary() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`leave-type-summary_${selection?.leaveType}_${selection?.year}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
+        withIdentity identityVariant="leaveShort" columns={EXPORT_COLUMNS}
+        sheetName="Leave"
+        fileStub={`leave-type-summary_${selection?.leaveType}_${selection?.year}`}
+      />
     </ReportShell>
   );
 }

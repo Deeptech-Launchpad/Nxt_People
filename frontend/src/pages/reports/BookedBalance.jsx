@@ -18,18 +18,40 @@ import { EmployeeCell } from './TableReportPage';
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
 
+// Every metric column is a Booked/Balance pair, so the sheet carries three
+// banner rows above the leaf headers: the pay class, then the leave type, then
+// Booked / Balance — which is how the reference lays it out.
+//
+// Absent and Leave Without Pay have no entitlement, so their Balance is "-"
+// rather than a number pretending to be one.
+const dash = v => (v === null || v === undefined ? '-' : v);
 const DAY_EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  { key: 'casualAllocated', header: 'Casual Allocated' }, { key: 'casualBooked', header: 'Casual Booked' }, { key: 'casualBalance', header: 'Casual Balance' },
-  { key: 'absentBooked', header: 'Absent (Days)' }, { key: 'lwpBooked', header: 'Leave Without Pay (Days)' }, { key: 'unpaidTotalBooked', header: 'Unpaid Total (Days)' },
-  { key: 'compOffBooked', header: 'Comp-Off Booked' }, { key: 'compOffBalance', header: 'Comp-Off Balance' },
-  { key: 'totalBooked', header: 'Total Booked' }, { key: 'totalBalance', header: 'Total Balance' },
+  { key: 'casualBooked', header: 'Booked' }, { key: 'casualBalance', header: 'Balance' },
+  { key: 'absentBooked', header: 'Booked' }, { key: 'absentBalance', header: 'Balance', value: () => '-' },
+  { key: 'lwpBooked', header: 'Booked' }, { key: 'lwpBalance', header: 'Balance', value: () => '-' },
+  { key: 'unpaidTotalBooked', header: 'Booked' }, { key: 'unpaidTotalBalance', header: 'Balance', value: () => '-' },
+  { key: 'compOffBooked', header: 'Booked' }, { key: 'compOffBalance', header: 'Balance', value: r => dash(r.compOffBalance) },
+];
+const DAY_EXPORT_GROUPS = identityWidth => [
+  [
+    { label: null, span: identityWidth },
+    { label: 'Paid', span: 2 }, { label: 'Unpaid', span: 6 }, { label: 'Compensatory Off', span: 2 },
+  ],
+  [
+    { label: null, span: identityWidth },
+    { label: 'Casual Leave', span: 2 }, { label: 'Absent', span: 2 },
+    { label: 'Leave Without Pay', span: 2 }, { label: 'Total', span: 2 },
+    { label: 'Compensatory Off', span: 2 },
+  ],
 ];
 const HOUR_EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  { key: 'permissionAllocated', header: 'Permission Allocated (Hrs)' }, { key: 'permissionBooked', header: 'Permission Booked (Hrs)' }, { key: 'permissionBalance', header: 'Permission Balance (Hrs)' },
+  { key: 'permissionAllocated', header: 'Allocated' },
+  { key: 'permissionBooked', header: 'Booked' },
+  { key: 'permissionBalance', header: 'Balance' },
 ];
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
+const HOUR_EXPORT_GROUPS = identityWidth => [
+  [{ label: null, span: identityWidth }, { label: 'Permission', span: 3 }],
+];
 
 // The Day table is described rather than hand-written so the Type filter can
 // show and hide whole groups. Sub-groups sit under a pay-type banner, matching
@@ -261,7 +283,14 @@ export default function BookedBalance() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={unit === 'hour' ? HOUR_EXPORT_COLUMNS : DAY_EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`leave-booked-balance_${startDate}_to_${endDate}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
+        withIdentity identityVariant="leave" stackIdentity
+        columns={unit === 'hour' ? HOUR_EXPORT_COLUMNS : DAY_EXPORT_COLUMNS}
+        groups={unit === 'hour' ? HOUR_EXPORT_GROUPS : DAY_EXPORT_GROUPS}
+        sheetName="Leave"
+        fileStub={`leave-booked-balance_${startDate}_to_${endDate}`}
+      />
     </ReportShell>
   );
 }

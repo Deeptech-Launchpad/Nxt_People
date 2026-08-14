@@ -25,7 +25,7 @@ const ATTENDANCE_FORMATS = ['XLS', 'XLSX', 'CSV'];
 //                 Presence hours' entry toggles)
 export default function LeaveExportModal({
   open, onClose, rows, baseColumns, columns, extraColumns = [], fileStub,
-  withIdentity = false, meta = [], legend = [], groups = null,
+  withIdentity = false, identityVariant, stackIdentity = false, meta = [], legend = [], groups = null,
   sheetName = 'Report', hourColumns = null, hourSheetName = null,
   formats = LEAVE_FORMATS, extraControls = null, kv = null,
 }) {
@@ -44,8 +44,8 @@ export default function LeaveExportModal({
       return [...leaf, ...extraColumns.filter(f => legacyExtra[f.key])];
     }
     const id = includeExtra
-      ? identityColumns(true).filter(c => !IDENTITY_OPTIONAL.some(o => o.key === c.key) || picked[c.key])
-      : identityColumns(false);
+      ? identityColumns(true, identityVariant).filter(c => !IDENTITY_OPTIONAL.some(o => o.key === c.key) || picked[c.key])
+      : identityColumns(false, identityVariant);
     return [...id, ...leaf];
   };
 
@@ -64,12 +64,12 @@ export default function LeaveExportModal({
 
     const sheets = [{
       name: hourColumns ? `${sheetName}(Hours)` : sheetName,
-      ws: buildSheet({ meta, legend, groups: groupSpec, columns: resolveColumns(own), rows }),
+      ws: buildSheet({ meta, legend, groups: groupSpec, columns: resolveColumns(own), rows, stackedIdentity: stackIdentity ? identityWidth : 0 }),
     }];
     if (hourColumns) {
       sheets.push({
         name: hourSheetName || `${sheetName}(Decimal)`,
-        ws: buildSheet({ meta, legend, groups: groupSpec, columns: resolveColumns(hourColumns), rows }),
+        ws: buildSheet({ meta, legend, groups: groupSpec, columns: resolveColumns(hourColumns), rows, stackedIdentity: stackIdentity ? identityWidth : 0 }),
       });
     }
     downloadWorkbook(sheets, format, fileStub);
