@@ -271,7 +271,7 @@ export default function MusterRoll() {
         groups={w => musterGroups(data?.dayLabels || [], w)}
         legend={MUSTER_LEGEND}
         sheetName="Muster roll"
-        meta={[['Start Date', dateRange.start], ['End Date', dateRange.end]]}
+        meta={[['Start Date', fmtDate(dateRange.start)], ['End Date', fmtDate(dateRange.end)]]}
         formats={['XLS', 'XLSX', 'CSV']}
         fileStub="Attendance_Musterroll_Report"
       />

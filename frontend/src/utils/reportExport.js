@@ -9,7 +9,10 @@ import * as XLSX from 'xlsx';
 // "Employee Name". Callers pick a variant instead of us guessing one.
 export const IDENTITY_CORE = [
   { key: 'employeeCode', header: 'Employee Id' },
-  { key: 'employeeName', header: 'Employee Name', value: r => `${r.firstName || ''} ${r.lastName || ''}`.trim() },
+  // The reference writes the given name alone — "Veeravasudevan", not
+  // "Veeravasudevan Rangarajan N" — and our first_name column holds exactly
+  // that. The surname lives in last_name and is not part of this cell.
+  { key: 'employeeName', header: 'Employee Name', value: r => (r.firstName || '').trim() },
   { key: 'email', header: 'Email ID' },
 ];
 
@@ -45,7 +48,7 @@ const cellValue = (col, row) => {
 // Leave booked and balance needs it: every metric is a Booked/Balance pair
 // under two levels of banner, so the reference prints the identity headers once
 // at the top and leaves those cells blank on the rows below.
-export function buildSheet({ meta = [], legend = [], groups = null, columns, rows, kv = null, stackedIdentity = 0 }) {
+export function buildSheet({ meta = [], legend = [], groups = null, columns, rows, kv = null, stackedIdentity = 0, stackedHeader = null }) {
   const aoa = [];
   const merges = [];
 
@@ -94,8 +97,35 @@ export function buildSheet({ meta = [], legend = [], groups = null, columns, row
     }
   }
 
-  const headerRow = aoa.length;
-  aoa.push(columns.map((c, i) => (i < stackedIdentity ? null : c.header)));
+  // `stackedHeader` inverts the banner: instead of a group label sitting above
+  // a full row of leaf headers, the label takes the header row itself and only
+  // its own members get a second row underneath. Presence hours break-up is
+  // laid out that way — "Core Hours" on the header row, "Expected / Worked /
+  // Deviation" below it, every other column's header merged down through both.
+  let headerRow = aoa.length;
+  if (stackedHeader) {
+    const top = [], sub = [];
+    let col = 0;
+    stackedHeader.forEach(g => {
+      if (g.label) {
+        top.push(g.label);
+        for (let i = 1; i < g.span; i++) top.push(null);
+        if (g.span > 1) merges.push({ s: { r: headerRow, c: col }, e: { r: headerRow, c: col + g.span - 1 } });
+        for (let i = 0; i < g.span; i++) sub.push(columns[col + i].header);
+      } else {
+        for (let i = 0; i < g.span; i++) {
+          top.push(columns[col + i].header);
+          sub.push(null);
+          merges.push({ s: { r: headerRow, c: col + i }, e: { r: headerRow + 1, c: col + i } });
+        }
+      }
+      col += g.span;
+    });
+    aoa.push(top, sub);
+    headerRow += 1;
+  } else {
+    aoa.push(columns.map((c, i) => (i < stackedIdentity ? null : c.header)));
+  }
   rows.forEach(r => aoa.push(columns.map(c => cellValue(c, r))));
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);

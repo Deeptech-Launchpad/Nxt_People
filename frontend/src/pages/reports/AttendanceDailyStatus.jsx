@@ -306,7 +306,7 @@ export default function AttendanceDailyStatus() {
           ['Out', data?.presence?.out ?? 0],
           ['Yet to check-in', data?.presence?.yetToCheckIn ?? 0],
         ]}
-        meta={[['Date', date]]}
+        meta={[['Date', formatDate(date)]]}
         formats={['XLS', 'XLSX', 'CSV']}
         fileStub="Daily attendance status"
       />

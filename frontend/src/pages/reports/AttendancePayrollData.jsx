@@ -266,7 +266,7 @@ export default function AttendancePayrollData() {
         withIdentity columns={exportColumns(simple, unit)}
         groups={w => exportGroups(simple, unit, w)}
         sheetName="Attendance Data"
-        meta={[['Start Date', dateRange.start], ['End Date', dateRange.end]]}
+        meta={[['Start Date', fmtDate(dateRange.start)], ['End Date', fmtDate(dateRange.end)]]}
         formats={['XLS', 'XLSX', 'CSV']}
         fileStub="Attendance data for payroll"
       />

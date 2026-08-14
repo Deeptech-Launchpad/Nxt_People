@@ -243,7 +243,7 @@ export default function PresentAbsentStatus() {
         withIdentity columns={dayColumns(data?.dayLabels || [])}
         legend={GRID_LEGEND}
         sheetName="Present status"
-        meta={[['Start Date', dateRange.start], ['End Date', dateRange.end]]}
+        meta={[['Start Date', fmtDate(dateRange.start)], ['End Date', fmtDate(dateRange.end)]]}
         formats={['XLS', 'XLSX', 'CSV']}
         fileStub="Employee present_absent status"
       />

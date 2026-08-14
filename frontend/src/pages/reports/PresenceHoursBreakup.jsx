@@ -94,7 +94,9 @@ const presenceColumns = (emp, decimal) => [
   { key: 'timeZone', header: 'Time zone', value: () => '' },
 ];
 
-// "Core Hours" straddles Expected / Worked / Deviation (columns 25-27).
+// "Core Hours" takes the header row itself and straddles Expected / Worked /
+// Deviation, whose own labels sit on a second row beneath it. Every other
+// column keeps its header on the top row, merged down through both.
 const PRESENCE_GROUPS = [
   { label: null, span: 24 },
   { label: 'Core Hours', span: 3 },
@@ -321,7 +323,7 @@ export default function PresenceHoursBreakup() {
         open={exportOpen} onClose={() => setExportOpen(false)} rows={data?.data || []}
         columns={presenceColumns(data?.employee, false)}
         hourColumns={presenceColumns(data?.employee, true)}
-        groups={PRESENCE_GROUPS}
+        stackedHeader={PRESENCE_GROUPS}
         sheetName="Presence hours"
         formats={['XLS', 'XLSX', 'CSV']}
         fileStub={`Presence hours break-up_${data?.employee?.employeeCode || ''}`}

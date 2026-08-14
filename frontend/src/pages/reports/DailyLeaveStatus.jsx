@@ -23,12 +23,13 @@ const shiftDay = (dateStr, delta) => {
 const formatDate = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
 
+// The reference exports this one as a tally, not a list of people: a Date row,
+// then one line per leave type with the headcount against it. Leave types
+// nobody took that day are left out rather than written as zero.
 const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
   { key: 'leaveType', header: 'Leave Type', value: r => LEAVE_LABEL[r.leaveType] || r.leaveType },
-  { key: 'category', header: 'Type' }, { key: 'reason', header: 'Reason' }, { key: 'approvalStatus', header: 'Approval Status' },
+  { key: 'count', header: 'Number of employees' },
 ];
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
 export default function DailyLeaveStatus() {
   const [date, setDate] = useState(todayCA());
@@ -199,7 +200,14 @@ export default function DailyLeaveStatus() {
           </table>
         </div>
       )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={employees} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub={`daily-leave-status_${date}`} />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)}
+        rows={byType.filter(r => Number(r.count) > 0)}
+        columns={EXPORT_COLUMNS}
+        meta={[['Date', formatDate(date)]]}
+        sheetName="Leave"
+        fileStub={`daily-leave-status_${date}`}
+      />
     </ReportShell>
   );
 }

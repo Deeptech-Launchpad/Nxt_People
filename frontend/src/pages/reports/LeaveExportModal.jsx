@@ -25,7 +25,8 @@ const ATTENDANCE_FORMATS = ['XLS', 'XLSX', 'CSV'];
 //                 Presence hours' entry toggles)
 export default function LeaveExportModal({
   open, onClose, rows, baseColumns, columns, extraColumns = [], fileStub,
-  withIdentity = false, identityVariant, stackIdentity = false, meta = [], legend = [], groups = null,
+  withIdentity = false, identityVariant, stackIdentity = false, stackedHeader = null,
+  meta = [], legend = [], groups = null,
   sheetName = 'Report', hourColumns = null, hourSheetName = null,
   formats = LEAVE_FORMATS, extraControls = null, kv = null,
 }) {
@@ -64,12 +65,12 @@ export default function LeaveExportModal({
 
     const sheets = [{
       name: hourColumns ? `${sheetName}(Hours)` : sheetName,
-      ws: buildSheet({ meta, legend, groups: groupSpec, columns: resolveColumns(own), rows, stackedIdentity: stackIdentity ? identityWidth : 0 }),
+      ws: buildSheet({ meta, legend, groups: groupSpec, columns: resolveColumns(own), rows, stackedIdentity: stackIdentity ? identityWidth : 0, stackedHeader }),
     }];
     if (hourColumns) {
       sheets.push({
         name: hourSheetName || `${sheetName}(Decimal)`,
-        ws: buildSheet({ meta, legend, groups: groupSpec, columns: resolveColumns(hourColumns), rows, stackedIdentity: stackIdentity ? identityWidth : 0 }),
+        ws: buildSheet({ meta, legend, groups: groupSpec, columns: resolveColumns(hourColumns), rows, stackedIdentity: stackIdentity ? identityWidth : 0, stackedHeader }),
       });
     }
     downloadWorkbook(sheets, format, fileStub);
