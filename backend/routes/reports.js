@@ -2308,17 +2308,25 @@ router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'h
 // owed, what it paid for, and the balance that carries in and out.
 //
 //   Expected Hours = every day the employee was on rolls x their shift length
-//   Payable Hours  = the days the company pays for x their shift length
-//                    (worked, paid leave, holiday, weekend)
+//   Payable Hours  = per day, the greater of the hours actually clocked and
+//                    the shift length on a day paid without work (leave,
+//                    holiday, weekend); nothing on an absence
 //   Balance Hours  = Previous Balance + Payable - Expected
+//
+// Payable has to be the real punch, not a flat shift length per worked day.
+// A flat length pays exactly what the day owes, so the balance could only ever
+// sit at zero or fall — and banking overtime is the whole point of it. The
+// reference agrees: its system account, absent all fortnight bar four
+// non-working days, shows payable 32:00 on a 112:00 expectation, which is
+// four days of credit and no worked hours at all.
 //
 // Expected counts every day rather than only working days, matching Attendance
 // Data for Payroll's Expected Payable column — the two reports would otherwise
 // disagree about the same period.
 //
 // This system stores no carried-forward hour bank, so Previous Balance is the
-// same Payable - Expected sum run over every day from the employee's joining
-// date up to the day before the period. It is therefore derived from our own
+// same Payable - Expected sum run from that employee's first attendance record
+// up to the day before the period. It is therefore derived from our own
 // attendance rather than migrated from anywhere, and will not match a balance
 // accumulated in another system.
 router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -2326,48 +2334,65 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
     const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
 
-    // How far back the ledger runs. One context covering history plus the
-    // period, rather than two loads over overlapping ranges.
+    // How far back the ledger runs, per employee: each one's history begins at
+    // their own first attendance record.
     //
-    // It begins when this system began recording, not at the joining date.
-    // Before there is any attendance at all there is no evidence either way,
-    // and scoring those days as absences would invent a deficit of thousands
-    // of hours for anyone who joined before the data starts.
-    const boundsRes = await pool.query(
-      `SELECT (SELECT MIN(joining_date)::text FROM employees WHERE deleted_at IS NULL) AS "joined",
-              (SELECT MIN(date)::text FROM attendance) AS "recorded"`
+    // Neither the joining date nor a company-wide earliest record works here.
+    // Before a person has any attendance at all there is no evidence about
+    // them either way, and counting those days as absences fabricates a
+    // deficit — with a global start, one stray record belonging to a colleague
+    // put everybody else on the hook for every day since.
+    const firstRes = await pool.query(
+      `SELECT employee_id, MIN(date)::text AS "first" FROM attendance GROUP BY employee_id`
     );
-    const { joined, recorded } = boundsRes.rows[0] || {};
-    const earliest = joined && recorded ? (joined > recorded ? joined : recorded) : (recorded || joined);
+    const firstSeen = new Map(firstRes.rows.map(r => [r.employee_id, r.first]));
+    const earliest = firstRes.rows.reduce((min, r) => (!min || r.first < min ? r.first : min), null);
     const ledgerStart = earliest && earliest < start ? earliest : start;
 
     const ctx = await loadAttendanceContext(req, ledgerStart, end);
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
-    const PAYABLE = new Set(['present', 'onDuty', 'paidLeave', 'holiday', 'weekend']);
+    const PAID_OFF = new Set(['paidLeave', 'holiday', 'weekend']);
 
     const data = ctx.employees.map(emp => {
       const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
+      // Nothing recorded for this person ever: their history is unknown, not
+      // zero, so the ledger opens at the period itself.
+      const since = firstSeen.get(emp._id) || start;
       let prevExpected = 0, prevPayable = 0, expected = 0, payable = 0;
 
       for (const d of ctx.days) {
         if (!ctx.onRolls(emp, d)) continue;
         const ymd = d.toLocaleDateString('en-CA');
+        if (ymd < since) continue;
         // A day that has not happened yet owes nothing and pays nothing.
         if (ymd > todayYmd) continue;
+        const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
         const dayLeaves = ctx.leavesOn(emp._id, d);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
-          attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
+          attStatus: att?.status,
           leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
           isFuture: false,
         });
-        const isPayable = PAYABLE.has(cls.kind);
+
+        // Payable is the hours actually clocked, or the shift length on a day
+        // the company pays for without work — whichever is greater.
+        //
+        // Counting a worked day as a flat shift length instead, as this did,
+        // made the balance incapable of ever rising: every day paid exactly
+        // what it owed or less, so the ledger could only sit at zero or fall.
+        // Overtime is precisely what a balance like this is meant to bank, and
+        // it only appears if the real punch is what counts.
+        const worked = parseFloat(att?.workingHours) || 0;
+        const credit = PAID_OFF.has(cls.kind) ? shiftHours : 0;
+        const dayPayable = Math.max(worked, credit);
+
         if (ymd < start) {
           prevExpected += shiftHours;
-          if (isPayable) prevPayable += shiftHours;
+          prevPayable += dayPayable;
         } else {
           expected += shiftHours;
-          if (isPayable) payable += shiftHours;
+          payable += dayPayable;
         }
       }
 
