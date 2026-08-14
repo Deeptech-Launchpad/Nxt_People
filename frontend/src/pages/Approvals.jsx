@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye } from 'lucide-react';
+import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye, Briefcase } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -48,11 +48,11 @@ export default function Approvals() {
   // Approve All is available to HR / Super Admin and Team Leads (managers).
   // Managers are still scoped server-side to requests they actually approve.
   const canApproveAll = ['admin', 'director', 'hr_admin', 'manager'].includes(user?.role);
-  const [data, setData] = useState({ leaves: [], permissions: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], total: 0 });
+  const [data, setData] = useState({ leaves: [], permissions: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], onDuty: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    const valid = ['leaves','permissions','approvedLeaves','rejectedLeaves','timesheets','regularizations','wfh','compoff'];
+    const valid = ['leaves','permissions','approvedLeaves','rejectedLeaves','timesheets','regularizations','wfh','compoff','onduty'];
     return valid.includes(t) ? t : 'leaves';
   });
   // Last-seen count per tab — persisted to localStorage so the badge
@@ -101,6 +101,7 @@ export default function Approvals() {
           regularizations: d.regularizations || [],
           wfhRequests: d.wfhRequests || [],
           compOffs: d.compOffs || [],
+          onDuty: d.onDuty || [],
           approvedLeaves: approved,
           rejectedLeaves: rejected,
           total: d.total || 0,
@@ -127,11 +128,13 @@ export default function Approvals() {
       ...(data.rejectedLeaves || []),
       ...(data.wfhRequests || []),
       ...(data.compOffs || []),
+      ...(data.onDuty || []),
     ];
     const found = allItems.find(item => item._id === openId);
     if (!found) return;
     const typeToTab = { permission: 'permissions' };
-    if (data.regularizations?.find(r => r._id === openId)) setTab('regularizations');
+    if (data.onDuty?.find(o => o._id === openId)) setTab('onduty');
+    else if (data.regularizations?.find(r => r._id === openId)) setTab('regularizations');
     else if (data.permissions?.find(p => p._id === openId)) setTab('permissions');
     else if (data.approvedLeaves?.find(l => l._id === openId)) setTab('approvedLeaves');
     else if (data.rejectedLeaves?.find(l => l._id === openId)) setTab('rejectedLeaves');
@@ -179,11 +182,12 @@ export default function Approvals() {
     ['regularizations', 'Regularizations', data.regularizations?.length],
     ['wfh', 'WFH Requests', data.wfhRequests?.length],
     ['compoff', 'Comp-Off', data.compOffs?.length],
+    ['onduty', 'On Duty', data.onDuty?.length],
   ];
 
   const ActionBtns = ({ endpoint, id, type, canActLeave, status }) => {
     let canAct = false;
-    if (endpoint === 'leaves' || endpoint === 'regularizations' || endpoint === 'comp-off' || endpoint === 'wfh') {
+    if (endpoint === 'leaves' || endpoint === 'regularizations' || endpoint === 'comp-off' || endpoint === 'wfh' || endpoint === 'on-duty') {
       canAct = status === 'pending' && !!canActLeave;
     } else if (endpoint === 'timesheets') {
       canAct = status === 'submitted' && !!canActLeave;
@@ -245,7 +249,7 @@ export default function Approvals() {
   return (
     <div className="space-y-5">
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
         {[
           ['Total Pending',   data.total,                    'bg-amber-50 text-amber-700',  null],
           ['Leaves',          data.leaves?.length,           'bg-blue-50 text-blue-700',    'leaves'],
@@ -254,6 +258,7 @@ export default function Approvals() {
           ['Regularizations', data.regularizations?.length,  'bg-slate-50 text-slate-600',  'regularizations'],
           ['WFH Requests',    data.wfhRequests?.length,      'bg-green-50 text-green-700',  'wfh'],
           ['Comp-Off',        data.compOffs?.length,         'bg-orange-50 text-orange-700','compoff'],
+          ['On Duty',         data.onDuty?.length,           'bg-violet-50 text-violet-700','onduty'],
         ].map(([l, v, c, tabId]) => (
           <div
             key={l}
@@ -605,6 +610,50 @@ export default function Approvals() {
                   </div>
                 ))}
                 <ShowMoreFooter tabId="wfh" total={data.wfhRequests.length} shown={getVisible('wfh', data.wfhRequests).length} />
+                </>
+            )}
+
+            {/* On Duty — work done away from the usual place of work. Not
+                leave: the day is payable and counts as worked. */}
+            {tab === 'onduty' && (
+              data.onDuty?.length === 0
+                ? <EmptyState icon={Briefcase} message="No pending on duty requests" />
+                : <>
+                {getVisible('onduty', data.onDuty).map(o => (
+                  <div key={o._id} className="p-5 flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center text-violet-600 flex-shrink-0">
+                        <Briefcase size={18} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-slate-700">{o.employee?.firstName} {o.employee?.lastName}</p>
+                          <span className="text-sm text-slate-600">{o.employee?.employeeId}</span>
+                          <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{o.employee?.department}</span>
+                          <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-200">
+                            {o.requestType === 'work_from_home' ? 'Work from home' : 'Client visit'}
+                          </span>
+                          {o.status === 'pending' && o.approvalLevels?.length > 0 && (
+                            <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-200">
+                              {o.approvalLevels.filter(a => a.status === 'approved').length} of {o.approvalLevels.length} level{o.approvalLevels.length !== 1 ? 's' : ''} approved
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-base text-slate-500 mt-1">
+                          {o.startDate === o.endDate
+                            ? fmtDay(o.startDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                            : `${fmtDay(o.startDate)} – ${fmtDay(o.endDate)}`}
+                          {o.unit === 'hours' && o.startTime && (
+                            <span className="text-slate-400"> · {String(o.startTime).slice(0, 5)} – {String(o.endTime).slice(0, 5)}</span>
+                          )}
+                        </p>
+                        {o.reason && <p className="text-sm text-slate-400 mt-0.5 max-w-xs">{o.reason}</p>}
+                      </div>
+                    </div>
+                    <ActionBtns endpoint="on-duty" id={o._id} type="On Duty" canActLeave={o.canAct && o.employee?._id !== user?._id} status={o.status} />
+                  </div>
+                ))}
+                <ShowMoreFooter tabId="onduty" total={data.onDuty.length} shown={getVisible('onduty', data.onDuty).length} />
                 </>
             )}
 

@@ -11,6 +11,7 @@ const LEAVE_LEVELS_JSON = approvalLevelsJson('leave', 'l');
 const REG_LEVELS_JSON   = approvalLevelsJson('regularization', 'r');
 const COMPOFF_LEVELS_JSON = approvalLevelsJson('comp_off', 'c');
 const WFH_LEVELS_JSON   = approvalLevelsJson('wfh', 'w');
+const OD_LEVELS_JSON    = approvalLevelsJson('on_duty', 'o');
 
 router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
@@ -25,7 +26,8 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
     const reportFilter = full ? '' : ' AND (e.reporting_manager_id = $1 OR e.approving_authority_id = $1)';
     const simpleParams = full ? [] : [userId];
 
-    const [leavesRes, timesheetsRes, regRes, wfhRes, compOffRes, approvedLeavesRes] = await Promise.all([
+    // Order here must match the order of the queries below, exactly.
+    const [leavesRes, timesheetsRes, regRes, wfhRes, onDutyRes, compOffRes, approvedLeavesRes] = await Promise.all([
       pool.query(`
         SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate", l.end_date as "endDate",
                l.total_days as "totalDays", l.hours, l.start_time as "startTime", l.end_time as "endTime",
@@ -94,6 +96,27 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         ORDER BY w.date DESC
       `, [userId, full]),
 
+      pool.query(`
+        SELECT o.id as "_id", o.start_date::text as "startDate", o.end_date::text as "endDate",
+               o.unit, o.start_time as "startTime", o.end_time as "endTime", o.hours,
+               o.request_type as "requestType", o.reason, o.status,
+               o.rejection_reason as "rejectionReason", o.created_at as "createdAt",
+               json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
+                 'department', e.department, 'employeeId', e.employee_id) as employee,
+               ${OD_LEVELS_JSON} as "approvalLevels",
+               ($2::boolean OR EXISTS (
+                  SELECT 1 FROM approval_levels x
+                   WHERE x.request_type = 'on_duty' AND x.request_id = o.id AND x.approver_id = $1 AND x.status = 'pending'
+               )) as "canAct"
+        FROM on_duty_requests o JOIN employees e ON o.employee_id = e.id
+        WHERE o.status = 'pending'
+          AND ($2::boolean OR EXISTS (
+               SELECT 1 FROM approval_levels x
+                WHERE x.request_type = 'on_duty' AND x.request_id = o.id AND x.approver_id = $1 AND x.status = 'pending'
+          ))
+        ORDER BY o.start_date DESC
+      `, [userId, full]),
+
       // Comp-Offs now flow through the same hierarchy engine as leaves.
       pool.query(`
         SELECT c.id as "_id", c.worked_date as "workedDate", c.comp_off_date as "compOffDate",
@@ -137,12 +160,13 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
     const regularizations = regRes.rows;
     const wfhRequests = wfhRes.rows;
     const compOffs = compOffRes.rows;
+    const onDuty = onDutyRes.rows;
     const approvedLeaves = approvedLeavesRes.rows;
-    const total = leaves.length + timesheets.length + regularizations.length + wfhRequests.length + compOffs.length;
+    const total = leaves.length + timesheets.length + regularizations.length + wfhRequests.length + compOffs.length + onDuty.length;
 
     res.json({
       success: true,
-      data: { leaves, timesheets, regularizations, wfhRequests, compOffs, approvedLeaves, total }
+      data: { leaves, timesheets, regularizations, wfhRequests, compOffs, onDuty, approvedLeaves, total }
     });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
