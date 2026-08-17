@@ -210,9 +210,17 @@ export default function RecordList({
 
   // The route refuses a delete that would strand employees, and says how many.
   // Confirming here as well means the common case never reaches the server.
+  //
+  // Against totalCount, not the count in the column: the column shows current
+  // staff, and a row reading 0 can still be carried by people who have left,
+  // whose records every report and payroll history still reads.
   const remove = row => {
-    if (row.userCount > 0) {
-      return toast.error(`${row.userCount} employee(s) still have this ${singular.toLowerCase()}. Reassign them first.`);
+    if (row.totalCount > 0) {
+      const former = row.totalCount - row.userCount;
+      const who = former === row.totalCount
+        ? `${former} former employee(s)`
+        : former > 0 ? `${row.totalCount} employee(s), ${former} of them former,` : `${row.totalCount} employee(s)`;
+      return toast.error(`${who} still have this ${singular.toLowerCase()}. Reassign them first.`);
     }
     if (!window.confirm(`Delete ${row.name}?`)) return;
     api.delete(`/org-setup/${resource}/${row.id}`)
@@ -314,29 +322,27 @@ export default function RecordList({
             <table className="w-full text-[14px]">
               <thead className="bg-slate-50">
                 <tr>
-                  {columns.map(c => (
+                  <th className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{columns[0].label}</th>
+                  {/* Second, as the reference has it: the count is the thing
+                      you scan a list like this for. */}
+                  <th className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{usersLabel}</th>
+                  {columns.slice(1).map(c => (
                     <th key={c.key} className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{c.label}</th>
                   ))}
-                  <th className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{usersLabel}</th>
                   <th className="w-16" />
                 </tr>
               </thead>
               <tbody>
                 {rows.map(row => (
                   <tr key={row.id} className="group border-t border-slate-100 hover:bg-slate-50/60">
-                    {columns.map((c, i) => (
-                      <td key={c.key} className="px-6 py-3 text-slate-700 align-top">
-                        {i === 0 ? (
-                          // The name opens the editor, the way the reference
-                          // does — there is no separate pencil column.
-                          <button onClick={() => setEditing(row)}
-                            className="text-blue-600 hover:underline text-left font-medium">
-                            {row[c.key]}
-                          </button>
-                        ) : c.render ? (c.render(row) || <span className="text-slate-400">—</span>)
-                          : (row[c.key] || <span className="text-slate-400">—</span>)}
-                      </td>
-                    ))}
+                    <td className="px-6 py-3 align-top">
+                      {/* The name opens the editor, the way the reference does
+                          — there is no separate pencil column. */}
+                      <button onClick={() => setEditing(row)}
+                        className="text-blue-600 hover:underline text-left font-medium">
+                        {row[columns[0].key]}
+                      </button>
+                    </td>
                     <td className="px-6 py-3 align-top">
                       {row.userCount > 0 ? (
                         <button onClick={() => openPeek(row)} className="text-blue-600 hover:underline">
@@ -344,6 +350,12 @@ export default function RecordList({
                         </button>
                       ) : <span className="text-slate-400">0</span>}
                     </td>
+                    {columns.slice(1).map(c => (
+                      <td key={c.key} className="px-6 py-3 text-slate-700 align-top">
+                        {c.render ? (c.render(row) || <span className="text-slate-400">—</span>)
+                          : (row[c.key] || <span className="text-slate-400">—</span>)}
+                      </td>
+                    ))}
                     <td className="px-6 py-3 align-top">
                       {/* Hidden until the row is hovered, as in the reference —
                           a delete on every row invites the mis-click. */}

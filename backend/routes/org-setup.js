@@ -56,7 +56,9 @@ const RESOURCES = {
       l.city, l.state, l.country, l.postal_code AS "postalCode",
       l.timezone, l.is_active AS "isActive",
       (SELECT COUNT(*)::int FROM employees e
-        WHERE e.work_location_id = l.id AND e.deleted_at IS NULL) AS "userCount"`,
+        WHERE e.work_location_id = l.id AND e.deleted_at IS NULL AND e.status = 'active') AS "userCount",
+      (SELECT COUNT(*)::int FROM employees e
+        WHERE e.work_location_id = l.id AND e.deleted_at IS NULL) AS "totalCount"`,
     from: 'work_locations l',
     order: 'l.name',
     clean: b => ({
@@ -89,7 +91,9 @@ const RESOURCES = {
       TRIM(CONCAT(h.first_name, ' ', h.last_name)) AS "headName",
       p.name AS "parentName",
       (SELECT COUNT(*)::int FROM employees e
-        WHERE e.department_id = d.id AND e.deleted_at IS NULL) AS "userCount"`,
+        WHERE e.department_id = d.id AND e.deleted_at IS NULL AND e.status = 'active') AS "userCount",
+      (SELECT COUNT(*)::int FROM employees e
+        WHERE e.department_id = d.id AND e.deleted_at IS NULL) AS "totalCount"`,
     from: `departments d
              LEFT JOIN employees h ON h.id = d.head_id
              LEFT JOIN departments p ON p.id = d.parent_id`,
@@ -128,7 +132,9 @@ const RESOURCES = {
       b.id, b.name, b.description, b.company_id AS "companyId",
       co.name AS "companyName", b.is_active AS "isActive",
       (SELECT COUNT(*)::int FROM employees e
-        WHERE e.business_unit_id = b.id AND e.deleted_at IS NULL) AS "userCount"`,
+        WHERE e.business_unit_id = b.id AND e.deleted_at IS NULL AND e.status = 'active') AS "userCount",
+      (SELECT COUNT(*)::int FROM employees e
+        WHERE e.business_unit_id = b.id AND e.deleted_at IS NULL) AS "totalCount"`,
     from: 'business_units b LEFT JOIN companies co ON co.id = b.company_id',
     order: 'b.name',
     clean: b => ({
@@ -150,7 +156,9 @@ const RESOURCES = {
       p.name AS "parentName", v.business_unit_id AS "businessUnitId",
       bu.name AS "businessUnitName", v.is_active AS "isActive",
       (SELECT COUNT(*)::int FROM employees e
-        WHERE e.division_id = v.id AND e.deleted_at IS NULL) AS "userCount"`,
+        WHERE e.division_id = v.id AND e.deleted_at IS NULL AND e.status = 'active') AS "userCount",
+      (SELECT COUNT(*)::int FROM employees e
+        WHERE e.division_id = v.id AND e.deleted_at IS NULL) AS "totalCount"`,
     from: `divisions v
              LEFT JOIN divisions p ON p.id = v.parent_id
              LEFT JOIN business_units bu ON bu.id = v.business_unit_id`,
@@ -192,7 +200,9 @@ const RESOURCES = {
     select: `
       c.id, c.name, c.code, c.description, c.is_active AS "isActive",
       (SELECT COUNT(*)::int FROM employees e
-        WHERE e.company_id = c.id AND e.deleted_at IS NULL) AS "userCount"`,
+        WHERE e.company_id = c.id AND e.deleted_at IS NULL AND e.status = 'active') AS "userCount",
+      (SELECT COUNT(*)::int FROM employees e
+        WHERE e.company_id = c.id AND e.deleted_at IS NULL) AS "totalCount"`,
     from: 'companies c',
     order: 'c.name',
     clean: b => ({
@@ -212,7 +222,9 @@ const RESOURCES = {
     select: `
       g.id, g.name, g.mail_alias AS "mailAlias", g.is_active AS "isActive",
       (SELECT COUNT(*)::int FROM employees e
-        WHERE e.designation_id = g.id AND e.deleted_at IS NULL) AS "userCount"`,
+        WHERE e.designation_id = g.id AND e.deleted_at IS NULL AND e.status = 'active') AS "userCount",
+      (SELECT COUNT(*)::int FROM employees e
+        WHERE e.designation_id = g.id AND e.deleted_at IS NULL) AS "totalCount"`,
     from: 'designations g',
     order: 'g.name',
     clean: b => ({
@@ -240,6 +252,9 @@ router.get('/:resource', async (req, res) => {
 // the employee directory cannot filter by location, business unit or division
 // — only by department and designation name — so the list comes from here,
 // keyed by the foreign key rather than by a name that can be duplicated.
+//
+// Current employees only, matching the count that opened it. `?all=true` adds
+// the people who have left, which is what the delete guard is counting.
 router.get('/:resource/:id/employees', async (req, res) => {
   const r = resourceOf(req);
   if (!r) return res.status(404).json({ success: false, message: 'Unknown resource' });
@@ -250,6 +265,7 @@ router.get('/:resource/:id/employees', async (req, res) => {
               e.email, e.designation, e.department, e.status
          FROM employees e
         WHERE e.${r.employeeIdColumn} = $1 AND e.deleted_at IS NULL
+          ${req.query.all === 'true' ? '' : `AND e.status = 'active'`}
         ORDER BY e.first_name, e.last_name`,
       [req.params.id]
     );
@@ -344,15 +360,27 @@ router.delete('/:resource/:id', authorize(...WRITE_ROLES), async (req, res) => {
     // Refused rather than cascaded. The foreign key is ON DELETE SET NULL, so
     // deleting would silently strip the value from everyone who had it — and
     // the employee's own text column would be left behind, disagreeing.
+    //
+    // This counts everyone still on file, not just the current staff the list
+    // shows. A former employee's records are still read by every report and by
+    // payroll history, and blanking their department because nobody current is
+    // in it would rewrite the past.
     const inUse = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM employees
+      `SELECT COUNT(*)::int AS n,
+              COUNT(*) FILTER (WHERE status <> 'active')::int AS former
+         FROM employees
         WHERE ${r.employeeIdColumn} = $1 AND deleted_at IS NULL`,
       [req.params.id]
     );
-    if (inUse.rows[0].n > 0) {
+    const { n, former } = inUse.rows[0];
+    if (n > 0) {
+      // Saying only "82 employees" against a list showing 0 reads as a bug.
+      const who = former === n
+        ? `${former} former employee(s)`
+        : former > 0 ? `${n} employee(s), ${former} of them former,` : `${n} employee(s)`;
       return res.status(400).json({
         success: false,
-        message: `${inUse.rows[0].n} employee(s) still have this ${r.label.toLowerCase()}. Reassign them first.`,
+        message: `${who} still have this ${r.label.toLowerCase()}. Reassign them first.`,
       });
     }
     if (r.table === 'departments' || r.table === 'divisions') {
