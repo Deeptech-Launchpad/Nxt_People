@@ -72,7 +72,9 @@ export function NotWired({ children = 'Saved, but not enforced yet' }) {
 export const selectClass = 'text-[14px] rounded-md border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400';
 
 // Loads a config section and returns everything a section screen needs.
-export function useConfigSection(section, label) {
+// `base` picks the service: leave-config or attendance-config. Both expose the
+// same GET/PATCH-a-section shape, so the screens differ only in their fields.
+export function useConfigSection(section, label, base = 'leave-config') {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -80,12 +82,12 @@ export function useConfigSection(section, label) {
 
   useEffect(() => {
     let cancelled = false;
-    api.get(`/leave-config/${section}`)
+    api.get(`/${base}/${section}`)
       .then(r => { if (!cancelled) setConfig(r.data.data || {}); })
       .catch(err => toast.error(err.response?.data?.message || `Failed to load ${label} settings`))
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [section, label]);
+  }, [section, label, base]);
 
   const set = changes => { setConfig(c => ({ ...c, ...changes })); setDirty(true); };
   // Merges into a nested object without losing the keys not being changed.
@@ -93,7 +95,7 @@ export function useConfigSection(section, label) {
 
   const save = () => {
     setSaving(true);
-    api.patch(`/leave-config/${section}`, config)
+    api.patch(`/${base}/${section}`, config)
       .then(r => { setConfig(r.data.data); setDirty(false); toast.success(`${label} settings saved`); })
       .catch(err => toast.error(err.response?.data?.message || 'Could not save those settings'))
       .finally(() => setSaving(false));

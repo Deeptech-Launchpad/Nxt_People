@@ -33,6 +33,32 @@ export default function Regularization() {
   const [actionLoading, setActionLoading] = useState('');
   const [detailReq, setDetailReq] = useState(null);  // request shown in the detail/timeline modal
   const [tab, setTab] = useState(user?.role === 'team_member' ? 'my' : 'pending');
+  // The same rules the route enforces on submit. Drawn from configuration so
+  // the form cannot offer something that will come back as a 400.
+  const [cfg, setCfg] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/regularizations/config')
+      .then(r => { if (!cancelled) setCfg(r.data.data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const reasonOptions = cfg?.reasons || [];
+  const restrictions = cfg?.restrictions || {};
+  // The earliest date still inside the configured window, and the latest one
+  // allowed if future requests are off.
+  const dateBounds = (() => {
+    const today = new Date().toLocaleDateString('en-CA');
+    const bounds = { max: restrictions.allowFutureDates ? undefined : today };
+    if (restrictions.withinDays?.enabled) {
+      const d = new Date(today + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() - Number(restrictions.withinDays.days || 0));
+      bounds.min = d.toISOString().slice(0, 10);
+    }
+    return bounds;
+  })();
 
   const load = () => {
     setLoading(true);
@@ -185,8 +211,13 @@ export default function Regularization() {
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Date *</label>
                 <input type="date" value={form.date} onChange={e => { const v = e.target.value; setForm(prev => ({ ...prev, date: v })); }} required
-                  max={new Date().toLocaleDateString('en-CA')}
+                  min={dateBounds.min} max={dateBounds.max}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
+                {restrictions.withinDays?.enabled && (
+                  <p className="text-[13px] text-slate-400 mt-1">
+                    Within {restrictions.withinDays.days} day(s) of the date being regularized.
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -201,10 +232,22 @@ export default function Regularization() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">Reason *</label>
-                <textarea value={form.reason} onChange={e => { const v = e.target.value; setForm(prev => ({ ...prev, reason: v })); }} required rows={3}
-                  placeholder="Explain why your attendance needs correction..."
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none" />
+                <label className="block text-sm font-medium text-slate-600 mb-1.5">
+                  Reason{cfg?.reasonMandatory !== false && ' *'}
+                </label>
+                {reasonOptions.length > 0 ? (
+                  <select value={form.reason} onChange={e => { const v = e.target.value; setForm(prev => ({ ...prev, reason: v })); }}
+                    required={cfg?.reasonMandatory !== false}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base bg-white focus:outline-none focus:border-brand-400">
+                    <option value="">Select a reason</option>
+                    {reasonOptions.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                ) : (
+                  <textarea value={form.reason} onChange={e => { const v = e.target.value; setForm(prev => ({ ...prev, reason: v })); }}
+                    required={cfg?.reasonMandatory !== false} rows={3}
+                    placeholder="Explain why your attendance needs correction..."
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none" />
+                )}
               </div>
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50">Cancel</button>

@@ -7,8 +7,35 @@ const { isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
 const { createLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
 const { sendLeaveApprovalEmail } = require('../utils/mailer');
+const attendanceConfig = require('../utils/attendanceConfig');
 const logger = require('../logger');
 router.use(protect);
+
+// Regularization can be switched off in Attendance → Configuration → Methods.
+// The check lives on the write, not only in the UI, so a tab left open on the
+// request form cannot still file one.
+async function requireRegularizationEnabled(req, res, next) {
+  if (await attendanceConfig.methodEnabled('regularization')) return next();
+  res.status(403).json({ success: false, message: 'Regularization is switched off for this organization' });
+}
+
+// The rules the request form renders against.
+router.get('/config', async (req, res) => {
+  try {
+    const cfg = await attendanceConfig.section('regularization');
+    res.json({
+      success: true,
+      data: {
+        enabled: await attendanceConfig.methodEnabled('regularization'),
+        entryMode: cfg.entryMode,
+        reasons: cfg.reasons || [],
+        reasonMandatory: !!cfg.reasonMandatory,
+        fields: cfg.fields,
+        restrictions: cfg.restrictions,
+      },
+    });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
 
 // Regularizations use the SAME hierarchy approval engine as leaves
 // (utils/leaveApproval.js + the shared approval_levels table, request_type='regularization').
@@ -61,9 +88,9 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
 });
 
 // POST submit request
-router.post('/', [
+router.post('/', requireRegularizationEnabled, [
   body('date').isISO8601().withMessage('Date must be YYYY-MM-DD'),
-  body('reason').isString().trim().isLength({ min: 3, max: 500 }).withMessage('Reason must be 3–500 characters'),
+  body('reason').optional({ nullable: true }).isString().trim().isLength({ max: 500 }),
   body('checkIn').optional({ nullable: true }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('checkIn must be HH:MM'),
   body('checkOut').optional({ nullable: true }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('checkOut must be HH:MM'),
 ], async (req, res) => {
@@ -71,12 +98,58 @@ router.post('/', [
   if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
   try {
     const { date, checkIn, checkOut, reason } = req.body;
-    // No back-fill more than 90 days old, and no future dates.
-    const d = new Date(`${date}T00:00:00`);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const ninetyAgo = new Date(today); ninetyAgo.setDate(ninetyAgo.getDate() - 90);
-    if (d > today) return res.status(400).json({ success: false, message: 'Cannot regularize a future date' });
-    if (d < ninetyAgo) return res.status(400).json({ success: false, message: 'Cannot regularize older than 90 days' });
+    const cfg = await attendanceConfig.section('regularization');
+    const restrictions = cfg.restrictions || {};
+
+    // Date strings throughout. new Date('YYYY-MM-DD') is UTC midnight while the
+    // working day is local, which east of Greenwich makes today look future.
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    if (!restrictions.allowFutureDates && date > today) {
+      return res.status(400).json({ success: false, message: 'Cannot regularize a future date' });
+    }
+
+    const within = restrictions.withinDays || {};
+    if (within.enabled) {
+      const limit = new Date(`${today}T00:00:00Z`);
+      limit.setUTCDate(limit.getUTCDate() - Number(within.days || 0));
+      const earliest = limit.toISOString().slice(0, 10);
+      if (date < earliest) {
+        return res.status(400).json({
+          success: false,
+          message: `Regularization must be raised within ${within.days} day(s) of the date being regularized`,
+        });
+      }
+    }
+
+    const reasonText = String(reason || '').trim();
+    if (cfg.reasonMandatory && !reasonText) {
+      return res.status(400).json({ success: false, message: 'A reason is required for a regularization request' });
+    }
+    // A configured reason list is a closed set. Free text alongside it would
+    // make the list decorative and the reports ungroupable.
+    if (reasonText && Array.isArray(cfg.reasons) && cfg.reasons.length && !cfg.reasons.includes(reasonText)) {
+      return res.status(400).json({ success: false, message: 'Choose one of the configured reasons' });
+    }
+
+    const perPeriod = restrictions.perPeriod || {};
+    if (perPeriod.enabled) {
+      // Counted over the calendar period the requested date falls in, not a
+      // rolling window — "1 per month" has to mean the month on the form.
+      const starts = { week: "date_trunc('week', $2::date)", month: "date_trunc('month', $2::date)", year: "date_trunc('year', $2::date)" };
+      const start = starts[perPeriod.period] || starts.month;
+      const used = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM attendance_regularizations
+          WHERE employee_id = $1 AND status IN ('pending','approved')
+            AND date >= ${start} AND date < (${start} + ('1 ' || $3)::interval)`,
+        [req.user._id, date, perPeriod.period || 'month']
+      );
+      if (used.rows[0].n >= Number(perPeriod.count || 0)) {
+        return res.status(400).json({
+          success: false,
+          message: `Only ${perPeriod.count} regularization request(s) are allowed per ${perPeriod.period}`,
+        });
+      }
+    }
 
     let reg;
     let levels = [];
@@ -86,7 +159,7 @@ router.post('/', [
       const result = await client.query(
         `INSERT INTO attendance_regularizations (employee_id, date, check_in, check_out, reason)
          VALUES ($1, $2, $3, $4, $5) RETURNING id as "_id", date, check_in as "checkIn", check_out as "checkOut", reason, status, created_at as "createdAt"`,
-        [req.user._id, date, checkIn || null, checkOut || null, reason]
+        [req.user._id, date, checkIn || null, checkOut || null, reasonText || null]
       );
       reg = result.rows[0];
       levels = await createLevels(client, 'regularization', reg._id, req.user._id);
@@ -239,8 +312,46 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
           }
         }
 
-        const exists = await client.query('SELECT id FROM attendance WHERE employee_id=$1 AND date=$2', [reg.employee_id, reg.date]);
-        if (exists.rows.length > 0) {
+        // Configuration → Regularization decides what an approved request does
+        // to the day. 'replace' overwrites the first check-in / last check-out;
+        // 'create' adds another pair alongside whatever is already there, which
+        // is what the reference does by default.
+        const regCfg = await attendanceConfig.section('regularization');
+        const addsEntry = regCfg.entryMode === 'create';
+
+        const exists = await client.query(
+          'SELECT id, check_in, check_out, working_hours FROM attendance WHERE employee_id=$1 AND date=$2',
+          [reg.employee_id, reg.date]
+        );
+        if (exists.rows.length > 0 && addsEntry && exists.rows[0].check_in) {
+          const row = exists.rows[0];
+          // The day now spans the earliest check-in to the latest check-out,
+          // and its hours are the sum of both pairs rather than either one.
+          await client.query(
+            `INSERT INTO attendance_sessions (attendance_id, employee_id, date, check_in, check_out, session_hours)
+             VALUES ($1, $2, $3::date,
+               ($3::date + $4::time)::timestamp,
+               CASE WHEN $5::time IS NOT NULL THEN ($3::date + $5::time)::timestamp END,
+               COALESCE($6, 0))`,
+            [row.id, reg.employee_id, reg.date, reg.check_in, reg.check_out, workingHours]
+          );
+          const combined = workingHours === null
+            ? row.working_hours
+            : parseFloat(((parseFloat(row.working_hours) || 0) + workingHours).toFixed(8));
+          await client.query(
+            `UPDATE attendance
+             SET check_in = LEAST(check_in, ($2::date + $1::time)::timestamp),
+                 check_out = CASE
+                   WHEN $3::time IS NULL THEN check_out
+                   WHEN check_out IS NULL THEN ($2::date + $3::time)::timestamp
+                   ELSE GREATEST(check_out, ($2::date + $3::time)::timestamp) END,
+                 working_hours = $5,
+                 status = $6,
+                 updated_at = NOW()
+             WHERE employee_id=$4 AND date=$2`,
+            [reg.check_in, reg.date, reg.check_out, reg.employee_id, combined, newStatus]
+          );
+        } else if (exists.rows.length > 0) {
           await client.query(
             `UPDATE attendance
              SET check_in = CASE WHEN $1::time IS NOT NULL THEN ($2::date + $1::time)::timestamp ELSE check_in END,

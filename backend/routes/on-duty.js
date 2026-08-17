@@ -7,8 +7,48 @@ const { isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
 const { createLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
 const { sendLeaveApprovalEmail } = require('../utils/mailer');
+const attendanceConfig = require('../utils/attendanceConfig');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const logger = require('../logger');
 router.use(protect);
+
+// Attachments land in the same backend/uploads volume every other upload uses,
+// so there is one directory to persist rather than a second one nobody backs up.
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+const ALLOWED_ATTACHMENTS = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'];
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `onduty-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, ALLOWED_ATTACHMENTS.includes(path.extname(file.originalname).toLowerCase())),
+});
+
+// multer rejects an oversized or wrong-typed file by erroring out of the
+// middleware, which without this lands as an unexplained 500.
+const uploadAttachment = (req, res, next) => upload.single('attachment')(req, res, err => {
+  if (!err) return next();
+  const message = err.code === 'LIMIT_FILE_SIZE'
+    ? 'The attachment must be 5 MB or smaller'
+    : 'That attachment could not be accepted';
+  res.status(400).json({ success: false, message });
+});
+
+// On Duty can be switched off in Attendance → Configuration → Methods. While it
+// is off the feature is gone, not merely hidden: the UI stops offering it and
+// this refuses the writes, so a stale tab cannot still file requests.
+async function requireOnDutyEnabled(req, res, next) {
+  if (await attendanceConfig.methodEnabled('onDuty')) return next();
+  res.status(403).json({ success: false, message: 'On Duty is switched off for this organization' });
+}
 
 // On Duty is work done away from the usual place of work — a client visit, or
 // a day worked from home. The employee is working, so the day is payable and
@@ -22,11 +62,33 @@ const OD_LEVELS_JSON = approvalLevelsJson('on_duty', 'o');
 const TYPES = ['client_visit', 'work_from_home'];
 const TYPE_LABEL = { client_visit: 'Client visit', work_from_home: 'Work from home' };
 
+// The configuration screen stores on-duty types as the labels an admin typed.
+// Requests store a slug, and rows already exist under 'client_visit' and
+// 'work_from_home' — so the label is slugified rather than stored raw, which
+// keeps the two defaults mapping onto the history already in the table.
+const slugType = label => String(label).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+
+// The allowed types for a new request, and their labels, taken from config.
+// Falls back to the two built-ins if types have been switched off entirely.
+async function typeOptions() {
+  const cfg = await attendanceConfig.section('onduty');
+  if (!cfg.typesEnabled || !Array.isArray(cfg.types) || !cfg.types.length) {
+    return { keys: TYPES, label: { ...TYPE_LABEL }, enabled: false };
+  }
+  const label = {};
+  for (const t of cfg.types) {
+    const key = slugType(t);
+    if (key) label[key] = String(t).trim();
+  }
+  return { keys: Object.keys(label), label, enabled: true };
+}
+
 const SELECT_FIELDS = `
   o.id as "_id", o.start_date::text as "startDate", o.end_date::text as "endDate",
   o.unit, o.start_time as "startTime", o.end_time as "endTime", o.hours,
   o.request_type as "requestType", o.reason, o.status,
-  o.rejection_reason as "rejectionReason", o.created_at as "createdAt"`;
+  o.rejection_reason as "rejectionReason", o.created_at as "createdAt",
+  o.attachment_path as "attachmentPath", o.attachment_name as "attachmentName"`;
 
 // Whole days between two dates, inclusive. An hours request is a slice of one
 // day, so it never counts as more than that day.
@@ -84,37 +146,108 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// GET the rules the request form has to render against — which durations and
+// types are on offer, and which fields are shown or required. The form reads
+// this before it can draw itself.
+router.get('/config', async (req, res) => {
+  try {
+    const cfg = await attendanceConfig.section('onduty');
+    const { keys, label } = await typeOptions();
+    res.json({
+      success: true,
+      data: {
+        enabled: await attendanceConfig.methodEnabled('onDuty'),
+        durations: cfg.durations,
+        typesEnabled: !!cfg.typesEnabled,
+        types: keys.map(k => ({ key: k, label: label[k] })),
+        restrictFutureDates: !!cfg.restrictFutureDates,
+        fields: cfg.fields,
+        attachmentMaxMb: 5,
+        attachmentTypes: ALLOWED_ATTACHMENTS,
+      },
+    });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
 // POST submit a request
-router.post('/', [
+router.post('/', requireOnDutyEnabled, uploadAttachment, [
   body('startDate').isISO8601().withMessage('Start date must be YYYY-MM-DD'),
   body('endDate').isISO8601().withMessage('End date must be YYYY-MM-DD'),
   body('unit').optional().isIn(['days', 'hours']).withMessage('Unit must be days or hours'),
-  body('requestType').optional().isIn(TYPES).withMessage('Unknown on-duty type'),
   body('reason').optional({ nullable: true }).isString().trim().isLength({ max: 500 }),
   body('startTime').optional({ nullable: true }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('startTime must be HH:MM'),
   body('endTime').optional({ nullable: true }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('endTime must be HH:MM'),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
+  // A rejected submission must not leave its upload behind on disk.
+  const discardUpload = () => { if (req.file) fs.unlink(req.file.path, () => {}); };
   try {
     const { startDate, endDate, reason } = req.body;
+    const cfg = await attendanceConfig.section('onduty');
+    const { keys: allowedTypes, label: typeLabels } = await typeOptions();
+
     const unit = req.body.unit === 'hours' ? 'hours' : 'days';
-    const requestType = TYPES.includes(req.body.requestType) ? req.body.requestType : 'client_visit';
+    if (unit === 'hours' && !cfg.durations?.hourly) {
+      discardUpload();
+      return res.status(400).json({ success: false, message: 'Hourly on-duty requests are not allowed' });
+    }
+    if (unit === 'days' && !cfg.durations?.fullDay) {
+      discardUpload();
+      return res.status(400).json({ success: false, message: 'Full-day on-duty requests are not allowed' });
+    }
+
+    const requestType = allowedTypes.includes(req.body.requestType) ? req.body.requestType : allowedTypes[0];
+    if (!requestType) {
+      discardUpload();
+      return res.status(400).json({ success: false, message: 'No on-duty type is configured' });
+    }
+
     if (endDate < startDate) {
+      discardUpload();
       return res.status(400).json({ success: false, message: 'End date cannot be before the start date' });
     }
+
+    // Compared as date strings, not Date objects: new Date('YYYY-MM-DD') is UTC
+    // midnight while the working day is local, which made today look future.
+    if (cfg.restrictFutureDates) {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      if (startDate > today) {
+        discardUpload();
+        return res.status(400).json({ success: false, message: 'On-duty requests cannot be raised for future dates' });
+      }
+    }
+
+    const descriptionField = cfg.fields?.description || {};
+    if (descriptionField.show && descriptionField.mandatory && !String(reason || '').trim()) {
+      discardUpload();
+      return res.status(400).json({ success: false, message: 'A description is required for an on-duty request' });
+    }
+
+    const attachmentField = cfg.fields?.attachment || {};
+    if (attachmentField.show && attachmentField.mandatory && !req.file) {
+      return res.status(400).json({ success: false, message: 'An attachment is required for an on-duty request' });
+    }
+    // An attachment sent while the field is switched off is dropped rather
+    // than stored — the request is still valid, the file just has no home.
+    if (req.file && !attachmentField.show) discardUpload();
+    const attachmentPath = req.file && attachmentField.show ? `/uploads/${req.file.filename}` : null;
+    const attachmentName = req.file && attachmentField.show ? req.file.originalname.slice(0, 255) : null;
 
     let startTime = null, endTime = null, hours = null;
     if (unit === 'hours') {
       startTime = req.body.startTime || null;
       endTime = req.body.endTime || null;
       if (!startTime || !endTime) {
+        discardUpload();
         return res.status(400).json({ success: false, message: 'An hours request needs a start and end time' });
       }
       if (endTime <= startTime) {
+        discardUpload();
         return res.status(400).json({ success: false, message: 'End time must be after the start time' });
       }
       if (endDate !== startDate) {
+        discardUpload();
         return res.status(400).json({ success: false, message: 'An hours request covers a single day' });
       }
       const [sh, sm] = startTime.split(':').map(Number);
@@ -131,6 +264,7 @@ router.post('/', [
       [req.user._id, startDate, endDate]
     );
     if (clash.rows.length) {
+      discardUpload();
       return res.status(400).json({ success: false, message: 'You already have an on-duty request covering those dates' });
     }
 
@@ -139,12 +273,12 @@ router.post('/', [
     try {
       await client.query('BEGIN');
       const result = await client.query(
-        `INSERT INTO on_duty_requests (employee_id, start_date, end_date, unit, start_time, end_time, hours, request_type, reason)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        `INSERT INTO on_duty_requests (employee_id, start_date, end_date, unit, start_time, end_time, hours, request_type, reason, attachment_path, attachment_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING id as "_id", start_date::text as "startDate", end_date::text as "endDate",
                    unit, start_time as "startTime", end_time as "endTime", hours,
                    request_type as "requestType", reason, status, created_at as "createdAt"`,
-        [req.user._id, startDate, endDate, unit, startTime, endTime, hours, requestType, reason || null]
+        [req.user._id, startDate, endDate, unit, startTime, endTime, hours, requestType, reason || null, attachmentPath, attachmentName]
       );
       od = result.rows[0];
       levels = await createLevels(client, 'on_duty', od._id, req.user._id);
@@ -171,7 +305,7 @@ router.post('/', [
 
       await Promise.all(approvers.map(a => createNotification(
         a.id, 'approval', 'On Duty Approval Required',
-        `${empName} requested on duty (${TYPE_LABEL[requestType]}) for ${label}.`,
+        `${empName} requested on duty (${typeLabels[requestType] || requestType}) for ${label}.`,
         `/approvals?tab=onduty&openId=${od._id}`
       ).catch(err => logger.warn({ err: err.message }, '[on-duty] notify approver failed'))));
 
@@ -179,7 +313,7 @@ router.post('/', [
       await Promise.all(approvers.filter(a => a.email).map(a => sendLeaveApprovalEmail({
         to: a.email,
         employeeName: empName,
-        leaveType: `On Duty — ${TYPE_LABEL[requestType]}`,
+        leaveType: `On Duty — ${typeLabels[requestType] || requestType}`,
         startDate, endDate,
         totalDays: unit === 'hours' ? 0 : daySpan(startDate, endDate),
         reason: reason || '',
@@ -189,7 +323,10 @@ router.post('/', [
     } catch (e) { logger.error({ err: e.message }, '[on-duty] notify soft-fail'); }
 
     res.status(201).json({ success: true, data: od });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) {
+    discardUpload();
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // PUT approve/reject — same engine as leave and regularization.

@@ -140,6 +140,7 @@ app.use('/api/weekend-rules',    require('./routes/weekend-rules'));
 app.use('/api/pay-periods',      require('./routes/pay-periods'));
 app.use('/api/work-calendars',   require('./routes/work-calendars'));
 app.use('/api/leave-config',     require('./routes/leave-config'));
+app.use('/api/attendance-config', require('./routes/attendance-config'));
 app.use('/api/approvals',        require('./routes/approvals'));
 app.use('/api/settings',         require('./routes/settings'));
 app.use('/api/dashboard',        require('./routes/dashboard'));

@@ -21,6 +21,7 @@ const TeamAttendance  = lazy(() => import('./pages/attendance/TeamAttendance'));
 const Regularization  = lazy(() => import('./pages/attendance/Regularization'));
 const OnDuty          = lazy(() => import('./pages/attendance/OnDuty'));
 const AttendanceLocation = lazy(() => import('./pages/attendance/AttendanceLocation'));
+const AttendanceConfiguration = lazy(() => import('./pages/attendance/Configuration'));
 const Employees       = lazy(() => import('./pages/Employees'));
 const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'));
 const Approvals       = lazy(() => import('./pages/Approvals'));
@@ -196,6 +197,8 @@ const AppRoutes = () => {
           <Route path="attendance/on-duty" element={<OnDuty/>}/>
           <Route path="attendance/location"       element={<AttendanceLocation/>}/>
           <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><TeamAttendance/></ProtectedRoute>}/>
+          {/* Splat route: the section rail routes within itself. */}
+          <Route path="attendance/configuration/*" element={<ProtectedRoute roles={['admin','director','hr_admin']}><AttendanceConfiguration/></ProtectedRoute>}/>
 
           {/* ── Time Tracker ─────────────────────────────────────────── */}
           <Route path="time-tracker"             element={<TimeTrackerLanding/>}/>

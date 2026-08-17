@@ -160,22 +160,62 @@ function RequestForm({ onClose, onSaved }) {
   const [startDate, setStartDate] = useState(todayCA());
   const [endDate, setEndDate] = useState(todayCA());
   const [unit, setUnit] = useState('days');
-  const [requestType, setRequestType] = useState('client_visit');
+  const [requestType, setRequestType] = useState('');
   const [startTime, setStartTime] = useState('09:30');
   const [endTime, setEndTime] = useState('13:30');
   const [reason, setReason] = useState('');
+  const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  // Which durations, types and fields this org allows. The form cannot draw
+  // itself correctly until it knows, so it waits rather than guessing and then
+  // rearranging under the person filling it in.
+  const [cfg, setCfg] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/on-duty/config')
+      .then(r => {
+        if (cancelled) return;
+        const c = r.data.data;
+        setCfg(c);
+        if (!c.durations?.fullDay && c.durations?.hourly) setUnit('hours');
+        setRequestType(c.types?.[0]?.key || '');
+      })
+      .catch(() => {
+        if (!cancelled) setCfg({ durations: { fullDay: true, hourly: true }, types: TYPES, fields: {} });
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const fields = cfg?.fields || {};
+  const showAttachment = !!fields.attachment?.show;
+  const reasonRequired = !!fields.description?.mandatory;
+  const attachmentRequired = showAttachment && !!fields.attachment?.mandatory;
+  const maxMb = cfg?.attachmentMaxMb || 5;
+  const maxStartDate = cfg?.restrictFutureDates ? todayCA() : undefined;
 
   const submit = async () => {
+    if (reasonRequired && !reason.trim()) return toast.error('A description is required');
+    if (attachmentRequired && !file) return toast.error('An attachment is required');
     setSaving(true);
     try {
-      await api.post('/on-duty', {
+      const payload = {
         startDate,
         // An hours request is a slice of one day, so the end follows the start.
         endDate: unit === 'hours' ? startDate : endDate,
-        unit, requestType, reason: reason.trim() || null,
+        unit, requestType, reason: reason.trim(),
         ...(unit === 'hours' ? { startTime, endTime } : {}),
-      });
+      };
+      // Multipart only when there is a file to carry, since a JSON body cannot
+      // hold one. The route accepts either shape.
+      if (file) {
+        const form = new FormData();
+        Object.entries(payload).forEach(([k, v]) => form.append(k, v));
+        form.append('attachment', file);
+        await api.post('/on-duty', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      } else {
+        await api.post('/on-duty', { ...payload, reason: payload.reason || null });
+      }
       toast.success('On duty request submitted');
       onSaved();
     } catch (err) {
@@ -196,12 +236,12 @@ function RequestForm({ onClose, onSaved }) {
             <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Period</label>
             <div className="flex items-center gap-3">
               <input
-                type="date" value={startDate}
+                type="date" value={startDate} max={maxStartDate}
                 onChange={e => { setStartDate(e.target.value); if (e.target.value > endDate) setEndDate(e.target.value); }}
                 className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400"
               />
               <input
-                type="date" value={unit === 'hours' ? startDate : endDate} min={startDate}
+                type="date" value={unit === 'hours' ? startDate : endDate} min={startDate} max={maxStartDate}
                 disabled={unit === 'hours'}
                 onChange={e => setEndDate(e.target.value)}
                 className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400 disabled:bg-slate-50 disabled:text-slate-400"
@@ -215,8 +255,8 @@ function RequestForm({ onClose, onSaved }) {
               value={unit} onChange={e => setUnit(e.target.value)}
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] bg-white focus:outline-none focus:border-blue-400"
             >
-              <option value="days">Days</option>
-              <option value="hours">Hours</option>
+              {cfg?.durations?.fullDay !== false && <option value="days">Days</option>}
+              {cfg?.durations?.hourly !== false && <option value="hours">Hours</option>}
             </select>
           </div>
 
@@ -241,18 +281,49 @@ function RequestForm({ onClose, onSaved }) {
               value={requestType} onChange={e => setRequestType(e.target.value)}
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] bg-white focus:outline-none focus:border-blue-400"
             >
-              {TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+              {(cfg?.types || TYPES).map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
           </div>
 
-          <div>
-            <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Reason</label>
-            <textarea
-              value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={500}
-              placeholder="Where you'll be and why"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400"
-            />
-          </div>
+          {fields.description?.show !== false && (
+            <div>
+              <label className="block text-[13px] font-medium text-slate-700 mb-1.5">
+                Reason{reasonRequired && <span className="text-red-500 ml-0.5">*</span>}
+              </label>
+              <textarea
+                value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={500}
+                placeholder="Where you'll be and why"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400"
+              />
+            </div>
+          )}
+
+          {showAttachment && (
+            <div>
+              <label className="block text-[13px] font-medium text-slate-700 mb-1.5">
+                Attachment{attachmentRequired && <span className="text-red-500 ml-0.5">*</span>}
+              </label>
+              <input
+                type="file"
+                accept={(cfg?.attachmentTypes || []).join(',')}
+                onChange={e => {
+                  const f = e.target.files?.[0] || null;
+                  // Checked here as well as on the server, so the person finds
+                  // out before filling in the rest of the form.
+                  if (f && f.size > maxMb * 1024 * 1024) {
+                    toast.error(`The attachment must be ${maxMb} MB or smaller`);
+                    e.target.value = '';
+                    return setFile(null);
+                  }
+                  setFile(f);
+                }}
+                className="w-full text-[13.5px] text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[13px] file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              <p className="text-[12.5px] text-slate-500 mt-1.5">
+                PDF, Word, Excel or an image, up to {maxMb} MB.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="px-6 py-4 border-t border-slate-200 flex items-center gap-3">

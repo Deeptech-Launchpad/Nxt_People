@@ -7,6 +7,7 @@ const { countWorkingDays, ruleMatchesDate, holidayClosesOffice } = require('../u
 const { lopDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
 const { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
 const { DEFAULT_TZ } = require('../utils/timezone');
+const attendanceConfig = require('../utils/attendanceConfig');
 router.use(protect);
 
 // Sentinel for the "Not Specified" filter option. Deliberately not a value any
@@ -1868,23 +1869,56 @@ const clockMinutes = (ts, tz) => {
 
 // settings.timezone and the expected-hours policy, read together and cached for
 // a minute so a 150-row report doesn't re-read them per employee.
-let cfgCache = { value: null, at: 0 };
+let cfgCache = { value: null, at: 0, gen: -1 };
 async function orgConfig() {
-  if (cfgCache.value && Date.now() - cfgCache.at < 60000) return cfgCache.value;
-  let cfg = { tz: DEFAULT_TZ, expectedMode: 'manual', expectedHours: 8 };
+  // Expires on time OR when the Attendance configuration is saved. Time alone
+  // meant a policy change took up to a minute to show in any report, which is
+  // indistinguishable from the setting not working.
+  const gen = attendanceConfig.currentGeneration();
+  if (cfgCache.value && cfgCache.gen === gen && Date.now() - cfgCache.at < 60000) return cfgCache.value;
+  let cfg = { tz: DEFAULT_TZ, expectedMode: 'manual', expectedHours: 8, policy: null };
   try {
     const r = await pool.query(
-      `SELECT timezone, expected_hours_mode AS mode, expected_hours_per_day AS hours FROM settings LIMIT 1`
+      `SELECT timezone, expected_hours_mode AS mode, expected_hours_per_day AS hours,
+              attendance_policy_config AS policy
+         FROM settings LIMIT 1`
     );
     const s = r.rows[0];
     if (s?.timezone) cfg.tz = s.timezone;
     if (s?.mode) cfg.expectedMode = s.mode;
     if (s?.hours != null) cfg.expectedHours = parseFloat(s.hours);
+    if (s?.policy) cfg.policy = s.policy;
   } catch { /* settings unreadable — the defaults above are still correct */ }
-  cfgCache = { value: cfg, at: Date.now() };
+  cfgCache = { value: cfg, at: Date.now(), gen };
   return cfg;
 }
 const orgTimezone = async () => (await orgConfig()).tz;
+
+// How many hours a day is counted as having been worked. Attendance → Configuration
+// → Attendance Policy decides two things about that figure:
+//
+//   calculateHoursFrom  'every'      sum of each check-in/check-out pair, which
+//                                    is what attendance.working_hours accumulates
+//                       'first_last' first check-in to last check-out, gaps and all
+//   maxHours            a ceiling, so an unusually long day cannot inflate a
+//                       payable total beyond what the policy allows
+//
+// Anything without both punches is zero — measuring from a check-in alone is
+// what once reported everyone still at work as -08:30.
+function workedHoursOf(att, cfg) {
+  const policy = cfg?.policy || {};
+  let worked;
+  if (policy.calculateHoursFrom === 'first_last') {
+    const ci = att?.checkIn ? new Date(att.checkIn) : null;
+    const co = att?.checkOut ? new Date(att.checkOut) : null;
+    worked = ci && co && co > ci ? (co - ci) / 3600000 : 0;
+  } else {
+    worked = parseFloat(att?.workingHours) || 0;
+  }
+  const max = policy.maxHours;
+  if (max?.enabled && Number.isFinite(Number(max.fullDay))) worked = Math.min(worked, Number(max.fullDay));
+  return Math.round(worked * 100) / 100;
+}
 
 // What one full working day is worth in payable hours.
 //
@@ -1895,6 +1929,21 @@ const orgTimezone = async () => (await orgConfig()).tz;
 // hour a day. 'shift' mode restores the old behaviour for orgs that want it.
 const expectedDayHours = (emp, cfg) =>
   (cfg.expectedMode === 'shift' ? shiftHoursOf(emp.shiftStart, emp.shiftEnd) : cfg.expectedHours);
+
+// Which non-working days still count as paid. Attendance → Configuration →
+// Attendance Policy → "Select the options to be included in payroll" decides,
+// and an org that pays only for days actually worked turns all three off.
+// 'present' and 'onDuty' are not listed there because they are worked days.
+function paidOffKinds(cfg) {
+  const p = cfg?.policy?.payDays || {};
+  const kinds = new Set();
+  // Absent when the policy has never been saved: the reference ships all three
+  // on, and dropping them silently would cut every payable total.
+  if (p.weekends !== false) kinds.add('weekend');
+  if (p.holidays !== false) kinds.add('holiday');
+  if (p.leave !== false) kinds.add('paidLeave');
+  return kinds;
+}
 
 // Applies the "Total Hours: All / Lesser than / Greater than N" comparator
 // that Zoho puts on several attendance reports.
@@ -1948,7 +1997,7 @@ function totalHoursMatches(query, hours) {
 router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const date = req.query.date || new Date().toLocaleDateString('en-CA');
-    const ctx = await loadAttendanceContext(req, date, date);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, date, date), orgConfig()]);
     const day = new Date(date);
     // Compare calendar dates as strings, not Date objects. `new Date('2026-08-13')`
     // is UTC midnight while ctx.today is local midnight, so east of Greenwich the
@@ -1997,7 +2046,7 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
         _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
         employeeCode: emp.employeeCode, department: emp.department, exitDate: emp.exitDate,
         firstIn: att?.checkIn || null, lastOut: att?.checkOut || null,
-        totalHours: hoursApply ? parseFloat(att?.workingHours) || 0 : null,
+        totalHours: hoursApply ? workedHoursOf(att, cfg) : null,
         statusKey: kind,
         // The column names the actual leave records when there are any, and
         // falls back to the bucket label otherwise.
@@ -2025,7 +2074,8 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
   try {
     const start = req.query.startDate || new Date().toLocaleDateString('en-CA');
     const end = req.query.endDate || start;
-    const [ctx, tz] = await Promise.all([loadAttendanceContext(req, start, end), orgTimezone()]);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end), orgConfig()]);
+    const tz = cfg.tz;
     const { firstCheckIn, lastCheckOut } = req.query;
 
     const data = [];
@@ -2062,7 +2112,7 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
         const inMin = att?.checkIn ? clockMinutes(att.checkIn, tz) : null;
         const outMin = att?.checkOut ? clockMinutes(att.checkOut, tz) : null;
-        const totalHours = parseFloat(att?.workingHours) || 0;
+        const totalHours = workedHoursOf(att, cfg);
 
         const entryEarly = inMin !== null && shiftStartMin !== null && inMin < shiftStartMin ? shiftStartMin - inMin : null;
         const entryLate = inMin !== null && shiftStartMin !== null && inMin > shiftStartMin ? inMin - shiftStartMin : null;
@@ -2103,7 +2153,7 @@ router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admi
     const now = new Date();
     const start = req.query.startDate || new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-CA');
-    const ctx = await loadAttendanceContext(req, start, end);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end), orgConfig()]);
 
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
 
@@ -2128,7 +2178,7 @@ router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admi
           isFuture: ymd > todayYmd,
         });
 
-        const worked = parseFloat(att?.workingHours) || 0;
+        const worked = workedHoursOf(att, cfg);
         const permHours = dayLeaves
           .filter(l => l.leaveType === 'permission')
           .reduce((s, l) => s + (parseFloat(l.hours) || 0), 0);
@@ -2258,13 +2308,14 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
       const kind = pending ? null : cls.kind;
 
       // On Duty is worked time, so it is payable like a present day.
-      const isPayable = ['present', 'onDuty', 'paidLeave', 'holiday', 'weekend'].includes(kind);
+      const paidOff = paidOffKinds(cfg);
+      const isPayable = kind === 'present' || kind === 'onDuty' || paidOff.has(kind);
       if (kind) summaryDays[kind] = (summaryDays[kind] || 0) + 1;
       if (isPayable) summaryDays.payableDays += 1;
 
       rows.push({
         date: ymd, firstIn: att?.checkIn || null, lastOut: att?.checkOut || null,
-        totalHours: parseFloat(att?.workingHours) || 0,
+        totalHours: workedHoursOf(att, cfg),
         payableHours: isPayable ? shiftHours : 0,
         statusKey: kind,
         // Name the actual thing: the leave records if there are any, else the
@@ -2310,6 +2361,8 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
 
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
 
+    const paidOff = paidOffKinds(cfg);
+
     const data = ctx.employees.map(emp => {
       const shiftHours = expectedDayHours(emp, cfg);
       const c = { present: 0, onDuty: 0, paidLeave: 0, holiday: 0, weekend: 0, absent: 0, unpaidLeave: 0 };
@@ -2332,25 +2385,37 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
           onDuty: ctx.onDutyOn(emp._id, d), isFuture: false,
         });
 
-        expectedPayableDays += 1;
+        // A day only counts towards what could be paid if the policy pays for
+        // its kind. With Weekends unticked, a Sunday is expected of nobody and
+        // payable to nobody.
+        if (cls.kind === 'present' || cls.kind === 'onDuty' || cls.kind === 'absent'
+            || cls.kind === 'unpaidLeave' || paidOff.has(cls.kind)) {
+          expectedPayableDays += 1;
+        }
         if (cls.kind !== 'weekend' && cls.kind !== 'holiday') expectedWorkingDays += 1;
 
         // A working day still to come is not an absence, so it counts towards
         // what was expected but towards none of the outcomes.
         const pending = ymd >= todayYmd && cls.kind === 'absent';
         if (!pending) c[cls.kind] = (c[cls.kind] || 0) + 1;
-        totalWorkedHours += parseFloat(att?.workingHours) || 0;
+        totalWorkedHours += workedHoursOf(att, cfg);
       }
 
+      // Each column is headed "paid", so a kind the policy does not pay for
+      // reads zero rather than reporting days that earn nothing as paid.
+      const paidLeaveDays = paidOff.has('paidLeave') ? c.paidLeave : 0;
+      const paidHolidayDays = paidOff.has('holiday') ? c.holiday : 0;
+      const paidWeekendDays = paidOff.has('weekend') ? c.weekend : 0;
+
       const workedTotal = c.present + c.onDuty;
-      const paidOffTotal = c.paidLeave + c.holiday + c.weekend;
+      const paidOffTotal = paidLeaveDays + paidHolidayDays + paidWeekendDays;
       const unpaidTotal = c.unpaidLeave + c.absent;
       const payableTotal = workedTotal + paidOffTotal;
 
       const days = {
         expectedPayableDays, payableWorked: workedTotal, payablePaidOff: paidOffTotal, payableTotal,
         expectedWorkingDays, workedPresent: c.present, workedOnDuty: c.onDuty, workedTotal,
-        paidLeave: c.paidLeave, paidHolidays: c.holiday, paidWeekend: c.weekend, paidOffTotal,
+        paidLeave: paidLeaveDays, paidHolidays: paidHolidayDays, paidWeekend: paidWeekendDays, paidOffTotal,
         unpaidLeave: c.unpaidLeave, unpaidAbsent: c.absent, unpaidTotal,
       };
       const scaled = unit === 'hour'
@@ -2376,7 +2441,7 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
     const now = new Date();
     const start = req.query.startDate || new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-CA');
-    const ctx = await loadAttendanceContext(req, start, end);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end), orgConfig()]);
 
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
 
@@ -2403,7 +2468,7 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
             isFuture: ymd > todayYmd,
           });
 
-          const worked = parseFloat(att?.workingHours) || 0;
+          const worked = workedHoursOf(att, cfg);
           const permHours = dayLeaves
             .filter(l => l.leaveType === 'permission')
             .reduce((s, l) => s + (parseFloat(l.hours) || 0), 0);
@@ -2532,7 +2597,7 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
 
     const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, ledgerStart, end), orgConfig()]);
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
-    const PAID_OFF = new Set(['paidLeave', 'holiday', 'weekend']);
+    const PAID_OFF = paidOffKinds(cfg);
 
     const data = ctx.employees.map(emp => {
       const shiftHours = expectedDayHours(emp, cfg);
@@ -2565,7 +2630,7 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
         // what it owed or less, so the ledger could only sit at zero or fall.
         // Overtime is precisely what a balance like this is meant to bank, and
         // it only appears if the real punch is what counts.
-        const worked = parseFloat(att?.workingHours) || 0;
+        const worked = workedHoursOf(att, cfg);
         const credit = PAID_OFF.has(cls.kind) ? shiftHours : 0;
         const dayPayable = Math.max(worked, credit);
 
