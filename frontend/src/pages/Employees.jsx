@@ -130,6 +130,10 @@ export default function Employees() {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [departments, setDepartments] = useState(['Engineering', 'HR', 'Sales', 'Marketing']);
   const [designations, setDesignations] = useState(['Software Engineer', 'Manager']);
+  // Work locations come from the Manage Accounts list, not from whatever has
+  // been typed before. Free text here is how six locations appeared for an org
+  // that has two — people filled in the room or the floor they sit on.
+  const [locations, setLocations] = useState([]);
   // Role is a fixed enum — admin needs to be able to assign these three even
   // when no current employee has the role (e.g. after a fresh Zoho sync where
   // everyone defaults to "employee"). Don't override from metadata.
@@ -160,6 +164,9 @@ export default function Employees() {
   // tab regains focus so admin sees fresh dropdowns without F5.
   useEffect(() => {
     const fetchMetadata = () => {
+      api.get('/org-setup/locations')
+        .then(r => setLocations((r.data.data || []).map(l => l.name)))
+        .catch(() => {});
       api.get('/employees/metadata').then(r => {
         const d = r.data.data || {};
         if (d.departments?.length)          setDepartments(d.departments);
@@ -811,7 +818,13 @@ export default function Employees() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1.5">Work Location</label>
-                    <input value={form.workLocation} onChange={e=>setForm({...form,workLocation:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                    <select value={form.workLocation} onChange={e=>setForm({...form,workLocation:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400">
+                      <option value="">Select...</option>
+                      {locations.map(l=><option key={l}>{l}</option>)}
+                      {form.workLocation && !locations.includes(form.workLocation) && (
+                        <option value={form.workLocation}>{form.workLocation} (not a configured location)</option>
+                      )}
+                    </select>
                   </div>
                   <div className="col-span-2">
                     <label className="block text-sm font-medium text-slate-600 mb-1.5">Expertise / Skills</label>
