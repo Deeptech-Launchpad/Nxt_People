@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Filter, X, ArrowUpDown, UserMinus } from 'lucide-react';
+import { Filter, X, ArrowUpDown, UserMinus, Plus, Download } from 'lucide-react';
 import api from '../../../utils/api';
 import { Spinner, selectClass } from '../configKit';
 import { roleLabel } from '../../../utils/roles';
 import useFitToViewport from '../../../hooks/useFitToViewport';
+import AddUserDialog from './AddUserDialog';
+import { buildSheet, downloadWorkbook } from '../../../utils/reportExport';
 
 // Manage Accounts → Users.
 //
@@ -29,6 +31,7 @@ const GROUPS = [
       { key: 'all', label: 'All', count: c => c.users },
       { key: 'enabled', label: 'Login Enabled', count: c => c.enabled },
       { key: 'disabled', label: 'Login Disabled', count: c => c.disabled },
+      { key: 'invited', label: 'Invited', count: c => c.invited },
     ],
   },
   {
@@ -62,6 +65,7 @@ export default function Users() {
   const [busyId, setBusyId] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [sort, setSort] = useState({ key: 'employeeCode', dir: 'desc' });
+  const [adding, setAdding] = useState(false);
   const scrollRef = useRef(null);
 
   // The table scrolls inside itself rather than growing the page, so the
@@ -117,6 +121,32 @@ export default function Users() {
     setSelected(allSelected ? new Set() : new Set(allOnPage));
   const toggleOne = id =>
     setSelected(s2 => { const n = new Set(s2); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  // Exports what is on screen, filters and all — the reference says as much on
+  // its own export dialog, and an export that quietly ignored the filter would
+  // be the more surprising of the two.
+  const exportList = () => {
+    const rows = sorted || [];
+    if (!rows.length) return toast.error('Nothing to export in this filter');
+    const columns = [
+      { header: 'Employee ID', value: r => r.employeeCode || '' },
+      { header: 'Name', value: r => r.name },
+      { header: 'Email', value: r => r.email },
+      { header: 'Date of joining', value: r => (r.joiningDate ? new Date(r.joiningDate).toLocaleDateString('en-GB') : '') },
+      { header: 'Role', value: r => roleLabel(r.role) },
+      { header: 'Location', value: r => r.location || '' },
+      { header: 'Department', value: r => r.department_name || r.department || '' },
+      { header: 'Employee status', value: r => (r.employeeStatus === 'active' ? 'Active' : 'Inactive') },
+      ...(group === 'users'
+        ? [{ header: 'Account status', value: r => (r.loginEnabled ? 'Login Enabled' : 'Login Disabled') }]
+        : []),
+    ];
+    const sheet = buildSheet({
+      meta: [[group === 'users' ? 'Users' : 'Employee Profiles', activeGroup.filters.find(f => f.key === filter)?.label || '']],
+      columns, rows,
+    });
+    downloadWorkbook([{ name: 'Users', sheet }], 'xlsx', `users-${group}-${filter}`);
+  };
 
   const removeAccount = row => {
     if (!window.confirm(`Remove ${row.name}'s login account? They stay on record as an employee profile.`)) return;
@@ -175,14 +205,29 @@ export default function Users() {
                 <span className="ml-3 text-[13.5px] text-blue-700">{selected.size} selected</span>
               )}
             </p>
-            <button
-              onClick={() => setShowFilters(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[13.5px] ${
-                hasCriteria ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <Filter size={14} /> Filter{hasCriteria ? ' (on)' : ''}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setAdding(true)}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-1.5 rounded text-[13.5px] font-medium"
+              >
+                <Plus size={15} /> {group === 'users' ? 'Add User(s)' : 'Add Employee Profile'}
+              </button>
+              <button
+                onClick={exportList}
+                title="Export what is on screen"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 text-[13.5px]"
+              >
+                <Download size={14} /> Export
+              </button>
+              <button
+                onClick={() => setShowFilters(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[13.5px] ${
+                  hasCriteria ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Filter size={14} /> Filter{hasCriteria ? ' (on)' : ''}
+              </button>
+            </div>
           </div>
 
           {rows === null ? <Spinner /> : rows.length === 0 ? (
@@ -326,6 +371,14 @@ export default function Users() {
           )}
         </div>
       </div>
+
+      {adding && (
+        <AddUserDialog
+          isUser={group === 'users'}
+          onClose={() => setAdding(false)}
+          onCreated={() => { setAdding(false); load(); }}
+        />
+      )}
 
       {showFilters && (
         <div className="fixed inset-y-0 right-0 z-[70] w-full max-w-[340px] bg-white border-l border-slate-200 shadow-2xl flex flex-col">
