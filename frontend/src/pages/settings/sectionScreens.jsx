@@ -16,6 +16,10 @@ import Locations from './org/Locations';
 import Departments from './org/Departments';
 import Designations from './org/Designations';
 import Companies from './org/Companies';
+import BusinessUnits from './org/BusinessUnits';
+import Divisions from './org/Divisions';
+import StructureConfiguration from './org/StructureConfiguration';
+import ManageStructure from './org/ManageStructure';
 import Users from './org/Users';
 
 import AttendanceMethods from './attendance/AttendanceMethods';
@@ -51,7 +55,13 @@ const SECTION_SCREENS = {
   'accounts.configuration.organization-details': OrganizationDetails,
   'accounts.configuration.organization-policy': OrganizationPolicy,
   'accounts.users.users': Users,
+  // Organization Structure. The rail nests these under one group; the routing
+  // is flat, because a group is never a destination of its own.
+  'accounts.configuration.structure-configuration': StructureConfiguration,
   'accounts.configuration.companies': Companies,
+  'accounts.configuration.business-units': BusinessUnits,
+  'accounts.configuration.divisions': Divisions,
+  'accounts.configuration.manage-structure': ManageStructure,
   'accounts.configuration.locations': Locations,
   'accounts.configuration.departments': Departments,
   'accounts.configuration.designations': Designations,

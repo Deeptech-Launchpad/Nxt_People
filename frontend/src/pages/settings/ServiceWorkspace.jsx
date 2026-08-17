@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, Navigate, useParams } from 'react-router-dom';
-import { serviceByKey, tabsOf, sectionsOf, BASE } from './serviceCatalog';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { serviceByKey, tabsOf, sectionsOf, flatSectionsOf, BASE } from './serviceCatalog';
 import SECTION_SCREENS from './sectionScreens';
 
 // A service's settings workspace: the left rail of sections, and the section.
@@ -14,6 +15,41 @@ import SECTION_SCREENS from './sectionScreens';
 // A tab with no sections is not rendered at all, which is why services here
 // have four tabs at most rather than the reference's five.
 
+
+// A rail group. It opens when one of its children is the active section, and
+// can be opened by hand otherwise — the reference expands Organization
+// Structure the moment you are inside it.
+function RailGroup({ group, service, tabKey, activeKey }) {
+  const holdsActive = group.children.some(c => c.key === activeKey);
+  const [open, setOpen] = useState(holdsActive);
+  const showing = open || holdsActive;
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-1.5 px-3 py-2.5 text-[14px] text-slate-700 hover:bg-slate-50 rounded-lg"
+      >
+        {showing ? <ChevronDown size={15} className="text-slate-500" /> : <ChevronRight size={15} className="text-slate-500" />}
+        <span className={holdsActive ? 'font-semibold text-slate-800' : ''}>{group.label}</span>
+      </button>
+      {showing && group.children.map(c => (
+        <NavLink
+          key={c.key}
+          to={`${BASE}/${service.key}/${tabKey}/${c.key}`}
+          className={({ isActive }) =>
+            `block pl-9 pr-4 py-2 text-[14px] rounded-lg transition-colors ${
+              isActive ? 'bg-slate-100 font-semibold text-slate-800' : 'text-slate-600 hover:bg-slate-50'
+            }`
+          }
+        >
+          {c.label}
+        </NavLink>
+      ))}
+    </div>
+  );
+}
+
 export default function ServiceWorkspace() {
   const { serviceKey, tabKey, sectionKey } = useParams();
 
@@ -25,7 +61,8 @@ export default function ServiceWorkspace() {
 
   const activeTab = tabs.find(t => t.key === tabKey) || tabs[0];
   const sections = sectionsOf(service, activeTab.key);
-  const activeSection = sections.find(s => s.key === sectionKey) || sections[0];
+  const leaves = flatSectionsOf(service, activeTab.key);
+  const activeSection = leaves.find(s => s.key === sectionKey) || leaves[0];
 
   // Land on the first tab and section rather than rendering a half-chosen URL.
   if (!tabKey || !sectionKey || activeTab.key !== tabKey || activeSection?.key !== sectionKey) {
@@ -39,27 +76,30 @@ export default function ServiceWorkspace() {
       <div>
         <div className="flex items-start gap-5">
           {sections.length > 1 && (
+          <>
           <nav className="w-[210px] flex-shrink-0 hidden md:block">
-            {sections.map(s => (
-              <NavLink
-                key={s.key}
-                to={`${BASE}/${service.key}/${activeTab.key}/${s.key}`}
-                className={({ isActive }) =>
-                  `block px-4 py-2.5 text-[14px] rounded-lg transition-colors ${
-                    isActive ? 'bg-slate-100 font-semibold text-slate-800' : 'text-slate-600 hover:bg-slate-50'
-                  }`
-                }
-              >
-                {s.label}
-              </NavLink>
-            ))}
-          </nav>
-          )}
+          {sections.map(s => (
+            s.children
+              ? <RailGroup key={s.key} group={s} service={service} tabKey={activeTab.key} activeKey={activeSection?.key} />
+              : (
+                <NavLink
+                  key={s.key}
+                  to={`${BASE}/${service.key}/${activeTab.key}/${s.key}`}
+                  className={({ isActive }) =>
+                    `block px-4 py-2.5 text-[14px] rounded-lg transition-colors ${
+                      isActive ? 'bg-slate-100 font-semibold text-slate-800' : 'text-slate-600 hover:bg-slate-50'
+                    }`
+                  }
+                >
+                  {s.label}
+                </NavLink>
+              )
+          ))}
+        </nav>
 
-          {sections.length > 1 && (
           <div className="md:hidden w-full overflow-x-auto border-b border-slate-200 pb-2 mb-3">
             <div className="flex gap-1 w-max">
-              {sections.map(s => (
+              {leaves.map(s => (
                 <NavLink
                   key={s.key}
                   to={`${BASE}/${service.key}/${activeTab.key}/${s.key}`}
@@ -74,6 +114,7 @@ export default function ServiceWorkspace() {
               ))}
             </div>
           </div>
+          </>
           )}
 
           <div className="flex-1 min-w-0">

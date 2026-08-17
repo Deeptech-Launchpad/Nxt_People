@@ -45,7 +45,18 @@ export const SERVICES = [
       configuration: [
         { key: 'organization-details', label: 'Organization Details' },
         { key: 'organization-policy', label: 'Organization Policy' },
-        { key: 'companies', label: 'Companies' },
+        // A section with children renders as a collapsible group in the rail,
+        // the way the reference nests Organization Structure.
+        {
+          key: 'organization-structure', label: 'Organization Structure',
+          children: [
+            { key: 'structure-configuration', label: 'Configuration' },
+            { key: 'companies', label: 'Company' },
+            { key: 'business-units', label: 'Business Unit' },
+            { key: 'divisions', label: 'Division' },
+            { key: 'manage-structure', label: 'Manage Structure' },
+          ],
+        },
         { key: 'locations', label: 'Locations' },
         { key: 'departments', label: 'Departments' },
         { key: 'designations', label: 'Designations' },
@@ -136,6 +147,11 @@ export const tabsOf = service =>
     .map(t => (service?.tabLabels?.[t.key] ? { ...t, label: service.tabLabels[t.key] } : t));
 
 export const sectionsOf = (service, tabKey) => service?.tabs?.[tabKey] || [];
+
+// The rail shows groups; routing needs the leaves. A group is never itself a
+// destination — landing on one would be a page with no content.
+export const flatSectionsOf = (service, tabKey) =>
+  sectionsOf(service, tabKey).flatMap(s => (s.children ? s.children : [s]));
 
 export const visibleServices = role =>
   SERVICES.filter(s => !s.roles || s.roles.includes(role));

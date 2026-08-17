@@ -7,12 +7,14 @@ import RecordList from './RecordList';
 // instead. Both are now filled and linked.
 //
 // Department Lead needs the employee list, so it is loaded here and folded into
-// the field definition rather than RecordList knowing about employees.
+// the field definition rather than RecordList knowing about employees. The
+// picker shows the employee id beside the name, as the reference does: two
+// people can share a name and the id is the only thing that separates them.
 const COLUMNS = [
   { key: 'name', label: 'Department name' },
   { key: 'headName', label: 'Department lead' },
   { key: 'parentName', label: 'Parent department' },
-  { key: 'mailAlias', label: 'Mail alias' },
+  { key: 'mailAlias', label: 'Email' },
 ];
 
 export default function Departments() {
@@ -32,22 +34,26 @@ export default function Departments() {
 
   const fields = useMemo(() => [
     { key: 'name', label: 'Department name', required: true },
-    { key: 'mailAlias', label: 'Mail alias' },
+    { key: 'mailAlias', label: 'Email' },
     {
-      key: 'headId', label: 'Department lead', type: 'select',
+      key: 'headId', label: 'Department lead', type: 'search-select',
       placeholder: 'No lead',
       options: () => employees
         .map(e => ({
           value: e._id || e.id,
           label: `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.email,
+          sub: e.employeeId || '',
         }))
         .filter(o => o.value && o.label)
         .sort((a, b) => a.label.localeCompare(b.label)),
     },
     {
-      key: 'parentId', label: 'Parent department', type: 'select',
+      key: 'parentId', label: 'Parent department', type: 'search-select',
       placeholder: 'None',
       hint: 'Leave blank for a top-level department.',
+      selfExcluding: true,
+      // The + creates a department without leaving this form, and selects it.
+      quickAdd: 'departments',
       // Fed the department list RecordList already has, so the picker cannot
       // offer a department that was deleted a moment ago.
       options: rows => rows.map(r => ({ value: r.id, label: r.name })),

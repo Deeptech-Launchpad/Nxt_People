@@ -118,6 +118,67 @@ const RESOURCES = {
     },
   },
 
+  business_units: {
+    table: 'business_units',
+    alias: 'b',
+    employeeIdColumn: 'business_unit_id',
+    employeeTextColumn: null,
+    label: 'Business unit',
+    select: `
+      b.id, b.name, b.description, b.company_id AS "companyId",
+      co.name AS "companyName", b.is_active AS "isActive",
+      (SELECT COUNT(*)::int FROM employees e
+        WHERE e.business_unit_id = b.id AND e.deleted_at IS NULL) AS "userCount"`,
+    from: 'business_units b LEFT JOIN companies co ON co.id = b.company_id',
+    order: 'b.name',
+    clean: b => ({
+      name: str(b.name, 'Name', { required: true }),
+      description: str(b.description, 'Description', { max: 100 }),
+      company_id: uuidOrNull(b.companyId, 'Company'),
+      is_active: b.isActive !== false,
+    }),
+  },
+
+  divisions: {
+    table: 'divisions',
+    alias: 'v',
+    employeeIdColumn: 'division_id',
+    employeeTextColumn: null,
+    label: 'Division',
+    select: `
+      v.id, v.name, v.description, v.parent_id AS "parentId",
+      p.name AS "parentName", v.business_unit_id AS "businessUnitId",
+      bu.name AS "businessUnitName", v.is_active AS "isActive",
+      (SELECT COUNT(*)::int FROM employees e
+        WHERE e.division_id = v.id AND e.deleted_at IS NULL) AS "userCount"`,
+    from: `divisions v
+             LEFT JOIN divisions p ON p.id = v.parent_id
+             LEFT JOIN business_units bu ON bu.id = v.business_unit_id`,
+    order: 'v.name',
+    clean: b => ({
+      name: str(b.name, 'Name', { required: true }),
+      description: str(b.description, 'Description', { max: 100 }),
+      parent_id: uuidOrNull(b.parentId, 'Parent division'),
+      business_unit_id: uuidOrNull(b.businessUnitId, 'Business unit'),
+      is_active: b.isActive !== false,
+    }),
+    // Divisions nest, so the same ancestry guard the departments have.
+    async validate(client, id, values) {
+      if (!values.parent_id) return;
+      if (id && values.parent_id === id) throw new Error('A division cannot be its own parent');
+      if (!id) return;
+      const r = await client.query(
+        `WITH RECURSIVE chain AS (
+           SELECT id, parent_id FROM divisions WHERE id = $1
+           UNION ALL
+           SELECT d.id, d.parent_id FROM divisions d JOIN chain c ON d.id = c.parent_id
+         ) SELECT 1 FROM chain WHERE id = $2 LIMIT 1`,
+        [values.parent_id, id]
+      );
+      if (r.rows.length) throw new Error('That would make the division its own ancestor');
+    },
+  },
+
   companies: {
     table: 'companies',
     alias: 'c',
@@ -169,6 +230,29 @@ router.get('/:resource', async (req, res) => {
   if (!r) return res.status(404).json({ success: false, message: 'Unknown resource' });
   try {
     const result = await pool.query(`SELECT ${r.select} FROM ${r.from} ORDER BY ${r.order}`);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+  }
+});
+
+// Who is on a row. The reference makes the associated-users count a link, and
+// the employee directory cannot filter by location, business unit or division
+// — only by department and designation name — so the list comes from here,
+// keyed by the foreign key rather than by a name that can be duplicated.
+router.get('/:resource/:id/employees', async (req, res) => {
+  const r = resourceOf(req);
+  if (!r) return res.status(404).json({ success: false, message: 'Unknown resource' });
+  try {
+    const result = await pool.query(
+      `SELECT e.id, e.employee_id AS "employeeId",
+              TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS name,
+              e.email, e.designation, e.department, e.status
+         FROM employees e
+        WHERE e.${r.employeeIdColumn} = $1 AND e.deleted_at IS NULL
+        ORDER BY e.first_name, e.last_name`,
+      [req.params.id]
+    );
     res.json({ success: true, data: result.rows });
   } catch (err) {
     res.status(500).json({ success: false, message: 'An internal server error occurred' });
@@ -232,12 +316,15 @@ router.put('/:resource/:id', authorize(...WRITE_ROLES), async (req, res) => {
 
     // Keep the denormalised text on employees in step with the new name.
     // Without this a rename splits the value across reports: the linked rows
-    // still say the old name, and every grouping shows both.
-    await client.query(
-      `UPDATE employees SET ${r.employeeTextColumn} = $1, updated_at = NOW()
-        WHERE ${r.employeeIdColumn} = $2 AND ${r.employeeTextColumn} IS DISTINCT FROM $1`,
-      [values.name, req.params.id]
-    );
+    // still say the old name, and every grouping shows both. Business units and
+    // divisions carry no such column, so there is nothing to keep in step.
+    if (r.employeeTextColumn) {
+      await client.query(
+        `UPDATE employees SET ${r.employeeTextColumn} = $1, updated_at = NOW()
+          WHERE ${r.employeeIdColumn} = $2 AND ${r.employeeTextColumn} IS DISTINCT FROM $1`,
+        [values.name, req.params.id]
+      );
+    }
 
     await client.query('COMMIT');
     const row = await pool.query(`SELECT ${r.select} FROM ${r.from} WHERE ${r.alias}.id = $1`, [req.params.id]);
@@ -268,10 +355,27 @@ router.delete('/:resource/:id', authorize(...WRITE_ROLES), async (req, res) => {
         message: `${inUse.rows[0].n} employee(s) still have this ${r.label.toLowerCase()}. Reassign them first.`,
       });
     }
-    if (r.table === 'departments') {
-      const child = await pool.query(`SELECT COUNT(*)::int AS n FROM departments WHERE parent_id = $1`, [req.params.id]);
+    if (r.table === 'departments' || r.table === 'divisions') {
+      const child = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM ${r.table} WHERE parent_id = $1`, [req.params.id]
+      );
       if (child.rows[0].n > 0) {
-        return res.status(400).json({ success: false, message: 'That department still has sub-departments' });
+        return res.status(400).json({
+          success: false,
+          message: `That ${r.label.toLowerCase()} still has children`,
+        });
+      }
+    }
+    if (r.table === 'companies') {
+      const units = await pool.query(`SELECT COUNT(*)::int AS n FROM business_units WHERE company_id = $1`, [req.params.id]);
+      if (units.rows[0].n > 0) {
+        return res.status(400).json({ success: false, message: 'That company still has business units' });
+      }
+    }
+    if (r.table === 'business_units') {
+      const divs = await pool.query(`SELECT COUNT(*)::int AS n FROM divisions WHERE business_unit_id = $1`, [req.params.id]);
+      if (divs.rows[0].n > 0) {
+        return res.status(400).json({ success: false, message: 'That business unit still has divisions' });
       }
     }
     const del = await pool.query(`DELETE FROM ${r.table} WHERE id = $1 RETURNING id`, [req.params.id]);

@@ -195,4 +195,83 @@ router.patch('/policy', authorize(...WRITE), async (req, res) => {
   } finally { client.release(); }
 });
 
+// ── Organization Structure ─────────────────────────────────────────────────
+// The three component names are configuration, not fixed strings: the reference
+// lets an organization call a legal entity whatever it calls one.
+const LABEL_KEYS = ['legalEntity', 'businessUnit', 'division'];
+const DEFAULT_LABELS = { legalEntity: 'Company', businessUnit: 'Business Unit', division: 'Division' };
+
+router.get('/structure', async (req, res) => {
+  try {
+    const r = await pool.query(`SELECT org_structure_config AS c FROM settings LIMIT 1`);
+    const c = r.rows[0]?.c || {};
+    res.json({
+      success: true,
+      data: { enabled: !!c.enabled, labels: { ...DEFAULT_LABELS, ...(c.labels || {}) } },
+    });
+  } catch (err) { fail(res, err); }
+});
+
+router.patch('/structure', authorize(...WRITE), async (req, res) => {
+  const b = req.body || {};
+  try {
+    const labels = {};
+    for (const key of LABEL_KEYS) {
+      const v = str(b.labels?.[key], 'Component name', 60);
+      // A blank component name would leave a rail item and a heading with no
+      // word in them, so the built-in stands in.
+      labels[key] = v || DEFAULT_LABELS[key];
+    }
+    const r = await pool.query(
+      `UPDATE settings SET org_structure_config = $1::jsonb, updated_at = NOW()
+        WHERE id = (SELECT id FROM settings LIMIT 1)
+       RETURNING org_structure_config AS c`,
+      [JSON.stringify({ enabled: !!b.enabled, labels })]
+    );
+    if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Settings row not found' });
+    res.json({ success: true, data: r.rows[0].c });
+  } catch (err) { fail(res, err); }
+});
+
+// The tree the reference draws under Manage Structure: the organization at the
+// root, its legal entities beneath, then business units, then divisions.
+router.get('/structure/tree', async (req, res) => {
+  try {
+    const [org, companies, units, divisions] = await Promise.all([
+      pool.query(`SELECT company_name AS name, org_structure_config AS c FROM settings LIMIT 1`),
+      pool.query(`SELECT id, name FROM companies ORDER BY name`),
+      pool.query(`SELECT id, name, company_id AS "companyId" FROM business_units ORDER BY name`),
+      pool.query(`SELECT id, name, parent_id AS "parentId", business_unit_id AS "businessUnitId" FROM divisions ORDER BY name`),
+    ]);
+
+    // Divisions nest, so each one is placed under its parent division where it
+    // has one, and under its business unit otherwise.
+    const divisionsOf = (businessUnitId, parentId) =>
+      divisions.rows
+        .filter(d => (parentId ? d.parentId === parentId : !d.parentId && d.businessUnitId === businessUnitId))
+        .map(d => ({ id: d.id, name: d.name, kind: 'division', children: divisionsOf(null, d.id) }));
+
+    res.json({
+      success: true,
+      data: {
+        name: org.rows[0]?.name || 'Organization',
+        labels: { ...DEFAULT_LABELS, ...(org.rows[0]?.c?.labels || {}) },
+        enabled: !!org.rows[0]?.c?.enabled,
+        children: companies.rows.map(co => ({
+          id: co.id, name: co.name, kind: 'company',
+          children: units.rows
+            .filter(u => u.companyId === co.id)
+            .map(u => ({ id: u.id, name: u.name, kind: 'business_unit', children: divisionsOf(u.id, null) })),
+        })),
+        // A business unit with no company, or a division with no business unit,
+        // would otherwise vanish from the tree rather than showing as unplaced.
+        unplaced: {
+          businessUnits: units.rows.filter(u => !u.companyId).map(u => ({ id: u.id, name: u.name })),
+          divisions: divisions.rows.filter(d => !d.parentId && !d.businessUnitId).map(d => ({ id: d.id, name: d.name })),
+        },
+      },
+    });
+  } catch (err) { fail(res, err); }
+});
+
 module.exports = router;

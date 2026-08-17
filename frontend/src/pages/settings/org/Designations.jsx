@@ -5,12 +5,12 @@ import RecordList from './RecordList';
 // under several spellings and no report could group by it reliably.
 const COLUMNS = [
   { key: 'name', label: 'Designation name' },
-  { key: 'mailAlias', label: 'Mail alias' },
+  { key: 'mailAlias', label: 'Email' },
 ];
 
 const FIELDS = [
   { key: 'name', label: 'Designation name', required: true },
-  { key: 'mailAlias', label: 'Mail alias' },
+  { key: 'mailAlias', label: 'Email' },
 ];
 
 export default function Designations() {
