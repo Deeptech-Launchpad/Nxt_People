@@ -6,6 +6,7 @@ import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
+import RegenerateDialog from './RegenerateDialog';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
 import EmployeeFilter from './EmployeeFilter';
@@ -24,6 +25,16 @@ const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 const STATUS_STYLE = { approved: 'bg-emerald-100 text-emerald-700', rejected: 'bg-red-100 text-red-700', pending: 'bg-amber-100 text-amber-700' };
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
 
+const fmtDay = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const cycleLabel = c => `${fmtDay(c.start)} - ${fmtDay(c.end)}`;
+// The pay period drives the cycle when one is picked; otherwise the calendar
+// month does, which is what this org's single pay period amounts to anyway.
+const monthCycle = offset => {
+  const n = new Date();
+  const s = new Date(n.getFullYear(), n.getMonth() + offset, 1);
+  return { start: s.toLocaleDateString('en-CA'), end: new Date(s.getFullYear(), s.getMonth() + 1, 0).toLocaleDateString('en-CA') };
+};
+
 export default function LeaveEncashmentDetails() {
   const [unit, setUnit] = useState('day');
   const [loading, setLoading] = useState(true);
@@ -36,6 +47,7 @@ export default function LeaveEncashmentDetails() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
   const [payPeriod, setPayPeriod] = useState(null);
+  const [regenOpen, setRegenOpen] = useState(false);
   const navigate = useNavigate();
 
   // Encashment is processed per pay period, so a period with the flag off has
@@ -44,6 +56,26 @@ export default function LeaveEncashmentDetails() {
   // where the guidance matters most, and it used to fall through to a bare
   // "No encashment requests" that read as a broken page.
   const encashmentOff = !payPeriod || !payPeriod.processEncashment;
+
+  const cycle = {
+    current: payPeriod ? { start: payPeriod.startDate, end: payPeriod.endDate } : monthCycle(0),
+    previous: monthCycle(-1),
+  };
+
+  // Encashment rows are read from source on every request, so re-running the
+  // report is the regeneration. Each option changes what is asked for rather
+  // than claiming work it did not do.
+  const regenerate = scope => {
+    setRegenOpen(false);
+    if (scope === 'previous') {
+      toast.success(`Rebuilt for ${cycleLabel(cycle.previous)}`);
+      load();
+      return;
+    }
+    setEmployeeStatus('exited');
+    setFiltersOpen(true);
+    toast.success(`Rebuilt for resigned users in ${cycleLabel(cycle.current)}`);
+  };
 
   const load = () => {
     setLoading(true);
@@ -86,7 +118,7 @@ export default function LeaveEncashmentDetails() {
   const actions = (
     <div className="flex items-center gap-2">
       <UnitToggle value={unit} onChange={setUnit} />
-      <button onClick={load} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
+      <button onClick={() => setRegenOpen(true)} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
         Regenerate Report
       </button>
       <FilterToggleButton open={filtersOpen} onClick={() => setFiltersOpen(o => !o)} />
@@ -168,6 +200,15 @@ export default function LeaveEncashmentDetails() {
             </tbody>
           </table>
         </div>
+      )}
+      {regenOpen && (
+        <RegenerateDialog
+          subject="encashment details and leave data for payroll"
+          current={cycleLabel(cycle.current)}
+          previous={cycleLabel(cycle.previous)}
+          onConfirm={regenerate}
+          onClose={() => setRegenOpen(false)}
+        />
       )}
       <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub="leave-encashment-details" />
     </ReportShell>

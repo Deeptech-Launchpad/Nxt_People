@@ -5,6 +5,7 @@ import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
+import RegenerateDialog from './RegenerateDialog';
 import EmployeeStatusFilter from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
 import EmployeeFilter from './EmployeeFilter';
@@ -32,43 +33,6 @@ const EXPORT_COLUMNS = [
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
-// Regenerating rebuilds a whole cycle's figures, so it asks first — and says
-// which dates it will touch, because "previous cycle" means nothing on its own.
-function RegenerateDialog({ current, previous, onConfirm, onClose }) {
-  const [scope, setScope] = useState('previous');
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-[560px]">
-        <div className="flex flex-col items-center pt-6 px-6">
-          <div className="w-12 h-12 rounded-full bg-amber-400 flex items-center justify-center mb-3">
-            <span className="text-white text-[22px] font-bold leading-none">!</span>
-          </div>
-          <p className="text-[16px] font-semibold text-slate-800">Alert</p>
-        </div>
-        <div className="px-6 py-5 space-y-4">
-          {[
-            ['previous', 'Previous cycle', `This action will regenerate the Loss of pay details and leave data for payroll for ${previous}, and erase any adjustments made on the LOP report.`],
-            ['resigned', 'Current cycle for resigned users', `This action will regenerate the Loss of pay and leave data for payroll details of ${current} for resigned users`],
-          ].map(([key, title, body]) => (
-            <label key={key} className="flex items-start gap-2.5 cursor-pointer">
-              <input type="radio" name="regenScope" checked={scope === key} onChange={() => setScope(key)}
-                className="w-4 h-4 accent-blue-600 mt-0.5 flex-shrink-0" />
-              <span className="min-w-0">
-                <span className="block text-[14px] text-slate-800">{title}</span>
-                <span className="block text-[13px] text-slate-500 mt-0.5">{body}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-        <div className="flex items-center justify-center gap-3 px-6 py-4 border-t border-slate-100">
-          <button onClick={() => onConfirm(scope)} className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded text-[14px] font-medium">Confirm</button>
-          <button onClick={onClose} className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-5 py-2 rounded text-[14px]">Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function LossOfPay() {
   const [startDate, setStartDate] = useState(monthStartCA());
   const [endDate, setEndDate] = useState(todayCA());
@@ -85,15 +49,27 @@ export default function LossOfPay() {
   const [payPeriod, setPayPeriod] = useState(null);
   const [regenOpen, setRegenOpen] = useState(false);
 
-  // Regenerating the previous cycle steps the range back a month and reloads;
-  // the resigned-users scope keeps the current range. Either way this report
-  // is recomputed from source rather than read from a cache, so a reload IS
-  // the regeneration — there is no stored copy to invalidate.
+  // This report is computed from source on every request rather than read from
+  // a stored copy, so re-running it IS the regeneration — there is no cache to
+  // invalidate. What each option must do, then, is change what is being asked
+  // for. Both branches now do that. An earlier version reported success for
+  // work it had not done: "previous cycle" only moved the dates without
+  // reloading, and "resigned users" re-fetched the same unfiltered rows.
   const regenerate = scope => {
     setRegenOpen(false);
-    if (scope === 'previous') { shiftMonth(-1); toast.success('Regenerated for the previous cycle'); return; }
-    load();
-    toast.success('Regenerated for resigned users in the current cycle');
+    if (scope === 'previous') {
+      setPayPeriod(null);
+      setStartDate(prevCycle.start);
+      setEndDate(prevCycle.end);
+      toast.success(`Rebuilt for ${fmtRange(prevCycle.start, prevCycle.end)}`);
+      return;
+    }
+    // "Resigned users" is the exited employee-status filter, which the report
+    // already supports — the chip updates too, so the narrowing is visible and
+    // clearable rather than silently applied.
+    setEmployeeStatus('exited');
+    setFiltersOpen(true);
+    toast.success(`Rebuilt for resigned users in ${fmtRange(startDate, endDate)}`);
   };
 
   // Picking a pay period drives the range from its dates; the From/To chips
@@ -224,8 +200,9 @@ export default function LossOfPay() {
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-right px-4 py-2.5">Booked Absent + Unpaid</th>
-                <th className="text-right px-4 py-2.5">Total Previous + Taken</th>
+                <th className="text-right px-4 py-2.5">Previous Pay Period Balance</th>
+                <th className="text-right px-4 py-2.5 leading-tight"><div>Booked</div><div className="font-normal text-slate-400">Absent + Unpaid</div></th>
+                <th className="text-right px-4 py-2.5 leading-tight"><div>Total</div><div className="font-normal text-slate-400">Previous + Taken</div></th>
                 <th className="text-right px-4 py-2.5">Waived Off</th>
                 <th className="text-right px-4 py-2.5">Carry Over</th>
                 <th className="text-left px-4 py-2.5">Reason</th>
@@ -236,6 +213,7 @@ export default function LossOfPay() {
               {rows.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{row.previousPeriodBalance}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.booked}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.total}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.waivedOff}</td>
@@ -250,6 +228,7 @@ export default function LossOfPay() {
       )}
       {regenOpen && (
         <RegenerateDialog
+          subject="Loss of pay details and leave data for payroll"
           current={fmtRange(startDate, endDate)}
           previous={fmtRange(prevCycle.start, prevCycle.end)}
           onConfirm={regenerate}
