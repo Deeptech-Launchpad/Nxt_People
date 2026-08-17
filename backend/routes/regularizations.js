@@ -162,7 +162,13 @@ router.post('/', requireRegularizationEnabled, [
         [req.user._id, date, checkIn || null, checkOut || null, reasonText || null]
       );
       reg = result.rows[0];
-      levels = await createLevels(client, 'regularization', reg._id, req.user._id);
+      levels = await createLevels(client, 'regularization', reg._id, req.user._id, {
+        date,
+        reason: reasonText,
+        // How stale the entry is, which is the condition an org most often
+        // wants to route on.
+        ageInDays: Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86400000),
+      });
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');

@@ -281,7 +281,9 @@ router.post('/', requireOnDutyEnabled, uploadAttachment, [
         [req.user._id, startDate, endDate, unit, startTime, endTime, hours, requestType, reason || null, attachmentPath, attachmentName]
       );
       od = result.rows[0];
-      levels = await createLevels(client, 'on_duty', od._id, req.user._id);
+      levels = await createLevels(client, 'on_duty', od._id, req.user._id, {
+        startDate, endDate, requestType, days: daySpan(startDate, endDate),
+      });
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
