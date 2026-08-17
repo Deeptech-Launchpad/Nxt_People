@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import api from '../../../utils/api';
-import { Card, Note, Toggle, selectClass, Spinner } from '../configKit';
+import { Card, Note, Toggle, Spinner } from '../configKit';
+import ApprovalEditor from './ApprovalEditor';
 import { roleLabel } from '../../../utils/roles';
 
 // Approvals — who a request goes to, and in what order.
@@ -33,7 +34,14 @@ const blankRule = (requestType) => ({
   description: '',
   isActive: true,
   decision: 'chain',
-  levels: [{ kind: 'reporting_to', count: 1 }],
+  // Nothing configured yet, so the Approvals card opens on its Configure
+  // Approver / Auto Approve / Auto Reject choice the way the reference does.
+  //
+  // The reference pre-selects Auto Approve there. This does not: an approval
+  // saved by accident with no criteria becomes its form's catch-all, and one
+  // that silently approves everything is a worse default than one that refuses
+  // to save until a decision is made.
+  levels: [],
   criteria: [],
   criteriaMatch: 'AND',
   followUp: false,
@@ -48,14 +56,11 @@ const blankRule = (requestType) => ({
   },
 });
 
-const SECTIONS = ['Approval Details', 'Criteria', 'Approvals', 'Messages'];
-
 export default function ApprovalRules({ service = 'attendance' }) {
   const [rules, setRules] = useState(null);
   const [meta, setMeta] = useState(null);
   const [preview, setPreview] = useState({});
   const [editing, setEditing] = useState(null);
-  const [section, setSection] = useState(SECTIONS[0]);
   const [busy, setBusy] = useState(false);
 
   const forms = useMemo(
@@ -133,7 +138,7 @@ export default function ApprovalRules({ service = 'attendance' }) {
       <Card title="Approvals" description="Who a request goes to, and in what order"
         actions={
           <button
-            onClick={() => { setEditing(blankRule(forms[0]?.key)); setSection(SECTIONS[0]); }}
+            onClick={() => setEditing(blankRule(forms[0]?.key))}
             className="flex-shrink-0 flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded text-[13.5px] font-medium"
           >
             <Plus size={15} /> Add Approval
@@ -188,7 +193,7 @@ export default function ApprovalRules({ service = 'attendance' }) {
                   <td className="px-4 py-3 text-slate-600">{rule.sortOrder}</td>
                   <td className="px-4 py-3"><Toggle checked={rule.isActive} onChange={() => toggleActive(rule)} label="" /></td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button onClick={() => { setEditing({ ...rule }); setSection(SECTIONS[0]); }}
+                    <button onClick={() => setEditing({ ...rule })}
                       className="text-[13.5px] text-blue-600 hover:text-blue-500">Edit</button>
                     <button onClick={() => remove(rule)} aria-label={`Delete ${rule.name}`}
                       className="ml-2 text-slate-400 hover:text-red-500 p-1 align-middle"><Trash2 size={15} /></button>
@@ -220,297 +225,15 @@ export default function ApprovalRules({ service = 'attendance' }) {
       </Card>
 
       {editing && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 px-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[88vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <p className="text-[16px] font-semibold text-slate-800">
-                {editing.id ? 'Edit Approval' : 'Add Approval'}
-              </p>
-              <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
-            </div>
-
-            <div className="flex items-start flex-1 min-h-0">
-              <nav className="w-[190px] flex-shrink-0 py-4 border-r border-slate-100 hidden sm:block">
-                {SECTIONS.map(s => (
-                  <button key={s} onClick={() => setSection(s)}
-                    className={`w-full text-left px-5 py-2.5 text-[14px] border-l-2 transition-colors ${
-                      section === s ? 'border-blue-600 text-slate-800 font-semibold bg-slate-50' : 'border-transparent text-slate-600 hover:bg-slate-50'
-                    }`}>
-                    {s}
-                  </button>
-                ))}
-              </nav>
-
-              <div className="flex-1 min-w-0 overflow-y-auto px-6 py-5 space-y-5">
-                {section === 'Approval Details' && (
-                  <>
-                    <div>
-                      <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Form name</label>
-                      <select value={editing.requestType} disabled={!!editing.id}
-                        onChange={e => setField({ requestType: e.target.value, criteria: [] })}
-                        className={`${selectClass} w-full max-w-md`}>
-                        {forms.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
-                      </select>
-                      {editing.id && <p className="text-[12.5px] text-slate-500 mt-1">The form cannot change once an approval exists.</p>}
-                    </div>
-                    <div>
-                      <label className="block text-[13px] font-medium text-slate-700 mb-1.5">
-                        Approval name<span className="text-red-500 ml-0.5">*</span>
-                      </label>
-                      <input value={editing.name} onChange={e => setField({ name: e.target.value })}
-                        className="w-full max-w-md border border-slate-300 rounded-md px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Description</label>
-                      <textarea rows={3} value={editing.description || ''} onChange={e => setField({ description: e.target.value })}
-                        className="w-full max-w-md border border-slate-300 rounded-md px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Order</label>
-                      <input type="number" min={1} max={999} value={editing.sortOrder}
-                        onChange={e => setField({ sortOrder: Number(e.target.value) })}
-                        className="w-[110px] border border-slate-300 rounded-md px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-                      <p className="text-[12.5px] text-slate-500 mt-1 max-w-md">
-                        Lower runs first. Put a narrow approval above the catch-all, or it never gets a turn.
-                      </p>
-                    </div>
-                  </>
-                )}
-
-                {section === 'Criteria' && (
-                  <>
-                    <p className="text-[13.5px] text-slate-600">
-                      This approval runs when the conditions below are satisfied. With none, it matches every
-                      request on this form.
-                    </p>
-                    {editing.criteria.length > 1 && (
-                      <div className="flex items-center gap-3">
-                        <span className="text-[13px] text-slate-600">Match</span>
-                        <select value={editing.criteriaMatch} onChange={e => setField({ criteriaMatch: e.target.value })} className={selectClass}>
-                          <option value="AND">all conditions</option>
-                          <option value="OR">any condition</option>
-                        </select>
-                      </div>
-                    )}
-                    <div className="space-y-2.5">
-                      {editing.criteria.map((c, i) => (
-                        <div key={i} className="flex flex-wrap items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-[12.5px] flex items-center justify-center flex-shrink-0">{i + 1}</span>
-                          <select value={c.field} onChange={e => setCond(i, { field: e.target.value })} className={`${selectClass} min-w-[170px]`}>
-                            {fieldsForForm.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
-                          </select>
-                          <select value={c.operator} onChange={e => setCond(i, { operator: e.target.value })} className={`${selectClass} min-w-[150px]`}>
-                            {meta.operators.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-                          </select>
-                          <input value={c.value} onChange={e => setCond(i, { value: e.target.value })} placeholder="Value"
-                            className="w-[160px] border border-slate-300 rounded-md px-2.5 py-1.5 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-                          <button onClick={() => setField({ criteria: editing.criteria.filter((_, n) => n !== i) })}
-                            aria-label="Remove condition" className="text-slate-400 hover:text-red-500 p-1.5"><Trash2 size={15} /></button>
-                        </div>
-                      ))}
-                    </div>
-                    <button
-                      onClick={() => setField({
-                        criteria: [...editing.criteria, { field: fieldsForForm[0]?.key, operator: 'is', value: '' }],
-                      })}
-                      disabled={!fieldsForForm.length || editing.criteria.length >= 10}
-                      className="flex items-center gap-1.5 text-[13.5px] text-blue-600 hover:text-blue-500 disabled:text-slate-400 bg-blue-50 disabled:bg-slate-100 rounded px-3 py-1.5"
-                    >
-                      <Plus size={14} /> Add Condition
-                    </button>
-                  </>
-                )}
-
-                {section === 'Approvals' && (
-                  <>
-                    <p className="text-[13.5px] text-slate-600">
-                      Configure approver levels, or let the system settle the request on submission.
-                    </p>
-                    <div className="flex flex-wrap items-center gap-5">
-                      {[['chain', 'Configure approver'], ['auto_approve', 'Auto Approve'], ['auto_reject', 'Auto Reject']].map(([k, l]) => (
-                        <label key={k} className="flex items-center gap-2 cursor-pointer">
-                          <input type="radio" name="decision" checked={editing.decision === k}
-                            onChange={() => setField({ decision: k })} className="w-4 h-4 accent-blue-600" />
-                          <span className="text-[14px] text-slate-700">{l}</span>
-                        </label>
-                      ))}
-                    </div>
-
-                    {editing.decision === 'chain' ? (
-                      <>
-                        <div className="space-y-2.5">
-                          {editing.levels.map((step, i) => {
-                            const t = typeOf(step.kind);
-                            return (
-                              <div key={i} className="flex flex-wrap items-center gap-2">
-                                <select value={step.kind}
-                                  onChange={e => {
-                                    const kind = e.target.value;
-                                    const seed = kind === 'reporting_to' ? { count: 1 }
-                                      : kind === 'role' ? { role: 'hr_admin' }
-                                      : kind === 'department_head' || kind === 'department_members' ? { departmentId: meta.departments[0]?.id }
-                                      : kind === 'user' ? { userId: '' } : {};
-                                    setEditing(e2 => ({ ...e2, levels: e2.levels.map((s, n) => (n === i ? { kind, ...seed } : s)) }));
-                                  }}
-                                  className={`${selectClass} flex-1 min-w-[240px]`}>
-                                  {meta.approverTypes.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
-                                </select>
-
-                                {t?.valueType === 'levels' && (
-                                  <select value={step.count} onChange={e => setStep(i, { count: Number(e.target.value) })} className={`${selectClass} w-[160px]`}>
-                                    {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{LEVEL_WORDS[n]}</option>)}
-                                  </select>
-                                )}
-                                {t?.valueType === 'role' && (
-                                  <select value={step.role} onChange={e => setStep(i, { role: e.target.value })} className={`${selectClass} w-[160px]`}>
-                                    {meta.roles.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-                                  </select>
-                                )}
-                                {t?.valueType === 'department' && (
-                                  <select value={step.departmentId || ''} onChange={e => setStep(i, { departmentId: e.target.value })} className={`${selectClass} w-[190px]`}>
-                                    <option value="">Select a department</option>
-                                    {meta.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                  </select>
-                                )}
-                                {t?.valueType === 'employee' && (
-                                  <input value={step.userId || ''} onChange={e => setStep(i, { userId: e.target.value })}
-                                    placeholder="Employee id"
-                                    className="w-[220px] border border-slate-300 rounded-md px-2.5 py-1.5 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-                                )}
-
-                                <button onClick={() => setField({ levels: editing.levels.filter((_, n) => n !== i) })}
-                                  disabled={editing.levels.length === 1} aria-label="Remove level"
-                                  className="text-slate-400 hover:text-red-500 disabled:opacity-30 p-1.5"><Trash2 size={15} /></button>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        <button
-                          onClick={() => setField({ levels: [...editing.levels, { kind: 'role', role: 'hr_admin' }] })}
-                          disabled={editing.levels.length >= 6}
-                          className="flex items-center gap-1.5 text-[13.5px] text-blue-600 hover:text-blue-500 disabled:text-slate-400 bg-blue-50 disabled:bg-slate-100 rounded px-3 py-1.5"
-                        >
-                          <Plus size={14} /> Add Approver Level
-                        </button>
-
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-1.5">
-                          {editing.levels.map((step, i) => (
-                            <React.Fragment key={i}>
-                              {i > 0 && <span className="text-slate-400">›</span>}
-                              <span className="bg-white border border-slate-200 rounded px-2.5 py-1 text-[13px]">{describeStep(step)}</span>
-                            </React.Fragment>
-                          ))}
-                        </div>
-
-                        {editing.levels.some(s => s.kind === 'role') && (
-                          <label className="flex items-start gap-2.5 cursor-pointer">
-                            <input type="checkbox"
-                              checked={editing.levels.some(s => s.kind === 'role' && s.skipWhenManagerIsBuHead)}
-                              onChange={e => setField({
-                                levels: editing.levels.map(s => (s.kind === 'role' ? { ...s, skipWhenManagerIsBuHead: e.target.checked } : s)),
-                              })}
-                              className="w-4 h-4 accent-blue-600 mt-0.5" />
-                            <span>
-                              <span className="block text-[14px] text-slate-700">Skip the role level when the manager is a Business Unit Head</span>
-                              <span className="block text-[13px] text-slate-500 mt-0.5">
-                                The rule the chain has always applied: someone reporting straight to the BU Head does not also go to HR.
-                              </span>
-                            </span>
-                          </label>
-                        )}
-                      </>
-                    ) : (
-                      <Note>
-                        The request is settled on submission and nobody is asked. No approver levels apply.
-                      </Note>
-                    )}
-
-                    <div className="pt-1">
-                      <Toggle checked={editing.followUp} onChange={v => setField({ followUp: v })}
-                        label="Enable follow-up option for this approval"
-                        hint="Saved; the reminder to a waiting approver is not sent yet" />
-                    </div>
-                  </>
-                )}
-
-                {section === 'Messages' && (
-                  <>
-                    <div>
-                      <label className="block text-[13px] font-medium text-slate-700 mb-1.5">From<span className="text-red-500 ml-0.5">*</span></label>
-                      <select value={editing.messages.from} onChange={e => setMsg({ from: e.target.value })} className={`${selectClass} w-full max-w-md`}>
-                        <option value="default_address">Default from address</option>
-                        <option value="performer">Person performing this action</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[13px] font-medium text-slate-700 mb-1.5">To<span className="text-red-500 ml-0.5">*</span></label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {RECIPIENTS.map(r => {
-                          const on = (editing.messages.to || []).includes(r.key);
-                          return (
-                            <button key={r.key} type="button"
-                              onClick={() => setMsg({
-                                to: on ? editing.messages.to.filter(x => x !== r.key) : [...(editing.messages.to || []), r.key],
-                              })}
-                              className={`text-[13px] rounded-full px-3 py-1 border transition-colors ${
-                                on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
-                              }`}>
-                              {r.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Subject<span className="text-red-500 ml-0.5">*</span></label>
-                      <input value={editing.messages.subject} onChange={e => setMsg({ subject: e.target.value })}
-                        className="w-full max-w-md border border-slate-300 rounded-md px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500" />
-                    </div>
-
-                    <div>
-                      <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Body</label>
-                      <select value={editing.messages.templateName || ''} onChange={e => setMsg({ templateName: e.target.value || null })}
-                        className={`${selectClass} w-full max-w-md`}>
-                        <option value="">Default wording</option>
-                        {(meta.templates || []).map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                      </select>
-                      <p className="text-[12.5px] text-slate-500 mt-1 max-w-md">
-                        Templates are edited under Automation → Email Templates, so one change reaches every
-                        approval that uses it.
-                      </p>
-                    </div>
-
-                    <div className="pt-1 space-y-2.5">
-                      <p className="text-[13px] font-medium text-slate-700">Also tell the requester when it is</p>
-                      {[['onApproved', 'Approved'], ['onRejected', 'Rejected']].map(([k, l]) => (
-                        <label key={k} className="flex items-center gap-2.5 cursor-pointer">
-                          <input type="checkbox" checked={editing.messages[k]?.enabled !== false}
-                            onChange={e => setMsg({ [k]: { ...editing.messages[k], enabled: e.target.checked } })}
-                            className="w-4 h-4 accent-blue-600" />
-                          <span className="text-[14px] text-slate-700">{l}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="px-6 py-4 border-t border-slate-200 flex items-center gap-3">
-              <button onClick={save} disabled={busy || !String(editing.name || '').trim()}
-                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white px-5 py-2 rounded text-[14px] font-medium">
-                {busy ? 'Saving…' : editing.id ? 'Save' : 'Add'}
-              </button>
-              <button onClick={() => setEditing(null)}
-                className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-5 py-2 rounded text-[14px] font-medium">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <ApprovalEditor
+          value={editing}
+          meta={meta}
+          forms={forms}
+          busy={busy}
+          onChange={setEditing}
+          onSave={save}
+          onClose={() => setEditing(null)}
+        />
       )}
     </div>
   );

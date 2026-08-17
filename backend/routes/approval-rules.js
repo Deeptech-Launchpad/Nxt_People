@@ -114,7 +114,7 @@ router.get('/meta', async (req, res) => {
   try {
     const [departments, templates] = await Promise.all([
       pool.query(`SELECT id, name FROM departments ORDER BY name`),
-      pool.query(`SELECT id, name FROM email_templates ORDER BY name`).catch(() => ({ rows: [] })),
+      pool.query(`SELECT id, name, subject, body FROM email_templates ORDER BY name`).catch(() => ({ rows: [] })),
     ]);
     res.json({
       success: true,
