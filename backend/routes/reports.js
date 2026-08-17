@@ -1452,17 +1452,108 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+// Leave encashment eligibility for a pay cycle: how many days (or hours) each
+// employee could encash, derived from the leave policy entitlement, less what
+// they have already taken and already encashed.
+//
+// This is what the reference's report is — "the number of days that each
+// employee has per pay period for leave encashment, based on the entitlement
+// as defined in the leave policy" — and its API returns one `encash` figure
+// per employee with a Day/Hour unit. It is NOT a list of encashment requests,
+// which is what this endpoint used to return.
+//
+// No money is computed. Neither the reference's leave policy nor its pay
+// period carries a rate or a cap — the payout is priced downstream in payroll,
+// so this report stops at the number of days.
 router.get('/leave/encashment', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
-    const r = await pool.query(
-      `SELECT l.id AS "_id", l.leave_type AS "leaveType", l.days, l.status, l.reason, l.created_at AS "createdAt",
-              e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate"
-         FROM leave_encashments l JOIN employees e ON l.employee_id = e.id
-        WHERE 1=1${reportsScope(req.user, 'e', 1).clause}
-        ORDER BY l.created_at DESC LIMIT 200`,
-      reportsScope(req.user, 'e', 1).params
+    const unit = req.query.unit === 'hour' ? 'hour' : 'day';
+    const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
+    const year = Number(end.slice(0, 4));
+    const upToMonth = Number(end.slice(5, 7));
+
+    // Only an annual entitlement can be left unspent at year end and bought
+    // back, so that is what qualifies. It rules out the rest for real reasons
+    // rather than by a hardcoded list: comp-off is earned against a worked day,
+    // permission is a flat monthly grant that does not carry, unpaid leave and
+    // absence have no entitlement at all, and a type switched off is not in use.
+    const typeRes = await pool.query(
+      `SELECT code FROM leave_types
+        WHERE is_active = TRUE AND accrual_mode = 'annual' AND unit = $1
+        ORDER BY code`,
+      [unit === 'hour' ? 'hours' : 'days']
     );
-    res.json({ success: true, data: r.rows });
+    const types = typeRes.rows.map(r => r.code);
+    if (!types.length) return res.json({ success: true, data: [], unit, year });
+
+    const filters = standardEmployeeFilters(req, 'e', 1);
+    const [empRes, policies] = await Promise.all([
+      pool.query(
+        `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
+                e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.joining_date::text AS "joiningDate",
+                COALESCE(e.casual_leave, 0) AS "casualAllocated"
+           FROM employees e WHERE 1=1${filters.clause} ORDER BY e.employee_id`,
+        filters.params
+      ),
+      getLeavePolicies(),
+    ]);
+    if (!empRes.rows.length) return res.json({ success: true, data: [], unit });
+
+    const ids = empRes.rows.map(e => e._id);
+    const [takenRes, encashedRes] = await Promise.all([
+      pool.query(
+        `SELECT employee_id, leave_type AS "leaveType",
+                COALESCE(SUM(total_days), 0) AS days, COALESCE(SUM(hours), 0) AS hours
+           FROM leaves
+          WHERE employee_id = ANY($1::uuid[]) AND status = 'approved'
+            AND EXTRACT(YEAR FROM start_date) = $2
+          GROUP BY employee_id, leave_type`,
+        [ids, year]
+      ),
+      pool.query(
+        `SELECT employee_id, leave_type AS "leaveType", COALESCE(SUM(days), 0) AS days
+           FROM leave_encashments
+          WHERE employee_id = ANY($1::uuid[]) AND status = 'approved'
+            AND EXTRACT(YEAR FROM created_at) = $2
+          GROUP BY employee_id, leave_type`,
+        [ids, year]
+      ),
+    ]);
+    const key = (id, t) => `${id}|${t}`;
+    const taken = new Map(takenRes.rows.map(r => [key(r.employee_id, r.leaveType), r]));
+    const encashed = new Map(encashedRes.rows.map(r => [key(r.employee_id, r.leaveType), parseFloat(r.days) || 0]));
+
+    const data = [];
+    for (const emp of empRes.rows) {
+      for (const code of types) {
+        const policy = policies.get(code);
+        if (!policy) continue;
+        const allocated = grantedToDate(policy, {
+          year, upToMonth, joiningDate: emp.joiningDate,
+          annualAmount: code === 'casual' ? parseFloat(emp.casualAllocated) || 0 : null,
+        });
+        // A type with no entitlement in this system has nothing to encash —
+        // that is N/A, not zero, so the row is left out rather than shown at 0.
+        if (allocated === null) continue;
+
+        const t = taken.get(key(emp._id, code));
+        const availed = round2(unit === 'hour' ? parseFloat(t?.hours) || 0 : parseFloat(t?.days) || 0);
+        const already = encashed.get(key(emp._id, code)) || 0;
+        const balance = round2(allocated - availed);
+        // You cannot encash the same day twice, and a negative balance means
+        // leave was taken beyond entitlement — there is nothing left to buy.
+        const encashable = round2(Math.max(0, balance - already));
+
+        data.push({
+          _id: `${emp._id}|${code}`, employeeId: emp._id,
+          firstName: emp.firstName, lastName: emp.lastName, department: emp.department,
+          employeeCode: emp.employeeCode, exitDate: emp.exitDate,
+          leaveType: code, allocated, availed, balance, encashed: already, encashable,
+        });
+      }
+    }
+
+    res.json({ success: true, data, unit, year });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 

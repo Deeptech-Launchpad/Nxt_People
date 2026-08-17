@@ -17,12 +17,13 @@ import PayPeriodChip from './PayPeriodChip';
 import { EmployeeCell } from './TableReportPage';
 
 const EXPORT_COLUMNS = [
-  { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
-  { key: 'leaveType', header: 'Leave Type' }, { key: 'days', header: 'Days' }, { key: 'status', header: 'Status' },
-  { key: 'reason', header: 'Reason' }, { key: 'createdAt', header: 'Requested' },
+  { key: 'leaveType', header: 'Leave Type', value: r => LEAVE_LABEL[r.leaveType] || r.leaveType },
+  { key: 'allocated', header: 'Allocated' },
+  { key: 'availed', header: 'Availed' },
+  { key: 'balance', header: 'Balance' },
+  { key: 'encashed', header: 'Encashed' },
+  { key: 'encashable', header: 'Encashable' },
 ];
-const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
-const STATUS_STYLE = { approved: 'bg-emerald-100 text-emerald-700', rejected: 'bg-red-100 text-red-700', pending: 'bg-amber-100 text-amber-700' };
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
 
 const fmtDay = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -80,7 +81,8 @@ export default function LeaveEncashmentDetails() {
   const load = () => {
     setLoading(true);
     const params = new URLSearchParams({
-      employeeStatus, directReportsOnly: String(directReportsOnly),
+      employeeStatus, directReportsOnly: String(directReportsOnly), unit,
+      ...(payPeriod ? { startDate: payPeriod.startDate, endDate: payPeriod.endDate } : {}),
     });
     appendDimensionFilters(params, dimFilters);
     // Repeated employeeId params — Express parses them into the array the
@@ -99,7 +101,7 @@ export default function LeaveEncashmentDetails() {
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [employeeStatus, employee, directReportsOnly, dimFilters]);
+  useEffect(load, [employeeStatus, employee, directReportsOnly, dimFilters, unit, payPeriod]);
 
   const reset = () => {
     setEmployee([]); setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
@@ -170,47 +172,41 @@ export default function LeaveEncashmentDetails() {
           </button>
         </div>
       ) : rows.length === 0 ? (
-        <div className="text-center py-16 text-slate-400">No encashment requests</div>
+        <div className="text-center py-16 text-slate-400">Nothing is encashable in this period</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-[14px]">
+          <table className="w-full text-[14px] border-collapse">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
-              <tr>
-                <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-left px-4 py-2.5">Type</th>
-                <th className="text-right px-4 py-2.5">Days</th>
-                <th className="text-left px-4 py-2.5">Status</th>
-                <th className="text-left px-4 py-2.5">Reason</th>
-                <th className="text-left px-4 py-2.5">Requested</th>
+              <tr className="border-b border-slate-200">
+                <th className="text-left px-4 py-2.5 border-r border-slate-200">Employee</th>
+                <th className="text-left px-4 py-2.5 border-r border-slate-200">Leave Type</th>
+                <th className="text-left px-4 py-2.5 border-r border-slate-200">Allocated</th>
+                <th className="text-left px-4 py-2.5 border-r border-slate-200">Availed</th>
+                <th className="text-left px-4 py-2.5 border-r border-slate-200">Balance</th>
+                <th className="text-left px-4 py-2.5 border-r border-slate-200">Encashed</th>
+                <th className="text-left px-4 py-2.5">Encashable</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody>
               {rows.map(row => (
-                <tr key={row._id}>
-                  <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5 capitalize">{LEAVE_LABEL[row.leaveType] || row.leaveType}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{row.days}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full capitalize ${STATUS_STYLE[row.status] || STATUS_STYLE.pending}`}>{row.status}</span>
-                  </td>
-                  <td className="px-4 py-2.5 max-w-xs truncate text-slate-500" title={row.reason}>{row.reason || '—'}</td>
-                  <td className="px-4 py-2.5 text-slate-600">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
+                <tr key={row._id} className="border-b border-slate-200">
+                  <td className="px-4 py-2.5 border-r border-slate-200"><EmployeeCell row={row} /></td>
+                  <td className="px-4 py-2.5 border-r border-slate-200">{LEAVE_LABEL[row.leaveType] || row.leaveType}</td>
+                  <td className="px-4 py-2.5 tabular-nums border-r border-slate-200">{row.allocated}</td>
+                  <td className="px-4 py-2.5 tabular-nums border-r border-slate-200">{row.availed}</td>
+                  <td className="px-4 py-2.5 tabular-nums border-r border-slate-200">{row.balance}</td>
+                  <td className="px-4 py-2.5 tabular-nums border-r border-slate-200">{row.encashed}</td>
+                  <td className="px-4 py-2.5 tabular-nums font-semibold text-emerald-700">{row.encashable}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      {regenOpen && (
-        <RegenerateDialog
-          subject="encashment details and leave data for payroll"
-          current={cycleLabel(cycle.current)}
-          previous={cycleLabel(cycle.previous)}
-          onConfirm={regenerate}
-          onClose={() => setRegenOpen(false)}
-        />
-      )}
-      <LeaveExportModal open={exportOpen} onClose={() => setExportOpen(false)} rows={rows} baseColumns={EXPORT_COLUMNS} extraColumns={EXPORT_EXTRA} fileStub="leave-encashment-details" />
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
+        withIdentity identityVariant="leave" columns={EXPORT_COLUMNS}
+        sheetName="Leave" fileStub="leave-encashment-details" />
     </ReportShell>
   );
 }
