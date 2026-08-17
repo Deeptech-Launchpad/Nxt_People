@@ -33,6 +33,18 @@ const fromHHmm = s => {
   return Number(m[1]) + Number(m[2]) / 60;
 };
 
+// "Late mark after" is stored as minutes from midnight but only reads as a
+// time — 570 means nothing, 09:30 means everything.
+const minutesToTime = mins => {
+  const n = Number(mins);
+  if (!Number.isFinite(n)) return '09:30';
+  return `${String(Math.floor(n / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`;
+};
+const timeToMinutes = value => {
+  const m = /^(\d{1,2}):([0-5]\d)$/.exec(String(value).trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : 570;
+};
+
 function HoursField({ label, value, onChange, disabled }) {
   const [text, setText] = React.useState(toHHmm(value));
   // Re-sync when the loaded config arrives, but never while the field is being
@@ -158,6 +170,38 @@ export default function AttendancePolicy() {
               hint="Use this option to automatically adjust employee check-in, check-out, and total working hours to rounded time"
             />
             <NotWired />
+          </div>
+        </div>
+      </Card>
+
+      <Card
+        title="Day classification"
+        description="What a finished day is called once someone checks out, and when an arrival counts as late"
+      >
+        <div className="space-y-5">
+          <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-4 inline-block space-y-2.5">
+            <HoursField label="Full day" value={config.presentAtLeastHours}
+              onChange={v => set({ presentAtLeastHours: v })} />
+            <HoursField label="Half day" value={config.halfDayAtLeastHours}
+              onChange={v => set({ halfDayAtLeastHours: v })} />
+          </div>
+          <p className="text-[13px] text-slate-500 max-w-[620px] -mt-1">
+            At or above the full-day figure the day is present; below it but at or above the half-day
+            figure it is a half day; below that it is absent.
+          </p>
+
+          <div>
+            <label className="block text-[13.5px] font-medium text-slate-700 mb-1.5">Late mark after</label>
+            <input
+              type="time"
+              value={minutesToTime(config.lateAfterMinutes)}
+              onChange={e => set({ lateAfterMinutes: timeToMinutes(e.target.value) })}
+              className={selectClass}
+            />
+            <p className="text-[13px] text-slate-500 mt-1.5 max-w-[620px]">
+              Used when an employee has no shift of their own. Anyone on a shift is measured against
+              that shift's start time instead.
+            </p>
           </div>
         </div>
       </Card>

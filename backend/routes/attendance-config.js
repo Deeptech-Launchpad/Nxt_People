@@ -130,7 +130,10 @@ const SECTIONS = {
       const r = await client.query(
         `SELECT expected_hours_mode AS "expectedMode",
                 expected_hours_per_day AS "expectedFullDay",
-                expected_half_day_hours AS "expectedHalfDay"
+                expected_half_day_hours AS "expectedHalfDay",
+                full_day_hours AS "presentAtLeastHours",
+                half_day_hours AS "halfDayAtLeastHours",
+                late_after_minutes AS "lateAfterMinutes"
            FROM settings LIMIT 1`
       );
       const s = r.rows[0] || {};
@@ -138,9 +141,27 @@ const SECTIONS = {
         expectedMode: s.expectedMode || 'manual',
         expectedFullDay: Number(s.expectedFullDay ?? 8),
         expectedHalfDay: Number(s.expectedHalfDay ?? 4),
+        // A different question from expected hours, and a different column:
+        // these decide what a finished day is called at check-out, while
+        // expected hours drive the payable and expected figures. Merging the
+        // two is what produced the 8h00-vs-8h30 discrepancy.
+        presentAtLeastHours: Number(s.presentAtLeastHours ?? 7.5),
+        halfDayAtLeastHours: Number(s.halfDayAtLeastHours ?? 4),
+        lateAfterMinutes: Number(s.lateAfterMinutes ?? 570),
       };
     },
     async saveExtra(client, b) {
+      // Saved in both expected-hours modes: what a day is *called* does not
+      // depend on where its expected length comes from.
+      const present = hours(b.presentAtLeastHours, 'Full day at least', { min: 0.5 });
+      const halfDay = hours(b.halfDayAtLeastHours, 'Half day at least', { min: 0.25 });
+      if (halfDay > present) throw new Error('Half day threshold cannot exceed the full day threshold');
+      const lateAfter = intIn(b.lateAfterMinutes, 'Late mark after', 0, 1439);
+      await client.query(
+        `UPDATE settings SET full_day_hours = $1, half_day_hours = $2, late_after_minutes = $3`,
+        [present, halfDay, lateAfter]
+      );
+
       const mode = b.expectedMode === 'shift' ? 'shift' : 'manual';
       // In shift mode the figures come from the employee's own shift, so the
       // manual numbers are left untouched rather than validated or zeroed.

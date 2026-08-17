@@ -21,11 +21,11 @@ const TeamAttendance  = lazy(() => import('./pages/attendance/TeamAttendance'));
 const Regularization  = lazy(() => import('./pages/attendance/Regularization'));
 const OnDuty          = lazy(() => import('./pages/attendance/OnDuty'));
 const AttendanceLocation = lazy(() => import('./pages/attendance/AttendanceLocation'));
-const AttendanceConfiguration = lazy(() => import('./pages/attendance/Configuration'));
+const ServiceHub = lazy(() => import('./pages/settings/ServiceHub'));
+const ServiceWorkspace = lazy(() => import('./pages/settings/ServiceWorkspace'));
 const Employees       = lazy(() => import('./pages/Employees'));
 const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'));
 const Approvals       = lazy(() => import('./pages/Approvals'));
-const Settings        = lazy(() => import('./pages/Settings'));
 const Registrations   = lazy(() => import('./pages/Registrations'));
 const Companies       = lazy(() => import('./pages/Companies'));
 const ApiConnections  = lazy(() => import('./pages/ApiConnections'));
@@ -78,7 +78,6 @@ const LeaveEncashmentDetails = lazy(() => import('./pages/reports/LeaveEncashmen
 const Diversity          = lazy(() => import('./pages/reports/Diversity'));
 const ExperienceExit     = lazy(() => import('./pages/reports/ExperienceExit'));
 const MusterRoll         = lazy(() => import('./pages/reports/MusterRoll'));
-const LeaveTrackerConfiguration = lazy(() => import('./pages/leavetracker/Configuration'));
 const AttendanceDailyStatus = lazy(() => import('./pages/reports/AttendanceDailyStatus'));
 const EarlyLateCheckInOut   = lazy(() => import('./pages/reports/EarlyLateCheckInOut'));
 const PresentAbsentStatus   = lazy(() => import('./pages/reports/PresentAbsentStatus'));
@@ -197,8 +196,9 @@ const AppRoutes = () => {
           <Route path="attendance/on-duty" element={<OnDuty/>}/>
           <Route path="attendance/location"       element={<AttendanceLocation/>}/>
           <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><TeamAttendance/></ProtectedRoute>}/>
-          {/* Splat route: the section rail routes within itself. */}
-          <Route path="attendance/configuration/*" element={<ProtectedRoute roles={['admin','director','hr_admin']}><AttendanceConfiguration/></ProtectedRoute>}/>
+          {/* Attendance configuration lives under Settings now; the old path
+              still resolves so links and bookmarks keep working. */}
+          <Route path="attendance/configuration/*" element={<Navigate to="/settings/service/attendance" replace />}/>
 
           {/* ── Time Tracker ─────────────────────────────────────────── */}
           <Route path="time-tracker"             element={<TimeTrackerLanding/>}/>
@@ -224,10 +224,10 @@ const AppRoutes = () => {
           {/* The weekend pattern is part of a work calendar now, so the
               standalone screen redirects into it rather than editing the same
               rules from two places. */}
-          <Route path="leave-tracker/weekends"   element={<Navigate to="/reports/configuration/work-calendar" replace />}/>
+          <Route path="leave-tracker/weekends"   element={<Navigate to="/settings/service/leave/configuration/work-calendar" replace />}/>
           {/* Configuration lives under Reports so the nav resolves it to the
               Reports section; the old Leave Tracker path stays as a redirect. */}
-          <Route path="leave-tracker/configuration" element={<Navigate to="/reports/configuration" replace />}/>
+          <Route path="leave-tracker/configuration" element={<Navigate to="/settings/service/leave" replace />}/>
 
           {/* ── Performance ──────────────────────────────────────────── */}
           <Route path="performance/goals"  element={<PerformanceGoals/>}/>
@@ -320,16 +320,20 @@ const AppRoutes = () => {
           <Route path="projects"       element={<Navigate to="/team/projects" replace/>}/>
           <Route path="api-connections"element={<ProtectedRoute roles={['admin','director','hr_admin']}><ApiConnections/></ProtectedRoute>}/>
           <Route path="my-apps"          element={<MyApps/>}/>
-          <Route path="settings"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><Settings/></ProtectedRoute>}/>
-          {/* Configuration hub and its screens, all under /reports so the top
-              bar keeps showing Reports rather than switching section mid-flow.
-              The former /settings/* paths redirect. */}
-          {/* Configuration renders its own left nav and owns every section
-              below it, so the whole subtree is one route. */}
-          <Route path="reports/configuration/*" element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerConfiguration/></ProtectedRoute>}/>
-          <Route path="settings/leave-policy" element={<Navigate to="/reports/configuration/leave-policy" replace />}/>
-          <Route path="settings/comp-off-policy" element={<Navigate to="/reports/configuration/comp-off-policy" replace />}/>
-          <Route path="settings/pay-periods" element={<Navigate to="/reports/configuration/pay-periods" replace />}/>
+          {/* Settings is a hub of services. Each tile opens a workspace with
+              its own tab bar and section rail; the workspace routes itself from
+              serviceCatalog, so these three paths cover every service. */}
+          <Route path="settings" element={<ProtectedRoute roles={['admin','director','hr_admin']}><ServiceHub/></ProtectedRoute>}/>
+          <Route path="settings/service/:serviceKey" element={<ProtectedRoute roles={['admin','director','hr_admin']}><ServiceWorkspace/></ProtectedRoute>}/>
+          <Route path="settings/service/:serviceKey/:tabKey" element={<ProtectedRoute roles={['admin','director','hr_admin']}><ServiceWorkspace/></ProtectedRoute>}/>
+          <Route path="settings/service/:serviceKey/:tabKey/:sectionKey" element={<ProtectedRoute roles={['admin','director','hr_admin']}><ServiceWorkspace/></ProtectedRoute>}/>
+
+          {/* Everything the old single-page Settings screen held moved to the
+              service that owns it. These keep old links and bookmarks working. */}
+          <Route path="settings/leave-policy" element={<Navigate to="/settings/service/leave/configuration/leave-policy" replace />}/>
+          <Route path="settings/comp-off-policy" element={<Navigate to="/settings/service/leave/configuration/comp-off-policy" replace />}/>
+          <Route path="settings/pay-periods" element={<Navigate to="/settings/service/leave/configuration/pay-periods" replace />}/>
+          <Route path="reports/configuration/*" element={<Navigate to="/settings/service/leave" replace />}/>
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace/>}/>
