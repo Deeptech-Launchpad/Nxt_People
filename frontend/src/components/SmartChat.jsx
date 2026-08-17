@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import { PAYROLL_ENABLED } from '../config/features';
 
 /**
  * Command palette / "Smart Chat" — global launcher triggered by Ctrl+Space
@@ -53,7 +54,9 @@ const PAGES = [
   { label: 'API Connections',       path: '/api-connections',           icon: Settings,     keywords: 'api connections integrations external' },
   { label: 'Settings',              path: '/settings',                  icon: Settings,     keywords: 'settings configuration admin' },
   { label: 'Exit Management',       path: '/exit',                      icon: LogOut,       keywords: 'exit resign offboarding' },
-];
+// Searching "payroll" should find nothing while the module is off — see
+// config/features.
+].filter(t => PAYROLL_ENABLED || !t.path.startsWith('/payroll'));
 
 const QUICK_ACTIONS = [
   { label: 'Open Chat',          path: '/chat',                       icon: MessageSquare, badge: 'Action' },

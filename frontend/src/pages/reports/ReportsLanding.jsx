@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { isFullAccess, isApprover } from '../../utils/roles';
 import { REPORT_CATALOG } from './catalogData';
+import { PAYROLL_ENABLED } from '../../config/features';
 
 // Icons live here (not in catalogData.js) so that shared file stays a plain
 // data module usable from both this page and ReportShell without pulling
@@ -19,7 +20,7 @@ const CATEGORY_ICONS = { 'Employee Information': Building2, 'Leave Tracker': Cal
 // with zero visible links for the current role simply doesn't render.
 const QUICK_LINKS_CATALOG = [
   {
-    category: 'Payroll', icon: DollarSign,
+    category: 'Payroll', icon: DollarSign, hidden: !PAYROLL_ENABLED,
     links: [
       { label: 'Payroll Report',    to: '/payroll',                 roles: ['admin','director','hr_admin','manager'] },
       { label: 'Salary Setup',      to: '/payroll/setup',           roles: ['admin','director','hr_admin'] },
@@ -45,13 +46,13 @@ export default function ReportsLanding() {
 
   const quickLinkCategories = QUICK_LINKS_CATALOG
     .map(cat => ({ ...cat, links: cat.links.filter(l => !l.roles || l.roles.includes(user?.role)) }))
-    .filter(cat => cat.links.length > 0);
+    .filter(cat => !cat.hidden && cat.links.length > 0);
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 min-h-[calc(100vh-12rem)]">
       <div className="px-6 py-5 border-b border-slate-100">
         <h2 className="text-[18px] font-semibold text-slate-900">Reports</h2>
-        <p className="text-[15px] text-slate-500 mt-1">Attendance, payroll, shifts, and compliance reports.</p>
+        <p className="text-[15px] text-slate-500 mt-1">{PAYROLL_ENABLED ? 'Attendance, payroll, shifts, and compliance reports.' : 'Attendance, leave, shifts, and compliance reports.'}</p>
       </div>
 
       <div className="px-6 pt-6 grid grid-cols-1 md:grid-cols-3 gap-x-10 gap-y-8">

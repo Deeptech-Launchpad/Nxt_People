@@ -17,6 +17,7 @@ import {
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import PhotoCropperModal from '../components/PhotoCropperModal';
+import { PAYROLL_ENABLED } from '../config/features';
 
 /* ─ Greeting helper ─ */
 function getGreeting() {
@@ -810,7 +811,9 @@ export default function Dashboard() {
   const attWeek = getCurrentWeek(user?.shift?.workingDays, holidays, isWeekendByRule, attWeekOffset);
 
   /* ─ tabs ─ */
-  const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance', 'Time Logs', 'Payslips'];
+  // Payslips only appears when payroll is live — see config/features.
+  const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance', 'Time Logs',
+    ...(PAYROLL_ENABLED ? ['Payslips'] : [])];
 
   return (
     <div className="flex flex-col relative w-full min-h-full font-sans bg-[#f2f3f7]">
@@ -826,13 +829,15 @@ export default function Dashboard() {
       >
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/10" />
         <div className="absolute top-4 right-6 flex items-center gap-2">
-          {/* Access My Payroll */}
-          <button
-            onClick={() => navigate('/payroll/my')}
-            className="bg-white/90 backdrop-blur-sm hover:bg-white text-slate-700 text-[14px] font-semibold px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all shadow-sm border border-white/80"
-          >
-            <ExternalLink size={12} /> Access my payroll
-          </button>
+          {/* Access My Payroll — only while payroll is live. */}
+          {PAYROLL_ENABLED && (
+            <button
+              onClick={() => navigate('/payroll/my')}
+              className="bg-white/90 backdrop-blur-sm hover:bg-white text-slate-700 text-[14px] font-semibold px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all shadow-sm border border-white/80"
+            >
+              <ExternalLink size={12} /> Access my payroll
+            </button>
+          )}
 
           {/* ─ Payroll more menu */}
           <div className="relative" ref={payrollMoreRef}>

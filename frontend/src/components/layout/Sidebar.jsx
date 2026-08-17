@@ -2,6 +2,7 @@ import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { isApprover, isFullAccess } from '../../utils/roles';
+import { PAYROLL_ENABLED } from '../../config/features';
 import {
   Home, CalendarCheck, Clock, CalendarDays, Trophy,
   LayoutGrid, PieChart, Users, AppWindow, Briefcase, Wallet
@@ -23,8 +24,9 @@ const NAV_ITEMS = [
     matches: p => p.startsWith('/time-tracker') },
   { to: '/leave-tracker',    icon: CalendarDays, label: 'Leave\nTracker',
     matches: p => p.startsWith('/leave-tracker') || p === '/leave' || p.startsWith('/wfh') || p.startsWith('/comp-off') || p.startsWith('/leave-calendar') || p.startsWith('/leave-encashment') },
+  // Payroll is built but not live for this org — see config/features.
   { to: '/payroll/my',       icon: Wallet,       label: 'Payroll',
-    matches: p => p.startsWith('/payroll') },
+    matches: p => p.startsWith('/payroll'), hidden: !PAYROLL_ENABLED },
   // Performance is intentionally disabled — feature isn't built out yet.
   // Visible in the sidebar so users see it's planned, but the click is
   // a no-op until we wire up goals/reviews/skills properly.
@@ -117,7 +119,7 @@ export default function Sidebar() {
 
       {/* Main nav — HOME is the first item, flush to the top of the nav list. */}
       <nav className="flex-1 flex flex-col overflow-y-auto scrollbar-none py-1">
-        {NAV_ITEMS.filter(item => (!item.roles || item.roles.includes(user?.role)) && (!item.excludeRoles || !item.excludeRoles.includes(user?.role))).map(item => <NavItem key={item.to} item={item}/>)}
+        {NAV_ITEMS.filter(item => !item.hidden && (!item.roles || item.roles.includes(user?.role)) && (!item.excludeRoles || !item.excludeRoles.includes(user?.role))).map(item => <NavItem key={item.to} item={item}/>)}
 
         {/* Admin sections appended to the scrolling nav. Employees = HR/Super
             Admin only; Reports = any approver (incl. Team Leads). */}
