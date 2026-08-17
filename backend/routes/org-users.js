@@ -181,9 +181,19 @@ router.patch('/:id/account', authorize(...ADMIN), async (req, res) => {
     const r = await pool.query(
       `UPDATE employees
           SET is_user = $1,
-              -- Removing the account withdraws access with it; granting one
-              -- does not silently re-enable sign-in for someone who was blocked.
-              login_enabled = CASE WHEN $1 THEN login_enabled ELSE FALSE END,
+              -- Removing the account withdraws access with it. Giving it back
+              -- restores access ONLY if losing the account is what took it
+              -- away — somebody blocked beforehand stays blocked, and somebody
+              -- who was working normally does not come back unable to sign in.
+              login_enabled = CASE
+                WHEN $1 THEN (login_enabled OR login_disabled_reason = 'Account removed')
+                ELSE FALSE END,
+              login_disabled_reason = CASE
+                WHEN $1 THEN NULLIF(login_disabled_reason, 'Account removed')
+                WHEN login_enabled THEN 'Account removed'
+                ELSE login_disabled_reason END,
+              login_disabled_at = CASE WHEN $1 AND login_disabled_reason = 'Account removed' THEN NULL
+                                       WHEN $1 THEN login_disabled_at ELSE NOW() END,
               -- Stamped when the account goes, and kept when it comes back:
               -- Downgraded is a thing that happened, not a current state.
               downgraded_at = CASE WHEN $1 THEN downgraded_at ELSE NOW() END,
@@ -411,6 +421,72 @@ router.post('/import', authorize(...ADMIN), async (req, res) => {
   }
 
   res.json({ success: true, data: { created, failed, total: rows.length } });
+});
+
+// Move several people between the two groups at once. This is what the Add
+// dialogs use when somebody is picked from the other group rather than typed in
+// fresh: an employee profile is very often a person who already exists.
+//
+// Guarded the same way the single change is, because a bulk call is exactly
+// where a careless selection would otherwise strand the organization.
+router.patch('/accounts', authorize(...ADMIN), async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  const isUser = req.body?.isUser === true;
+  if (!ids.length) return res.status(400).json({ success: false, message: 'Nobody was selected' });
+  if (ids.length > 200) return res.status(400).json({ success: false, message: 'No more than 200 at a time' });
+  if (ids.includes(String(req.user._id))) {
+    return res.status(400).json({ success: false, message: 'You cannot change your own account here' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Taking accounts away can empty the set of administrators who can sign in.
+    if (!isUser) {
+      const remaining = await client.query(
+        `SELECT COUNT(*)::int AS n FROM employees
+          WHERE role IN ('admin','director') AND login_enabled AND is_user
+            AND deleted_at IS NULL AND NOT (id = ANY($1::uuid[]))`,
+        [ids]
+      );
+      if (remaining.rows[0].n === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'That would leave no administrator able to sign in. Leave one out of the selection.',
+        });
+      }
+    }
+
+    const r = await client.query(
+      `UPDATE employees
+          SET is_user = $1,
+              -- Same rule as the single change: losing the account is what took
+              -- access away, so giving it back returns it — but only to people
+              -- who had it.
+              login_enabled = CASE
+                WHEN $1 THEN (login_enabled OR login_disabled_reason = 'Account removed')
+                ELSE FALSE END,
+              login_disabled_reason = CASE
+                WHEN $1 THEN NULLIF(login_disabled_reason, 'Account removed')
+                WHEN login_enabled THEN 'Account removed'
+                ELSE login_disabled_reason END,
+              login_disabled_at = CASE WHEN $1 AND login_disabled_reason = 'Account removed' THEN NULL
+                                       WHEN $1 THEN login_disabled_at ELSE NOW() END,
+              downgraded_at = CASE WHEN $1 THEN downgraded_at ELSE NOW() END,
+              tokens_revoked_at = CASE WHEN $1 THEN tokens_revoked_at ELSE NOW() END,
+              updated_at = NOW()
+        WHERE id = ANY($2::uuid[]) AND deleted_at IS NULL AND is_user <> $1
+       RETURNING TRIM(CONCAT(first_name,' ',last_name)) AS name`,
+      [isUser, ids]
+    );
+    await client.query('COMMIT');
+    res.json({ success: true, data: { moved: r.rowCount, names: r.rows.map(x => x.name) } });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+  } finally { client.release(); }
 });
 
 module.exports = router;
