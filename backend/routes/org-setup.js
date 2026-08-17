@@ -118,6 +118,30 @@ const RESOURCES = {
     },
   },
 
+  companies: {
+    table: 'companies',
+    alias: 'c',
+    employeeIdColumn: 'company_id',
+    employeeTextColumn: 'company',
+    label: 'Company',
+    // The legal entity people are employed by. The table has existed since the
+    // first schema with exactly one row and nothing referencing it, while every
+    // employee carried the name as free text — the same drift that gave six
+    // work locations to an org with two.
+    select: `
+      c.id, c.name, c.code, c.description, c.is_active AS "isActive",
+      (SELECT COUNT(*)::int FROM employees e
+        WHERE e.company_id = c.id AND e.deleted_at IS NULL) AS "userCount"`,
+    from: 'companies c',
+    order: 'c.name',
+    clean: b => ({
+      name: str(b.name, 'Company name', { required: true, max: 255 }),
+      code: str(b.code, 'Code', { max: 50 }),
+      description: str(b.description, 'Description', { max: 500 }),
+      is_active: b.isActive !== false,
+    }),
+  },
+
   designations: {
     table: 'designations',
     alias: 'g',

@@ -17,6 +17,7 @@
 // own, so no service here declares it. A service only declares the tabs it has.
 
 export const SERVICE_TABS = [
+  { key: 'users', label: 'Users' },
   { key: 'configuration', label: 'Configuration' },
   { key: 'approvals', label: 'Approvals' },
   { key: 'automation', label: 'Automation' },
@@ -30,13 +31,21 @@ export const SERVICES = [
   {
     key: 'accounts',
     label: 'Manage Accounts',
+    // The reference calls this tab Organization Setup here and Configuration
+    // everywhere else. Renaming it globally is exactly the mistake this
+    // override exists to prevent.
+    tabLabels: { configuration: 'Organization Setup' },
     icon: 'Users',
     description: 'People, locations, departments and designations',
     roles: ['admin', 'director', 'hr_admin'],
     tabs: {
+      users: [
+        { key: 'users', label: 'Users' },
+      ],
       configuration: [
         { key: 'organization-details', label: 'Organization Details' },
         { key: 'organization-policy', label: 'Organization Policy' },
+        { key: 'companies', label: 'Companies' },
         { key: 'locations', label: 'Locations' },
         { key: 'departments', label: 'Departments' },
         { key: 'designations', label: 'Designations' },
@@ -119,9 +128,12 @@ export const BASE = '/settings/service';
 
 export const serviceByKey = key => SERVICES.find(s => s.key === key) || null;
 
-// The tabs a service actually has, in the catalogue's order.
+// The tabs a service actually has, in the catalogue's order, with any
+// per-service renaming applied.
 export const tabsOf = service =>
-  SERVICE_TABS.filter(t => (service?.tabs?.[t.key] || []).length > 0);
+  SERVICE_TABS
+    .filter(t => (service?.tabs?.[t.key] || []).length > 0)
+    .map(t => (service?.tabLabels?.[t.key] ? { ...t, label: service.tabLabels[t.key] } : t));
 
 export const sectionsOf = (service, tabKey) => service?.tabs?.[tabKey] || [];
 

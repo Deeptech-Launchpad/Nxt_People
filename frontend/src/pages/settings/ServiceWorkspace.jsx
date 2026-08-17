@@ -38,6 +38,7 @@ export default function ServiceWorkspace() {
     <div className="w-full max-w-full min-w-0">
       <div>
         <div className="flex items-start gap-5">
+          {sections.length > 1 && (
           <nav className="w-[210px] flex-shrink-0 hidden md:block">
             {sections.map(s => (
               <NavLink
@@ -53,7 +54,9 @@ export default function ServiceWorkspace() {
               </NavLink>
             ))}
           </nav>
+          )}
 
+          {sections.length > 1 && (
           <div className="md:hidden w-full overflow-x-auto border-b border-slate-200 pb-2 mb-3">
             <div className="flex gap-1 w-max">
               {sections.map(s => (
@@ -71,6 +74,7 @@ export default function ServiceWorkspace() {
               ))}
             </div>
           </div>
+          )}
 
           <div className="flex-1 min-w-0">
             {Screen ? <Screen /> : (

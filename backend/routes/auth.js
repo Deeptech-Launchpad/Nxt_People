@@ -337,7 +337,7 @@ router.post('/login', loginLimiter, [
     const { email, password } = req.body;
 
     const result = await pool.query(
-      `SELECT id as "_id", password, registration_status, has_accepted, rejection_reason, mfa_enabled AS "mfaEnabled", first_name AS "firstName", last_name AS "lastName", email, role, department, designation, company, division, employee_id AS "employeeId", photo_url AS "photoUrl", deleted_at
+      `SELECT id as "_id", password, registration_status, has_accepted, rejection_reason, mfa_enabled AS "mfaEnabled", first_name AS "firstName", last_name AS "lastName", email, role, department, designation, company, division, employee_id AS "employeeId", photo_url AS "photoUrl", deleted_at, is_user AS "isUser", login_enabled AS "loginEnabled"
        FROM employees WHERE email = $1`,
       [email]
     );
@@ -358,6 +358,17 @@ router.post('/login', loginLimiter, [
     // Soft-deleted employees can't log in. Same generic message as bad creds
     // so an attacker can't enumerate who's been archived.
     if (employee.deleted_at) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    // Access is a separate fact from employment. Until now nothing on the
+    // sign-in path consulted either: 87 people marked inactive were refused
+    // only because they happened to have no password. Manage Accounts -> Users
+    // drives login_enabled, and an employment status change sets it too.
+    //
+    // Deliberately the same generic message as bad credentials — a distinct
+    // one would let an outsider enumerate who has left the company.
+    if (employee.isUser === false || employee.loginEnabled === false) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
@@ -471,12 +482,19 @@ router.post('/google', googleLimiter, async (req, res) => {
     const result = await pool.query(
       `SELECT id as "_id", registration_status, has_accepted, rejection_reason, mfa_enabled AS "mfaEnabled",
               first_name AS "firstName", last_name AS "lastName", email, role, department, designation,
-              company, division, employee_id AS "employeeId", photo_url AS "photoUrl", deleted_at
+              company, division, employee_id AS "employeeId", photo_url AS "photoUrl", deleted_at,
+              is_user AS "isUser", login_enabled AS "loginEnabled"
          FROM employees WHERE email = $1`,
       [email]
     );
 
-    if (result.rows.length === 0 || result.rows[0].deleted_at) {
+    // The same access check as password sign-in, and the more important one:
+    // this path needs no password at all, so an employee who has left could
+    // sign in with their company Google account for as long as it existed.
+    // Folded into the existing branch so the message does not distinguish
+    // "never had an account" from "no longer has access".
+    const found = result.rows[0];
+    if (!found || found.deleted_at || found.isUser === false || found.loginEnabled === false) {
       return res.status(403).json({
         success: false,
         message: 'No active employee account is linked to this Google email. Please contact HR.',
@@ -771,7 +789,7 @@ router.post('/refresh', async (req, res) => {
           AND rt.expires_at > NOW()
           AND rt.revoked_at IS NULL
           AND (e.tokens_revoked_at IS NULL OR rt.created_at >= e.tokens_revoked_at)
-       RETURNING rt.id, rt.employee_id, rt.user_agent, e.registration_status`,
+       RETURNING rt.id, rt.employee_id, rt.user_agent, e.registration_status, e.is_user, e.login_enabled`,
       [tokenHash]
     );
 
@@ -779,8 +797,15 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid or expired refresh token' });
     }
 
-    const { id: tokenId, employee_id: employeeId, user_agent: storedUA, registration_status } = result.rows[0];
+    const { id: tokenId, employee_id: employeeId, user_agent: storedUA, registration_status,
+            is_user: isUser, login_enabled: loginEnabled } = result.rows[0];
 
+    // Checked on refresh as well as on login, so revoking access ends a live
+    // session at the next token refresh rather than whenever it happens to
+    // expire.
+    if (isUser === false || loginEnabled === false) {
+      return res.status(403).json({ success: false, message: 'Account is not active' });
+    }
     if (registration_status !== 'active') {
       return res.status(403).json({ success: false, message: 'Account is not active' });
     }

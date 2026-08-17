@@ -15,6 +15,8 @@ import OrganizationPolicy from './org/OrganizationPolicy';
 import Locations from './org/Locations';
 import Departments from './org/Departments';
 import Designations from './org/Designations';
+import Companies from './org/Companies';
+import Users from './org/Users';
 
 import AttendanceMethods from './attendance/AttendanceMethods';
 import AttendancePolicy from './attendance/AttendancePolicy';
@@ -48,6 +50,8 @@ import LeaveAdditionalOptions from './LeaveAdditionalOptions';
 const SECTION_SCREENS = {
   'accounts.configuration.organization-details': OrganizationDetails,
   'accounts.configuration.organization-policy': OrganizationPolicy,
+  'accounts.users.users': Users,
+  'accounts.configuration.companies': Companies,
   'accounts.configuration.locations': Locations,
   'accounts.configuration.departments': Departments,
   'accounts.configuration.designations': Designations,
