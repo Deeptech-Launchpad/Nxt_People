@@ -1,6 +1,7 @@
 ﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal } from 'lucide-react';
+import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal, Settings as SettingsIcon, ArrowLeft } from 'lucide-react';
+import { serviceByKey, tabsOf, BASE as SETTINGS_BASE } from '../../pages/settings/serviceCatalog';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
 import { roleLabel } from '../../utils/roles';
@@ -8,6 +9,10 @@ import api from '../../utils/api';
 
 /* ── Section detection ─────────────────────────────────────────────── */
 function getSection(pathname) {
+  // Settings is its own section. Without this it fell through to 'home', so a
+  // service workspace sat under My Space's tabs and the Overview / Dashboard /
+  // Calendar / Profile sub-bar — three stacked bars where there should be one.
+  if (pathname.startsWith('/settings')) return 'settings';
   if (pathname.startsWith('/attendance')) return 'attendance';
   if (pathname.startsWith('/time-tracker')) return 'timetracker';
   if (pathname.startsWith('/leave-tracker') || pathname === '/leave' ||
@@ -69,6 +74,13 @@ const NAV = {
     label: 'Attendance',
     isLanding: true,
     landingPath: '/attendance',
+  },
+  // Settings draws its own left-hand content in the navy bar — the service
+  // name and its tabs — so it declares neither primary tabs nor a sub-nav.
+  settings: {
+    label: 'Settings',
+    isLanding: true,
+    landingPath: '/settings',
   },
   timetracker: {
     label: 'Time Tracker',
@@ -491,11 +503,52 @@ export default function Topbar() {
   const activeTab    = isHome ? homeTab : (config?.getActiveTab?.(location.pathname) || primaryTabs[0]?.key);
   const subNavItems  = (config?.subNav?.[activeTab] || []).filter(canSee);
 
+  // On /settings/service/<key>/<tab>/... the navy bar carries the workspace's
+  // own navigation: a way back, the service name, and its tabs. The workspace
+  // itself renders only the section rail and the section, so there is one bar
+  // rather than one per component.
+  const settingsWorkspace = (() => {
+    if (section !== 'settings') return null;
+    const [, , , serviceKey, tabKey] = location.pathname.split('/');
+    const service = serviceByKey(serviceKey);
+    if (!service) return null;
+    const tabs = tabsOf(service);
+    return { service, tabs, activeTabKey: tabs.find(t => t.key === tabKey)?.key || tabs[0]?.key };
+  })();
+
   return (
     <div className="flex flex-col sticky top-0 z-40">
       {/* ── Navy primary bar ─────────────────────────────────────────── */}
       <div className="h-[48px] bg-[#1a2040] flex items-center justify-between px-5 shadow-sm flex-shrink-0">
         <div className="flex items-center h-full gap-1 min-w-0 flex-1">
+          {settingsWorkspace ? (
+            <>
+              <button
+                onClick={() => navigate('/settings')}
+                aria-label="Back to Settings"
+                className="w-7 h-7 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 text-white flex-shrink-0 mr-3"
+              >
+                <ArrowLeft size={15} />
+              </button>
+              <span className="text-white text-[16px] font-semibold mr-3 border-r border-white/20 pr-4 flex-shrink-0">
+                {settingsWorkspace.service.label}
+              </span>
+              <div className="flex items-center h-full gap-1 min-w-0 overflow-x-auto scrollbar-none">
+                {settingsWorkspace.tabs.map(t => {
+                  const active = t.key === settingsWorkspace.activeTabKey;
+                  return (
+                    <button key={t.key}
+                      onClick={() => navigate(`${SETTINGS_BASE}/${settingsWorkspace.service.key}/${t.key}`)}
+                      className={`h-full px-4 flex items-center text-[16px] border-b-[3px] transition-all duration-150 tracking-[-0.01em] flex-shrink-0
+                        ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`}>
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+          <>
           {!isHome && (
             <span className="text-white text-[16px] font-semibold mr-3 border-r border-white/20 pr-4 flex-shrink-0">
               {config.label}
@@ -527,6 +580,8 @@ export default function Topbar() {
             );
           })}
           </div>
+          </>
+          )}
         </div>
 
         {/* Right icons */}
@@ -664,6 +719,19 @@ export default function Topbar() {
               </div>
             )}
           </div>
+
+          {/* Settings, next to notifications. It was reachable only from inside
+              the avatar menu, which is two clicks and a guess. */}
+          <button
+            onClick={() => navigate('/settings')}
+            aria-label="Settings"
+            title="Settings"
+            className={`p-1 rounded transition-colors ${
+              section === 'settings' ? 'bg-white/15 text-white' : 'hover:bg-white/10 text-white'
+            }`}
+          >
+            <SettingsIcon size={17} />
+          </button>
 
           <div className="w-px h-5 bg-white/20"/>
 

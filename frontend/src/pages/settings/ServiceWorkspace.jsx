@@ -1,25 +1,21 @@
 import React from 'react';
-import { NavLink, Navigate, useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { NavLink, Navigate, useParams } from 'react-router-dom';
 import { serviceByKey, tabsOf, sectionsOf, BASE } from './serviceCatalog';
 import SECTION_SCREENS from './sectionScreens';
 
-// A service's settings workspace: the service name and its tabs sit together in
-// the dark bar, the way the rest of the app's chrome does, then a left rail of
-// sections and the section itself.
+// A service's settings workspace: the left rail of sections, and the section.
+//
+// The service name and its tabs are drawn by the Topbar, in the same navy row
+// as the rest of the application chrome. Rendering them here as well is what
+// produced three stacked bars where the reference has one.
 //
 // The whole thing is driven by serviceCatalog, so adding a section is one entry
 // there plus one screen in sectionScreens — the nav and the routing follow.
 // A tab with no sections is not rendered at all, which is why services here
 // have four tabs at most rather than the reference's five.
 
-// The same navy as the application top bar, so the workspace header reads as
-// part of the chrome rather than as a card floating on the page.
-const NAVY = '#1a2040';
-
 export default function ServiceWorkspace() {
   const { serviceKey, tabKey, sectionKey } = useParams();
-  const navigate = useNavigate();
 
   const service = serviceByKey(serviceKey);
   if (!service) return <Navigate to="/settings" replace />;
@@ -39,43 +35,8 @@ export default function ServiceWorkspace() {
   const Screen = SECTION_SCREENS[`${service.key}.${activeTab.key}.${activeSection.key}`];
 
   return (
-    <div className="w-full max-w-full min-w-0 -mx-4 -mt-4 sm:-mx-6">
-      <div style={{ backgroundColor: NAVY }} className="px-4 sm:px-6">
-        {/* Name and tabs share one row on a wide screen, exactly as the
-            reference has them, and stack only when there is no room. */}
-        <div className="flex items-center gap-4 overflow-x-auto">
-          <div className="flex items-center gap-3 py-3 flex-shrink-0">
-            <button
-              onClick={() => navigate('/settings')}
-              aria-label="Back to Settings"
-              className="w-7 h-7 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 text-white transition-colors"
-            >
-              <ArrowLeft size={15} />
-            </button>
-            <h1 className="text-[16px] font-semibold text-white whitespace-nowrap">{service.label}</h1>
-          </div>
-
-          <div className="flex items-stretch gap-1 w-max">
-            {tabs.map(t => (
-              <NavLink
-                key={t.key}
-                to={`${BASE}/${service.key}/${t.key}`}
-                className={() =>
-                  `px-4 flex items-center text-[14px] whitespace-nowrap border-b-[3px] transition-colors ${
-                    t.key === activeTab.key
-                      ? 'border-white text-white font-semibold'
-                      : 'border-transparent text-white/65 hover:text-white'
-                  }`
-                }
-              >
-                {t.label}
-              </NavLink>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="px-4 sm:px-6 pt-5">
+    <div className="w-full max-w-full min-w-0">
+      <div>
         <div className="flex items-start gap-5">
           <nav className="w-[210px] flex-shrink-0 hidden md:block">
             {sections.map(s => (
