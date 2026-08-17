@@ -1775,19 +1775,35 @@ const clockMinutes = (ts, tz) => {
   return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
 };
 
-// settings.timezone is the source of truth; DEFAULT_TZ is the fallback before
-// that row exists. Cached for a minute so a 150-row report doesn't re-read it.
-let tzCache = { value: null, at: 0 };
-async function orgTimezone() {
-  if (tzCache.value && Date.now() - tzCache.at < 60000) return tzCache.value;
-  let tz = DEFAULT_TZ;
+// settings.timezone and the expected-hours policy, read together and cached for
+// a minute so a 150-row report doesn't re-read them per employee.
+let cfgCache = { value: null, at: 0 };
+async function orgConfig() {
+  if (cfgCache.value && Date.now() - cfgCache.at < 60000) return cfgCache.value;
+  let cfg = { tz: DEFAULT_TZ, expectedMode: 'manual', expectedHours: 8 };
   try {
-    const r = await pool.query('SELECT timezone FROM settings LIMIT 1');
-    if (r.rows[0]?.timezone) tz = r.rows[0].timezone;
-  } catch { /* settings unreadable — the fallback is still correct */ }
-  tzCache = { value: tz, at: Date.now() };
-  return tz;
+    const r = await pool.query(
+      `SELECT timezone, expected_hours_mode AS mode, expected_hours_per_day AS hours FROM settings LIMIT 1`
+    );
+    const s = r.rows[0];
+    if (s?.timezone) cfg.tz = s.timezone;
+    if (s?.mode) cfg.expectedMode = s.mode;
+    if (s?.hours != null) cfg.expectedHours = parseFloat(s.hours);
+  } catch { /* settings unreadable — the defaults above are still correct */ }
+  cfgCache = { value: cfg, at: Date.now() };
+  return cfg;
 }
+const orgTimezone = async () => (await orgConfig()).tz;
+
+// What one full working day is worth in payable hours.
+//
+// Not the shift span. The span says when you are expected to be there; this
+// says how many hours the day is worth once you were. The reference keeps them
+// as separate settings and this org has them at 08:30 and 08:00 respectively,
+// so deriving one from the other overstated every payable figure by half an
+// hour a day. 'shift' mode restores the old behaviour for orgs that want it.
+const expectedDayHours = (emp, cfg) =>
+  (cfg.expectedMode === 'shift' ? shiftHoursOf(emp.shiftStart, emp.shiftEnd) : cfg.expectedHours);
 
 // Applies the "Total Hours: All / Lesser than / Greater than N" comparator
 // that Zoho puts on several attendance reports.
@@ -2111,13 +2127,15 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
     const holNames = new Map(holNameRes.rows.map(r => [r.ymd, r.name]));
     const onDutyOnDay = ymd => odRes.rows.find(o => ymd >= o.startYmd && ymd <= o.endYmd);
 
+    const cfg = await orgConfig();
     const attByDate = new Map(attRes.rows.map(r => [r.date, r]));
     // Match leaves on the calendar date as a string. Comparing Date objects
     // dropped every single-day leave east of Greenwich, which is why a day of
     // casual leave was reading as an absence here.
     const leaves = leaveRes.rows;
     const leavesOnDay = ymd => leaves.filter(l => ymd >= l.startYmd && ymd <= l.endYmd);
-    const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
+    // What a paid day is worth, per the org's expected-hours policy.
+    const shiftHours = expectedDayHours(emp, cfg);
     const todayYmd = new Date().toLocaleDateString('en-CA');
 
     const summaryDays = { payableDays: 0, present: 0, onDuty: 0, paidLeave: 0, holiday: 0, weekend: 0, absent: 0, unpaidLeave: 0 };
@@ -2197,12 +2215,12 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
     const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
     const unit = req.query.unit === 'hour' ? 'hour' : 'day';
     const simple = req.query.simple === 'true';
-    const ctx = await loadAttendanceContext(req, start, end);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end), orgConfig()]);
 
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
 
     const data = ctx.employees.map(emp => {
-      const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
+      const shiftHours = expectedDayHours(emp, cfg);
       const c = { present: 0, onDuty: 0, paidLeave: 0, holiday: 0, weekend: 0, absent: 0, unpaidLeave: 0 };
       let totalWorkedHours = 0;
       // The two "Expected" figures come from the calendar, not from the
@@ -2421,12 +2439,12 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
     const earliest = firstRes.rows.reduce((min, r) => (!min || r.first < min ? r.first : min), null);
     const ledgerStart = earliest && earliest < start ? earliest : start;
 
-    const ctx = await loadAttendanceContext(req, ledgerStart, end);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, ledgerStart, end), orgConfig()]);
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
     const PAID_OFF = new Set(['paidLeave', 'holiday', 'weekend']);
 
     const data = ctx.employees.map(emp => {
-      const shiftHours = shiftHoursOf(emp.shiftStart, emp.shiftEnd);
+      const shiftHours = expectedDayHours(emp, cfg);
       // Nothing recorded for this person ever: their history is unknown, not
       // zero, so the ledger opens at the period itself.
       const since = firstSeen.get(emp._id) || start;
