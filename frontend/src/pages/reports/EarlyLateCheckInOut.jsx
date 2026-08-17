@@ -10,6 +10,7 @@ import HoursComparatorFilter from './HoursComparatorFilter';
 import PeriodFilter from './PeriodFilter';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
+import useFitToViewport from '../../hooks/useFitToViewport';
 import { EmployeeCell } from './TableReportPage';
 
 const now = new Date();
@@ -151,9 +152,11 @@ export default function EarlyLateCheckInOut() {
   const [lastCheckOut, setLastCheckOut] = useState({ mode: '', amount: '' });
   const [hours, setHours] = useState({ mode: 'all', amount: '' });
   const [loading, setLoading] = useState(true);
+  const gridRef = useRef(null);
   const [rows, setRows] = useState([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const gridHeight = useFitToViewport(gridRef, null, [filtersOpen, rows]);
 
   const load = () => {
     setLoading(true);
@@ -240,9 +243,11 @@ export default function EarlyLateCheckInOut() {
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No records for this period</div>
       ) : (
-        <div className="overflow-x-auto">
+        // The grid scrolls inside itself so the two-row header stays put and
+        // the horizontal scrollbar does not strand at the foot of the page.
+        <div ref={gridRef} className="overflow-auto" style={gridHeight ? { height: gridHeight } : undefined}>
           <table className="w-full text-[14px] border-collapse">
-            <thead className="bg-slate-50 text-[13px] text-slate-600">
+            <thead className="bg-slate-50 text-[13px] text-slate-600 sticky top-0 z-20">
               <tr className="border-b border-slate-200">
                 <th rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Employee</th>
                 {/* The date only earns a column when the period is more than one

@@ -6,6 +6,7 @@ const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
 const { countWorkingDays, ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
 const { lopDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
 const { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
+const { DEFAULT_TZ } = require('../utils/timezone');
 router.use(protect);
 
 // Sentinel for the "Not Specified" filter option. Deliberately not a value any
@@ -1756,7 +1757,37 @@ async function loadAttendanceContext(req, start, end) {
 
 // Local clock minutes for a timestamp — used to compare an actual punch
 // against the shift's HH:MM boundary.
-const clockMinutes = (ts) => { const d = new Date(ts); return d.getHours() * 60 + d.getMinutes(); };
+// Minutes past midnight *in the organisation's timezone*, not the server's.
+//
+// A shift boundary like 09:30 is a wall-clock time in Coimbatore. A punch is an
+// absolute instant. Reading that instant with getHours() gives the server's
+// wall clock, which is only the same thing when the server happens to run in
+// the org's zone — on a UTC host every punch read five and a half hours early,
+// so a 10:09 arrival was reported as arriving 04:51 *before* a 09:30 shift.
+// Converting the instant into the org's zone is what the employee, and the
+// browser rendering the same timestamp, actually sees.
+const clockMinutes = (ts, tz) => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(ts));
+  const h = Number(parts.find(p => p.type === 'hour')?.value);
+  const m = Number(parts.find(p => p.type === 'minute')?.value);
+  return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+};
+
+// settings.timezone is the source of truth; DEFAULT_TZ is the fallback before
+// that row exists. Cached for a minute so a 150-row report doesn't re-read it.
+let tzCache = { value: null, at: 0 };
+async function orgTimezone() {
+  if (tzCache.value && Date.now() - tzCache.at < 60000) return tzCache.value;
+  let tz = DEFAULT_TZ;
+  try {
+    const r = await pool.query('SELECT timezone FROM settings LIMIT 1');
+    if (r.rows[0]?.timezone) tz = r.rows[0].timezone;
+  } catch { /* settings unreadable — the fallback is still correct */ }
+  tzCache = { value: tz, at: Date.now() };
+  return tz;
+}
 
 // Applies the "Total Hours: All / Lesser than / Greater than N" comparator
 // that Zoho puts on several attendance reports.
@@ -1887,7 +1918,7 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
   try {
     const start = req.query.startDate || new Date().toLocaleDateString('en-CA');
     const end = req.query.endDate || start;
-    const ctx = await loadAttendanceContext(req, start, end);
+    const [ctx, tz] = await Promise.all([loadAttendanceContext(req, start, end), orgTimezone()]);
     const { firstCheckIn, lastCheckOut } = req.query;
 
     const data = [];
@@ -1922,8 +1953,8 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
         const shiftHours = baseShiftHours - permHours;
 
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
-        const inMin = att?.checkIn ? clockMinutes(att.checkIn) : null;
-        const outMin = att?.checkOut ? clockMinutes(att.checkOut) : null;
+        const inMin = att?.checkIn ? clockMinutes(att.checkIn, tz) : null;
+        const outMin = att?.checkOut ? clockMinutes(att.checkOut, tz) : null;
         const totalHours = parseFloat(att?.workingHours) || 0;
 
         const entryEarly = inMin !== null && shiftStartMin !== null && inMin < shiftStartMin ? shiftStartMin - inMin : null;
@@ -1941,11 +1972,12 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
           department: emp.department, exitDate: emp.exitDate, date: ymd,
           firstIn: att?.checkIn || null, lastOut: att?.checkOut || null,
           totalHours, entryEarly, entryLate, exitEarly, exitLate,
-          // Net hours is worked-vs-expected, so it needs a real shift to be
-          // measured against. Without one it used to fall back to a standard
-          // 8h day and report everybody half an hour up, while Entry and Exit
-          // — measured against the same missing shift — honestly showed "-".
-          netMinutes: att?.checkIn && shiftStartMin !== null && shiftEndMin !== null
+          // Net hours is worked-versus-expected, so it needs a finished day to
+          // measure. Someone who has checked in but not out has worked an
+          // unknown amount so far, and reporting that as a full shift's
+          // shortfall — everyone mid-morning showing -08:30 — states a
+          // deficit that has not happened. Both punches, or nothing.
+          netMinutes: att?.checkIn && att?.checkOut && shiftStartMin !== null && shiftEndMin !== null
             ? Math.round((totalHours - shiftHours) * 60)
             : null,
           shiftName: emp.shiftName || null,
