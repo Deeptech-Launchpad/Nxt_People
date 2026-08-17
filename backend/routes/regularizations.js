@@ -272,7 +272,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         const [settingsRes, shiftRes] = await Promise.all([
           client.query('SELECT half_day_hours, full_day_hours, late_after_minutes FROM settings LIMIT 1'),
           client.query(
-            'SELECT s.start_time FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.id = $1',
+            'SELECT s.start_time, s.grace_minutes FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.id = $1',
             [reg.employee_id]
           ),
         ]);
@@ -280,6 +280,11 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         const fullDayHours = parseFloat(settingsRes.rows[0]?.full_day_hours) || 7.5;
         const lateAfterMins = parseInt(settingsRes.rows[0]?.late_after_minutes, 10) || 570;
         const shiftStartRaw = shiftRes.rows[0]?.start_time || null;
+        // The shift's own grace period, not a literal 15. The column has always
+        // existed and defaulted to 15, so behaviour is unchanged until someone
+        // edits a shift — at which point it now takes effect.
+        const graceMinutes = Number.isFinite(Number(shiftRes.rows[0]?.grace_minutes))
+          ? Number(shiftRes.rows[0].grace_minutes) : 15;
         const shiftStartMins = shiftStartRaw
           ? (() => { const [h, m] = String(shiftStartRaw).split(':').map(Number); return h * 60 + (m || 0); })()
           : lateAfterMins;
@@ -304,11 +309,11 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
               } else if (workingHours < fullDayHours) {
                 newStatus = 'half-day';
               } else {
-                newStatus = (minsLate > 15) ? 'late' : 'present';
+                newStatus = (minsLate > graceMinutes) ? 'late' : 'present';
               }
             }
           } else {
-            newStatus = (minsLate > 15) ? 'late' : 'present';
+            newStatus = (minsLate > graceMinutes) ? 'late' : 'present';
           }
         }
 

@@ -29,6 +29,11 @@ import EmailTemplates from './attendance/EmailTemplates';
 import EmailAlerts from './attendance/EmailAlerts';
 import AbsentScheduler from './attendance/AbsentScheduler';
 
+import ShiftsGeneral from './shifts/ShiftsGeneral';
+// Manage Shifts is the existing Shifts screen, not a copy: there is one set of
+// shifts, and two editors for one table is how they drift apart.
+import ManageShifts from '../Shifts';
+
 import LeaveMethods from './LeaveMethods';
 import LeavePolicy from './LeavePolicy';
 import LeaveAccrual from './LeaveAccrual';
@@ -60,6 +65,9 @@ const SECTION_SCREENS = {
   'attendance.automation.absent-scheduler': AbsentScheduler,
   'attendance.automation.email-alerts': EmailAlerts,
   'attendance.automation.email-templates': EmailTemplates,
+
+  'shifts.configuration.general': ShiftsGeneral,
+  'shifts.configuration.manage-shifts': ManageShifts,
 
   'leave.configuration.methods': LeaveMethods,
   'leave.configuration.leave-policy': LeavePolicy,

@@ -276,8 +276,14 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
     }
 
     const result = await pool.query(
-      `INSERT INTO employees (first_name, last_name, email, password, phone, role, department, designation, company, division, joining_date, employee_id, registration_status, has_accepted, monthly_ctc, basic_salary, casual_leave, sick_leave, earned_leave, reporting_manager_id, approving_authority_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', true, $13, $14, $15, $16, $17, $18, $19)
+      // shift_id is taken from the shift marked default in
+      // Settings -> Shifts -> Configuration. Without it a new employee had no
+      // shift at all, and their expected hours and late marking silently fell
+      // back to org-wide values — the only reason nobody had hit this is that
+      // migrate_default_shift.js linked every existing employee by hand.
+      `INSERT INTO employees (first_name, last_name, email, password, phone, role, department, designation, company, division, joining_date, employee_id, registration_status, has_accepted, monthly_ctc, basic_salary, casual_leave, sick_leave, earned_leave, reporting_manager_id, approving_authority_id, shift_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', true, $13, $14, $15, $16, $17, $18, $19,
+               (SELECT id FROM shifts WHERE is_default = TRUE ORDER BY created_at LIMIT 1))
        RETURNING id as "_id", first_name AS "firstName", last_name AS "lastName", email, role, department, designation, employee_id AS "employeeId"`,
       [firstName, lastName, email.toLowerCase(), hashedPassword, phone, role || 'team_member', department, designation, company, division, joiningDate || new Date(), employeeId,
        // monthly_ctc and basic_salary are nullable — "" / 0 / undefined all collapse to NULL.

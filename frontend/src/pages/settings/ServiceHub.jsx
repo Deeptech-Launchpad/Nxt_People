@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, CalendarCheck, CalendarDays } from 'lucide-react';
+import { Users, CalendarCheck, CalendarDays, Clock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { visibleServices, BASE } from './serviceCatalog';
 
@@ -11,7 +11,7 @@ import { visibleServices, BASE } from './serviceCatalog';
 // the service that owns it. Company details and the security policy are under
 // Manage Accounts, the location rules under Attendance, leave accrual and the
 // weekend calendar under Leave Tracker.
-const ICONS = { Users, CalendarCheck, CalendarDays };
+const ICONS = { Users, CalendarCheck, CalendarDays, Clock };
 
 export default function ServiceHub() {
   const navigate = useNavigate();
