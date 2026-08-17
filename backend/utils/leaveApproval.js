@@ -30,7 +30,76 @@ const { isFullAccess } = require('./roles');
  * approver levels for `employeeId`. Uses a recursive CTE, cycle-guarded by depth.
  * @returns {Promise<Array<{level:number, approverId:string}>>}
  */
-async function deriveLevels(db, employeeId) {
+/**
+ * The configured rule for a request type, or null when there is none. A rule
+ * that exists but is switched off also returns null, so the request falls back
+ * to the built-in chain rather than ending up with no approvers at all.
+ */
+async function loadRule(db, requestType) {
+  if (!requestType) return null;
+  try {
+    const r = await db.query(
+      `SELECT levels FROM approval_rules WHERE request_type = $1 AND is_active = TRUE LIMIT 1`,
+      [requestType]
+    );
+    const levels = r.rows[0]?.levels;
+    return Array.isArray(levels) && levels.length ? levels : null;
+  } catch {
+    // Table missing — an install that has not run the migration yet.
+    return null;
+  }
+}
+
+/**
+ * Build the approver list from a configured rule.
+ *
+ * Steps are applied in order and the result is de-duplicated, so a rule asking
+ * for two reporting levels and then HR gives three approvers — unless HR is
+ * already one of the two, in which case it gives two. Renumbering afterwards
+ * keeps levels contiguous, which the approve/reject logic relies on.
+ */
+async function levelsFromRule(db, employeeId, ancestors, rule) {
+  const picks = [];
+  const seen = new Set([String(employeeId)]);
+  const add = id => {
+    if (id && !seen.has(String(id))) { seen.add(String(id)); picks.push(id); }
+  };
+
+  // Needed by the Business Unit Head exception, which the built-in chain has
+  // always applied and which the seeded rule carries forward.
+  let managerIsBuHead = false;
+  if (ancestors.length) {
+    const d = await db.query(`SELECT designation FROM employees WHERE id = $1 LIMIT 1`, [ancestors[0]]);
+    managerIsBuHead = (d.rows[0]?.designation || '').toLowerCase() === 'business unit head';
+  }
+
+  for (const step of rule) {
+    if (step?.skipWhenManagerIsBuHead && managerIsBuHead) continue;
+
+    if (step?.kind === 'reporting_to') {
+      const count = Math.max(1, Math.min(Number(step.count) || 1, 10));
+      for (let i = 0; i < count && i < ancestors.length; i += 1) add(ancestors[i]);
+    } else if (step?.kind === 'role' && step.role) {
+      const r = await db.query(
+        `SELECT id FROM employees
+          WHERE role = $1 AND COALESCE(status,'active') = 'active' AND deleted_at IS NULL
+          ORDER BY created_at LIMIT 1`,
+        [step.role]
+      );
+      if (r.rows.length) add(r.rows[0].id);
+      else if (ancestors.length) add(ancestors[ancestors.length - 1]); // fallback: tree root
+    } else if (step?.kind === 'user' && step.userId) {
+      const r = await db.query(
+        `SELECT id FROM employees WHERE id = $1 AND deleted_at IS NULL LIMIT 1`, [step.userId]
+      );
+      if (r.rows.length) add(r.rows[0].id);
+    }
+  }
+
+  return picks.map((approverId, i) => ({ level: i + 1, approverId }));
+}
+
+async function deriveLevels(db, employeeId, requestType) {
   const res = await db.query(
     `WITH RECURSIVE chain AS (
        SELECT id, reporting_manager_id, 0 AS depth
@@ -48,6 +117,12 @@ async function deriveLevels(db, employeeId) {
   // ancestors[0] = immediate parent (L1) … ancestors[last] = root.
   const ancestors = res.rows.map(r => r.id);
   if (ancestors.length === 0) return [];
+
+  // A configured rule wins. The seeded rule reproduces the chain below exactly,
+  // so this changes nothing until an admin edits it in
+  // Settings → Attendance → Approvals.
+  const rule = await loadRule(db, requestType);
+  if (rule) return levelsFromRule(db, employeeId, ancestors, rule);
 
   const picks = [];
   const seen = new Set();
@@ -91,7 +166,7 @@ async function deriveLevels(db, employeeId) {
 
 /** Create the approval_levels rows for a freshly-submitted request. */
 async function createLevels(db, requestType, requestId, employeeId) {
-  const levels = await deriveLevels(db, employeeId);
+  const levels = await deriveLevels(db, employeeId, requestType);
   for (const { level, approverId } of levels) {
     await db.query(
       `INSERT INTO approval_levels (request_type, request_id, level, approver_id)
@@ -303,6 +378,7 @@ function approvalLevelsJson(requestTypeLiteral, reqAlias = 'l', idCol = 'id') {
 }
 
 module.exports = {
-  deriveLevels, createLevels, getLevels, canUserAct, applyApproval, applyApproveAll, applyRejection,
+  deriveLevels, levelsFromRule, loadRule, createLevels, getLevels, canUserAct,
+  applyApproval, applyApproveAll, applyRejection,
   approvalLevelsJson,
 };

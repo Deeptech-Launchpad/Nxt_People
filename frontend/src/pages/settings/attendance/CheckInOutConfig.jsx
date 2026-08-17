@@ -102,8 +102,12 @@ export default function CheckInOutConfig() {
       <Card
         title="Check-in / check-out reminders"
         description="Automatically send check-in / check-out reminders to employees just before and after their shift time"
-        actions={<NotWired>Saved, not sent yet</NotWired>}
       >
+        <Note>
+          The daily reminders themselves live in Automation → Email Alerts, where their time, wording
+          and recipients are set. These offsets are a per-shift refinement of that and are not yet
+          applied.
+        </Note>
         <div className="space-y-5">
           <div>
             <Check checked={ci.enabled} onChange={v => setReminder('checkIn', { enabled: v })}

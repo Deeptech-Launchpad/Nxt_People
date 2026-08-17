@@ -60,6 +60,14 @@ export const SERVICES = [
         { key: 'reports', label: 'Reports' },
         { key: 'additional-options', label: 'Additional Options' },
       ],
+      approvals: [
+        { key: 'approvals', label: 'Approvals' },
+      ],
+      automation: [
+        { key: 'absent-scheduler', label: 'Absent Scheduler' },
+        { key: 'email-alerts', label: 'Email Alerts' },
+        { key: 'email-templates', label: 'Email Templates' },
+      ],
       permissions: [
         { key: 'geo-restriction', label: 'Geo Restriction' },
       ],
@@ -83,6 +91,9 @@ export const SERVICES = [
         { key: 'leave-request', label: 'Leave Request' },
         { key: 'holidays', label: 'Holidays' },
         { key: 'additional-options', label: 'Additional Options' },
+      ],
+      approvals: [
+        { key: 'approvals', label: 'Approvals' },
       ],
     },
   },

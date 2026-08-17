@@ -9,6 +9,7 @@
 // Tracker, because there is one set of pay periods either way and two editors
 // for one table is how they drift apart.
 
+import React from 'react';
 import OrganizationDetails from './org/OrganizationDetails';
 import OrganizationPolicy from './org/OrganizationPolicy';
 import Locations from './org/Locations';
@@ -23,6 +24,10 @@ import OnDutyConfig from './attendance/OnDutyConfig';
 import AttendanceReportsConfig from './attendance/AttendanceReportsConfig';
 import AttendanceAdditionalOptions from './attendance/AttendanceAdditionalOptions';
 import GeoRestriction from './attendance/GeoRestriction';
+import ApprovalRules from './attendance/ApprovalRules';
+import EmailTemplates from './attendance/EmailTemplates';
+import EmailAlerts from './attendance/EmailAlerts';
+import AbsentScheduler from './attendance/AbsentScheduler';
 
 import LeaveMethods from './LeaveMethods';
 import LeavePolicy from './LeavePolicy';
@@ -51,6 +56,10 @@ const SECTION_SCREENS = {
   'attendance.configuration.reports': AttendanceReportsConfig,
   'attendance.configuration.additional-options': AttendanceAdditionalOptions,
   'attendance.permissions.geo-restriction': GeoRestriction,
+  'attendance.approvals.approvals': ApprovalRules,
+  'attendance.automation.absent-scheduler': AbsentScheduler,
+  'attendance.automation.email-alerts': EmailAlerts,
+  'attendance.automation.email-templates': EmailTemplates,
 
   'leave.configuration.methods': LeaveMethods,
   'leave.configuration.leave-policy': LeavePolicy,
@@ -62,6 +71,9 @@ const SECTION_SCREENS = {
   'leave.configuration.leave-request': LeaveRequestConfig,
   'leave.configuration.holidays': HolidayConfig,
   'leave.configuration.additional-options': LeaveAdditionalOptions,
+  // Same screen, different service: it lists the request types that belong to
+  // whichever service opened it.
+  'leave.approvals.approvals': () => <ApprovalRules service="leave" />,
 };
 
 export default SECTION_SCREENS;

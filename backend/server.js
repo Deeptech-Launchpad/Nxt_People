@@ -213,73 +213,125 @@ cron.schedule('5 0 1 1 *', async () => {
   }
 }, cronOpts);
 
-// 3. Daily Check-in Reminder (Runs Mon-Sat at 9:00 AM)
-//    Skips weekends + holidays via the centralised rule evaluator.
-//    Single INSERT...SELECT replaces per-employee N+1 (was N round-trips at 150 employees).
-cron.schedule('0 9 * * 1-6', async () => {
-  try {
-    if (await isNonWorkingDay()) return;
-    logger.info('Sending daily 9 AM Check-in reminders');
-    const r = await pool.query(
-      `INSERT INTO notifications (employee_id, type, title, message, link)
-       SELECT id, 'attendance', 'Check-in Reminder', $1, '/attendance/my'
-         FROM employees WHERE status='active'`,
-      ["Don't forget to check in for the day!"]
-    );
-    logger.info({ sent: r.rowCount }, '9 AM Check-in reminders sent');
-    // Working-day guard before sending reminder emails.
-    // Skips on Sundays, company holidays, 1st/3rd Saturdays, or any
-    // non-working day declared in the holidays / weekend_rules tables.
-    if (await isNonWorkingDay()) {
-      logger.info('Non-working day — check-in reminder emails skipped');
-      return;
-    }
-    const empEmails = await pool.query(
-      `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != '' AND LOWER(email) != 'vellayan@altiusnxt.com'`
-    );
-    // Send sequentially — firing all SMTP connections at once trips Gmail rate limits,
-    // causing only some employees to receive the email. Sequential sending with one
-    // connection at a time keeps the rate within Gmail's tolerance.
-    for (const emp of empEmails.rows) {
-      await sendCheckInReminderEmail({ to: emp.email, employeeName: emp.name })
-        .catch(err => logger.warn({ err: err.message, email: emp.email }, '9 AM check-in email failed'));
-    }
-    logger.info({ emails: empEmails.rowCount }, '9 AM Check-in reminder emails sent');
-  } catch (err) {
-    logger.error({ err }, 'Error sending 9 AM reminders');
-  }
-}, cronOpts);
+// 3 & 4. Check-in and check-out reminders.
+//
+// These used to be two crons pinned to 09:00 and 18:00, addressed to every
+// active employee, with the wording inline. All three are now records —
+// Settings → Attendance → Automation → Email Alerts — so the crons run every
+// minute and each alert fires when the clock reaches its own send time.
+//
+// Running per-minute rather than re-scheduling on save is deliberate: a cron
+// re-registered at runtime is a second source of truth about when it fires,
+// and one process restarting mid-change is enough to leave the two disagreeing.
+const REMINDERS = [
+  {
+    event: 'check_in_reminder',
+    title: 'Check-in Reminder',
+    notification: "Don't forget to check in for the day!",
+    send: sendCheckInReminderEmail,
+  },
+  {
+    event: 'check_out_reminder',
+    title: 'Check-out Reminder',
+    notification: "Your shift has ended — don't forget to check out before you leave.",
+    send: sendCheckOutReminderEmail,
+  },
+];
 
-// 4. Daily Check-out Reminder (Runs Mon-Sat at 6:00 PM)
-cron.schedule('0 18 * * 1-6', async () => {
+// Guards against a restart inside the same minute firing an alert twice.
+const remindersSentAt = new Map();
+
+cron.schedule('* * * * *', async () => {
+  const now = new Date().toLocaleTimeString('en-GB', {
+    timeZone: CRON_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+  const stamp = `${new Date().toLocaleDateString('en-CA', { timeZone: CRON_TZ })} ${now}`;
+
+  let configured;
+  try { configured = await automationConfig.alerts(); }
+  catch (err) { return logger.error({ err: err.message }, 'Could not read email alerts'); }
+
+  for (const reminder of REMINDERS) {
+    const alert = configured[reminder.event];
+    if (!alert || alert.isActive === false) continue;
+    if ((alert.sendAt || '').slice(0, 5) !== now) continue;
+    if (remindersSentAt.get(reminder.event) === stamp) continue;
+    remindersSentAt.set(reminder.event, stamp);
+
+    try {
+      // Sundays, company holidays and 1st/3rd Saturdays are not working days,
+      // and nobody is expected to check in on one.
+      if (await isNonWorkingDay()) {
+        logger.info({ event: reminder.event }, 'Non-working day — reminder skipped');
+        continue;
+      }
+
+      const recipients = await automationConfig.recipientsFor(alert);
+      if (!recipients.length) {
+        logger.info({ event: reminder.event }, 'Reminder has no recipients — nothing sent');
+        continue;
+      }
+
+      const emails = new Set(recipients.map(r => String(r.email).toLowerCase()));
+      const n = await pool.query(
+        `INSERT INTO notifications (employee_id, type, title, message, link)
+         SELECT id, 'attendance', $1, $2, '/attendance/my'
+           FROM employees
+          WHERE status = 'active' AND deleted_at IS NULL AND LOWER(email) = ANY($3::text[])`,
+        [reminder.title, reminder.notification, [...emails]]
+      );
+
+      // Sent one at a time: opening every SMTP connection at once trips Gmail's
+      // rate limit, and only some of the reminders arrive.
+      let sent = 0;
+      for (const emp of recipients) {
+        if (String(emp.email).toLowerCase() === 'vellayan@altiusnxt.com') continue;
+        await reminder.send({
+          to: emp.email,
+          employeeName: emp.name,
+          subject: alert.subject ? automationConfig.render(alert.subject, { employeeName: emp.name }) : undefined,
+          body: alert.body ? automationConfig.render(alert.body, { employeeName: emp.name }) : undefined,
+        }).then(() => { sent += 1; })
+          .catch(err => logger.warn({ err: err.message, email: emp.email, event: reminder.event }, 'Reminder email failed'));
+      }
+      logger.info({ event: reminder.event, notifications: n.rowCount, emails: sent }, 'Reminder sent');
+    } catch (err) {
+      logger.error({ err, event: reminder.event }, 'Reminder failed');
+    }
+  }
+
+  // ── Absent scheduler ────────────────────────────────────────────────────
+  // Marks anyone with no check-in at all as absent for the day. Leave,
+  // holidays, weekends and on-duty are never touched: a day already accounted
+  // for is not an absence, and the classifier decides those.
   try {
+    const sched = await automationConfig.scheduler();
+    if (!sched.enabled || (sched.runAt || '').slice(0, 5) !== now) return;
+    if (remindersSentAt.get('absent_scheduler') === stamp) return;
+    remindersSentAt.set('absent_scheduler', stamp);
     if (await isNonWorkingDay()) return;
-    logger.info('Sending daily 6 PM Check-out reminders');
+
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: CRON_TZ });
     const r = await pool.query(
-      `INSERT INTO notifications (employee_id, type, title, message, link)
-       SELECT id, 'attendance', 'Check-out Reminder', $1, '/attendance/my'
-         FROM employees WHERE status='active'`,
-      ["It's 6 PM! Don't forget to check out before you leave."]
+      `INSERT INTO attendance (employee_id, date, status, working_hours)
+       SELECT e.id, $1::date, 'absent', 0
+         FROM employees e
+        WHERE e.status = 'active' AND e.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM attendance a WHERE a.employee_id = e.id AND a.date = $1::date)
+          AND NOT EXISTS (
+                SELECT 1 FROM leaves l
+                 WHERE l.employee_id = e.id AND l.status = 'approved'
+                   AND $1::date BETWEEN l.start_date AND l.end_date)
+          AND NOT EXISTS (
+                SELECT 1 FROM on_duty_requests o
+                 WHERE o.employee_id = e.id AND o.status = 'approved'
+                   AND $1::date BETWEEN o.start_date AND o.end_date)
+       ON CONFLICT (employee_id, date) DO NOTHING`,
+      [today]
     );
-    logger.info({ sent: r.rowCount }, '6 PM Check-out reminders sent');
-    // Working-day guard before sending reminder emails.
-    // Skips on Sundays, company holidays, 1st/3rd Saturdays, or any
-    // non-working day declared in the holidays / weekend_rules tables.
-    if (await isNonWorkingDay()) {
-      logger.info('Non-working day — check-out reminder emails skipped');
-      return;
-    }
-    const empEmails = await pool.query(
-      `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE status='active' AND email IS NOT NULL AND email != '' AND LOWER(email) != 'vellayan@altiusnxt.com'`
-    );
-    // Send sequentially — same reason as the check-in cron above.
-    for (const emp of empEmails.rows) {
-      await sendCheckOutReminderEmail({ to: emp.email, employeeName: emp.name })
-        .catch(err => logger.warn({ err: err.message, email: emp.email }, '6 PM check-out email failed'));
-    }
-    logger.info({ emails: empEmails.rowCount }, '6 PM Check-out reminder emails sent');
+    logger.info({ date: today, marked: r.rowCount }, 'Absent scheduler ran');
   } catch (err) {
-    logger.error({ err }, 'Error sending 6 PM reminders');
+    logger.error({ err }, 'Absent scheduler failed');
   }
 }, cronOpts);
 

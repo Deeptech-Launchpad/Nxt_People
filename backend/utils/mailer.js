@@ -331,7 +331,20 @@ const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, 
  * Check-Out Reminder Email — sent to employees at end of day.
  * Design matches the Check-In reminder email exactly (same blue gradient, layout, CTA style).
  */
-const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
+const sendCheckOutReminderEmail = async ({ to, employeeName, subject, body }) => {
+  if (body) {
+    return sendMail({
+      to,
+      subject: subject || 'Please check out',
+      text: body,
+      html: renderTemplateEmail({
+        title: subject || 'Check-out reminder',
+        bodyText: body,
+        linkLabel: 'Check out',
+        linkUrl: (process.env.FRONTEND_URL || 'https://nxtpeople.altiusnxt.tech') + '/attendance/my',
+      }),
+    });
+  }
   const transporter = createTransporter();
   const safeEmployeeName = escapeHtml(employeeName || 'Employee');
   const checkOutLink = safeUrl((process.env.FRONTEND_URL || 'https://ur.altiusnxt.tech') + '/attendance/my');
@@ -404,7 +417,48 @@ const sendCheckOutReminderEmail = async ({ to, employeeName }) => {
 /**
  * Check-In Reminder Email — sent automatically at 9 AM each working day.
  */
-const sendCheckInReminderEmail = async ({ to, employeeName }) => {
+/**
+ * Wraps an admin-authored template body in the same branded shell the designed
+ * emails use. Used when someone has edited the wording in
+ * Settings → Attendance → Automation → Email Templates: their words are the
+ * point, so they replace the copy, but the email should still look like ours.
+ *
+ * The body is escaped and its newlines become breaks — it is authored text, not
+ * markup, and treating it as HTML would let a template inject anything.
+ */
+const renderTemplateEmail = ({ title, bodyText, linkLabel, linkUrl }) => {
+  const safeBody = escapeHtml(bodyText || '').replace(/\n/g, '<br/>');
+  const button = linkUrl
+    ? `<tr><td style="padding:8px 32px 32px;"><a href="${safeUrl(linkUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:11px 22px;border-radius:6px;font-size:14px;font-weight:600;">${escapeHtml(linkLabel || 'Open')}</a></td></tr>`
+    : '';
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>${escapeHtml(title || '')}</title></head>
+<body style="margin:0;padding:24px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
+    <tr><td style="padding:28px 32px 8px;font-size:17px;font-weight:600;color:#0f172a;">${escapeHtml(title || '')}</td></tr>
+    <tr><td style="padding:8px 32px 24px;font-size:14px;line-height:1.65;color:#334155;">${safeBody}</td></tr>
+    ${button}
+    <tr><td style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;">${escapeHtml(process.env.COMPANY_NAME || 'NXT People')}</td></tr>
+  </table>
+</body></html>`;
+};
+
+const sendCheckInReminderEmail = async ({ to, employeeName, subject, body }) => {
+  // An edited template replaces the designed email entirely — otherwise the
+  // screen would report a change it never made.
+  if (body) {
+    return sendMail({
+      to,
+      subject: subject || 'Please check in for the day',
+      text: body,
+      html: renderTemplateEmail({
+        title: subject || 'Check-in reminder',
+        bodyText: body,
+        linkLabel: 'Check in',
+        linkUrl: (process.env.FRONTEND_URL || 'https://nxtpeople.altiusnxt.tech') + '/attendance/my',
+      }),
+    });
+  }
   const transporter = createTransporter();
   const safeEmployeeName = escapeHtml(employeeName || 'Employee');
   const checkInLink = safeUrl((process.env.FRONTEND_URL || 'https://ur.altiusnxt.tech') + '/attendance/my');
@@ -573,4 +627,4 @@ const sendLeaveStatusEmail = async ({ to, employeeName, leaveType, startDate, to
   });
 };
 
-module.exports = { sendOnboardingEmail, sendLeaveApprovalEmail, sendCheckOutReminderEmail, sendCheckInReminderEmail, sendLeaveStatusEmail, sendMail };
+module.exports = { sendOnboardingEmail, sendLeaveApprovalEmail, sendCheckOutReminderEmail, sendCheckInReminderEmail, sendLeaveStatusEmail, sendMail, renderTemplateEmail };
