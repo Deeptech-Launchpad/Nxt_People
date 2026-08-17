@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Filter, X, ArrowUpDown, UserMinus, Plus, Download } from 'lucide-react';
+import { Filter, X, ArrowUpDown, UserCog, Upload, Trash2, ChevronDown, ChevronRight, Users as UsersIcon } from 'lucide-react';
 import api from '../../../utils/api';
 import { Spinner, selectClass } from '../configKit';
 import { roleLabel } from '../../../utils/roles';
 import useFitToViewport from '../../../hooks/useFitToViewport';
 import AddUserDialog from './AddUserDialog';
+import ImportUsersDialog from './ImportUsersDialog';
 import { buildSheet, downloadWorkbook } from '../../../utils/reportExport';
 
 // Manage Accounts → Users.
@@ -28,21 +29,29 @@ const GROUPS = [
   {
     key: 'users', label: 'Users',
     filters: [
-      { key: 'all', label: 'All', count: c => c.users },
-      { key: 'enabled', label: 'Login Enabled', count: c => c.enabled },
-      { key: 'disabled', label: 'Login Disabled', count: c => c.disabled },
-      { key: 'invited', label: 'Invited', count: c => c.invited },
+      { key: 'all', label: 'All' },
+      { key: 'enabled', label: 'Login Enabled' },
+      { key: 'disabled', label: 'Login Disabled' },
+      { key: 'invited', label: 'Invited' },
+      { key: 'downgraded', label: 'Downgraded' },
     ],
   },
   {
     key: 'profiles', label: 'Employee Profiles',
     filters: [
-      { key: 'all', label: 'All', count: c => c.profiles },
-      { key: 'active', label: 'Active', count: c => c.profilesActive },
-      { key: 'inactive', label: 'Inactive', count: c => c.profilesInactive },
+      { key: 'all', label: 'All' },
+      { key: 'active', label: 'Active' },
+      { key: 'inactive', label: 'Inactive' },
+      { key: 'downgraded', label: 'Downgraded' },
     ],
   },
 ];
+
+// Employment status. Resigned and Terminated are accepted but unset on the
+// employees migrated in, whose separation type nobody recorded.
+const STATUS_LABEL = {
+  active: 'Active', inactive: 'Inactive', resigned: 'Resigned', terminated: 'Terminated',
+};
 
 const Toggle = ({ on, onClick, disabled, label }) => (
   <button
@@ -66,6 +75,8 @@ export default function Users() {
   const [selected, setSelected] = useState(() => new Set());
   const [sort, setSort] = useState({ key: 'employeeCode', dir: 'desc' });
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [hovered, setHovered] = useState(null);
   const scrollRef = useRef(null);
 
   // The table scrolls inside itself rather than growing the page, so the
@@ -136,7 +147,7 @@ export default function Users() {
       { header: 'Role', value: r => roleLabel(r.role) },
       { header: 'Location', value: r => r.location || '' },
       { header: 'Department', value: r => r.department_name || r.department || '' },
-      { header: 'Employee status', value: r => (r.employeeStatus === 'active' ? 'Active' : 'Inactive') },
+      { header: 'Employee status', value: r => STATUS_LABEL[r.employeeStatus] || r.employeeStatus },
       ...(group === 'users'
         ? [{ header: 'Account status', value: r => (r.loginEnabled ? 'Login Enabled' : 'Login Disabled') }]
         : []),
@@ -146,6 +157,23 @@ export default function Users() {
       columns, rows,
     });
     downloadWorkbook([{ name: 'Users', sheet }], 'xlsx', `users-${group}-${filter}`);
+  };
+
+  const remove = row => {
+    if (!window.confirm(`Delete ${row.name}? Their attendance and leave history is kept, but they stop appearing everywhere.`)) return;
+    setBusyId(row.id);
+    api.delete(`/org-users/${row.id}`)
+      .then(() => { toast.success(`${row.name} deleted`); load(); })
+      .catch(err => toast.error(err.response?.data?.message || 'Could not delete'))
+      .finally(() => setBusyId(null));
+  };
+
+  const giveAccount = row => {
+    setBusyId(row.id);
+    api.patch(`/org-users/${row.id}/account`, { isUser: true })
+      .then(() => { toast.success(`${row.name} now has a login account`); load(); })
+      .catch(err => toast.error(err.response?.data?.message || 'Could not change the account'))
+      .finally(() => setBusyId(null));
   };
 
   const removeAccount = row => {
@@ -162,27 +190,35 @@ export default function Users() {
 
   return (
     <div className="flex items-start gap-5 pb-4">
+      {/* Two collapsible groups, and only the one you are in is open — the
+          reference collapses the other, which keeps the rail short enough to
+          read at a glance. No counts here: the total sits above the table. */}
       <nav className="w-[210px] flex-shrink-0 hidden lg:block">
-        {GROUPS.map(g => (
-          <div key={g.key} className="mb-3">
-            <p className="px-4 py-1.5 text-[13px] font-semibold text-slate-500 uppercase tracking-wide">{g.label}</p>
-            {g.filters.map(f => {
-              const on = group === g.key && filter === f.key;
-              return (
+        {GROUPS.map(g => {
+          const open = group === g.key;
+          return (
+            <div key={g.key} className="mb-1">
+              <button
+                onClick={() => { setGroup(g.key); setFilter('all'); setSelected(new Set()); }}
+                className="w-full flex items-center gap-1.5 px-3 py-2 text-[14px] text-slate-800 hover:bg-slate-50 rounded-lg"
+              >
+                {open ? <ChevronDown size={15} className="text-slate-500" /> : <ChevronRight size={15} className="text-slate-500" />}
+                <span className={open ? 'font-semibold' : ''}>{g.label}</span>
+              </button>
+              {open && g.filters.map(f => (
                 <button
                   key={f.key}
-                  onClick={() => { setGroup(g.key); setFilter(f.key); setSelected(new Set()); }}
-                  className={`w-full flex items-center justify-between px-4 py-2 text-[14px] rounded-lg transition-colors ${
-                    on ? 'bg-slate-100 font-semibold text-slate-800' : 'text-slate-600 hover:bg-slate-50'
+                  onClick={() => { setFilter(f.key); setSelected(new Set()); }}
+                  className={`w-full text-left pl-9 pr-4 py-2 text-[14px] rounded-lg transition-colors ${
+                    filter === f.key ? 'bg-slate-100 font-semibold text-slate-800' : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  <span>{f.label}</span>
-                  <span className="text-[12.5px] text-slate-500">{f.count(counts) ?? ''}</span>
+                  {f.label}
                 </button>
-              );
-            })}
-          </div>
-        ))}
+              ))}
+            </div>
+          );
+        })}
       </nav>
 
       <div className="flex-1 min-w-0">
@@ -200,43 +236,59 @@ export default function Users() {
               )))}
             </div>
             <p className="text-[14px] text-slate-600">
-              Total count: <span className="font-semibold text-slate-800">{rows?.length ?? '—'}</span>
+              Total Count : <span className="font-semibold text-slate-800">{rows?.length ?? '—'}</span>
               {selected.size > 0 && (
                 <span className="ml-3 text-[13.5px] text-blue-700">{selected.size} selected</span>
               )}
             </p>
             <div className="flex items-center gap-2">
+              {/* Add and Import appear on All only, the way the reference has
+                  them — adding somebody is not an operation on a filtered view. */}
+              {filter === 'all' && (
+                <>
+                  <button
+                    onClick={() => setAdding(true)}
+                    className="flex items-center bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-1.5 rounded text-[13.5px] font-medium"
+                  >
+                    {group === 'users' ? 'Add User(s)' : 'Add Employee Profile'}
+                  </button>
+                  <button
+                    onClick={() => setImporting(true)}
+                    className="flex items-center px-3.5 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50 text-[13.5px] font-medium"
+                  >
+                    Import
+                  </button>
+                </>
+              )}
               <button
-                onClick={() => setAdding(true)}
-                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-1.5 rounded text-[13.5px] font-medium"
+                onClick={() => setShowFilters(v => !v)}
+                aria-label="Filter" title="Filter"
+                className={`w-8 h-8 flex items-center justify-center rounded border ${
+                  hasCriteria ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-500 hover:bg-slate-50'
+                }`}
               >
-                <Plus size={15} /> {group === 'users' ? 'Add User(s)' : 'Add Employee Profile'}
+                <Filter size={15} />
               </button>
               <button
                 onClick={exportList}
-                title="Export what is on screen"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 text-[13.5px]"
+                aria-label="Export" title="Export what is on screen"
+                className="w-8 h-8 flex items-center justify-center rounded border border-slate-300 text-slate-500 hover:bg-slate-50"
               >
-                <Download size={14} /> Export
-              </button>
-              <button
-                onClick={() => setShowFilters(v => !v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[13.5px] ${
-                  hasCriteria ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Filter size={14} /> Filter{hasCriteria ? ' (on)' : ''}
+                <Upload size={15} />
               </button>
             </div>
           </div>
 
           {rows === null ? <Spinner /> : rows.length === 0 ? (
-            <div className="px-6 py-12 text-center border-t border-slate-100">
-              <p className="text-[14px] text-slate-600">No one in this filter currently.</p>
-              {group === 'profiles' && (
-                <p className="text-[13px] text-slate-500 mt-1.5 max-w-[460px] mx-auto">
+            <div className="px-6 py-16 text-center border-t border-slate-100">
+              <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                <UsersIcon size={24} className="text-slate-400" />
+              </div>
+              <p className="text-[15px] text-slate-600">There are no users in this filter currently</p>
+              {group === 'profiles' && filter === 'all' && (
+                <p className="text-[13px] text-slate-500 mt-2 max-w-[420px] mx-auto">
                   An employee profile is someone on record without a login. Remove a user&rsquo;s
-                  account to move them here.
+                  account, or add one here.
                 </p>
               )}
             </div>
@@ -285,7 +337,12 @@ export default function Users() {
                     const picked = selected.has(u.id);
                     const cell = 'border-b border-slate-100 px-5 py-3';
                     return (
-                      <tr key={u.id} className={picked ? 'bg-blue-50/50' : 'hover:bg-slate-50/60'}>
+                      <tr
+                        key={u.id}
+                        onMouseEnter={() => setHovered(u.id)}
+                        onMouseLeave={() => setHovered(h => (h === u.id ? null : h))}
+                        className={picked ? 'bg-blue-50/50' : 'hover:bg-slate-50/60'}
+                      >
                         <td className={`sticky left-0 z-10 border-b border-r border-slate-200 px-3 py-3 w-[44px] ${picked ? 'bg-blue-50' : 'bg-white'}`}>
                           <input
                             type="checkbox" checked={picked} onChange={() => toggleOne(u.id)}
@@ -313,7 +370,7 @@ export default function Users() {
                         <td className={`${cell} text-slate-600`}>{u.location || <span className="text-slate-400">—</span>}</td>
                         <td className={`${cell} whitespace-nowrap`}>
                           <span className={u.employeeStatus === 'active' ? 'text-slate-700' : 'text-amber-700'}>
-                            {u.employeeStatus === 'active' ? 'Active' : 'Inactive'}
+                            {STATUS_LABEL[u.employeeStatus] || u.employeeStatus}
                           </span>
                         </td>
                         {group === 'users' && (
@@ -326,42 +383,38 @@ export default function Users() {
                         <td className={cell}>
                           <div className="flex items-center gap-2">
                             {group === 'users' && (
-                              <>
-                                <Toggle
-                                  on={u.loginEnabled}
-                                  disabled={busyId === u.id}
-                                  onClick={() => setLogin(u, !u.loginEnabled)}
-                                  label={`Sign-in for ${u.name}`}
-                                />
-                                <button
-                                  onClick={() => removeAccount(u)}
-                                  disabled={busyId === u.id}
-                                  title="Remove the login account and keep them on record"
-                                  aria-label={`Remove ${u.name}'s account`}
-                                  className="text-slate-400 hover:text-red-500 disabled:opacity-40 p-1"
-                                >
-                                  <UserMinus size={15} />
-                                </button>
-                              </>
-                            )}
-                            {group === 'profiles' && (
-                              <button
-                                onClick={() => {
-                                  setBusyId(u.id);
-                                  api.patch(`/org-users/${u.id}/account`, { isUser: true })
-                                    .then(() => { toast.success(`${u.name} now has a login account`); load(); })
-                                    .catch(err => toast.error(err.response?.data?.message || 'Could not change the account'))
-                                    .finally(() => setBusyId(null));
-                                }}
+                              <Toggle
+                                on={u.loginEnabled}
                                 disabled={busyId === u.id}
-                                className="text-[13px] text-blue-600 hover:text-blue-500 disabled:opacity-40"
-                              >
-                                Give a login
-                              </button>
+                                onClick={() => setLogin(u, !u.loginEnabled)}
+                                label={`Sign-in for ${u.name}`}
+                              />
                             )}
+                            <button
+                              onClick={() => (group === 'users' ? removeAccount(u) : giveAccount(u))}
+                              disabled={busyId === u.id}
+                              title={group === 'users'
+                                ? 'Remove the login account and keep them on record'
+                                : 'Give them a login account'}
+                              aria-label={group === 'users' ? `Remove ${u.name}'s account` : `Give ${u.name} a login`}
+                              className="text-slate-400 hover:text-blue-600 disabled:opacity-40 p-1"
+                            >
+                              <UserCog size={16} />
+                            </button>
                           </div>
                         </td>
-                        <td className="border-b border-slate-100 w-10" />
+                        <td className="border-b border-slate-100 w-12 pr-2">
+                          {hovered === u.id && (
+                            <button
+                              onClick={() => remove(u)}
+                              disabled={busyId === u.id}
+                              aria-label={`Delete ${u.name}`} title="Delete"
+                              className="w-7 h-7 rounded flex items-center justify-center text-red-500 hover:bg-red-50 disabled:opacity-40"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -371,6 +424,14 @@ export default function Users() {
           )}
         </div>
       </div>
+
+      {importing && (
+        <ImportUsersDialog
+          isUser={group === 'users'}
+          onClose={() => setImporting(false)}
+          onImported={() => { setImporting(false); load(); }}
+        />
+      )}
 
       {adding && (
         <AddUserDialog

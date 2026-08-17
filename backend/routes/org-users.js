@@ -15,10 +15,11 @@
  * questions, and the whole reason nobody noticed the sign-in gap was that the
  * product only ever had one of them.
  *
- * Employee status stays Active / Inactive rather than the reference's
- * Active / Resigned / Terminated. exit_requests only models resignation, and
- * only 40 of the 87 inactive employees have an exit date, so splitting them
- * would mean inventing a separation type for 47 people.
+ * Employee status accepts the reference's Active / Resigned / Terminated as
+ * well as Inactive. The 87 employees already marked inactive keep that value:
+ * status_reason is null on every one of them and exit_requests is empty, so
+ * which separation each was is not recorded anywhere and assigning one would be
+ * invention. New separations can be recorded properly.
  */
 const express = require('express');
 const router = express.Router();
@@ -61,9 +62,12 @@ router.get('/', authorize(...ADMIN), async (req, res) => {
     // migrated in had already accepted, so this is empty until someone is added
     // through Add User(s), which is the same as the reference reports.
     if (filter === 'invited') where.push('COALESCE(e.has_accepted, FALSE) = FALSE');
+    // Somebody whose account was taken away and later given back.
+    if (filter === 'downgraded') where.push('e.downgraded_at IS NOT NULL');
   } else {
     if (filter === 'active') where.push(`COALESCE(e.status, 'active') = 'active'`);
     if (filter === 'inactive') where.push(`COALESCE(e.status, 'active') <> 'active'`);
+    if (filter === 'downgraded') where.push('e.downgraded_at IS NOT NULL');
   }
 
   // Free-text search across the fields someone would actually type.
@@ -94,6 +98,8 @@ router.get('/', authorize(...ADMIN), async (req, res) => {
          COUNT(*) FILTER (WHERE is_user AND login_enabled)           AS "enabled",
          COUNT(*) FILTER (WHERE is_user AND NOT login_enabled)       AS "disabled",
          COUNT(*) FILTER (WHERE is_user AND NOT COALESCE(has_accepted, FALSE)) AS "invited",
+         COUNT(*) FILTER (WHERE is_user AND downgraded_at IS NOT NULL)         AS "usersDowngraded",
+         COUNT(*) FILTER (WHERE NOT is_user AND downgraded_at IS NOT NULL)     AS "profilesDowngraded",
          COUNT(*) FILTER (WHERE NOT is_user)                         AS "profiles",
          COUNT(*) FILTER (WHERE NOT is_user AND COALESCE(status,'active') = 'active')  AS "profilesActive",
          COUNT(*) FILTER (WHERE NOT is_user AND COALESCE(status,'active') <> 'active') AS "profilesInactive"
@@ -178,6 +184,9 @@ router.patch('/:id/account', authorize(...ADMIN), async (req, res) => {
               -- Removing the account withdraws access with it; granting one
               -- does not silently re-enable sign-in for someone who was blocked.
               login_enabled = CASE WHEN $1 THEN login_enabled ELSE FALSE END,
+              -- Stamped when the account goes, and kept when it comes back:
+              -- Downgraded is a thing that happened, not a current state.
+              downgraded_at = CASE WHEN $1 THEN downgraded_at ELSE NOW() END,
               tokens_revoked_at = CASE WHEN $1 THEN tokens_revoked_at ELSE NOW() END,
               updated_at = NOW()
         WHERE id = $2 AND deleted_at IS NULL
@@ -266,6 +275,142 @@ router.post('/', authorize(...ADMIN), async (req, res) => {
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'That email or employee id already exists' });
     res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
+});
+
+// The trash the reference reveals on row hover. A soft delete: the row keeps
+// its attendance, leave and approval history, and stops appearing anywhere.
+router.delete('/:id', authorize(...ADMIN), async (req, res) => {
+  try {
+    if (String(req.params.id) === String(req.user._id)) {
+      return res.status(400).json({ success: false, message: 'You cannot delete your own account' });
+    }
+    const target = await pool.query(
+      `SELECT role, is_user AS "isUser", TRIM(CONCAT(first_name,' ',last_name)) AS name
+         FROM employees WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (!target.rows.length) return res.status(404).json({ success: false, message: 'Employee not found' });
+
+    // The same guard the access toggle has: an org with no administrator who
+    // can sign in cannot undo this through the UI.
+    if (target.rows[0].isUser && ['admin', 'director'].includes(target.rows[0].role)) {
+      const remaining = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM employees
+          WHERE role IN ('admin','director') AND login_enabled AND is_user
+            AND deleted_at IS NULL AND id <> $1`,
+        [req.params.id]
+      );
+      if (remaining.rows[0].n === 0) {
+        return res.status(400).json({ success: false, message: 'That is the last administrator who can sign in.' });
+      }
+    }
+
+    // Anyone still reporting to them would be left pointing at a deleted row,
+    // and their approval chains would resolve to nobody.
+    const reports = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM employees
+        WHERE reporting_manager_id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (reports.rows[0].n > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `${reports.rows[0].n} employee(s) report to ${target.rows[0].name}. Reassign them first.`,
+      });
+    }
+
+    await pool.query(
+      `UPDATE employees
+          SET deleted_at = NOW(), registration_status = 'deleted',
+              login_enabled = FALSE, tokens_revoked_at = NOW(), updated_at = NOW()
+        WHERE id = $1`,
+      [req.params.id]
+    );
+    res.json({ success: true, message: `${target.rows[0].name} deleted` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+  }
+});
+
+// Import. Rows arrive already parsed by the browser, which keeps the
+// spreadsheet libraries where they already are rather than adding one here.
+//
+// Every row is validated and reported on individually. A partial import that
+// said nothing about what it skipped would be worse than a refusal, so the
+// response names each failure and its line.
+router.post('/import', authorize(...ADMIN), async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!rows.length) return res.status(400).json({ success: false, message: 'The file has no rows' });
+  if (rows.length > 1000) return res.status(400).json({ success: false, message: 'No more than 1000 rows at a time' });
+
+  const isUser = req.body?.isUser !== false;
+  const ROLES = ['admin', 'director', 'hr_admin', 'manager', 'team_incharge', 'team_member'];
+  const created = [];
+  const failed = [];
+
+  const [locations, departments] = await Promise.all([
+    pool.query(`SELECT id, LOWER(name) AS name FROM work_locations`),
+    pool.query(`SELECT id, LOWER(name) AS name FROM departments`),
+  ]);
+  const locationBy = new Map(locations.rows.map(r => [r.name, r.id]));
+  const departmentBy = new Map(departments.rows.map(r => [r.name, r.id]));
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i] || {};
+    // +2: a spreadsheet's first data row is line 2, and the person fixing the
+    // file is looking at line numbers, not array indexes.
+    const line = i + 2;
+    const firstName = String(row.firstName || '').trim();
+    const email = String(row.email || '').trim().toLowerCase();
+
+    if (!firstName) { failed.push({ line, email, reason: 'First name is missing' }); continue; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { failed.push({ line, email, reason: 'Email is missing or not valid' }); continue; }
+
+    try {
+      const clash = await pool.query(`SELECT 1 FROM employees WHERE LOWER(email) = $1 AND deleted_at IS NULL`, [email]);
+      if (clash.rows.length) { failed.push({ line, email, reason: 'Someone already has that email' }); continue; }
+
+      const code = String(row.employeeCode || '').trim() || null;
+      if (code) {
+        const dupe = await pool.query(`SELECT 1 FROM employees WHERE employee_id = $1 AND deleted_at IS NULL`, [code]);
+        if (dupe.rows.length) { failed.push({ line, email, reason: `Employee id ${code} is already in use` }); continue; }
+      }
+
+      const role = ROLES.includes(String(row.role || '').trim()) ? String(row.role).trim() : 'team_member';
+      const locationId = locationBy.get(String(row.location || '').trim().toLowerCase()) || null;
+      const departmentId = departmentBy.get(String(row.department || '').trim().toLowerCase()) || null;
+
+      // A date the file gives in a form Postgres cannot read fails the row
+      // rather than silently importing somebody with no joining date.
+      let joiningDate = null;
+      const rawDate = String(row.joiningDate || '').trim();
+      if (rawDate) {
+        const iso = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate
+          : /^(\d{2})[/-](\d{2})[/-](\d{4})$/.test(rawDate)
+            ? rawDate.replace(/^(\d{2})[/-](\d{2})[/-](\d{4})$/, '$3-$2-$1') : null;
+        if (!iso) { failed.push({ line, email, reason: `Date of joining "${rawDate}" is not a date` }); continue; }
+        joiningDate = iso;
+      }
+
+      const r = await pool.query(
+        `INSERT INTO employees
+           (first_name, last_name, email, employee_id, role, joining_date,
+            work_location_id, department_id, registration_status, has_accepted,
+            is_user, login_enabled, status, shift_id, company_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',FALSE,$9,$9,'active',
+                 (SELECT id FROM shifts WHERE is_default = TRUE ORDER BY created_at LIMIT 1),
+                 (SELECT id FROM companies ORDER BY created_at LIMIT 1))
+         RETURNING id, TRIM(CONCAT(first_name,' ',last_name)) AS name`,
+        [firstName, String(row.lastName || '').trim() || null, email, code, role,
+         joiningDate, locationId, departmentId, isUser]
+      );
+      created.push({ line, name: r.rows[0].name, email });
+    } catch (err) {
+      failed.push({ line, email, reason: 'Could not be saved' });
+    }
+  }
+
+  res.json({ success: true, data: { created, failed, total: rows.length } });
 });
 
 module.exports = router;
