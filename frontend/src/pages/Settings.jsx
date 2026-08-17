@@ -5,6 +5,7 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { roleLabel } from '../utils/roles';
 import WeekendRulesEditor from '../components/WeekendRulesEditor';
+import { PAYROLL_ENABLED } from '../config/features';
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
@@ -15,7 +16,10 @@ export default function Settings() {
   // ?tab= lets the Leave Tracker Configuration hub land on the right section
   // instead of dropping the user on Company and leaving them to hunt.
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'company');
+  const requestedTab = searchParams.get('tab') || 'company';
+  const [activeTab, setActiveTab] = useState(
+    requestedTab === 'payroll' && !PAYROLL_ENABLED ? 'company' : requestedTab
+  );
 
   const selectTab = (id) => {
     setActiveTab(id);
@@ -47,6 +51,7 @@ export default function Settings() {
     }));
   };
 
+  // Payroll is built but not live for this org — see config/features.
   const tabs = [
     { id: 'company', label: 'Company', icon: Building2 },
     { id: 'attendance', label: 'Attendance', icon: Clock },
@@ -54,7 +59,7 @@ export default function Settings() {
     { id: 'accrual', label: 'Leave Accrual', icon: TrendingUp },
     { id: 'weekends', label: 'Weekends', icon: Repeat },
     { id: 'gps', label: 'GPS & Location', icon: MapPin },
-    { id: 'payroll', label: 'Payroll', icon: Wallet },
+    ...(PAYROLL_ENABLED ? [{ id: 'payroll', label: 'Payroll', icon: Wallet }] : []),
     { id: 'security', label: 'Security', icon: Shield },
   ];
 
@@ -242,7 +247,7 @@ export default function Settings() {
             </div>
           )}
 
-          {activeTab === 'payroll' && (
+          {PAYROLL_ENABLED && activeTab === 'payroll' && (
             <div>
               <h3 className="font-display font-semibold text-slate-800 mb-1">Payroll Controls</h3>
               <p className="text-slate-400 text-base mb-5">Org-wide policies that govern how payroll runs and locks.</p>
