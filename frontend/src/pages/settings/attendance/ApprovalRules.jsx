@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Search } from 'lucide-react';
 import api from '../../../utils/api';
-import { Card, Note, Toggle, Spinner } from '../configKit';
+import { Card, Note, Toggle, selectClass, Spinner } from '../configKit';
 import ApprovalEditor from './ApprovalEditor';
 import { roleLabel } from '../../../utils/roles';
 
@@ -62,6 +62,8 @@ export default function ApprovalRules({ service = 'attendance' }) {
   const [preview, setPreview] = useState({});
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [formFilter, setFormFilter] = useState('all');
+  const [search, setSearch] = useState('');
 
   const forms = useMemo(
     () => (meta?.forms || []).filter(f => f.service === service),
@@ -114,6 +116,13 @@ export default function ApprovalRules({ service = 'attendance' }) {
 
   if (rules === null || !meta) return <Spinner />;
 
+  // A form can carry several approvals, so filtering by form is how an admin
+  // finds the one they mean rather than reading every row.
+  const visible = rules.filter(r =>
+    (formFilter === 'all' || r.requestType === formFilter) &&
+    (!search.trim() || `${r.name} ${r.formLabel}`.toLowerCase().includes(search.trim().toLowerCase()))
+  );
+
   const describeStep = step => {
     if (step.kind === 'reporting_to') return `${step.count} level${step.count > 1 ? 's' : ''} of Reporting To`;
     if (step.kind === 'role') return roleLabel(step.role);
@@ -137,12 +146,22 @@ export default function ApprovalRules({ service = 'attendance' }) {
     <div className="space-y-4 pb-4">
       <Card title="Approvals" description="Who a request goes to, and in what order"
         actions={
-          <button
-            onClick={() => setEditing(blankRule(forms[0]?.key))}
-            className="flex-shrink-0 flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded text-[13.5px] font-medium"
-          >
-            <Plus size={15} /> Add Approval
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Search approvals"
+                className="w-[190px] border border-slate-300 rounded pl-8 pr-3 py-1.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+              />
+            </div>
+            <button
+              onClick={() => setEditing(blankRule(forms[0]?.key))}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded text-[13.5px] font-medium"
+            >
+              <Plus size={15} /> Add Approval
+            </button>
+          </div>
         }
       >
         <Note>
@@ -151,20 +170,31 @@ export default function ApprovalRules({ service = 'attendance' }) {
           A change applies to requests filed afterwards.
         </Note>
 
-        <div className="mt-5 overflow-x-auto">
+        <div className="mt-5 flex items-center gap-2.5">
+          <span className="text-[13.5px] text-slate-600">Form</span>
+          <select value={formFilter} onChange={e => setFormFilter(e.target.value)} className={`${selectClass} min-w-[220px]`}>
+            <option value="all">All</option>
+            {forms.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+        </div>
+
+        <div className="mt-4 overflow-x-auto">
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                {['Approval name', 'Form name', 'Chain', 'Order', 'Status', ''].map(h => (
+                {['Approval name', 'Form name', 'Template name', 'Chain', 'Order', 'Status', ''].map(h => (
                   <th key={h} className="text-left font-medium text-slate-600 px-4 py-2.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rules.map(rule => (
+              {visible.map(rule => (
                 <tr key={rule.id} className="border-t border-slate-100">
                   <td className="px-4 py-3 text-slate-800">{rule.name}</td>
                   <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{rule.formLabel}</td>
+                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                    {rule.messages?.templateName || <span className="text-slate-400">Default wording</span>}
+                  </td>
                   <td className="px-4 py-3">
                     {rule.decision !== 'chain' ? (
                       <span className={`rounded px-2 py-0.5 text-[13px] ${
@@ -202,6 +232,11 @@ export default function ApprovalRules({ service = 'attendance' }) {
               ))}
             </tbody>
           </table>
+          {visible.length === 0 && (
+            <p className="text-[14px] text-slate-500 text-center py-8">
+              No approval matches that form or search.
+            </p>
+          )}
         </div>
       </Card>
 
