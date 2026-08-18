@@ -22,6 +22,7 @@ const router = express.Router();
 const pool = require('../db');
 const logger = require('../logger');
 const { protect, authorize } = require('../middleware/auth');
+const { fire } = require('../utils/workflowEngine');
 
 router.use(protect);
 
@@ -280,6 +281,12 @@ router.post('/:id/assign', authorize('admin', 'director', 'hr_admin', 'manager')
       }
     }
     await pool.query('UPDATE employees SET shift_id = $1 WHERE id = ANY($2)', [req.params.id, employeeIds]);
+    // Employees never change shift through the employees route, so this is the
+    // only place the event can be raised. Fire-and-forget: a workflow must
+    // never be able to fail the assignment that triggered it.
+    for (const employeeId of employeeIds) {
+      fire('employee', 'field_updated', { recordId: employeeId, actorId: req.user._id, changedFields: ['shift_id'] });
+    }
     res.json({ success: true, message: 'Shift assigned' });
   } catch (err) { fail(res, err); }
 });

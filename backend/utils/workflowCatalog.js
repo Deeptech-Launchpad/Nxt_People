@@ -97,6 +97,10 @@ const RECORD_TYPES = [
       { key: 'work_location', label: 'Location' },
       { key: 'role', label: 'Role' },
       { key: 'reporting_manager_id', label: 'Reporting manager' },
+      // What the reference's Shifts Automation exists to watch. Assigning a
+      // shift and rotating one both report this, so a workflow can notify on a
+      // shift change without a second Automation tab scoped to shifts.
+      { key: 'shift_id', label: 'Shift' },
     ],
     // Only these can be written by a field update.
     writableFields: [

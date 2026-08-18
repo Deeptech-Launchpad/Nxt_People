@@ -14,6 +14,7 @@ const chatWs  = require('./ws-chat');
 const permissions = require('./utils/permissions');
 const { sweepDateWorkflows } = require('./utils/workflowEngine');
 const { sweepApprovalFollowups } = require('./utils/approvalFollowups');
+const { sweepShiftRotations } = require('./utils/shiftRotation');
 // The email-alerts cron below has called automationConfig.* since it was
 // written without this line, so every run logged "automationConfig is not
 // defined" and sent nothing.
@@ -569,6 +570,37 @@ cron.schedule(`*/${WORKFLOW_SWEEP_MINUTES} * * * *`, async () => {
       await pool.query(
         `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
          VALUES ('approval_followups', 'Approval follow-ups', 'Approval Scheduler', 'failed', $1, $2)`,
+        [err.message, Date.now() - startedAt]
+      );
+    } catch { /* the log failing must not take the cron down too */ }
+  }
+}, cronOpts);
+
+// ── Shift rotation ───────────────────────────────────────────────────────────
+// Moves people between shifts on the schedule each rotation names. Same
+// cadence and window as the other sweeps, so a rotation due at 00:07 runs in
+// the 00:15 pass rather than being skipped.
+//
+// A rotation reassigns real people, so it is guarded twice: it only runs on
+// its own day inside its own window, and it refuses to run again on a day it
+// has already run.
+cron.schedule(`*/${WORKFLOW_SWEEP_MINUTES} * * * *`, async () => {
+  const startedAt = Date.now();
+  try {
+    const summary = await sweepShiftRotations({ windowMinutes: WORKFLOW_SWEEP_MINUTES });
+    if (summary.ran > 0) {
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('shift_rotation', 'Shift rotation', 'Shift Scheduler', 'success', $1, $2)`,
+        [`${summary.ran} rotation(s) ran, ${summary.moved} employee(s) moved`, Date.now() - startedAt]
+      );
+    }
+  } catch (err) {
+    logger.error({ err: err.message }, 'Shift rotation sweep failed');
+    try {
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('shift_rotation', 'Shift rotation', 'Shift Scheduler', 'failed', $1, $2)`,
         [err.message, Date.now() - startedAt]
       );
     } catch { /* the log failing must not take the cron down too */ }

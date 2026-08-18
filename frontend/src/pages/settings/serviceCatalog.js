@@ -151,6 +151,15 @@ export const SERVICES = [
         { key: 'auto-shift-assignment', label: 'Auto Shift Assignment' },
         { key: 'shift-patterns', label: 'Shift Patterns' },
       ],
+      // The reference's Shifts Automation tab also carries Workflows,
+      // Blueprints, Actions, Templates and Logs. Those are not duplicated
+      // here: there is one Automation, under Manage Accounts, covering every
+      // record type this application has. A shift change raises an employee
+      // field_updated event there, so a workflow can notify on one without a
+      // second builder writing to the same tables.
+      automation: [
+        { key: 'shift-rotation', label: 'Shift Rotation' },
+      ],
     },
   },
   {

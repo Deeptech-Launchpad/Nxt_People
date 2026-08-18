@@ -51,6 +51,7 @@ import ShiftsGeneral from './shifts/ShiftsGeneral';
 import ManageShifts from '../Shifts';
 import AutoShiftAssignment from './shifts/AutoShiftAssignment';
 import ShiftPatterns from './shifts/ShiftPatterns';
+import ShiftRotation from './shifts/ShiftRotation';
 
 import LeaveMethods from './LeaveMethods';
 import LeavePolicy from './LeavePolicy';
@@ -118,6 +119,7 @@ const SECTION_SCREENS = {
   'shifts.configuration.manage-shifts': ManageShifts,
   'shifts.configuration.auto-shift-assignment': AutoShiftAssignment,
   'shifts.configuration.shift-patterns': ShiftPatterns,
+  'shifts.automation.shift-rotation': ShiftRotation,
 
   'leave.configuration.methods': LeaveMethods,
   'leave.configuration.leave-policy': LeavePolicy,
