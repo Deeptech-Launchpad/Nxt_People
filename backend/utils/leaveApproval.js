@@ -113,6 +113,7 @@ const REQUEST_TABLES = {
   wfh: 'wfh_requests',
   regularization: 'attendance_regularizations',
   timesheet: 'timesheets',
+  shift_change: 'shift_change_requests',
 };
 
 /**

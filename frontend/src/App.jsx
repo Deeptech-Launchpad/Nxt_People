@@ -56,6 +56,7 @@ const Performance     = lazy(() => import('./pages/Performance'));
 const ExitManagement  = lazy(() => import('./pages/ExitManagement'));
 const ShiftRoster     = lazy(() => import('./pages/ShiftRoster'));
 const Shifts          = lazy(() => import('./pages/Shifts'));
+const ShiftChange     = lazy(() => import('./pages/ShiftChange'));
 const Holidays        = lazy(() => import('./pages/Holidays'));
 const Timesheets      = lazy(() => import('./pages/Timesheets'));
 const Leave           = lazy(() => import('./pages/Leave'));
@@ -304,6 +305,9 @@ const AppRoutes = () => {
           {/* Onboarding creates employees — full-access only (no manager CRUD). */}
           <Route path="registrations"element={<ProtectedRoute roles={['admin','director','hr_admin']}><Registrations/></ProtectedRoute>}/>
           <Route path="shifts"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><Shifts/></ProtectedRoute>}/>
+          {/* Anybody can ask to change their own shift; the route itself
+              scopes who may approve one. */}
+          <Route path="shift-change" element={<ShiftChange/>}/>
           <Route path="shift-roster" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ShiftRoster/></ProtectedRoute>}/>
 
           {/* ── Other ────────────────────────────────────────────────── */}

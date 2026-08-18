@@ -180,6 +180,22 @@ const RECORD_TYPES = [
     mergeFields: ['employeeName', 'employeeId', 'date', 'daysEarned', 'status', 'managerName'],
   },
   {
+    key: 'shift_change',
+    label: 'Shift Change Request',
+    table: 'shift_change_requests',
+    criteria: [
+      { key: 'changeType', label: 'Kind of change', type: 'text' },
+      { key: 'startDate', label: 'From date', type: 'date' },
+      { key: 'endDate', label: 'To date', type: 'date' },
+      { key: 'days', label: 'Number of days', type: 'number' },
+      { key: 'status', label: 'Status', type: 'text' },
+    ],
+    dateFields: [{ key: 'start_date', label: 'From date' }, { key: 'end_date', label: 'To date' }],
+    watchableFields: [],
+    writableFields: [],
+    mergeFields: ['employeeName', 'employeeId', 'startDate', 'endDate', 'changeType', 'status', 'managerName'],
+  },
+  {
     key: 'wfh',
     label: 'Work From Home',
     table: 'wfh_requests',

@@ -40,6 +40,13 @@ const CRITERIA_FIELDS = {
     { key: 'endDate', label: 'To date', type: 'date' },
   ],
   timesheet: [{ key: 'date', label: 'Date', type: 'date' }],
+  shift_change: [
+    { key: 'changeType', label: 'Kind of change', type: 'text' },
+    { key: 'startDate', label: 'From date', type: 'date' },
+    { key: 'endDate', label: 'To date', type: 'date' },
+    { key: 'days', label: 'Number of days', type: 'number' },
+    { key: 'toShift', label: 'Requested shift', type: 'text' },
+  ],
 };
 
 const OPERATORS = [

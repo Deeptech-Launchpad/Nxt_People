@@ -201,6 +201,8 @@ const SELECTS = {
   comp_off: `SELECT c.id, c.employee_id, c.worked_date, c.days_earned, c.status
                FROM comp_off_requests c WHERE c.id = $1`,
   wfh: `SELECT w.id, w.employee_id, w.date, w.status FROM wfh_requests w WHERE w.id = $1`,
+  shift_change: `SELECT s.id, s.employee_id, s.change_type, s.start_date, s.end_date, s.status
+                   FROM shift_change_requests s WHERE s.id = $1`,
 };
 
 const CRITERIA_OF = {
@@ -222,6 +224,13 @@ const CRITERIA_OF = {
   }),
   comp_off: r => ({ date: iso(r.worked_date), daysEarned: Number(r.days_earned) || 0, status: r.status }),
   wfh: r => ({ date: iso(r.date), status: r.status }),
+  shift_change: r => ({
+    changeType: r.change_type, startDate: iso(r.start_date), endDate: iso(r.end_date),
+    status: r.status,
+    days: r.end_date
+      ? Math.round((new Date(iso(r.end_date)) - new Date(iso(r.start_date))) / 86400000) + 1
+      : 1,
+  }),
 };
 
 async function loadContext(recordTypeKey, ctx) {

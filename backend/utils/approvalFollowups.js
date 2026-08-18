@@ -22,11 +22,13 @@ const SOURCES = {
   comp_off: { table: 'comp_off_requests', raised: 'created_at' },
   wfh: { table: 'wfh_requests', raised: 'created_at' },
   regularization: { table: 'attendance_regularizations', raised: 'created_at' },
+  shift_change: { table: 'shift_change_requests', raised: 'created_at' },
 };
 
 const LABELS = {
   leave: 'leave request', on_duty: 'on duty request', comp_off: 'comp off request',
   wfh: 'work from home request', regularization: 'attendance regularization',
+  shift_change: 'shift change request',
 };
 
 /**

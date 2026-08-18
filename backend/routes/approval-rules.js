@@ -26,6 +26,7 @@ const REQUEST_TYPES = {
   comp_off: { label: 'Compensatory Off', service: 'leave' },
   wfh: { label: 'Work From Home', service: 'leave' },
   timesheet: { label: 'Timesheet', service: 'time' },
+  shift_change: { label: 'Shift Change Request', service: 'shifts' },
 };
 
 const ROLES = new Set(['admin', 'director', 'hr_admin', 'manager', 'team_incharge', 'team_member']);

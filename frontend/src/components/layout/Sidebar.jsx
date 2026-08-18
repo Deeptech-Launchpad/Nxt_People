@@ -19,7 +19,9 @@ const NAV_ITEMS = [
   { to: '/',                         icon: Home,         label: 'Home',         end: true,
     matches: p => p === '/' || ['/dashboard','/calendar','/team-space','/team/','/organization','/org-chart','/dept-tree','/announcements','/policies','/birthdays','/new-hires','/directory','/companies','/profile','/approvals','/employees','/registrations','/chat','/exit','/settings'].some(x => p.startsWith(x)) },
   { to: '/attendance',            icon: CalendarCheck,label: 'Attendance',
-    matches: p => p.startsWith('/attendance') },
+    // Shift Change sits under Attendance rather than getting its own icon:
+    // it is a request about when you work, like regularization and on duty.
+    matches: p => p.startsWith('/attendance') || p.startsWith('/shift-change') },
   { to: '/time-tracker',    icon: Clock,        label: 'Time\nTracker',
     matches: p => p.startsWith('/time-tracker') },
   { to: '/leave-tracker',    icon: CalendarDays, label: 'Leave\nTracker',
