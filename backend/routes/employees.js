@@ -1,6 +1,7 @@
 ﻿const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { fire } = require('../utils/workflowEngine');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { protect, authorize } = require('../middleware/auth');
@@ -305,6 +306,9 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
       changes: { email: email.toLowerCase(), role, department }
     });
 
+    // Fire-and-forget: the employee exists, and a workflow must never be able
+    // to fail or delay creating one.
+    fire('employee', 'created', { recordId: result.rows[0]._id, actorId: req.user._id });
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
     // The pre-check above closes most races, but two submissions using the
@@ -455,6 +459,15 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
       changes: safeChanges
     });
 
+    // The column names that were actually written, so a "specific field is
+    // updated" workflow can tell whether its field was one of them. Derived
+    // from the update list the query was built from, not from req.body — the
+    // body carries keys that were ignored.
+    fire('employee', 'edited', {
+      recordId: req.params.id,
+      actorId: req.user._id,
+      changedFields: updates.map(u => u.split(' = ')[0].trim()),
+    });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'Email already exists' });

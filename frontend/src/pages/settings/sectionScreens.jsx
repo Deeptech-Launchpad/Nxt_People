@@ -25,6 +25,11 @@ import SpecificRoleAssignment from './access/SpecificRoleAssignment';
 import FunctionPermissions from './access/FunctionPermissions';
 import Administrators from './access/Administrators';
 import ApplicabilityGroups from './access/ApplicabilityGroups';
+import AccountWorkflows from './automation/Workflows';
+import WorkflowEmailAlerts from './automation/EmailAlerts';
+import WorkflowFieldUpdates from './automation/FieldUpdates';
+import WorkflowEmailTemplates from './automation/EmailTemplates';
+import { WorkflowLogs, SchedulerLogs } from './automation/Logs';
 import Users from './org/Users';
 
 import AttendanceMethods from './attendance/AttendanceMethods';
@@ -75,6 +80,14 @@ const SECTION_SCREENS = {
   'accounts.permissions.function-permissions': FunctionPermissions,
   'accounts.permissions.administrator': Administrators,
   'accounts.permissions.applicability-groups': ApplicabilityGroups,
+
+  // Automation. Actions and Templates nest in the rail; routing stays flat.
+  'accounts.automation.workflows': AccountWorkflows,
+  'accounts.automation.email-alerts': WorkflowEmailAlerts,
+  'accounts.automation.field-updates': WorkflowFieldUpdates,
+  'accounts.automation.email-templates': WorkflowEmailTemplates,
+  'accounts.automation.workflow-logs': WorkflowLogs,
+  'accounts.automation.scheduler-logs': SchedulerLogs,
   'accounts.configuration.locations': Locations,
   'accounts.configuration.departments': Departments,
   'accounts.configuration.designations': Designations,

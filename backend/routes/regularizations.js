@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const pool = require('../db');
+const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
@@ -401,6 +402,9 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         await createNotification(reg.employee_id, 'info', 'Regularization Approved ✓',
           `Your attendance regularization for ${dateLabel} has been approved.`, '/attendance/my');
       }
+      // Fire-and-forget: the approval is committed, and a workflow must never
+      // be able to fail or delay it. Only when every level has approved.
+      if (result.allApproved) fire('regularization', 'approved', { recordId: reg.id, actorId: req.user._id });
       return res.json({
         success: true,
         status: result.status,
@@ -419,6 +423,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
 
     await createNotification(reg.employee_id, 'info', 'Regularization Rejected',
       `Your regularization for ${dateLabel} was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`, '/attendance/my');
+    fire('regularization', 'rejected', { recordId: reg.id, actorId: req.user._id });
     return res.json({ success: true, status: 'rejected', message: 'Regularization rejected.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

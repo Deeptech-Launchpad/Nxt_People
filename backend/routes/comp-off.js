@@ -1,6 +1,7 @@
 ﻿const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { audit } = require('../middleware/audit');
@@ -258,6 +259,9 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         await createNotification(co.employee_id, 'info', 'Comp-Off Approved ✓',
           `Your comp-off for working on ${dateLabel} (${co.days_earned} day) has been approved.`, '/leave-tracker/comp-off');
       }
+      // Fire-and-forget: the approval is committed, and a workflow must never
+      // be able to fail or delay it. Only when every level has approved.
+      if (result.allApproved) fire('comp_off', 'approved', { recordId: co.id, actorId: req.user._id });
       return res.json({
         success: true,
         status: result.status,
@@ -276,6 +280,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
 
     await createNotification(co.employee_id, 'info', 'Comp-Off Rejected',
       `Your comp-off request for ${dateLabel} was rejected.`, '/leave-tracker/comp-off');
+    fire('comp_off', 'rejected', { recordId: co.id, actorId: req.user._id });
     return res.json({ success: true, status: 'rejected', message: 'Comp-off rejected.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

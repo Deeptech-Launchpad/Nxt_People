@@ -204,17 +204,27 @@ const sanitizeRecipients = (to) => {
     .filter(a => a && !/[\r\n]/.test(a) && ADDR_RE.test(a));
 };
 
-const sendMail = async ({ to, subject, text, html }) => {
+const sendMail = async ({ to, cc, bcc, replyTo, subject, text, html }) => {
   const transporter = createTransporter();
   const recipients = sanitizeRecipients(to);
   if (recipients.length === 0) {
     throw new Error('sendMail: no valid recipient addresses after sanitisation');
   }
+  // Cc, Bcc and Reply-To go through the same sanitiser as To. A workflow's
+  // email alert offers all three, and accepting them here without validating
+  // would reopen the header-injection hole the To list is guarded against.
+  const ccList = sanitizeRecipients(cc || []);
+  const bccList = sanitizeRecipients(bcc || []);
+  const replyToList = sanitizeRecipients(replyTo || []);
+
   // Subject must not contain CR/LF either — same injection vector via Subject.
   const safeSubject = String(subject || '').replace(/[\r\n]+/g, ' ').slice(0, 998);
   await transporter.sendMail({
     from: `"${process.env.COMPANY_NAME || 'HR Team'}" <${process.env.EMAIL_USER}>`,
     to: recipients, // pass the array — nodemailer handles separator + escaping
+    ...(ccList.length ? { cc: ccList } : {}),
+    ...(bccList.length ? { bcc: bccList } : {}),
+    ...(replyToList.length ? { replyTo: replyToList[0] } : {}),
     subject: safeSubject,
     text,
     html: html || `<pre style="font-family:sans-serif;font-size:14px;">${(text || '').replace(/</g, '&lt;')}</pre>`,

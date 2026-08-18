@@ -12,6 +12,7 @@ const pool    = require('./db');
 const logger  = require('./logger');
 const chatWs  = require('./ws-chat');
 const permissions = require('./utils/permissions');
+const { sweepDateWorkflows } = require('./utils/workflowEngine');
 // The email-alerts cron below has called automationConfig.* since it was
 // written without this line, so every run logged "automationConfig is not
 // defined" and sent nothing.
@@ -106,6 +107,7 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 chatWs.attach(server);
 server.listen(PORT, () => logger.info({ port: PORT }, 'Server listening (HTTP + WebSocket)'));
+
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 // Docker sends SIGTERM and waits up to `stop_grace_period` (10s default)
@@ -501,6 +503,41 @@ cron.schedule('10 0 * * *', async () => {
     }
   } catch (err) {
     logger.error({ err }, 'Auto-absent cron failed');
+  }
+}, cronOpts);
+
+// ── Date-based workflows ─────────────────────────────────────────────────────
+// Every 15 minutes rather than once a day, because a workflow can name any time
+// of execution. Each run looks back over the interval just elapsed, so a
+// workflow due at 09:07 fires in the 09:15 sweep rather than being skipped for
+// not landing exactly on a scheduled minute.
+//
+// Wrapped whole: a failing sweep must log and be picked up again 15 minutes
+// later, never take the process down.
+const WORKFLOW_SWEEP_MINUTES = 15;
+cron.schedule(`*/${WORKFLOW_SWEEP_MINUTES} * * * *`, async () => {
+  const startedAt = Date.now();
+  try {
+    const summary = await sweepDateWorkflows({ windowMinutes: WORKFLOW_SWEEP_MINUTES });
+    // Only worth a row when it actually did something. A log with 96 "nothing
+    // to do" entries a day is a log nobody reads.
+    if (summary.considered > 0) {
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('workflow_date_sweep', 'Date-based workflows', 'Workflow Scheduler', 'success', $1, $2)`,
+        [`${summary.fired} fired, ${summary.skipped} skipped of ${summary.considered} record(s)`,
+         Date.now() - startedAt]
+      );
+    }
+  } catch (err) {
+    logger.error({ err: err.message }, 'Date-based workflow sweep failed');
+    try {
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('workflow_date_sweep', 'Date-based workflows', 'Workflow Scheduler', 'failed', $1, $2)`,
+        [err.message, Date.now() - startedAt]
+      );
+    } catch { /* the log failing must not take the cron down too */ }
   }
 }, cronOpts);
 

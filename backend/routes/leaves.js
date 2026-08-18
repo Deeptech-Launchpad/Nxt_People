@@ -11,6 +11,7 @@ const { logAudit } = require('../utils/audit');
 const { countWorkingDays } = require('../utils/workingDays');
 const { getLeavePolicies } = require('../utils/leavePolicy');
 const logger = require('../logger');
+const { fire } = require('../utils/workflowEngine');
 
 router.use(protect);
 
@@ -487,6 +488,9 @@ router.post('/', [
         ));
       } catch (e) { logger.error({ err: e.message }, '[leaves] notify/feed soft-fail'); }
 
+      // Fire-and-forget by design: the leave is already committed, and a
+      // workflow must never be able to fail or delay the request that raised it.
+      fire('leave', 'created', { recordId: ins.rows[0].id, actorId: req.user._id });
       res.status(201).json({ success: true, data: ins.rows[0], message: 'Leave applied successfully' });
     } catch (txErr) {
       await client.query('ROLLBACK').catch(() => {});
@@ -652,6 +656,9 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         }
       } catch (e) { logger.warn({ err: e.message }, '[leaves] employee status email failed'); }
       await logAudit(req, { action: 'APPROVE', resource: 'Leave', resourceId: leave.id, changes: { allApproved: result.allApproved } });
+      // Only once every level has approved. Firing per level would send the
+      // "your leave is approved" mail while it is still awaiting someone.
+      if (result.allApproved) fire('leave', 'approved', { recordId: leave.id, actorId: req.user._id });
       return res.json({
         success: true,
         status: result.status,
@@ -710,6 +717,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
       }
     } catch (e) { logger.warn({ err: e.message }, '[leaves] employee rejection email failed'); }
     await logAudit(req, { action: 'REJECT', resource: 'Leave', resourceId: leave.id, changes: { status: 'rejected', rejectionReason } });
+    fire('leave', 'rejected', { recordId: leave.id, actorId: req.user._id });
     return res.json({ success: true, status: 'rejected', message: 'Leave rejected.' });
 
   } catch (err) {

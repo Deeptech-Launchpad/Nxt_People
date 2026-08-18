@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, reportsScope } = require('../utils/roles');
 const { audit } = require('../middleware/audit');
@@ -148,6 +149,12 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         );
       }
 
+      // Fire-and-forget: the decision is committed, and a workflow must never
+      // be able to fail or delay it. `finalStatus` is 'pending' while levels
+      // remain, so this only fires on the decision that settles the request.
+      if (finalStatus === 'approved' || finalStatus === 'rejected') {
+        fire('wfh', finalStatus, { recordId: wfh.id, actorId: req.user._id });
+      }
       res.json({ success: true, message: `WFH ${finalStatus}` });
     } catch (err) {
       await client.query('ROLLBACK');

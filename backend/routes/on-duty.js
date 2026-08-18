@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const pool = require('../db');
+const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
@@ -387,6 +388,9 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         await createNotification(od.employee_id, 'info', 'On Duty Approved ✓',
           `Your on-duty request for ${label} has been approved.`, '/attendance/on-duty');
       }
+      // Fire-and-forget: the approval is committed, and a workflow must never
+      // be able to fail or delay it. Only when every level has approved.
+      if (result.allApproved) fire('on_duty', 'approved', { recordId: od.id, actorId: req.user._id });
       return res.json({
         success: true,
         status: result.status,
@@ -404,6 +408,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
 
     await createNotification(od.employee_id, 'info', 'On Duty Rejected',
       `Your on-duty request for ${label} was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`, '/attendance/on-duty');
+    fire('on_duty', 'rejected', { recordId: od.id, actorId: req.user._id });
     return res.json({ success: true, status: 'rejected', message: 'On duty rejected.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

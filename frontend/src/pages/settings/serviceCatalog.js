@@ -76,6 +76,27 @@ export const SERVICES = [
         { key: 'administrator', label: 'Administrator' },
         { key: 'applicability-groups', label: 'Applicability groups' },
       ],
+      // The reference's Automation tab, minus Blueprints, Checklists & Tasks,
+      // Webhooks, Custom Functions, E-Sign Flow and the two document template
+      // kinds — see utils/workflowCatalog.js for why each was left out.
+      automation: [
+        { key: 'workflows', label: 'Workflows' },
+        {
+          key: 'actions', label: 'Actions',
+          children: [
+            { key: 'email-alerts', label: 'Email Alerts' },
+            { key: 'field-updates', label: 'Field Updates' },
+          ],
+        },
+        {
+          key: 'templates', label: 'Templates',
+          children: [
+            { key: 'email-templates', label: 'Email Templates' },
+          ],
+        },
+        { key: 'workflow-logs', label: 'Workflow Logs' },
+        { key: 'scheduler-logs', label: 'Scheduler Logs' },
+      ],
     },
   },
   {

@@ -31,8 +31,13 @@ async function alerts() {
       `SELECT a.event, a.is_active AS "isActive", a.send_at AS "sendAt", a.recipients,
               t.subject, t.body
          FROM email_alerts a
-         LEFT JOIN email_templates t ON t.id = a.template_id`
+         LEFT JOIN email_templates t ON t.id = a.template_id
+        WHERE a.event IS NOT NULL`
     );
+    // Only the rows that name an event are scheduled reminders. The ones
+    // without an event are workflow actions and have no business here — an
+    // unguarded loop would key them under `undefined` and, worse, a workflow
+    // alert named like a reminder could overwrite one.
     for (const row of r.rows) value[row.event] = row;
   } catch {
     // Tables not there yet — the fallback keeps the reminders going.
