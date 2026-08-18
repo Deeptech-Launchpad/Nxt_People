@@ -97,6 +97,12 @@ export const SERVICES = [
         { key: 'workflow-logs', label: 'Workflow Logs' },
         { key: 'scheduler-logs', label: 'Scheduler Logs' },
       ],
+      // The same screen the Attendance and Leave Tracker tabs open, with no
+      // service to scope it — so it lists every form's approvals in one place,
+      // which is the whole point of the reference's account-level tab.
+      approvals: [
+        { key: 'approvals', label: 'Approvals' },
+      ],
     },
   },
   {

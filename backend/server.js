@@ -13,6 +13,7 @@ const logger  = require('./logger');
 const chatWs  = require('./ws-chat');
 const permissions = require('./utils/permissions');
 const { sweepDateWorkflows } = require('./utils/workflowEngine');
+const { sweepApprovalFollowups } = require('./utils/approvalFollowups');
 // The email-alerts cron below has called automationConfig.* since it was
 // written without this line, so every run logged "automationConfig is not
 // defined" and sent nothing.
@@ -535,6 +536,39 @@ cron.schedule(`*/${WORKFLOW_SWEEP_MINUTES} * * * *`, async () => {
       await pool.query(
         `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
          VALUES ('workflow_date_sweep', 'Date-based workflows', 'Workflow Scheduler', 'failed', $1, $2)`,
+        [err.message, Date.now() - startedAt]
+      );
+    } catch { /* the log failing must not take the cron down too */ }
+  }
+}, cronOpts);
+
+// ── Approval follow-up reminders ─────────────────────────────────────────────
+// approval_rules.follow_up was a boolean nothing read. It is a schedule now,
+// and this is what reads it: a rule can chase its pending approver once, or
+// every N days, at a chosen time.
+//
+// Same 15-minute cadence and same look-back window as the workflow sweep, so a
+// rule due at 10:07 is chased in the 10:15 run rather than skipped for not
+// landing on a scheduled minute.
+cron.schedule(`*/${WORKFLOW_SWEEP_MINUTES} * * * *`, async () => {
+  const startedAt = Date.now();
+  try {
+    const summary = await sweepApprovalFollowups({ windowMinutes: WORKFLOW_SWEEP_MINUTES });
+    if (summary.considered > 0) {
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('approval_followups', 'Approval follow-ups', 'Approval Scheduler', $1, $2, $3)`,
+        [summary.failed ? 'failed' : 'success',
+         `${summary.sent} sent, ${summary.skipped} already chased, ${summary.failed} failed of ${summary.considered} pending`,
+         Date.now() - startedAt]
+      );
+    }
+  } catch (err) {
+    logger.error({ err: err.message }, 'Approval follow-up sweep failed');
+    try {
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('approval_followups', 'Approval follow-ups', 'Approval Scheduler', 'failed', $1, $2)`,
         [err.message, Date.now() - startedAt]
       );
     } catch { /* the log failing must not take the cron down too */ }

@@ -23,6 +23,9 @@ const RECIPIENTS = [
   { key: 'reporting_manager', label: 'Reporting manager' },
 ];
 
+// What the toggle falls back to for a rule saved before follow-up had a shape.
+const FOLLOW_UP_DEFAULT = { enabled: false, mode: 'one_time', days: 1, time: '10:00' };
+
 const SECTIONS = [
   { key: 'details', label: 'Approval Details' },
   { key: 'criteria', label: 'Criteria' },
@@ -344,10 +347,59 @@ export default function ApprovalEditor({ value, meta, forms, busy, onChange, onS
                     </label>
                   )}
 
-                  <div className="pt-1">
-                    <Toggle checked={value.followUp} onChange={v => set({ followUp: v })}
+                  {/* The reference's follow-up block. This was a boolean that
+                      nothing read; it is a schedule now, and the sweep that
+                      reads it runs every 15 minutes. */}
+                  <div className="pt-1 space-y-3">
+                    <Toggle
+                      checked={!!value.followUp?.enabled}
+                      onChange={v => set({ followUp: { ...FOLLOW_UP_DEFAULT, ...value.followUp, enabled: v } })}
                       label="Enable follow-up option for this approval"
-                      hint="Saved; the reminder to a waiting approver is not sent yet" />
+                      hint="Chases the approver who has not acted yet."
+                    />
+
+                    {value.followUp?.enabled && (
+                      <div className="bg-slate-50 rounded-lg px-4 py-3.5 space-y-3">
+                        <div className="flex items-center gap-5">
+                          {[['one_time', 'One-time'], ['repeat', 'Repeat']].map(([k, l]) => (
+                            <label key={k} className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio" name="followUpMode"
+                                checked={(value.followUp.mode || 'one_time') === k}
+                                onChange={() => set({ followUp: { ...value.followUp, mode: k } })}
+                                className="w-4 h-4 accent-blue-600" />
+                              <span className="text-[14px] text-slate-700">{l}</span>
+                            </label>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap text-[14px] text-slate-700">
+                          <span>
+                            {(value.followUp.mode || 'one_time') === 'repeat' ? 'Repeat every' : 'One-time follow-up after'}
+                          </span>
+                          <input
+                            type="number" min={1} max={365}
+                            value={value.followUp.days ?? 1}
+                            onChange={e => set({ followUp: { ...value.followUp, days: Number(e.target.value) } })}
+                            className="w-20 border border-slate-300 rounded px-2 py-1.5 text-[14px]" />
+                          <span>day(s) from the approval trigger date.</span>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap text-[14px] text-slate-700">
+                          <span>Follow-up email sent at</span>
+                          <input
+                            type="time"
+                            value={value.followUp.time || '10:00'}
+                            onChange={e => set({ followUp: { ...value.followUp, time: e.target.value } })}
+                            className="border border-slate-300 rounded px-2 py-1.5 text-[14px]" />
+                        </div>
+
+                        <p className="text-[12.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                          Only approvers who have not acted are chased, and each reminder is recorded — a
+                          sweep that overlaps the one before it cannot chase the same person twice.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

@@ -88,6 +88,9 @@ const SECTION_SCREENS = {
   'accounts.automation.email-templates': WorkflowEmailTemplates,
   'accounts.automation.workflow-logs': WorkflowLogs,
   'accounts.automation.scheduler-logs': SchedulerLogs,
+
+  // No service prop: every form's approvals in one list.
+  'accounts.approvals.approvals': () => <ApprovalRules />,
   'accounts.configuration.locations': Locations,
   'accounts.configuration.departments': Departments,
   'accounts.configuration.designations': Designations,
@@ -101,7 +104,10 @@ const SECTION_SCREENS = {
   'attendance.configuration.reports': AttendanceReportsConfig,
   'attendance.configuration.additional-options': AttendanceAdditionalOptions,
   'attendance.permissions.geo-restriction': GeoRestriction,
-  'attendance.approvals.approvals': ApprovalRules,
+  // Explicit, because the component's default became "every form" for the
+  // account-level tab — leaving this bare would have quietly shown Leave and
+  // Comp Off approvals under Attendance.
+  'attendance.approvals.approvals': () => <ApprovalRules service="attendance" />,
   'attendance.automation.absent-scheduler': AbsentScheduler,
   'attendance.automation.email-alerts': EmailAlerts,
   'attendance.automation.email-templates': EmailTemplates,

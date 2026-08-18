@@ -103,6 +103,26 @@ function cleanMessages(input) {
   };
 }
 
+const FOLLOW_UP_MODES = new Set(['one_time', 'repeat']);
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+// Was a boolean that nothing read. The reference's shape is a schedule, and a
+// schedule is what the sweep needs to know when to chase.
+function cleanFollowUp(f) {
+  if (!f || typeof f !== 'object') return { enabled: false, mode: 'one_time', days: 1, time: '10:00' };
+  const days = Math.max(1, Math.min(365, Number(f.days) || 1));
+  if (f.time && !HHMM.test(f.time)) throw new Error('The follow-up time is not valid');
+  return {
+    enabled: !!f.enabled,
+    mode: FOLLOW_UP_MODES.has(f.mode) ? f.mode : 'one_time',
+    days,
+    // The reference notes that the approval request time is used when no
+    // follow-up time is given; ours always stores one so the sweep has a
+    // window to match rather than a null to guess at.
+    time: f.time || '10:00',
+  };
+}
+
 const ROW = `
   id, request_type AS "requestType", name, description, is_active AS "isActive",
   levels, criteria, criteria_match AS "criteriaMatch", decision, follow_up AS "followUp",
@@ -166,7 +186,7 @@ function readBody(body) {
     levels: cleanLevels(body.levels, decision),
     criteria: cleanCriteria(body.criteria, requestType),
     criteriaMatch: body.criteriaMatch === 'OR' ? 'OR' : 'AND',
-    followUp: !!body.followUp,
+    followUp: cleanFollowUp(body.followUp),
     messages: cleanMessages(body.messages),
     sortOrder: Math.max(1, Math.min(order, 999)),
   };
@@ -211,6 +231,54 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Approval not found' });
     res.json({ success: true, data: r.rows[0] });
+  } catch (err) { fail(res, err); }
+});
+
+// The copy icon on the reference's hover row.
+router.post('/:id/duplicate', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const r = await pool.query(
+      `INSERT INTO approval_rules (request_type, name, description, is_active, levels,
+                                   criteria, criteria_match, decision, follow_up, messages, sort_order)
+       SELECT request_type, LEFT(name || ' (copy)', 150), description,
+              -- Off on arrival. A copy of a live approval that starts routing
+              -- the same requests is not what a copy button promises.
+              FALSE, levels, criteria, criteria_match, decision, follow_up, messages, sort_order + 1
+         FROM approval_rules WHERE id = $1 RETURNING ${ROW}`,
+      [req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ success: false, message: 'Approval not found' });
+    res.status(201).json({ success: true, data: r.rows[0] });
+  } catch (err) { fail(res, err); }
+});
+
+// The inline toggle, separate from the full save so switching one off does not
+// have to re-post and re-validate the whole rule.
+router.patch('/:id/status', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const r = await pool.query(
+      `UPDATE approval_rules SET is_active = $1, updated_at = NOW() WHERE id = $2 RETURNING ${ROW}`,
+      [req.body?.isActive !== false, req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ success: false, message: 'Approval not found' });
+    res.json({ success: true, data: r.rows[0] });
+  } catch (err) { fail(res, err); }
+});
+
+// What the follow-up sweep has actually sent.
+router.get('/followups', async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT f.id, f.request_type AS "requestType", f.request_id AS "requestId",
+              f.level, f.sequence, f.status, f.message, f.sent_at AS "sentAt",
+              r.name AS "ruleName",
+              TRIM(CONCAT(a.first_name, ' ', a.last_name)) AS "approverName"
+         FROM approval_followups f
+         LEFT JOIN approval_rules r ON r.id = f.rule_id
+         LEFT JOIN employees a ON a.id = f.approver_id
+        ORDER BY f.sent_at DESC LIMIT 200`
+    );
+    res.json({ success: true, data: r.rows });
   } catch (err) { fail(res, err); }
 });
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, Search } from 'lucide-react';
+import { Plus, Trash2, Search, Copy } from 'lucide-react';
 import api from '../../../utils/api';
 import { Card, Note, Toggle, selectClass, Spinner } from '../configKit';
 import ApprovalEditor from './ApprovalEditor';
@@ -44,7 +44,7 @@ const blankRule = (requestType) => ({
   levels: [],
   criteria: [],
   criteriaMatch: 'AND',
-  followUp: false,
+  followUp: { enabled: false, mode: 'one_time', days: 1, time: '10:00' },
   sortOrder: 50,
   messages: {
     from: 'default_address',
@@ -56,7 +56,10 @@ const blankRule = (requestType) => ({
   },
 });
 
-export default function ApprovalRules({ service = 'attendance' }) {
+// `service` scopes this to one module's forms, which is what the Attendance and
+// Leave Tracker settings pass. Manage Accounts passes nothing and gets every
+// form in one list, the way the reference's account-level tab does.
+export default function ApprovalRules({ service = null }) {
   const [rules, setRules] = useState(null);
   const [meta, setMeta] = useState(null);
   const [preview, setPreview] = useState({});
@@ -66,12 +69,12 @@ export default function ApprovalRules({ service = 'attendance' }) {
   const [search, setSearch] = useState('');
 
   const forms = useMemo(
-    () => (meta?.forms || []).filter(f => f.service === service),
+    () => (meta?.forms || []).filter(f => !service || f.service === service),
     [meta, service]
   );
 
   const load = useCallback(() => {
-    api.get(`/approval-rules?service=${service}`)
+    api.get(service ? `/approval-rules?service=${service}` : '/approval-rules')
       .then(r => setRules(r.data.data || []))
       .catch(err => { toast.error(err.response?.data?.message || 'Failed to load approvals'); setRules([]); });
   }, [service]);
@@ -108,10 +111,18 @@ export default function ApprovalRules({ service = 'attendance' }) {
       .catch(err => toast.error(err.response?.data?.message || 'Could not delete'));
   };
 
+  // PATCH, not a full PUT: flipping a switch should not re-validate and
+  // re-save every level, criterion and message on the rule.
   const toggleActive = rule => {
-    api.put(`/approval-rules/${rule.id}`, { ...rule, isActive: !rule.isActive })
+    api.patch(`/approval-rules/${rule.id}/status`, { isActive: !rule.isActive })
       .then(() => { toast.success(`${rule.name} ${rule.isActive ? 'switched off' : 'switched on'}`); load(); })
       .catch(err => toast.error(err.response?.data?.message || 'Could not save'));
+  };
+
+  const duplicate = rule => {
+    api.post(`/approval-rules/${rule.id}/duplicate`)
+      .then(() => { toast.success('Copied, switched off'); load(); })
+      .catch(err => toast.error(err.response?.data?.message || 'Could not duplicate'));
   };
 
   if (rules === null || !meta) return <Spinner />;
@@ -182,7 +193,7 @@ export default function ApprovalRules({ service = 'attendance' }) {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                {['Approval name', 'Form name', 'Template name', 'Chain', 'Order', 'Status', ''].map(h => (
+                {['Approval name', 'Form name', 'Template name', 'Chain', 'Follow-up', 'Order', 'Status', ''].map(h => (
                   <th key={h} className="text-left font-medium text-slate-600 px-4 py-2.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -220,13 +231,23 @@ export default function ApprovalRules({ service = 'attendance' }) {
                       </p>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {rule.followUp?.enabled
+                      ? <span className="text-[13px] text-slate-600">
+                          {rule.followUp.mode === 'repeat' ? 'Every' : 'After'} {rule.followUp.days}d
+                          <span className="text-slate-400"> at {rule.followUp.time}</span>
+                        </span>
+                      : <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{rule.sortOrder}</td>
                   <td className="px-4 py-3"><Toggle checked={rule.isActive} onChange={() => toggleActive(rule)} label="" /></td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button onClick={() => setEditing({ ...rule })}
                       className="text-[13.5px] text-blue-600 hover:text-blue-500">Edit</button>
+                    <button onClick={() => duplicate(rule)} aria-label={`Duplicate ${rule.name}`} title="Duplicate"
+                      className="ml-2 text-slate-400 hover:text-blue-600 p-1 align-middle"><Copy size={15} /></button>
                     <button onClick={() => remove(rule)} aria-label={`Delete ${rule.name}`}
-                      className="ml-2 text-slate-400 hover:text-red-500 p-1 align-middle"><Trash2 size={15} /></button>
+                      className="ml-1 text-slate-400 hover:text-red-500 p-1 align-middle"><Trash2 size={15} /></button>
                   </td>
                 </tr>
               ))}
