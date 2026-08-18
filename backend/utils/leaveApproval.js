@@ -103,9 +103,68 @@ async function deriveLevels(db, employeeId, requestType, context = {}) {
   return picks.map((approverId, i) => ({ level: i + 1, approverId }));
 }
 
+// Where an auto decision has to be written. A request type absent from this
+// map cannot be settled automatically, so its rule stays a chain rather than
+// producing a request nobody can act on.
+const REQUEST_TABLES = {
+  leave: 'leaves',
+  on_duty: 'on_duty_requests',
+  comp_off: 'comp_off_requests',
+  wfh: 'wfh_requests',
+  regularization: 'attendance_regularizations',
+  timesheet: 'timesheets',
+};
+
+/**
+ * Settle a request that an Auto Approve / Auto Reject rule matched.
+ *
+ * Without this, deriveLevels returned no levels for those decisions and the
+ * request was committed as 'pending' with nobody assigned: not approved, and
+ * un-actionable by anyone but full-access. The option has been savable since
+ * the Approvals screen shipped; nobody had set it, which is the only reason it
+ * never bit.
+ */
+async function settleAutoDecision(db, requestType, requestId, decision) {
+  const table = REQUEST_TABLES[requestType];
+  if (!table) return false;
+  const status = decision === 'auto_approve' ? 'approved' : 'rejected';
+
+  // comp_off_requests and wfh_requests have no updated_at, so the columns are
+  // resolved rather than assumed — naming one that is not there would fail the
+  // whole request on exactly those two types.
+  const cols = (await db.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_name = $1 AND column_name IN ('approved_at', 'updated_at')`,
+    [table]
+  )).rows.map(r => r.column_name);
+
+  const sets = ['status = $1', ...cols.map(c => `${c} = NOW()`)];
+  // approved_by stays NULL: nobody approved it, the rule did. Recording a
+  // person would put a name against a decision they did not make.
+  const r = await db.query(
+    `UPDATE ${table} SET ${sets.join(', ')} WHERE id = $2 RETURNING id`,
+    [status, requestId]
+  );
+  return r.rows.length > 0;
+}
+
 /** Create the approval_levels rows for a freshly-submitted request. */
 async function createLevels(db, requestType, requestId, employeeId, context = {}) {
   const levels = await deriveLevels(db, employeeId, requestType, context);
+
+  // No levels can mean two very different things: an auto decision, or a chain
+  // that resolved to nobody. Only the first should settle the request.
+  if (levels.length === 0) {
+    const rule = await pickRule(db, requestType, context);
+    if (rule && (rule.decision === 'auto_approve' || rule.decision === 'auto_reject')) {
+      await settleAutoDecision(db, requestType, requestId, rule.decision);
+      // Returned empty as before, so the callers' "email every approver" loops
+      // iterate over nothing and no "awaiting your approval" mail goes out for
+      // a request that is already settled.
+      return levels;
+    }
+  }
+
   for (const { level, approverId } of levels) {
     await db.query(
       `INSERT INTO approval_levels (request_type, request_id, level, approver_id)
@@ -317,7 +376,7 @@ function approvalLevelsJson(requestTypeLiteral, reqAlias = 'l', idCol = 'id') {
 }
 
 module.exports = {
-  deriveLevels, createLevels, getLevels, canUserAct,
+  deriveLevels, createLevels, settleAutoDecision, getLevels, canUserAct,
   applyApproval, applyApproveAll, applyRejection,
   approvalLevelsJson,
 };
