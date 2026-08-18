@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
 import ChartExportMenu from './ChartExportMenu';
+import { PERCENT_FMT } from '../../utils/reportExport';
 import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
 import SliceDrilldown from './SliceDrilldown';
@@ -132,7 +133,7 @@ export default function Diversity() {
       ) : (
         <>
           <div className="flex px-4 pt-4">
-            <ChartExportMenu rows={rows} columns={[{ key: 'label', header: typeLabel }, { key: 'count', header: 'Count' }]} fileStub={`diversity-${type}`} />
+            <ChartExportMenu rows={rows} columns={[{ key: 'label', header: typeLabel }, { key: 'count', header: 'Count' }, { key: 'pct', header: 'Percentage', numFmt: PERCENT_FMT, value: r => (total ? Number(r.count) / total : 0) }]} fileStub={`diversity-${type}`} />
           </div>
           {/* Age and Experience only bucket people who have a date of birth /
               joining date, but the percentages divide by the full headcount —

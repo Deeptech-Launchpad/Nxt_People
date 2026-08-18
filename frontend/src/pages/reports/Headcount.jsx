@@ -71,7 +71,7 @@ export default function Headcount() {
           <div className="flex mb-1">
             <ChartExportMenu
               rows={data}
-              columns={[{ key: 'year', header: 'Year' }, { key: 'count', header: 'Count' }, { key: 'growth', header: 'Percentage' }]}
+              columns={[{ key: 'year', header: 'Period' }, { key: 'count', header: 'Count' }, { key: 'growth', header: 'Percentage' }]}
               fileStub="headcount-trend"
             />
           </div>

@@ -68,10 +68,13 @@ const dayColumns = dayLabels => dayLabels.map((d, i) => {
   };
 });
 
-const GRID_LEGEND = [[
-  ['P', 'Present'], ['A', 'Absent'], ['H', 'Holidays'], ['W', 'Weekend'],
-  ['CL', 'Casual Leave'], ['CO', 'Compensatory Off'], ['PM', 'Permission'], ['LWP', 'Leave Without Pay'],
-]];
+// Statuses on one row, leave types on the next — the reference's own layout.
+// Its numbered CL1/PM2 codes are year-tagged duplicates we deliberately do not
+// reproduce; see MusterRoll for the same note.
+const GRID_LEGEND = [
+  [['P', 'Present'], ['OD', 'On Duty'], ['HD', 'Half Day'], ['A', 'Absent'], ['H', 'Holidays'], ['W', 'Weekend']],
+  [['CL', 'Casual Leave'], ['PM', 'Permission'], ['CO', 'Compensatory Off'], ['LWP', 'Leave Without Pay']],
+];
 
 // Employee × date grid of attendance codes — the report Zoho calls Employee
 // Present/Absent Status. Our previous "summary" tab was an aggregate table,

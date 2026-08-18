@@ -10,7 +10,7 @@ import PeriodFilter from './PeriodFilter';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import useFitToViewport from '../../hooks/useFitToViewport';
-import { codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
+import { codeStyle, weekendColumns, WEEKEND_HATCH, sumDays, round2 } from './attendanceCodes';
 import { LegendBar, StatusPanel } from './AttendanceLegend';
 
 const now = new Date();
@@ -60,21 +60,25 @@ const dayHeader = d => {
   const dt = new Date(d);
   return `${dt.getDate()} - ${dt.toLocaleDateString('en-US', { month: 'short' })}`;
 };
-const isPaidOff = c => ['H', 'W'].includes(c) || ['CL', 'CO', 'PM'].includes(String(c).replace(/^[\d.]+/, '').split('/')[0]);
-
 const musterColumns = (dayLabels) => {
   const cols = [];
   dayLabels.forEach((d, i) => {
     cols.push({ key: `shift_${i}`, header: 'Shift', value: r => r.days[i]?.shift || '' });
     cols.push({ key: `status_${i}`, header: 'Status', value: r => r.days[i]?.code || '' });
   });
-  const count = (r, pred) => r.days.filter(x => x.code && x.code !== '-' && pred(x.code)).length;
-  cols.push({ key: 'workedDays', header: 'Worked Days', value: r => count(r, c => c === 'P' || c === 'HD') });
-  cols.push({ key: 'weekend', header: 'Weekend', value: r => count(r, c => c === 'W') });
-  cols.push({ key: 'holidays', header: 'Holidays', value: r => count(r, c => c === 'H') });
-  cols.push({ key: 'paidOff', header: 'Paid Off ', value: r => count(r, isPaidOff) });
-  cols.push({ key: 'unpayable', header: 'Unpayable Days', value: r => count(r, c => c === 'A' || String(c).startsWith('LWP')) });
-  cols.push({ key: 'payable', header: 'Payable Days', value: r => count(r, c => c === 'P' || c === 'HD' || isPaidOff(c)) });
+  // Six weighted roll-ups. Totals are cached per row because every one of them
+  // walks the whole month and there are six of them on 150+ rows.
+  const cache = new Map();
+  const t = r => { if (!cache.has(r)) cache.set(r, sumDays(r.days)); return cache.get(r); };
+
+  // The definition lines are the reference's own, printed on a second header
+  // row beneath the three columns that are derived rather than counted.
+  cols.push({ key: 'workedDays', header: 'Worked Days', subHeader: 'Present + On Duty', value: r => round2(t(r).worked) });
+  cols.push({ key: 'weekend', header: 'Weekend', value: r => round2(t(r).weekend) });
+  cols.push({ key: 'holidays', header: 'Holidays', value: r => round2(t(r).holiday) });
+  cols.push({ key: 'paidOff', header: 'Paid Off', value: r => round2(t(r).paidOff) });
+  cols.push({ key: 'unpayable', header: 'Unpayable Days', subHeader: 'Unpaid Leave + Absent', value: r => round2(t(r).unpayable) });
+  cols.push({ key: 'payable', header: 'Payable Days', subHeader: 'Worked Days + Paid Off', value: r => round2(t(r).worked + t(r).paidOff) });
   return cols;
 };
 
@@ -86,10 +90,14 @@ const musterGroups = (dayLabels, identityWidth) => [
   { label: null, span: 6 },
 ];
 
-const MUSTER_LEGEND = [[
-  ['P', 'Present'], ['A', 'Absent'], ['H', 'Holidays'], ['W', 'Weekend'],
-  ['CL', 'Casual Leave'], ['CO', 'Compensatory Off'], ['PM', 'Permission'], ['LWP', 'Leave Without Pay'],
-]];
+// Two rows, as in the reference: the fixed day statuses, then the leave types.
+// The reference's second row carries CL1/CL2/CL6 and PM1/PM2/PM5/PM6 only
+// because that tenant accumulated a year-tagged leave type per year. We hold
+// one Casual Leave and one Permission, so ours are the unsuffixed codes.
+const MUSTER_LEGEND = [
+  [['P', 'Present'], ['OD', 'On Duty'], ['HD', 'Half Day'], ['A', 'Absent'], ['H', 'Holidays'], ['W', 'Weekend']],
+  [['CL', 'Casual Leave'], ['PM', 'Permission'], ['CO', 'Compensatory Off'], ['LWP', 'Leave Without Pay']],
+];
 
 // Muster Roll pairs the rostered Shift with the resulting Status under each
 // date — that pairing is what distinguishes it from Present/Absent Status,

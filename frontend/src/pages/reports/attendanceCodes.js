@@ -60,3 +60,65 @@ export const WEEKEND_HATCH = {
     'repeating-linear-gradient(45deg, rgba(148,163,184,0.16) 0 4px, transparent 4px 8px)',
   backgroundColor: 'rgba(241,245,249,0.7)',
 };
+
+// ── Roll-up weighting ──────────────────────────────────────────────────────
+// A cell is either one code ('P', 'W') or a split that must add up to a single
+// day ('0.06PM/0.94P', '0.5CL/0.5P'). Muster Roll's roll-up columns are
+// fractional in the reference — a 30-minute permission on an 8-hour shift
+// reads 6.94 worked and 8.06 paid off, not 6 and 9 — so a cell is *weighed*
+// rather than counted.
+//
+// Counting was wrong in both directions at once: a split day contributed
+// nothing to Worked Days (the code is not literally 'P') and a whole day to
+// Paid Off, so an employee who took thirty minutes off lost a full day from
+// one column and gained a full day in another.
+//
+// The property that matters is conservation: worked + paidOff + unpayable is
+// exactly 1.0 for any day that happened, so Payable Days can never exceed the
+// number of days in the period.
+const BUCKET = {
+  P:   { worked: 1 },
+  OD:  { worked: 1 },
+  W:   { weekend: 1, paidOff: 1 },
+  H:   { holiday: 1, paidOff: 1 },
+  CL:  { paidOff: 1 },
+  CO:  { paidOff: 1 },
+  // Permission is paid time off inside a working day, so its fraction leaves
+  // Worked and lands in Paid Off. The day still pays in full.
+  PM:  { paidOff: 1 },
+  L:   { paidOff: 1 },
+  LWP: { unpayable: 1 },
+  A:   { unpayable: 1 },
+  // Half a day present with no leave record covering the remainder: the worked
+  // half pays and the other half is covered by nothing, so it is not payable.
+  HD:  { worked: 0.5, unpayable: 0.5 },
+};
+
+const EMPTY = () => ({ worked: 0, weekend: 0, holiday: 0, paidOff: 0, unpayable: 0 });
+
+export const dayWeights = (code) => {
+  const out = EMPTY();
+  if (!code || code === '-') return out;
+  String(code).split('/').forEach(part => {
+    const m = /^([\d.]*)([A-Za-z]+)$/.exec(part.trim());
+    if (!m) return;
+    // A leading number is the fraction of the day; a bare code is the whole of it.
+    const frac = m[1] === '' ? 1 : parseFloat(m[1]);
+    const bucket = BUCKET[m[2].toUpperCase()];
+    if (!bucket || !Number.isFinite(frac)) return;
+    Object.entries(bucket).forEach(([k, v]) => { out[k] += v * frac; });
+  });
+  return out;
+};
+
+// A day is a bare code on the Present/Absent grid and a {shift, code} pair on
+// Muster Roll, so both shapes are accepted here rather than at each call site.
+export const sumDays = (days) => (days || []).reduce((acc, d) => {
+  const w = dayWeights(d && typeof d === 'object' ? d.code : d);
+  Object.keys(acc).forEach(k => { acc[k] += w[k]; });
+  return acc;
+}, EMPTY());
+
+// Fractions accumulated in binary drift — 6.94 + 8.06 lands on 15.000000000002
+// often enough that the sheet has to be rounded on the way out.
+export const round2 = n => Math.round(n * 100) / 100;

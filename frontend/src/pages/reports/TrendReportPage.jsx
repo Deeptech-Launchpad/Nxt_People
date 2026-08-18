@@ -87,7 +87,7 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
           <div className="flex mb-1">
             <ChartExportMenu
               rows={data}
-              columns={[{ key: 'month', header: 'Month' }, { key: 'year', header: 'Year' }, { key: 'count', header: 'Count' }, { key: 'growth', header: 'Percentage' }]}
+              columns={[{ key: 'month', header: 'Period' }, { key: 'year', header: 'Year' }, { key: 'count', header: 'Count' }, { key: 'growth', header: 'Percentage' }]}
               fileStub={title.toLowerCase().replace(/\s+/g, '-')}
             />
           </div>

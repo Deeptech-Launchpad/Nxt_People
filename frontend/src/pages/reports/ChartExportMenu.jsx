@@ -32,9 +32,25 @@ export default function ChartExportMenu({ rows, columns, fileStub }) {
     };
   }, [open]);
 
+  // Columns may be plain keys or derived, and a percentage has to reach the
+  // sheet as a real fraction with a % format so Excel can still do arithmetic
+  // on it — writing "94.83%" as text made the column useless. Same contract as
+  // the full table exports in reportExport.js.
   const buildSheet = () => {
-    const aoa = [columns.map(c => c.header), ...rows.map(r => columns.map(c => r[c.key] ?? ''))];
-    return XLSX.utils.aoa_to_sheet(aoa);
+    const cell = (c, r) => {
+      const v = c.value ? c.value(r) : r[c.key];
+      return v === undefined || v === null ? '' : v;
+    };
+    const aoa = [columns.map(c => c.header), ...rows.map(r => columns.map(c => cell(c, r)))];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    columns.forEach((c, ci) => {
+      if (!c.numFmt) return;
+      for (let ri = 0; ri < rows.length; ri++) {
+        const addr = XLSX.utils.encode_cell({ r: ri + 1, c: ci });
+        if (ws[addr] && typeof ws[addr].v === 'number') ws[addr].z = c.numFmt;
+      }
+    });
+    return ws;
   };
 
   const exportAs = (format) => {

@@ -125,6 +125,14 @@ export function buildSheet({ meta = [], legend = [], groups = null, columns, row
     headerRow += 1;
   } else {
     aoa.push(columns.map((c, i) => (i < stackedIdentity ? null : c.header)));
+    // Muster Roll prints a definition line under three of its roll-up columns
+    // ("Present + On Duty", "Unpaid Leave + Absent", "Worked Days + Paid Off").
+    // It is a sparse second header row rather than a group banner, so it is
+    // emitted only when a column actually asks for one.
+    if (columns.some(c => c.subHeader)) {
+      aoa.push(columns.map(c => c.subHeader || null));
+      headerRow += 1;
+    }
   }
   rows.forEach(r => aoa.push(columns.map(c => cellValue(c, r))));
 

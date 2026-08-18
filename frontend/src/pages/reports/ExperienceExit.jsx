@@ -5,6 +5,7 @@ import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import ChartExportMenu from './ChartExportMenu';
+import { PERCENT_FMT } from '../../utils/reportExport';
 import PeriodFilter from './PeriodFilter';
 import EmploymentTypeFilter from './EmploymentTypeFilter';
 import FilterRow from './FilterRow';
@@ -104,7 +105,7 @@ export default function ExperienceExit() {
       ) : (
         <div className="p-4">
           <div className="flex mb-1">
-            <ChartExportMenu rows={rows} columns={[{ key: 'label', header: 'Experience' }, { key: 'count', header: 'Count' }]} fileStub="experience-wise-exit" />
+            <ChartExportMenu rows={rows} columns={[{ key: 'label', header: 'Current Experience' }, { key: 'count', header: 'Count' }, { key: 'pct', header: 'Percentage', numFmt: PERCENT_FMT, value: r => (total ? Number(r.count) / total : 0) }]} fileStub="experience-wise-exit" />
           </div>
           <ResponsiveContainer width="100%" height={340}>
             <AreaChart data={rows} margin={{ top: 30, right: 20, left: 10, bottom: 24 }}>

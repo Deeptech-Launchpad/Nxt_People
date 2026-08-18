@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import DonutWithStats from './DonutWithStats';
 import ChartExportMenu from './ChartExportMenu';
+import { PERCENT_FMT } from '../../utils/reportExport';
 import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
 import SliceDrilldown from './SliceDrilldown';
@@ -118,7 +119,7 @@ export default function Distribution() {
       ) : (
         <>
           <div className="flex px-4 pt-4">
-            <ChartExportMenu rows={rows} columns={[{ key: 'label', header: typeLabel }, { key: 'count', header: 'Count' }]} fileStub={`distribution-${by}`} />
+            <ChartExportMenu rows={rows} columns={[{ key: 'label', header: typeLabel }, { key: 'count', header: 'Count' }, { key: 'pct', header: 'Percentage', numFmt: PERCENT_FMT, value: r => (total ? Number(r.count) / total : 0) }]} fileStub={`distribution-${by}`} />
           </div>
           {/* Distribution draws a solid pie in Zoho; Diversity draws a donut. */}
           <DonutWithStats
