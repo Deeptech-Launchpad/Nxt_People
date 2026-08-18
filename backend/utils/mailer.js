@@ -235,7 +235,7 @@ const sendMail = async ({ to, cc, bcc, replyTo, subject, text, html }) => {
  * Leave Approval Email — sent to approvers with a direct approval link.
  * Includes employee info, leave details, and a clickable approval button.
  */
-const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, endDate, totalDays, reason, approvalLink, customSubject, hours, startTime, endTime }) => {
+const sendLeaveApprovalEmail = async ({ to, cc, bcc, replyTo, employeeName, leaveType, startDate, endDate, totalDays, reason, approvalLink, customSubject, hours, startTime, endTime }) => {
   const transporter = createTransporter();
   const dateRange = `${new Date(startDate).toLocaleDateString('en-IN')} ${endDate !== startDate ? `– ${new Date(endDate).toLocaleDateString('en-IN')}` : ''}`;
   const safeEmployeeName = escapeHtml(employeeName || 'Employee');
@@ -328,9 +328,18 @@ const sendLeaveApprovalEmail = async ({ to, employeeName, leaveType, startDate, 
 </html>
 `;
 
+  // Cc, Bcc and Reply-To go through the same sanitiser as To, and are omitted
+  // entirely when empty rather than handed over as empty arrays.
+  const ccList = sanitizeRecipients(cc || []);
+  const bccList = sanitizeRecipients(bcc || []);
+  const replyToList = sanitizeRecipients(replyTo || []);
+
   await transporter.sendMail({
     from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
     to: sanitizeRecipients(to),
+    ...(ccList.length ? { cc: ccList } : {}),
+    ...(bccList.length ? { bcc: bccList } : {}),
+    ...(replyToList.length ? { replyTo: replyToList[0] } : {}),
     subject: customSubject || `[Action Required] ${safeEmployeeName} - ${safeLeaveType} Leave Approval`,
     html,
     text: `Leave Approval Required\n\n${safeEmployeeName} has requested ${safeLeaveType} leave (${safeDateRange}, ${totalDays} day(s)).\n\nReason: ${safeReason}\n\nClick here to approve: ${safeLink}\n\nOr visit NXT People → Team → Approvals`,

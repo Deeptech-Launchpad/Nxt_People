@@ -13,6 +13,7 @@ const { getLeavePolicies } = require('../utils/leavePolicy');
 const logger = require('../logger');
 const { fire } = require('../utils/workflowEngine');
 const { canCancel, loadConfig } = require('../utils/leaveCancellation');
+const { approvalEmail, outcomeEmail } = require('../utils/approvalMessages');
 
 router.use(protect);
 
@@ -487,21 +488,48 @@ router.post('/', [
                                  leaveType.charAt(0).toUpperCase() + leaveType.slice(1) + ' Leave';
         const approvalLink = `${baseUrl}/more-services/operations/leave-tracker?openId=${leaveId}`;
 
-        await Promise.all(allRecipients.filter(a => a.email).map(a =>
-          sendLeaveApprovalEmail({
-            to: a.email,
-            employeeName: empName,
-            leaveType: leaveTypeDisplay,
-            startDate,
-            endDate,
-            totalDays,
-            reason,
-            approvalLink,
-            hours: isPermission ? permHours : null,
-            startTime: isPermission ? permStartTime : null,
-            endTime: isPermission ? permEndTime : null,
-          }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))
-        ));
+        // Settings > Approvals > Messages decides who is written to, with what
+        // subject, and whether a template replaces the built-in wording. Until
+        // this was wired that card was stored and ignored.
+        const mail = await approvalEmail({
+          requestType: 'leave',
+          record: { leaveType, totalDays, startDate, endDate },
+          approverEmails: allRecipients.map(a => a.email).filter(Boolean),
+          employeeId: req.user._id,
+          vars: {
+            EmployeeName: empName, LeaveType: leaveTypeDisplay,
+            FromDate: startDate, ToDate: endDateVal, Days: totalDays,
+            Reason: reason || '', Link: approvalLink,
+          },
+        });
+
+        if (mail.html) {
+          // A chosen template replaces the whole email, so the built-in layout
+          // is not rendered underneath it.
+          await sendMail({
+            to: mail.to, cc: mail.cc, bcc: mail.bcc, replyTo: mail.replyTo,
+            subject: mail.subject || 'A request is waiting for your approval',
+            html: mail.html,
+          }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'));
+        } else {
+          await Promise.all(mail.to.map(address =>
+            sendLeaveApprovalEmail({
+              to: address,
+              employeeName: empName,
+              leaveType: leaveTypeDisplay,
+              startDate,
+              endDate,
+              totalDays,
+              reason,
+              approvalLink,
+              customSubject: mail.subject || undefined,
+              cc: mail.cc, bcc: mail.bcc, replyTo: mail.replyTo,
+              hours: isPermission ? permHours : null,
+              startTime: isPermission ? permStartTime : null,
+              endTime: isPermission ? permEndTime : null,
+            }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))
+          ));
+        }
       } catch (e) { logger.error({ err: e.message }, '[leaves] notify/feed soft-fail'); }
 
       // Fire-and-forget by design: the leave is already committed, and a
@@ -658,17 +686,34 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
           `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE id=$1`,
           [leave.employee_id]
         );
-        if (empRes.rows[0]?.email) {
-          await sendLeaveStatusEmail({
-            to: empRes.rows[0].email,
-            employeeName: empRes.rows[0].name,
-            leaveType: leaveLabel,
-            startDate: startLabel,
-            totalDays: leave.total_days,
-            hours: leave.hours || null,
-            status: result.allApproved ? 'approved' : 'partial',
-            approverName: result.allApproved ? null : (`${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || null),
-          });
+        // "Also tell the requester when it is Approved" on the Approvals
+        // screen. Switching it off used to change nothing.
+        const notice = await outcomeEmail({
+          requestType: 'leave', record: leave, event: 'approved',
+          vars: {
+            EmployeeName: empRes.rows[0]?.name || '', LeaveType: leaveLabel,
+            FromDate: startLabel, Days: leave.total_days,
+          },
+        });
+        if (empRes.rows[0]?.email && notice.send) {
+          if (notice.html) {
+            await sendMail({
+              to: [empRes.rows[0].email], cc: notice.cc, bcc: notice.bcc, replyTo: notice.replyTo,
+              subject: notice.subject || 'Your request has been approved',
+              html: notice.html,
+            });
+          } else {
+            await sendLeaveStatusEmail({
+              to: empRes.rows[0].email,
+              employeeName: empRes.rows[0].name,
+              leaveType: leaveLabel,
+              startDate: startLabel,
+              totalDays: leave.total_days,
+              hours: leave.hours || null,
+              status: result.allApproved ? 'approved' : 'partial',
+              approverName: result.allApproved ? null : (`${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || null),
+            });
+          }
         }
       } catch (e) { logger.warn({ err: e.message }, '[leaves] employee status email failed'); }
       await logAudit(req, { action: 'APPROVE', resource: 'Leave', resourceId: leave.id, changes: { allApproved: result.allApproved } });
@@ -719,17 +764,32 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         `SELECT email, COALESCE(first_name || ' ' || last_name, email) AS name FROM employees WHERE id=$1`,
         [leave.employee_id]
       );
-      if (empRes.rows[0]?.email) {
-        await sendLeaveStatusEmail({
-          to: empRes.rows[0].email,
-          employeeName: empRes.rows[0].name,
-          leaveType: leaveLabel,
-          startDate: startLabel,
-          totalDays: leave.total_days,
-          hours: leave.hours || null,
-          status: 'rejected',
-          reason: rejectionReason,
-        });
+      const notice = await outcomeEmail({
+        requestType: 'leave', record: leave, event: 'rejected',
+        vars: {
+          EmployeeName: empRes.rows[0]?.name || '', LeaveType: leaveLabel,
+          FromDate: startLabel, Days: leave.total_days, Reason: rejectionReason || '',
+        },
+      });
+      if (empRes.rows[0]?.email && notice.send) {
+        if (notice.html) {
+          await sendMail({
+            to: [empRes.rows[0].email], cc: notice.cc, bcc: notice.bcc, replyTo: notice.replyTo,
+            subject: notice.subject || 'Your request has been rejected',
+            html: notice.html,
+          });
+        } else {
+          await sendLeaveStatusEmail({
+            to: empRes.rows[0].email,
+            employeeName: empRes.rows[0].name,
+            leaveType: leaveLabel,
+            startDate: startLabel,
+            totalDays: leave.total_days,
+            hours: leave.hours || null,
+            status: 'rejected',
+            reason: rejectionReason,
+          });
+        }
       }
     } catch (e) { logger.warn({ err: e.message }, '[leaves] employee rejection email failed'); }
     await logAudit(req, { action: 'REJECT', resource: 'Leave', resourceId: leave.id, changes: { status: 'rejected', rejectionReason } });

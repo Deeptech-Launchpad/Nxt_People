@@ -87,6 +87,18 @@ function cleanCriteria(input, requestType) {
   });
 }
 
+// Cc, Bcc and Reply-To are typed addresses rather than chips, so they are
+// validated here as well as in the mailer's sanitiser. Storing an address the
+// mailer will silently drop is the same bug as storing a subject nothing reads.
+const EMAIL = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+function cleanAddresses(list, label) {
+  const arr = Array.isArray(list) ? list : [];
+  const out = [...new Set(arr.map(x => String(x || '').trim()).filter(Boolean))];
+  if (out.length > 20) throw new Error(`${label} cannot have more than 20 addresses`);
+  for (const a of out) if (!EMAIL.test(a)) throw new Error(`'${a}' is not a valid ${label} address`);
+  return out;
+}
+
 function cleanMessages(input) {
   const m = input || {};
   const recipients = Array.isArray(m.to) ? m.to.filter(x => ['current_approver', 'requester', 'reporting_manager'].includes(x)) : [];
@@ -94,9 +106,14 @@ function cleanMessages(input) {
   const subject = String(m.subject || '').trim();
   if (!subject) throw new Error('The approval email needs a subject');
   if (subject.length > 300) throw new Error('The subject must be 300 characters or fewer');
+  const replyTo = cleanAddresses(m.replyTo, 'Reply-To');
+  if (replyTo.length > 1) throw new Error('Only one Reply-To address can be set');
   return {
     from: m.from === 'performer' ? 'performer' : 'default_address',
     to: [...new Set(recipients)],
+    cc: cleanAddresses(m.cc, 'Cc'),
+    bcc: cleanAddresses(m.bcc, 'Bcc'),
+    replyTo,
     subject,
     templateName: String(m.templateName || '').trim() || null,
     onApproved: { enabled: m.onApproved?.enabled !== false, templateName: m.onApproved?.templateName || null },

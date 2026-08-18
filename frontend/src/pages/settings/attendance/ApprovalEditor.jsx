@@ -15,6 +15,8 @@ import { roleLabel } from '../../../utils/roles';
 // approval that simply routes everything up the reporting line does not present
 // a condition builder nobody asked for.
 
+const EXTRA_FIELDS = [['cc', 'Cc'], ['bcc', 'Bcc'], ['replyTo', 'Reply To']];
+
 const LEVEL_WORDS = ['', 'Single Level', 'Two Levels', 'Three Levels', 'Four Levels', 'Five Levels', 'Six Levels'];
 
 const RECIPIENTS = [
@@ -49,6 +51,9 @@ const input = 'w-full border border-slate-300 rounded-md px-3 py-2 text-[14px] f
 
 export default function ApprovalEditor({ value, meta, forms, busy, onChange, onSave, onClose }) {
   const [active, setActive] = useState('details');
+  // Which of Cc / Bcc / Reply-To have been revealed on this visit. An
+  // address already saved keeps its box shown without needing this.
+  const [extra, setExtra] = useState({});
   const scrollRef = useRef(null);
   const refs = useRef({});
 
@@ -409,12 +414,40 @@ export default function ApprovalEditor({ value, meta, forms, busy, onChange, onS
               subtitle="The email that tells an approver a request is waiting.">
               <div className="space-y-4">
                 <div>
-                  <label className="block text-[13px] font-medium text-slate-700 mb-1.5">From<span className="text-red-500 ml-0.5">*</span></label>
+                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                    <label className="block text-[13px] font-medium text-slate-700">From<span className="text-red-500 ml-0.5">*</span></label>
+                    {/* Revealed rather than always shown: three empty address
+                        boxes on every approval read as required fields. */}
+                    <div className="flex items-center gap-2 text-[12.5px]">
+                      <span className="text-slate-500">Add:</span>
+                      {EXTRA_FIELDS.map(([k, l]) => (
+                        <button key={k} onClick={() => setExtra(x => ({ ...x, [k]: true }))}
+                          disabled={extra[k] || (value.messages[k] || []).length > 0}
+                          className="text-blue-600 hover:text-blue-500 disabled:text-slate-300 disabled:cursor-default">
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <select value={value.messages.from} onChange={e => setMsg({ from: e.target.value })} className={`${selectClass} w-full`}>
                     <option value="default_address">Default from address</option>
                     <option value="performer">Person performing this action</option>
                   </select>
                 </div>
+
+                {EXTRA_FIELDS.filter(([k]) => extra[k] || (value.messages[k] || []).length > 0).map(([k, l]) => (
+                  <div key={k}>
+                    <label className="block text-[13px] font-medium text-slate-700 mb-1.5">{l}</label>
+                    <input
+                      value={(value.messages[k] || []).join(', ')}
+                      placeholder={k === 'replyTo' ? 'one address' : 'comma separated'}
+                      onChange={e => setMsg({
+                        [k]: e.target.value.split(',').map(x => x.trim()).filter(Boolean),
+                      })}
+                      className={input}
+                    />
+                  </div>
+                ))}
 
                 <div>
                   <label className="block text-[13px] font-medium text-slate-700 mb-1.5">To<span className="text-red-500 ml-0.5">*</span></label>
