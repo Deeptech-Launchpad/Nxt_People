@@ -34,7 +34,7 @@ export const SERVICES = [
     // The reference calls this tab Organization Setup here and Configuration
     // everywhere else. Renaming it globally is exactly the mistake this
     // override exists to prevent.
-    tabLabels: { configuration: 'Organization Setup' },
+    tabLabels: { configuration: 'Organization Setup', permissions: 'User Access Control' },
     icon: 'Users',
     description: 'People, locations, departments and designations',
     roles: ['admin', 'director', 'hr_admin'],
@@ -60,6 +60,21 @@ export const SERVICES = [
         { key: 'locations', label: 'Locations' },
         { key: 'departments', label: 'Departments' },
         { key: 'designations', label: 'Designations' },
+      ],
+      // The reference calls this tab User Access Control. Roles is a group in
+      // the rail, the way Organization Structure is.
+      permissions: [
+        {
+          key: 'roles', label: 'Roles',
+          children: [
+            { key: 'general-role', label: 'General Role' },
+            { key: 'specific-role', label: 'Specific Role' },
+            { key: 'specific-role-assignment', label: 'Specific Role Assignment' },
+          ],
+        },
+        { key: 'function-permissions', label: 'Function Based Permissions' },
+        { key: 'administrator', label: 'Administrator' },
+        { key: 'applicability-groups', label: 'Applicability groups' },
       ],
     },
   },

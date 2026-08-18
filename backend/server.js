@@ -11,6 +11,7 @@ const app     = require('./app');   // ← single source of truth for all routes
 const pool    = require('./db');
 const logger  = require('./logger');
 const chatWs  = require('./ws-chat');
+const permissions = require('./utils/permissions');
 const { isNonWorkingDay } = require('./utils/workingDays');
 const { sendCheckInReminderEmail, sendCheckOutReminderEmail } = require('./utils/mailer');
 const { DEFAULT_TZ } = require('./utils/timezone');
@@ -32,6 +33,13 @@ process.on('uncaughtException', (err) => {
 pool.query('SELECT NOW()', async (err) => {
   if (err) { logger.error({ err }, 'PostgreSQL connection failed'); return; }
   logger.info('PostgreSQL connected');
+  // Every route guard reads this map. Until it loads, permissions.js answers
+  // from the six roles compiled into it, which is what the application
+  // enforced before roles were records — so a request arriving in the gap is
+  // answered correctly for a system role and refused for a custom one, rather
+  // than being let through.
+  const map = await permissions.reload();
+  logger.info({ roles: map.size, fromTable: permissions.isLoaded() }, 'Role permissions loaded');
   await ensureAdminUser();
 });
 

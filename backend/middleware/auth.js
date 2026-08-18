@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
+const { roleCan } = require('../utils/permissions');
 
 exports.protect = async (req, res, next) => {
   let token;
@@ -47,9 +48,41 @@ exports.protect = async (req, res, next) => {
   }
 };
 
-exports.authorize = (...roles) => (req, res, next) => {
-  if (!roles.includes(req.user.role)) {
-    return res.status(403).json({ success: false, message: `Role '${req.user.role}' not authorized` });
+// Route guards ask about permissions now, so a role created in the UI can
+// actually pass one. The call sites are unchanged: every authorize() in the
+// codebase declares one of exactly three role sets, and each set names a
+// permission. Rewriting 182 call sites by hand is how a route quietly loses
+// its guard; the shape is matched instead.
+const GUARD_PERMISSION = new Map([
+  ['admin|director|hr_admin',                       'org.manage'],
+  ['admin|director|hr_admin|manager',               'team.manage'],
+  ['admin|director|hr_admin|manager|team_incharge', 'team.approve'],
+]);
+
+exports.GUARD_PERMISSION = GUARD_PERMISSION;
+
+exports.authorize = (...roles) => {
+  const shape = [...new Set(roles)].sort().join('|');
+  const permission = GUARD_PERMISSION.get(shape);
+
+  // Thrown while the routes are being built, not on the request that hits it.
+  // A guard shape nobody mapped would otherwise either let everyone through
+  // or nobody, and both are silent until someone notices.
+  if (!permission) {
+    throw new Error(
+      `authorize(${roles.map(r => `'${r}'`).join(', ')}) has no permission mapped. ` +
+      `Add the shape '${shape}' to GUARD_PERMISSION in middleware/auth.js.`
+    );
   }
-  next();
+
+  return (req, res, next) => {
+    if (roleCan(req.user.role, permission)) return next();
+    return res.status(403).json({ success: false, message: `Role '${req.user.role}' not authorized` });
+  };
+};
+
+// A guard for routes that name what they need rather than who may do it.
+exports.requires = permission => (req, res, next) => {
+  if (roleCan(req.user.role, permission)) return next();
+  return res.status(403).json({ success: false, message: `Role '${req.user.role}' not authorized` });
 };

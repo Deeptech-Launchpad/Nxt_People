@@ -144,6 +144,7 @@ app.use('/api/attendance-config', require('./routes/attendance-config'));
 app.use('/api/org-setup',        require('./routes/org-setup'));
 app.use('/api/org-users',        require('./routes/org-users'));
 app.use('/api/org-details',      require('./routes/org-details'));
+app.use('/api/access',           require('./routes/access-control'));
 app.use('/api/approval-rules',   require('./routes/approval-rules'));
 app.use('/api/automation',       require('./routes/automation'));
 app.use('/api/shift-config',     require('./routes/shift-config'));

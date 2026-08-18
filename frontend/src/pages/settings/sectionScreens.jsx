@@ -20,6 +20,11 @@ import BusinessUnits from './org/BusinessUnits';
 import Divisions from './org/Divisions';
 import StructureConfiguration from './org/StructureConfiguration';
 import ManageStructure from './org/ManageStructure';
+import { GeneralRole, SpecificRole } from './access/RoleCards';
+import SpecificRoleAssignment from './access/SpecificRoleAssignment';
+import FunctionPermissions from './access/FunctionPermissions';
+import Administrators from './access/Administrators';
+import ApplicabilityGroups from './access/ApplicabilityGroups';
 import Users from './org/Users';
 
 import AttendanceMethods from './attendance/AttendanceMethods';
@@ -62,6 +67,14 @@ const SECTION_SCREENS = {
   'accounts.configuration.business-units': BusinessUnits,
   'accounts.configuration.divisions': Divisions,
   'accounts.configuration.manage-structure': ManageStructure,
+
+  // User Access Control. Roles nests in the rail; the routing is flat.
+  'accounts.permissions.general-role': GeneralRole,
+  'accounts.permissions.specific-role': SpecificRole,
+  'accounts.permissions.specific-role-assignment': SpecificRoleAssignment,
+  'accounts.permissions.function-permissions': FunctionPermissions,
+  'accounts.permissions.administrator': Administrators,
+  'accounts.permissions.applicability-groups': ApplicabilityGroups,
   'accounts.configuration.locations': Locations,
   'accounts.configuration.departments': Departments,
   'accounts.configuration.designations': Designations,

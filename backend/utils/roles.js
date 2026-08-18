@@ -13,6 +13,8 @@
  *  (see middleware/auth.js), so role changes take effect immediately.
  * ───────────────────────────────────────────────────────────────────────── */
 
+const { roleCan } = require('./permissions');
+
 const ROLES = {
   ADMIN:         'admin',
   DIRECTOR:      'director',
@@ -29,8 +31,17 @@ const FULL_ACCESS = [ROLES.ADMIN, ROLES.DIRECTOR, ROLES.HR_ADMIN];
 // to their direct reports by reportsScope() at the data layer.
 const APPROVERS = [ROLES.ADMIN, ROLES.DIRECTOR, ROLES.HR_ADMIN, ROLES.MANAGER, ROLES.TEAM_INCHARGE];
 
-const isFullAccess = (role) => FULL_ACCESS.includes(role);
-const isManager    = (role) => role === ROLES.MANAGER || role === ROLES.TEAM_INCHARGE;
+// These two decide which rows a caller sees, in twenty-two files. They keep
+// their signatures and stay synchronous — the permission map is held in
+// memory for exactly this reason — but they now answer from a role's
+// permissions rather than from a list of six names, so a role created in the
+// UI scopes data the same way the role it was cloned from does.
+//
+// FULL_ACCESS and APPROVERS below are left as they were: they are still the
+// truth for the six system roles, and permissions.js falls back to them if the
+// roles table cannot be read.
+const isFullAccess = (role) => roleCan(role, 'people.viewAll');
+const isManager    = (role) => roleCan(role, 'people.viewReports');
 
 /**
  * Returns a SQL fragment to AND into a query so the caller only sees the
