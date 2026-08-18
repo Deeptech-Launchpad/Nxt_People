@@ -874,8 +874,12 @@ router.get('/export', async (req, res) => {
 router.get('/holidays', async (req, res) => {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
+    // `is_optional` was selected here and the column has never existed, so this
+    // route answered 500 to every request it ever served. Optionality lives in
+    // `type`: a restricted holiday is the one an employee may choose to take.
     const r = await pool.query(
-      `SELECT id as "_id", name, date, description, is_optional as "isOptional"
+      `SELECT id as "_id", name, date, description, type,
+              (type = 'restricted') AS "isOptional"
        FROM holidays
        WHERE EXTRACT(YEAR FROM date) = $1
        ORDER BY date ASC`,
@@ -883,6 +887,9 @@ router.get('/holidays', async (req, res) => {
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
+    // Logged, not just swallowed. The generic reply with no log is why a
+    // permanently broken query went unnoticed.
+    logger.error({ err: err.message }, '[attendance] holidays list failed');
     res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
 });

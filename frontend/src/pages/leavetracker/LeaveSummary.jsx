@@ -370,7 +370,13 @@ export default function LeaveSummary() {
     Promise.all([
       api.get(`/leaves/balance?year=${dateRange.year}`),
       api.get(`/leaves/my?year=${dateRange.year}`),
-      api.get(`/attendance/holidays?year=${dateRange.year}`).catch(() => ({ data: { data: [] } })),
+      // Kept non-fatal so one failing call cannot blank the balances and the
+      // leave list beside it — but it now says so. Swallowing this silently
+      // rendered a year with no holidays in it and looked like real data.
+      api.get(`/attendance/holidays?year=${dateRange.year}`).catch(() => {
+        toast.error('Holidays could not be loaded, so the calendar below may be incomplete');
+        return { data: { data: [] } };
+      }),
     ]).then(([b, l, h]) => {
       setCards(b.data.data || []);
       setLeaves(l.data.data || []);

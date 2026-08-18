@@ -36,6 +36,16 @@ function atMidnight(d) {
   out.setHours(0, 0, 0, 0);
   return out;
 }
+
+// 'YYYY-MM-DD' from a date's LOCAL parts.
+//
+// toISOString() was used here and it converts to UTC first, so anywhere east of
+// Greenwich a date built at local midnight is the previous evening in UTC and
+// every string came back a day early: asked for 2026-01-01, told 2025-12-31.
+// The holiday lookups below compare against date::text straight out of
+// Postgres, which is the true calendar day, so the two disagreed by one day
+// for every row and every query.
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 function daysBetween(a, b) {
   return Math.round((atMidnight(b) - atMidnight(a)) / 86_400_000);
 }
@@ -83,10 +93,10 @@ function ruleMatchesDate(rule, date) {
  * (typically a cron job) doesn't accidentally skip every day.
  */
 async function isNonWorkingDay(date = new Date()) {
-  const ymd = atMidnight(date).toISOString().slice(0, 10);
+  const day = ymd(atMidnight(date));
   try {
     // A closure or an explicit working-day override beats everything else.
-    const h = await pool.query(`SELECT type FROM holidays WHERE date = $1::date`, [ymd]);
+    const h = await pool.query(`SELECT type FROM holidays WHERE date = $1::date`, [day]);
     const holType = h.rows[0]?.type;
     if (holidayClosesOffice(holType)) return true;
     if (holType === 'working_day') return false;
@@ -117,8 +127,8 @@ async function countWorkingDays(startDate, endDate) {
   const end   = atMidnight(new Date(endDate));
   if (end < start) return 0;
 
-  const startYmd = start.toISOString().slice(0, 10);
-  const endYmd   = end.toISOString().slice(0, 10);
+  const startYmd = ymd(start);
+  const endYmd   = ymd(end);
 
   let rules = [];
   let holidayMap = new Map();
@@ -150,8 +160,7 @@ async function countWorkingDays(startDate, endDate) {
   let count = 0;
   const cur = new Date(start);
   while (cur <= end) {
-    const ymd = cur.toISOString().slice(0, 10);
-    const holType = holidayMap.get(ymd);
+    const holType = holidayMap.get(ymd(cur));
     let isWorkingDay;
     if (holidayClosesOffice(holType)) {
       isWorkingDay = false;

@@ -707,6 +707,35 @@ router.get('/admin/payslips', authorize('admin', 'director', 'hr_admin', 'manage
   }
 });
 
+// Registered ahead of '/admin/payslips/:id' deliberately. Express matches in
+// registration order, so with this below it the :id route captured the word
+// "export" as an id, Postgres rejected it as a malformed uuid, and this
+// handler was unreachable code that answered 500 to every request.
+router.get('/admin/payslips/export', authorize(...PAYROLL_ADMIN), async (req, res) => {
+  try {
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const r = await pool.query(
+      `SELECT e.employee_id AS code, e.first_name, e.last_name, e.designation, e.department,
+              e.bank_name, e.bank_account, e.bank_ifsc, e.pan_number,
+              p.status, p.gross_earnings, p.pf_employee, p.esi_employee, p.professional_tax, p.tds,
+              p.total_deductions, p.net_pay, p.lop_days, p.slip_number
+         FROM payroll_payslips p JOIN employees e ON p.employee_id = e.id
+        WHERE p.pay_month = $1 AND p.pay_year = $2 AND p.superseded_by IS NULL
+        ORDER BY e.first_name ASC`,
+      [month, year]
+    );
+    const period = `${String(month).padStart(2, '0')}-${year}`;
+    sendCsv(res, `payroll-verification-${period}.csv`,
+      ['Employee ID', 'Name', 'Designation', 'Department', 'Bank Name', 'Account Number', 'IFSC', 'PAN',
+       'Gross Earnings', 'PF', 'ESI', 'Professional Tax', 'TDS', 'Total Deductions', 'Net Pay', 'LOP Days', 'Status', 'Slip Number'],
+      r.rows.map(x => [x.code, `${x.first_name} ${x.last_name}`, x.designation || '', x.department || '',
+        x.bank_name || '', x.bank_account || '', x.bank_ifsc || '', x.pan_number || '',
+        x.gross_earnings, x.pf_employee, x.esi_employee, x.professional_tax, x.tds, x.total_deductions, x.net_pay,
+        x.lop_days, x.status, x.slip_number || '']));
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
 router.get('/admin/payslips/:id', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const r = await pool.query(
@@ -1394,30 +1423,6 @@ router.get('/admin/reports/:type', authorize(...PAYROLL_ADMIN), async (req, res)
 // deliberately locked/paid-only). This is the pre-lock verification list —
 // accounts can eyeball bank details against a draft run before anything is
 // finalised, then this same sheet is what actually goes to the bank.
-router.get('/admin/payslips/export', authorize(...PAYROLL_ADMIN), async (req, res) => {
-  try {
-    const month = Number(req.query.month) || (new Date().getMonth() + 1);
-    const year = Number(req.query.year) || new Date().getFullYear();
-    const r = await pool.query(
-      `SELECT e.employee_id AS code, e.first_name, e.last_name, e.designation, e.department,
-              e.bank_name, e.bank_account, e.bank_ifsc, e.pan_number,
-              p.status, p.gross_earnings, p.pf_employee, p.esi_employee, p.professional_tax, p.tds,
-              p.total_deductions, p.net_pay, p.lop_days, p.slip_number
-         FROM payroll_payslips p JOIN employees e ON p.employee_id = e.id
-        WHERE p.pay_month = $1 AND p.pay_year = $2 AND p.superseded_by IS NULL
-        ORDER BY e.first_name ASC`,
-      [month, year]
-    );
-    const period = `${String(month).padStart(2, '0')}-${year}`;
-    sendCsv(res, `payroll-verification-${period}.csv`,
-      ['Employee ID', 'Name', 'Designation', 'Department', 'Bank Name', 'Account Number', 'IFSC', 'PAN',
-       'Gross Earnings', 'PF', 'ESI', 'Professional Tax', 'TDS', 'Total Deductions', 'Net Pay', 'LOP Days', 'Status', 'Slip Number'],
-      r.rows.map(x => [x.code, `${x.first_name} ${x.last_name}`, x.designation || '', x.department || '',
-        x.bank_name || '', x.bank_account || '', x.bank_ifsc || '', x.pan_number || '',
-        x.gross_earnings, x.pf_employee, x.esi_employee, x.professional_tax, x.tds, x.total_deductions, x.net_pay,
-        x.lop_days, x.status, x.slip_number || '']));
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
-});
 
 /* ════════════════════════════════════════════════════════════════════════
  *  PHASE 6 — Manager approval, corrections, adjustments, loans, NEFT
