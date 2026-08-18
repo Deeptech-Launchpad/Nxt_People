@@ -12,6 +12,10 @@ const pool    = require('./db');
 const logger  = require('./logger');
 const chatWs  = require('./ws-chat');
 const permissions = require('./utils/permissions');
+// The email-alerts cron below has called automationConfig.* since it was
+// written without this line, so every run logged "automationConfig is not
+// defined" and sent nothing.
+const automationConfig = require('./utils/automationConfig');
 const { isNonWorkingDay } = require('./utils/workingDays');
 const { sendCheckInReminderEmail, sendCheckOutReminderEmail } = require('./utils/mailer');
 const { DEFAULT_TZ } = require('./utils/timezone');

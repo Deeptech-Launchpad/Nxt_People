@@ -20,6 +20,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const permissions = require('../utils/permissions');
+const logger = require('../logger');
 const {
   FUNCTIONS, FUNCTION_KEYS, SERVICES, SERVICE_KEYS, ACCESS_LEVELS,
   PERMISSIONS, PERMISSION_KEYS, APPLICABILITY_FIELDS, CRITERIA_FIELDS,
@@ -56,9 +57,35 @@ class Invalid extends Error {
 }
 const bad = message => new Invalid(message);
 
-const fail = (res, err) => (err.expected
-  ? res.status(400).json({ success: false, message: err.message })
-  : res.status(500).json({ success: false, message: 'An internal server error occurred' }));
+const fail = (res, err) => {
+  if (err.expected) return res.status(400).json({ success: false, message: err.message });
+  // An unexpected error is the one worth keeping. Returning the generic
+  // message without logging leaves "An internal server error occurred" on
+  // screen and nothing anywhere to say what it was.
+  logger.error({ err: err.message, code: err.code, stack: err.stack }, 'Access control request failed');
+  return res.status(500).json({ success: false, message: 'An internal server error occurred' });
+};
+
+// employees has carried a photo under more than one column name over this
+// project's life, and not every database has both. Asking the catalogue once
+// beats a query that works on one database and 500s on another. The name can
+// only be one of the two the IN clause allows, so it is safe to inline.
+let PHOTO_EXPR = null;
+async function photoExpr() {
+  if (PHOTO_EXPR) return PHOTO_EXPR;
+  const r = await pool.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'employees' AND column_name IN ('photo_url', 'avatar')`
+  );
+  const have = r.rows.map(x => x.column_name);
+  PHOTO_EXPR = have.length === 2 ? 'COALESCE(e.photo_url, e.avatar)'
+    : have.length === 1 ? `e.${have[0]}`
+    : 'NULL::text';
+  if (have.length < 2) {
+    logger.warn({ have }, 'employees has no photo_url/avatar pair; avatars fall back to initials');
+  }
+  return PHOTO_EXPR;
+}
 
 // A role's key is what employees.role stores. Renaming a role must never
 // change it, or every employee holding it is orphaned in one statement.
@@ -99,10 +126,11 @@ const rolesWithMembers = async kind => {
   }
 
   // Current staff only, the way every other count in Manage Accounts reads.
+  const photo = await photoExpr();
   const members = await pool.query(
     `SELECT e.id, e.role AS "roleKey", e.employee_id AS "employeeId",
             TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS name,
-            e.email, COALESCE(e.photo_url, e.avatar) AS photo
+            e.email, ${photo} AS photo
        FROM employees e
       WHERE e.deleted_at IS NULL AND e.status = 'active'
       ORDER BY e.first_name, e.last_name`
@@ -125,19 +153,20 @@ router.get('/roles/:id/members', async (req, res) => {
   try {
     const role = await pool.query(`SELECT key, kind FROM roles WHERE id = $1`, [req.params.id]);
     if (!role.rows.length) return res.status(404).json({ success: false, message: 'Role not found' });
+    const photo = await photoExpr();
 
     const r = role.rows[0].kind === 'general'
       ? await pool.query(
           `SELECT e.id, e.employee_id AS "employeeId",
                   TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS name, e.email,
-                  COALESCE(e.photo_url, e.avatar) AS photo, e.designation, e.department
+                  ${photo} AS photo, e.designation, e.department
              FROM employees e
             WHERE e.role = $1 AND e.deleted_at IS NULL AND e.status = 'active'
             ORDER BY e.first_name, e.last_name`, [role.rows[0].key])
       : await pool.query(
           `SELECT e.id, e.employee_id AS "employeeId",
                   TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS name, e.email,
-                  COALESCE(e.photo_url, e.avatar) AS photo, e.designation, e.department
+                  ${photo} AS photo, e.designation, e.department
              FROM specific_role_assignments a
              JOIN employees e ON e.id = a.employee_id
             WHERE a.role_id = $1 AND e.deleted_at IS NULL AND e.status = 'active'
@@ -418,10 +447,11 @@ const cleanApplicability = lines => (Array.isArray(lines) ? lines : []).map(line
 
 router.get('/specific-assignments', async (req, res) => {
   try {
+    const photo = await photoExpr();
     const r = await pool.query(
       `SELECT a.id, a.employee_id AS "employeeId", a.role_id AS "roleId", a.applicability,
               TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS "employeeName",
-              e.employee_id AS "employeeCode", COALESCE(e.photo_url, e.avatar) AS photo,
+              e.employee_id AS "employeeCode", ${photo} AS photo,
               e.role AS "employeeRoleKey",
               gr.name AS "employeeRole", sr.name AS "roleName"
          FROM specific_role_assignments a
@@ -493,12 +523,13 @@ router.delete('/specific-assignments/:employeeId', authorize(...WRITE), async (r
 // ── Administrator ──────────────────────────────────────────────────────────
 router.get('/administrators', async (req, res) => {
   try {
+    const photo = await photoExpr();
     const r = await pool.query(
       `SELECT a.employee_id AS "employeeId", a.service_key AS "serviceKey",
               a.settings_level AS "settingsLevel", a.data_level AS "dataLevel",
               e.employee_id AS "employeeCode",
               TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS name,
-              COALESCE(e.photo_url, e.avatar) AS photo
+              ${photo} AS photo
          FROM administrator_access a
          JOIN employees e ON e.id = a.employee_id AND e.deleted_at IS NULL
         ORDER BY e.first_name, e.last_name`
@@ -601,10 +632,12 @@ const membersOfGroup = async group => {
   // No criteria and no named employees is an empty group, not everybody.
   if (!ors.length) return [];
 
+  const photo = await photoExpr();
+
   const r = await pool.query(
     `SELECT e.id, e.employee_id AS "employeeId",
             TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS name, e.email,
-            COALESCE(e.photo_url, e.avatar) AS photo
+            ${photo} AS photo
        FROM employees e
       WHERE ${where.join(' AND ')} AND (${ors.join(' OR ')})
       ORDER BY e.first_name, e.last_name`,
@@ -694,10 +727,11 @@ router.delete('/applicability-groups/:id', authorize(...WRITE), async (req, res)
 // ── The user picker every one of these screens opens ───────────────────────
 router.get('/assignable-users', async (req, res) => {
   try {
+    const photo = await photoExpr();
     const r = await pool.query(
       `SELECT e.id, e.employee_id AS "employeeId",
               TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS name,
-              e.email, COALESCE(e.photo_url, e.avatar) AS photo, e.role AS "roleKey"
+              e.email, ${photo} AS photo, e.role AS "roleKey"
          FROM employees e
         WHERE e.deleted_at IS NULL AND e.status = 'active'
         ORDER BY e.employee_id`
