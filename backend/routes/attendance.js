@@ -88,10 +88,19 @@ router.post('/checkin', async (req, res) => {
           + EXTRACT(MINUTE FROM NOW() AT TIME ZONE COALESCE(timezone, '${DEFAULT_TZ}')))::int AS check_in_mins
          FROM settings LIMIT 1`
       ),
+      // A rostered shift for today wins over the employee's standing one.
+      // shift_roster has been written by the roster screen since it was built
+      // and read by nothing, so assigning someone a different shift for a day
+      // changed neither their expected start nor when they counted as late.
+      // COALESCE, so with no roster row the answer is exactly what it was.
       pool.query(
-        `SELECT s.id, s.start_time FROM employees e
-         LEFT JOIN shifts s ON e.shift_id = s.id
-         WHERE e.id = $1`, [req.user._id]
+        `SELECT COALESCE(rs.id, s.id) AS id,
+                COALESCE(rs.start_time, s.start_time) AS start_time
+           FROM employees e
+           LEFT JOIN shifts s ON s.id = e.shift_id
+           LEFT JOIN shift_roster r ON r.employee_id = e.id AND r.date = $2::date
+           LEFT JOIN shifts rs ON rs.id = r.shift_id
+          WHERE e.id = $1`, [req.user._id, today]
       ),
     ]);
     const existing = existingRes.rows[0];
@@ -797,7 +806,11 @@ router.get('/export', async (req, res) => {
               a.late_minutes AS "lateMinutes", a.notes
          FROM attendance a
          JOIN employees e ON e.id = a.employee_id
-    LEFT JOIN shifts s    ON s.id = e.shift_id
+    -- The shift stamped on the row when it was created, falling back to the
+    -- employee's current one for rows written before stamping existed. Reading
+    -- e.shift_id alone rewrote history: move someone to a new shift and every
+    -- past report showed them against hours they were never on.
+    LEFT JOIN shifts s    ON s.id = COALESCE(a.shift_id, e.shift_id)
         WHERE a.employee_id = $1::uuid
           AND a.date >= $2::date AND a.date <= $3::date
         ORDER BY a.date ASC`,
