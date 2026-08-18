@@ -22,6 +22,7 @@ const QRCode   = require('qrcode');
 const { authenticator } = require('otplib');
 const pool     = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 
 const ISSUER = process.env.MFA_ISSUER || 'Nxt People';
 
@@ -57,7 +58,7 @@ router.post('/setup', protect, async (req, res) => {
 
     res.json({ success: true, secret, otpauth, qrDataUrl, label });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -90,7 +91,7 @@ router.post('/verify-setup', protect, async (req, res) => {
 
     res.json({ success: true, backupCodes });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -126,7 +127,7 @@ router.post('/disable', protect, async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -148,7 +149,7 @@ router.post('/regenerate-backup-codes', protect, async (req, res) => {
     );
     res.json({ success: true, backupCodes });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -169,7 +170,7 @@ router.post('/reset/:employeeId', protect, authorize('admin', 'director', 'hr_ad
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
     res.json({ success: true, data: r.rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 

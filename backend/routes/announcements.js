@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const logger = require('../logger');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // Shared projection — every read endpoint returns the same shape.
@@ -48,7 +49,7 @@ router.get('/active', async (req, res) => {
     );
     res.json({ success: true, data: result.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -63,7 +64,7 @@ router.post('/:id/read', async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -80,7 +81,7 @@ router.get('/', async (req, res) => {
     );
     res.json({ success: true, data: result.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -122,7 +123,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
 
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -163,7 +164,7 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Announcement not found' });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -173,7 +174,7 @@ router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, re
     await pool.query('DELETE FROM announcements WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Deleted' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 

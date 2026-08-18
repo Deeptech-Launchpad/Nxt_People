@@ -10,6 +10,7 @@ const logger = require('../logger');
 const path = require('path');
 const { protect, authorize } = require('../middleware/auth');
 const { nextIdForCompany } = require('../utils/employeeId');
+const { serverError } = require('../utils/serverError');
 
 // Nodemailer setup
 const transporter = nodemailer.createTransport({
@@ -107,7 +108,7 @@ router.get('/validate-token/:token', async (req, res) => {
 
     res.json({ success: true, email: tk.email });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -325,7 +326,7 @@ router.post('/generate-link', async (req, res) => {
 
     res.json({ success: true, link, message: 'Link generated and emailed to candidate.' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -413,7 +414,7 @@ router.get('/:id/full', async (req, res) => {
 
     res.json({ success: true, data: candidate });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -499,7 +500,7 @@ router.put('/:id/confirm', async (req, res) => {
 
     res.json({ success: true, message: 'Employee confirmed successfully' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -529,7 +530,7 @@ router.get('/', async (req, res) => {
     `, [...params, limitNum, offsetNum]);
 
     res.json({ success: true, data: result.rows, total, page: Number(page) });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/counts', async (req, res) => {
@@ -545,7 +546,7 @@ router.get('/counts', async (req, res) => {
     countsRes.rows.forEach(r => { counts[r.registration_status] = parseInt(r.count, 10); });
     
     res.json({ success: true, data: counts });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.put('/:id/approve', async (req, res) => {
@@ -630,7 +631,7 @@ router.put('/:id/reject', async (req, res) => {
     `, [reason || 'Not specified', req.user._id, mangledEmail, req.params.id]);
 
     res.json({ success: true, message: 'Registration rejected.', data: up.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

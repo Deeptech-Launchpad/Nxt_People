@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // GET /api/companies — list all active companies (any authenticated user, for registration form)
@@ -11,7 +12,7 @@ router.get('/', async (req, res) => {
     const result = await pool.query('SELECT id as "_id", name, code, description, is_active as "isActive" FROM companies WHERE is_active = true ORDER BY name');
     res.json({ success: true, data: result.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -45,7 +46,7 @@ router.delete('/:id', authorize('admin', 'director', 'hr_admin'), audit('DELETE'
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Company not found' });
     res.json({ success: true, message: 'Company deactivated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 

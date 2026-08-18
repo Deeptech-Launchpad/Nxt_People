@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 router.get('/stats', async (req, res) => {
@@ -142,7 +143,7 @@ router.get('/stats', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 

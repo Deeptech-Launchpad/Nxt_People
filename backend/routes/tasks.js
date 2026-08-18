@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -42,7 +43,7 @@ router.get('/', async (req, res) => {
     );
 
     res.json({ success: true, data: r.rows, total: r.rows.length });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── GET single task ───────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ router.get('/:id', async (req, res) => {
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Task not found' });
     res.json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── POST create task ──────────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ router.post('/', audit('CREATE', 'task'), async (req, res) => {
        assigneeId || null, req.user._id, dueDate || null]
     );
     res.status(201).json({ success: true, data: r.rows[0], message: 'Task created' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── PUT update task ───────────────────────────────────────────────────────────
@@ -116,7 +117,7 @@ router.put('/:id', audit('UPDATE', 'task'), async (req, res) => {
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Task not found' });
     res.json({ success: true, data: r.rows[0], message: 'Task updated' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── DELETE task ───────────────────────────────────────────────────────────────
@@ -124,7 +125,7 @@ router.delete('/:id', audit('DELETE', 'task'), async (req, res) => {
   try {
     await pool.query('DELETE FROM tasks WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Task deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

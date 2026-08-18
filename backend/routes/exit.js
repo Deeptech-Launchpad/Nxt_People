@@ -4,6 +4,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { createNotification } = require('./notifications');
 const { logAudit } = require('../utils/audit');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // GET my exit request
@@ -18,7 +19,7 @@ router.get('/my', async (req, res) => {
       [req.user._id]
     );
     res.json({ success: true, data: r.rows[0] || null });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET all (admin only)
@@ -34,7 +35,7 @@ router.get('/all', authorize('admin', 'director', 'hr_admin'), async (req, res) 
        ORDER BY ex.created_at DESC`
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST submit resignation
@@ -56,7 +57,7 @@ router.post('/', async (req, res) => {
       details: { resignationDate, lastWorkingDate }
     });
     res.status(201).json({ success: true, data: r.rows[0], message: 'Resignation submitted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PUT approve/reject (admin)
@@ -97,7 +98,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin'), async (req
     res.json({ success: true, message: `Exit request ${action}` });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   } finally {
     client.release();
   }
@@ -133,7 +134,7 @@ router.put('/:id/clearance', authorize('admin', 'director', 'hr_admin'), async (
       details: { itClearance, hrClearance, financeClearance, managerClearance }
     });
     res.json({ success: true, message: 'Clearance updated' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

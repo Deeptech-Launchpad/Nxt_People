@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -42,7 +43,7 @@ router.get('/', async (req, res) => {
     );
 
     res.json({ success: true, data: r.rows, total: parseInt(cnt.rows[0].count), page: parseInt(page) });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── GET single project with members + tasks ───────────────────────────────────
@@ -74,7 +75,7 @@ router.get('/:id', async (req, res) => {
 
     if (!projRes.rows[0]) return res.status(404).json({ success: false, message: 'Project not found' });
     res.json({ success: true, data: { ...projRes.rows[0], members: membersRes.rows, tasks: tasksRes.rows } });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── POST create project ───────────────────────────────────────────────────────
@@ -106,7 +107,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin', 'manager'), audit('C
     }
 
     res.status(201).json({ success: true, data: project, message: 'Project created' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── PUT update project ────────────────────────────────────────────────────────
@@ -127,7 +128,7 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin', 'manager'), audit(
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Project not found' });
     res.json({ success: true, data: r.rows[0], message: 'Project updated' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── POST add member ───────────────────────────────────────────────────────────
@@ -139,7 +140,7 @@ router.post('/:id/members', authorize('admin', 'director', 'hr_admin', 'manager'
       [req.params.id, employeeId, role]
     );
     res.json({ success: true, message: 'Member added' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── DELETE remove member ──────────────────────────────────────────────────────
@@ -150,7 +151,7 @@ router.delete('/:id/members/:empId', authorize('admin', 'director', 'hr_admin', 
       [req.params.id, req.params.empId]
     );
     res.json({ success: true, message: 'Member removed' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── DELETE project ────────────────────────────────────────────────────────────
@@ -158,7 +159,7 @@ router.delete('/:id', authorize('admin', 'director', 'hr_admin'), audit('DELETE'
   try {
     await pool.query('DELETE FROM projects WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Project deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

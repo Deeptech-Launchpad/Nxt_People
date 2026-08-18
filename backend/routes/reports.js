@@ -1568,6 +1568,9 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
     const startDate = req.query.startDate ? new Date(req.query.startDate) : new Date(new Date().setDate(1));
     const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
     const { holMap, rules } = await loadHolidaysAndRulesRange(startDate, endDate);
+    const lopCfg = (await leaveReportsConfig()).lossOfPay || {};
+    const maxLop = lopCfg.maxPerPeriod === null || lopCfg.maxPerPeriod === undefined || lopCfg.maxPerPeriod === ''
+      ? null : Number(lopCfg.maxPerPeriod);
 
     const filters = standardEmployeeFilters(req, 'e', 1);
     const empRes = await pool.query(
@@ -1578,12 +1581,17 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
 
     const data = [];
     for (const emp of empRes.rows) {
-      const lopDays = await lopDaysForRange(emp._id, startDate, endDate, holMap, rules, pool);
+      const rawLop = await lopDaysForRange(emp._id, startDate, endDate, holMap, rules, pool);
+      // "The maximum number of LOP allowed per pay period". Blank means no cap
+      // — which is not the same as a cap of zero, so the check is on null
+      // rather than on falsiness.
+      const lopDays = maxLop === null ? rawLop : Math.min(rawLop, maxLop);
       // Every employee is listed, including those with no loss of pay. This
       // report is read to confirm a payroll figure, and "nobody had LOP" and
       // "the report failed to load" look identical if the rows are dropped —
       // a table of zeros is the answer, not an empty state.
-      data.push({ ...emp, previousPeriodBalance: 0, booked: lopDays, total: lopDays, waivedOff: 0, carryOver: 0, reason: null, lopDays, lopHours: 0 });
+      data.push({ ...emp, previousPeriodBalance: 0, booked: rawLop, total: rawLop,
+        waivedOff: Math.max(0, rawLop - lopDays), carryOver: 0, reason: null, lopDays, lopHours: 0 });
     }
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
@@ -1608,6 +1616,7 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
     // so a standard workday is the only non-fabricated basis available.
     const HOURS_PER_DAY = 8;
     const { holMap, rules } = await loadHolidaysAndRulesRange(startD, endD);
+    const payableCfg = (await leaveReportsConfig()).payrollReport || {};
 
     const filters = standardEmployeeFilters(req, 'e', 1);
     const empRes = await pool.query(
@@ -1625,17 +1634,32 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
       const totalDays = Math.round((effEnd - effStart) / 86400000) + 1;
       // eslint-disable-next-line no-await-in-loop
       const lopDays = await lopDaysForRange(emp._id, effStart, effEnd, holMap, rules, pool);
-      const paidDays = Math.max(0, totalDays - lopDays);
-      const row = { ...emp, totalDays, lopDays, paidDays };
+
+      // Counted for every row now, because the two payable-days settings need
+      // them whether or not the detailed layout was asked for.
+      let weekendCount = 0, holidayCount = 0;
+      for (const d = new Date(effStart); d <= effEnd; d.setDate(d.getDate() + 1)) {
+        const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+        const holType = holMap.get(key);
+        if (holidayClosesOffice(holType)) holidayCount++;
+        else if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, d))) weekendCount++;
+      }
+
+      // "Include weekends / holidays as payable days". On, they are inside the
+      // calendar-day total already and get no column of their own. Off, they
+      // come out of the payable figure and are reported separately — which is
+      // the whole point of the setting, and did nothing until now.
+      const nonPayable = (payableCfg.includeWeekendsAsPayable === false ? weekendCount : 0)
+                       + (payableCfg.includeHolidaysAsPayable === false ? holidayCount : 0);
+      const paidDays = Math.max(0, totalDays - lopDays - nonPayable);
+      // payableDays is set on the base row, not only inside the detailed
+      // branch. The simple layout's third column reads it, so in that mode it
+      // was undefined and "Payable Days" exported blank.
+      const row = { ...emp, totalDays, lopDays, paidDays, payableDays: paidDays };
+      if (payableCfg.includeWeekendsAsPayable === false) row.nonPayableWeekends = weekendCount;
+      if (payableCfg.includeHolidaysAsPayable === false) row.nonPayableHolidays = holidayCount;
 
       if (reportType === 'detailed') {
-        let weekendCount = 0, holidayCount = 0;
-        for (const d = new Date(effStart); d <= effEnd; d.setDate(d.getDate() + 1)) {
-          const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-          const holType = holMap.get(key);
-          if (holidayClosesOffice(holType)) holidayCount++;
-          else if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, d))) weekendCount++;
-        }
         // eslint-disable-next-line no-await-in-loop
         const leaveRes = await pool.query(
           `SELECT leave_type, COALESCE(SUM(total_days), 0) AS days
@@ -1668,7 +1692,9 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
         })
       : data;
 
-    res.json({ success: true, data: finalData, reportType, unit, startDate: start, endDate: end });
+    res.json({ success: true, data: finalData, reportType, unit, startDate: start, endDate: end,
+      payable: { weekendsPayable: payableCfg.includeWeekendsAsPayable !== false,
+                 holidaysPayable: payableCfg.includeHolidaysAsPayable !== false } });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -1870,6 +1896,16 @@ const clockMinutes = (ts, tz) => {
 // settings.timezone and the expected-hours policy, read together and cached for
 // a minute so a 150-row report doesn't re-read them per employee.
 let cfgCache = { value: null, at: 0, gen: -1 };
+// Leave Tracker > Configuration > Reports. Read per request rather than cached:
+// these are report endpoints, one small query is nothing next to the work they
+// already do, and a cached copy would make an admin's saved change appear not
+// to take for a minute.
+async function leaveReportsConfig() {
+  const r = await pool.query(`SELECT leave_reports_config AS c FROM settings LIMIT 1`)
+    .catch(() => ({ rows: [] }));
+  return r.rows[0]?.c || {};
+}
+
 async function orgConfig() {
   // Expires on time OR when the Attendance configuration is saved. Time alone
   // meant a policy change took up to a minute to show in any report, which is

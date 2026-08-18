@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -23,7 +24,7 @@ router.get('/', async (req, res) => {
        ORDER BY d.name`
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/departments/tree — hierarchical nested structure
@@ -47,7 +48,7 @@ router.get('/tree', async (req, res) => {
       }
     });
     res.json({ success: true, data: roots });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/departments/:id/employees
@@ -63,7 +64,7 @@ router.get('/:id/employees', async (req, res) => {
       [req.params.id]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST /api/departments — create (admin)
@@ -77,7 +78,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
       [name, parentId || null, headId || null]
     );
     res.status(201).json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PUT /api/departments/:id (admin)
@@ -92,7 +93,7 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Not found' });
     res.json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // DELETE /api/departments/:id (admin)
@@ -100,7 +101,7 @@ router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, re
   try {
     await pool.query('DELETE FROM departments WHERE id=$1', [req.params.id]);
     res.json({ success: true, message: 'Department deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

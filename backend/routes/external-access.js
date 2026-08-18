@@ -28,6 +28,7 @@ const router = express.Router();
 const crypto = require('crypto');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const pool = require('../db');
+const logger = require('../logger');
 
 const accessLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -98,7 +99,8 @@ router.post('/check', validateAppKey, async (req, res) => {
       application: { id: req.application.id, name: req.application.name },
     });
   } catch (err) {
-    res.status(500).json({ allowed: false, reason: 'INTERNAL_ERROR', message: err.message });
+    logger.error({ err: err.message, stack: err.stack }, 'external access check failed');
+    res.status(500).json({ allowed: false, reason: 'INTERNAL_ERROR', message: 'An internal server error occurred' });
   }
 });
 

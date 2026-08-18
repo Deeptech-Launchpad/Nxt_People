@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -34,7 +35,7 @@ router.get('/', async (req, res) => {
       params
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET daily summary (total hours per day for the last 7 days)
@@ -55,7 +56,7 @@ router.get('/daily-summary', async (req, res) => {
       [req.user._id, fromDate, toDate]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST start a timer entry
@@ -81,7 +82,7 @@ router.post('/start', async (req, res) => {
       [req.user._id, projectId || null, jobId || null, description || null, now, billable, today]
     );
     res.status(201).json({ success: true, data: r.rows[0], message: 'Timer started' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST stop a running timer
@@ -103,7 +104,7 @@ router.post('/stop/:id', async (req, res) => {
       [now, hours, req.params.id]
     );
     res.json({ success: true, data: r.rows[0], message: 'Timer stopped' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET running timer for current user
@@ -121,7 +122,7 @@ router.get('/running', async (req, res) => {
       [req.user._id]
     );
     res.json({ success: true, data: r.rows[0] || null });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST add a manual time log entry (no start/stop)
@@ -140,7 +141,7 @@ router.post('/', async (req, res) => {
        parseFloat(hours), billable, today]
     );
     res.status(201).json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // DELETE a time log
@@ -151,7 +152,7 @@ router.delete('/:id', async (req, res) => {
       [req.params.id, req.user._id]
     );
     res.json({ success: true, message: 'Time log deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

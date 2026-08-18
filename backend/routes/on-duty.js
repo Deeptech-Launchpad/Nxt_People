@@ -13,6 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const logger = require('../logger');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // Attachments land in the same backend/uploads volume every other upload uses,
@@ -117,7 +118,7 @@ router.get('/my', async (req, res) => {
       params
     );
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET pending on-duty requests for the current approver (hierarchy-scoped).
@@ -144,7 +145,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       [req.user._id, full]
     );
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET the rules the request form has to render against — which durations and
@@ -328,7 +329,7 @@ router.post('/', requireOnDutyEnabled, uploadAttachment, [
     res.status(201).json({ success: true, data: od });
   } catch (err) {
     discardUpload();
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -412,7 +413,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
     return res.json({ success: true, status: 'rejected', message: 'On duty rejected.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   } finally {
     client.release();
   }
@@ -430,7 +431,7 @@ router.delete('/:id', async (req, res) => {
     }
     await pool.query(`DELETE FROM approval_levels WHERE request_type = 'on_duty' AND request_id = $1`, [req.params.id]);
     res.json({ success: true, message: 'Request withdrawn' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

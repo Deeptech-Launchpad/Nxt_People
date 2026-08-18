@@ -13,6 +13,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, reportsScope, canActOnEmployee } = require('../utils/roles');
 const { audit } = require('../middleware/audit');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 const SELECT_OWN = `
@@ -48,7 +49,7 @@ router.get('/my', async (req, res) => {
   try {
     const r = await pool.query(SELECT_OWN, [req.user._id]);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -57,7 +58,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (re
     const scope = reportsScope(req.user, 'e', 1);
     const r = await pool.query(`${SELECT_ALL}${scope.clause} ORDER BY t.created_at DESC`, scope.params);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/', audit('CREATE', 'travel_request'), async (req, res) => {
@@ -77,7 +78,7 @@ router.post('/', audit('CREATE', 'travel_request'), async (req, res) => {
       [req.user._id, destination, purpose || null, fromDate, toDate, transport || null]
     );
     res.status(201).json({ success: true, data: { _id: r.rows[0]._id } });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager'), audit('ACTION', 'travel_request'), async (req, res) => {
@@ -115,7 +116,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager'),
       return res.status(404).json({ success: false, message: 'Request not found or already actioned' });
     }
     res.json({ success: true, message: `Request ${status}` });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.delete('/:id', audit('CANCEL', 'travel_request'), async (req, res) => {
@@ -133,7 +134,7 @@ router.delete('/:id', audit('CANCEL', 'travel_request'), async (req, res) => {
       return res.status(404).json({ success: false, message: 'Request not found or already processed' });
     }
     res.json({ success: true, message: 'Cancelled' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

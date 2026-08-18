@@ -16,6 +16,7 @@ const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const chatHub = require('../ws-chat');
 const { createNotification } = require('./notifications');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -127,7 +128,7 @@ router.get('/contacts', async (req, res) => {
       data: { accepted, incoming: incomingRes.rows, outgoing: outgoingRes.rows },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -159,7 +160,7 @@ router.get('/search', async (req, res) => {
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -205,7 +206,7 @@ router.post('/connect/:userId', async (req, res) => {
       `/chat`);
     res.json({ success: true, data: r.rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -241,7 +242,7 @@ router.post('/connect/:userId/accept', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   } finally {
     client.release();
   }
@@ -262,7 +263,7 @@ router.post('/connect/:userId/decline', async (req, res) => {
     if (r.rowCount === 0) return res.status(404).json({ success: false, message: 'No pending request' });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -280,7 +281,7 @@ router.delete('/connect/:userId', async (req, res) => {
     if (r.rowCount === 0) return res.status(404).json({ success: false, message: 'No pending request to cancel' });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -314,7 +315,7 @@ router.get('/threads/:userId/messages', async (req, res) => {
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -372,7 +373,7 @@ router.post('/threads/:userId/messages', async (req, res) => {
     res.json({ success: true, data: message });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   } finally {
     client.release();
   }
@@ -399,7 +400,7 @@ router.post('/threads/:userId/read', async (req, res) => {
     }
     res.json({ success: true, updated: r.rowCount });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -419,7 +420,7 @@ router.get('/unread', async (req, res) => {
     );
     res.json({ success: true, unread: r.rows[0].unread });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 

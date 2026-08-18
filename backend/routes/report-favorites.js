@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -17,7 +18,7 @@ router.get('/', async (req, res) => {
       [req.user._id]
     );
     res.json({ success: true, data: r.rows.map(x => x.reportKey) });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST /api/report-favorites/:key — toggle (add if missing, remove if exists)
@@ -41,7 +42,7 @@ router.post('/:key', async (req, res) => {
       );
       res.json({ success: true, starred: true, message: 'Added to favorites' });
     }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

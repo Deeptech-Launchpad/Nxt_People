@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 const SELECT_COLS = `
@@ -39,7 +40,7 @@ router.get('/', async (req, res) => {
       result = await pool.query(`SELECT ${SELECT_COLS} FROM settings LIMIT 1`);
     }
     res.json({ success: true, data: result.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
@@ -138,7 +139,7 @@ router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => 
     });
 
     res.json({ success: true, data: up.rows[0], message: 'Settings saved' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

@@ -44,6 +44,12 @@ export default function LeaveReportsConfig() {
             checked={config.showLeaveTypes}
             onChange={v => set({ showLeaveTypes: v })}
           />
+          {/* Collapsing every code to 'L' would also collapse LWP, and the
+              Muster Roll roll-ups weigh unpaid days by that code — so this
+              needs a separate display code before it can be switched on. */}
+          <p className="text-[12px] text-slate-400 mt-1.5 ml-[26px]">
+            The grids still name each leave type.<NotWired />
+          </p>
         </div>
       </Card>
 
@@ -72,7 +78,12 @@ export default function LeaveReportsConfig() {
       </Card>
 
       <Card title="Loss of pay details report" description="Define preferences related to loss of pay">
-        <p className="text-[14px] text-slate-700 mb-3">Unpaid leave will be</p>
+        <p className="text-[14px] text-slate-700 mb-3">
+          Unpaid leave will be
+          {lop.unpaidLeave === 'carry_over' && (
+            <NotWired>Carrying over is not applied — unpaid leave is still reported as LOP</NotWired>
+          )}
+        </p>
         <div className="flex flex-wrap items-center gap-x-8 gap-y-2.5">
           {[['lop', 'treated as LOP'], ['carry_over', 'carried over to next pay period']].map(([v, l]) => (
             <label key={v} className="flex items-center gap-2.5 cursor-pointer text-[14px] text-slate-700">

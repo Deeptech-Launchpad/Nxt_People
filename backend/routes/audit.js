@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect, authorize('admin', 'director', 'hr_admin'));
 
@@ -47,7 +48,7 @@ router.get('/', async (req, res) => {
       page: parseInt(page),
       limit: limitN,
     });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/audit/summary — action counts grouped by resource/action
@@ -61,7 +62,7 @@ router.get('/summary', async (req, res) => {
        ORDER BY count DESC LIMIT 30`
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

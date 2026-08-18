@@ -17,6 +17,7 @@ const { reportsScope, canActOnEmployee } = require('../utils/roles');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -85,7 +86,7 @@ router.get('/my', async (req, res) => {
   try {
     const r = await pool.query(SELECT_OWN, [req.user._id]);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -94,7 +95,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (re
     const scope = reportsScope(req.user, 'e', 1);
     const r = await pool.query(`${SELECT_ALL}${scope.clause} ORDER BY l.created_at DESC`, scope.params);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/', async (req, res) => {
@@ -110,7 +111,7 @@ router.post('/', async (req, res) => {
       [req.user._id, letterType, purpose || null]
     );
     res.status(201).json({ success: true, data: { _id: r.rows[0]._id } });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PUT /:id/process — change status, optionally upload signed PDF.
@@ -145,7 +146,7 @@ router.put('/:id/process', authorize('admin', 'director', 'hr_admin', 'manager')
     );
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Request not found' });
     res.json({ success: true, message: `Request updated to ${status}` });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.delete('/:id', async (req, res) => {
@@ -158,7 +159,7 @@ router.delete('/:id', async (req, res) => {
     );
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Request not found or already processed' });
     res.json({ success: true, message: 'Cancelled' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

@@ -6,6 +6,7 @@ const { isFullAccess, isManager } = require('../utils/roles');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // Local disk storage under backend/uploads/
@@ -63,7 +64,7 @@ router.get('/:employeeId', async (req, res) => {
       [req.params.employeeId]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST upload document — admin/manager OR the owning employee uploading
@@ -83,7 +84,7 @@ router.post('/:employeeId', upload.single('file'), async (req, res) => {
       [req.params.employeeId, name || req.file.originalname, type, fileUrl, req.file.size, req.user._id]
     );
     res.status(201).json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // DELETE document — admin/manager, OR the original uploader. Before this
@@ -104,7 +105,7 @@ router.delete('/:employeeId/:docId', async (req, res) => {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     await pool.query('DELETE FROM employee_documents WHERE id=$1', [req.params.docId]);
     res.json({ success: true, message: 'Deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

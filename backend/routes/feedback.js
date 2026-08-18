@@ -7,6 +7,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, isManager } = require('../utils/roles');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -37,7 +38,7 @@ router.get('/', async (req, res) => {
       params
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/feedback/counts?employeeId=  (category counts for filter bar)
@@ -58,7 +59,7 @@ router.get('/counts', async (req, res) => {
       counts.total += parseInt(row.count, 10);
     });
     res.json({ success: true, data: counts });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST /api/feedback — give feedback
@@ -78,7 +79,7 @@ router.post('/', async (req, res) => {
       [req.user._id, toEmployeeId, type, content]
     );
     res.status(201).json({ success: true, data: r.rows[0], message: 'Feedback submitted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // DELETE /api/feedback/:id (admin or own)
@@ -91,7 +92,7 @@ router.delete('/:id', async (req, res) => {
     }
     await pool.query('DELETE FROM feedback WHERE id=$1', [req.params.id]);
     res.json({ success: true, message: 'Feedback deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

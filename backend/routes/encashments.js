@@ -4,6 +4,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, reportsScope, canActOnEmployee } = require('../utils/roles');
 const { audit } = require('../middleware/audit');
+const { serverError } = require('../utils/serverError');
 
 // Whitelist map -- column names come from code, never from user input
 const ENCASHMENT_COL = {
@@ -20,7 +21,7 @@ router.get('/my', async (req, res) => {
       [req.user._id]
     );
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET all pending encashments (admin/manager)
@@ -35,7 +36,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager'), as
       WHERE l.status = 'pending'${scope.clause}
     `, scope.params);
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST apply for encashment
@@ -69,7 +70,7 @@ router.post('/', audit('CREATE', 'encashment'), async (req, res) => {
     `, [req.user._id, leaveType, days, reason]);
 
     res.status(201).json({ success: true, data: result.rows[0], message: 'Encashment request submitted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PUT approve/reject
@@ -125,7 +126,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager'),
     } finally {
       client.release();
     }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 

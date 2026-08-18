@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -37,7 +38,7 @@ router.get('/', async (req, res) => {
       params
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/jobs/:id
@@ -72,7 +73,7 @@ router.get('/:id', async (req, res) => {
         billableHours: parseFloat(stats.billable_hours) || 0,
       }
     });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST /api/jobs (admin/manager)
@@ -87,7 +88,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (r
       [projectId||null, name, description||null, estimatedHours||null, billable, assigneeId||null, dueDate||null]
     );
     res.status(201).json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PUT /api/jobs/:id
@@ -106,7 +107,7 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin', 'manager'), async 
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Not found' });
     res.json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // DELETE /api/jobs/:id (admin)
@@ -114,7 +115,7 @@ router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, re
   try {
     await pool.query('DELETE FROM jobs WHERE id=$1', [req.params.id]);
     res.json({ success: true, message: 'Job deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

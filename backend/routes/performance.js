@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, isManager } = require('../utils/roles');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // GET performance reviews — full-access sees all; a manager sees their direct
@@ -33,7 +34,7 @@ router.get('/', async (req, res) => {
       params
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET single review with goals
@@ -75,7 +76,7 @@ router.get('/:id', async (req, res) => {
         goals: goalsRes.rows.map(g => ({ _id: g.id, title: g.title, description: g.description, target: g.target, achievement: g.achievement, rating: g.rating, weight: g.weight, status: g.status, dueDate: g.due_date }))
       }
     });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST create review (admin/manager)
@@ -96,7 +97,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (r
       );
     }
     res.status(201).json({ success: true, data: { _id: reviewId } });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PUT update review ratings + comments (reviewer)
@@ -125,7 +126,7 @@ router.put('/:id', async (req, res) => {
       }
     }
     res.json({ success: true, message: 'Review updated' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // DELETE review (admin)
@@ -133,7 +134,7 @@ router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, re
   try {
     await pool.query('DELETE FROM performance_reviews WHERE id=$1', [req.params.id]);
     res.json({ success: true, message: 'Deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ── Standalone (employee-set) goals ──────────────────────────────────────────
@@ -156,7 +157,7 @@ router.get('/goals/my', async (req, res) => {
       [req.user._id]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST a new standalone goal
@@ -172,7 +173,7 @@ router.post('/goals', async (req, res) => {
       [req.user._id, title, target || null, description || null, dueDate || null]
     );
     res.status(201).json({ success: true, data: { _id: r.rows[0]._id } });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PUT update a standalone goal (own only — admin/manager can rate via a separate flow)
@@ -205,7 +206,7 @@ router.put('/goals/:id', async (req, res) => {
     );
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Goal not found' });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.delete('/goals/:id', async (req, res) => {
@@ -218,7 +219,7 @@ router.delete('/goals/:id', async (req, res) => {
     );
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Goal not found' });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

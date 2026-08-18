@@ -63,18 +63,27 @@ const fmtUnit = (v, unit) => {
 // Identity is prepended by the dialog. The simple report is the reference's
 // three columns — Total, Loss of pay, Payable Days — and the detailed one
 // keeps the fuller breakdown this system can produce.
-const exportColumns = (reportType, unit) => {
+// `payable` mirrors what the server applied. When weekends or holidays are set
+// as non-payable they leave the Payable figure and get a column of their own —
+// the reference's rule is exactly that: no separate column while they count.
+const exportColumns = (reportType, unit, payable = {}) => {
+  const nonPayable = [];
+  if (payable.weekendsPayable === false) nonPayable.push({ key: 'nonPayableWeekends', header: unitLabel(unit, 'Weekend (not payable)') });
+  if (payable.holidaysPayable === false) nonPayable.push({ key: 'nonPayableHolidays', header: unitLabel(unit, 'Holidays (not payable)') });
+
   if (reportType === 'detailed') {
     return [
       { key: 'totalDays', header: unitLabel(unit, 'Total') }, { key: 'weekendCount', header: unitLabel(unit, 'Weekend') }, { key: 'holidayCount', header: unitLabel(unit, 'Holidays') },
       { key: 'payableDays', header: unitLabel(unit, 'Payable') }, { key: 'onDutyDays', header: unitLabel(unit, 'On Duty') },
       { key: 'leavePaid', header: unitLabel(unit, 'Leave Paid') }, { key: 'leaveUnpaid', header: unitLabel(unit, 'Leave Unpaid') }, { key: 'leaveComp', header: unitLabel(unit, 'Leave Comp-Off') }, { key: 'leaveTotal', header: unitLabel(unit, 'Leave Total') },
       { key: 'lopDays', header: unitLabel(unit, 'Loss of Pay') }, { key: 'paidDays', header: unitLabel(unit, 'Paid') },
+      ...nonPayable,
     ];
   }
   return [
     { key: 'totalDays', header: 'Total' },
     { key: 'lopDays', header: 'Loss of pay' },
+    ...nonPayable,
     { key: 'payableDays', header: 'Payable Days' },
   ];
 };
@@ -94,6 +103,7 @@ export default function LeavePayrollExport() {
   const [unit, setUnit] = useState('day');
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const [payable, setPayable] = useState({});
   const [exportOpen, setExportOpen] = useState(false);
   const [employeeStatus, setEmployeeStatus] = useState('all');
   const [employee, setEmployee] = useState([]);
@@ -112,7 +122,7 @@ export default function LeavePayrollExport() {
     // backend's ANY() clause expects.
     employee.forEach(e => params.append('employeeId', e._id));
     api.get(`/reports/leave/payroll-export?${params}`)
-      .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
+      .then(r => { setRows(Array.isArray(r.data.data) ? r.data.data : []); setPayable(r.data.payable || {}); })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
@@ -246,7 +256,7 @@ export default function LeavePayrollExport() {
       )}
       <LeaveExportModal
         open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
-        withIdentity identityVariant="leave" columns={exportColumns(reportType, unit)}
+        withIdentity identityVariant="leave" columns={exportColumns(reportType, unit, payable)}
         sheetName="Leave"
         fileStub={`leave-data-for-payroll_${startDate}_to_${endDate}`}
       />

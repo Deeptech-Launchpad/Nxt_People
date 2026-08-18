@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // GET roster for a date range (week view)
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
       department ? [department] : []
     );
     res.json({ success: true, data: r.rows, employees: emps.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST assign shift (admin/manager)
@@ -45,7 +46,7 @@ router.post('/assign', authorize('admin', 'director', 'hr_admin', 'manager'), as
       [employeeId, shiftId, date, req.user._id]
     );
     res.json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST bulk assign (copy previous week)
@@ -60,7 +61,7 @@ router.post('/copy-week', authorize('admin', 'director', 'hr_admin', 'manager'),
       [fromStart, toStart, req.user._id]
     );
     res.json({ success: true, message: `Copied ${r.rowCount} assignments` });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // DELETE assignment
@@ -68,7 +69,7 @@ router.delete('/:id', authorize('admin', 'director', 'hr_admin', 'manager'), asy
   try {
     await pool.query('DELETE FROM shift_roster WHERE id=$1', [req.params.id]);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

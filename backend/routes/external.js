@@ -5,6 +5,7 @@ const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const pool = require('../db');
 const bcrypt = require('bcryptjs');
 const logger = require('../logger');
+const { serverError } = require('../utils/serverError');
 
 // Per-API-key rate limit. Prevents a leaked key from being used to
 // hammer the bulk-upsert endpoint into a denial of service. Keyed on
@@ -106,7 +107,7 @@ router.get('/employees', async (req, res) => {
     const result = await pool.query(`SELECT employee_id as "employeeId", first_name as "firstName", last_name as "lastName", email, phone, designation, division, company, department, joining_date as "joiningDate" FROM employees ${query}`, params);
     auditExternal(req, 'READ', 'employees', { count: result.rows.length, filter: { company: req.apiConnection.company || null } });
     res.json({ success: true, source: req.apiConnection.name, count: result.rows.length, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/employees', async (req, res) => {
@@ -148,7 +149,7 @@ router.post('/employees', async (req, res) => {
       errorCount: results.errors.length,
     });
     res.json({ success: true, message: 'Sync complete', results });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/login', async (req, res) => {
@@ -185,7 +186,7 @@ router.post('/login', async (req, res) => {
       success: true, message: 'Login successful',
       user: { id: emp._id, employeeId: emp.employeeId, firstName: emp.firstName, lastName: emp.lastName, email: emp.email, phone: emp.phone, role: emp.role, designation: emp.designation, department: emp.department, division: emp.division, company: emp.company }
     });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/status', (req, res) => {

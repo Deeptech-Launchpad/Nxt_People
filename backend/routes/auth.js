@@ -10,6 +10,7 @@ const { body, validationResult } = require('express-validator');
 const { verifyMfaCode, issueMfaTicket, consumeMfaTicket } = require('./mfa');
 const { verifyGoogleIdToken } = require('../utils/google-auth');
 const logger = require('../logger');
+const { serverError } = require('../utils/serverError');
 
 // Google Sign-In configuration. The OAuth Client ID must match the one the
 // frontend uses (VITE_GOOGLE_CLIENT_ID). Only Google accounts on these
@@ -179,7 +180,7 @@ router.post('/check-email', checkEmailLimiter, async (req, res) => {
       hasAccepted: employee.has_accepted,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -218,7 +219,7 @@ router.post('/register', registerLimiter, [
       data: { email: result.rows[0].email, firstName: result.rows[0].first_name }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -428,7 +429,7 @@ router.post('/login', loginLimiter, [
 
     res.json({ success: true, token, refreshToken, data: employee });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -545,7 +546,7 @@ router.post('/google', googleLimiter, async (req, res) => {
 
     res.json({ success: true, token, refreshToken, data: employee });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -580,7 +581,7 @@ router.post('/login-mfa', loginLimiter, async (req, res) => {
       ...(verify.usedBackupCode && { warning: `Backup code used — ${verify.remainingBackupCodes} left` }),
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -600,7 +601,7 @@ router.get('/me', protect, async (req, res) => {
 
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -706,7 +707,7 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -845,7 +846,7 @@ router.post('/refresh', async (req, res) => {
 
     res.json({ success: true, token: newAccessToken, refreshToken: newRefreshToken });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -862,7 +863,7 @@ router.post('/logout', async (req, res) => {
     }
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -879,7 +880,7 @@ router.get('/sessions', protect, async (req, res) => {
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -908,7 +909,7 @@ router.post('/logout-everywhere', protect, async (req, res) => {
       sessionsRevoked: revRes.rows.length,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 

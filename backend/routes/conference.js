@@ -13,6 +13,7 @@ const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { DEFAULT_TZ } = require('../utils/timezone');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -72,7 +73,7 @@ router.get('/', async (req, res) => {
     );
     res.json({ success: true, data: r.rows, date, halls: HALLS });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -106,7 +107,7 @@ router.post('/', [
     );
     res.status(201).json({ success: true, data: { _id: r.rows[0]._id }, message: 'Conference hall booked.' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -147,7 +148,7 @@ router.put('/:id', async (req, res) => {
     );
     res.json({ success: true, message: 'Booking updated.' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -165,7 +166,7 @@ router.delete('/:id', async (req, res) => {
     await pool.query(`UPDATE conference_bookings SET status='cancelled', updated_at=NOW() WHERE id=$1`, [req.params.id]);
     res.json({ success: true, message: 'Booking cancelled.' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 

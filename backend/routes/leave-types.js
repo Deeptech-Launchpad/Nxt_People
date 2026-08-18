@@ -7,6 +7,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -15,7 +16,7 @@ router.get('/', async (req, res) => {
   try {
     const r = await pool.query(`SELECT * FROM leave_types WHERE is_active=true ORDER BY name`);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/leave-types/policies — the Leave Policy configuration screen.
@@ -218,7 +219,7 @@ router.get('/balances', async (req, res) => {
     });
 
     res.json({ success: true, data: result, year });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST /api/leave-types — create (admin)
@@ -235,7 +236,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
     res.status(201).json({ success: true, data: r.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'Code already exists' });
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -251,7 +252,7 @@ router.put('/balances/:employeeId', authorize('admin', 'director', 'hr_admin'), 
       [req.params.employeeId, leaveTypeId, y, available]
     );
     res.json({ success: true, message: 'Balance updated' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/leave-types/methods — the Methods configuration screen.

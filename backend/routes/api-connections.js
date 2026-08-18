@@ -4,6 +4,7 @@ const pool = require('../db');
 const crypto = require('crypto');
 const { protect, authorize } = require('../middleware/auth');
 const { encrypt, decrypt } = require('../utils/crypto-vault');
+const { serverError } = require('../utils/serverError');
 router.use(protect, authorize('admin', 'director', 'hr_admin'));
 
 // Generate a fresh API key + its SHA-256 hash + a short prefix shown in the UI.
@@ -43,7 +44,7 @@ router.get('/', async (req, res) => {
     `);
     // Decrypt api_key_encrypted into apiKey before returning to the client.
     res.json({ success: true, data: result.rows.map(withDecryptedKey) });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/', async (req, res) => {
@@ -98,7 +99,7 @@ router.delete('/:id', async (req, res) => {
     const result = await pool.query('DELETE FROM api_connections WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Connection not found' });
     res.json({ success: true, message: 'Connection deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/:id/regenerate-key', async (req, res) => {
@@ -114,7 +115,7 @@ router.post('/:id/regenerate-key', async (req, res) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Connection not found' });
     res.json({ success: true, data: { ...result.rows[0], apiKey: raw }, message: 'API key regenerated.' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -141,7 +142,7 @@ router.get('/:id/access', async (req, res) => {
        ORDER BY e.first_name ASC, e.last_name ASC
     `, [req.params.id]);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST /api/api-connections/:id/access — bulk grant. Body: { employeeIds }.
@@ -163,7 +164,7 @@ router.post('/:id/access', async (req, res) => {
     `, [req.params.id, ids, req.user._id]);
 
     res.json({ success: true, granted: ids.length });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // DELETE /api/api-connections/:id/access/:employeeId — soft-revoke
@@ -178,7 +179,7 @@ router.delete('/:id/access/:employeeId', async (req, res) => {
     `, [req.user._id, reason, req.params.id, req.params.employeeId]);
     if (r.rows.length === 0) return res.status(400).json({ success: false, message: 'No active grant to revoke' });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST /api/api-connections/:id/access/revoke — bulk soft-revoke.
@@ -197,7 +198,7 @@ router.post('/:id/access/revoke', async (req, res) => {
        RETURNING id
     `, [req.user._id, reason, req.params.id, ids]);
     res.json({ success: true, revoked: r.rowCount });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

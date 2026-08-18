@@ -10,6 +10,7 @@ const { createLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJ
 const { sendLeaveApprovalEmail } = require('../utils/mailer');
 const attendanceConfig = require('../utils/attendanceConfig');
 const logger = require('../logger');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // Regularization can be switched off in Attendance → Configuration → Methods.
@@ -56,7 +57,7 @@ router.get('/my', async (req, res) => {
       [req.user._id]
     );
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET pending regularizations for the current approver (hierarchy-scoped).
@@ -85,7 +86,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       [req.user._id, full]
     );
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST submit request
@@ -235,7 +236,7 @@ router.post('/', requireRegularizationEnabled, [
     } catch (e) { logger.error({ err: e.message }, '[regularizations] notify soft-fail'); }
 
     res.status(201).json({ success: true, data: reg });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PUT approve/reject — hierarchy-based, identical engine to leaves.
@@ -427,7 +428,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
     return res.json({ success: true, status: 'rejected', message: 'Regularization rejected.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   } finally {
     client.release();
   }

@@ -14,6 +14,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const logger = require('../logger');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -120,7 +121,7 @@ router.get('/space', async (req, res) => {
     // so the previous 500 looked like "failed with status code 500"
     // with no detail. logger.error lands in the container's stdout as JSON.
     logger.error({ err: err.message, stack: err.stack }, '[/api/team/space] failed');
-    res.status(500).json({ success: false, message: err.message, stack: err.stack });
+    serverError(res, err, 'team');
   }
 });
 

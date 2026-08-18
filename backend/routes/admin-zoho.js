@@ -17,6 +17,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { iterateEmployees, iteratePayroll, listEmployeeFiles, downloadFile } = require('../utils/zoho');
 const fs = require('fs');
 const path = require('path');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect, authorize('admin', 'director', 'hr_admin'));
 
@@ -497,7 +498,7 @@ router.post('/zoho-sync', async (req, res) => {
     res.json({ success: true, stats });
   } catch (err) {
     logger.error({ err }, 'Zoho sync failed');
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -561,7 +562,9 @@ router.post('/zoho-sync-payroll', async (req, res) => {
     res.json({ success: true, stats });
   } catch (err) {
     logger.error({ err }, 'Zoho Payroll sync failed');
-    res.status(500).json({ success: false, message: err.message, stats });
+    serverError(res, err, 'zoho sync');
+    // stats are still logged so a partial sync can be diagnosed.
+    logger.warn({ stats }, '[zoho] sync ended early');
   }
 });
 
@@ -671,7 +674,9 @@ router.post('/zoho-sync-documents', async (req, res) => {
     res.json({ success: true, stats });
   } catch (err) {
     logger.error({ err }, 'Zoho Documents sync failed');
-    res.status(500).json({ success: false, message: err.message, stats });
+    serverError(res, err, 'zoho sync');
+    // stats are still logged so a partial sync can be diagnosed.
+    logger.warn({ stats }, '[zoho] sync ended early');
   }
 });
 

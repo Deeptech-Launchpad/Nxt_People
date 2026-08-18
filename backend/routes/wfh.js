@@ -7,6 +7,7 @@ const { isFullAccess, reportsScope } = require('../utils/roles');
 const { audit } = require('../middleware/audit');
 const { createNotification } = require('./notifications');
 const { createLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 const WFH_LEVELS_JSON = approvalLevelsJson('wfh', 'w');
@@ -21,7 +22,7 @@ router.get('/my', async (req, res) => {
       [req.user._id]
     );
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET all team WFH requests (all statuses, scoped to direct reports)
@@ -43,7 +44,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       [userId, full, ...scope.params]
     );
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST apply WFH
@@ -84,7 +85,7 @@ router.post('/', audit('CREATE', 'wfh_request'), async (req, res) => {
     } finally {
       client.release();
     }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PUT approve/reject with multi-level hierarchy support
@@ -162,7 +163,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
     } finally {
       client.release();
     }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

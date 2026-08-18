@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -29,7 +30,7 @@ router.get('/birthdays', async (req, res) => {
     );
     res.json({ success: true, data: r.rows, month, year });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -41,15 +42,15 @@ router.get('/new-hires', async (req, res) => {
       `SELECT id as "_id", employee_id as "employeeId",
        first_name as "firstName", last_name as "lastName",
        email, designation, department, photo_url as "photoUrl",
-       join_date as "joinDate"
+       joining_date as "joinDate"
        FROM employees
        WHERE status = 'active' AND deleted_at IS NULL
-         AND join_date >= CURRENT_DATE - INTERVAL '${days} days'
-       ORDER BY join_date DESC`
+         AND joining_date >= CURRENT_DATE - INTERVAL '${days} days'
+       ORDER BY joining_date DESC`
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -78,7 +79,7 @@ router.get('/departments', async (req, res) => {
     }
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -112,7 +113,7 @@ router.get('/departments/:id/employees', async (req, res) => {
     const r = await pool.query(q, params);
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -156,7 +157,7 @@ router.get('/directory', async (req, res) => {
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -196,7 +197,7 @@ router.get('/employee-tree', async (req, res) => {
 
     res.json({ success: true, data: roots });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -215,7 +216,7 @@ router.get('/info', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -223,13 +224,13 @@ router.get('/info', async (req, res) => {
 router.get('/announcements', async (req, res) => {
   try {
     const r = await pool.query(
-      `SELECT id as "_id", title, content, author_id as "authorId",
+      `SELECT id as "_id", title, content, created_by as "authorId",
        created_at as "createdAt", expires_at as "expiresAt"
        FROM announcements ORDER BY created_at DESC LIMIT 20`
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 

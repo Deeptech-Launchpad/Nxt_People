@@ -8,6 +8,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { protect } = require('../middleware/auth');
 const { mergeRows } = require('../utils/mergeRows');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // Identity of one real entry — used to collapse the partial duplicate rows the
@@ -181,7 +182,7 @@ router.get('/', async (req, res) => {
     }
     res.json({ success: true, data: profile });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -234,7 +235,7 @@ router.put('/', async (req, res) => {
     await pool.query(`UPDATE employees SET ${updates.join(', ')} WHERE id = $${i}`, params);
     res.json({ success: true, message: 'Profile updated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -265,7 +266,7 @@ router.post('/photo', (req, res, next) => {
 
     res.json({ success: true, photoUrl });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -281,7 +282,7 @@ router.delete('/photo', async (req, res) => {
     await pool.query('UPDATE employees SET photo_url = NULL, updated_at = NOW() WHERE id = $1', [req.user._id]);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
@@ -315,7 +316,7 @@ router.put('/change-password', async (req, res) => {
     await pool.query('DELETE FROM refresh_tokens WHERE employee_id = $1', [req.user._id]);
     res.json({ success: true, message: 'Password updated successfully' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
   }
 });
 
