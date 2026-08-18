@@ -47,6 +47,10 @@ function clean(b) {
       enabled: allowanceOn,
       minimumHours: allowanceOn ? hhmm(allowance.minimumHours || '04:00', 'Minimum hours') : '04:00',
     },
+    // Auto shift assignment. Off by default, and it only ever decides today's
+    // shift for a check-in that has no rostered one — the reference says the
+    // same: current date entries only, without impacting past data.
+    autoShiftAssignment: { enabled: bool(b.autoShiftAssignment?.enabled) },
   };
 }
 

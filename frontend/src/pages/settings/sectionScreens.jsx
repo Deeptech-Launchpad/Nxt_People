@@ -49,6 +49,8 @@ import ShiftsGeneral from './shifts/ShiftsGeneral';
 // Manage Shifts is the existing Shifts screen, not a copy: there is one set of
 // shifts, and two editors for one table is how they drift apart.
 import ManageShifts from '../Shifts';
+import AutoShiftAssignment from './shifts/AutoShiftAssignment';
+import ShiftPatterns from './shifts/ShiftPatterns';
 
 import LeaveMethods from './LeaveMethods';
 import LeavePolicy from './LeavePolicy';
@@ -114,6 +116,8 @@ const SECTION_SCREENS = {
 
   'shifts.configuration.general': ShiftsGeneral,
   'shifts.configuration.manage-shifts': ManageShifts,
+  'shifts.configuration.auto-shift-assignment': AutoShiftAssignment,
+  'shifts.configuration.shift-patterns': ShiftPatterns,
 
   'leave.configuration.methods': LeaveMethods,
   'leave.configuration.leave-policy': LeavePolicy,

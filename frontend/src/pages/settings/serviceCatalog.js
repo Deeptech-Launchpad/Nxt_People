@@ -142,12 +142,14 @@ export const SERVICES = [
     description: 'Shift timings and the default new employees start on',
     roles: ['admin', 'director', 'hr_admin'],
     tabs: {
-      // Auto Shift Assignment and Shift Patterns are absent: both need a
-      // rostering engine that does not exist here, and a builder whose output
-      // nothing reads is worse than no builder.
+      // Auto Shift Assignment and Shift Patterns are here now: shift_roster
+      // already existed, and attendance resolves against it, so a pattern
+      // generates something that actually decides which shift somebody is on.
       configuration: [
         { key: 'general', label: 'General' },
         { key: 'manage-shifts', label: 'Manage Shifts' },
+        { key: 'auto-shift-assignment', label: 'Auto Shift Assignment' },
+        { key: 'shift-patterns', label: 'Shift Patterns' },
       ],
     },
   },

@@ -3,6 +3,7 @@ const router = express.Router();
 const logger = require('../logger');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { shiftForCheckIn, autoAssignEnabled } = require('../utils/shiftPatterns');
 const { isFullAccess } = require('../utils/roles');
 const { sendCheckOutReminderEmail } = require('../utils/mailer');
 const { DEFAULT_TZ } = require('../utils/timezone');
@@ -95,7 +96,8 @@ router.post('/checkin', async (req, res) => {
       // COALESCE, so with no roster row the answer is exactly what it was.
       pool.query(
         `SELECT COALESCE(rs.id, s.id) AS id,
-                COALESCE(rs.start_time, s.start_time) AS start_time
+                COALESCE(rs.start_time, s.start_time) AS start_time,
+                rs.id AS "rosteredId"
            FROM employees e
            LEFT JOIN shifts s ON s.id = e.shift_id
            LEFT JOIN shift_roster r ON r.employee_id = e.id AND r.date = $2::date
@@ -105,7 +107,22 @@ router.post('/checkin', async (req, res) => {
     ]);
     const existing = existingRes.rows[0];
     const settings = settingsRes.rows[0] || {};
-    const shift = shiftRes.rows[0];
+    let shift = shiftRes.rows[0];
+
+    // Auto shift assignment. Only when it is switched on, only when nothing
+    // has already decided — a rostered shift, or one a pattern generated, is
+    // an explicit answer and wins — and only for today, which is the only date
+    // this route writes. Wrapped, because failing to guess a shift must never
+    // fail a check-in.
+    try {
+      const rostered = shiftRes.rows[0]?.rosteredId;
+      if (!rostered && await autoAssignEnabled()) {
+        const picked = await shiftForCheckIn(settings.check_in_mins ?? 0);
+        if (picked) shift = { id: picked.id, start_time: shift?.start_time };
+      }
+    } catch (err) {
+      logger.warn({ err: err.message }, '[attendance] auto shift assignment skipped');
+    }
 
     if (existing && existing.check_in && !existing.check_out) {
       return res.status(400).json({ success: false, message: 'Already checked in today' });
