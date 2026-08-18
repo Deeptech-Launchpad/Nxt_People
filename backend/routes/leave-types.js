@@ -96,6 +96,79 @@ router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async 
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+// POST /api/leave-types/policies/:id/clone — duplicate a policy.
+// A copy starts disabled. Enabling it is a separate, deliberate act: a second
+// live policy with the same rules would double what a balance report grants.
+router.post('/policies/:id/clone', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const src = await pool.query(`SELECT * FROM leave_types WHERE id = $1`, [req.params.id]);
+    const row = src.rows[0];
+    if (!row) return res.status(404).json({ success: false, message: 'Leave policy not found' });
+
+    // The code is a unique key, so the copy needs its own. Counting up rather
+    // than appending blindly means cloning twice does not collide.
+    const taken = new Set((await pool.query(`SELECT code FROM leave_types`)).rows.map(x => x.code));
+    let code = `${row.code}_copy`, n = 1;
+    while (taken.has(code)) { n += 1; code = `${row.code}_copy${n}`; }
+
+    const r = await pool.query(
+      `INSERT INTO leave_types
+         (name, code, icon, color, is_active, pay_type, unit, accrual_mode, accrual_amount,
+          carry_forward, policy_type, max_days_per_year, sort_order)
+       VALUES ($1,$2,$3,$4,FALSE,$5,$6,$7,$8,$9,$10,$11,$12)
+       RETURNING id AS "_id", name, code`,
+      [`${row.name} (Copy)`, code, row.icon, row.color, row.pay_type, row.unit,
+       row.accrual_mode, row.accrual_amount, row.carry_forward, row.policy_type,
+       row.max_days_per_year, row.sort_order]
+    );
+    res.status(201).json({ success: true, data: r.rows[0] });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
+// DELETE /api/leave-types/policies/:id — remove a policy outright.
+//
+// Guarded, because the row is what every leave and every balance points at.
+// leaves.leave_type stores the code as text with no foreign key, so deleting a
+// used policy would not fail — it would leave leaves naming a policy that no
+// longer exists, and those rows would stop resolving a name, a colour or a pay
+// type. Disabling is the reversible answer and the toggle already does it.
+router.delete('/policies/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const src = await pool.query(`SELECT id, name, code FROM leave_types WHERE id = $1`, [req.params.id]);
+    const row = src.rows[0];
+    if (!row) return res.status(404).json({ success: false, message: 'Leave policy not found' });
+
+    // leaves.leave_type spells comp-off with an underscore; leave_types.code
+    // does not. They have always disagreed, so the guard has to translate or
+    // it would report zero leaves for the one policy most likely to have them.
+    const leaveCode = row.code === 'compoff' ? 'comp_off' : row.code;
+    const used = await pool.query(`SELECT COUNT(*)::int n FROM leaves WHERE leave_type = $1`, [leaveCode]);
+    if (used.rows[0].n > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `${row.name} is used by ${used.rows[0].n} leave request${used.rows[0].n === 1 ? '' : 's'}. Disable it instead — that stops new requests without breaking the old ones.`,
+      });
+    }
+
+    const held = await pool.query(
+      `SELECT COUNT(*)::int n FROM leave_balances WHERE leave_type_id = $1 AND (available > 0 OR booked > 0)`,
+      [req.params.id]
+    );
+    if (held.rows[0].n > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `${held.rows[0].n} employee${held.rows[0].n === 1 ? ' holds' : 's hold'} a balance of ${row.name}. Clear those balances or disable the policy instead.`,
+      });
+    }
+
+    // Only empty balance rows are left, and they are derived — the accrual job
+    // recreates them for whatever policies exist.
+    await pool.query(`DELETE FROM leave_balances WHERE leave_type_id = $1`, [req.params.id]);
+    await pool.query(`DELETE FROM leave_types WHERE id = $1`, [req.params.id]);
+    res.json({ success: true, message: `${row.name} deleted` });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
 // GET /api/leave-types/balances?year=2025&employeeId=  (employee sees own, admin can pass id)
 router.get('/balances', async (req, res) => {
   try {

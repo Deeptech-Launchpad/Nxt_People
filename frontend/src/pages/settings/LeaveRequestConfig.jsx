@@ -4,15 +4,63 @@ import api from '../../utils/api';
 import { Card, Check, Note, NotWired, SaveBar, Spinner, selectClass, useConfigSection } from './configKit';
 
 const ROWS = [
-  ['past_within_pay_period', 'Past leaves within current pay period', 'Only meaningful once a pay period exists — the period decides what counts as past.'],
+  ['past_within_pay_period', 'Past leaves within current pay period', 'With no pay period configured this row can never match, and a past leave falls through to the calendar-year row below.'],
   ['current_and_upcoming', 'Current day & upcoming leave requests'],
   ['past_within_calendar_year', 'Past leave request within current calendar year'],
 ];
 const ACTORS = [['self', 'Employees (Self)'], ['manager', 'Reporting managers'], ['approver', 'Approvers']];
 
+// A leave matches exactly one row: still running or yet to start is
+// current-and-upcoming; otherwise the pay-period row if it fits the live cycle,
+// and the calendar-year row if not. A leave from a previous year matches no row
+// and so is cancellable by nobody.
+//
+// Shared by cancellation and extension because they ask the same question of
+// the same three actors — two copies drifted apart the moment one gained a
+// column.
+function PermissionMatrix({ rows, perms, onToggle, firstRowExtra }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[600px] border border-slate-200 rounded-lg">
+        <thead className="bg-slate-50 text-[13px] font-semibold text-slate-600">
+          <tr>
+            <th className="text-left px-4 py-2.5">Permissions</th>
+            {ACTORS.map(([, l]) => <th key={l} className="px-4 py-2.5 font-semibold whitespace-nowrap">{l}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([key, l, hint], i) => (
+            <tr key={key} className="border-t border-slate-100">
+              <td className="px-4 py-3 text-[14px] text-slate-700 align-top">
+                <span className="inline-flex items-center gap-1.5">
+                  {l}
+                  {hint && <span title={hint} className="text-amber-500"><Info size={13} /></span>}
+                </span>
+                {i === 0 && firstRowExtra}
+              </td>
+              {ACTORS.map(([actor]) => (
+                <td key={actor} className="px-4 py-3 text-center align-middle">
+                  <input type="checkbox" checked={!!perms[key]?.[actor]}
+                    aria-label={`${l} — ${actor}`}
+                    onChange={() => onToggle(key, actor)}
+                    className="w-4 h-4 accent-blue-600 cursor-pointer" />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // Leave Request configuration — cancellation, extension and how far ahead leave
-// can be booked. Extension is a permissions matrix rather than a single switch
-// because who may extend depends on when the leave was.
+// can be booked. Cancellation and extension are permissions matrices rather
+// than single switches because who may act depends on when the leave was.
+//
+// The cancellation matrix is enforced: /leaves DELETE and PUT :id/cancel both
+// resolve the row and the actor through it. Before it existed an employee could
+// withdraw any unapproved leave of their own from any month of the year.
 export default function LeaveRequestConfig() {
   const { config, set, setIn, loading, saving, dirty, save } = useConfigSection('request', 'Leave request');
   const [policies, setPolicies] = useState([]);
@@ -29,6 +77,8 @@ export default function LeaveRequestConfig() {
   const ext = config.extension || {};
   const perms = ext.permissions || {};
   const selected = ext.policies || [];
+  const cancel = config.cancellation || {};
+  const cancelPerms = cancel.permissions || {};
 
   const togglePolicy = code => setIn('extension', {
     policies: selected.includes(code) ? selected.filter(c => c !== code) : [...selected, code],
@@ -38,14 +88,97 @@ export default function LeaveRequestConfig() {
     permissions: { ...perms, [row]: { ...(perms[row] || {}), [actor]: !perms[row]?.[actor] } },
   });
 
+  const toggleCancelPerm = (row, actor) => setIn('cancellation', {
+    permissions: { ...cancelPerms, [row]: { ...(cancelPerms[row] || {}), [actor]: !cancelPerms[row]?.[actor] } },
+  });
+
+  const toggleCancelPolicy = code => {
+    const list = cancel.policies || [];
+    setIn('cancellation', { policies: list.includes(code) ? list.filter(c => c !== code) : [...list, code] });
+  };
+
   return (
     <div className="space-y-4 pb-20">
       <Card title="Leave cancellation" description="Specify who can cancel leave requests and make cancellation reason mandatory">
-        <Check
-          label="Make reason for leave cancellation mandatory"
-          checked={config.cancellationReasonMandatory}
-          onChange={v => set({ cancellationReasonMandatory: v })}
+        <PermissionMatrix
+          rows={ROWS}
+          perms={cancelPerms}
+          onToggle={toggleCancelPerm}
+          firstRowExtra={(
+            <div className="mt-3 space-y-2.5">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                {[['custom', 'Custom pay period'], ['current', 'Current pay period']].map(([v, l]) => (
+                  <label key={v} className="flex items-center gap-2 cursor-pointer text-[13.5px] text-slate-700">
+                    <input type="radio" name="pastScope" checked={(cancel.pastScope || 'current') === v}
+                      onChange={() => setIn('cancellation', { pastScope: v })}
+                      className="w-4 h-4 accent-blue-600" />
+                    {l}
+                  </label>
+                ))}
+              </div>
+
+              <div className="inline-flex rounded-md bg-slate-100 p-0.5">
+                {[['all', 'All requests'], ['specific', 'Specific requests']].map(([v, l]) => (
+                  <label key={v}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-[13.5px] cursor-pointer ${
+                      (cancel.requestScope || 'all') === v ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+                    }`}>
+                    <input type="radio" name="requestScope" checked={(cancel.requestScope || 'all') === v}
+                      onChange={() => setIn('cancellation', { requestScope: v })}
+                      className="w-3.5 h-3.5 accent-blue-600" />
+                    {l}
+                  </label>
+                ))}
+              </div>
+
+              {cancel.requestScope === 'specific' && (
+                <div className="border border-slate-200 rounded-lg p-3 max-w-[380px] max-h-[150px] overflow-y-auto space-y-2">
+                  {policies.length === 0 && <p className="text-[13px] text-slate-400">No leave policies found</p>}
+                  {policies.map(p => (
+                    <label key={p._id} className="flex items-center gap-2.5 cursor-pointer text-[13.5px] text-slate-700">
+                      <input type="checkbox" checked={(cancel.policies || []).includes(p.code)}
+                        onChange={() => toggleCancelPolicy(p.code)} className="w-4 h-4 accent-blue-600" />
+                      <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: p.color || '#94a3b8' }} />
+                      {p.name}
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {/* Both are stored and returned intact, but the rule engine only
+                  interprets the live pay period and every policy. Saying so
+                  beats a setting that looks applied and is not. */}
+              {(cancel.pastScope === 'custom' || cancel.requestScope === 'specific') && (
+                <p className="text-[12px] text-slate-400 max-w-[420px]">
+                  Saved, but not yet applied — cancellation is still judged against the live pay
+                  period and every leave policy.<NotWired />
+                </p>
+              )}
+            </div>
+          )}
         />
+
+        <div className="mt-4">
+          <Note>Leave cancellation requests follow the approval chain configured for leave.</Note>
+        </div>
+
+        <div className="mt-5 space-y-4">
+          <div>
+            <Check
+              label="Allow partial leave cancellation"
+              checked={cancel.allowPartial}
+              onChange={v => setIn('cancellation', { allowPartial: v })}
+            />
+            <p className="text-[12px] text-slate-400 mt-1 ml-[26px]">
+              Cancelling part of a range would have to split the request in two.<NotWired />
+            </p>
+          </div>
+          <Check
+            label="Make reason for leave cancellation mandatory"
+            checked={config.cancellationReasonMandatory}
+            onChange={v => set({ cancellationReasonMandatory: v })}
+          />
+        </div>
       </Card>
 
       <Card
@@ -71,35 +204,8 @@ export default function LeaveRequestConfig() {
           ))}
         </div>
 
-        <div className="overflow-x-auto mt-5">
-          <table className="w-full min-w-[560px] border border-slate-200 rounded-lg">
-            <thead className="bg-slate-50 text-[13px] font-semibold text-slate-600">
-              <tr>
-                <th className="text-left px-4 py-2.5">Permissions</th>
-                {ACTORS.map(([, l]) => <th key={l} className="px-4 py-2.5 font-semibold">{l}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {ROWS.map(([key, l, hint]) => (
-                <tr key={key} className="border-t border-slate-100">
-                  <td className="px-4 py-3 text-[14px] text-slate-700">
-                    <span className="inline-flex items-center gap-1.5">
-                      {l}
-                      {hint && <span title={hint} className="text-amber-500"><Info size={13} /></span>}
-                    </span>
-                  </td>
-                  {ACTORS.map(([actor]) => (
-                    <td key={actor} className="px-4 py-3 text-center">
-                      <input type="checkbox" checked={!!perms[key]?.[actor]}
-                        aria-label={`${l} — ${actor}`}
-                        onChange={() => togglePerm(key, actor)}
-                        className="w-4 h-4 accent-blue-600 cursor-pointer" />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-5">
+          <PermissionMatrix rows={ROWS} perms={perms} onToggle={togglePerm} />
         </div>
 
         <div className="mt-4">

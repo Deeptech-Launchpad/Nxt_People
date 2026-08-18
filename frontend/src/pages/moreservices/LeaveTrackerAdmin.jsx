@@ -4,6 +4,7 @@ import {
   ArrowLeft, Plus, ChevronLeft, ChevronRight, CheckCircle2, CheckCheck, Clock, XCircle, Search, Filter,
 } from 'lucide-react';
 import api from '../../utils/api';
+import { confirmCancel } from '../../utils/cancelLeave';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
 import ApplyLeaveModal from '../../components/ApplyLeaveModal';
@@ -142,9 +143,11 @@ export default function LeaveTrackerAdmin() {
   // Cancel a pending request (Super Admin / HR). The row is kept with status
   // 'cancelled' (shows under the Cancelled filter), balance refunded server-side.
   const cancelLeave = async (id) => {
-    if (!confirm('Cancel this leave request? It will be marked as Cancelled.')) return;
+    const { ok, reason, empty } = await confirmCancel('Cancel this leave request? It will be marked as Cancelled.');
+    if (empty) return toast.error('A reason for cancelling is required');
+    if (!ok) return;
     try {
-      await api.put(`/leaves/${id}/cancel`);
+      await api.put(`/leaves/${id}/cancel`, { reason });
       toast.success('Leave cancelled');
       setDetail(null); setDetailBalance(null); load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }

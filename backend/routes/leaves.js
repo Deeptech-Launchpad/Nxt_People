@@ -12,6 +12,7 @@ const { countWorkingDays } = require('../utils/workingDays');
 const { getLeavePolicies } = require('../utils/leavePolicy');
 const logger = require('../logger');
 const { fire } = require('../utils/workflowEngine');
+const { canCancel, loadConfig } = require('../utils/leaveCancellation');
 
 router.use(protect);
 
@@ -189,6 +190,21 @@ router.post('/', [
     const today = new Date(); today.setHours(0, 0, 0, 0);
     if (start < today) {
       return res.status(400).json({ success: false, message: 'Cannot apply for leave in the past' });
+    }
+    // How far ahead leave may be booked — Leave Tracker > Configuration >
+    // Leave Request. Stored since that screen was built, but until now nothing
+    // read it, so the limit was advertised and never applied.
+    {
+      const cfg = await loadConfig();
+      const years = Number(cfg.futureRequestYears) || 1;
+      const limit = new Date(today);
+      limit.setFullYear(limit.getFullYear() + years);
+      if (start > limit) {
+        return res.status(400).json({
+          success: false,
+          message: `Leave can only be requested up to ${years} year${years > 1 ? 's' : ''} in advance.`,
+        });
+      }
     }
 
     // ── Permission = hourly leave, capped per calendar month, NO carry-forward ──
@@ -728,12 +744,19 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
   }
 });
 
-// ── Admin cancel leave ──────────────────────────────────────────────────────
-// Super Admin / HR cancel a PENDING request: the row is KEPT with status
-// 'cancelled' (so it appears under the Cancelled filter) rather than deleted.
-// Balance is refunded exactly like a rejection. Approved leaves are left to the
-// owner-delete path's existing rule (not cancellable here).
-router.put('/:id/cancel', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+// ── Cancel someone else's leave ─────────────────────────────────────────────
+// Cancels a PENDING request: the row is KEPT with status 'cancelled' (so it
+// appears under the Cancelled filter) rather than deleted. Balance is refunded
+// exactly like a rejection. Approved leaves are left to the owner-delete path's
+// existing rule (not cancellable here).
+//
+// There is no authorize() guard because the permissions matrix on Leave
+// Tracker > Configuration > Leave Request IS the guard, and it distinguishes
+// reporting managers from approvers — a distinction no role guard can make,
+// since both are relationships to the employee rather than roles. canCancel()
+// resolves those relationships and refuses anybody holding neither, so an
+// unrelated employee gets a 403 exactly as before.
+router.put('/:id/cancel', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -743,6 +766,18 @@ router.put('/:id/cancel', authorize('admin', 'director', 'hr_admin'), async (req
     if (leave.status !== 'pending') {
       await client.query('ROLLBACK');
       return res.status(400).json({ success: false, message: `Only pending leaves can be cancelled (this one is ${leave.status}).` });
+    }
+
+    const config = await loadConfig();
+    const verdict = await canCancel({ user: req.user, leave, config });
+    if (!verdict.allowed) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, message: verdict.reason });
+    }
+    const reason = String(req.body?.reason || '').trim();
+    if (config.cancellationReasonMandatory && !reason) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'A reason for cancelling is required.' });
     }
 
     // Refund balance (mirrors the rejection refund — pending never debited 'booked').
@@ -757,15 +792,28 @@ router.put('/:id/cancel', authorize('admin', 'director', 'hr_admin'), async (req
         );
       }
     }
-    await client.query(`UPDATE leaves SET status='cancelled', updated_at=NOW() WHERE id=$1`, [leave.id]);
+    await client.query(
+      `UPDATE leaves
+          SET status='cancelled', cancellation_reason=$2, cancelled_by=$3, cancelled_at=NOW(), updated_at=NOW()
+        WHERE id=$1`,
+      [leave.id, reason || null, req.user._id]
+    );
     await client.query('COMMIT');
 
     const leaveLabel = leave.leave_type.charAt(0).toUpperCase() + leave.leave_type.slice(1);
     const startLabel = new Date(leave.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    // Naming the person rather than "HR": a reporting manager or an approver
+    // can cancel too now, and being told the wrong party did it is worse than
+    // being told nothing.
+    const byRes = await pool.query(
+      `SELECT TRIM(CONCAT(first_name, ' ', last_name)) AS name FROM employees WHERE id = $1`, [req.user._id]
+    ).catch(() => ({ rows: [] }));
+    const by = byRes.rows[0]?.name || 'an approver';
     await createNotification(leave.employee_id, 'leave', 'Leave Cancelled',
-      `Your ${leaveLabel} leave from ${startLabel} was cancelled by HR.`, '/leave-tracker/summary'
+      `Your ${leaveLabel} leave from ${startLabel} was cancelled by ${by}.${reason ? ` Reason: ${reason}` : ''}`,
+      '/leave-tracker/summary'
     ).catch(() => {});
-    await logAudit(req, { action: 'CANCEL', resource: 'Leave', resourceId: leave.id, changes: { prior_status: 'pending', status: 'cancelled' } });
+    await logAudit(req, { action: 'CANCEL', resource: 'Leave', resourceId: leave.id, changes: { prior_status: 'pending', status: 'cancelled', matrix_row: verdict.row, reason: reason || null } });
     return res.json({ success: true, status: 'cancelled', message: 'Leave cancelled.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -786,7 +834,7 @@ router.delete('/:id', async (req, res) => {
     // approval from changing status between our check and the DELETE.
     await client.query('BEGIN');
     const leaveRes = await client.query(
-      'SELECT status, leave_type, start_date, end_date, total_days FROM leaves WHERE id=$1 AND employee_id=$2 FOR UPDATE',
+      'SELECT id, employee_id, status, leave_type, start_date, end_date, total_days FROM leaves WHERE id=$1 AND employee_id=$2 FOR UPDATE',
       [req.params.id, req.user._id]
     );
     if (leaveRes.rows.length === 0) {
@@ -797,6 +845,21 @@ router.delete('/:id', async (req, res) => {
     if (leave.status === 'approved') {
       await client.query('ROLLBACK');
       return res.status(400).json({ success: false, message: 'Cannot cancel approved leave' });
+    }
+
+    // When the leave falls decides whether the employee may cancel it at all.
+    // Until this was wired an employee could withdraw a leave from any month of
+    // the year as long as it had not been approved.
+    const config = await loadConfig();
+    const verdict = await canCancel({ user: req.user, leave, config });
+    if (!verdict.allowed) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, message: verdict.reason });
+    }
+    const cancelReason = String(req.body?.reason || '').trim();
+    if (config.cancellationReasonMandatory && !cancelReason) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'A reason for cancelling is required.' });
     }
 
     // Only refund balance if the leave was still pending — rejected and cancelled
@@ -815,7 +878,11 @@ router.delete('/:id', async (req, res) => {
         );
       }
     }
-    await client.query("UPDATE leaves SET status='cancelled' WHERE id=$1", [req.params.id]);
+    await client.query(
+      `UPDATE leaves SET status='cancelled', cancellation_reason=$2, cancelled_by=$3, cancelled_at=NOW()
+        WHERE id=$1`,
+      [req.params.id, cancelReason || null, req.user._id]
+    );
     await client.query('COMMIT');
 
     // Audit trail for cancellations — was missing entirely before.
@@ -829,6 +896,8 @@ router.delete('/:id', async (req, res) => {
         start_date:   leave.start_date,
         end_date:     leave.end_date,
         refunded_days: leave.leave_type !== 'unpaid' ? leave.total_days : 0,
+        matrix_row: verdict.row,
+        reason: cancelReason || null,
       },
     });
     res.json({ success: true, message: 'Leave cancelled' });

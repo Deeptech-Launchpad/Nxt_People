@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { SlidersHorizontal, X, CalendarRange, Users, Gift, CalendarCheck } from 'lucide-react';
+import { SlidersHorizontal, X, CalendarRange, Users, Gift, CalendarCheck, Copy, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 
 const PAY_TYPES = [['paid', 'Paid'], ['unpaid', 'Unpaid'], ['comp_off', 'Compensatory Off']];
@@ -291,8 +291,23 @@ export default function LeavePolicy() {
   const activeFilterCount = Object.entries(filters)
     .filter(([k, v]) => v && !(k === 'status' && v === 'active')).length;
 
+  const clone = row => {
+    api.post(`/leave-types/policies/${row._id}/clone`)
+      .then(r => { toast.success(`${r.data.data.name} created, disabled`); load(); })
+      .catch(err => toast.error(err.response?.data?.message || 'Could not copy that policy'));
+  };
+
+  // The confirm names the policy rather than saying "this policy" — the rows
+  // look alike enough that Casual Leave and Casual Leave2025 are easy to mix up.
+  const remove = row => {
+    if (!window.confirm(`Delete the ${row.name} leave policy? This cannot be undone.`)) return;
+    api.delete(`/leave-types/policies/${row._id}`)
+      .then(r => { toast.success(r.data.message || 'Deleted'); load(); })
+      .catch(err => toast.error(err.response?.data?.message || 'Could not delete that policy'));
+  };
+
   const Row = ({ row }) => (
-    <tr className={`border-t border-slate-100 ${savingId === row._id ? 'opacity-60' : ''}`}>
+    <tr className={`border-t border-slate-100 group hover:bg-slate-50/70 ${savingId === row._id ? 'opacity-60' : ''}`}>
       <td className="px-5 py-3.5">
         <span className="flex items-center gap-2.5">
           <span className="w-3.5 h-3.5 rounded-sm flex-shrink-0" style={{ background: row.color || '#94a3b8' }} />
@@ -363,6 +378,14 @@ export default function LeavePolicy() {
           <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${row.isActive ? 'left-[22px]' : 'left-0.5'}`} />
         </button>
       </td>
+      <td className="px-5 py-3.5">
+        <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <button onClick={() => clone(row)} title={`Copy ${row.name}`}
+            className="text-slate-400 hover:text-slate-700"><Copy size={15} /></button>
+          <button onClick={() => remove(row)} title={`Delete ${row.name}`}
+            className="text-slate-400 hover:text-rose-600"><Trash2 size={15} /></button>
+        </div>
+      </td>
     </tr>
   );
 
@@ -377,6 +400,7 @@ export default function LeavePolicy() {
             <th className="text-left px-5 py-3">Unit</th>
             <th className="text-left px-5 py-3">Accrual</th>
             <th className="text-center px-5 py-3 w-[90px]">Status</th>
+            <th className="w-[80px]" />
           </tr>
         </thead>
         <tbody>{items.map(r => <Row key={r._id} row={r} />)}</tbody>

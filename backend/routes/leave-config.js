@@ -22,6 +22,18 @@ const RESOURCE_ACCESS = ['administrators', 'department_heads', 'employees_own_de
 const UNPAID_LEAVE = ['lop', 'carry_over'];
 const EXTENSION_ROWS = ['past_within_pay_period', 'current_and_upcoming', 'past_within_calendar_year'];
 const EXTENSION_ACTORS = ['self', 'manager', 'approver'];
+const PAST_SCOPES = ['current', 'custom'];
+const REQUEST_SCOPES = ['all', 'specific'];
+
+// A permissions matrix is stored dense — every row, every actor, explicitly
+// true or false. A sparse one would leave "not set" and "not permitted"
+// indistinguishable at read time, and the difference decides whether somebody
+// can cancel a leave.
+const matrix = src => EXTENSION_ROWS.reduce((rows, row) => {
+  const r = (src || {})[row] || {};
+  rows[row] = EXTENSION_ACTORS.reduce((o, a) => ({ ...o, [a]: !!r[a] }), {});
+  return rows;
+}, {});
 const CALENDAR_PARTS = ['employee_id', 'employee_name', 'leave_policy_name', 'leave_type', 'none'];
 
 // A section is (column, validator). The validator returns a clean object, or
@@ -61,17 +73,37 @@ const SECTIONS = {
       const e = b.extension || {};
       const years = Number(b.futureRequestYears);
       if (!Number.isInteger(years) || years < 1 || years > 3) throw new Error('Future request limit must be 1, 2 or 3 years');
-      const permissions = {};
-      for (const row of EXTENSION_ROWS) {
-        const src = (e.permissions || {})[row] || {};
-        permissions[row] = EXTENSION_ACTORS.reduce((o, a) => ({ ...o, [a]: !!src[a] }), {});
-      }
       const policies = Array.isArray(e.policies)
         ? [...new Set(e.policies.map(String).filter(Boolean))]
         : [];
+
+      const c = b.cancellation || {};
+      if (c.pastScope !== undefined && !PAST_SCOPES.includes(c.pastScope)) {
+        throw new Error('Pay period scope for past leave cancellation is not valid');
+      }
+      if (c.requestScope !== undefined && !REQUEST_SCOPES.includes(c.requestScope)) {
+        throw new Error('Request scope for leave cancellation is not valid');
+      }
+      const cancelPolicies = Array.isArray(c.policies)
+        ? [...new Set(c.policies.map(String).filter(Boolean))]
+        : [];
+      // Scoping to specific requests with nothing selected would silently mean
+      // "none", which reads on screen as a working restriction and behaves as a
+      // total block. Refuse it rather than storing an unusable rule.
+      if (c.requestScope === 'specific' && !cancelPolicies.length) {
+        throw new Error('Select at least one leave policy, or scope cancellation to all requests');
+      }
+
       return {
         cancellationReasonMandatory: !!b.cancellationReasonMandatory,
-        extension: { policies, permissions, reasonMandatory: !!e.reasonMandatory },
+        cancellation: {
+          permissions: matrix(c.permissions),
+          pastScope: c.pastScope || 'current',
+          requestScope: c.requestScope || 'all',
+          policies: cancelPolicies,
+          allowPartial: !!c.allowPartial,
+        },
+        extension: { policies, permissions: matrix(e.permissions), reasonMandatory: !!e.reasonMandatory },
         futureRequestYears: years,
       };
     },

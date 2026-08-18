@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Plus, X, Calendar, Eye } from 'lucide-react';
 import api from '../utils/api';
+import { confirmCancel } from '../utils/cancelLeave';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import BackButton from '../components/BackButton';
@@ -80,8 +81,10 @@ export default function Leave() {
   };
 
   const handleCancel = async (id) => {
-    if (!confirm('Cancel this leave request?')) return;
-    try { await api.delete(`/leaves/${id}`); toast.success('Leave cancelled'); load(); }
+    const { ok, reason, empty } = await confirmCancel('Cancel this leave request?');
+    if (empty) return toast.error('A reason for cancelling is required');
+    if (!ok) return;
+    try { await api.delete(`/leaves/${id}`, { data: { reason } }); toast.success('Leave cancelled'); load(); }
     catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
   };
 

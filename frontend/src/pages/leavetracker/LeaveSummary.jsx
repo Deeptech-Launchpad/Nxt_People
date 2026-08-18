@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Calendar, Clock, Plus, X, Info, ChevronDown, AlertTriangle, Eye } from 'lucide-react';
 import api from '../../utils/api';
+import { confirmCancel } from '../../utils/cancelLeave';
 import BackButton from '../../components/BackButton';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
@@ -380,8 +381,10 @@ export default function LeaveSummary() {
   useEffect(() => { load(); }, [load]);
 
   const handleCancel = async (id) => {
-    if (!confirm('Cancel this leave request?')) return;
-    try { await api.delete(`/leaves/${id}`); toast.success('Leave cancelled'); load(); }
+    const { ok, reason, empty } = await confirmCancel('Cancel this leave request?');
+    if (empty) return toast.error('A reason for cancelling is required');
+    if (!ok) return;
+    try { await api.delete(`/leaves/${id}`, { data: { reason } }); toast.success('Leave cancelled'); load(); }
     catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
   };
 
