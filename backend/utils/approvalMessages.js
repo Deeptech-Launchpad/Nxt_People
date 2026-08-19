@@ -59,6 +59,40 @@ async function recipientsFor(messages, { approverEmails = [], employeeId } = {})
 }
 
 /**
+ * Placeholder names, reconciled.
+ *
+ * The seeded templates were written with ${employeeName}, ${requestType},
+ * ${reason} and ${approverName}; the call sites supply EmployeeName,
+ * LeaveType, Reason and friends. Not one name matched, in either the word or
+ * the case, so every templated approval email went out with its placeholders
+ * showing verbatim — render() leaves an unknown key as written, deliberately,
+ * so it reached real inboxes as literal ${approverName} text.
+ *
+ * Fixing the supply side rather than rewriting the stored templates means the
+ * rows already seeded on live keep working, and any template somebody wrote by
+ * hand against either spelling keeps working too. Every key is offered in both
+ * casings, plus the aliases the seeds actually use.
+ */
+function expandVars(vars = {}) {
+  const out = { ...vars };
+  for (const [k, v] of Object.entries(vars)) {
+    const lower = k.charAt(0).toLowerCase() + k.slice(1);
+    const upper = k.charAt(0).toUpperCase() + k.slice(1);
+    if (out[lower] === undefined) out[lower] = v;
+    if (out[upper] === undefined) out[upper] = v;
+  }
+  // The seeds call the leave type "requestType" and the person "employeeName".
+  const alias = (from, to) => {
+    if (out[to] === undefined && out[from] !== undefined) out[to] = out[from];
+  };
+  alias("LeaveType", "requestType");
+  alias("LeaveType", "RequestType");
+  alias("EmployeeName", "employeeName");
+  alias("Reason", "reason");
+  alias("Link", "link");
+  return out;
+}
+/**
  * The chosen template rendered against the request, or null when no template is
  * chosen — in which case the caller keeps its own built-in HTML. Returning null
  * rather than a bare fallback is what preserves the existing formatted emails
@@ -66,6 +100,7 @@ async function recipientsFor(messages, { approverEmails = [], employeeId } = {})
  */
 async function renderTemplate(templateName, vars) {
   if (!templateName) return null;
+  vars = expandVars(vars);
   const r = await pool.query(
     `SELECT subject, body FROM email_templates WHERE name = $1 LIMIT 1`, [templateName]
   ).catch(() => ({ rows: [] }));
@@ -86,8 +121,18 @@ async function approvalEmail({ requestType, record, approverEmails, employeeId, 
   const messages = await messagesFor(requestType, record);
   const to = await recipientsFor(messages, { approverEmails, employeeId });
   const rendered = await renderTemplate(messages?.templateName, vars);
+
+  // ${approverName} is addressed to one person, and a single render shared
+  // across the whole recipient list can never fill it. htmlFor() re-renders
+  // the template per address so the greeting is the right one; callers that
+  // send a single message to everybody can still use `html`, where the name
+  // is simply absent.
+  const htmlFor = async (approverName) =>
+    (await renderTemplate(messages?.templateName, { ...vars, approverName }))?.html || null;
+
   return {
     to,
+    htmlFor,
     cc: messages?.cc || [],
     bcc: messages?.bcc || [],
     replyTo: messages?.replyTo || [],

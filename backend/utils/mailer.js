@@ -37,6 +37,30 @@ const safeUrl = (u) => {
 // has to say so out loud.
 const mailDisabled = () => String(process.env.EMAIL_DISABLED || '').toLowerCase() === 'true';
 
+// A narrower instrument than the blanket switch above: on a developer machine
+// EMAIL_ALLOWLIST names the only addresses that may be written to, and every
+// other recipient is dropped before the message is built. It exists so local
+// work can still be checked against a real inbox without a test run reaching
+// anybody else — which is exactly what went wrong: leave applications raised
+// by tests notified the real reporting managers of the employees the tests had
+// borrowed, and those people never agreed to be part of it.
+//
+// Unset means no filtering, so live is untouched. Setting it to an address
+// that receives nothing on a given run is normal, not a failure.
+const allowlist = () => String(process.env.EMAIL_ALLOWLIST || "")
+  .split(",").map(a => a.trim().toLowerCase()).filter(Boolean);
+
+const applyAllowlist = (recipients, field) => {
+  const allowed = allowlist();
+  if (!allowed.length) return recipients;
+  const kept = recipients.filter(a => allowed.includes(String(a).toLowerCase()));
+  const dropped = recipients.filter(a => !kept.includes(a));
+  if (dropped.length) {
+    console.warn("[mailer] EMAIL_ALLOWLIST dropped " + field + ":", dropped.join(", "));
+  }
+  return kept;
+};
+
 const createTransporter = () => {
   if (mailDisabled()) {
     // Same shape as a real transporter, so every send path in this file
@@ -50,7 +74,7 @@ const createTransporter = () => {
       verify: async () => true,
     };
   }
-  return nodemailer.createTransport({
+  const transport = nodemailer.createTransport({
     service: process.env.EMAIL_SERVICE || 'gmail',
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.EMAIL_PORT) || 587,
@@ -60,6 +84,22 @@ const createTransporter = () => {
       pass: process.env.EMAIL_PASS,
     },
   });
+
+  return {
+    ...transport,
+    verify: (...a) => transport.verify(...a),
+    sendMail: async (message) => {
+      const to = Array.isArray(message.to) ? message.to : [message.to].filter(Boolean);
+      if (to.length === 0) {
+        // Nobody left to write to — normally because the allowlist removed
+        // everyone. Not an error, and not something to hand to the transport.
+        console.warn("[mailer] nobody left to write to, message not sent:",
+          JSON.stringify({ subject: message.subject }));
+        return { skipped: true, accepted: [], rejected: [] };
+      }
+      return transport.sendMail(message);
+    },
+  };
 };
 
 const sendOnboardingEmail = async ({ to, candidateName, dueDate, registrationLink, companyName, hrName, hrEmail, hrPhone }) => {
@@ -225,24 +265,36 @@ const sendOnboardingEmail = async ({ to, candidateName, dueDate, registrationLin
  *     remain so we never silently broadcast a deliverable email to nobody.
  */
 const ADDR_RE = /^[^\s,;<>"'()\\[\]@]+@[^\s,;<>"'()\\[\]@]+\.[^\s,;<>"'()\\[\]@]+$/;
-const sanitizeRecipients = (to) => {
+// Every address the file sends to passes through here, which is why the
+// allowlist is applied at this point rather than in sendMail alone:
+// sendLeaveApprovalEmail and the other helpers build their own recipient
+// lists through this same function, and filtering one caller would have left
+// the rest free to reach anybody.
+const sanitizeRecipients = (to, field = "to") => {
   const list = Array.isArray(to) ? to : [to];
-  return list
+  const valid = list
     .map(a => (typeof a === 'string' ? a.trim() : ''))
     .filter(a => a && !/[\r\n]/.test(a) && ADDR_RE.test(a));
+  return applyAllowlist(valid, field);
 };
 
 const sendMail = async ({ to, cc, bcc, replyTo, subject, text, html, attachments }) => {
   const transporter = createTransporter();
-  const recipients = sanitizeRecipients(to);
+  const recipients = sanitizeRecipients(to, "to");
   if (recipients.length === 0) {
+    // With an allowlist in force this is the normal outcome for a message
+    // aimed at somebody else, so it is not an error worth throwing over.
+    if (allowlist().length) {
+      console.warn("[mailer] every recipient was outside EMAIL_ALLOWLIST - nothing sent");
+      return { skipped: true };
+    }
     throw new Error('sendMail: no valid recipient addresses after sanitisation');
   }
   // Cc, Bcc and Reply-To go through the same sanitiser as To. A workflow's
   // email alert offers all three, and accepting them here without validating
   // would reopen the header-injection hole the To list is guarded against.
-  const ccList = sanitizeRecipients(cc || []);
-  const bccList = sanitizeRecipients(bcc || []);
+  const ccList = sanitizeRecipients(cc || [], "cc");
+  const bccList = sanitizeRecipients(bcc || [], "bcc");
   const replyToList = sanitizeRecipients(replyTo || []);
 
   // Subject must not contain CR/LF either — same injection vector via Subject.

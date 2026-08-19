@@ -461,17 +461,31 @@ router.post('/', [
             EmployeeName: empName, LeaveType: leaveTypeDisplay,
             FromDate: startDate, ToDate: endDateVal, Days: totalDays,
             Reason: reason || '', Link: approvalLink,
+            // The seeded templates say ${requestType}; without it the phrase
+            // "your ${requestType} is waiting" reached inboxes verbatim.
+            RequestType: leaveTypeDisplay,
           },
         });
 
         if (mail.html) {
           // A chosen template replaces the whole email, so the built-in layout
           // is not rendered underneath it.
-          await sendMail({
-            to: mail.to, cc: mail.cc, bcc: mail.bcc, replyTo: mail.replyTo,
-            subject: mail.subject || 'A request is waiting for your approval',
-            html: mail.html,
-          }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'));
+          //
+          // One message per approver rather than one to all of them: the
+          // templates open "Hi ${approverName}," and a single render shared
+          // across the list can only leave that blank. It also stops every
+          // approver seeing who else is on the request.
+          const byEmail = new Map(allRecipients
+            .filter(a => a.email)
+            .map(a => [a.email.toLowerCase(), a.firstName || null]));
+          await Promise.all(mail.to.map(async address => {
+            const html = await mail.htmlFor(byEmail.get(String(address).toLowerCase()) || null);
+            return sendMail({
+              to: address, cc: mail.cc, bcc: mail.bcc, replyTo: mail.replyTo,
+              subject: mail.subject || 'A request is waiting for your approval',
+              html: html || mail.html,
+            }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'));
+          }));
         } else {
           await Promise.all(mail.to.map(address =>
             sendLeaveApprovalEmail({
@@ -619,6 +633,8 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
           vars: {
             EmployeeName: empRes.rows[0]?.name || '', LeaveType: leaveLabel,
             FromDate: startLabel, Days: leave.total_days,
+            RequestType: leaveLabel,
+            ApproverName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || null,
           },
         });
         if (empRes.rows[0]?.email && notice.send) {
@@ -695,6 +711,8 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         vars: {
           EmployeeName: empRes.rows[0]?.name || '', LeaveType: leaveLabel,
           FromDate: startLabel, Days: leave.total_days, Reason: rejectionReason || '',
+          RequestType: leaveLabel,
+          ApproverName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || null,
         },
       });
       if (empRes.rows[0]?.email && notice.send) {
