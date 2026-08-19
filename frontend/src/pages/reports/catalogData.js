@@ -29,6 +29,13 @@ export const REPORT_CATALOG = [
     ],
   },
   {
+    // "Attendance Report" and "Daily Attendance" used to sit at the bottom of
+    // this list. Both predate the per-report pages above and duplicated them:
+    // the first rendered pages/Reports.jsx against three legacy endpoints, the
+    // second was a live team view rather than a report at all. Neither was
+    // linked from anywhere else, and neither excluded Employee Profiles, so the
+    // catalog offered two ways to see a number that the report beside them had
+    // just been corrected to stop showing.
     category: 'Attendance',
     reports: [
       { label: 'Daily attendance status',              to: '/reports/attendance/daily-status' },
@@ -39,8 +46,6 @@ export const REPORT_CATALOG = [
       { label: 'Muster roll',                            to: '/reports/attendance/muster-roll' },
       { label: 'Consecutive absences',                   to: '/reports/attendance/consecutive-absences' },
       { label: 'Expected vs Worked Hours',               to: '/reports/attendance/expected-vs-worked' },
-      { label: 'Attendance Report',                      to: '/reports/attendance' },
-      { label: 'Daily Attendance',                        to: '/daily-attendance' },
     ],
   },
 ];
