@@ -366,6 +366,67 @@ async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, qu
   return lop;
 }
 
+/**
+ * Unmarked absences in a range: a past working day with no punch, no approved
+ * leave and no on-duty record.
+ *
+ * Deliberately NOT folded into lopDaysForRange(). Both are unpaid, but they are
+ * different facts and the reference reports them in separate columns —
+ * "Unpaid Off Day(s): Leave | Absent | Total". Only approved unpaid leave is
+ * deducted automatically; an absence is surfaced for HR to act on, because a
+ * missing punch is not the same as not working. Auto-deducting would dock a
+ * month's pay from somebody whose biometric never registered, which is exactly
+ * what regularization exists to correct.
+ *
+ * Counts whole days only. A half-day leave still covers the day, so it is not
+ * an absence — the unpaid half of it is already lopDaysForRange()'s business.
+ */
+async function absentDaysForRange(employeeId, startDate, endDate, holMap, rules, queryRunner = pool) {
+  const workingDates = listWorkingDays(startDate, endDate, holMap, rules);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const past = workingDates.filter(d => d < today);
+  if (past.length === 0) return 0;
+
+  const start = startDate instanceof Date ? startDate.toLocaleDateString('en-CA') : startDate;
+  const end = endDate instanceof Date ? endDate.toLocaleDateString('en-CA') : endDate;
+
+  // Sequential for the same reason as lopDaysForRange: queryRunner may be a
+  // single client inside a transaction.
+  const att = await queryRunner.query(
+    `SELECT date::text AS d FROM attendance
+      WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date
+        AND (check_in IS NOT NULL OR status = 'on_duty')`,
+    [employeeId, start, end]
+  );
+  const punched = new Set(att.rows.map(r => r.d));
+
+  const lv = await queryRunner.query(
+    `SELECT start_date::text AS s, end_date::text AS e FROM leaves
+      WHERE employee_id = $1 AND status = 'approved' AND leave_type <> 'permission'
+        AND start_date <= $3::date AND end_date >= $2::date`,
+    [employeeId, start, end]
+  );
+  const od = await queryRunner.query(
+    `SELECT start_date::text AS s, end_date::text AS e FROM on_duty_requests
+      WHERE employee_id = $1 AND status = 'approved'
+        AND start_date <= $3::date AND end_date >= $2::date`,
+    [employeeId, start, end]
+  ).catch(() => ({ rows: [] }));
+  const covered = [...lv.rows, ...od.rows];
+
+  let absent = 0;
+  for (const day of past) {
+    // Local parts, never toISOString — the punched set is keyed by date::text
+    // out of Postgres, which is the true calendar day.
+    const ymd = day.toLocaleDateString('en-CA');
+    if (punched.has(ymd)) continue;
+    if (covered.some(c => ymd >= c.s && ymd <= c.e)) continue;
+    absent += 1;
+  }
+  return absent;
+}
+
 /** Indian FY for a given (month, year). Apr-Mar boundary. Returns "2026-27". */
 function fyForMonth(month, year) {
   const fy = month >= 4 ? year : year - 1;
@@ -1608,6 +1669,7 @@ module.exports.runMonthlyPayroll = runMonthlyPayroll;
 // LOP exactly the same way Payroll Run itself computes it — one
 // implementation, not a second copy that could drift.
 module.exports.lopDaysForRange = lopDaysForRange;
+module.exports.absentDaysForRange = absentDaysForRange;
 module.exports.listWorkingDays = listWorkingDays;
 module.exports.loadHolidaysAndRules = loadHolidaysAndRules;
 module.exports.workingDaysInRange = workingDaysInRange;

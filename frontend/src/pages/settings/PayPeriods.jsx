@@ -217,6 +217,9 @@ function PeriodDialog({ initial, options, onClose, onSaved }) {
 
               <Check checked={form.convertAbsences} onChange={v => set({ convertAbsences: v })}>
                 <span className="font-medium">Automatically convert absences to leave</span>
+                <span className="ml-2 text-[11.5px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 whitespace-nowrap">
+                  Saved, but not enforced yet
+                </span>
                 <span className="block text-[13px] text-slate-500 mt-0.5">
                   Absences will be converted to approved leave on the scheduled date, utilizing the
                   leave balances in the specified order defined below.

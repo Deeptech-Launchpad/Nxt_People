@@ -28,6 +28,11 @@ const EXPORT_COLUMNS = [
   { key: 'total', header: 'Total' },
   { key: 'waivedOff', header: 'Adjustment' },
   { key: 'lopDays', header: 'Loss of pay' },
+  // Unpaid leave and unmarked absence are both unpaid but are different facts,
+  // so the reference gives each its own column rather than merging them. Only
+  // Loss of pay above is deducted automatically.
+  { key: 'absentDays', header: 'Unmarked absence' },
+  { key: 'totalUnpayable', header: 'Total unpayable' },
   { key: 'reason', header: 'Reason' },
   { key: 'carryOver', header: 'Carry Over ' },
 ];

@@ -4,7 +4,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
 const { countWorkingDays, ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
-const { lopDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
+const { lopDaysForRange, absentDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
 const { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const attendanceConfig = require('../utils/attendanceConfig');
@@ -1582,6 +1582,11 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
     const data = [];
     for (const emp of empRes.rows) {
       const rawLop = await lopDaysForRange(emp._id, startDate, endDate, holMap, rules, pool);
+      // Unpaid leave and unmarked absence are both unpaid, and the reference
+      // reports them in separate columns rather than choosing between them.
+      // Reporting only the first is why this report said nobody lost pay while
+      // the Muster Roll showed the same people with unpayable days.
+      const absentDays = await absentDaysForRange(emp._id, startDate, endDate, holMap, rules, pool);
       // "The maximum number of LOP allowed per pay period". Blank means no cap
       // — which is not the same as a cap of zero, so the check is on null
       // rather than on falsiness.
@@ -1591,7 +1596,10 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
       // "the report failed to load" look identical if the rows are dropped —
       // a table of zeros is the answer, not an empty state.
       data.push({ ...emp, previousPeriodBalance: 0, booked: rawLop, total: rawLop,
-        waivedOff: Math.max(0, rawLop - lopDays), carryOver: 0, reason: null, lopDays, lopHours: 0 });
+        waivedOff: Math.max(0, rawLop - lopDays), carryOver: 0, reason: null, lopDays, lopHours: 0,
+        // Only lopDays is deducted automatically. absentDays is surfaced for HR
+        // to regularize or convert — a missing punch is not proof of absence.
+        absentDays, totalUnpayable: round2(lopDays + absentDays) });
     }
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
