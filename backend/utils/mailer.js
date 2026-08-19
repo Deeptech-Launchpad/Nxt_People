@@ -204,7 +204,7 @@ const sanitizeRecipients = (to) => {
     .filter(a => a && !/[\r\n]/.test(a) && ADDR_RE.test(a));
 };
 
-const sendMail = async ({ to, cc, bcc, replyTo, subject, text, html }) => {
+const sendMail = async ({ to, cc, bcc, replyTo, subject, text, html, attachments }) => {
   const transporter = createTransporter();
   const recipients = sanitizeRecipients(to);
   if (recipients.length === 0) {
@@ -228,6 +228,16 @@ const sendMail = async ({ to, cc, bcc, replyTo, subject, text, html }) => {
     subject: safeSubject,
     text,
     html: html || `<pre style="font-family:sans-serif;font-size:14px;">${(text || '').replace(/</g, '&lt;')}</pre>`,
+    // Attachments carry no header of their own for a caller to inject into,
+    // but the filename lands in a Content-Disposition, so it gets the same
+    // CR/LF treatment the subject does.
+    ...(Array.isArray(attachments) && attachments.length
+      ? { attachments: attachments.map(a => ({
+            filename: String(a.filename || 'attachment').replace(/[\r\n]+/g, ' ').slice(0, 200),
+            content: a.content,
+            ...(a.contentType ? { contentType: a.contentType } : {}),
+          })) }
+      : {}),
   });
 };
 

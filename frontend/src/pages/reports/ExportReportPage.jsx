@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { deliverWorkbook } from '../../utils/protectedExport';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
@@ -27,7 +28,7 @@ export default function ExportReportPage({ title, subtitle, endpoint, columns, s
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      XLSX.writeFile(wb, `${fileStub}-${startDate}_to_${endDate}.xlsx`);
+      await deliverWorkbook(wb, `${fileStub}-${startDate}_to_${endDate}.xlsx`);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Export failed');
     } finally {

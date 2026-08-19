@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Download, Filter, ArrowUpDown, Search, X } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import * as XLSX from 'xlsx';
+import { deliverWorkbook } from '../utils/protectedExport';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 
@@ -145,7 +146,7 @@ export default function Reports() {
 
   const applyFilters = () => tab === 'daily' ? loadDaily() : load();
 
-  const exportFile = () => {
+  const exportFile = async () => {
     const data = tab === 'detail' ? records : filteredSummary;
     if (!data?.length) return toast.error('No data to export for the selected filters');
     let rows;
@@ -181,7 +182,7 @@ export default function Reports() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, tab === 'detail' ? 'Detailed Report' : 'Summary Report');
     const stamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `nxt-people-report-${stamp}.xlsx`);
+    await deliverWorkbook(wb, `nxt-people-report-${stamp}.xlsx`);
   };
 
   const fmt = d => d ? new Date(d).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'}) : '—';

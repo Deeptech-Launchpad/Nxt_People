@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { deliverWorkbook } from './protectedExport';
 
 // Every employee-level export in the reference opens with the same eight
 // identity columns. The first three are always written; the remaining five
@@ -175,7 +176,9 @@ export function downloadWorkbook(sheets, format, fileStub) {
 
   const wb = XLSX.utils.book_new();
   sheets.forEach(s => XLSX.utils.book_append_sheet(wb, s.ws, s.name.slice(0, 31)));
-  XLSX.writeFile(wb, `${fileStub}.${fmt}`, { bookType: fmt === 'xls' ? 'biff8' : 'xlsx' });
+  // Password protection, when the admin has switched it on, sends this by
+  // email instead of writing it here. See utils/protectedExport.js.
+  return deliverWorkbook(wb, `${fileStub}.${fmt}`, { bookType: fmt === 'xls' ? 'biff8' : 'xlsx' });
 }
 
 // Resolves the identity block for a given "include additional fields" state.

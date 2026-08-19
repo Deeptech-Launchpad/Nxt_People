@@ -53,16 +53,13 @@ export default function LeaveAdditionalOptions() {
 
       <Card
         title="Password protection for file export"
-        description="The file will be encrypted with a password. The password will be shared via email."
+        description="The file is emailed to you inside a password-protected zip. The password is shown here, once, rather than mailed alongside it."
       >
         <Toggle
           label="Password protection"
           checked={config.passwordProtectExports}
           onChange={v => set({ passwordProtectExports: v })}
         />
-        <p className="text-[12px] text-slate-400 mt-1.5 ml-14">
-          Report exports are not encrypted yet.<NotWired />
-        </p>
       </Card>
 
       <Card

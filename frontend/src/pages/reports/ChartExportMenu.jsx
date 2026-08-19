@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Menu } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { deliverWorkbook } from '../../utils/protectedExport';
 
 // Small per-chart export menu (☰ → Export as CSV / XLS / XLSX), matching
 // the menu Zoho shows on each individual chart.
@@ -53,7 +54,7 @@ export default function ChartExportMenu({ rows, columns, fileStub }) {
     return ws;
   };
 
-  const exportAs = (format) => {
+  const exportAs = async (format) => {
     setOpen(false);
     if (!rows?.length) return;
     const ws = buildSheet();
@@ -68,7 +69,7 @@ export default function ChartExportMenu({ rows, columns, fileStub }) {
     }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Report');
-    XLSX.writeFile(wb, `${fileStub}.${format}`, { bookType: format === 'xls' ? 'biff8' : 'xlsx' });
+    await deliverWorkbook(wb, `${fileStub}.${format}`, { bookType: format === 'xls' ? 'biff8' : 'xlsx' });
   };
 
   return (

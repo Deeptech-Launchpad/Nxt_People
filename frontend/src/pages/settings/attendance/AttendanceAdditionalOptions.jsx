@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Check, Toggle, NotWired, useConfigSection, SaveBar, Spinner } from '../configKit';
+import { Card, Check, Toggle, useConfigSection, SaveBar, Spinner } from '../configKit';
 
 // Additional Options — the two settings that belong to no other section.
 export default function AttendanceAdditionalOptions() {
@@ -13,7 +13,6 @@ export default function AttendanceAdditionalOptions() {
       <Card
         title="Password protection for file export"
         description="Once enabled, all files with attendance data will be sent to your email, encrypted with a password"
-        actions={<NotWired />}
       >
         <Toggle
           checked={config.passwordProtectExport}
