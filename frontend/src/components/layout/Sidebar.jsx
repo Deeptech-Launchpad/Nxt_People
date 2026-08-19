@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { isApprover, isFullAccess } from '../../utils/roles';
-import { PAYROLL_ENABLED } from '../../config/features';
+import { PAYROLL_ENABLED, TIME_TRACKER_ENABLED, PERFORMANCE_ENABLED } from '../../config/features';
 import {
   Home, CalendarCheck, Clock, CalendarDays, Trophy,
   LayoutGrid, PieChart, Users, AppWindow, Briefcase, Wallet
@@ -22,18 +22,18 @@ const NAV_ITEMS = [
     // Shift Change sits under Attendance rather than getting its own icon:
     // it is a request about when you work, like regularization and on duty.
     matches: p => p.startsWith('/attendance') || p.startsWith('/shift-change') },
+  // Not in use for this org — see config/features.
   { to: '/time-tracker',    icon: Clock,        label: 'Time\nTracker',
-    matches: p => p.startsWith('/time-tracker') },
+    matches: p => p.startsWith('/time-tracker'), hidden: !TIME_TRACKER_ENABLED },
   { to: '/leave-tracker',    icon: CalendarDays, label: 'Leave\nTracker',
     matches: p => p.startsWith('/leave-tracker') || p === '/leave' || p.startsWith('/wfh') || p.startsWith('/comp-off') || p.startsWith('/leave-calendar') || p.startsWith('/leave-encashment') },
   // Payroll is built but not live for this org — see config/features.
   { to: '/payroll/my',       icon: Wallet,       label: 'Payroll',
     matches: p => p.startsWith('/payroll'), hidden: !PAYROLL_ENABLED },
-  // Performance is intentionally disabled — feature isn't built out yet.
-  // Visible in the sidebar so users see it's planned, but the click is
-  // a no-op until we wire up goals/reviews/skills properly.
+  // Was shown greyed out with a dead click. An icon that never does anything
+  // reads as broken rather than planned, so it is hidden like payroll.
   { to: '/performance/goals',        icon: Trophy,       label: 'Performance',
-    matches: p => p.startsWith('/performance'), disabled: true },
+    matches: p => p.startsWith('/performance'), hidden: !PERFORMANCE_ENABLED },
   { to: '/more-services/files',      icon: LayoutGrid,   label: 'More\nServices',
     matches: p => (p.startsWith('/more-services') && !p.startsWith('/more-services/operations')) || p.startsWith('/documents') },
   // Operations workspace — relocated here from the More Services top tabs.

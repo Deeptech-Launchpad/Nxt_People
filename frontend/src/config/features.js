@@ -11,3 +11,15 @@
 // for anyone typing the URL. That is deliberate: it keeps the module reachable
 // for testing without advertising it to everyone.
 export const PAYROLL_ENABLED = false;
+
+// Time Tracker and Performance are not in use for this org either. Same
+// treatment as payroll above: every way in is hidden — the sidebar icon, the
+// Time Logs tab on the home overview, the Topbar sections, and the SmartChat
+// shortcuts — while the routes themselves still resolve for anyone typing a
+// URL, so the modules stay reachable for testing without being advertised.
+//
+// Performance was previously shown greyed out with a dead click. That told
+// users it was planned, but a permanently inert icon reads as broken rather
+// than forthcoming, so it is hidden outright.
+export const TIME_TRACKER_ENABLED = false;
+export const PERFORMANCE_ENABLED = false;

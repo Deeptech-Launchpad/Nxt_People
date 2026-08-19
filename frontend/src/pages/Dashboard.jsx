@@ -17,7 +17,7 @@ import {
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import PhotoCropperModal from '../components/PhotoCropperModal';
-import { PAYROLL_ENABLED } from '../config/features';
+import { PAYROLL_ENABLED, TIME_TRACKER_ENABLED } from '../config/features';
 
 /* ─ Greeting helper ─ */
 function getGreeting() {
@@ -812,7 +812,8 @@ export default function Dashboard() {
 
   /* ─ tabs ─ */
   // Payslips only appears when payroll is live — see config/features.
-  const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance', 'Time Logs',
+  const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance',
+    ...(TIME_TRACKER_ENABLED ? ['Time Logs'] : []),
     ...(PAYROLL_ENABLED ? ['Payslips'] : [])];
 
   return (
