@@ -21,7 +21,35 @@ const safeUrl = (u) => {
   return /^(https?:|mailto:)/i.test(s) ? s : '#';
 };
 
+// Nothing leaves a developer machine unless somebody says so.
+//
+// This is here because it was not. Local test runs drove real leave
+// applications through the real API, and the approval chain did its job: it
+// mailed the actual reporting managers of the actual employees those tests
+// had picked as subjects with SELECT ... LIMIT 1. Around a hundred messages
+// reached colleagues' inboxes before anyone noticed.
+//
+// The flag is opt-OUT, and keys off an explicit variable rather than
+// NODE_ENV. docker-compose passes NODE_ENV with a default of development, so
+// a live deployment whose root .env omits it would read as development —
+// guarding on that would silently stop every email in production, which is a
+// far worse failure than the one being fixed. A machine that should not send
+// has to say so out loud.
+const mailDisabled = () => String(process.env.EMAIL_DISABLED || '').toLowerCase() === 'true';
+
 const createTransporter = () => {
+  if (mailDisabled()) {
+    // Same shape as a real transporter, so every send path in this file
+    // behaves identically and no caller needs to know.
+    return {
+      sendMail: async (opts) => {
+        console.warn('[mailer] EMAIL_DISABLED is set - not sending:',
+          JSON.stringify({ to: opts.to, subject: opts.subject }));
+        return { disabled: true, messageId: 'disabled', accepted: [], rejected: [] };
+      },
+      verify: async () => true,
+    };
+  }
   return nodemailer.createTransport({
     service: process.env.EMAIL_SERVICE || 'gmail',
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
