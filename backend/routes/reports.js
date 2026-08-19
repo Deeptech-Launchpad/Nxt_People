@@ -54,6 +54,38 @@ function directReportsClause(req, alias, paramIndex) {
   return { clause: ` AND ${alias}.reporting_manager_id = $${paramIndex}`, params: [req.user._id] };
 }
 
+// "Access permissions for employees" — Leave Tracker > Configuration > Reports.
+//
+// Applied as a NARROWING on top of the route's own authorize() guard, never as
+// a widening. Letting a stored setting grant access the role guard refuses
+// would move access control out of the permission layer and into a JSONB blob,
+// where access_parity.js cannot see it. So 'all_employees' means "no extra
+// restriction", not "everyone can now call this".
+function resourceAccessClause(user, access, alias, paramIndex) {
+  if (isFullAccess(user.role)) return { clause: '', params: [] };
+  if (access === 'administrators') return { clause: ' AND 1=0', params: [] };
+  if (access === 'department_heads' || access === 'employees_own_department') {
+    // Their own department only, on top of whatever reportsScope already did.
+    return {
+      clause: ` AND ${alias}.department IS NOT DISTINCT FROM (SELECT department FROM employees WHERE id = $${paramIndex})`,
+      params: [user._id],
+    };
+  }
+  return { clause: '', params: [] };
+}
+
+// "Show leave policy types". Off, every leave reads as a plain 'L'.
+//
+// Emitted as a SEPARATE displayCode rather than by rewriting `code`: the Muster
+// Roll roll-ups weigh each day by its code, and collapsing LWP into L would
+// move unpaid days into the paid bucket. The grids render the display value;
+// the arithmetic keeps the real one.
+const COLLAPSIBLE_LEAVE = new Set(['CL', 'CO', 'PM', 'LWP', 'L']);
+const collapseLeaveCode = code => String(code).split('/').map(part => {
+  const m = /^([\d.]*)([A-Za-z]+)$/.exec(part.trim());
+  return m && COLLAPSIBLE_LEAVE.has(m[2].toUpperCase()) ? `${m[1]}L` : part;
+}).join('/');
+
 // Employee narrowing filter for the multi-employee table reports — Booked &
 // Balance, Leave Type Summary, LOP, Payroll export.
 //
@@ -965,9 +997,10 @@ router.get('/leave/resource-availability', authorize('admin', 'director', 'hr_ad
     let empIdx = 1;
     const extra = extraEmployeeFilters(req.query, 'e', empIdx); empIdx += extra.params.length;
     const directReports = directReportsClause(req, 'e', empIdx); empIdx += directReports.params.length;
-    const scope = reportsScope(req.user, 'e', empIdx);
-    const empParams = [...extra.params, ...directReports.params, ...scope.params];
-    const empWhereTail = `${employeeStatusClause(req)}${extra.clause}${directReports.clause}${scope.clause}`;
+    const scope = reportsScope(req.user, 'e', empIdx); empIdx += scope.params.length;
+    const access = resourceAccessClause(req.user, (await leaveReportsConfig()).resourceAccess, 'e', empIdx);
+    const empParams = [...extra.params, ...directReports.params, ...scope.params, ...access.params];
+    const empWhereTail = `${employeeStatusClause(req)}${extra.clause}${directReports.clause}${scope.clause}${access.clause}`;
 
     const leaveTypeFilter = ['casual', 'comp_off', 'unpaid', 'permission'].includes(req.query.leaveType) ? req.query.leaveType : null;
     const leaveParams = [start, end];
@@ -2247,7 +2280,16 @@ router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admi
       };
     });
 
-    res.json({ success: true, data, dayLabels: ctx.days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
+    const showTypes = (await leaveReportsConfig()).showLeaveTypes !== false;
+    if (!showTypes) {
+      // A parallel array, never a rewrite of `days`: the roll-ups weigh each
+      // day by its real code, and collapsing LWP into L would move unpaid days
+      // into the paid bucket.
+      data.forEach(emp => { emp.displayDays = (emp.days || []).map(collapseLeaveCode); });
+    }
+
+    res.json({ success: true, data, showLeaveTypes: showTypes,
+      dayLabels: ctx.days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -2532,7 +2574,14 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
       };
     });
 
-    res.json({ success: true, data, dayLabels: ctx.days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
+    const showTypes = (await leaveReportsConfig()).showLeaveTypes !== false;
+    if (!showTypes) {
+      // Beside the real code, never instead of it — same reason as the grid.
+      data.forEach(emp => emp.days.forEach(d => { d.displayCode = collapseLeaveCode(d.code); }));
+    }
+
+    res.json({ success: true, data, showLeaveTypes: showTypes,
+      dayLabels: ctx.days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 

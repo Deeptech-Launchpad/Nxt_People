@@ -64,7 +64,10 @@ const musterColumns = (dayLabels) => {
   const cols = [];
   dayLabels.forEach((d, i) => {
     cols.push({ key: `shift_${i}`, header: 'Shift', value: r => r.days[i]?.shift || '' });
-    cols.push({ key: `status_${i}`, header: 'Status', value: r => r.days[i]?.code || '' });
+    cols.push({ key: `status_${i}`, header: 'Status',
+      // displayCode when "Show leave policy types" is off, the real code
+      // otherwise. The roll-ups below always weigh the real one.
+      value: r => r.days[i]?.displayCode ?? r.days[i]?.code ?? '' });
   });
   // Six weighted roll-ups. Totals are cached per row because every one of them
   // walks the whole month and there are six of them on 150+ rows.
@@ -242,7 +245,9 @@ export default function MusterRoll() {
                     </span>
                   </td>
                   {emp.days.map((cell, i) => {
-                    const shown = unit === 'hour' ? cell.hours : cell.code;
+                    // displayCode is present only when "Show leave policy types"
+                    // is off; the styling still keys off the real code.
+                    const shown = unit === 'hour' ? cell.hours : (cell.displayCode ?? cell.code);
                     return (
                       <React.Fragment key={i}>
                         <td style={weekendCols.has(i) ? WEEKEND_HATCH : undefined}
@@ -257,7 +262,7 @@ export default function MusterRoll() {
                           {shown && shown !== '-'
                             ? unit === 'hour'
                               ? <span className="text-[10px] tabular-nums text-slate-700 whitespace-nowrap">{shown}</span>
-                              : <span className={`inline-block min-w-8 px-1 rounded text-[10px] font-semibold py-0.5 ${codeStyle(cell.code)}`}>{cell.code}</span>
+                              : <span className={`inline-block min-w-8 px-1 rounded text-[10px] font-semibold py-0.5 ${codeStyle(cell.code)}`}>{cell.displayCode ?? cell.code}</span>
                             : <span className="text-slate-300">-</span>}
                         </td>
                       </React.Fragment>

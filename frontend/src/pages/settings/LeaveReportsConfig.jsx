@@ -33,8 +33,8 @@ export default function LeaveReportsConfig() {
           {ACCESS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
         <p className="text-[12px] text-slate-400 mt-1.5">
-          Resource availability and the leave calendar still apply their existing role checks.
-          <NotWired />
+          Applied on top of each report's own role check — this narrows who sees which rows, and
+          never grants access a role does not already have.
         </p>
 
         <div className="mt-5">
@@ -44,11 +44,11 @@ export default function LeaveReportsConfig() {
             checked={config.showLeaveTypes}
             onChange={v => set({ showLeaveTypes: v })}
           />
-          {/* Collapsing every code to 'L' would also collapse LWP, and the
-              Muster Roll roll-ups weigh unpaid days by that code — so this
-              needs a separate display code before it can be switched on. */}
+          {/* The grids now carry a display code separately from the real one,
+              so collapsing to 'L' cannot move an unpaid day into the paid
+              bucket of the roll-ups. */}
           <p className="text-[12px] text-slate-400 mt-1.5 ml-[26px]">
-            The grids still name each leave type.<NotWired />
+            Payable-day arithmetic still uses the real leave type either way.
           </p>
         </div>
       </Card>

@@ -64,7 +64,9 @@ const dayColumns = dayLabels => dayLabels.map((d, i) => {
   return {
     key: `d${i}`,
     header: `${dt.getDate()} - ${dt.toLocaleDateString('en-US', { month: 'short' })}`,
-    value: r => (r.days[i] && r.days[i] !== '-' ? r.days[i] : ''),
+    // displayDays rides alongside days when "Show leave policy types" is
+    // off. days stays the real codes so nothing downstream miscounts.
+    value: r => { const c = r.displayDays?.[i] ?? r.days[i]; return c && c !== '-' ? c : ''; },
   };
 });
 
@@ -218,7 +220,8 @@ export default function PresentAbsentStatus() {
                       {emp.exitDate && <span className="ml-1.5 text-[12px] text-slate-400">( Exit Date - {new Date(emp.exitDate).toLocaleDateString('en-IN')} )</span>}
                     </span>
                   </td>
-                  {emp.days.map((code, i) => {
+                  {emp.days.map((realCode, i) => {
+                    const code = emp.displayDays?.[i] ?? realCode;
                     const hours = emp.hours?.[i];
                     const shown = unit === 'hour' ? hours : code;
                     return (
