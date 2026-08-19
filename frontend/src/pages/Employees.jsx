@@ -144,6 +144,7 @@ export default function Employees() {
   const [managers, setManagers] = useState([]);
   const [approvingAuthorities, setApprovingAuthorities] = useState([]);
   const [limit, setLimit] = useState(10);
+  const [loadError, setLoadError] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -155,7 +156,16 @@ export default function Employees() {
       ...(desigFilter  && { designation: desigFilter }),
       ...(statusFilter && { status:      statusFilter }),
     });
-    api.get(`/employees?${params}`).then(r => { setEmployees(r.data.data); setTotal(r.data.total); }).catch(console.error).finally(()=>setLoading(false));
+    api.get(`/employees?${params}`)
+      .then(r => { setEmployees(r.data.data); setTotal(r.data.total); setLoadError(null); })
+      // A failed request used to leave the list empty, which the table renders
+      // as "No employees found" — so a broken query and an empty organisation
+      // looked exactly the same on screen. Say which one it is.
+      .catch(err => {
+        setEmployees([]); setTotal(0);
+        setLoadError(err.response?.data?.message || err.message || 'Could not load employees');
+      })
+      .finally(()=>setLoading(false));
   };
 
   // Metadata (managers / departments / designations) used to be fetched
@@ -498,7 +508,11 @@ export default function Employees() {
               <table className="w-full">
                 <thead><tr className="bg-slate-50">{['Employee','ID','Department','Role','Designation', statusFilter === 'inactive' ? 'Left On' : 'Joining Date','Actions'].map(h=><th key={h} className="px-5 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-slate-50">
-                  {employees.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-slate-400">No employees found</td></tr> :
+                  {employees.length === 0 ? <tr><td colSpan={7} className="text-center py-12">
+                    {loadError
+                      ? <span className="text-red-600">Could not load employees — {loadError}</span>
+                      : <span className="text-slate-400">No employees found</span>}
+                  </td></tr> :
                   employees.map(emp => (
                     <tr key={emp._id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3.5">
