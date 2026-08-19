@@ -93,7 +93,7 @@ export default function CheckInOutConfig() {
                 onChange={e => setIn('notifyOnReporteeEdit', { email: e.target.value })}
                 className="w-[240px] text-[14px] rounded-md border border-slate-300 px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400"
               />
-              <NotWired>Saved; the notification email is not sent yet</NotWired>
+              <NotWired>Editing a reportee's entry is not built, so there is nothing to notify about</NotWired>
             </div>
           )}
         </div>
@@ -135,7 +135,7 @@ export default function CheckInOutConfig() {
       <Card
         title="Attendance deviation alerts"
         description="Notify reporting managers and employees based on shift schedule and working hours violations"
-        actions={<NotWired>Saved, not sent yet</NotWired>}
+
       >
         <div className="space-y-3.5">
           <Check checked={alerts.lateCheckIn} onChange={v => setAlert({ lateCheckIn: v })} label="Late check-in" />

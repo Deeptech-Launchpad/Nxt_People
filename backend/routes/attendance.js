@@ -8,6 +8,7 @@ const { isFullAccess } = require('../utils/roles');
 const { sendCheckOutReminderEmail } = require('../utils/mailer');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { loadWeekendResolver } = require('../utils/workingDays');
+const attendanceAlerts = require('../utils/attendanceAlerts');
 
 router.use(protect);
 
@@ -228,6 +229,12 @@ router.post('/checkin', async (req, res) => {
     }
     const record = upRes.rows[0];
 
+    // Fire-and-forget: the check-in is already committed and an alert must
+    // never be able to fail it. Does nothing unless the switch is on.
+    attendanceAlerts.fire('late_check_in', {
+      employeeId: req.user._id, date: today, lateMinutes: record.lateMinutes,
+    });
+
     // Insert a session row for this check-in (soft-fail — must not break the response)
     try {
       await pool.query(
@@ -365,6 +372,13 @@ router.post('/checkout', async (req, res) => {
     if (up.rows.length === 0) {
       return res.status(409).json({ success: false, message: 'Already checked out' });
     }
+
+    // The shift end is resolved inside the alert rather than fetched here — the
+    // checkout handler should not grow a join to satisfy a switch that is off
+    // by default.
+    attendanceAlerts.fire('early_check_out', {
+      employeeId: req.user._id, date: today, checkOutAt: now,
+    });
 
     // Update the open session with checkout time and hours (soft-fail)
     try {

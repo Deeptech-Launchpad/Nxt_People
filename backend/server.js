@@ -14,6 +14,7 @@ const chatWs  = require('./ws-chat');
 const permissions = require('./utils/permissions');
 const { sweepDateWorkflows } = require('./utils/workflowEngine');
 const { sweepApprovalFollowups } = require('./utils/approvalFollowups');
+const { sweepAttendanceAlerts } = require('./utils/attendanceAlerts');
 const { sweepShiftRotations } = require('./utils/shiftRotation');
 // The email-alerts cron below has called automationConfig.* since it was
 // written without this line, so every run logged "automationConfig is not
@@ -573,6 +574,32 @@ cron.schedule(`*/${WORKFLOW_SWEEP_MINUTES} * * * *`, async () => {
         [err.message, Date.now() - startedAt]
       );
     } catch { /* the log failing must not take the cron down too */ }
+  }
+}, cronOpts);
+
+// ── Attendance deviation sweeps ──────────────────────────────────────────────
+// Missed check-in and insufficient hours have no event to hang off — nothing
+// happens when somebody fails to turn up — so they are swept.
+//
+// Every minute, not every fifteen: both alerts are due on an exact minute
+// derived from the shift (start + window, or the shift end), and a coarser
+// cadence would miss the minute entirely rather than fire late. Both switches
+// default to off, so this does nothing at all until an admin turns one on.
+cron.schedule('* * * * *', async () => {
+  const startedAt = Date.now();
+  try {
+    const summary = await sweepAttendanceAlerts({ tz: CRON_TZ });
+    const total = summary.missedCheckIn + summary.insufficientHours;
+    if (total > 0) {
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('attendance_alerts', 'Attendance deviation alerts', 'Attendance Scheduler', 'success', $1, $2)`,
+        [`${summary.missedCheckIn} missed check-in, ${summary.insufficientHours} short hours`,
+         Date.now() - startedAt]
+      ).catch(() => {});
+    }
+  } catch (err) {
+    logger.error({ err: err.message }, 'Attendance alert sweep failed');
   }
 }, cronOpts);
 
