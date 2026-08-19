@@ -107,14 +107,30 @@ function employeeIdClause(req, alias, paramIndex) {
 // the running-index pattern so callers never hand-compute $N positions.
 // Returns {clause, params, nextIndex} — nextIndex is the first free $N
 // for anything the caller still needs to add after this.
-function standardEmployeeFilters(req, alias, startIndex) {
+// Manage Accounts splits people in two: Users, who can sign in, and Employee
+// Profiles, who are recorded and never can. Only the five login-related route
+// files ever asked which is which — all 36 employee queries in this file
+// treated them identically, so an Employee Profile sat in Daily Attendance
+// Status under "Yet to check-in" for a punch that was never going to come.
+//
+// Opt-in rather than blanket, because the answer differs by report: an
+// Employee Profile is not tracked for attendance or leave, but is still staff
+// for headcount and is still paid. A filter applied inside the shared context
+// loader would have taken them out of payroll too.
+//
+// is_user is NOT NULL with a default of true, so there is no third state to
+// reason about here.
+const trackedOnly = alias => ` AND ${alias}.is_user = TRUE`;
+
+function standardEmployeeFilters(req, alias, startIndex, opts = {}) {
   let idx = startIndex;
   const extra = extraEmployeeFilters(req.query, alias, idx); idx += extra.params.length;
   const directReports = directReportsClause(req, alias, idx); idx += directReports.params.length;
   const employeeId = employeeIdClause(req, alias, idx); idx += employeeId.params.length;
   const scope = reportsScope(req.user, alias, idx); idx += scope.params.length;
   return {
-    clause: `${employeeStatusClause(req, alias)}${extra.clause}${directReports.clause}${employeeId.clause}${scope.clause}`,
+    clause: `${employeeStatusClause(req, alias)}${extra.clause}${directReports.clause}${employeeId.clause}${scope.clause}`
+      + (opts.trackedOnly ? trackedOnly(alias) : ''),
     params: [...extra.params, ...directReports.params, ...employeeId.params, ...scope.params],
     nextIndex: idx,
   };
@@ -960,7 +976,8 @@ router.get('/leave/daily-status', authorize('admin', 'director', 'hr_admin', 'ma
     const scope = reportsScope(req.user, 'e', idx);
 
     const baseParams = [date, ...extra.params, ...directReports.params, ...leaveTypeParams, ...scope.params];
-    const whereTail = `${employeeStatusClause(req)}${extra.clause}${directReports.clause}${leaveTypeClause}${scope.clause}`;
+    // Employee Profiles are not tracked for leave either.
+    const whereTail = `${employeeStatusClause(req)}${extra.clause}${directReports.clause}${leaveTypeClause}${scope.clause}${trackedOnly('e')}`;
 
     const [typeRes, listRes] = await Promise.all([
       pool.query(
@@ -1001,7 +1018,8 @@ router.get('/leave/resource-availability', authorize('admin', 'director', 'hr_ad
     const scope = reportsScope(req.user, 'e', empIdx); empIdx += scope.params.length;
     const access = resourceAccessClause(req.user, (await leaveReportsConfig()).resourceAccess, 'e', empIdx);
     const empParams = [...extra.params, ...directReports.params, ...scope.params, ...access.params];
-    const empWhereTail = `${employeeStatusClause(req)}${extra.clause}${directReports.clause}${scope.clause}${access.clause}`;
+    // Employee Profiles are not tracked, so they are never "available".
+    const empWhereTail = `${employeeStatusClause(req)}${extra.clause}${directReports.clause}${scope.clause}${access.clause}${trackedOnly('e')}`;
 
     const leaveTypeFilter = ['casual', 'comp_off', 'unpaid', 'permission'].includes(req.query.leaveType) ? req.query.leaveType : null;
     const leaveParams = [start, end];
@@ -1358,7 +1376,7 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
     const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
     const unit = req.query.unit === 'hour' ? 'hour' : 'day';
-    const filters = standardEmployeeFilters(req, 'e', 3);
+    const filters = standardEmployeeFilters(req, 'e', 3, { trackedOnly: true });
 
     if (unit === 'hour') {
       // Hour mode shows only Permission — the only hour-based leave type —
@@ -1459,7 +1477,7 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
   try {
     const leaveType = ['casual', 'comp_off', 'unpaid', 'permission'].includes(req.query.leaveType) ? req.query.leaveType : 'casual';
     const year = parseInt(req.query.year, 10) || new Date().getFullYear();
-    const filters = standardEmployeeFilters(req, 'e', 3);
+    const filters = standardEmployeeFilters(req, 'e', 3, { trackedOnly: true });
     const r = await pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate",
               ${leaveType === 'casual' ? 'COALESCE(e.casual_leave,0)' : 'NULL'} AS granted,
@@ -1521,7 +1539,7 @@ router.get('/leave/encashment', authorize('admin', 'director', 'hr_admin', 'mana
     const types = typeRes.rows.map(r => r.code);
     if (!types.length) return res.json({ success: true, data: [], unit, year });
 
-    const filters = standardEmployeeFilters(req, 'e', 1);
+    const filters = standardEmployeeFilters(req, 'e', 1, { trackedOnly: true });
     const [empRes, policies] = await Promise.all([
       pool.query(
         `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
@@ -1834,8 +1852,11 @@ function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, 
 // Loads everything the day-grid attendance reports need for a range in one
 // place: filtered employees (with their shift), their attendance rows, their
 // approved leaves, and the holiday/weekend rule set.
-async function loadAttendanceContext(req, start, end) {
-  const filters = standardEmployeeFilters(req, 'e', 1);
+// `opts.trackedOnly` drops Employee Profiles. The attendance reports pass it;
+// the two payroll exports deliberately do not, because those people are still
+// paid even though nothing is expected of them day to day.
+async function loadAttendanceContext(req, start, end, opts = {}) {
+  const filters = standardEmployeeFilters(req, 'e', 1, opts);
   const [empRes, attRes, leaveRes, odRes, cal] = await Promise.all([
     pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
@@ -2080,7 +2101,7 @@ function totalHoursMatches(query, hours) {
 router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const date = req.query.date || new Date().toLocaleDateString('en-CA');
-    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, date, date), orgConfig()]);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, date, date, { trackedOnly: true }), orgConfig()]);
     const day = new Date(date);
     // Compare calendar dates as strings, not Date objects. `new Date('2026-08-13')`
     // is UTC midnight while ctx.today is local midnight, so east of Greenwich the
@@ -2157,7 +2178,7 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
   try {
     const start = req.query.startDate || new Date().toLocaleDateString('en-CA');
     const end = req.query.endDate || start;
-    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end), orgConfig()]);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end, { trackedOnly: true }), orgConfig()]);
     const tz = cfg.tz;
     const { firstCheckIn, lastCheckOut } = req.query;
 
@@ -2236,7 +2257,7 @@ router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admi
     const now = new Date();
     const start = req.query.startDate || new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-CA');
-    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end), orgConfig()]);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end, { trackedOnly: true }), orgConfig()]);
 
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
 
@@ -2539,7 +2560,7 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
     const now = new Date();
     const start = req.query.startDate || new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-CA');
     const end = req.query.endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-CA');
-    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end), orgConfig()]);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end, { trackedOnly: true }), orgConfig()]);
 
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
 
@@ -2613,7 +2634,7 @@ router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'h
     // "Absent consecutively for more than N days" — the threshold is exclusive,
     // as in the reference, so N=3 lists runs of 4 and up.
     const minDays = Math.max(0, parseInt(req.query.minDays, 10) || 3);
-    const ctx = await loadAttendanceContext(req, start, end);
+    const ctx = await loadAttendanceContext(req, start, end, { trackedOnly: true });
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
 
     const data = [];
@@ -2700,7 +2721,7 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
     const earliest = firstRes.rows.reduce((min, r) => (!min || r.first < min ? r.first : min), null);
     const ledgerStart = earliest && earliest < start ? earliest : start;
 
-    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, ledgerStart, end), orgConfig()]);
+    const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, ledgerStart, end, { trackedOnly: true }), orgConfig()]);
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
     const PAID_OFF = paidOffKinds(cfg);
 
