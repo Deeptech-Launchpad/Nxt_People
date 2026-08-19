@@ -603,6 +603,42 @@ cron.schedule('* * * * *', async () => {
   }
 }, cronOpts);
 
+// ── Recycle bin retention ────────────────────────────────────────────────────
+// "Recycle bin preference" on Organization > Policy names how long a deleted
+// record is recoverable. Nothing purged, so the retention period described
+// something that never happened.
+//
+// Deliberately conservative: it removes only employees soft-deleted longer ago
+// than the retention window, and only when a retention has actually been set.
+// An unset preference purges nothing at all rather than falling back to a
+// default nobody chose — this is the one job here that destroys data.
+cron.schedule('30 2 * * *', async () => {
+  const startedAt = Date.now();
+  try {
+    const cfg = (await pool.query(`SELECT organization_policy_config AS c FROM settings LIMIT 1`)).rows[0]?.c;
+    const months = Number(cfg?.recycleBin?.retentionMonths);
+    if (!Number.isInteger(months) || months < 1) return;
+
+    const r = await pool.query(
+      `DELETE FROM employees
+        WHERE deleted_at IS NOT NULL
+          AND deleted_at < NOW() - ($1 || ' months')::interval
+        RETURNING id`,
+      [String(months)]
+    );
+    if (r.rowCount > 0) {
+      logger.info({ purged: r.rowCount, months }, 'Recycle bin purged');
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('recycle_bin', 'Recycle bin retention', 'Housekeeping', 'success', $1, $2)`,
+        [`${r.rowCount} record(s) past ${months} month(s) removed`, Date.now() - startedAt]
+      ).catch(() => {});
+    }
+  } catch (err) {
+    logger.error({ err: err.message }, 'Recycle bin purge failed');
+  }
+}, cronOpts);
+
 // ── Shift rotation ───────────────────────────────────────────────────────────
 // Moves people between shifts on the schedule each rotation names. Same
 // cadence and window as the other sweeps, so a rotation due at 00:07 runs in

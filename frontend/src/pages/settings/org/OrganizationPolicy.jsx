@@ -146,7 +146,7 @@ export default function OrganizationPolicy() {
       <Card
         title="Employee personal information"
         description="Define permissions to give employees the option to share or hide certain personal information in the dashboard with others in the organization."
-        actions={<NotWired />}
+        
       >
         <Switch on={personal.birthday} onChange={v => group('personalInformation', { birthday: v })}
           title="Birthday" hint="Enable to give employees the choice to share or hide their birth day." />
@@ -156,7 +156,7 @@ export default function OrganizationPolicy() {
           title="Mobile number" hint="Give employee the choice to share or hide their mobile number" />
       </Card>
 
-      <Card title="Employee search" actions={<NotWired />}>
+      <Card title="Employee search">
         <Switch on={search.byMobileNumber} onChange={v => group('employeeSearch', { byMobileNumber: v })}
           title="Allow employee information to be searched using mobile number" />
       </Card>
@@ -164,7 +164,7 @@ export default function OrganizationPolicy() {
       <Card
         title="Profile picture update"
         description="Define who can add or update an employee's profile picture."
-        actions={<NotWired />}
+        
       >
         <div className="space-y-4">
           <div>
@@ -193,7 +193,7 @@ export default function OrganizationPolicy() {
       <Card
         title="Cover image preference"
         description="By default, the organization cover image set by the administrator is used as the My Space cover image for employees. Enable the options below to allow employees to choose a separate cover image for their My Space page."
-        actions={<NotWired />}
+        actions={<NotWired>No cover image upload exists yet, so there is nothing to govern</NotWired>}
       >
         <Switch on={cover.allowSystemOptions} onChange={v => group('coverImage', { allowSystemOptions: v })}
           title="Allow employees to choose a cover image for My Space from the system-provided options." />
@@ -267,7 +267,7 @@ export default function OrganizationPolicy() {
       <Card
         title="Recycle bin preference"
         description="Specify how long deleted data is retained before permanent removal."
-        actions={<NotWired>Saved; nothing is purged yet</NotWired>}
+        
       >
         <label className="block text-[14px] text-slate-800 mb-2">Set the duration (in months) for record retention</label>
         <input

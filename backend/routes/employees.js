@@ -14,6 +14,7 @@ router.use(protect);
 
 const { nextIdForCompany } = require('../utils/employeeId');
 const { mergeRows } = require('../utils/mergeRows');
+const { orgPolicy, applyPrivacy } = require('../utils/orgPolicy');
 
 // GET next suggested employee_id — used by Confirm Registration + Add Employee
 // modals to prefill. Pass ?company=AltiusNxt for the per-company format
@@ -99,7 +100,11 @@ router.get('/', async (req, res) => {
       // or paste by accident) required that literal space to appear next
       // to the match inside the stored value, so it silently found
       // nothing even though "Balaji" existed.
-      query += ` AND (e.first_name ILIKE $${paramIndex} OR e.last_name ILIKE $${paramIndex} OR e.email ILIKE $${paramIndex} OR e.employee_id ILIKE $${paramIndex})`;
+      // "Allow employee information to be searched using mobile number" on
+      // Organization > Policy. Off by default, and off means a phone number
+      // typed into search finds nobody rather than quietly matching.
+      const byMobile = !!(await orgPolicy())?.employeeSearch?.byMobileNumber;
+      query += ` AND (e.first_name ILIKE $${paramIndex} OR e.last_name ILIKE $${paramIndex} OR e.email ILIKE $${paramIndex} OR e.employee_id ILIKE $${paramIndex}${byMobile ? ` OR e.phone ILIKE $${paramIndex}` : ''})`;
       params.push(`%${search.trim()}%`);
       paramIndex++;
     }
@@ -112,7 +117,7 @@ router.get('/', async (req, res) => {
     params.push(limitNum, offsetNum);
 
     const employeesResult = await pool.query(
-      `SELECT e.id as "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.email, e.role, e.department, e.designation, e.company, e.division, e.employee_id AS "employeeId", e.status, e.joining_date AS "joiningDate", e.phone, e.reporting_manager_id AS "reportingManagerId", e.approving_authority_id AS "approvingAuthorityId",
+      `SELECT e.id as "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.email, e.role, e.department, e.designation, e.company, e.division, e.employee_id AS "employeeId", e.status, e.joining_date AS "joiningDate", e.phone, e.privacy_prefs AS "privacyPrefs", e.reporting_manager_id AS "reportingManagerId", e.approving_authority_id AS "approvingAuthorityId",
        e.monthly_ctc AS "monthlyCTC", e.basic_salary AS "basicSalary",
        e.casual_leave AS "casualLeave", e.sick_leave AS "sickLeave", e.earned_leave AS "earnedLeave",
        e.photo_url AS "photoUrl", e.exit_date AS "exitDate", e.total_experience AS "totalExperience", e.expertise,
@@ -143,7 +148,18 @@ router.get('/', async (req, res) => {
     const total = parseInt(countResult.rows[0].count, 10);
 
     const canSeeSalary = ['admin', 'director', 'hr_admin'].includes(req.user.role);
-    const data = canSeeSalary ? employeesResult.rows : employeesResult.rows.map(({ monthlyCTC, basicSalary, ...rest }) => rest);
+    const visible = canSeeSalary ? employeesResult.rows : employeesResult.rows.map(({ monthlyCTC, basicSalary, ...rest }) => rest);
+
+    // A person always sees their own record whole; the preference governs what
+    // OTHER people see, and hiding a field from its owner would leave them
+    // unable to tell what they had chosen. Full-access roles keep the whole
+    // record too — HR has to be able to reach a phone number in an emergency.
+    const policy = await orgPolicy();
+    const data = visible.map(row =>
+      (canSeeSalary || String(row._id) === String(req.user._id))
+        ? (({ privacyPrefs, ...rest }) => rest)(row)
+        : applyPrivacy(row, policy));
+
     res.json({ success: true, data, total, page: Number(page), pages: Math.ceil(total / limitNum) });
   } catch (err) {
     res.status(500).json({ success: false, message: 'An internal server error occurred' });

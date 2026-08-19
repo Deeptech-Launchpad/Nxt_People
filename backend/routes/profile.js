@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { protect } = require('../middleware/auth');
 const { mergeRows } = require('../utils/mergeRows');
 const { serverError } = require('../utils/serverError');
+const { orgPolicy, mayUpdatePhoto, applyPrivacy } = require('../utils/orgPolicy');
 router.use(protect);
 
 // Identity of one real entry — used to collapse the partial duplicate rows the
@@ -239,6 +240,51 @@ router.put('/', async (req, res) => {
   }
 });
 
+// GET /api/profile/privacy — what this person has chosen to share, and which
+// of those choices the organisation is currently offering.
+//
+// Both halves are returned together on purpose: a preference the org has not
+// enabled is stored but inert, and a screen that showed the switch without
+// saying so would be making the same promise the settings badges exist to
+// avoid.
+router.get('/privacy', async (req, res) => {
+  try {
+    const r = await pool.query(`SELECT privacy_prefs AS prefs FROM employees WHERE id = $1`, [req.user._id]);
+    const policy = await orgPolicy();
+    res.json({
+      success: true,
+      data: {
+        prefs: r.rows[0]?.prefs || { birthday: true, workAnniversary: true, mobileNumber: true },
+        offered: {
+          birthday: !!policy?.personalInformation?.birthday,
+          workAnniversary: !!policy?.personalInformation?.workAnniversary,
+          mobileNumber: !!policy?.personalInformation?.mobileNumber,
+        },
+      },
+    });
+  } catch (err) { serverError(res, err); }
+});
+
+// PATCH /api/profile/privacy — the employee's own call, and only ever their own:
+// the row is addressed by req.user._id, never by anything the caller sends.
+router.patch('/privacy', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const cur = (await pool.query(`SELECT privacy_prefs AS prefs FROM employees WHERE id = $1`, [req.user._id]))
+      .rows[0]?.prefs || {};
+    const next = { ...cur };
+    for (const k of ['birthday', 'workAnniversary', 'mobileNumber']) {
+      if (b[k] !== undefined) next[k] = !!b[k];
+    }
+    const r = await pool.query(
+      `UPDATE employees SET privacy_prefs = $1::jsonb, updated_at = NOW() WHERE id = $2
+       RETURNING privacy_prefs AS prefs`,
+      [JSON.stringify(next), req.user._id]
+    );
+    res.json({ success: true, data: r.rows[0].prefs });
+  } catch (err) { serverError(res, err); }
+});
+
 // POST /api/profile/photo — upload (or replace) the caller's profile picture.
 // handleMulterError sits between multer and the route body so size/type
 // errors return a clean 413/400 instead of falling through to a 500.
@@ -250,6 +296,17 @@ router.post('/photo', (req, res, next) => {
 }, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No image attached' });
+
+    // "Profile picture update" on Organization > Policy. Unset means
+    // unrestricted, which is what this route did before the setting existed —
+    // an admin who never opened that screen must not find uploads switched off.
+    const policy = await orgPolicy();
+    if (!mayUpdatePhoto(policy, { isSelf: true, isAdmin: isFullAccess(req.user.role) })) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your organisation does not allow employees to change their own profile picture.',
+      });
+    }
 
     const photoUrl = `/uploads/photos/${req.file.filename}`;
 
