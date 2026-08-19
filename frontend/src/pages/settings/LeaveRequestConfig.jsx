@@ -170,7 +170,7 @@ export default function LeaveRequestConfig() {
               onChange={v => setIn('cancellation', { allowPartial: v })}
             />
             <p className="text-[12px] text-slate-400 mt-1 ml-[26px]">
-              Cancelling part of a range would have to split the request in two.<NotWired />
+              Cancelling part of a range splits the request in two: the days before the cancelled part stay on the original request, and the days after become a second one linked back to it.
             </p>
           </div>
           <Check
@@ -187,7 +187,6 @@ export default function LeaveRequestConfig() {
       >
         <p className="text-[14px] text-slate-700 mb-2">
           Select applicable leave policies
-          <NotWired>Extension is not built yet</NotWired>
         </p>
         {/* A checkbox list rather than a combo box: there are a handful of
             policies, and seeing which are selected matters more than saving

@@ -14,11 +14,20 @@ const logger = require('../logger');
 const { fire } = require('../utils/workflowEngine');
 const { canCancel, loadConfig } = require('../utils/leaveCancellation');
 const { availableFor, debitOnApproval, refundApproved, typeCode: dbTypeCode } = require('../utils/leaveBalance');
+const { canExtend, partialAllowed } = require('../utils/leaveExtension');
 const { approvalEmail, outcomeEmail } = require('../utils/approvalMessages');
 
 router.use(protect);
 
 const VALID_LEAVE_TYPES = ['casual', 'unpaid', 'permission', 'comp_off'];
+
+// A date column comes back as a Date object. toISOString() would render it
+// in UTC, which in IST is the previous day — the shift this project has been
+// bitten by four times. Local parts only.
+const ymdLocal = (d) => {
+  const x = d instanceof Date ? d : new Date(`${String(d).slice(0, 10)}T00:00:00`);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+};
 
 // Correlated subquery that materialises a leave's hierarchy approval chain as a
 // JSON array for the frontend timeline (the leaves table is aliased `l`).
@@ -1206,6 +1215,324 @@ router.get('/pending-approvals', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }
+});
+
+// ── PUT extend a leave ─────────────────────────────────────────────────────
+//
+// Leave Tracker > Configuration > Leave Request > "Leave extension": who can
+// extend requests that are already submitted, approved, or pending approval,
+// and for which policies. Stored and ignored until now.
+//
+// Extending moves the end date later on the same request rather than raising a
+// second one, so the employee keeps one record for one absence. The extra days
+// are charged the same way the original was: a pending leave has reserved
+// nothing yet, an approved one is debited immediately for the difference.
+router.put('/:id/extend', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const leave = (await client.query(
+      `SELECT * FROM leaves WHERE id = $1 FOR UPDATE`, [req.params.id])).rows[0];
+    if (!leave) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Leave not found' }); }
+
+    if (leave.status !== 'pending' && leave.status !== 'approved') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: `A ${leave.status} leave cannot be extended.` });
+    }
+
+    const newEnd = String(req.body?.endDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newEnd)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'A new end date is required, as YYYY-MM-DD' });
+    }
+    const currentEnd = ymdLocal(leave.end_date);
+    if (newEnd <= currentEnd) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: `The new end date must be after the current one (${currentEnd}). To shorten a leave, cancel part of it instead.`,
+      });
+    }
+
+    const config = await loadConfig();
+    const verdict = await canExtend({ user: req.user, leave, config });
+    if (!verdict.allowed) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, message: verdict.reason });
+    }
+    const reason = String(req.body?.reason || '').trim();
+    if (config.extension?.reasonMandatory && !reason) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'A reason for extending is required.' });
+    }
+
+    // Only the working days actually added are charged — a Sunday tacked on the
+    // end costs nothing, exactly as it would have on the original request.
+    const dayAfter = new Date(`${currentEnd}T00:00:00`);
+    dayAfter.setDate(dayAfter.getDate() + 1);
+    const extraDays = await countWorkingDays(ymdLocal(dayAfter), newEnd);
+    if (extraDays <= 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Those extra dates are all non-working days, so there is nothing to extend by.',
+      });
+    }
+
+    // Overlap has to be re-checked against the new tail: another request may
+    // already sit in the days being claimed.
+    const clash = await client.query(
+      `SELECT 1 FROM leaves
+        WHERE employee_id = $1 AND id <> $2
+          AND status IN ('pending', 'pending_approval', 'approved')
+          AND start_date <= $4::date AND end_date >= $3::date
+        LIMIT 1`,
+      [leave.employee_id, leave.id, ymdLocal(dayAfter), newEnd]);
+    if (clash.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'Another leave request already covers part of those dates.' });
+    }
+
+    const year = new Date(leave.start_date).getFullYear();
+    if (leave.leave_type !== 'unpaid') {
+      const { available } = await availableFor(client, leave.employee_id, leave.leave_type, year);
+      if (available !== null && available < extraDays) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient ${leave.leave_type} leave balance for ${extraDays} more day(s). Available: ${available}`,
+        });
+      }
+      // An approved leave has already been debited for its original span, so
+      // the extra days are taken now. A pending one has reserved nothing yet
+      // and is charged when it is approved, like any other pending request.
+      if (leave.status === 'approved') {
+        await debitOnApproval(client, {
+          employeeId: leave.employee_id, leaveType: leave.leave_type, days: extraDays, year,
+        });
+      }
+    }
+
+    const updated = (await client.query(
+      `UPDATE leaves
+          SET end_date = $2::date,
+              total_days = total_days + $3,
+              extension_reason = $4,
+              extended_by = $5,
+              extended_at = NOW(),
+              updated_at = NOW()
+        WHERE id = $1
+      RETURNING id AS "_id", leave_type AS "leaveType", start_date AS "startDate",
+                end_date AS "endDate", total_days AS "totalDays", status`,
+      [leave.id, newEnd, extraDays, reason || null, req.user._id])).rows[0];
+
+    await client.query('COMMIT');
+
+    await logAudit(req, {
+      action: 'EXTEND', resource: 'Leave', resourceId: leave.id,
+      changes: {
+        from: currentEnd, to: newEnd, added_days: extraDays,
+        prior_status: leave.status, matrix_row: verdict.row, reason: reason || null,
+      },
+    });
+    await createNotification(leave.employee_id, 'leave', 'Leave Extended',
+      `Your ${leave.leave_type} leave now runs to ${newEnd} (${extraDays} more day(s)).`,
+      '/leave-tracker/summary').catch(() => {});
+
+    return res.json({ success: true, data: updated, message: `Extended by ${extraDays} day(s).` });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    return serverError(res, err, 'extend leave');
+  } finally { client.release(); }
+});
+
+// ── PUT cancel part of a leave ─────────────────────────────────────────────
+//
+// Leave Tracker > Configuration > Leave Request > "Allow partial leave
+// cancellation". The note under it was honest about the cost: cancelling part
+// of a range has to split the request in two. That is what this does.
+//
+// Three shapes, and the third is the one that makes this awkward:
+//   - the cancelled part starts the range  -> the request moves its start later
+//   - the cancelled part ends the range    -> the request pulls its end earlier
+//   - the cancelled part is in the middle  -> the request keeps the head, and a
+//                                             second request is created for the
+//                                             tail, carrying split_from
+//
+// Who may do it is decided by canCancel, not by a matrix of its own: the screen
+// offers partial cancellation as a modifier on cancelling rather than as a
+// separate permission, so whoever may cancel the whole may cancel a part.
+router.put('/:id/cancel-partial', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const leave = (await client.query(
+      `SELECT * FROM leaves WHERE id = $1 FOR UPDATE`, [req.params.id])).rows[0];
+    if (!leave) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Leave not found' }); }
+
+    if (leave.status !== 'pending' && leave.status !== 'approved') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: `This leave is already ${leave.status}.` });
+    }
+
+    const config = await loadConfig();
+    if (!partialAllowed(config)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Partial leave cancellation is switched off. This is set under Leave Tracker → Configuration → Leave Request.',
+      });
+    }
+
+    const from = String(req.body?.startDate || '').slice(0, 10);
+    const to = String(req.body?.endDate || '').slice(0, 10);
+    const bounds = /^\d{4}-\d{2}-\d{2}$/;
+    if (!bounds.test(from) || !bounds.test(to) || to < from) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'A valid start and end date are required for the part being cancelled' });
+    }
+
+    const leaveStart = ymdLocal(leave.start_date);
+    const leaveEnd = ymdLocal(leave.end_date);
+    if (from < leaveStart || to > leaveEnd) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: `That range is outside the leave, which runs ${leaveStart} to ${leaveEnd}.`,
+      });
+    }
+    if (from === leaveStart && to === leaveEnd) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'That is the whole leave — cancel it outright rather than partially.',
+      });
+    }
+
+    const verdict = await canCancel({ user: req.user, leave, config });
+    if (!verdict.allowed) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, message: verdict.reason });
+    }
+    const reason = String(req.body?.reason || '').trim();
+    if (config.cancellationReasonMandatory && !reason) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'A reason for cancelling is required.' });
+    }
+
+    const removedDays = await countWorkingDays(from, to);
+    if (removedDays <= 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Those dates are all non-working days, so cancelling them frees nothing.',
+      });
+    }
+
+    const year = new Date(leave.start_date).getFullYear();
+    // Only an approved leave has been debited. A pending one reserved against
+    // leave_balances at apply time, exactly as the whole-leave path assumes.
+    if (leave.leave_type !== 'unpaid') {
+      if (leave.status === 'approved') {
+        await refundApproved(client, {
+          employeeId: leave.employee_id, leaveType: leave.leave_type,
+          days: removedDays, year, store: leave.balance_source,
+        });
+      } else {
+        const lt = await client.query(`SELECT id FROM leave_types WHERE code = $1`, [dbTypeCode(leave.leave_type)]);
+        if (lt.rows[0]) {
+          await client.query(
+            `UPDATE leave_balances SET available = available + $1
+              WHERE employee_id = $2 AND leave_type_id = $3 AND year = $4`,
+            [removedDays, leave.employee_id, lt.rows[0].id, year]);
+        }
+      }
+    }
+
+    const dayBefore = (d) => { const x = new Date(`${d}T00:00:00`); x.setDate(x.getDate() - 1); return ymdLocal(x); };
+    const dayAfter = (d) => { const x = new Date(`${d}T00:00:00`); x.setDate(x.getDate() + 1); return ymdLocal(x); };
+
+    let outcome;
+    if (from === leaveStart) {
+      // Head removed: the request now starts the day after the cancelled part.
+      const newStart = dayAfter(to);
+      const days = await countWorkingDays(newStart, leaveEnd);
+      await client.query(
+        `UPDATE leaves SET start_date = $2::date, total_days = $3,
+                cancelled_days = COALESCE(cancelled_days, 0) + $4, updated_at = NOW()
+          WHERE id = $1`, [leave.id, newStart, days, removedDays]);
+      outcome = { shape: 'start_trimmed', remaining: [{ from: newStart, to: leaveEnd, days }] };
+    } else if (to === leaveEnd) {
+      // Tail removed: the request now ends the day before it.
+      const newEnd = dayBefore(from);
+      const days = await countWorkingDays(leaveStart, newEnd);
+      await client.query(
+        `UPDATE leaves SET end_date = $2::date, total_days = $3,
+                cancelled_days = COALESCE(cancelled_days, 0) + $4, updated_at = NOW()
+          WHERE id = $1`, [leave.id, newEnd, days, removedDays]);
+      outcome = { shape: 'end_trimmed', remaining: [{ from: leaveStart, to: newEnd, days }] };
+    } else {
+      // Middle removed: the original keeps the head, and the tail becomes its
+      // own request so the two halves can be approved, cancelled or reported on
+      // independently. It carries split_from so the pair stays traceable.
+      const headEnd = dayBefore(from);
+      const tailStart = dayAfter(to);
+      const headDays = await countWorkingDays(leaveStart, headEnd);
+      const tailDays = await countWorkingDays(tailStart, leaveEnd);
+
+      await client.query(
+        `UPDATE leaves SET end_date = $2::date, total_days = $3,
+                cancelled_days = COALESCE(cancelled_days, 0) + $4, updated_at = NOW()
+          WHERE id = $1`, [leave.id, headEnd, headDays, removedDays]);
+
+      const tail = (await client.query(
+        `INSERT INTO leaves
+           (employee_id, leave_type, start_date, end_date, total_days, reason, status,
+            approved_by, approved_at, balance_source, split_from)
+         VALUES ($1,$2,$3::date,$4::date,$5,$6,$7,$8,$9,$10,$11)
+         RETURNING id`,
+        [leave.employee_id, leave.leave_type, tailStart, leaveEnd, tailDays,
+         leave.reason, leave.status, leave.approved_by, leave.approved_at,
+         leave.balance_source, leave.id])).rows[0];
+
+      // The tail inherits the original's standing, so an approved leave split
+      // in two does not quietly send half of itself back for approval.
+      if (leave.status === 'pending') {
+        await createLevels(client, 'leave', tail.id, leave.employee_id, {});
+      }
+      outcome = {
+        shape: 'split',
+        remaining: [
+          { from: leaveStart, to: headEnd, days: headDays, id: leave.id },
+          { from: tailStart, to: leaveEnd, days: tailDays, id: tail.id },
+        ],
+      };
+    }
+
+    await client.query('COMMIT');
+
+    await logAudit(req, {
+      action: 'CANCEL_PARTIAL', resource: 'Leave', resourceId: leave.id,
+      changes: {
+        cancelled_from: from, cancelled_to: to, cancelled_days: removedDays,
+        prior_status: leave.status, shape: outcome.shape,
+        matrix_row: verdict.row, balance_source: leave.balance_source || null,
+        reason: reason || null,
+      },
+    });
+    await createNotification(leave.employee_id, 'leave', 'Leave Partly Cancelled',
+      `${removedDays} day(s) of your ${leave.leave_type} leave (${from} to ${to}) were cancelled.`,
+      '/leave-tracker/summary').catch(() => {});
+
+    return res.json({
+      success: true,
+      data: { cancelledDays: removedDays, ...outcome },
+      message: `${removedDays} day(s) cancelled.`,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    return serverError(res, err, 'partial leave cancellation');
+  } finally { client.release(); }
 });
 
 module.exports = router;
