@@ -115,6 +115,13 @@ const SECTIONS = {
         allowOvertimeAndDeviation: bool(b.allowOvertimeAndDeviation),
         maxHours: { enabled: maxEnabled, fullDay: maxFull, halfDay: maxHalf },
         roundOff: bool(b.roundOff),
+        // The reference ships round-off as a bare switch in the screenshots we
+        // have, with no granularity. A switch alone cannot be implemented —
+        // "rounded" has to say rounded to what — so the interval and direction
+        // are asked for here. Fifteen minutes to the nearest boundary is the
+        // common payroll default and what an unset config falls back to.
+        roundOffMinutes: [5, 10, 15, 30].includes(Number(b.roundOffMinutes)) ? Number(b.roundOffMinutes) : 15,
+        roundOffMode: ['nearest', 'up', 'down'].includes(b.roundOffMode) ? b.roundOffMode : 'nearest',
         payDays: { weekends: bool(pay.weekends), holidays: bool(pay.holidays), leave: bool(pay.leave) },
         lateNightHours: {
           enabled: nightEnabled,

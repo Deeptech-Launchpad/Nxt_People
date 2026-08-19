@@ -8,6 +8,7 @@ const { lopDaysForRange, absentDaysForRange, listWorkingDays, loadHolidaysAndRul
 const { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const attendanceConfig = require('../utils/attendanceConfig');
+const { roundHours, lateNightMinutes } = require('../utils/hoursPolicy');
 router.use(protect);
 
 // Sentinel for the "Not Specified" filter option. Deliberately not a value any
@@ -1994,8 +1995,13 @@ function workedHoursOf(att, cfg) {
   }
   const max = policy.maxHours;
   if (max?.enabled && Number.isFinite(Number(max.fullDay))) worked = Math.min(worked, Number(max.fullDay));
+  // Capping first, then rounding: rounding up past a configured maximum would
+  // report more hours than the cap the same screen sets.
+  worked = roundHours(worked, policy);
+  if (max?.enabled && Number.isFinite(Number(max.fullDay))) worked = Math.min(worked, Number(max.fullDay));
   return Math.round(worked * 100) / 100;
 }
+
 
 // What one full working day is worth in payable hours.
 //
@@ -2403,6 +2409,12 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
         date: ymd, firstIn: att?.checkIn || null, lastOut: att?.checkOut || null,
         totalHours: workedHoursOf(att, cfg),
         payableHours: isPayable ? shiftHours : 0,
+        // "Hours within this period are tracked separately for pay
+        // calculations" — reported, not deducted from anything. It is a
+        // premium band, and what a company pays for it is a payroll decision
+        // this report has no business making.
+        lateNightHours: parseFloat(
+          (lateNightMinutes(att?.checkIn, att?.checkOut, cfg?.policy?.lateNightHours) / 60).toFixed(2)),
         statusKey: kind,
         // Name the actual thing: the leave records if there are any, else the
         // holiday's own name, else the bucket label.

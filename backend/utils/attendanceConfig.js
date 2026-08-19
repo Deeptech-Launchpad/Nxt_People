@@ -31,7 +31,8 @@ const FALLBACKS = {
   methods: { regularization: true, onDuty: true, hourlyPermission: true },
   policy: {
     calculateHoursFrom: 'every', strictMode: true, allowOvertimeAndDeviation: false,
-    maxHours: { enabled: false, fullDay: 8.5, halfDay: 4 }, roundOff: false,
+    maxHours: { enabled: false, fullDay: 8.5, halfDay: 4 },
+    roundOff: false, roundOffMinutes: 15, roundOffMode: 'nearest',
     payDays: { weekends: true, holidays: true, leave: true },
     lateNightHours: { enabled: false, from: '22:00', to: '06:00' },
     absentEffectiveFrom: null,

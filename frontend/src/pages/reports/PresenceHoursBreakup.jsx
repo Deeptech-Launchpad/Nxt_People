@@ -84,6 +84,7 @@ const presenceColumns = (emp, decimal) => [
   { key: 'checkOutLocation', header: 'Check-out Location', value: () => '' },
   { key: 'totalHours', header: 'Total Hours', value: r => (decimal ? (Number(r.totalHours) || 0).toFixed(2) : fmtHrs(r.totalHours)) },
   { key: 'payableHours', header: 'Payable Hours', value: r => (decimal ? (Number(r.payableHours) || 0).toFixed(2) : fmtHrs(r.payableHours)) },
+  { key: 'lateNightHours', header: 'Late-night Hours', value: r => (decimal ? (Number(r.lateNightHours) || 0).toFixed(2) : fmtHrs(r.lateNightHours)) },
   { key: 'status', header: 'Status' },
   { key: 'coreExpected', header: 'Expected', value: () => '-' },
   { key: 'coreWorked', header: 'Worked  ', value: () => '-' },
@@ -98,7 +99,8 @@ const presenceColumns = (emp, decimal) => [
 // Deviation, whose own labels sit on a second row beneath it. Every other
 // column keeps its header on the top row, merged down through both.
 const PRESENCE_GROUPS = [
-  { label: null, span: 24 },
+  // 25, not 24: Late-night Hours joins the block before Core Hours.
+  { label: null, span: 25 },
   { label: 'Core Hours', span: 3 },
   { label: null, span: 4 },
 ];

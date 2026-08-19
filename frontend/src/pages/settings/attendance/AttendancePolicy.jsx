@@ -162,14 +162,43 @@ export default function AttendancePolicy() {
             )}
           </div>
 
-          <div className="flex items-start">
+          <div>
             <Check
               checked={config.roundOff}
               onChange={v => set({ roundOff: v })}
               label="Round-off"
               hint="Use this option to automatically adjust employee check-in, check-out, and total working hours to rounded time"
             />
-            <NotWired />
+            {/* "Rounded" has to say rounded to what, so the interval and the
+                direction are asked for here. Reports round; the stored punch
+                always keeps the real time. */}
+            {config.roundOff && (
+              <div className="ml-6 mt-3 flex flex-wrap items-center gap-2.5 text-[14px] text-slate-700">
+                <span>Round worked hours</span>
+                <select
+                  value={config.roundOffMode || 'nearest'}
+                  onChange={e => set({ roundOffMode: e.target.value })}
+                  aria-label="Rounding direction"
+                  className={selectClass}
+                >
+                  <option value="nearest">to the nearest</option>
+                  <option value="up">up to the next</option>
+                  <option value="down">down to the previous</option>
+                </select>
+                <select
+                  value={config.roundOffMinutes || 15}
+                  onChange={e => set({ roundOffMinutes: Number(e.target.value) })}
+                  aria-label="Rounding interval"
+                  className={selectClass}
+                >
+                  {[5, 10, 15, 30].map(m => <option key={m} value={m}>{m} minutes</option>)}
+                </select>
+              </div>
+            )}
+            <p className="text-[12px] text-slate-400 mt-2 ml-6 max-w-[46rem]">
+              Applied when a report is read, never to the stored check-in and check-out — the
+              recorded times stay exactly as they were punched.
+            </p>
           </div>
         </div>
       </Card>
@@ -220,10 +249,11 @@ export default function AttendancePolicy() {
       </Card>
 
       <Card title="Late-night work hours" description="Define a time range for late-night work. Hours within this period are tracked separately for pay calculations.">
-        <div className="flex items-start">
-          <Toggle checked={night.enabled} onChange={v => setIn('lateNightHours', { enabled: v })} label="Late-night work hours" />
-          <NotWired />
-        </div>
+        <Toggle checked={night.enabled} onChange={v => setIn('lateNightHours', { enabled: v })} label="Late-night work hours" />
+        <p className="text-[12px] text-slate-400 mt-2 ml-14 max-w-[46rem]">
+          Reported as its own column on Presence hours break-up. It is a premium band, so what the
+          hours are worth stays a payroll decision rather than something this setting applies.
+        </p>
         {night.enabled && (
           <div className="flex items-center gap-3 mt-4 ml-14">
             <input type="time" value={night.from || '22:00'} onChange={e => setIn('lateNightHours', { from: e.target.value })} className={selectClass} />
