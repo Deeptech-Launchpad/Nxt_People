@@ -169,7 +169,7 @@ export default function Leave() {
                         <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                           <Eye size={13} /> View
                         </button>
-                        {l.status === 'pending' && (
+                        {['pending', 'approved'].includes(l.status) && (
                           <button onClick={() => handleCancel(l._id)} className="text-sm text-red-500 hover:text-red-600 flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
                             <X size={13} /> Cancel
                           </button>

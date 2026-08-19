@@ -118,7 +118,12 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
   const noteText = leave.rejectionReason;                    // doubles as approver comment
   const noteLabel = status === 'rejected' ? 'Rejection Reason' : 'Comment';
   const showActions = canAct && (onApprove || onReject);
-  const showCancel = typeof onCancel === 'function' && status === 'pending';
+  // Approved leave is cancellable too — that is the case the Leave Tracker
+  // cancellation rules are written for ("leave from today onwards", "past
+  // leave in the current pay period"). Whether this particular person may
+  // cancel this particular leave is the server's call; it answers 403 with a
+  // reason, which surfaces as a toast.
+  const showCancel = typeof onCancel === 'function' && ['pending', 'approved'].includes(status);
   const c = () => comment.trim() || undefined;
 
   return (

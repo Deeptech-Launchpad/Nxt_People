@@ -13,22 +13,12 @@ const { getLeavePolicies } = require('../utils/leavePolicy');
 const logger = require('../logger');
 const { fire } = require('../utils/workflowEngine');
 const { canCancel, loadConfig } = require('../utils/leaveCancellation');
+const { availableFor, debitOnApproval, refundApproved, typeCode: dbTypeCode } = require('../utils/leaveBalance');
 const { approvalEmail, outcomeEmail } = require('../utils/approvalMessages');
 
 router.use(protect);
 
 const VALID_LEAVE_TYPES = ['casual', 'unpaid', 'permission', 'comp_off'];
-// Whitelist mapping leave_type code → physical column name. Defense in
-// depth: even though `leave.leave_type` reaches the balance-decrement
-// UPDATE from a DB row (not directly from request body), interpolating a
-// column name into SQL is dangerous if any future code path stores
-// attacker-influenced text in the column. Keep this map exclusive — any
-// missing key short-circuits the UPDATE rather than building bad SQL.
-const LEAVE_BALANCE_COLUMN = Object.freeze({
-  casual: 'casual_leave',
-  unpaid: 'unpaid_leave',
-});
-const VALID_BALANCE_COLUMNS = new Set(Object.values(LEAVE_BALANCE_COLUMN));
 
 // Correlated subquery that materialises a leave's hierarchy approval chain as a
 // JSON array for the frontend timeline (the leaves table is aliased `l`).
@@ -346,63 +336,34 @@ router.post('/', [
 
       if (!isPermission && leaveType !== 'unpaid') {
         const year = start.getFullYear();
-        const dbCode = leaveType === 'comp_off' ? 'compoff' : leaveType;
-        const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
-        if (ltRes.rows[0]) {
-          const updRes = await client.query(
+        // One balance answer, shared with the balance card. This block used to
+        // read leave_balances and then fall back to a hand-written lookup that
+        // knew only casual and permission — so an employee holding two days of
+        // comp-off was shown "2 available" on the card and refused here with
+        // "Available: 0 day(s)".
+        const { available, store } = await availableFor(client, req.user._id, leaveType, year);
+
+        // null is "this type has no ceiling", not "nothing left". Treating the
+        // two the same would refuse leave that has no balance to run out of.
+        if (available !== null && available < totalDays) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient ${leaveType} leave balance. Available: ${available} day(s)`
+          });
+        }
+
+        // leave_balances reserves the days at application time; the legacy
+        // columns and the comp-off ledger are debited at approval instead.
+        // Only the store that reserves here is touched here, so nothing is
+        // taken twice.
+        if (store === 'leave_balances') {
+          const lt = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbTypeCode(leaveType)]);
+          await client.query(
             `UPDATE leave_balances SET available = available - $1
-              WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4 AND available >= $1
-              RETURNING id`,
-            [totalDays, req.user._id, ltRes.rows[0].id, year]
+              WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
+            [totalDays, req.user._id, lt.rows[0].id, year]
           );
-          if (updRes.rows.length === 0) {
-            const chk = await client.query(
-              `SELECT available FROM leave_balances WHERE employee_id=$1 AND leave_type_id=$2 AND year=$3`,
-              [req.user._id, ltRes.rows[0].id, year]
-            );
-            if (chk.rows.length > 0) {
-              await client.query('ROLLBACK');
-              return res.status(400).json({
-                success: false,
-                message: `Insufficient ${leaveType} leave balance. Available: ${parseFloat(chk.rows[0].available) || 0} day(s)`
-              });
-            }
-            const empRes = await client.query(
-              'SELECT casual_leave, sick_leave, earned_leave, unpaid_leave FROM employees WHERE id=$1',
-              [req.user._id]
-            );
-            const employee = empRes.rows[0] || {};
-            let balance = 0;
-            if (leaveType === 'casual') balance = parseFloat(employee.casual_leave) || 0;
-            else if (leaveType === 'permission') balance = parseFloat(employee.earned_leave) || 0;
-            if (balance < totalDays) {
-              await client.query('ROLLBACK');
-              return res.status(400).json({
-                success: false,
-                message: `Insufficient ${leaveType} leave balance. Available: ${balance} day(s)`
-              });
-            }
-          }
-        } else {
-          const empRes = await client.query(
-            'SELECT casual_leave, sick_leave, earned_leave, unpaid_leave FROM employees WHERE id=$1',
-            [req.user._id]
-          );
-          const employee = empRes.rows[0] || {};
-          let balance = 0;
-          let legacyCol = null;
-          if (leaveType === 'casual') { balance = parseFloat(employee.casual_leave) || 0; legacyCol = 'casual_leave'; }
-          else if (leaveType === 'permission') { balance = parseFloat(employee.earned_leave) || 0; legacyCol = 'earned_leave'; }
-          if (balance < totalDays) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({
-              success: false,
-              message: `Insufficient ${leaveType} leave balance. Available: ${balance} day(s)`
-            });
-          }
-          if (legacyCol) {
-            await client.query(`UPDATE employees SET ${legacyCol} = ${legacyCol} - $1 WHERE id = $2`, [totalDays, req.user._id]);
-          }
         }
       }
 
@@ -564,6 +525,9 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
   // (managers); applyApproveAll enforces the role, and canUserAct below ensures
   // a manager can only do this on a request they're actually an approver on.
   const wantApproveAll = action === 'approved' && approveAll === true;
+  // Which store the days came out of, recorded on the leave so a later
+  // cancellation puts them back into that same store.
+  let balanceSource = null;
 
   const client = await pool.connect();
   try {
@@ -604,64 +568,26 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
       }
 
       if (result.allApproved) {
-        // Final approval — update leave_balances.booked.
-        // Do NOT also decrement employees.col here: leave_balances.available was
-        // already decremented at apply time, so touching employees.col would be
-        // a double-deduction. Only fall back to employees.col when no leave_balances
-        // row exists (legacy setup with no leave_balances rows for this year).
+        // Final approval — take the days off whichever store actually holds
+        // this employee's balance, and remember which one that was. The three
+        // branches that used to live here (leave_balances, the legacy column,
+        // the comp-off ledger) now sit next to their matching refund in
+        // utils/leaveBalance.js, because a debit and its refund landing in
+        // different stores is exactly what went wrong before.
         if (leave.leave_type !== 'unpaid') {
           const year = new Date(leave.start_date).getFullYear();
-          const dbCode = leave.leave_type === 'comp_off' ? 'compoff' : leave.leave_type;
-          const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
-          if (ltRes.rows[0]) {
-            const lbRes = await client.query(
-              `UPDATE leave_balances SET booked=booked+$1 WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4 RETURNING id`,
-              [leave.total_days, leave.employee_id, ltRes.rows[0].id, year]
-            );
-            if (lbRes.rows.length === 0) {
-              // No leave_balances row — nothing was decremented at apply, so decrement legacy column now
-              const col = LEAVE_BALANCE_COLUMN[leave.leave_type];
-              if (col && VALID_BALANCE_COLUMNS.has(col)) {
-                await client.query(`UPDATE employees SET ${col}=GREATEST(0,${col}-$1) WHERE id=$2`, [leave.total_days, leave.employee_id]);
-              }
-            }
-          } else {
-            // No leave_types entry — fall back to legacy employees column
-            const col = LEAVE_BALANCE_COLUMN[leave.leave_type];
-            if (col && VALID_BALANCE_COLUMNS.has(col)) {
-              await client.query(`UPDATE employees SET ${col}=GREATEST(0,${col}-$1) WHERE id=$2`, [leave.total_days, leave.employee_id]);
-            }
-          }
-          // For comp_off leaves: deduct from the comp_offs ledger (FIFO) so the balance card stays accurate
-          if (leave.leave_type === 'comp_off') {
-            let remaining = parseFloat(leave.total_days);
-            if (remaining > 0) {
-              const credits = await client.query(
-                `SELECT id, days_earned, days_used FROM comp_offs
-                  WHERE employee_id = $1 AND status = 'approved'
-                    AND (expires_at IS NULL OR expires_at >= CURRENT_DATE)
-                    AND days_earned > days_used
-                  ORDER BY worked_date ASC FOR UPDATE`,
-                [leave.employee_id]
-              );
-              for (const credit of credits.rows) {
-                if (remaining <= 0) break;
-                const avail = parseFloat(credit.days_earned) - parseFloat(credit.days_used);
-                const deduct = Math.min(remaining, avail);
-                await client.query(
-                  `UPDATE comp_offs SET days_used = days_used + $1 WHERE id = $2`,
-                  [deduct, credit.id]
-                );
-                remaining -= deduct;
-              }
-            }
-          }
+          balanceSource = await debitOnApproval(client, {
+            employeeId: leave.employee_id,
+            leaveType: leave.leave_type,
+            days: leave.total_days,
+            year,
+          });
         }
         await client.query(
           // The optional approver comment reuses the rejection_reason column;
           // COALESCE keeps any earlier note when no new comment is provided.
-          `UPDATE leaves SET status='approved', approved_by=$1, approved_at=NOW(), rejection_reason=COALESCE($2, rejection_reason), updated_at=NOW() WHERE id=$3`,
-          [req.user._id, rejectionReason || null, leave.id]
+          `UPDATE leaves SET status='approved', approved_by=$1, approved_at=NOW(), rejection_reason=COALESCE($2, rejection_reason), balance_source=$4, updated_at=NOW() WHERE id=$3`,
+          [req.user._id, rejectionReason || null, leave.id, balanceSource]
         );
       } else {
         // Partial approval - request stays pending for the remaining level(s).
@@ -823,9 +749,16 @@ router.put('/:id/cancel', async (req, res) => {
     const leaveRes = await client.query(`SELECT * FROM leaves WHERE id=$1 FOR UPDATE`, [req.params.id]);
     const leave = leaveRes.rows[0];
     if (!leave) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Leave not found' }); }
-    if (leave.status !== 'pending') {
+    // An approved leave is the case this whole screen exists for. The
+    // cancellation rules are "leave from today onwards", "past leave in the
+    // current pay period" and "past leave in the current calendar year" — and
+    // the last two describe leave that was necessarily approved and taken. A
+    // status gate here used to refuse every one of them before canCancel() was
+    // consulted, which left the entire configuration unable to do anything.
+    // Already-resolved leaves stay refused: there is nothing left to cancel.
+    if (leave.status !== 'pending' && leave.status !== 'approved') {
       await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: `Only pending leaves can be cancelled (this one is ${leave.status}).` });
+      return res.status(400).json({ success: false, message: `This leave is already ${leave.status}.` });
     }
 
     const config = await loadConfig();
@@ -840,16 +773,32 @@ router.put('/:id/cancel', async (req, res) => {
       return res.status(400).json({ success: false, message: 'A reason for cancelling is required.' });
     }
 
-    // Refund balance (mirrors the rejection refund — pending never debited 'booked').
+    // What gets refunded depends on what was actually debited, and the two
+    // differ by status.
+    //
+    // A pending leave only ever reserved against leave_balances.available —
+    // the legacy columns and the comp-off ledger are not touched until
+    // approval — so reversing that reservation is the whole job.
+    //
+    // An approved leave has additionally been debited from whichever store
+    // holds the balance, recorded at the time in balance_source. Returning the
+    // days to a store that was never debited, which is what a single shared
+    // refund path would do, is how a cancellation quietly destroys a day.
     if (leave.leave_type !== 'unpaid' && leave.total_days > 0) {
       const year = new Date(leave.start_date).getFullYear();
-      const dbCode = leave.leave_type === 'comp_off' ? 'compoff' : leave.leave_type;
-      const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
-      if (ltRes.rows[0]) {
-        await client.query(
-          `UPDATE leave_balances SET available=available+$1 WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
-          [leave.total_days, leave.employee_id, ltRes.rows[0].id, year]
-        );
+      if (leave.status === 'approved') {
+        await refundApproved(client, {
+          employeeId: leave.employee_id, leaveType: leave.leave_type,
+          days: leave.total_days, year, store: leave.balance_source,
+        });
+      } else {
+        const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbTypeCode(leave.leave_type)]);
+        if (ltRes.rows[0]) {
+          await client.query(
+            `UPDATE leave_balances SET available=available+$1 WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
+            [leave.total_days, leave.employee_id, ltRes.rows[0].id, year]
+          );
+        }
       }
     }
     await client.query(
@@ -873,7 +822,7 @@ router.put('/:id/cancel', async (req, res) => {
       `Your ${leaveLabel} leave from ${startLabel} was cancelled by ${by}.${reason ? ` Reason: ${reason}` : ''}`,
       '/leave-tracker/summary'
     ).catch(() => {});
-    await logAudit(req, { action: 'CANCEL', resource: 'Leave', resourceId: leave.id, changes: { prior_status: 'pending', status: 'cancelled', matrix_row: verdict.row, reason: reason || null } });
+    await logAudit(req, { action: 'CANCEL', resource: 'Leave', resourceId: leave.id, changes: { prior_status: leave.status, status: 'cancelled', matrix_row: verdict.row, balance_source: leave.balance_source || null, reason: reason || null } });
     return res.json({ success: true, status: 'cancelled', message: 'Leave cancelled.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -894,7 +843,7 @@ router.delete('/:id', async (req, res) => {
     // approval from changing status between our check and the DELETE.
     await client.query('BEGIN');
     const leaveRes = await client.query(
-      'SELECT id, employee_id, status, leave_type, start_date, end_date, total_days FROM leaves WHERE id=$1 AND employee_id=$2 FOR UPDATE',
+      'SELECT id, employee_id, status, leave_type, start_date, end_date, total_days, balance_source FROM leaves WHERE id=$1 AND employee_id=$2 FOR UPDATE',
       [req.params.id, req.user._id]
     );
     if (leaveRes.rows.length === 0) {
@@ -902,9 +851,13 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Leave not found' });
     }
     const leave = leaveRes.rows[0];
-    if (leave.status === 'approved') {
+    // Whether an approved leave may be withdrawn is canCancel()'s decision, not
+    // a flat refusal here. The cancellation rules cover past leave in the pay
+    // period and past leave in the calendar year, both of which are approved by
+    // definition; refusing on status first meant neither rule could ever apply.
+    if (leave.status !== 'pending' && leave.status !== 'approved') {
       await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'Cannot cancel approved leave' });
+      return res.status(400).json({ success: false, message: `This leave is already ${leave.status}.` });
     }
 
     // When the leave falls decides whether the employee may cancel it at all.
@@ -922,20 +875,28 @@ router.delete('/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'A reason for cancelling is required.' });
     }
 
-    // Only refund balance if the leave was still pending — rejected and cancelled
-    // leaves already had their balance refunded at rejection/cancellation time.
-    // Refunding again here would inflate the balance.
-    if (leave.status === 'pending' && leave.leave_type !== 'unpaid' && leave.total_days > 0) {
+    // Rejected and cancelled leaves were already refunded when they were
+    // rejected or cancelled, and are refused above, so only these two states
+    // reach here. They are refunded differently: a pending leave has only ever
+    // reserved against leave_balances.available, while an approved one was
+    // debited from whichever store balance_source names.
+    if (leave.leave_type !== 'unpaid' && leave.total_days > 0) {
       const year = new Date(leave.start_date).getFullYear();
-      const dbCode = leave.leave_type === 'comp_off' ? 'compoff' : leave.leave_type;
-      const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbCode]);
-      if (ltRes.rows[0]) {
-        await client.query(
-          `UPDATE leave_balances
-              SET available = available + $1
-            WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
-          [leave.total_days, req.user._id, ltRes.rows[0].id, year]
-        );
+      if (leave.status === 'approved') {
+        await refundApproved(client, {
+          employeeId: leave.employee_id, leaveType: leave.leave_type,
+          days: leave.total_days, year, store: leave.balance_source,
+        });
+      } else {
+        const ltRes = await client.query(`SELECT id FROM leave_types WHERE code=$1`, [dbTypeCode(leave.leave_type)]);
+        if (ltRes.rows[0]) {
+          await client.query(
+            `UPDATE leave_balances
+                SET available = available + $1
+              WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
+            [leave.total_days, req.user._id, ltRes.rows[0].id, year]
+          );
+        }
       }
     }
     await client.query(
