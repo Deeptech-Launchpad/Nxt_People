@@ -46,9 +46,10 @@ const FALLBACKS = {
   },
   regularization: {
     entryMode: 'create', reasons: [], reasonMandatory: false,
+    deadlineIgnoresOnDutyTypes: ['Work from home'], deadlineEffectiveFrom: null,
     fields: { description: { show: true, mandatory: false }, document: { show: true, mandatory: false } },
     restrictions: {
-      withinDays: { enabled: false, days: 5 },
+
       perPeriod: { enabled: false, count: 1, period: 'month' },
       allowFutureDates: false,
     },

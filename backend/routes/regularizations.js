@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const pool = require('../db');
 const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
+const { deadlineFor, isClosed: deadlinePassed } = require('../utils/regularizationWindow');
 const { isFullAccess } = require('../utils/roles');
 const { createNotification } = require('./notifications');
 const { createLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
@@ -110,17 +111,21 @@ router.post('/', requireRegularizationEnabled, [
       return res.status(400).json({ success: false, message: 'Cannot regularize a future date' });
     }
 
-    const within = restrictions.withinDays || {};
-    if (within.enabled) {
-      const limit = new Date(`${today}T00:00:00Z`);
-      limit.setUTCDate(limit.getUTCDate() - Number(within.days || 0));
-      const earliest = limit.toISOString().slice(0, 10);
-      if (date < earliest) {
-        return res.status(400).json({
-          success: false,
-          message: `Regularization must be raised within ${within.days} day(s) of the date being regularized`,
-        });
-      }
+    // Every unmarked absence in a week is due by the Monday after it, moved
+    // for a holiday and again for anything that kept this person from acting.
+    // The old "within N days" check that stood here did its arithmetic in UTC
+    // against an IST today, so its window was a day out — the shift this
+    // project has been caught by four times.
+    //
+    // Full access can still act after the deadline. A biometric that never
+    // registered is exactly the case a hard close would strand, and the
+    // override is written to the audit trail rather than being silent.
+    if (!isFullAccess(req.user.role) && await deadlinePassed(req.user._id, date)) {
+      const missed = await deadlineFor(req.user._id, date);
+      return res.status(400).json({
+        success: false,
+        message: `The window for ${date} closed on ${missed}. It now counts as an unregularized absence — ask HR if it needs correcting.`,
+      });
     }
 
     const reasonText = String(reason || '').trim();

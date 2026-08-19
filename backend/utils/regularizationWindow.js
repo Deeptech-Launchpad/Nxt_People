@@ -128,8 +128,24 @@ async function deadlineFor(employeeId, absenceDate) {
   return await baseDeadline(absenceDate);
 }
 
+/**
+ * The date this rule started applying. Absences before it are exempt: the
+ * deadline did not exist, no warning was sent, and closing them retroactively
+ * would penalise people for a backlog they never had a chance to clear.
+ * Null means the rule is not in force at all yet.
+ */
+async function effectiveFrom() {
+  try {
+    const r = await pool.query(`SELECT regularization_config AS c FROM settings LIMIT 1`);
+    const v = r.rows[0]?.c?.deadlineEffectiveFrom;
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : null;
+  } catch (_) { return null; }
+}
+
 /** True once the deadline has passed — the day is closed to the employee. */
 async function isClosed(employeeId, absenceDate, now = todayYmd()) {
+  const from = await effectiveFrom();
+  if (!from || String(absenceDate).slice(0, 10) < from) return false;
   const deadline = await deadlineFor(employeeId, absenceDate);
   return now > deadline;
 }
@@ -152,6 +168,6 @@ async function lastWorkingDayOfWeek(date) {
 }
 
 module.exports = {
-  deadlineFor, isClosed, baseDeadline, canActOn, lastWorkingDayOfWeek,
+  deadlineFor, isClosed, effectiveFrom, baseDeadline, canActOn, lastWorkingDayOfWeek,
   mondayOnOrAfter, availableOnDutyTypes, ymd, addDays, todayYmd, TZ,
 };

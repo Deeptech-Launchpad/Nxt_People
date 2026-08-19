@@ -258,7 +258,6 @@ const SECTIONS = {
       if (!ENTRY_MODES.includes(b.entryMode)) throw new Error('Regularization entry mode is not valid');
       const f = b.fields || {};
       const r = b.restrictions || {};
-      const within = r.withinDays || {};
       const per = r.perPeriod || {};
 
       const reasons = labelList(b.reasons, 'reason');
@@ -277,10 +276,10 @@ const SECTIONS = {
         reasonMandatory,
         fields: { description: showMandatory(f.description), document: showMandatory(f.document) },
         restrictions: {
-          withinDays: {
-            enabled: bool(within.enabled),
-            days: bool(within.enabled) ? intIn(within.days, 'Regularization window', 1, 365) : 5,
-          },
+          // "Within N days" is gone. How long somebody has is now the weekly
+          // rule in utils/regularizationWindow.js — every unmarked absence in a
+          // week is due by the Monday after it — and two windows that could
+          // disagree about the same day is one too many.
           perPeriod: {
             enabled: perEnabled,
             count: perEnabled ? intIn(per.count, 'Regularization limit', 1, 100) : 1,
@@ -288,6 +287,28 @@ const SECTIONS = {
           },
           allowFutureDates: bool(r.allowFutureDates),
         },
+        // On-duty normally pushes a regularization deadline, because the
+        // person may be at a client site with no system. These types are the
+        // exception: they are working, just elsewhere, so their deadline
+        // stands. Matched case-insensitively against on_duty_requests.request_type.
+        // Chases people about unmarked absences before the window shuts. Off
+        // by default: switching it on writes to every employee with an open
+        // absence, which is not something a deploy should start doing by
+        // itself.
+        deadlineReminders: {
+          enabled: bool(b.deadlineReminders?.enabled),
+          sendAt: /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(b.deadlineReminders?.sendAt || ''))
+            ? String(b.deadlineReminders.sendAt)
+            : '10:00',
+        },
+        deadlineIgnoresOnDutyTypes: Array.isArray(b.deadlineIgnoresOnDutyTypes)
+          ? [...new Set(b.deadlineIgnoresOnDutyTypes.map(s => String(s).trim()).filter(Boolean))]
+          : ['Work from home'],
+        // Absences before this date are exempt: the rule did not exist and
+        // nobody was warned. Set once, when the feature goes live.
+        deadlineEffectiveFrom: /^\d{4}-\d{2}-\d{2}$/.test(String(b.deadlineEffectiveFrom || ""))
+          ? String(b.deadlineEffectiveFrom)
+          : null,
       };
     },
   },

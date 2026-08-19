@@ -15,6 +15,7 @@ const permissions = require('./utils/permissions');
 const { sweepDateWorkflows } = require('./utils/workflowEngine');
 const { sweepApprovalFollowups } = require('./utils/approvalFollowups');
 const { sweepAttendanceAlerts } = require('./utils/attendanceAlerts');
+const { sweepRegularizationReminders } = require('./utils/regularizationReminders');
 const { sweepShiftRotations } = require('./utils/shiftRotation');
 // The email-alerts cron below has called automationConfig.* since it was
 // written without this line, so every run logged "automationConfig is not
@@ -672,3 +673,27 @@ cron.schedule(`*/${WORKFLOW_SWEEP_MINUTES} * * * *`, async () => {
 
 module.exports = app;
 
+// Regularization deadline reminders.
+//
+// Every minute for the same reason as the sweep above: the send time is a
+// configured clock reading, and the sweep itself returns immediately unless
+// the minute matches. Off by default — switching it on writes to every
+// employee holding an open unmarked absence, so a deploy must not start
+// doing it unasked.
+cron.schedule('* * * * *', async () => {
+  const startedAt = Date.now();
+  try {
+    const summary = await sweepRegularizationReminders({ tz: CRON_TZ });
+    const total = summary.warned + summary.deadline;
+    if (total > 0) {
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('regularization_reminders', 'Regularization deadline reminders', 'Attendance Scheduler', 'success', $1, $2)`,
+        [`${summary.warned} warned, ${summary.deadline} on their last day`,
+         Date.now() - startedAt]
+      ).catch(() => {});
+    }
+  } catch (err) {
+    logger.error({ err: err.message }, 'Regularization reminder sweep failed');
+  }
+}, { timezone: CRON_TZ });
