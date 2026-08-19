@@ -15,6 +15,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { invalidate } = require('../utils/shiftConfig');
 
 router.use(protect);
 
@@ -102,6 +103,7 @@ router.patch('/general', authorize('admin', 'director', 'hr_admin'), async (req,
       [JSON.stringify(config)]
     );
     await client.query('COMMIT');
+    invalidate();
 
     const shifts = await pool.query(
       `SELECT id, name, start_time AS "startTime", end_time AS "endTime", is_default AS "isDefault"

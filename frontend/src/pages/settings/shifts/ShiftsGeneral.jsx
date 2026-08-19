@@ -11,11 +11,14 @@ import { PermissionMatrix } from '../attendance/kit';
 // values without saying so. New employees now start on whichever shift is
 // marked here.
 //
-// The rest is stored and not yet applied, and says so. Shift mapping has no
-// screen of its own, there is no shift-change request to make a reason
-// mandatory on, and no shift allowance reaches payroll. They are shown because
-// they are the reference's own settings and hiding them would make a partial
-// configuration look complete — but nothing here pretends to work.
+// The mapping matrix now decides who may view and change somebody's roster,
+// and it closed a real hole on the way: /roster/assign checked the caller's
+// role and stopped, so any manager could roster anyone in the organisation.
+// A mandatory reason is enforced on a shift change request, and the notify
+// switches send on the change actually being applied.
+//
+// Shift allowance is still stored and not applied — it changes payroll, so it
+// waits for the reconciliation the round-off work got — and says so.
 
 const COLUMNS = [
   { key: 'manager', label: 'Reporting manager' },
@@ -76,7 +79,6 @@ export default function ShiftsGeneral() {
       <Card
         title="Shift mapping permission"
         description="Define settings related to shift mapping permissions"
-        actions={<NotWired />}
       >
         <PermissionMatrix columns={COLUMNS} rows={ROWS} values={perms} onChange={setCell} />
 
@@ -102,7 +104,6 @@ export default function ShiftsGeneral() {
       <Card
         title="Notify employees on a shift change"
         description="Send an automated notification when an employee's shift is changed"
-        actions={<NotWired />}
       >
         <div className="flex flex-wrap items-center gap-6">
           <Check checked={notify.email} onChange={v => set({ notifyOnShiftChange: { ...notify, email: v } })} label="Email" />

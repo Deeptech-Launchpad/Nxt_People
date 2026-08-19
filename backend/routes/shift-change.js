@@ -28,6 +28,9 @@ const {
 } = require('../utils/leaveApproval');
 const { isFullAccess, reportsScope } = require('../utils/roles');
 const { fire } = require('../utils/workflowEngine');
+const { shiftConfig } = require('../utils/shiftConfig');
+const { createNotification } = require('./notifications');
+const { sendMail } = require('../utils/mailer');
 
 router.use(protect);
 
@@ -123,6 +126,13 @@ router.post('/', audit('CREATE', 'shift_change_request'), async (req, res) => {
     }
     if (b.endDate && b.endDate < b.startDate) throw bad('The end date cannot be before the start date');
 
+    // Shifts > General > "Make reason mandatory for shift change". Stored and
+    // ignored until now, so the switch changed nothing either way.
+    const cfg = await shiftConfig();
+    if (cfg.reasonMandatoryOnShiftChange && !String(b.reason || '').trim()) {
+      throw bad('A reason for the shift change is required');
+    }
+
     const me = (await client.query(
       `SELECT shift_id FROM employees WHERE id = $1`, [req.user._id])).rows[0];
     if (me?.shift_id === toShiftId) throw bad('You are already on that shift');
@@ -169,6 +179,65 @@ router.post('/', audit('CREATE', 'shift_change_request'), async (req, res) => {
     fail(res, err);
   } finally { client.release(); }
 });
+
+/**
+ * Shifts > General > "Notify employees on a shift change". Two independent
+ * switches, both off by default, and both were stored and never read.
+ *
+ * Fire-and-forget on purpose: the shift has already been applied and committed
+ * by the time this runs, so a mail server that is down must not turn a change
+ * that happened into an error that says it did not.
+ */
+async function notifyShiftChange(requestId) {
+  try {
+    const cfg = await shiftConfig();
+    const want = cfg.notifyOnShiftChange || {};
+    if (!want.email && !want.feeds) return;
+
+    const r = (await pool.query(
+      `SELECT r.employee_id AS "employeeId", r.change_type AS "changeType",
+              r.start_date AS "startDate", r.end_date AS "endDate",
+              t.name AS "toShift", t.start_time AS "toStart", t.end_time AS "toEnd",
+              f.name AS "fromShift",
+              e.email, TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS name
+         FROM shift_change_requests r
+         JOIN employees e ON e.id = r.employee_id
+         LEFT JOIN shifts t ON t.id = r.to_shift_id
+         LEFT JOIN shifts f ON f.id = r.from_shift_id
+        WHERE r.id = $1`, [requestId])).rows[0];
+    if (!r) return;
+
+    const when = r.changeType === 'permanent'
+      ? `from ${ymd(r.startDate)}`
+      : `for ${ymd(r.startDate)} to ${ymd(r.endDate)}`;
+    const shift = r.toShift
+      ? `${r.toShift} (${String(r.toStart).slice(0, 5)}-${String(r.toEnd).slice(0, 5)})`
+      : 'a new shift';
+    const line = r.fromShift
+      ? `Your shift has changed from ${r.fromShift} to ${shift}, ${when}.`
+      : `You have been placed on ${shift}, ${when}.`;
+
+    if (want.feeds) {
+      await createNotification(r.employeeId, 'shift', 'Shift Changed', line, '/attendance/shifts')
+        .catch(() => {});
+      await pool.query(
+        `INSERT INTO feeds (employee_id, type, title, body, icon)
+         VALUES ($1, 'shift_change', 'Shift Changed', $2, '🕒')`,
+        [r.employeeId, line]).catch(() => {});
+    }
+
+    if (want.email && r.email) {
+      await sendMail({
+        to: r.email,
+        subject: `Your shift has changed`,
+        text: `Hi ${r.name},\n\n${line}\n`,
+        html: `<p>Hi ${r.name},</p><p>${line}</p>`,
+      });
+    }
+  } catch (err) {
+    logger.warn({ err: err.message, requestId }, '[shift-change] change applied but notification failed');
+  }
+}
 
 /**
  * Make an approved request real.
@@ -228,6 +297,7 @@ async function applyChange(requestId) {
     if (r.change_type === 'permanent') {
       fire('employee', 'field_updated', { recordId: r.employee_id, changedFields: ['shift_id'] });
     }
+    notifyShiftChange(requestId);
     return { ok: true, note };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

@@ -23,6 +23,7 @@ const pool = require('../db');
 const logger = require('../logger');
 const { protect, authorize } = require('../middleware/auth');
 const { fire } = require('../utils/workflowEngine');
+const { shiftConfig, mayEditMapping } = require('../utils/shiftConfig');
 
 router.use(protect);
 
@@ -271,6 +272,15 @@ router.post('/:id/assign', authorize('admin', 'director', 'hr_admin', 'manager')
       throw bad('No employees specified');
     }
     if (req.user.role === 'manager') {
+      // Shifts > General > "Employee shift mapping can be edited by" decides
+      // whether a manager may do this at all; the team check below then decides
+      // for whom. Both are needed: the matrix without the scope would let a
+      // manager reshuffle the whole organisation.
+      const cfg = await shiftConfig();
+      if (!mayEditMapping(cfg, 'manager')) {
+        return res.status(403).json({ success: false,
+          message: 'Changing shift mapping is not permitted for your role' });
+      }
       const uniqueIds = [...new Set(employeeIds)];
       const scope = await pool.query(
         'SELECT id FROM employees WHERE id = ANY($1) AND reporting_manager_id = $2',
