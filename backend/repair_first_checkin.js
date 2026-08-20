@@ -26,6 +26,24 @@
  * ────────────────────────────────────────────────────────────────────────── */
 const pool = require('./db');
 
+const TZ = 'Asia/Kolkata';
+
+// Shown in local time, with seconds: several of these differ by well under a
+// minute, and rounding those to "0 min" makes a real change look like a no-op.
+const clock = (v) => {
+  const d = v instanceof Date ? v : new Date(v);
+  if (isNaN(d)) return String(v);
+  return d.toLocaleTimeString('en-GB', { timeZone: TZ, hour12: false });
+};
+
+const gap = (minutes) => {
+  const secs = Math.round(Number(minutes) * 60);
+  if (secs < 60) return `${secs}s earlier`;
+  if (secs < 3600) return `${Math.round(secs / 60)} min earlier`;
+  const h = Math.floor(secs / 3600), m = Math.round((secs % 3600) / 60);
+  return `${h}h ${String(m).padStart(2, "0")}m earlier`;
+};
+
 const APPLY = process.argv.includes('--apply');
 
 (async () => {
@@ -47,6 +65,9 @@ const APPLY = process.argv.includes('--apply');
          ON s.employee_id = a.employee_id AND s.date = a.date
       WHERE a.check_in IS NOT NULL
         AND s.first_in < a.check_in
+        -- Under a second apart is the same moment recorded twice, not a lost
+        -- arrival. Listing those beside a ten-hour correction only buries it.
+        AND EXTRACT(EPOCH FROM (a.check_in - s.first_in)) >= 1
       ORDER BY a.date, e.employee_id`);
 
   if (!candidates.rows.length) {
@@ -57,9 +78,8 @@ const APPLY = process.argv.includes('--apply');
 
   console.log(`  ${candidates.rows.length} row(s) where the stored arrival is later than the first session:\n`);
   for (const r of candidates.rows) {
-    const lost = Math.round(Number(r.minutes_lost));
-    console.log(`    ${r.code.padEnd(14)} ${r.d}  stored ${String(r.stored_in).slice(11, 19)}`
-              + `  ->  ${String(r.first_in).slice(11, 19)}   (${lost} min earlier)`);
+    console.log(`    ${r.code.padEnd(14)} ${r.d}   ${clock(r.stored_in)}  ->  ${clock(r.first_in)}`
+              + `   (${gap(r.minutes_lost)})`);
   }
 
   if (!APPLY) {
@@ -81,7 +101,8 @@ const APPLY = process.argv.includes('--apply');
                  FROM attendance_sessions GROUP BY employee_id, date) s
         WHERE s.employee_id = a.employee_id AND s.date = a.date
           AND a.check_in IS NOT NULL
-          AND s.first_in < a.check_in`);
+          AND s.first_in < a.check_in
+          AND EXTRACT(EPOCH FROM (a.check_in - s.first_in)) >= 1`);
     await client.query('COMMIT');
     console.log(`\n  ${r.rowCount} row(s) repaired.`);
     console.log('  Hours, check-out times and statuses were not touched.\n');
