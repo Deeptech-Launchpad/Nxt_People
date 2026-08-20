@@ -7,6 +7,7 @@ const { shiftForCheckIn, autoAssignEnabled } = require('../utils/shiftPatterns')
 const { isFullAccess } = require('../utils/roles');
 const { sendCheckOutReminderEmail } = require('../utils/mailer');
 const { DEFAULT_TZ } = require('../utils/timezone');
+const { classifyDay } = require('../utils/attendanceRule');
 const { loadWeekendResolver } = require('../utils/workingDays');
 const attendanceAlerts = require('../utils/attendanceAlerts');
 
@@ -314,9 +315,51 @@ router.post('/checkout', async (req, res) => {
     // honours the same GPS rule as check-in. Previously this route blocked
     // every check-out when GPS was missing, even though check-in defaults
     // to allowing GPS-less attendance unless settings.require_gps = TRUE.
-    const settingsRes = await pool.query('SELECT half_day_hours, full_day_hours FROM settings LIMIT 1');
-    const halfDayHours = parseFloat(settingsRes.rows[0]?.half_day_hours) || 4;
-    const fullDayHours = parseFloat(settingsRes.rows[0]?.full_day_hours) || 7.5;
+    // The policy that decides what this day gets called, plus the two facts the
+    // day itself cannot supply: what the company had already approved for it.
+    // Without those, someone on half-day leave or two hours of permission is
+    // measured against a full eight hours and marked short for time off that
+    // was granted.
+    const [settingsRes, dayRes] = await Promise.all([
+      pool.query(
+        `SELECT expected_hours_mode AS "expectedMode",
+                expected_hours_per_day AS "expectedFullDay",
+                expected_half_day_hours AS "expectedHalfDay",
+                attendance_policy_config AS policy
+           FROM settings LIMIT 1`),
+      pool.query(
+        `SELECT COALESCE((
+                  SELECT MAX(CASE WHEN l.is_half_day THEN 0.5 ELSE 1 END)
+                    FROM leaves l
+                   WHERE l.employee_id = $1 AND l.status = 'approved'
+                     AND l.leave_type <> 'permission'
+                     AND $2::date BETWEEN l.start_date AND l.end_date), 0) AS leave_portion,
+                COALESCE((
+                  SELECT SUM(COALESCE(l.hours, 0))
+                    FROM leaves l
+                   WHERE l.employee_id = $1 AND l.status = 'approved'
+                     AND l.leave_type = 'permission'
+                     AND $2::date BETWEEN l.start_date AND l.end_date), 0) AS permission_hours,
+                EXISTS (
+                  SELECT 1 FROM on_duty_requests o
+                   WHERE o.employee_id = $1 AND o.status = 'approved'
+                     AND $2::date BETWEEN o.start_date AND o.end_date) AS on_duty,
+                (SELECT EXTRACT(EPOCH FROM (s.end_time::time - s.start_time::time))/3600.0
+                   FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
+                  WHERE e.id = $1) AS shift_hours,
+                (SELECT COALESCE(s.grace_minutes, 15)
+                   FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
+                  WHERE e.id = $1) AS grace`,
+        [req.user._id, today]),
+    ]);
+    const cfgRow = settingsRes.rows[0] || {};
+    const dayFacts = dayRes.rows[0] || {};
+    const ruleCfg = {
+      ...(cfgRow.policy || {}),
+      expectedMode: cfgRow.expectedMode || 'manual',
+      expectedFullDay: Number(cfgRow.expectedFullDay ?? 8),
+      expectedHalfDay: Number(cfgRow.expectedHalfDay ?? 4),
+    };
 
     const now = new Date();
     const location = req.body.location ||
@@ -345,14 +388,36 @@ router.post('/checkout', async (req, res) => {
     const safePrev = isFinite(prevHoursRaw) ? prevHoursRaw : 0;
     const workingHours = parseFloat((safePrev + sessionHours).toFixed(8));
 
+    // One engine decides this, the same one the reports and the "update older
+    // entries" sweep use. Three separate implementations of "was this a full
+    // day" is how the calendar and the report come to disagree.
+    //
+    // Days before the effective date keep the old rule, so switching the policy
+    // on cannot change how this afternoon is judged against a month that has
+    // already been reported.
     let status = record.status;
+    const ruleLive = !ruleCfg.ruleEffectiveFrom || today >= ruleCfg.ruleEffectiveFrom;
     if (isFinite(workingHours) && record.status !== 'on_duty') {
-      if (workingHours < halfDayHours) {
-        status = 'absent';
-      } else if (workingHours < fullDayHours) {
-        status = 'half-day';
+      if (ruleLive) {
+        status = classifyDay({
+          workedHours: workingHours,
+          hasPunch: true,
+          leavePortion: Number(dayFacts.leave_portion) || 0,
+          permissionHours: Number(dayFacts.permission_hours) || 0,
+          onDuty: dayFacts.on_duty === true,
+          lateMinutes: Number(record.late_minutes) || 0,
+          graceMinutes: Number(dayFacts.grace) || 0,
+          cfg: ruleCfg,
+          shiftHours: dayFacts.shift_hours === null || dayFacts.shift_hours === undefined
+            ? null : Number(dayFacts.shift_hours),
+        }).status;
       } else {
-        status = record.late_minutes > 0 ? 'late' : 'present';
+        const legacy = await pool.query('SELECT half_day_hours, full_day_hours FROM settings LIMIT 1');
+        const halfDayHours = parseFloat(legacy.rows[0]?.half_day_hours) || 4;
+        const fullDayHours = parseFloat(legacy.rows[0]?.full_day_hours) || 7.5;
+        if (workingHours < halfDayHours) status = 'absent';
+        else if (workingHours < fullDayHours) status = 'half-day';
+        else status = record.late_minutes > 0 ? 'late' : 'present';
       }
     }
 

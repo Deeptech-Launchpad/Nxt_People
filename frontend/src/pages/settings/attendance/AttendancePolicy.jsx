@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../../utils/api';
-import { Card, Check, Toggle, Note, NotWired, selectClass, useConfigSection, SaveBar, Spinner } from '../configKit';
+import { Card, Check, Toggle, Note, selectClass, useConfigSection, SaveBar, Spinner } from '../configKit';
 
 // Attendance Policy — how a day's hours are counted, and which days are paid.
 //
@@ -231,7 +231,6 @@ export default function AttendancePolicy() {
                 onChange={() => set({ mode: 'lenient', strictMode: false })} />
               <Radio name="strictness" label="Custom" checked={mode === 'custom'}
                 onChange={() => set({ mode: 'custom', strictMode: true })} />
-              <NotWired>The rule is built and tested; attendance does not follow it yet</NotWired>
             </div>
 
             <p className="text-[13px] text-slate-500 mb-3 max-w-[620px]">
@@ -459,21 +458,14 @@ export default function AttendancePolicy() {
       </Card>
 
       <Card
-        title="Day classification"
-        description="What a finished day is called once someone checks out, and when an arrival counts as late"
+        title="Late arrival"
+        description="When an arrival counts as late"
       >
+        {/* This card used to hold a second Full day / Half day pair, which was
+            a duplicate of Expected hours per day above and could drift from it.
+            Expected hours decides the day now, as it does in the reference.
+            Late marking is a genuinely separate question, so it stays. */}
         <div className="space-y-5">
-          <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-4 inline-block space-y-2.5">
-            <HoursField label="Full day" value={config.presentAtLeastHours}
-              onChange={v => set({ presentAtLeastHours: v })} />
-            <HoursField label="Half day" value={config.halfDayAtLeastHours}
-              onChange={v => set({ halfDayAtLeastHours: v })} />
-          </div>
-          <p className="text-[13px] text-slate-500 max-w-[620px] -mt-1">
-            At or above the full-day figure the day is present; below it but at or above the half-day
-            figure it is a half day; below that it is absent.
-          </p>
-
           <div>
             <label className="block text-[13.5px] font-medium text-slate-700 mb-1.5">Late mark after</label>
             <input

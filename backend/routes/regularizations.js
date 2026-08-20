@@ -7,6 +7,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { deadlineFor, isClosed: deadlinePassed } = require('../utils/regularizationWindow');
 const { isFullAccess } = require('../utils/roles');
 const { DEFAULT_TZ } = require('../utils/timezone');
+const { classifyDay } = require('../utils/attendanceRule');
 const { createNotification } = require('./notifications');
 const { createLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
 const { sendLeaveApprovalEmail } = require('../utils/mailer');
@@ -303,22 +304,90 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
           ? (() => { const [h, m] = String(shiftStartRaw).split(':').map(Number); return h * 60 + (m || 0); })()
           : lateAfterMins;
 
+        // The policy, and what the company had already approved for that day.
+        // Fetched here rather than inside the branch so the regularized day is
+        // judged on exactly the facts a punched day would be.
+        const policyRes = await client.query(
+          `SELECT expected_hours_mode AS "expectedMode",
+                  expected_hours_per_day AS "expectedFullDay",
+                  expected_half_day_hours AS "expectedHalfDay",
+                  attendance_policy_config AS policy
+             FROM settings LIMIT 1`);
+        const pRow = policyRes.rows[0] || {};
+        const ruleCfg = {
+          ...(pRow.policy || {}),
+          expectedMode: pRow.expectedMode || 'manual',
+          expectedFullDay: Number(pRow.expectedFullDay ?? 8),
+          expectedHalfDay: Number(pRow.expectedHalfDay ?? 4),
+        };
+        const factsRes = await client.query(
+          `SELECT COALESCE((
+                    SELECT MAX(CASE WHEN l.is_half_day THEN 0.5 ELSE 1 END)
+                      FROM leaves l
+                     WHERE l.employee_id = $1 AND l.status = 'approved'
+                       AND l.leave_type <> 'permission'
+                       AND $2::date BETWEEN l.start_date AND l.end_date), 0) AS leave_portion,
+                  COALESCE((
+                    SELECT SUM(COALESCE(l.hours, 0))
+                      FROM leaves l
+                     WHERE l.employee_id = $1 AND l.status = 'approved'
+                       AND l.leave_type = 'permission'
+                       AND $2::date BETWEEN l.start_date AND l.end_date), 0) AS permission_hours,
+                  EXISTS (
+                    SELECT 1 FROM on_duty_requests o
+                     WHERE o.employee_id = $1 AND o.status = 'approved'
+                       AND $2::date BETWEEN o.start_date AND o.end_date) AS on_duty,
+                  (SELECT EXTRACT(EPOCH FROM (s.end_time::time - s.start_time::time))/3600.0
+                     FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
+                    WHERE e.id = $1) AS shift_hours`,
+          [reg.employee_id, reg.date]);
+        const dayFacts = factsRes.rows[0] || {};
+
+        // pg returns a DATE column as a JS Date, so `${reg.date}` renders as
+        // "Mon Jul 20 2026 00:00:00 GMT+0530 (India Standard Time)" and
+        // new Date(that + "T09:30:00") is Invalid. Every approved
+        // regularization therefore computed NaN hours, left working_hours null
+        // and stamped the day 'present' whatever was claimed — which is the
+        // zero-hours rows found on live.
+        //
+        // Rebuilt from the local date parts, which is exactly how pg built it:
+        // toISOString would render UTC and land on the previous day in IST.
+        const regDate = reg.date instanceof Date
+          ? `${reg.date.getFullYear()}-${String(reg.date.getMonth() + 1).padStart(2, '0')}-${String(reg.date.getDate()).padStart(2, '0')}`
+          : String(reg.date).slice(0, 10);
+
         let workingHours = null;
         let newStatus = 'present';
         let newLateMinutes = 0;
 
         if (reg.check_in) {
-          const ciTime = new Date(`${reg.date}T${reg.check_in}`);
+          const ciTime = new Date(`${regDate}T${reg.check_in}`);
           const checkInMins = ciTime.getHours() * 60 + ciTime.getMinutes();
           const minsLate = checkInMins - shiftStartMins;
           if (minsLate > 0) newLateMinutes = minsLate;
 
           if (reg.check_out) {
-            const coTime = new Date(`${reg.date}T${reg.check_out}`);
+            const coTime = new Date(`${regDate}T${reg.check_out}`);
             const diffMs = coTime - ciTime;
             if (diffMs > 0) {
               workingHours = parseFloat((diffMs / 3600000).toFixed(8));
-              if (workingHours < halfDayHours) {
+              // The same engine check-out uses. A regularized day and a punched
+              // day of identical length must be called the same thing, or
+              // correcting a forgotten check-out would change the verdict.
+              if (!ruleCfg.ruleEffectiveFrom || regDate >= ruleCfg.ruleEffectiveFrom) {
+                newStatus = classifyDay({
+                  workedHours: workingHours,
+                  hasPunch: true,
+                  leavePortion: Number(dayFacts.leave_portion) || 0,
+                  permissionHours: Number(dayFacts.permission_hours) || 0,
+                  onDuty: dayFacts.on_duty === true,
+                  lateMinutes: newLateMinutes,
+                  graceMinutes,
+                  cfg: ruleCfg,
+                  shiftHours: dayFacts.shift_hours === null || dayFacts.shift_hours === undefined
+                    ? null : Number(dayFacts.shift_hours),
+                }).status;
+              } else if (workingHours < halfDayHours) {
                 newStatus = 'absent';
               } else if (workingHours < fullDayHours) {
                 newStatus = 'half-day';
