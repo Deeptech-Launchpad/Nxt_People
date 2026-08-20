@@ -32,6 +32,11 @@ const EXPORT_COLUMNS = [
   // so the reference gives each its own column rather than merging them. Only
   // Loss of pay above is deducted automatically.
   { key: 'absentDays', header: 'Unmarked absence' },
+  // A subset of Unmarked absence: the days whose regularization window shut
+  // with nothing raised. Not added into Total unpayable — it is already
+  // counted there once, through Unmarked absence — and it deducts nothing.
+  // It answers "who is letting days lapse", not "what do we withhold".
+  { key: 'unregularizedDays', header: 'Unregularized absence' },
   { key: 'totalUnpayable', header: 'Total unpayable' },
   { key: 'reason', header: 'Reason' },
   { key: 'carryOver', header: 'Carry Over ' },

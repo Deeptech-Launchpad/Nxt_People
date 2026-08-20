@@ -4,6 +4,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
 const { countWorkingDays, ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
+const { unregularizedDaysForRange } = require('../utils/unregularizedAbsence');
 const { lopDaysForRange, absentDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
 const { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
 const { DEFAULT_TZ } = require('../utils/timezone');
@@ -1639,6 +1640,10 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
       // Reporting only the first is why this report said nobody lost pay while
       // the Muster Roll showed the same people with unpayable days.
       const absentDays = await absentDaysForRange(emp._id, startDate, endDate, holMap, rules, pool);
+      // Of those absences, the ones whose regularization window has already
+      // shut. A subset of absentDays, never added to it — the same day shown
+      // twice in a total is how a figure gets double counted downstream.
+      const unregularizedDays = await unregularizedDaysForRange(emp._id, startDate, endDate);
       // "The maximum number of LOP allowed per pay period". Blank means no cap
       // — which is not the same as a cap of zero, so the check is on null
       // rather than on falsiness.
@@ -1651,7 +1656,11 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
         waivedOff: Math.max(0, rawLop - lopDays), carryOver: 0, reason: null, lopDays, lopHours: 0,
         // Only lopDays is deducted automatically. absentDays is surfaced for HR
         // to regularize or convert — a missing punch is not proof of absence.
-        absentDays, totalUnpayable: round2(lopDays + absentDays) });
+        absentDays, unregularizedDays,
+        // Deliberately excludes unregularizedDays: it is part of absentDays
+        // already, and nothing here deducts pay for it. The column is for
+        // seeing who is letting the window close, not for charging them.
+        totalUnpayable: round2(lopDays + absentDays) });
     }
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }

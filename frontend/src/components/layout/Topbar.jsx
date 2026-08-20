@@ -4,7 +4,7 @@ import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal, Settings as Setting
 import { serviceByKey, tabsOf, BASE as SETTINGS_BASE } from '../../pages/settings/serviceCatalog';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
-import { roleLabel } from '../../utils/roles';
+import { roleLabel, isFullAccess } from '../../utils/roles';
 import api from '../../utils/api';
 
 /* ── Section detection ─────────────────────────────────────────────── */
@@ -413,6 +413,10 @@ function SubNav({ items }) {
 /* ── Topbar ──────────────────────────────────────────────────────── */
 export default function Topbar() {
   const { user, logout } = useAuth();
+  // /settings is already restricted to admin, director and HR by its route.
+  // Showing the way in to everybody else meant a team member could click a
+  // gear and be bounced, which reads as broken rather than as not-for-you.
+  const canOpenSettings = isFullAccess(user);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -721,7 +725,9 @@ export default function Topbar() {
           </div>
 
           {/* Settings, next to notifications. It was reachable only from inside
-              the avatar menu, which is two clicks and a guess. */}
+              the avatar menu, which is two clicks and a guess. Hidden entirely
+              for anyone the page itself would refuse. */}
+          {canOpenSettings && (
           <button
             onClick={() => navigate('/settings')}
             aria-label="Settings"
@@ -732,6 +738,7 @@ export default function Topbar() {
           >
             <SettingsIcon size={17} />
           </button>
+          )}
 
           <div className="w-px h-5 bg-white/20"/>
 
@@ -763,7 +770,9 @@ export default function Topbar() {
                 </div>
                 <div className="py-1">
                   <button onClick={() => { navigate('/profile'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[15px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151]">My Profile</button>
+                  {canOpenSettings && (
                   <button onClick={() => { navigate('/settings'); setShowUserMenu(false); }} className="w-full text-left px-4 py-2.5 text-[15px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151]">Settings</button>
+                  )}
                   <div className="border-t border-slate-100 dark:border-[#374151] mt-1 pt-1">
                     <button onClick={logout} className="w-full text-left px-4 py-2.5 text-[15px] text-red-500 hover:bg-red-50 dark:hover:bg-[#450a0a] font-medium">Sign Out</button>
                     <button

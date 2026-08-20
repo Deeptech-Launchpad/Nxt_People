@@ -367,7 +367,9 @@ async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, qu
 }
 
 /**
- * Unmarked absences in a range: a past working day with no punch, no approved
+ * Unmarked absences in a range: a past working day with no approved leave and
+ * no on-duty, where the person either never punched OR punched in and never
+ * out. The second half is deliberate — see the query below. Previously: no
  * leave and no on-duty record.
  *
  * Deliberately NOT folded into lopDaysForRange(). Both are unpaid, but they are
@@ -393,10 +395,18 @@ async function absentDaysForRange(employeeId, startDate, endDate, holMap, rules,
 
   // Sequential for the same reason as lopDaysForRange: queryRunner may be a
   // single client inside a transaction.
+  // A day counts as attended only when BOTH punches are there. A check-in on
+  // its own used to be enough, so somebody who badged in and never badged out
+  // was reported present for a full day — the same day the regularization
+  // reminder chases them about. Two definitions of the same word in one
+  // system is how a report and an email end up contradicting each other.
+  //
+  // On-duty still counts without punches: the whole point of it is being
+  // somewhere there is no device.
   const att = await queryRunner.query(
     `SELECT date::text AS d FROM attendance
       WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date
-        AND (check_in IS NOT NULL OR status = 'on_duty')`,
+        AND ((check_in IS NOT NULL AND check_out IS NOT NULL) OR status = 'on_duty')`,
     [employeeId, start, end]
   );
   const punched = new Set(att.rows.map(r => r.d));
