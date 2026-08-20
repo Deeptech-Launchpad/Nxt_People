@@ -6,6 +6,7 @@ const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
 const { deadlineFor, isClosed: deadlinePassed } = require('../utils/regularizationWindow');
 const { isFullAccess } = require('../utils/roles');
+const { DEFAULT_TZ } = require('../utils/timezone');
 const { createNotification } = require('./notifications');
 const { createLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
 const { sendLeaveApprovalEmail } = require('../utils/mailer');
@@ -348,8 +349,8 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
           await client.query(
             `INSERT INTO attendance_sessions (attendance_id, employee_id, date, check_in, check_out, session_hours)
              VALUES ($1, $2, $3::date,
-               ($3::date + $4::time)::timestamp,
-               CASE WHEN $5::time IS NOT NULL THEN ($3::date + $5::time)::timestamp END,
+               (($3::date + $4::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC'),
+               CASE WHEN $5::time IS NOT NULL THEN (($3::date + $5::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC') END,
                COALESCE($6, 0))`,
             [row.id, reg.employee_id, reg.date, reg.check_in, reg.check_out, workingHours]
           );
@@ -358,11 +359,11 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
             : parseFloat(((parseFloat(row.working_hours) || 0) + workingHours).toFixed(8));
           await client.query(
             `UPDATE attendance
-             SET check_in = LEAST(check_in, ($2::date + $1::time)::timestamp),
+             SET check_in = LEAST(check_in, (($2::date + $1::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')),
                  check_out = CASE
                    WHEN $3::time IS NULL THEN check_out
-                   WHEN check_out IS NULL THEN ($2::date + $3::time)::timestamp
-                   ELSE GREATEST(check_out, ($2::date + $3::time)::timestamp) END,
+                   WHEN check_out IS NULL THEN (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')
+                   ELSE GREATEST(check_out, (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')) END,
                  working_hours = $5,
                  status = $6,
                  updated_at = NOW()
@@ -372,8 +373,8 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         } else if (exists.rows.length > 0) {
           await client.query(
             `UPDATE attendance
-             SET check_in = CASE WHEN $1::time IS NOT NULL THEN ($2::date + $1::time)::timestamp ELSE check_in END,
-                 check_out = CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp ELSE check_out END,
+             SET check_in = CASE WHEN $1::time IS NOT NULL THEN (($2::date + $1::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC') ELSE check_in END,
+                 check_out = CASE WHEN $3::time IS NOT NULL THEN (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC') ELSE check_out END,
                  working_hours = CASE WHEN $5::numeric IS NOT NULL THEN $5 ELSE working_hours END,
                  status = $6,
                  late_minutes = $7,
@@ -385,8 +386,8 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
           await client.query(
             `INSERT INTO attendance (employee_id, date, check_in, check_out, status, working_hours, late_minutes)
              VALUES ($1, $2,
-               CASE WHEN $3::time IS NOT NULL THEN ($2::date + $3::time)::timestamp END,
-               CASE WHEN $4::time IS NOT NULL THEN ($2::date + $4::time)::timestamp END,
+               CASE WHEN $3::time IS NOT NULL THEN (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC') END,
+               CASE WHEN $4::time IS NOT NULL THEN (($2::date + $4::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC') END,
                $5, $6, $7)`,
             [reg.employee_id, reg.date, reg.check_in, reg.check_out, newStatus, workingHours, newLateMinutes]
           );
