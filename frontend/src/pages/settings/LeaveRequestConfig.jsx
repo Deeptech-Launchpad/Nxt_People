@@ -187,6 +187,12 @@ export default function LeaveRequestConfig() {
       >
         <p className="text-[14px] text-slate-700 mb-2">
           Select applicable leave policies
+          <NotWired>Not built, deliberately</NotWired>
+        </p>
+        <p className="text-[12px] text-slate-500 mb-3 max-w-[520px]">
+          Raise a new request for the extra days instead. Extending an approved leave
+          would move its end date without the added day passing the approval chain —
+          a manager extending is level one, so higher levels would never see it.
         </p>
         {/* A checkbox list rather than a combo box: there are a handful of
             policies, and seeing which are selected matters more than saving

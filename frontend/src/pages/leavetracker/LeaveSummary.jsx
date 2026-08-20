@@ -3,9 +3,10 @@
  * Matches screenshot: 4 leave type cards + Apply Leave modal + Upcoming/Past holidays section
  */
 import React, { useState, useEffect, useCallback } from 'react';
+import CancelPartDialog from '../../components/CancelPartDialog';
 import { ChevronLeft, ChevronRight, Calendar, Clock, Plus, X, Info, ChevronDown, AlertTriangle, Eye } from 'lucide-react';
 import api from '../../utils/api';
-import { confirmCancel } from '../../utils/cancelLeave';
+import { confirmCancel, cancellationRules } from '../../utils/cancelLeave';
 import BackButton from '../../components/BackButton';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
@@ -352,6 +353,11 @@ export default function LeaveSummary() {
   const [cards, setCards]           = useState([]);
   const [leaves, setLeaves]         = useState([]);
   const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
+  const [partLeave, setPartLeave] = useState(null);
+  // Whether a reason is required is a setting, and the dialog needs to know
+  // before the user types rather than after the server refuses.
+  const [cancelRules, setCancelRules] = useState({});
+  useEffect(() => { cancellationRules().then(setCancelRules).catch(() => {}); }, []);
   const [holidays, setHolidays]     = useState([]);
   const [loading, setLoading]       = useState(true);
   const [showApply, setShowApply]   = useState(false);
@@ -579,6 +585,7 @@ export default function LeaveSummary() {
           balance={cards}
           onClose={() => setDetailLeave(null)}
           onCancel={(x) => { setDetailLeave(null); handleCancel(x._id); }}
+          onCancelPart={(x) => { setDetailLeave(null); setPartLeave(x); }}
         />
       )}
 
@@ -605,6 +612,14 @@ export default function LeaveSummary() {
           }}
         />
       )}
-    </div>
+            {partLeave && (
+          <CancelPartDialog
+            leave={partLeave}
+            reasonMandatory={!!cancelRules.cancellationReasonMandatory}
+            onClose={() => setPartLeave(null)}
+            onDone={load}
+          />
+        )}
+</div>
   );
 }

@@ -17,7 +17,7 @@
  *   kind                                    — 'leave' (default) | 'regularization'.
  */
 import React, { useState } from 'react';
-import { X, CheckCircle, CheckCheck, XCircle, Calendar, Clock, FileText, User, Hash, LogIn, LogOut, Eye, ArrowLeft, MessageSquare } from 'lucide-react';
+import { X, CheckCircle, CheckCheck, XCircle, Calendar, Clock, FileText, User, Hash, LogIn, LogOut, Eye, ArrowLeft, MessageSquare, Scissors } from 'lucide-react';
 import ApprovalTimeline from './ApprovalTimeline';
 
 const TYPE_LABEL = { casual: 'Casual Leave', comp_off: 'Compensatory Off', unpaid: 'Leave Without Pay', permission: 'Permission', sick: 'Sick Leave', earned: 'Earned Leave' };
@@ -89,7 +89,7 @@ function BalanceCard({ leave, balanceCards }) {
   );
 }
 
-export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct = false, onApprove, onApproveAll, onReject, onCancel, defaultView = 'details' }) {
+export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct = false, onApprove, onApproveAll, onReject, onCancel, onCancelPart, defaultView = 'details' }) {
   const [view, setView] = useState(defaultView);   // 'details' | 'timeline'
   const [comment, setComment] = useState('');
   const [acting, setActing] = useState(false);
@@ -124,6 +124,10 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
   // cancel this particular leave is the server's call; it answers 403 with a
   // reason, which surfaces as a toast.
   const showCancel = typeof onCancel === 'function' && ['pending', 'approved'].includes(status);
+  // Only offered on a range: cancelling "part" of a single day is just
+  // cancelling it, and offering both would be two buttons for one outcome.
+  const isRange = String(leave.startDate || '').slice(0, 10) !== String(leave.endDate || '').slice(0, 10);
+  const showCancelPart = typeof onCancelPart === 'function' && showCancel && isRange && !isReg && !isWfh;
   const c = () => comment.trim() || undefined;
 
   return (
@@ -236,6 +240,11 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
             <div className="flex items-center justify-end gap-2">
               {/* The dismiss button doubles as Cancel Leave when a cancel handler
                   is provided — cancelling marks the request 'cancelled'. */}
+              {showCancelPart && (
+                <button onClick={() => onCancelPart(leave)} className="flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg text-[15px] font-medium transition-colors">
+                  <Scissors size={15} /> Cancel part
+                </button>
+              )}
               {showCancel ? (
                 <button onClick={() => onCancel(leave)} className="flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg text-[15px] font-semibold transition-colors">
                   <XCircle size={15} /> Cancel Leave

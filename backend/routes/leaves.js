@@ -14,7 +14,8 @@ const logger = require('../logger');
 const { fire } = require('../utils/workflowEngine');
 const { canCancel, loadConfig } = require('../utils/leaveCancellation');
 const { availableFor, debitOnApproval, refundApproved, typeCode: dbTypeCode } = require('../utils/leaveBalance');
-const { canExtend, partialAllowed } = require('../utils/leaveExtension');
+const { partialAllowed } = require('../utils/leaveExtension');
+const { notifyChainOfCancellation } = require('../utils/cancellationNotice');
 const { approvalEmail, outcomeEmail } = require('../utils/approvalMessages');
 
 router.use(protect);
@@ -850,6 +851,9 @@ router.put('/:id/cancel', async (req, res) => {
       '/leave-tracker/summary'
     ).catch(() => {});
     await logAudit(req, { action: 'CANCEL', resource: 'Leave', resourceId: leave.id, changes: { prior_status: leave.status, status: 'cancelled', matrix_row: verdict.row, balance_source: leave.balance_source || null, reason: reason || null } });
+    // The people who approved it are told it is gone. Fire-and-forget: the
+    // cancellation is already committed, so a mail failure must not undo it.
+    notifyChainOfCancellation({ leave, actor: req.user, kind: 'full' });
     return res.json({ success: true, status: 'cancelled', message: 'Leave cancelled.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -948,6 +952,7 @@ router.delete('/:id', async (req, res) => {
         reason: cancelReason || null,
       },
     });
+    notifyChainOfCancellation({ leave, actor: req.user, kind: 'full' });
     res.json({ success: true, message: 'Leave cancelled' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -1217,134 +1222,19 @@ router.get('/pending-approvals', async (req, res) => {
   }
 });
 
-// ── PUT extend a leave ─────────────────────────────────────────────────────
+// Leave extension was built here and removed deliberately.
 //
-// Leave Tracker > Configuration > Leave Request > "Leave extension": who can
-// extend requests that are already submitted, approved, or pending approval,
-// and for which policies. Stored and ignored until now.
+// It let an approved leave grow by moving its end date, which sounds tidy
+// — one absence, one record — and is not. The approval chain has several
+// levels; a manager extending is level one, so levels two and three would
+// never see the added day. Applying it immediately therefore skipped part of
+// the hierarchy, and sending it back through the chain made it a new leave
+// request with extra machinery bolted on. Either way worse than the thing
+// that already works.
 //
-// Extending moves the end date later on the same request rather than raising a
-// second one, so the employee keeps one record for one absence. The extra days
-// are charged the same way the original was: a pending leave has reserved
-// nothing yet, an approved one is debited immediately for the difference.
-router.put('/:id/extend', async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const leave = (await client.query(
-      `SELECT * FROM leaves WHERE id = $1 FOR UPDATE`, [req.params.id])).rows[0];
-    if (!leave) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Leave not found' }); }
-
-    if (leave.status !== 'pending' && leave.status !== 'approved') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: `A ${leave.status} leave cannot be extended.` });
-    }
-
-    const newEnd = String(req.body?.endDate || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(newEnd)) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'A new end date is required, as YYYY-MM-DD' });
-    }
-    const currentEnd = ymdLocal(leave.end_date);
-    if (newEnd <= currentEnd) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        message: `The new end date must be after the current one (${currentEnd}). To shorten a leave, cancel part of it instead.`,
-      });
-    }
-
-    const config = await loadConfig();
-    const verdict = await canExtend({ user: req.user, leave, config });
-    if (!verdict.allowed) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ success: false, message: verdict.reason });
-    }
-    const reason = String(req.body?.reason || '').trim();
-    if (config.extension?.reasonMandatory && !reason) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'A reason for extending is required.' });
-    }
-
-    // Only the working days actually added are charged — a Sunday tacked on the
-    // end costs nothing, exactly as it would have on the original request.
-    const dayAfter = new Date(`${currentEnd}T00:00:00`);
-    dayAfter.setDate(dayAfter.getDate() + 1);
-    const extraDays = await countWorkingDays(ymdLocal(dayAfter), newEnd);
-    if (extraDays <= 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        message: 'Those extra dates are all non-working days, so there is nothing to extend by.',
-      });
-    }
-
-    // Overlap has to be re-checked against the new tail: another request may
-    // already sit in the days being claimed.
-    const clash = await client.query(
-      `SELECT 1 FROM leaves
-        WHERE employee_id = $1 AND id <> $2
-          AND status IN ('pending', 'pending_approval', 'approved')
-          AND start_date <= $4::date AND end_date >= $3::date
-        LIMIT 1`,
-      [leave.employee_id, leave.id, ymdLocal(dayAfter), newEnd]);
-    if (clash.rows.length) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'Another leave request already covers part of those dates.' });
-    }
-
-    const year = new Date(leave.start_date).getFullYear();
-    if (leave.leave_type !== 'unpaid') {
-      const { available } = await availableFor(client, leave.employee_id, leave.leave_type, year);
-      if (available !== null && available < extraDays) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient ${leave.leave_type} leave balance for ${extraDays} more day(s). Available: ${available}`,
-        });
-      }
-      // An approved leave has already been debited for its original span, so
-      // the extra days are taken now. A pending one has reserved nothing yet
-      // and is charged when it is approved, like any other pending request.
-      if (leave.status === 'approved') {
-        await debitOnApproval(client, {
-          employeeId: leave.employee_id, leaveType: leave.leave_type, days: extraDays, year,
-        });
-      }
-    }
-
-    const updated = (await client.query(
-      `UPDATE leaves
-          SET end_date = $2::date,
-              total_days = total_days + $3,
-              extension_reason = $4,
-              extended_by = $5,
-              extended_at = NOW(),
-              updated_at = NOW()
-        WHERE id = $1
-      RETURNING id AS "_id", leave_type AS "leaveType", start_date AS "startDate",
-                end_date AS "endDate", total_days AS "totalDays", status`,
-      [leave.id, newEnd, extraDays, reason || null, req.user._id])).rows[0];
-
-    await client.query('COMMIT');
-
-    await logAudit(req, {
-      action: 'EXTEND', resource: 'Leave', resourceId: leave.id,
-      changes: {
-        from: currentEnd, to: newEnd, added_days: extraDays,
-        prior_status: leave.status, matrix_row: verdict.row, reason: reason || null,
-      },
-    });
-    await createNotification(leave.employee_id, 'leave', 'Leave Extended',
-      `Your ${leave.leave_type} leave now runs to ${newEnd} (${extraDays} more day(s)).`,
-      '/leave-tracker/summary').catch(() => {});
-
-    return res.json({ success: true, data: updated, message: `Extended by ${extraDays} day(s).` });
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    return serverError(res, err, 'extend leave');
-  } finally { client.release(); }
-});
+// Raising a second request is the answer. The settings card says so.
+// leaves.extension_reason / extended_by / extended_at stay on the table:
+// dropping columns is riskier than leaving three unused ones.
 
 // ── PUT cancel part of a leave ─────────────────────────────────────────────
 //
@@ -1519,6 +1409,10 @@ router.put('/:id/cancel-partial', async (req, res) => {
         matrix_row: verdict.row, balance_source: leave.balance_source || null,
         reason: reason || null,
       },
+    });
+    notifyChainOfCancellation({
+      leave, actor: req.user, kind: 'partial',
+      detail: { from, to, days: removedDays, shape: outcome.shape, remaining: outcome.remaining },
     });
     await createNotification(leave.employee_id, 'leave', 'Leave Partly Cancelled',
       `${removedDays} day(s) of your ${leave.leave_type} leave (${from} to ${to}) were cancelled.`,

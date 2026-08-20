@@ -1,11 +1,12 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Plus, X, Calendar, Eye } from 'lucide-react';
 import api from '../utils/api';
-import { confirmCancel } from '../utils/cancelLeave';
+import { confirmCancel, cancellationRules } from '../utils/cancelLeave';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import BackButton from '../components/BackButton';
 import LeaveDetailModal from '../components/LeaveDetailModal';
+import CancelPartDialog from '../components/CancelPartDialog';
 import CompOffDetailModal from '../components/CompOffDetailModal';
 
 const STATUS_STYLE = {
@@ -40,6 +41,11 @@ export default function Leave() {
   const [form, setForm] = useState(initForm);
   const [saving, setSaving] = useState(false);
   const [detailLeave, setDetailLeave] = useState(null);
+  const [partLeave, setPartLeave] = useState(null);
+  // Whether a reason is required is a setting, and the dialog needs to know
+  // before the user types rather than after the server refuses.
+  const [cancelRules, setCancelRules] = useState({});
+  useEffect(() => { cancellationRules().then(setCancelRules).catch(() => {}); }, []);
   const [compOffs, setCompOffs] = useState([]);
   const [viewCompOff, setViewCompOff] = useState(null);
 
@@ -306,6 +312,7 @@ export default function Leave() {
           balance={balanceCards}
           onClose={() => setDetailLeave(null)}
           onCancel={(x) => { setDetailLeave(null); handleCancel(x._id); }}
+          onCancelPart={(x) => { setDetailLeave(null); setPartLeave(x); }}
         />
       )}
 
@@ -316,6 +323,14 @@ export default function Leave() {
           onClose={() => setViewCompOff(null)}
         />
       )}
-    </div>
+            {partLeave && (
+          <CancelPartDialog
+            leave={partLeave}
+            reasonMandatory={!!cancelRules.cancellationReasonMandatory}
+            onClose={() => setPartLeave(null)}
+            onDone={load}
+          />
+        )}
+</div>
   );
 }
