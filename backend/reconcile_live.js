@@ -167,17 +167,23 @@ const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
     r => `${r.code} ${r.name} on ${r.d}: stored ${r.stored}h, punches say ${r.derived}h`);
 
   // The two shapes that cannot be a split shift, and are wrong either way.
+  // Tolerance, not equality. A pair of punches seconds apart is not literally
+  // equal but is still no elapsed time, and an exact test let those through.
   await q('no day claims hours with no elapsed time between the punches',
     `SELECT e.employee_id AS code, TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name,
-            a.date::text AS d, a.working_hours AS stored, a.check_in, a.check_out
+            a.date::text AS d, a.working_hours AS stored,
+            ROUND(EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0, 3) AS span
        FROM attendance a JOIN employees e ON e.id = a.employee_id
       WHERE a.date BETWEEN $1::date AND $2::date
         AND a.check_in IS NOT NULL AND a.check_out IS NOT NULL
-        AND a.check_in = a.check_out AND COALESCE(a.working_hours, 0) > 0
+        AND EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0 < 0.05
+        AND COALESCE(a.working_hours, 0) > 0.05
       ORDER BY a.date LIMIT 200`,
     [START, END],
-    r => `${r.code} ${r.name} on ${r.d}: ${r.stored}h stored, but checked in and out at the same moment`);
+    r => `${r.code} ${r.name} on ${r.d}: ${r.stored}h stored, but the punches are only ${r.span}h apart`);
 
+  // Likewise: a span of a few seconds stored as zero hours is agreement, not
+  // a fault. Only a real span recorded as nothing is worth reporting.
   await q('no day was worked and recorded as zero hours',
     `SELECT e.employee_id AS code, TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name,
             a.date::text AS d,
@@ -185,11 +191,26 @@ const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
        FROM attendance a JOIN employees e ON e.id = a.employee_id
       WHERE a.date BETWEEN $1::date AND $2::date
         AND a.check_in IS NOT NULL AND a.check_out IS NOT NULL
-        AND a.check_out > a.check_in
+        AND EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0 > 0.05
         AND COALESCE(a.working_hours, 0) = 0
       ORDER BY a.date LIMIT 200`,
     [START, END],
     r => `${r.code} ${r.name} on ${r.d}: punches span ${r.derived}h but the day is stored as 0`);
+
+  // Not a fault, but worth seeing: somebody tapped in and out again within a
+  // minute. The day is consistent — zero span, zero hours — and reads as a
+  // full working day nowhere, but it is also not a day anybody worked.
+  await q('nobody checked in and straight back out within a minute',
+    `SELECT e.employee_id AS code, TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name,
+            a.date::text AS d,
+            ROUND(EXTRACT(EPOCH FROM (a.check_out - a.check_in)))::int AS seconds
+       FROM attendance a JOIN employees e ON e.id = a.employee_id
+      WHERE a.date BETWEEN $1::date AND $2::date
+        AND a.check_in IS NOT NULL AND a.check_out IS NOT NULL
+        AND EXTRACT(EPOCH FROM (a.check_out - a.check_in)) BETWEEN 0 AND 60
+      ORDER BY a.date LIMIT 200`,
+    [START, END],
+    r => `${r.code} ${r.name} on ${r.d}: in and out again after ${r.seconds} second(s)`);
 
   await q('one attendance row per person per day',
     `SELECT e.employee_id AS code, TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name,
