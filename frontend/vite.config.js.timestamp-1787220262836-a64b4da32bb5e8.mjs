@@ -1,0 +1,19 @@
+// vite.config.js
+import { defineConfig } from "file:///D:/Projects/Nxt_People_source/frontend/node_modules/vite/dist/node/index.js";
+import react from "file:///D:/Projects/Nxt_People_source/frontend/node_modules/@vitejs/plugin-react/dist/index.js";
+var vite_config_default = defineConfig({
+  plugins: [react()],
+  // Trailing slash on the proxy key matters: it stops `/api-connections`
+  // (a frontend route) from being mis-routed to the backend just because
+  // it starts with `/api`. Only `/api/...` paths get proxied now.
+  // `/uploads/` proxies static file downloads (resumes, ID proofs, etc.)
+  // served by Express; production nginx mirrors this routing.
+  server: { port: 5173, proxy: {
+    "/api/": { target: "http://localhost:5000", changeOrigin: true },
+    "/uploads/": { target: "http://localhost:5000", changeOrigin: true }
+  } }
+});
+export {
+  vite_config_default as default
+};
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsidml0ZS5jb25maWcuanMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbImNvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9kaXJuYW1lID0gXCJEOlxcXFxQcm9qZWN0c1xcXFxOeHRfUGVvcGxlX3NvdXJjZVxcXFxmcm9udGVuZFwiO2NvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9maWxlbmFtZSA9IFwiRDpcXFxcUHJvamVjdHNcXFxcTnh0X1Blb3BsZV9zb3VyY2VcXFxcZnJvbnRlbmRcXFxcdml0ZS5jb25maWcuanNcIjtjb25zdCBfX3ZpdGVfaW5qZWN0ZWRfb3JpZ2luYWxfaW1wb3J0X21ldGFfdXJsID0gXCJmaWxlOi8vL0Q6L1Byb2plY3RzL054dF9QZW9wbGVfc291cmNlL2Zyb250ZW5kL3ZpdGUuY29uZmlnLmpzXCI7aW1wb3J0IHsgZGVmaW5lQ29uZmlnIH0gZnJvbSAndml0ZSdcbmltcG9ydCByZWFjdCBmcm9tICdAdml0ZWpzL3BsdWdpbi1yZWFjdCdcbmV4cG9ydCBkZWZhdWx0IGRlZmluZUNvbmZpZyh7XG4gIHBsdWdpbnM6IFtyZWFjdCgpXSxcbiAgLy8gVHJhaWxpbmcgc2xhc2ggb24gdGhlIHByb3h5IGtleSBtYXR0ZXJzOiBpdCBzdG9wcyBgL2FwaS1jb25uZWN0aW9uc2BcbiAgLy8gKGEgZnJvbnRlbmQgcm91dGUpIGZyb20gYmVpbmcgbWlzLXJvdXRlZCB0byB0aGUgYmFja2VuZCBqdXN0IGJlY2F1c2VcbiAgLy8gaXQgc3RhcnRzIHdpdGggYC9hcGlgLiBPbmx5IGAvYXBpLy4uLmAgcGF0aHMgZ2V0IHByb3hpZWQgbm93LlxuICAvLyBgL3VwbG9hZHMvYCBwcm94aWVzIHN0YXRpYyBmaWxlIGRvd25sb2FkcyAocmVzdW1lcywgSUQgcHJvb2ZzLCBldGMuKVxuICAvLyBzZXJ2ZWQgYnkgRXhwcmVzczsgcHJvZHVjdGlvbiBuZ2lueCBtaXJyb3JzIHRoaXMgcm91dGluZy5cbiAgc2VydmVyOiB7IHBvcnQ6IDUxNzMsIHByb3h5OiB7XG4gICAgJy9hcGkvJzogICAgIHsgdGFyZ2V0OiAnaHR0cDovL2xvY2FsaG9zdDo1MDAwJywgY2hhbmdlT3JpZ2luOiB0cnVlIH0sXG4gICAgJy91cGxvYWRzLyc6IHsgdGFyZ2V0OiAnaHR0cDovL2xvY2FsaG9zdDo1MDAwJywgY2hhbmdlT3JpZ2luOiB0cnVlIH0sXG4gIH0gfVxufSlcbiJdLAogICJtYXBwaW5ncyI6ICI7QUFBNFMsU0FBUyxvQkFBb0I7QUFDelUsT0FBTyxXQUFXO0FBQ2xCLElBQU8sc0JBQVEsYUFBYTtBQUFBLEVBQzFCLFNBQVMsQ0FBQyxNQUFNLENBQUM7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEsRUFNakIsUUFBUSxFQUFFLE1BQU0sTUFBTSxPQUFPO0FBQUEsSUFDM0IsU0FBYSxFQUFFLFFBQVEseUJBQXlCLGNBQWMsS0FBSztBQUFBLElBQ25FLGFBQWEsRUFBRSxRQUFRLHlCQUF5QixjQUFjLEtBQUs7QUFBQSxFQUNyRSxFQUFFO0FBQ0osQ0FBQzsiLAogICJuYW1lcyI6IFtdCn0K
