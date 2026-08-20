@@ -127,6 +127,11 @@ app.use('/api/auth',             authLimiter, require('./routes/auth'));
 app.use('/api/mfa',              require('./routes/mfa'));
 app.use('/api/employees',        require('./routes/employees'));
 app.use('/api/attendance',       require('./routes/attendance'));
+// Editing a reportee's entry. Its own file because the checks it needs — the
+// setting, the reporting line, the audit trail — do not belong in the punch
+// routes, and mounting it under /api/attendance would be caught by that
+// router's own /:something handlers.
+app.use('/api/attendance-entry', require('./routes/attendance-entry'));
 app.use('/api/leaves',           require('./routes/leaves'));
 app.use('/api/leave-types',      require('./routes/leave-types'));
 app.use('/api/timesheets',       require('./routes/timesheets'));

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Check, Note, NotWired, useConfigSection, SaveBar, Spinner } from '../configKit';
+import { Card, Check, Note, useConfigSection, SaveBar, Spinner } from '../configKit';
 
 // Check In and Check Out — who may record attendance, who may see and change
 // someone else's, and what the system says when a day looks wrong.
@@ -93,7 +93,6 @@ export default function CheckInOutConfig() {
                 onChange={e => setIn('notifyOnReporteeEdit', { email: e.target.value })}
                 className="w-[240px] text-[14px] rounded-md border border-slate-300 px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400"
               />
-              <NotWired>Editing a reportee's entry is not built, so there is nothing to notify about</NotWired>
             </div>
           )}
         </div>

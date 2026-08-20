@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Search, Phone, ChevronDown } from 'lucide-react';
+import { EditEntryButton } from '../../components/EditAttendanceEntry';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -82,11 +83,16 @@ export default function TeamAttendance() {
           </div>
 
           {/* Phone icon — only shown when the employee has a number on record */}
-          {person.phone && (
-            <a href={`tel:${person.phone}`} className="text-slate-300 hover:text-blue-500 transition-colors flex-shrink-0">
-              <Phone size={15} />
-            </a>
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {person.phone && (
+              <a href={`tel:${person.phone}`} className="text-slate-300 hover:text-blue-500 transition-colors">
+                <Phone size={15} />
+              </a>
+            )}
+            {/* Renders nothing unless editing a reportee's entries is switched
+                on, so it never appears where pressing it would be refused. */}
+            <EditEntryButton employee={person} date={date} onSaved={() => fetchTeamAttendance(true)} />
+          </div>
         </div>
 
         {/* Shift info */}
