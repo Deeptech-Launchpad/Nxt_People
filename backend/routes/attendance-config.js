@@ -87,6 +87,8 @@ const CALC_MODES = ['every', 'first_last'];
 // Kept in step with utils/attendanceRule.js, which is what actually enforces
 // them. Rejecting an unknown mode here means the engine never has to guess.
 const { MODES: RULE_MODES } = require('../utils/attendanceRule');
+const { reprocess } = require('../utils/attendanceReprocess');
+const { DEFAULT_TZ } = require('../utils/timezone');
 const PERIODS = ['week', 'month', 'year'];
 const ENTRY_MODES = ['create', 'replace'];
 
@@ -399,6 +401,63 @@ const SECTIONS = {
     }),
   },
 };
+
+// "Update older attendance entries" on the policy screen.
+//
+// A day's status is written at check-out under the policy in force that
+// afternoon, so changing the policy leaves older days saying what the old rule
+// said. This re-applies the current one — but only when asked, only from the
+// effective date, and only to `status`. The punches and the hours are the
+// record of what happened; the policy decides what to call it.
+//
+// Reports before it writes: the default is a dry run, and applying is a second
+// deliberate call. Declared above the section routes so '/policy/reprocess' is
+// not swallowed by '/:section'.
+router.post('/policy/reprocess', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  const apply = req.body?.apply === true;
+  const client = await pool.connect();
+  try {
+    const r = await client.query(
+      `SELECT expected_hours_mode AS "expectedMode",
+              expected_hours_per_day AS "expectedFullDay",
+              expected_half_day_hours AS "expectedHalfDay",
+              COALESCE(timezone, $1) AS tz,
+              attendance_policy_config AS policy
+         FROM settings LIMIT 1`, [DEFAULT_TZ]);
+    const s = r.rows[0] || {};
+    const policy = s.policy || {};
+    const cfg = {
+      ...policy,
+      expectedMode: s.expectedMode || 'manual',
+      expectedFullDay: Number(s.expectedFullDay ?? 8),
+      expectedHalfDay: Number(s.expectedHalfDay ?? 4),
+    };
+
+    // No effective date means the policy has always applied, so there is no
+    // earlier month to protect. '1970-01-01' rather than null keeps the query
+    // to one shape.
+    const from = policy.ruleEffectiveFrom || policy.absentEffectiveFrom || '1970-01-01';
+
+    const result = await reprocess(client, { cfg, from, tz: s.tz, apply });
+
+    if (apply && result.written) {
+      await logAudit(req, {
+        action: 'UPDATE',
+        resource: 'Attendance configuration',
+        resourceId: 'policy',
+        changes: {
+          section: 'policy',
+          summary: `re-applied the policy to ${result.written} older day(s) from ${from}`,
+          fields: result.transitions.map(t => ({ field: t.label, from: null, to: t.count })),
+        },
+      });
+    }
+
+    res.json({ success: true, data: { ...result, from, applied: apply } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+  } finally { client.release(); }
+});
 
 router.get('/:section', async (req, res) => {
   const section = SECTIONS[req.params.section];

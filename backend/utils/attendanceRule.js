@@ -104,10 +104,16 @@ function expectedFor(cfg = {}, shiftHours = null) {
   // would make every day a full present day.
   const hasShift = shiftHours !== null && shiftHours !== undefined
     && Number.isFinite(Number(shiftHours)) && Number(shiftHours) > 0;
-  const full = cfg.expectedMode === 'shift' && hasShift
-    ? Number(shiftHours)
-    : num(cfg.expectedFullDay, 8);
-  const half = num(cfg.expectedHalfDay, 4);
+  const useShift = cfg.expectedMode === 'shift' && hasShift;
+
+  // Shift mode takes both figures from the shift, exactly as the reference
+  // states them: "Full day: Duration of the shift", "Half day: Half of the
+  // shift duration". Keeping the org's half-day figure here would pair a
+  // 4-hour half day with an 8.5-hour full day, so somebody on a long shift
+  // would clear the half-day bar far too easily.
+  const full = useShift ? Number(shiftHours) : num(cfg.expectedFullDay, 8);
+  const half = useShift ? Number(shiftHours) / 2 : num(cfg.expectedHalfDay, 4);
+
   // A half day longer than a full day would classify everything as absent.
   return { full, half: Math.min(half, full) };
 }

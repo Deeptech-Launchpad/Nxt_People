@@ -157,8 +157,13 @@ check('a day with no punch and no leave is absent under every preset',
 console.log('\n════ Expected hours per employee ════\n');
 
 eq('manual mode uses the org figures', expectedFor(BASE), { full: 8, half: 4 });
+// The reference states both: "Full day: Duration of the shift" and
+// "Half day: Half of the shift duration". Keeping the org's 4h half day against
+// an 8.5h shift would let somebody clear the half-day bar far too easily.
 eq("shift mode takes the length of the employee's own shift",
-  expectedFor({ ...BASE, expectedMode: 'shift' }, 8.5), { full: 8.5, half: 4 });
+  expectedFor({ ...BASE, expectedMode: 'shift' }, 8.5), { full: 8.5, half: 4.25 });
+eq('and halves that shift for the half day, not the org figure',
+  expectedFor({ ...BASE, expectedMode: 'shift' }, 9), { full: 9, half: 4.5 });
 eq('shift mode falls back to the org figure when the shift is unknown',
   expectedFor({ ...BASE, expectedMode: 'shift' }, null), { full: 8, half: 4 });
 check('a zero-length shift is treated as no shift, not a zero-hour day',

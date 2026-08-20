@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+import toast from 'react-hot-toast';
+import api from '../../../utils/api';
 import { Card, Check, Toggle, Note, NotWired, selectClass, useConfigSection, SaveBar, Spinner } from '../configKit';
 
 // Attendance Policy — how a day's hours are counted, and which days are paid.
@@ -72,6 +74,112 @@ function HoursField({ label, value, onChange, disabled }) {
   );
 }
 
+// "Update older attendance entries". Asks first, in two steps: a dry run that
+// reports what would move, then an apply the person has to choose. Only the
+// day's status changes — punches and hours are the record of what happened.
+function UpdateOlderEntries({ dirty }) {
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+
+  const run = async (apply) => {
+    setBusy(true);
+    try {
+      const r = await api.post('/attendance-config/policy/reprocess', { apply });
+      if (apply) { setDone(r.data.data); setPreview(null); }
+      else setPreview(r.data.data);
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Could not read the older entries');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div>
+      <p className="text-[13.5px] font-medium text-slate-700 mb-2">Update older attendance entries</p>
+
+      {/* Running this against a policy that has been edited but not saved would
+          re-apply the OLD one, which reads as the button not working. */}
+      {dirty ? (
+        <p className="text-[13px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
+          Save your changes first — this re-applies the saved policy, not the edits on screen.
+        </p>
+      ) : (
+        <button
+          onClick={() => run(false)} disabled={busy}
+          className="border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-60 text-slate-700 px-4 py-1.5 rounded-md text-[13.5px] font-semibold"
+        >
+          {busy && !preview ? 'Checking…' : 'Update'}
+        </button>
+      )}
+
+      {done && (
+        <div className="mt-3 text-[13px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3.5 py-2.5 max-w-[620px]">
+          {done.written} older {done.written === 1 ? 'day' : 'days'} updated to match the current policy.
+        </div>
+      )}
+
+      {preview && (
+        <div className="mt-3 border border-slate-200 rounded-lg px-4 py-3.5 max-w-[620px] bg-white">
+          {preview.changed === 0 ? (
+            <p className="text-[13.5px] text-slate-600">
+              Nothing to update — all {preview.finished} finished {preview.finished === 1 ? 'day' : 'days'} since{' '}
+              {preview.from} already match the current policy.
+            </p>
+          ) : (
+            <>
+              <p className="text-[13.5px] text-slate-800 font-medium">
+                {preview.changed} of {preview.finished} finished days would change.
+              </p>
+              <p className="text-[12.5px] text-slate-500 mt-0.5">
+                Counting from {preview.from}. Only the day&rsquo;s status moves — check-in,
+                check-out and hours stay exactly as recorded.
+              </p>
+              <div className="mt-2.5 space-y-1">
+                {preview.transitions.map(t => (
+                  <div key={t.label} className="flex items-center gap-2 text-[13px]">
+                    <span className="tabular-nums text-slate-800 font-medium w-12">{t.count}</span>
+                    <span className="text-slate-600">{t.label}</span>
+                  </div>
+                ))}
+              </div>
+              {preview.sample?.length > 0 && (
+                <details className="mt-2.5">
+                  <summary className="text-[12.5px] text-slate-500 cursor-pointer hover:text-slate-700">
+                    Show examples
+                  </summary>
+                  <div className="mt-2 space-y-1 max-h-[190px] overflow-y-auto">
+                    {preview.sample.map(s => (
+                      <div key={s.id} className="text-[12.5px] text-slate-500 tabular-nums">
+                        {s.code} &middot; {s.date} &middot; {Number(s.hours).toFixed(2)}h of {s.owed}h owed
+                        &nbsp;<span className="text-slate-400">{s.from} &rarr;</span>{' '}
+                        <span className="text-slate-700">{s.to}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+              <div className="mt-3.5 flex items-center gap-2">
+                <button
+                  onClick={() => run(true)} disabled={busy}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white px-4 py-1.5 rounded-md text-[13.5px] font-semibold"
+                >
+                  {busy ? 'Updating…' : `Update ${preview.changed} ${preview.changed === 1 ? 'day' : 'days'}`}
+                </button>
+                <button
+                  onClick={() => setPreview(null)}
+                  className="border border-slate-200 hover:bg-slate-50 px-3.5 py-1.5 rounded-md text-[13.5px] text-slate-600"
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AttendancePolicy() {
   const { config, set, setIn, loading, saving, dirty, save } =
     useConfigSection('policy', 'Attendance policy', 'attendance-config');
@@ -87,6 +195,11 @@ export default function AttendancePolicy() {
   const mode = ['strict', 'lenient', 'custom'].includes(config.mode)
     ? config.mode
     : (config.strictMode === false ? 'lenient' : 'strict');
+  // A half-day figure only means something where a half day can occur. Lenient
+  // never makes one, and Custom set to "absent" never makes one either, so both
+  // collapse to a single expected figure and a single ceiling.
+  const oneFigure = mode === 'lenient'
+    || (mode === 'custom' && config.shortDayBecomes !== 'half_day');
 
   return (
     <div className="space-y-4 pb-4">
@@ -232,10 +345,25 @@ export default function AttendancePolicy() {
                 <Radio name="expectedMode" label="Shift hours" checked={shiftMode}
                   onChange={() => set({ expectedMode: 'shift' })} />
               </div>
+              {/* Lenient never produces a half day — the punch decides the whole
+                  day — so asking for a half-day figure there would be asking for
+                  a number nothing reads. The reference collapses the box to one
+                  field for exactly that reason, and to "Duration of the shift"
+                  when the figures come from the shift. */}
               {shiftMode ? (
-                <p className="text-[13px] text-slate-500 max-w-[280px]">
-                  Each employee&rsquo;s expected hours come from the length of their own shift.
-                </p>
+                <div className="space-y-1.5 text-[13.5px] text-slate-700">
+                  {oneFigure ? (
+                    <p>Expected hours per day : <span className="text-slate-500">Duration of the shift</span></p>
+                  ) : (
+                    <>
+                      <p>Full day : <span className="text-slate-500">Duration of the shift</span></p>
+                      <p>Half day : <span className="text-slate-500">Half of the shift duration</span></p>
+                    </>
+                  )}
+                </div>
+              ) : oneFigure ? (
+                <HoursField label="Expected hours per day" value={config.expectedFullDay}
+                  onChange={v => set({ expectedFullDay: v })} />
               ) : (
                 <div className="space-y-2.5">
                   <HoursField label="Full day" value={config.expectedFullDay}
@@ -265,13 +393,29 @@ export default function AttendancePolicy() {
               label="Impose maximum hours per day"
               hint="A day is never counted as longer than this, however long the punches say"
             />
+            {/* Same reason as the expected-hours box: with no half day to cap,
+                the reference shows a single "Per Day" ceiling instead. */}
             {max.enabled && (
               <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-4 inline-block mt-3 ml-6 space-y-2.5">
-                <HoursField label="Full day" value={max.fullDay} onChange={v => setIn('maxHours', { fullDay: v })} />
-                <HoursField label="Half day" value={max.halfDay} onChange={v => setIn('maxHours', { halfDay: v })} />
+                {oneFigure ? (
+                  <HoursField label="Per day" value={max.fullDay} onChange={v => setIn('maxHours', { fullDay: v })} />
+                ) : (
+                  <>
+                    <HoursField label="Full day" value={max.fullDay} onChange={v => setIn('maxHours', { fullDay: v })} />
+                    <HoursField label="Half day" value={max.halfDay} onChange={v => setIn('maxHours', { halfDay: v })} />
+                  </>
+                )}
               </div>
             )}
           </div>
+
+          {/* A day's status is written at check-out under the policy in force
+              that afternoon, so changing the policy leaves older days saying
+              what the old rule said. This re-applies the current one. It shows
+              what would change before it changes anything — the reference has a
+              bare Update button, and a bare button here would rewrite thousands
+              of days on one click. */}
+          <UpdateOlderEntries dirty={dirty} />
 
           <div>
             <Check
