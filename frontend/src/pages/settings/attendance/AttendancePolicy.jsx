@@ -275,15 +275,9 @@ export default function AttendancePolicy() {
 
                 <div className="space-y-2.5 pt-1">
                   <Check
-                    checked={config.leaveReducesExpected !== false}
-                    onChange={v => set({ leaveReducesExpected: v })}
-                    label="Half-day leave halves what is expected that day"
-                    hint="Off means someone on approved half-day leave still has to work a full day to avoid being marked short."
-                  />
-                  <Check
                     checked={config.permissionReducesExpected !== false}
                     onChange={v => set({ permissionReducesExpected: v })}
-                    label="Approved permission reduces what is expected that day"
+                    label="Approved permission reduces the hours expected that day"
                     hint="Off means two hours of permission and six hours worked is marked short, which makes permission a punishment."
                   />
                   <Check
@@ -294,19 +288,69 @@ export default function AttendancePolicy() {
                   />
                 </div>
 
-                <div>
-                  <p className="text-[13.5px] font-medium text-slate-700 mb-2">On a half-day leave, the other half counts as</p>
-                  <div className="flex flex-wrap items-center gap-6">
-                    <Radio name="otherHalf" label="Leave"
-                      checked={config.halfDayLeaveOtherHalf !== 'absent'}
-                      onChange={() => set({ halfDayLeaveOtherHalf: 'leave' })} />
-                    <Radio name="otherHalf" label="Absent"
-                      checked={config.halfDayLeaveOtherHalf === 'absent'}
-                      onChange={() => set({ halfDayLeaveOtherHalf: 'absent' })} />
+                {/* These two both mention half-day leave and were easy to read
+                    as the same setting. They are not: one is the bar (how many
+                    hours are owed), the other is the label (what the half they
+                    were away for is called). Grouped and named as two
+                    questions so the difference is on the screen. */}
+                <div className="border border-slate-200 rounded-lg bg-white px-4 py-3.5 space-y-4">
+                  <p className="text-[13.5px] font-semibold text-slate-800">When someone takes half-day leave</p>
+
+                  <div>
+                    <p className="text-[13px] text-slate-600 mb-2">
+                      <span className="font-medium text-slate-700">Hours they must work that day</span>
+                    </p>
+                    <div className="flex flex-wrap items-center gap-6">
+                      <Radio name="leaveHours" label="Half of a normal day"
+                        checked={config.leaveReducesExpected !== false}
+                        onChange={() => set({ leaveReducesExpected: true })} />
+                      <Radio name="leaveHours" label="A full day"
+                        checked={config.leaveReducesExpected === false}
+                        onChange={() => set({ leaveReducesExpected: false })} />
+                    </div>
+                    <p className="text-[12px] text-slate-400 mt-1.5">
+                      {config.leaveReducesExpected !== false
+                        ? 'Work the other half and the day is fine.'
+                        : 'They must work a full day even though half of it was approved leave, or be marked short.'}
+                    </p>
                   </div>
-                  <p className="text-[12px] text-slate-400 mt-1.5">
-                    &ldquo;Absent&rdquo; takes the day off their balance and marks them away for it.
-                  </p>
+
+                  <div className="border-t border-slate-100 pt-3.5">
+                    <p className="text-[13px] text-slate-600 mb-2">
+                      <span className="font-medium text-slate-700">What the leave half is called on their record</span>
+                    </p>
+                    <div className="flex flex-wrap items-center gap-6">
+                      <Radio name="otherHalf" label="Leave"
+                        checked={config.halfDayLeaveOtherHalf !== 'absent'}
+                        onChange={() => set({ halfDayLeaveOtherHalf: 'leave' })} />
+                      <Radio name="otherHalf" label="Absent"
+                        checked={config.halfDayLeaveOtherHalf === 'absent'}
+                        onChange={() => set({ halfDayLeaveOtherHalf: 'absent' })} />
+                    </div>
+                    <p className="text-[12px] text-slate-400 mt-1.5">
+                      {config.halfDayLeaveOtherHalf === 'absent'
+                        ? 'The half day comes off their balance AND counts as an absence — charged twice for one approved leave.'
+                        : 'The half day comes off their balance. No absence is recorded.'}
+                    </p>
+                  </div>
+
+                  {/* One worked example, built from whatever the two settings
+                      above currently say, because the interaction between them
+                      is the part nobody can hold in their head. */}
+                  <div className="border-t border-slate-100 pt-3.5">
+                    <p className="text-[12.5px] text-slate-500">
+                      <span className="font-medium text-slate-600">So:</span> half-day leave in the morning,
+                      then four hours worked in the afternoon &rarr;{' '}
+                      <span className="text-slate-700">
+                        {config.leaveReducesExpected === false && config.halfDayLeaveOtherHalf === 'absent'
+                          ? 'the whole day absent'
+                          : `half ${config.halfDayLeaveOtherHalf === 'absent' ? 'absent' : 'leave'}`
+                            + ` + half ${config.leaveReducesExpected !== false ? 'present' : 'absent'}`}
+                      </span>.
+                      {config.leaveReducesExpected === false
+                        && ' Four hours falls short of the full day still expected, so the afternoon counts against them too.'}
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
