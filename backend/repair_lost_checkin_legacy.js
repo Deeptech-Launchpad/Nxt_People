@@ -72,9 +72,21 @@ const minsOfDay = (v) => {
     return;
   }
 
-  const repairable = [], rejected = [];
+  const repairable = [], rejected = [], overstated = [];
   for (const r of rows) {
-    if (r.sessions > 0) { rejected.push({ r, why: 'has sessions — use repair_first_checkin.js' }); continue; }
+    const impliedFromCreated = (new Date(r.check_out) - new Date(r.created_at)) / 3600000;
+
+    // Hours that exceed the whole day are not a lost arrival; they are hours
+    // counted twice, and they overstate rather than merely mislabel.
+    if (Number(r.working_hours) - impliedFromCreated > TOLERANCE_H) {
+      overstated.push({ r, impliedH: impliedFromCreated });
+      continue;
+    }
+
+    if (r.sessions > 0) {
+      rejected.push({ r, why: `worked in ${r.sessions} session(s), arrival already correct` });
+      continue;
+    }
     const impliedH = (new Date(r.check_out) - new Date(r.created_at)) / 3600000;
     const diff = Math.abs(impliedH - Number(r.working_hours));
     if (!(impliedH > 0)) { rejected.push({ r, why: 'created_at is after check-out' }); continue; }
@@ -109,6 +121,18 @@ const minsOfDay = (v) => {
                 + `   late ${r.late_minutes} -> ${lateMins} min`
                 + (status !== r.status ? `   status ${r.status} -> ${status}` : ''));
     }
+  }
+
+  if (overstated.length) {
+    console.log(`\n  ${overstated.length} row(s) storing MORE hours than the day is long — a different`);
+    console.log(`  problem, and this script does not touch it:\n`);
+    for (const { r, impliedH } of overstated) {
+      console.log(`    ${r.code.padEnd(14)} ${r.d}   ${r.working_hours}h stored, but only ${impliedH.toFixed(2)}h`
+                + ` between first arrival and last exit`);
+    }
+    console.log(`\n    Hours counted twice, most likely a double check-out from before the`);
+    console.log(`    race guard existed. Unlike a lost arrival this OVERSTATES hours, so`);
+    console.log(`    it is worth deciding what the right figure is rather than guessing.`);
   }
 
   if (rejected.length) {
