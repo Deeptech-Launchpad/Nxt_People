@@ -40,7 +40,7 @@ pool.query = (text, params) => {
   return realQuery(text, params);
 };
 
-const { classifyDay } = require('./utils/attendanceRule');
+const { classifyDay, resolvePolicy } = require('./utils/attendanceRule');
 
 const ymd = (d) => {
   const x = d instanceof Date ? d : new Date(`${String(d).slice(0, 10)}T00:00:00`);
@@ -83,19 +83,32 @@ function defaultRange() {
        FROM settings LIMIT 1`)).rows[0] || {};
 
   const policy = s.policy || {};
+  // Spread the whole policy: reading only strictMode would silently preview
+  // Strict while the screen is set to Custom, which is the one mistake a
+  // preview must never make.
   const cfg = {
-    strictMode: policy.strictMode !== false,
+    ...policy,
     allowOvertimeAndDeviation: policy.allowOvertimeAndDeviation === true,
     expectedMode: s.expectedMode || 'manual',
     expectedFullDay: Number(s.expectedFullDay ?? 8),
     expectedHalfDay: Number(s.expectedHalfDay ?? 4),
   };
+  const effective = resolvePolicy(cfg);
 
   console.log('  Your settings as they stand');
   console.log(`    classified today against   full ${Number(s.presentAtLeast ?? 7.5)}h, half ${Number(s.halfDayAtLeast ?? 4)}h`);
-  console.log(`    Zoho would classify against full ${cfg.expectedFullDay}h, half ${cfg.expectedHalfDay}h  (the expected hours)`);
-  console.log(`    mode                       ${cfg.strictMode ? 'Strict' : 'Lenient'}`);
+  console.log(`    the rule would classify    full ${cfg.expectedFullDay}h, half ${cfg.expectedHalfDay}h  (the expected hours)`);
+  console.log(`    mode                       ${effective.mode}`);
+  console.log(`    a short day becomes        ${effective.shortDayBecomes}`);
+  console.log(`    tolerance                  ${effective.toleranceMinutes} min`);
+  console.log(`    half-day leave reduces     ${effective.leaveReducesExpected ? 'yes' : 'no'}`);
+  console.log(`    permission reduces         ${effective.permissionReducesExpected ? 'yes' : 'no'}`);
+  console.log(`    on-duty exempt             ${effective.exemptOnDuty ? 'yes' : 'no'}`);
   console.log(`    expected hours from        ${cfg.expectedMode === 'shift' ? "each employee's shift" : 'the org figure'}`);
+  if (cfg.expectedMode === 'shift') {
+    console.log('    !! in shift mode the expected day is the SHIFT LENGTH, so a');
+    console.log(`    !! 09:30-18:00 shift means 8.5h is required, not ${cfg.expectedFullDay}h`);
+  }
   console.log(`    overtime and deviation     ${cfg.allowOvertimeAndDeviation ? 'measured' : 'NOT measured — deficits would show as “—”'}\n`);
 
   // Finished days only. A day still running has somebody checked in and not
@@ -107,7 +120,26 @@ function defaultRange() {
             a.check_in IS NOT NULL OR a.check_out IS NOT NULL AS has_punch,
             a.check_out IS NOT NULL AS finished,
             EXTRACT(EPOCH FROM (sh.end_time::time - sh.start_time::time))/3600.0 AS shift_hours,
-            COALESCE(sh.grace_minutes, 15) AS grace
+            COALESCE(sh.grace_minutes, 15) AS grace,
+            -- Approved leave covering the day. A half day counts 0.5, and
+            -- permission is not leave at all: it is hours off inside a working
+            -- day, so it reduces what is owed rather than the day itself.
+            COALESCE((
+              SELECT MAX(CASE WHEN l.is_half_day THEN 0.5 ELSE 1 END)
+                FROM leaves l
+               WHERE l.employee_id = a.employee_id AND l.status = 'approved'
+                 AND l.leave_type <> 'permission'
+                 AND a.date BETWEEN l.start_date AND l.end_date), 0) AS leave_portion,
+            COALESCE((
+              SELECT SUM(COALESCE(l.hours, 0))
+                FROM leaves l
+               WHERE l.employee_id = a.employee_id AND l.status = 'approved'
+                 AND l.leave_type = 'permission'
+                 AND a.date BETWEEN l.start_date AND l.end_date), 0) AS permission_hours,
+            EXISTS (
+              SELECT 1 FROM on_duty_requests o
+               WHERE o.employee_id = a.employee_id AND o.status = 'approved'
+                 AND a.date BETWEEN o.start_date AND o.end_date) AS on_duty
        FROM attendance a
        JOIN employees e ON e.id = a.employee_id
        LEFT JOIN shifts sh ON sh.id = e.shift_id
@@ -128,6 +160,9 @@ function defaultRange() {
     const verdict = classifyDay({
       workedHours: Number(r.working_hours) || 0,
       hasPunch: r.has_punch,
+      leavePortion: Number(r.leave_portion) || 0,
+      permissionHours: Number(r.permission_hours) || 0,
+      onDuty: r.on_duty,
       lateMinutes: Number(r.late_minutes) || 0,
       graceMinutes: Number(r.grace) || 0,
       cfg,
@@ -140,7 +175,7 @@ function defaultRange() {
 
     // Deficit is reported whatever the org's tracking switch says, so this
     // preview can show what turning it on would reveal.
-    const shortfall = Math.max(0, cfg.expectedFullDay - (Number(r.working_hours) || 0));
+    const shortfall = Math.max(0, verdict.owed - (Number(r.working_hours) || 0));
     if (shortfall > 0.01) { totalDeficit += shortfall; deficitDays++; }
 
     // 'late' and 'present' are both a full present day; comparing the labels
@@ -172,8 +207,15 @@ function defaultRange() {
     const show = changed.slice(0, 25);
     for (const c of show) {
       console.log(`    ${pad(c.code, 14)} ${c.d}   ${h2(c.working_hours)} worked`);
+      const owedNote = c.verdict.owed !== cfg.expectedFullDay
+        ? `   owed ${c.verdict.owed}h`
+        + (Number(c.leave_portion) ? ' (half-day leave)' : '')
+        + (Number(c.permission_hours) ? ` (${Number(c.permission_hours)}h permission)` : '')
+        : '';
       console.log(`${' '.repeat(20)}${pad(c.status, 10)} -> ${pad(c.verdict.status, 10)}`
         + `  present ${c.verdict.present}, absent ${c.verdict.absent}`
+        + (c.verdict.leave ? `, leave ${c.verdict.leave}` : '')
+        + owedNote
         + (c.shortfall > 0.01 ? `   short by ${c.shortfall.toFixed(2)}h` : ''));
     }
     if (changed.length > show.length) {
@@ -191,6 +233,21 @@ function defaultRange() {
     }
     console.log('');
   }
+
+  const withLeave = finished.filter(r => Number(r.leave_portion) > 0 && Number(r.leave_portion) < 1).length;
+  const withPerm = finished.filter(r => Number(r.permission_hours) > 0).length;
+  const withOnDuty = finished.filter(r => r.on_duty).length;
+  console.log('──────────────────────────────────────────────────────────');
+  console.log('  The cases that reduce what is owed');
+  console.log('──────────────────────────────────────────────────────────\n');
+  console.log(`    ${withLeave} day(s) with half-day leave`);
+  console.log(`    ${withPerm} day(s) with approved permission`);
+  console.log(`    ${withOnDuty} day(s) approved on-duty`);
+  if (!withLeave && !withPerm) {
+    console.log('\n    Neither occurs in this range, so this run says nothing');
+    console.log('    about how those days would be treated. Widen the range.');
+  }
+  console.log('');
 
   console.log('──────────────────────────────────────────────────────────');
   console.log('  What deviation tracking would reveal');
