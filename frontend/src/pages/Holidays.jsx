@@ -157,9 +157,9 @@ export default function Holidays() {
   return (
     <div className="bg-white min-h-[calc(100vh-8rem)]">
       {/* Top Toolbar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4 px-6 py-4 border-b border-slate-200">
         {/* Left: back nav + admin buttons */}
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center shrink-0">
           <BackButton to="/leave-tracker" label="Leave Tracker" />
           {isFullAccess(user) && (
             <>
@@ -203,21 +203,21 @@ export default function Holidays() {
         </div>
 
         {/* Center: Year Navigation */}
-        <div className="flex items-center gap-4 absolute left-1/2 -translate-x-1/2">
-          <button onClick={() => setYear(y => y - 1)} className="text-[#1a73e8] hover:text-[#1557B0]">
+        <div className="flex items-center gap-4 flex-1 justify-center min-w-max">
+          <button onClick={() => setYear(y => y - 1)} aria-label="Previous year" className="shrink-0 text-[#1a73e8] hover:text-[#1557B0]">
             <ChevronLeft size={16} />
           </button>
           <div className="flex items-center gap-2 border border-[#1a73e8] rounded px-3 py-1 text-base text-slate-700 font-medium">
              <Calendar size={14} className="text-slate-400" />
-             <span>01/01/{year} - 31/12/{year}</span>
+             <span className="whitespace-nowrap">01/01/{year} - 31/12/{year}</span>
           </div>
-          <button onClick={() => setYear(y => y + 1)} className="text-[#1a73e8] hover:text-[#1557B0]">
+          <button onClick={() => setYear(y => y + 1)} aria-label="Next year" className="shrink-0 text-[#1a73e8] hover:text-[#1557B0]">
             <ChevronRight size={16} />
           </button>
         </div>
 
         {/* Right: view toggle + kebab menu. Both now have real handlers. */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <div className="flex border border-slate-200 rounded text-slate-400">
             <button
               type="button"

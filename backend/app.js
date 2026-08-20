@@ -135,7 +135,6 @@ app.use('/api/jobs',             require('./routes/jobs'));
 app.use('/api/reports',          require('./routes/reports'));
 app.use('/api/report-favorites', require('./routes/report-favorites'));
 app.use('/api/exports', require('./routes/exports'));
-app.use('/api/calendar', require('./routes/calendar-feed'));
 app.use('/api/shifts',           require('./routes/shifts'));
 app.use('/api/holidays',         require('./routes/holidays'));
 app.use('/api/weekend-rules',    require('./routes/weekend-rules'));

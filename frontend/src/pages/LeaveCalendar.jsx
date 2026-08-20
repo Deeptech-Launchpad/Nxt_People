@@ -1,6 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
-import CalendarSubscribe from '../components/CalendarSubscribe';
 import api from '../utils/api';
 import { useWeekendRules } from '../context/WeekendRulesContext';
 
@@ -244,7 +243,6 @@ export default function LeaveCalendar() {
             <div key={`end-empty-${i}`} className="border-r border-b border-slate-200 bg-white" />
           ))}
         </div>
-            <div className="mt-4"><CalendarSubscribe /></div>
 </div>
     </div>
   );

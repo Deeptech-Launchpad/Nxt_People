@@ -63,16 +63,9 @@ export default function LeaveAdditionalOptions() {
       </Card>
 
       <Card
-        title="Calendar subscription"
-        description="Leave and company holidays as a calendar people subscribe to, in Google, Outlook or anything else that reads iCal"
+        title="Google calendar and Microsoft 365 calendar integration"
+        description="Specify the leave display format for synced leaves"
       >
-        <Note>
-          Each person turns this on for themselves from their profile and gets a private
-          link. This is a one-way feed rather than a two-way integration with Google or
-          Microsoft — their calendar reads it, nothing writes back — which needs no sign-in
-          to either provider. The settings below decide what everyone else sees.
-        </Note>
-
         <div className="flex flex-wrap items-center gap-2">
           {format.map((part, i) => (
             <React.Fragment key={i}>
@@ -115,13 +108,14 @@ export default function LeaveAdditionalOptions() {
 
         <div className="mt-5 border border-slate-200 rounded-lg px-4 py-3">
           <Check
-            label="Set the event as free rather than busy, by leave type"
-            hint="With this on, unpaid leave and permission show as free, so a colleague looking for a meeting slot is not blocked out by them. Everything else shows as busy."
+            label="Update Microsoft 365 and Google calendar event status by leave type"
+            hint="Enable and set the preferred calendar event-status for leave types. If no preference is set, the event-status for synced leave will be 'Busy' by default."
             checked={cal.updateEventStatusByType}
             onChange={v => setIn('calendarSync', { updateEventStatusByType: v })}
           />
         </div>
         <p className="text-[12px] text-slate-400 mt-2">
+          Leave is not synced to an external calendar yet.<NotWired />
         </p>
       </Card>
 
