@@ -148,6 +148,9 @@ const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
     [START, END],
     r => `${r.code} ${r.name} on ${r.d}: in ${r.check_in}, out ${r.check_out}`);
 
+  // A day with more than one session legitimately has working_hours (the sum
+  // of the sessions) differing from check_out minus check_in (the span,
+  // including the gap between them). Only single-session days are compared.
   await q('stored working_hours match the punches',
     `SELECT e.employee_id AS code, TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name,
             a.date::text AS d, a.working_hours AS stored,
@@ -157,9 +160,36 @@ const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
         AND a.check_in IS NOT NULL AND a.check_out IS NOT NULL
         AND a.working_hours IS NOT NULL
         AND ABS(a.working_hours - EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0) > 0.05
+        AND (SELECT COUNT(*) FROM attendance_sessions s
+              WHERE s.employee_id = a.employee_id AND s.date = a.date) < 2
       ORDER BY a.date LIMIT 200`,
     [START, END],
     r => `${r.code} ${r.name} on ${r.d}: stored ${r.stored}h, punches say ${r.derived}h`);
+
+  // The two shapes that cannot be a split shift, and are wrong either way.
+  await q('no day claims hours with no elapsed time between the punches',
+    `SELECT e.employee_id AS code, TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name,
+            a.date::text AS d, a.working_hours AS stored, a.check_in, a.check_out
+       FROM attendance a JOIN employees e ON e.id = a.employee_id
+      WHERE a.date BETWEEN $1::date AND $2::date
+        AND a.check_in IS NOT NULL AND a.check_out IS NOT NULL
+        AND a.check_in = a.check_out AND COALESCE(a.working_hours, 0) > 0
+      ORDER BY a.date LIMIT 200`,
+    [START, END],
+    r => `${r.code} ${r.name} on ${r.d}: ${r.stored}h stored, but checked in and out at the same moment`);
+
+  await q('no day was worked and recorded as zero hours',
+    `SELECT e.employee_id AS code, TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name,
+            a.date::text AS d,
+            ROUND(EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0, 2) AS derived
+       FROM attendance a JOIN employees e ON e.id = a.employee_id
+      WHERE a.date BETWEEN $1::date AND $2::date
+        AND a.check_in IS NOT NULL AND a.check_out IS NOT NULL
+        AND a.check_out > a.check_in
+        AND COALESCE(a.working_hours, 0) = 0
+      ORDER BY a.date LIMIT 200`,
+    [START, END],
+    r => `${r.code} ${r.name} on ${r.d}: punches span ${r.derived}h but the day is stored as 0`);
 
   await q('one attendance row per person per day',
     `SELECT e.employee_id AS code, TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name,
@@ -359,11 +389,15 @@ const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
     if (errors.length) console.log(`  ${errors.length} check(s) could not be run:`);
     for (const e of errors) console.log(`    • ${e.message}`);
   }
-  console.log(`\n  Read-only throughout: ${blockedWrites.length} write attempt(s) refused, `
+  console.log(`\n  Read-only throughout: ${blockedWrites.length} write attempt(s) refused `
+            + `(1 of them this script testing its own guard), `
             + `${mailAttempts} mail attempt(s) refused.`);
-  if (blockedWrites.length) {
+  // The startup self-test is one of these by design; listing it as a
+  // suspicious write made the summary contradict its own safety section.
+  const foreign = blockedWrites.filter(w => !/first_name = first_name/.test(w));
+  if (foreign.length) {
     console.log('  Something tried to write during a read-only run, which is worth knowing:');
-    for (const w of [...new Set(blockedWrites)].slice(0, 5)) console.log(`    ${w}`);
+    for (const w of [...new Set(foreign)].slice(0, 5)) console.log(`    ${w}`);
   }
   console.log('══════════════════════════════════════════════════════════\n');
 
