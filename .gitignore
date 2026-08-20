@@ -22,3 +22,6 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Vite writes these while building and does not always clean them up
+frontend/vite.config.js.timestamp-*
