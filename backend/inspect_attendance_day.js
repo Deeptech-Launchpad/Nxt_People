@@ -43,17 +43,22 @@ async function inspect(code, date) {
   console.log(`──────────────────────────────────────────────────────────`);
 
   const a = (await pool.query(
-    `SELECT id, check_in, check_out, working_hours, status, late_minutes, created_at, updated_at
+    `SELECT id, check_in, check_out, working_hours, status, late_minutes, created_at, updated_at,
+            to_char(check_in,  'YYYY-MM-DD HH24:MI:SS') AS raw_in,
+            to_char(check_out, 'YYYY-MM-DD HH24:MI:SS') AS raw_out,
+            to_char(created_at,'YYYY-MM-DD HH24:MI:SS') AS raw_created
        FROM attendance WHERE employee_id = $1 AND date = $2::date`, [emp.id, date])).rows[0];
   if (!a) { console.log('  no attendance row for that day'); return; }
 
   console.log(`\n  The attendance row`);
-  console.log(`    check in      ${t(a.check_in)}`);
-  console.log(`    check out     ${t(a.check_out)}`);
+  // Stored text first, formatted second: if the two disagree the problem is
+  // the reading, not the row.
+  console.log(`    check in      ${a.raw_in || "—"}   (shown as ${t(a.check_in)})`);
+  console.log(`    check out     ${a.raw_out || "—"}   (shown as ${t(a.check_out)})`);
   console.log(`    span          ${hrs(a.check_in, a.check_out)} h`);
   console.log(`    stored hours  ${a.working_hours}`);
   console.log(`    status        ${a.status}    late ${a.late_minutes ?? '—'} min`);
-  console.log(`    created       ${t(a.created_at)}`);
+  console.log(`    created       ${a.raw_created || "—"}   (shown as ${t(a.created_at)})`);
   console.log(`    last updated  ${t(a.updated_at)}`);
 
   const s = (await pool.query(
