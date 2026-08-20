@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, CalendarCheck, CalendarDays, Clock } from 'lucide-react';
+import { Users, CalendarCheck, CalendarDays, Clock, History } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { roleLabel } from '../../utils/roles';
 import api from '../../utils/api';
@@ -98,6 +98,24 @@ export default function ServiceHub() {
             })}
           </div>
         )}
+
+        {/* Not a service — it configures nothing. It is the record of what the
+            services above were changed to, and it belongs on this page because
+            this is where somebody goes after asking "who changed that?". */}
+        <h3 className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mt-8 mb-4">Records</h3>
+        <button
+          type="button"
+          onClick={() => navigate('/audit')}
+          className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-sm px-4 py-3.5 transition-all text-left"
+        >
+          <History size={22} strokeWidth={1.6} className="text-blue-600 flex-shrink-0" />
+          <span className="min-w-0">
+            <span className="block text-[13.5px] font-medium text-slate-800">Change history</span>
+            <span className="block text-[12.5px] text-slate-500">
+              Every configuration change, who made it, and what it moved
+            </span>
+          </span>
+        </button>
       </div>
     </div>
   );

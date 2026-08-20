@@ -12,7 +12,9 @@ function getSection(pathname) {
   // Settings is its own section. Without this it fell through to 'home', so a
   // service workspace sat under My Space's tabs and the Overview / Dashboard /
   // Calendar / Profile sub-bar — three stacked bars where there should be one.
-  if (pathname.startsWith('/settings')) return 'settings';
+  // Change history records what the configuration screens did, so it belongs
+  // to the same section they do rather than announcing itself as its own area.
+  if (pathname.startsWith('/settings') || pathname.startsWith('/audit')) return 'settings';
   if (pathname.startsWith('/attendance')) return 'attendance';
   if (pathname.startsWith('/time-tracker')) return 'timetracker';
   if (pathname.startsWith('/leave-tracker') || pathname === '/leave' ||

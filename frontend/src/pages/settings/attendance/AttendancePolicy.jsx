@@ -82,6 +82,11 @@ export default function AttendancePolicy() {
   const pay = config.payDays || {};
   const night = config.lateNightHours || {};
   const shiftMode = config.expectedMode === 'shift';
+  // An older saved policy has strictMode but no mode. Deriving it here keeps
+  // that policy on the setting it already had rather than showing Custom.
+  const mode = ['strict', 'lenient', 'custom'].includes(config.mode)
+    ? config.mode
+    : (config.strictMode === false ? 'lenient' : 'strict');
 
   return (
     <div className="space-y-4 pb-4">
@@ -107,11 +112,117 @@ export default function AttendancePolicy() {
           <div>
             <p className="text-[13.5px] font-medium text-slate-700 mb-2.5">Expected hours per day</p>
             <div className="flex flex-wrap items-center gap-6 mb-3">
-              <Radio name="strictness" label="Strict mode" checked={config.strictMode !== false}
-                onChange={() => set({ strictMode: true })} />
-              <Radio name="strictness" label="Lenient mode" checked={config.strictMode === false}
-                onChange={() => set({ strictMode: false })} />
-              <NotWired>Strictness is saved, but not yet applied</NotWired>
+              <Radio name="strictness" label="Strict mode" checked={mode === 'strict'}
+                onChange={() => set({ mode: 'strict', strictMode: true })} />
+              <Radio name="strictness" label="Lenient mode" checked={mode === 'lenient'}
+                onChange={() => set({ mode: 'lenient', strictMode: false })} />
+              <Radio name="strictness" label="Custom" checked={mode === 'custom'}
+                onChange={() => set({ mode: 'custom', strictMode: true })} />
+              <NotWired>The rule is built and tested; attendance does not follow it yet</NotWired>
+            </div>
+
+            <p className="text-[13px] text-slate-500 mb-3 max-w-[620px]">
+              {mode === 'strict'
+                ? 'Hours decide the day. At or above the full-day figure it is present; between the half-day and full-day figures it is half present and half absent; below the half-day figure it is absent.'
+                : mode === 'lenient'
+                  ? 'The punch decides the day. Any check-in or check-out marks the person present however few hours they worked. The shortfall is still reported.'
+                  : 'The same rule with its decisions set below. Strict and Lenient are presets of this — Custom just unlocks them.'}
+            </p>
+
+            {mode === 'custom' && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-4 mb-4 space-y-4 max-w-[620px]">
+                <div>
+                  <p className="text-[13.5px] font-medium text-slate-700 mb-2">A day short of the expected hours becomes</p>
+                  <div className="flex flex-wrap items-center gap-6">
+                    <Radio name="shortDay" label="Absent"
+                      checked={config.shortDayBecomes !== 'half_day'}
+                      onChange={() => set({ shortDayBecomes: 'absent' })} />
+                    <Radio name="shortDay" label="A half day"
+                      checked={config.shortDayBecomes === 'half_day'}
+                      onChange={() => set({ shortDayBecomes: 'half_day' })} />
+                  </div>
+                  <p className="text-[12px] text-slate-400 mt-1.5">
+                    &ldquo;A half day&rdquo; is what the reference does. &ldquo;Absent&rdquo; means someone
+                    a few minutes short loses the whole day.
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-[13.5px] font-medium text-slate-700 mb-2">Tolerance</p>
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      type="number" min="0" max="240"
+                      value={config.toleranceMinutes ?? 0}
+                      onChange={e => set({ toleranceMinutes: e.target.value === '' ? 0 : Number(e.target.value) })}
+                      aria-label="Tolerance in minutes"
+                      className="w-24 text-[14px] rounded-md border border-slate-300 px-3 py-1.5 bg-white"
+                    />
+                    <span className="text-[13px] text-slate-500">minutes short still counts as a full day</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5 pt-1">
+                  <Check
+                    checked={config.leaveReducesExpected !== false}
+                    onChange={v => set({ leaveReducesExpected: v })}
+                    label="Half-day leave halves what is expected that day"
+                    hint="Off means someone on approved half-day leave still has to work a full day to avoid being marked short."
+                  />
+                  <Check
+                    checked={config.permissionReducesExpected !== false}
+                    onChange={v => set({ permissionReducesExpected: v })}
+                    label="Approved permission reduces what is expected that day"
+                    hint="Off means two hours of permission and six hours worked is marked short, which makes permission a punishment."
+                  />
+                  <Check
+                    checked={!!config.exemptOnDuty}
+                    onChange={v => set({ exemptOnDuty: v })}
+                    label="On-duty days are exempt from the hours rule"
+                    hint="For people at a client site with nothing to punch. Off means an on-duty day is judged on hours like any other."
+                  />
+                </div>
+
+                <div>
+                  <p className="text-[13.5px] font-medium text-slate-700 mb-2">On a half-day leave, the other half counts as</p>
+                  <div className="flex flex-wrap items-center gap-6">
+                    <Radio name="otherHalf" label="Leave"
+                      checked={config.halfDayLeaveOtherHalf !== 'absent'}
+                      onChange={() => set({ halfDayLeaveOtherHalf: 'leave' })} />
+                    <Radio name="otherHalf" label="Absent"
+                      checked={config.halfDayLeaveOtherHalf === 'absent'}
+                      onChange={() => set({ halfDayLeaveOtherHalf: 'absent' })} />
+                  </div>
+                  <p className="text-[12px] text-slate-400 mt-1.5">
+                    &ldquo;Absent&rdquo; takes the day off their balance and marks them away for it.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="mb-4">
+              <p className="text-[13.5px] font-medium text-slate-700 mb-2">Apply this rule from</p>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <input
+                  type="date"
+                  value={config.ruleEffectiveFrom || ''}
+                  onChange={e => set({ ruleEffectiveFrom: e.target.value || null })}
+                  aria-label="Rule effective from"
+                  className="text-[14px] rounded-md border border-slate-300 px-3 py-1.5 bg-white"
+                />
+                {config.ruleEffectiveFrom && (
+                  <button
+                    onClick={() => set({ ruleEffectiveFrom: null })}
+                    className="text-[13px] text-blue-600 hover:underline"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <p className="text-[12px] text-slate-400 mt-1.5 max-w-[620px]">
+                {config.ruleEffectiveFrom
+                  ? 'Days before this date keep whatever rule was in force when they were worked, so an already-reported month cannot change underneath you.'
+                  : 'Left blank, a change applies to every day ever recorded — including months that have already been reported on.'}
+              </p>
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-4 inline-block min-w-[290px]">

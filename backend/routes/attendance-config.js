@@ -84,6 +84,9 @@ const ymd = (v, label) => {
 };
 
 const CALC_MODES = ['every', 'first_last'];
+// Kept in step with utils/attendanceRule.js, which is what actually enforces
+// them. Rejecting an unknown mode here means the engine never has to guess.
+const { MODES: RULE_MODES } = require('../utils/attendanceRule');
 const PERIODS = ['week', 'month', 'year'];
 const ENTRY_MODES = ['create', 'replace'];
 
@@ -111,9 +114,30 @@ const SECTIONS = {
       if (maxEnabled && maxHalf > maxFull) throw new Error('Maximum half day cannot exceed maximum full day');
 
       const nightEnabled = bool(night.enabled);
+
+      // Strict and Lenient are Zoho's two modes; Custom is the same engine with
+      // its decisions exposed. strictMode is kept in step with the mode so
+      // anything still reading the older boolean keeps working.
+      const mode = RULE_MODES.includes(b.mode)
+        ? b.mode
+        : (b.strictMode === false ? 'lenient' : 'strict');
+
       return {
         calculateHoursFrom: b.calculateHoursFrom,
-        strictMode: bool(b.strictMode),
+        mode,
+        strictMode: mode !== 'lenient',
+        // Only meaningful under Custom, but stored in every mode: switching to
+        // Custom and back should not silently discard what was configured.
+        shortDayBecomes: b.shortDayBecomes === 'half_day' ? 'half_day' : 'absent',
+        toleranceMinutes: intIn(b.toleranceMinutes ?? 0, 'Tolerance', 0, 240),
+        leaveReducesExpected: b.leaveReducesExpected !== false,
+        permissionReducesExpected: b.permissionReducesExpected !== false,
+        halfDayLeaveOtherHalf: b.halfDayLeaveOtherHalf === 'absent' ? 'absent' : 'leave',
+        exemptOnDuty: bool(b.exemptOnDuty),
+        // Blank means the rule has always applied. A date means days before it
+        // keep whatever rule was in force when they were worked, so changing a
+        // threshold cannot rewrite a month that has already been reported on.
+        ruleEffectiveFrom: ymd(b.ruleEffectiveFrom, 'Rule effective date'),
         allowOvertimeAndDeviation: bool(b.allowOvertimeAndDeviation),
         maxHours: { enabled: maxEnabled, fullDay: maxFull, halfDay: maxHalf },
         roundOff: bool(b.roundOff),

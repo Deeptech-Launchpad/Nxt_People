@@ -27,6 +27,7 @@ const Employees       = lazy(() => import('./pages/Employees'));
 const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'));
 const Approvals       = lazy(() => import('./pages/Approvals'));
 const Registrations   = lazy(() => import('./pages/Registrations'));
+const AuditLog        = lazy(() => import('./pages/AuditLog'));
 const Companies       = lazy(() => import('./pages/Companies'));
 const ApiConnections  = lazy(() => import('./pages/ApiConnections'));
 const MyApps          = lazy(() => import('./pages/MyApps'));
@@ -304,6 +305,9 @@ const AppRoutes = () => {
           <Route path="employees/:id" element={<EmployeeProfile/>}/>
           {/* Onboarding creates employees — full-access only (no manager CRUD). */}
           <Route path="registrations"element={<ProtectedRoute roles={['admin','director','hr_admin']}><Registrations/></ProtectedRoute>}/>
+          {/* Change history. Same roles as the configuration screens it records —
+              anyone who can read who changed a policy can already change it. */}
+          <Route path="audit"        element={<ProtectedRoute roles={['admin','director','hr_admin']}><AuditLog/></ProtectedRoute>}/>
           <Route path="shifts"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><Shifts/></ProtectedRoute>}/>
           {/* Anybody can ask to change their own shift; the route itself
               scopes who may approve one. */}
