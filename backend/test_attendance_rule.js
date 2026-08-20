@@ -104,6 +104,32 @@ check('the portions always add up to one day',
     return Math.abs(r.present + r.absent + r.leave - 1) < 0.001;
   })));
 
+console.log('\n════ The status stays inside the vocabulary the reports know ════\n');
+
+// Reports map 'present'/'late' to P and 'half-day' to HD, and read anything
+// they do not recognise as absent. A status this engine invented would
+// therefore be silently wrong everywhere it appeared.
+const KNOWN = ['present', 'late', 'half-day', 'absent', 'leave'];
+const everyShape = [];
+for (const cfg of [STRICT, LENIENT, OURS]) {
+  for (const h of [0, 1, 3.99, 4, 5, 7, 7.99, 8, 9]) {
+    for (const lv of [0, 0.5, 1]) {
+      for (const perm of [0, 2]) {
+        for (const od of [false, true]) {
+          everyShape.push(classifyDay({ workedHours: h, hasPunch: h > 0,
+            leavePortion: lv, permissionHours: perm, onDuty: od, cfg }).status);
+        }
+      }
+    }
+  }
+}
+const unknown = [...new Set(everyShape)].filter(x => !KNOWN.includes(x));
+check(`every combination returns a known status (${everyShape.length} checked)`,
+  unknown.length === 0, unknown);
+check('half-day leave worked properly reads as a half day, not a full one',
+  day(4, OURS, { leavePortion: 0.5 }).status === 'half-day',
+  day(4, OURS, { leavePortion: 0.5 }));
+
 console.log('\n════ A full day of leave is not judged ════\n');
 
 const onLeave = day(0, OURS, { leavePortion: 1 });

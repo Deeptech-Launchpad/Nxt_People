@@ -202,18 +202,15 @@ function classifyDay({
   const deficit = measured ? round2(Math.max(0, owed - worked)) : null;
   const overtime = measured ? round2(Math.max(0, worked - owed)) : null;
 
+  // attendance.status is a small, closed vocabulary that the reports, the
+  // calendar and the summary all switch on, and anything they do not recognise
+  // falls through to "absent". So the portions above carry the detail and this
+  // stays inside the words the rest of the system already speaks.
   let status;
-  if (present > 0 && absent === 0 && leaveOut === 0) {
-    status = lateMinutes > graceMinutes ? 'late' : 'present';
-  } else if (present > 0 && leaveOut > 0) {
-    status = 'half-day-leave';
-  } else if (present > 0) {
-    status = 'half-day';
-  } else if (leaveOut > 0) {
-    status = 'half-day-leave';
-  } else {
-    status = 'absent';
-  }
+  if (present >= 1) status = lateMinutes > graceMinutes ? 'late' : 'present';
+  else if (present > 0) status = 'half-day';
+  else if (leaveOut >= 1) status = 'leave';
+  else status = 'absent';
 
   return {
     status,
