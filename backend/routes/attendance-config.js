@@ -18,6 +18,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { logAudit } = require('../utils/audit');
+const { diffConfig, summarise } = require('../utils/configDiff');
 const { invalidate } = require('../utils/attendanceConfig');
 
 router.use(protect);
@@ -400,6 +402,12 @@ router.patch('/:section', authorize('admin', 'director', 'hr_admin'), async (req
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Read the section as it stands before overwriting it. Without this the
+    // audit entry can say a save happened but not what it changed, which is
+    // the only part anyone ever needs.
+    const prior = await client.query(`SELECT ${section.column} AS config FROM settings LIMIT 1`);
+    const before = { ...(prior.rows[0]?.config || {}),
+      ...(section.extra ? await section.extra(client) : {}) };
     // The blob and the expected-hours columns move together or not at all —
     // a half-applied policy is one of the states that reads wrong everywhere.
     if (section.saveExtra) await section.saveExtra(client, body);
@@ -415,6 +423,18 @@ router.patch('/:section', authorize('admin', 'director', 'hr_admin'), async (req
     }
     const extra = section.extra ? await section.extra(client) : {};
     await client.query('COMMIT');
+    // After the commit on purpose: a failed audit write must not undo a
+    // saved policy. A save that changed nothing writes no entry, or people
+    // pressing the button twice would bury the real changes.
+    const changes = diffConfig(before, { ...r.rows[0].config, ...extra });
+    if (changes.length) {
+      await logAudit(req, {
+        action: 'UPDATE',
+        resource: 'Attendance configuration',
+        resourceId: req.params.section,
+        changes: { section: req.params.section, summary: summarise(changes), fields: changes },
+      });
+    }
     // Drop the cached copy the enforcing routes read, so the change applies to
     // the next request rather than after the TTL.
     invalidate();

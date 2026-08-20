@@ -1,10 +1,14 @@
-// The day-classification rule, checked against Zoho's own worked examples.
+// The day-classification engine.
 //
-// Zoho's documentation gives two figures outright — 7 hours against an 8-hour
-// expectation, and 5 hours against the same — and states the result for each.
-// Those are the two cases below that are not mine, so they are the ones that
-// prove this is Zoho's rule and not my reading of it.
-const { classifyDay, expectedFor } = require('./utils/attendanceRule');
+// Two things have to hold at once: Zoho's presets must still behave exactly as
+// Zoho documents them, and this org's own rule — a short day is absent, no
+// tolerance — must behave as HR stated it. If one engine can do both, the
+// Custom mode is worth having; if it cannot, it is not.
+//
+// Zoho's documentation gives two figures outright (7 hours and 5 hours against
+// an 8-hour expectation) and states the result for each. Those two cases are
+// the ones I did not invent, so they are what prove this is Zoho's rule.
+const { classifyDay, expectedFor, resolvePolicy } = require('./utils/attendanceRule');
 
 const checks = [];
 const check = (label, ok, got) => {
@@ -13,92 +17,154 @@ const check = (label, ok, got) => {
 };
 const eq = (label, got, want) =>
   check(label, JSON.stringify(got) === JSON.stringify(want), got);
+const split = (r) => ({ present: r.present, absent: r.absent, leave: r.leave });
 
-const STRICT = { strictMode: true, expectedFullDay: 8, expectedHalfDay: 4, allowOvertimeAndDeviation: true };
-const LENIENT = { ...STRICT, strictMode: false };
+const BASE = { expectedFullDay: 8, expectedHalfDay: 4, allowOvertimeAndDeviation: true };
+const STRICT = { ...BASE, mode: 'strict' };
+const LENIENT = { ...BASE, mode: 'lenient' };
+// HR's rule: eight hours needed, no tolerance, a short day is absent outright.
+const OURS = { ...BASE, mode: 'custom', shortDayBecomes: 'absent', toleranceMinutes: 0 };
+
 const day = (h, cfg = STRICT, extra = {}) =>
   classifyDay({ workedHours: h, hasPunch: h > 0, cfg, ...extra });
 
-console.log('\n════ Strict — Zoho\'s two documented examples ════\n');
+console.log('\n════ Zoho Strict — the two documented examples ════\n');
 
 // "if someone is present for 7 hours, the system marks it as half-day present
 //  and half-day absent with 1 hour deficit"
-const seven = day(7);
 eq('7h against 8h expected is half present and half absent',
-  { present: seven.present, absent: seven.absent }, { present: 0.5, absent: 0.5 });
-check('and records a 1 hour deficit', seven.deficit === 1, seven.deficit);
+  split(day(7)), { present: 0.5, absent: 0.5, leave: 0 });
+check('and records a 1 hour deficit', day(7).deficit === 1, day(7).deficit);
 
 // "If someone is present for 5 hours, it shows as half-day present and
 //  half-day absent with a 3-hour deficit"
-const five = day(5);
 eq('5h is also half present and half absent',
-  { present: five.present, absent: five.absent }, { present: 0.5, absent: 0.5 });
-check('and records a 3 hour deficit', five.deficit === 3, five.deficit);
-
-console.log('\n════ Strict — the boundaries ════\n');
+  split(day(5)), { present: 0.5, absent: 0.5, leave: 0 });
+check('and records a 3 hour deficit', day(5).deficit === 3, day(5).deficit);
 
 check('exactly 8h is a full present day', day(8).present === 1, day(8));
+check('exactly 4h is still half present', day(4).present === 0.5, day(4));
+check('3.99h is fully absent under Zoho too', day(3.99).absent === 1, day(3.99));
 check('8.5h is a full day and 0.5h of overtime',
   day(8.5).present === 1 && day(8.5).overtime === 0.5, day(8.5));
-check('a full day records no deficit', day(8).deficit === 0, day(8).deficit);
-check('exactly 4h is still half present', day(4).present === 0.5, day(4));
-check('3.99h is fully absent', day(3.99).absent === 1, day(3.99));
-check('the split always adds up to one day',
-  [0, 2, 4, 6, 7.99, 8, 12].every(h => day(h).present + day(h).absent === 1));
 
-// This is the case that was wrong before: 7.6h passed our old 7.5h threshold
-// and was called a full present day, while the payable report still expected 8.
-const seventySix = day(7.6);
-check('7.6h is a half day, not a full one — it is short of the expected 8h',
-  seventySix.present === 0.5 && seventySix.status === 'half-day', seventySix);
-
-console.log('\n════ Lenient — the punch decides ════\n');
+console.log('\n════ Zoho Lenient — the punch decides ════\n');
 
 check('2h worked is still a full present day', day(2, LENIENT).present === 1, day(2, LENIENT));
-check('so is 30 minutes', day(0.5, LENIENT).present === 1, day(0.5, LENIENT));
 check('but the shortfall is still reported', day(2, LENIENT).deficit === 6, day(2, LENIENT).deficit);
 check('no punch at all is absent, in lenient mode too',
   classifyDay({ workedHours: 0, hasPunch: false, cfg: LENIENT }).absent === 1);
 check('lenient never produces a half day',
-  [0.5, 2, 4, 7, 7.99].every(h => day(h, LENIENT).status !== 'half-day'));
+  [0.5, 2, 4, 7, 7.99].every(h => day(h, LENIENT).present === 1));
 
-console.log('\n════ Deviation tracking is a choice, and off means unmeasured ════\n');
+console.log("\n════ This org's rule — 8h, no tolerance, short is absent ════\n");
 
-const untracked = day(6, { ...STRICT, allowOvertimeAndDeviation: false });
+check('8h exactly is present', day(8, OURS).present === 1, day(8, OURS));
+check('7h55m is a lost day — absent, not a half day',
+  day(7 + 55 / 60, OURS).absent === 1 && day(7 + 55 / 60, OURS).status === 'absent',
+  day(7 + 55 / 60, OURS));
+check('7h is absent, where Zoho would give half a day',
+  day(7, OURS).absent === 1 && day(7, STRICT).present === 0.5, day(7, OURS));
+check('no half day is ever produced from hours alone',
+  [0.5, 2, 4, 5, 7, 7.99].every(h => day(h, OURS).present === 0), 'a half day appeared');
+check('the shortfall is still reported', day(7, OURS).deficit === 1, day(7, OURS).deficit);
+
+console.log('\n════ Permission reduces what is owed ════\n');
+
+// HR: "2h permission + works 6h → Present"
+const perm = day(6, OURS, { permissionHours: 2 });
+check('2h permission and 6h worked is PRESENT', perm.present === 1 && perm.absent === 0, perm);
+check('what they owed that day was 6h, not 8h', perm.owed === 6, perm.owed);
+check('4h permission and 4h worked is present too',
+  day(4, OURS, { permissionHours: 4 }).present === 1, day(4, OURS, { permissionHours: 4 }));
+check('but 5h worked against 2h permission is still short',
+  day(5, OURS, { permissionHours: 2 }).absent === 1, day(5, OURS, { permissionHours: 2 }));
+check('without permission reducing the requirement, the same day is absent',
+  day(6, { ...OURS, permissionReducesExpected: false }, { permissionHours: 2 }).absent === 1);
+
+console.log('\n════ Half-day leave ════\n');
+
+const halfLeave = day(4, OURS, { leavePortion: 0.5 });
+check('half-day leave halves what is owed to 4h', halfLeave.owed === 4, halfLeave.owed);
+eq('working the other half properly is half present, half leave',
+  split(halfLeave), { present: 0.5, absent: 0, leave: 0.5 });
+
+const halfLeaveShort = day(2, OURS, { leavePortion: 0.5 });
+eq('working only 2h of the owed 4h makes the working half absent',
+  split(halfLeaveShort), { present: 0, absent: 0.5, leave: 0.5 });
+
+// The setting that decides where the leave half is counted.
+const asAbsent = day(4, { ...OURS, halfDayLeaveOtherHalf: 'absent' }, { leavePortion: 0.5 });
+eq('with the other-half setting on absent, the leave half is counted absent',
+  split(asAbsent), { present: 0.5, absent: 0.5, leave: 0 });
+
+check('the portions always add up to one day',
+  [0, 2, 4, 6, 8].every(h => [0, 0.5].every(l => {
+    const r = day(h, OURS, { leavePortion: l });
+    return Math.abs(r.present + r.absent + r.leave - 1) < 0.001;
+  })));
+
+console.log('\n════ A full day of leave is not judged ════\n');
+
+const onLeave = day(0, OURS, { leavePortion: 1 });
+eq('a full-day leave is leave, not absence',
+  split(onLeave), { present: 0, absent: 0, leave: 1 });
+check('and nothing is owed, so no deficit is invented', onLeave.owed === 0 && onLeave.deficit === null, onLeave);
+
+console.log('\n════ On duty ════\n');
+
+// HR: the 8-hour rule applies to on-duty and WFH.
+const onDutyShort = classifyDay({ workedHours: 5, hasPunch: true, onDuty: true, cfg: OURS });
+check('an on-duty day short of 8h is absent, as HR asked',
+  onDutyShort.absent === 1, onDutyShort);
+check('unless the exemption is switched on',
+  classifyDay({ workedHours: 5, hasPunch: true, onDuty: true,
+    cfg: { ...OURS, exemptOnDuty: true } }).present === 1);
+check('an on-duty day with no punch at all is not automatically absent when exempt',
+  classifyDay({ workedHours: 0, hasPunch: false, onDuty: true,
+    cfg: { ...OURS, exemptOnDuty: true } }).present === 1);
+
+console.log('\n════ Tolerance ════\n');
+
+check('with 10 minutes tolerance, 7h55m becomes present',
+  day(7 + 55 / 60, { ...OURS, toleranceMinutes: 10 }).present === 1);
+check('but 7h45m still is not',
+  day(7.75, { ...OURS, toleranceMinutes: 10 }).absent === 1);
+check('tolerance cannot be negative',
+  resolvePolicy({ mode: 'custom', toleranceMinutes: -30 }).toleranceMinutes === 0);
+
+console.log('\n════ Deviation tracking is a choice ════\n');
+
+const untracked = day(6, { ...OURS, allowOvertimeAndDeviation: false });
 check('with the setting off, deficit is null — not zero',
   untracked.deficit === null && untracked.overtime === null, untracked);
-check('but the day is still classified', untracked.present === 0.5, untracked);
+check('but the day is still classified', untracked.absent === 1, untracked);
 
-console.log('\n════ Labels ════\n');
+console.log('\n════ Presets and defaults ════\n');
 
-check('a full day past the grace period is late',
-  day(9, STRICT, { lateMinutes: 20, graceMinutes: 15 }).status === 'late');
-check('within grace it is simply present',
-  day(9, STRICT, { lateMinutes: 10, graceMinutes: 15 }).status === 'present');
-check('a short day is a half day whether or not it was late',
-  day(5, STRICT, { lateMinutes: 90, graceMinutes: 15 }).status === 'half-day');
+check('an unsaved policy is Strict, not Lenient',
+  resolvePolicy({}).mode === 'strict' && resolvePolicy({}).punchIsEnough === false);
+check('the older strictMode:false flag still selects Lenient',
+  resolvePolicy({ strictMode: false }).mode === 'lenient');
+check('an unknown mode falls back rather than throwing',
+  resolvePolicy({ mode: 'nonsense' }).mode === 'strict');
+check('custom defaults to absent, which is this org\'s rule',
+  resolvePolicy({ mode: 'custom' }).shortDayBecomes === 'absent');
+check('a day with no punch and no leave is absent under every preset',
+  [STRICT, LENIENT, OURS].every(c =>
+    classifyDay({ workedHours: 0, hasPunch: false, cfg: c }).absent === 1));
 
 console.log('\n════ Expected hours per employee ════\n');
 
-eq('manual mode uses the org figures',
-  expectedFor(STRICT), { full: 8, half: 4 });
-eq('shift mode takes the length of the employee\'s own shift',
-  expectedFor({ ...STRICT, expectedMode: 'shift' }, 8.5), { full: 8.5, half: 4 });
+eq('manual mode uses the org figures', expectedFor(BASE), { full: 8, half: 4 });
+eq("shift mode takes the length of the employee's own shift",
+  expectedFor({ ...BASE, expectedMode: 'shift' }, 8.5), { full: 8.5, half: 4 });
 eq('shift mode falls back to the org figure when the shift is unknown',
-  expectedFor({ ...STRICT, expectedMode: 'shift' }, null), { full: 8, half: 4 });
+  expectedFor({ ...BASE, expectedMode: 'shift' }, null), { full: 8, half: 4 });
 check('a zero-length shift is treated as no shift, not a zero-hour day',
-  expectedFor({ ...STRICT, expectedMode: 'shift' }, 0).full === 8, expectedFor({ ...STRICT, expectedMode: 'shift' }, 0));
-
+  expectedFor({ ...BASE, expectedMode: 'shift' }, 0).full === 8);
 eq('a half day longer than a full day cannot mark everyone absent',
   expectedFor({ expectedFullDay: 6, expectedHalfDay: 9 }), { full: 6, half: 6 });
-
-console.log('\n════ Defaults are safe ════\n');
-
-check('an unsaved policy classifies strictly rather than marking everyone present',
-  classifyDay({ workedHours: 2, hasPunch: true, cfg: {} }).present !== 1,
-  classifyDay({ workedHours: 2, hasPunch: true, cfg: {} }));
-check('and falls back to 8h and 4h',
-  classifyDay({ workedHours: 5, hasPunch: true, cfg: {} }).expected === 8);
 
 const failed = checks.filter(c => !c).length;
 console.log(`\n${checks.length - failed}/${checks.length} passed\n`);

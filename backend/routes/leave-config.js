@@ -15,6 +15,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { logAudit } = require('../utils/audit');
+const { diffConfig, summarise } = require('../utils/configDiff');
 
 router.use(protect);
 
@@ -145,6 +147,12 @@ router.patch('/:section', authorize('admin', 'director', 'hr_admin'), async (req
   catch (err) { return res.status(400).json({ success: false, message: err.message }); }
 
   try {
+    // Read the section before overwriting it. Without this the audit entry can
+    // say a save happened but not what it changed, which is the only part
+    // anyone ever needs afterwards.
+    const prior = await pool.query(`SELECT ${section.column} AS config FROM settings LIMIT 1`);
+    const before = prior.rows[0]?.config || {};
+
     const r = await pool.query(
       `UPDATE settings SET ${section.column} = $1::jsonb, updated_at = NOW()
         WHERE id = (SELECT id FROM settings LIMIT 1)
@@ -152,6 +160,18 @@ router.patch('/:section', authorize('admin', 'director', 'hr_admin'), async (req
       [JSON.stringify(config)]
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Settings row not found' });
+
+    // A save that changed nothing writes no entry — people press the button
+    // twice, and those would bury the real changes.
+    const changes = diffConfig(before, r.rows[0].config);
+    if (changes.length) {
+      await logAudit(req, {
+        action: 'UPDATE',
+        resource: 'Leave configuration',
+        resourceId: req.params.section,
+        changes: { section: req.params.section, summary: summarise(changes), fields: changes },
+      });
+    }
     res.json({ success: true, data: r.rows[0].config });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
