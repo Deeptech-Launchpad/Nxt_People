@@ -58,9 +58,12 @@ const minsOfDay = (v) => {
        FROM attendance a
        JOIN employees e ON e.id = a.employee_id
        LEFT JOIN shifts s ON s.id = e.shift_id
+      -- Any row whose stored hours disagree with its punches, not just the
+      -- ones seconds apart. The corroboration below is what decides.
       WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
         AND COALESCE(a.working_hours, 0) > 0.05
-        AND EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0 < 0.05
+        AND ABS(COALESCE(a.working_hours,0)
+                - EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0) > 0.05
       ORDER BY a.date`)).rows;
 
   if (!rows.length) {
@@ -76,7 +79,11 @@ const minsOfDay = (v) => {
     const diff = Math.abs(impliedH - Number(r.working_hours));
     if (!(impliedH > 0)) { rejected.push({ r, why: 'created_at is after check-out' }); continue; }
     if (diff > TOLERANCE_H) {
-      rejected.push({ r, why: `created_at implies ${impliedH.toFixed(2)}h, stored is ${r.working_hours}h` });
+      const gapH = impliedH - Number(r.working_hours);
+      rejected.push({ r, why: gapH > 0.5
+        ? `worked in sessions — ${impliedH.toFixed(2)}h between first arrival and last exit, `
+          + `${r.working_hours}h actually worked. Correct as it stands.`
+        : `created_at implies ${impliedH.toFixed(2)}h, stored is ${r.working_hours}h` });
       continue;
     }
 
@@ -105,7 +112,7 @@ const minsOfDay = (v) => {
   }
 
   if (rejected.length) {
-    console.log(`\n  ${rejected.length} row(s) left alone, because the evidence does not support a repair:\n`);
+    console.log(`\n  ${rejected.length} row(s) left alone:\n`);
     for (const { r, why } of rejected) {
       console.log(`    ${r.code.padEnd(14)} ${r.d}   ${why}`);
     }
