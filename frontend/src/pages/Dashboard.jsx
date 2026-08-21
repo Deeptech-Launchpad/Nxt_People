@@ -322,13 +322,6 @@ const FeedCard = ({ icon, children }) => (
  *    height guesses, no more bottom-row overflow. */
 const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
   const navigate = useNavigate();
-  // The banner. Null until it loads, and the container carries a plain colour
-  // underneath so nothing flashes white while it does.
-  const [cover, setCover] = useState(null);
-  const loadCover = React.useCallback(() => {
-    api.get('/cover-image').then(r => setCover(r.data.data)).catch(() => {});
-  }, []);
-  useEffect(() => { loadCover(); }, [loadCover]);
   const menuRef  = useRef(null);
   // Start fully off-screen on first paint so the user doesn't see a
   // flash at the wrong position; useLayoutEffect re-positions before
@@ -410,6 +403,21 @@ export default function Dashboard() {
   } = useAttendance();
   const { isWeekend: isWeekendByRule } = useWeekendRules();
   const navigate = useNavigate();
+
+  // The banner. Null until it loads, and the container carries a plain colour
+  // underneath so nothing flashes white while it does.
+  //
+  // This has to live in Dashboard, not in a child: `cover` and `loadCover` are
+  // read further down in THIS component's JSX. Declared in RequestMenu instead
+  // — which also opens with `const navigate = useNavigate();` — they were free
+  // identifiers here, and the whole page rendered blank. esbuild does not
+  // resolve free identifiers, so the build passed.
+  const [cover, setCover] = useState(null);
+  const loadCover = React.useCallback(() => {
+    api.get('/cover-image').then(r => setCover(r.data.data)).catch(() => {});
+  }, []);
+  useEffect(() => { loadCover(); }, [loadCover]);
+
   const [activeTab, setActiveTab] = useState('activities');
   const [feedTab, setFeedTab] = useState('all');
 

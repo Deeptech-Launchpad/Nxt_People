@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node check_free_identifiers.cjs && vite build",
     "preview": "vite preview",
     "test:e2e": "cypress open",
-    "test:run": "cypress run"
+    "test:run": "cypress run",
+    "check": "node check_free_identifiers.cjs"
   },
   "dependencies": {
     "@sentry/react": "^8.45.0",
