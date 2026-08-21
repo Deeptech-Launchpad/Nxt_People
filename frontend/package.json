@@ -10,7 +10,8 @@
     "test:e2e": "cypress open",
     "test:run": "cypress run",
     "check": "node check_free_identifiers.cjs",
-    "covers": "node build_cover_manifest.cjs"
+    "covers": "node build_cover_manifest.cjs",
+    "covers:fetch": "node fetch_cover_banners.cjs"
   },
   "dependencies": {
     "@sentry/react": "^8.45.0",
