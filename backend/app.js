@@ -85,6 +85,9 @@ app.use('/uploads/photos', express.static(path.join(__dirname, 'uploads', 'photo
 // profile photo beside it. Everything else under /uploads stays behind the
 // token check below.
 app.use('/uploads/covers', express.static(path.join(__dirname, 'uploads', 'covers')));
+// And the organization logo, for the same reason: it renders in an <img> on
+// the sign-in page, which nobody has a token on yet.
+app.use('/uploads/logos', express.static(path.join(__dirname, 'uploads', 'logos')));
 const jwt = require('jsonwebtoken');
 app.use('/uploads', (req, res, next) => {
   const authHeader = req.headers.authorization;

@@ -414,6 +414,7 @@ export default function Dashboard() {
   // resolve free identifiers, so the build passed.
   const [cover, setCover] = useState(null);
   const [covers, setCovers] = useState([]);
+  const [orgLogo, setOrgLogo] = useState(null);
   const [showCover, setShowCover] = useState(false);
   const canChangeCover = useCanChangeCover();
   const loadCover = React.useCallback(() => {
@@ -421,6 +422,11 @@ export default function Dashboard() {
   }, []);
   useEffect(() => { loadCover(); }, [loadCover]);
   useEffect(() => { loadCovers().then(setCovers); }, []);
+  useEffect(() => {
+    // /org-details/details rather than /settings: the logo lives there, and
+    // that route is readable by anybody signed in, which the greeting has to be.
+    api.get('/org-details/details').then(r => setOrgLogo(r.data.data?.logoUrl || null)).catch(() => {});
+  }, []);
 
   const [activeTab, setActiveTab] = useState('activities');
   const [feedTab, setFeedTab] = useState('all');
@@ -1112,17 +1118,19 @@ export default function Dashboard() {
                       adapt. Card stays light enough to keep dark text legible
                       around the clock. */}
                   <div className={`greeting-banner bg-gradient-to-r ${getTimeOfDaySky()} rounded-xl border border-slate-200 p-5 flex items-center gap-5 shadow-sm transition-colors duration-500`}>
-                    {/* Branding — real AltiusNxt logo. File lives at
-                        frontend/public/altius-logo.png so Vite serves it
-                        from the root and no import is needed. */}
-                    <div className="flex items-center">
-                      <img
-                        src="/altius-logo.png"
-                        alt="AltiusNxt"
-                        className="h-10 w-auto object-contain"
-                      />
-                    </div>
-                    <div className="h-10 w-[1px] bg-slate-200"></div>
+                    {/* The organization's own logo, set under Organization
+                        Details. This was a hardcoded AltiusNxt file, so every
+                        company using this saw somebody else's brand on their
+                        home page. With none set the block is dropped entirely
+                        rather than leaving a gap and a divider around nothing. */}
+                    {orgLogo && (
+                      <>
+                        <div className="flex items-center">
+                          <img src={orgLogo} alt="" className="h-10 w-auto object-contain" />
+                        </div>
+                        <div className="h-10 w-[1px] bg-slate-200"></div>
+                      </>
+                    )}
                     <div className="flex-1">
                       {/* Heading scaled up + heavier weight to match Zoho's
                           prominence — was 15px font-bold slate-800, now

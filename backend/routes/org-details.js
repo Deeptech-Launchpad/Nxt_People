@@ -16,6 +16,11 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const multer = require('multer');
+const { logAudit } = require('../utils/audit');
 
 router.use(protect);
 
@@ -46,6 +51,73 @@ const ORG_TYPES = [
   'Consultant', 'Product', 'Service', 'Manufacturing', 'Education',
   'Healthcare', 'Non-profit', 'Government', 'Other',
 ];
+
+/* ── The organization's logo ───────────────────────────────────────────────
+ *  The field on Organization Details accepted a URL and nothing else, so a
+ *  company with a logo file and no public host for it could not set one at
+ *  all — and the greeting card on the home page carried a hardcoded image
+ *  regardless of what was typed there.
+ *
+ *  Uploading writes the URL into the same column the field already uses, so
+ *  both routes in and both remain valid: paste a link, or send a file.
+ *
+ *  Same allowlist discipline as the photo and cover uploads — the extension
+ *  written to disk comes from the allowlist and never from the uploaded name,
+ *  so "logo.png.php" cannot land as .php however a future proxy is set up.
+ * ────────────────────────────────────────────────────────────────────────── */
+const LOGO_MAX_MB = 4;
+const LOGO_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg']);
+const logosDir = path.join(__dirname, '..', 'uploads', 'logos');
+if (!fs.existsSync(logosDir)) fs.mkdirSync(logosDir, { recursive: true });
+
+const logoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, logosDir),
+    filename: (req, file, cb) => {
+      const raw = path.extname(file.originalname).toLowerCase();
+      const ext = LOGO_EXTS.has(raw) ? raw : '.png';
+      cb(null, `logo-${crypto.randomBytes(8).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: LOGO_MAX_MB * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, LOGO_EXTS.has(path.extname(file.originalname).toLowerCase())),
+});
+
+router.post('/details/logo', authorize(...WRITE), (req, res) => {
+  logoUpload.single('logo')(req, res, async (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({
+        success: false,
+        message: err.code === 'LIMIT_FILE_SIZE'
+          ? `That image is larger than ${LOGO_MAX_MB}MB` : 'That file could not be accepted',
+      });
+    }
+    if (err) return res.status(400).json({ success: false, message: 'That file could not be accepted' });
+    if (!req.file) return res.status(400).json({ success: false, message: 'No image was sent' });
+
+    try {
+      const url = `/uploads/logos/${req.file.filename}`;
+      const before = (await pool.query(`SELECT org_logo_url AS u FROM settings LIMIT 1`)).rows[0]?.u || null;
+      await pool.query(`UPDATE settings SET org_logo_url = $1 WHERE id = (SELECT id FROM settings LIMIT 1)`, [url]);
+
+      // The one it replaces is unreachable now, so it goes rather than sitting
+      // in the uploads directory forever. A pasted URL is somebody else's file
+      // and is never deleted.
+      if (before && before.startsWith('/uploads/logos/')) {
+        fs.unlink(path.join(logosDir, path.basename(before)), () => {});
+      }
+
+      await logAudit(req, {
+        action: 'UPDATE', resource: 'Organization details', resourceId: 'logo',
+        changes: { summary: 'organization logo', fields: [{ field: 'logoUrl', from: before, to: url }] },
+      });
+      res.json({ success: true, message: 'Logo updated', data: { logoUrl: url } });
+    } catch (e) {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      fail(res, e);
+    }
+  });
+});
 
 router.get('/details', async (req, res) => {
   try {

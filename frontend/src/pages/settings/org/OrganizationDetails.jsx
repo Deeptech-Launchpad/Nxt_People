@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../../utils/api';
+import { Upload } from 'lucide-react';
 import { Note, SaveBar, Spinner, selectClass } from '../configKit';
 
 // Organization Setup → Organization Details.
@@ -33,6 +34,8 @@ function Field({ label, required, children, hint }) {
 }
 
 export default function OrganizationDetails() {
+  const logoFile = useRef(null);
+  const [uploading, setUploading] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -48,6 +51,27 @@ export default function OrganizationDetails() {
   }, []);
 
   const set = changes => { setData(d => ({ ...d, ...changes })); setDirty(true); };
+
+  // The upload writes the column itself, so the field is updated from the
+  // response rather than marked dirty — pressing Save afterwards would send
+  // back the same value it already holds.
+  const uploadLogo = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    const form = new FormData();
+    form.append('logo', file);
+    try {
+      const r = await api.post('/org-details/details/logo', form,
+        { headers: { 'Content-Type': 'multipart/form-data' } });
+      setData(d => ({ ...d, logoUrl: r.data.data.logoUrl }));
+      toast.success('Logo updated');
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Could not upload that image');
+    } finally {
+      setUploading(false);
+      if (logoFile.current) logoFile.current.value = '';
+    }
+  };
 
   const save = () => {
     setSaving(true);
@@ -75,11 +99,37 @@ export default function OrganizationDetails() {
                 ? <img src={data.logoUrl} alt="Organization logo" className="max-h-full max-w-full object-contain" />
                 : <span className="text-[13px] text-slate-400">No logo</span>}
             </div>
+            {/* Uploading writes straight to the column the field below reads,
+                so a company with a file and no public host for it can set a
+                logo — which the URL box alone could never do. Both routes stay
+                valid: paste a link, or send a file. */}
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <input ref={logoFile} type="file" accept=".png,.jpg,.jpeg,.webp,.svg"
+                onChange={e => uploadLogo(e.target.files?.[0])} className="hidden" />
+              <button
+                type="button" onClick={() => logoFile.current?.click()} disabled={uploading}
+                className="flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 disabled:opacity-60 px-3.5 py-1.5 rounded-md text-[13.5px] font-medium text-slate-700"
+              >
+                <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload a logo'}
+              </button>
+              {data.logoUrl && (
+                <button
+                  type="button" onClick={() => set({ logoUrl: '' })}
+                  className="text-[13px] text-slate-500 hover:text-rose-600"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
             <input
               value={data.logoUrl || ''} onChange={e => set({ logoUrl: e.target.value })}
-              placeholder="Logo image URL"
+              placeholder="…or paste an image URL"
               className={`${input} mt-2`}
             />
+            <p className="text-[12px] text-slate-400 mt-1.5 max-w-[420px]">
+              Shown on the sign-in page and in the greeting on everybody&rsquo;s home page.
+              PNG, JPG, WebP or SVG, up to 4MB.
+            </p>
           </Field>
 
           <Field label="Name" required>
