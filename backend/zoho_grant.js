@@ -36,26 +36,22 @@ const need = (k) => {
     process.exit(1);
   }
 
-  // Three exchanges in a row failed as "invalid_code" when the real fault was a
-  // truncated paste: the Zoho console shows the code with a trailing ellipsis,
-  // and hand-selecting it takes the dots along. Zoho cannot tell the difference
-  // between a cut code and an expired one, so it says expired — and you go and
-  // generate another, which pastes the same way. Checking the shape here ends
-  // that loop.
-  const shape = /^1000\.[0-9a-f]{32}\.[0-9a-f]{32}$/i;
-  if (!shape.test(CODE)) {
-    const tail = CODE.split('.').pop();
-    console.log('\n  That code is not the right shape, so it was not sent.\n');
-    console.log(`  Got:       ${CODE.length} characters, ${CODE.split('.').length - 1} dot(s)`);
-    console.log('  Expected:  1000. then 32 characters, a dot, then 32 more\n');
-    if (/\.$/.test(CODE) || /\.\.+/.test(CODE)) {
-      console.log('  It ends in dots. Those are the console\'s "..." for text too long to');
-      console.log('  show, not part of the code — the copy took the display, not the value.\n');
-    } else if (tail && tail.length < 32) {
-      console.log(`  The part after the last dot is ${tail.length} characters, not 32. It is cut short.\n`);
-    }
-    console.log('  Use the DOWNLOAD button rather than COPY, open the file it saves, and');
-    console.log('  take the code from there. Nothing in that file is truncated.\n');
+  // Several exchanges failed as "invalid_code" when the fault was a truncated
+  // paste: the console shows the code with a trailing ellipsis, and selecting
+  // it by hand takes the dots along. Zoho cannot tell a cut code from an
+  // expired one, so it reports expired, and you generate another that pastes
+  // the same way.
+  //
+  // But only the ellipsis is worth refusing over. Zoho issues codes in more
+  // than one shape — a single segment of thirty-odd characters, and an older
+  // two-segment form — and a length rule written from one sample rejects
+  // perfectly good codes, which is a worse failure than the one it prevents.
+  if (/\.\.+$/.test(CODE) || CODE.includes('…') || /\s/.test(CODE)) {
+    console.log('\n  That code was not sent — it has the console\'s "..." on the end.\n');
+    console.log(`  Got: ${CODE}\n`);
+    console.log('  Those dots mark text too long to display; they are not part of the');
+    console.log('  code. Use DOWNLOAD rather than COPY, open the file it saves, and take');
+    console.log('  the code from there.\n');
     process.exit(1);
   }
 
@@ -63,7 +59,14 @@ const need = (k) => {
   const clientId = need('ZOHO_CLIENT_ID');
   const clientSecret = need('ZOHO_CLIENT_SECRET');
 
-  console.log(`\n  Exchanging with ${authUrl}\n`);
+  // A code is issued for one client. Exchanged against a different app's id,
+  // Zoho answers invalid_code — the same words it uses for an expired code —
+  // and there is nothing in that message to tell you which of the two happened.
+  // Showing the id being used lets you check it against the console yourself.
+  console.log(`\n  Exchanging with ${authUrl}`);
+  console.log(`  As client   ${clientId}\n`);
+  console.log('  That id must belong to the SAME application the code came from.');
+  console.log('  A code from one app exchanged against another reads as invalid_code.\n');
 
   const params = new URLSearchParams({
     grant_type: 'authorization_code',
