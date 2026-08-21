@@ -1881,8 +1881,17 @@ function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, 
   if (onDuty) return { code: 'OD', kind: 'onDuty' };
   if (leave) {
     const code = ATT_LEAVE_CODE[leave.leaveType] || 'L';
+    // Half a day of leave says nothing about the other half. This used to
+    // render every half-day leave as "0.5CL/0.5P" from the leave record alone,
+    // so somebody who took the morning off and then did not come in at all was
+    // credited half a day present they never worked. The reference does not do
+    // that — Zoho's own status for such a day reads
+    // "Casual Leave(Second Half), 0.5 day Absent" — and it took eight months of
+    // real data to surface, because seeded data always has somebody working the
+    // other half.
+    const workedOtherHalf = attStatus === 'present' || attStatus === 'late' || attStatus === 'half-day';
     return {
-      code: leave.isHalfDay ? `0.5${code}/0.5P` : code,
+      code: leave.isHalfDay ? `0.5${code}/0.5${workedOtherHalf ? 'P' : 'A'}` : code,
       kind: leave.leaveType === 'unpaid' ? 'unpaidLeave' : 'paidLeave',
       fraction: leave.isHalfDay ? 0.5 : 1,
     };
