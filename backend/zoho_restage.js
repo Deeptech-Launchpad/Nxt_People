@@ -33,7 +33,7 @@ nodemailer.createTransport = () => ({
 
 const pool = require('./db');
 const { zohoApi } = require('./utils/zoho');
-const { classifyDay } = require('./utils/attendanceRule');
+const { classifyDay, resolvePolicy, expectedFor } = require('./utils/attendanceRule');
 
 const CODES = String(process.argv[2] || '').split(/[,\s]+/).filter(Boolean);
 const START = process.argv[3];
@@ -324,6 +324,26 @@ async function backup(client, batch, table, empId, where, params) {
   const cfg = (await pool.query(
     `SELECT attendance_policy_config AS c FROM settings LIMIT 1`)).rows[0]?.c || {};
 
+  /* Every "owed" figure below comes out of these settings, so print them.
+   * Reading that somebody was owed eight hours on a day they had half a day's
+   * leave is alarming until you can see that this org has chosen not to let
+   * leave reduce what is expected — at which point it is simply the policy
+   * doing what it was told. The number is only checkable next to the rule. */
+  const policy = resolvePolicy(cfg);
+  const expected = expectedFor(cfg, null);
+  console.log('──────────────────────────────────────────────────────────');
+  console.log('  The rules these days are being judged by');
+  console.log('──────────────────────────────────────────────────────────\n');
+  console.log(`    mode                          ${policy.mode}`);
+  console.log(`    a full day is                 ${expected.full} hours`);
+  console.log(`    a half day is                 ${expected.half} hours`);
+  console.log(`    a punch alone is enough       ${policy.punchIsEnough ? 'yes' : 'no'}`);
+  console.log(`    a short day becomes           ${policy.shortDayBecomes.replace('_', ' ')}`);
+  console.log(`    tolerance                     ${policy.toleranceMinutes} minutes`);
+  console.log(`    leave reduces what is owed    ${policy.leaveReducesExpected ? 'yes' : 'NO'}`);
+  console.log(`    permission reduces it         ${policy.permissionReducesExpected ? 'yes' : 'NO'}`);
+  console.log(`    on-duty is exempt             ${policy.exemptOnDuty ? 'yes' : 'no'}\n`);
+
   // ── Gather, per person, before anything is written ───────────────────────
   const plan = [];
   for (const token of CODES) {
@@ -510,8 +530,10 @@ async function backup(client, batch, table, empId, where, params) {
       if (clashes.length > 25) console.log(`      … and ${clashes.length - 25} more`);
       console.log('');
 
-      const first = p.days[0];
-      console.log('    first day, as it would be stored:\n');
+      // A punched day, not simply the first — the first is now often an
+      // absence, and null/null/0.00 shows nothing about the conversion.
+      const first = p.days.find(d => d.hasPunch) || p.days[0];
+      console.log('    first day with a punch, as it would be stored:\n');
       console.log(`      ${first.date}   check_in ${first.checkIn} UTC   check_out ${first.checkOut} UTC`);
       console.log(`      that is ${first.hours.toFixed(2)} hours, late ${first.lateMinutes} min,`
         + ` status ${first.verdict.status}\n`);
