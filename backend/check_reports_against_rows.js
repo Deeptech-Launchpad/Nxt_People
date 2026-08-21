@@ -232,6 +232,46 @@ const OFF_CODES = /^(W|H|-)$/;
       }
     }
 
+    /* Rows for days this person was not employed.
+     *
+     * Zoho reports days before somebody joined and calls them Absent, and an
+     * import that takes it at its word puts absences on a muster roll for
+     * weeks the person had not started. The reports refuse to judge days
+     * outside joining..exit, so nothing downstream will ever contradict such a
+     * row — it simply sits there being counted. */
+    const stray = (await pool.query(
+      `SELECT a.date::text AS d, a.status
+         FROM attendance a JOIN employees e ON e.id = a.employee_id
+        WHERE a.employee_id = $1 AND a.date BETWEEN $2::date AND $3::date
+          AND ((e.joining_date IS NOT NULL AND a.date < e.joining_date)
+            OR (e.exit_date   IS NOT NULL AND a.date > e.exit_date))
+        ORDER BY a.date`, [emp.id, ms[0].start, ms[ms.length - 1].end])).rows;
+    if (stray.length) {
+      note(code, stray[0].d.slice(0, 7),
+        `${stray.length} attendance row(s) fall outside this person's employment`,
+        `${stray[0].d} to ${stray[stray.length - 1].d} — no report will ever judge these`);
+    }
+
+    /* What the daily ceiling discards over the whole range.
+     *
+     * Not a fault: the ceiling is a deliberate setting. But it is applied
+     * silently and per day, so nothing on any screen says how much time it
+     * removed — and if overtime is ever paid from these reports, this is the
+     * number that will be missing. Worth stating once. */
+    const over = (await pool.query(
+      `SELECT COALESCE(SUM(working_hours - $4::numeric), 0)::numeric(10,2) AS lost,
+              COUNT(*)::int AS days
+         FROM attendance
+        WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date
+          AND working_hours > $4::numeric`,
+      [emp.id, ms[0].start, ms[ms.length - 1].end, cap.full])).rows[0];
+    if (cap.on && Number(over.lost) > 0) {
+      console.log(`\n    the ${cap.full}h ceiling discarded ${over.lost}h`
+        + ` across ${over.days} day(s) in this range.`);
+      console.log('    (a setting, not a fault — but no screen says so,'
+        + ' and payroll would not see it)');
+    }
+
     // ── Days where a half-day leave and the punches tell different stories ──
     // classifyAttendanceDay renders any half-day leave as "0.5X/0.5P" — half
     // leave, half PRESENT — without looking at whether the other half was

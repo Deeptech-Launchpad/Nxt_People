@@ -351,7 +351,8 @@ async function backup(client, batch, table, empId, where, params) {
     // them, and a typo'd code that quietly matched nobody would be worse than
     // one that stops here.
     const matches = (await pool.query(
-      `SELECT id, employee_id AS code, TRIM(CONCAT(first_name,' ',last_name)) AS name
+      `SELECT id, employee_id AS code, TRIM(CONCAT(first_name,' ',last_name)) AS name,
+              joining_date::text AS joined, exit_date::text AS exited
          FROM employees
         WHERE deleted_at IS NULL
           AND (employee_id = $1 OR CONCAT(first_name,' ',last_name) ILIKE '%' || $1 || '%')
@@ -426,8 +427,20 @@ async function backup(client, batch, table, empId, where, params) {
           .sort((a, b) => a.date.localeCompare(b.date))
       : [];
     const isAbsence = d => !d.hasPunch && /\babsent\b/i.test(d.zohoStatus);
-    const days = allDays.filter(d => d.hasPunch || isAbsence(d));
-    const skipped = allDays.filter(d => !(d.hasPunch || isAbsence(d)));
+
+    /* Zoho reports days before somebody joined, and calls them Absent. Balaji's
+     * first punch is 29 January and Zoho hands back seventeen absences for the
+     * weeks before it. Those are not absences — he was not employed yet — and
+     * importing them puts seventeen A codes on his muster roll and seventeen
+     * days into every figure that counts absence.
+     *
+     * The reports already refuse to judge days outside joining..exit, so a row
+     * out there has nothing judging it. It must not be written at all. */
+    const onRolls = d =>
+      !(emp.joined && d.date < emp.joined) && !(emp.exited && d.date > emp.exited);
+    const offRolls = allDays.filter(d => !onRolls(d) && (d.hasPunch || isAbsence(d)));
+    const days = allDays.filter(d => onRolls(d) && (d.hasPunch || isAbsence(d)));
+    const skipped = allDays.filter(d => onRolls(d) && !(d.hasPunch || isAbsence(d)));
 
     for (const d of days) {
       const f = dayFacts.get(d.date) || { leavePortion: 0, permissionHours: 0 };
@@ -435,7 +448,7 @@ async function backup(client, batch, table, empId, where, params) {
     }
 
     plan.push({ emp, leaveInRange, reached, attendanceReachable, attendanceError,
-                hereAtt, hereLeave, days, skipped, allDays, sessions });
+                hereAtt, hereLeave, days, skipped, allDays, offRolls, sessions });
   }
 
   // ── Say plainly what would happen to each person ─────────────────────────
@@ -502,6 +515,13 @@ async function backup(client, batch, table, empId, where, params) {
           console.log(`      ${pad(st || '(none)', 34)}${n} day(s)`);
         }
         console.log('');
+      }
+
+      if (p.offRolls.length) {
+        const first = p.offRolls[0].date, last = p.offRolls[p.offRolls.length - 1].date;
+        console.log(`    ${p.offRolls.length} day(s) Zoho reported from outside this person's`);
+        console.log(`    employment (${first} to ${last}) — joined ${p.emp.joined || 'unknown'}`
+          + `${p.emp.exited ? `, exited ${p.emp.exited}` : ''}. Not imported.\n`);
       }
 
       const ours = new Map();
