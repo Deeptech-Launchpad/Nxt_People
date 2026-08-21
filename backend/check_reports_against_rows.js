@@ -217,11 +217,24 @@ const OFF_CODES = /^(W|H|-)$/;
         const rounded = cut.filter(r => !capped.includes(r));
         const lost = cut.reduce((s, r) => s + (r.was - r.now), 0);
 
-        note(code, m.label,
-          `${lost.toFixed(2)}h fewer than the rows hold, across ${cut.length} day(s)`,
-          `${capped.length} capped at ${cap.full}h`
+        /* A gap the settings fully explain is not a finding. Listing sixteen
+         * of them beside one real bug is how the real one gets skipped — the
+         * eye reads the length of the list, not the entries. Explained gaps
+         * are reported where they happen and left off the summary. */
+        const explained = capped.length + rounded.length === cut.length;
+        const detail = `${capped.length} capped at ${cap.full}h`
           + `, ${rounded.length} changed by round-off`
-          + `   (rows ${Number(truth.hours).toFixed(2)}h → report ${reported.toFixed(2)}h)`);
+          + `   (rows ${Number(truth.hours).toFixed(2)}h → report ${reported.toFixed(2)}h)`;
+
+        if (explained) {
+          console.log(`      ${pad(m.label, 10)}${lost.toFixed(2)}h less than the rows hold`
+            + `, and the settings account for all of it`);
+          console.log(`                ${detail}`);
+        } else {
+          note(code, m.label,
+            `${lost.toFixed(2)}h fewer than the rows hold, across ${cut.length} day(s)`
+            + ' — NOT fully explained by the settings', detail);
+        }
         for (const r of cut.slice(0, 3)) {
           console.log(`                  ${r.d}  ${r.was.toFixed(2)}h → ${r.now.toFixed(2)}h`);
         }

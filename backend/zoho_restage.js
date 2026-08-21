@@ -305,6 +305,28 @@ async function backup(client, batch, table, empId, where, params) {
     process.exit(1);
   }
 
+  /* Full dates, checked here.
+   *
+   * "2026-01" reached Postgres and came back as a DateTimeParseError with a
+   * stack trace, from a script whose whole job is deleting and replacing real
+   * history. It failed safely — during the read, before any transaction — but
+   * only by luck of ordering, and a stack trace is not an answer to a typo.
+   * The companion checker takes YYYY-MM, which is exactly how the wrong shape
+   * gets typed here. */
+  for (const [label, v] of [['start', START], ['end', END]]) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(`${v}T00:00:00Z`))) {
+      console.log(`\n  The ${label} date "${v}" is not a full date.\n`);
+      console.log('  This takes YYYY-MM-DD. check_reports_against_rows.js takes YYYY-MM,');
+      console.log('  which is the easy mix-up.\n');
+      console.log(`  You probably meant:  ${/^\d{4}-\d{2}$/.test(v) ? `${v}-01` : 'YYYY-MM-DD'}\n`);
+      process.exit(1);
+    }
+  }
+  if (START > END) {
+    console.log(`\n  The start date ${START} is after the end date ${END}.\n`);
+    process.exit(1);
+  }
+
   console.log('\n══════════════════════════════════════════════════════════');
   console.log(`  Restage onto Zoho history — ${APPLY ? 'APPLYING' : 'DRY RUN, nothing will be written'}`);
   console.log(`  ${CODES.join(', ')}   ${START} to ${END}`);
