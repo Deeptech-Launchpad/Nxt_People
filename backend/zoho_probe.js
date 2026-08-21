@@ -69,6 +69,18 @@ async function attempt(label, endpoint) {
   try {
     const json = await zohoApi(endpoint);
     const body = json?.response?.result ?? json?.response ?? json;
+
+    // Zoho answers a bad form name with HTTP 200 and an error envelope, so the
+    // status code alone reported four failures as successes. An unknown form
+    // is a failure whatever the transport says about it.
+    const envelope = body && !Array.isArray(body) && typeof body === 'object'
+      && ('errors' in body || 'message' in body) && !('result' in body);
+    if (envelope) {
+      const msg = String(body.message || JSON.stringify(body.errors || {})).slice(0, 70);
+      console.log(`no     200 but an error: ${msg}`);
+      return { label, endpoint, ok: false, code: 'envelope' };
+    }
+
     console.log(`ok    ${shapeOf(body)}`);
     return { label, endpoint, ok: true, body };
   } catch (err) {
