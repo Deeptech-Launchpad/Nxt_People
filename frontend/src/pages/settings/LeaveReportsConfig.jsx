@@ -80,9 +80,6 @@ export default function LeaveReportsConfig() {
       <Card title="Loss of pay details report" description="Define preferences related to loss of pay">
         <p className="text-[14px] text-slate-700 mb-3">
           Unpaid leave will be
-          {lop.unpaidLeave === 'carry_over' && (
-            <NotWired>Carrying over is not applied — unpaid leave is still reported as LOP</NotWired>
-          )}
         </p>
         <div className="flex flex-wrap items-center gap-x-8 gap-y-2.5">
           {[['lop', 'treated as LOP'], ['carry_over', 'carried over to next pay period']].map(([v, l]) => (
@@ -108,6 +105,58 @@ export default function LeaveReportsConfig() {
           {/* Blank is meaningful here and easy to misread as unset-by-accident. */}
           <span className="text-[12px] text-slate-400">leave blank for no limit</span>
         </div>
+
+        <p className="text-[12px] text-slate-400 mt-2 max-w-[560px]">
+          {lop.maxPerPeriod === null || lop.maxPerPeriod === '' || lop.maxPerPeriod === undefined
+            ? 'With no limit, every unpaid day is charged in the period it happened.'
+            : lop.unpaidLeave === 'carry_over'
+              ? `Past ${lop.maxPerPeriod} days, the rest moves to the next pay period rather than being forgiven.`
+              : `Past ${lop.maxPerPeriod} days, the rest is not charged at all — so the same unpaid leave costs less taken all at once than spread across two periods.`}
+        </p>
+
+        {/* Only shown while carrying is chosen. Both are stored either way, so
+            switching to LOP and back does not discard how it was configured. */}
+        {lop.unpaidLeave === 'carry_over' && (
+          <div className="mt-4 border border-slate-200 rounded-lg bg-slate-50 px-4 py-4 space-y-4 max-w-[560px]">
+            <div>
+              <p className="text-[13.5px] font-medium text-slate-700 mb-2">A carried day that still cannot be charged</p>
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                <label className="flex items-center gap-2 cursor-pointer text-[13.5px] text-slate-700">
+                  <input type="radio" name="carryExpiry" className="w-4 h-4 accent-blue-600"
+                    checked={lop.carryExpiry !== 'never'}
+                    onChange={() => setIn('lossOfPay', { carryExpiry: 'one_period' })} />
+                  Is dropped after one more period
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-[13.5px] text-slate-700">
+                  <input type="radio" name="carryExpiry" className="w-4 h-4 accent-blue-600"
+                    checked={lop.carryExpiry === 'never'}
+                    onChange={() => setIn('lossOfPay', { carryExpiry: 'never' })} />
+                  Keeps moving until there is room
+                </label>
+              </div>
+              <p className="text-[12px] text-slate-400 mt-1.5">
+                {lop.carryExpiry === 'never'
+                  ? 'A large amount of unpaid leave can follow somebody for months.'
+                  : 'Anything still uncharged after one further period is written off.'}
+              </p>
+            </div>
+
+            <div className="border-t border-slate-200 pt-3.5">
+              <Check
+                checked={!!lop.carryVisibleToEmployee}
+                onChange={v => setIn('lossOfPay', { carryVisibleToEmployee: v })}
+                label="Show carried loss of pay to the employee"
+                hint="Off keeps it to HR. On, somebody can see a deduction is coming before it reaches their payslip."
+              />
+            </div>
+
+            <p className="text-[12px] text-slate-500 border-t border-slate-200 pt-3.5">
+              Carried days are charged oldest first, and the figures are worked out from
+              the periods themselves rather than stored — so changing the limit here, or
+              switching back to LOP, leaves no stale balance behind.
+            </p>
+          </div>
+        )}
 
         <div className="mt-5">
           <Toggle

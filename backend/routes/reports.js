@@ -6,6 +6,8 @@ const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
 const { countWorkingDays, ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
 const { unregularizedDaysForRange } = require('../utils/unregularizedAbsence');
 const { lopDaysForRange, absentDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
+const { lopForPeriod, activePayPeriod } = require('../utils/lopCarryOver');
+const { cycleFor } = require('../utils/payPeriodCycle');
 const { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const attendanceConfig = require('../utils/attendanceConfig');
@@ -1622,6 +1624,16 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
     const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
     const { holMap, rules } = await loadHolidaysAndRulesRange(startDate, endDate);
     const lopCfg = (await leaveReportsConfig()).lossOfPay || {};
+    // Carrying only means something across pay periods, so the report has to
+    // know whether the range it was handed IS one.
+    const canCarry = lopCfg.unpaidLeave === 'carry_over';
+    const payPeriod = canCarry ? await activePayPeriod(pool) : null;
+    const periodCycle = payPeriod
+      ? cycleFor(payPeriod, new Date(`${startDate.toLocaleDateString('en-CA')}T00:00:00Z`))
+      : null;
+    const isWholePeriod = !!periodCycle
+      && periodCycle.startDate === startDate.toLocaleDateString('en-CA')
+      && periodCycle.endDate === endDate.toLocaleDateString('en-CA');
     const maxLop = lopCfg.maxPerPeriod === null || lopCfg.maxPerPeriod === undefined || lopCfg.maxPerPeriod === ''
       ? null : Number(lopCfg.maxPerPeriod);
 
@@ -1647,13 +1659,35 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
       // "The maximum number of LOP allowed per pay period". Blank means no cap
       // — which is not the same as a cap of zero, so the check is on null
       // rather than on falsiness.
-      const lopDays = maxLop === null ? rawLop : Math.min(rawLop, maxLop);
+      // Carry-over, when the org has switched it on AND the range asked for is
+      // exactly one pay period. Over an arbitrary range "carried in from the
+      // previous period" has no meaning, so those columns stay null rather
+      // than being filled with a plausible zero.
+      let carry = null;
+      if (payPeriod && isWholePeriod) {
+        carry = await lopForPeriod(pool, {
+          employeeId: emp._id, on: periodCycle.startDate, cfg: { lossOfPay: lopCfg },
+          period: payPeriod,
+          rawFor: (s2, e2) => lopDaysForRange(emp._id, new Date(s2), new Date(e2), holMap, rules, pool),
+        });
+      }
+
+      const lopDays = carry ? carry.charged
+        : (maxLop === null ? rawLop : Math.min(rawLop, maxLop));
       // Every employee is listed, including those with no loss of pay. This
       // report is read to confirm a payroll figure, and "nobody had LOP" and
       // "the report failed to load" look identical if the rows are dropped —
       // a table of zeros is the answer, not an empty state.
-      data.push({ ...emp, previousPeriodBalance: 0, booked: rawLop, total: rawLop,
-        waivedOff: Math.max(0, rawLop - lopDays), carryOver: 0, reason: null, lopDays, lopHours: 0,
+      data.push({ ...emp,
+        // Null, not zero, when the range is not a pay period — "no balance
+        // carried" and "carrying is not a question here" are different facts.
+        previousPeriodBalance: carry ? carry.carriedIn : (canCarry ? 0 : null),
+        booked: rawLop,
+        total: carry ? round2(rawLop + carry.carriedIn) : rawLop,
+        waivedOff: carry ? carry.waived : Math.max(0, rawLop - lopDays),
+        carryOver: carry ? carry.carriedOut : (canCarry ? 0 : null),
+        expired: carry ? carry.expired : null,
+        reason: null, lopDays, lopHours: 0,
         // Only lopDays is deducted automatically. absentDays is surfaced for HR
         // to regularize or convert — a missing punch is not proof of absence.
         absentDays, unregularizedDays,

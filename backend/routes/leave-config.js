@@ -64,7 +64,19 @@ const SECTIONS = {
           includeWeekendsAsPayable: !!p.includeWeekendsAsPayable,
           includeHolidaysAsPayable: !!p.includeHolidaysAsPayable,
         },
-        lossOfPay: { unpaidLeave: l.unpaidLeave, maxPerPeriod, reversal: !!l.reversal },
+        lossOfPay: {
+          unpaidLeave: l.unpaidLeave,
+          maxPerPeriod,
+          reversal: !!l.reversal,
+          // Only meaningful while unpaidLeave is 'carry_over', but stored
+          // either way: switching to LOP and back should not discard how the
+          // carry was configured.
+          //
+          // 'one_period' by default. A debt that follows somebody indefinitely
+          // is the more surprising of the two, so it has to be chosen.
+          carryExpiry: l.carryExpiry === 'never' ? 'never' : 'one_period',
+          carryVisibleToEmployee: !!l.carryVisibleToEmployee,
+        },
       };
     },
   },
