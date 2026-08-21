@@ -12,10 +12,20 @@
  *  that row rather than creating one — leaving created_at holding the cron's
  *  time, which is earlier than the real arrival and would invent one.
  *
- *  So this proves it before proposing anything. A cron write lands on many
- *  people at once, within the same minute; a check-in does not. Any row whose
- *  created_at shares its minute with other rows the same day is treated as
- *  cron-written and left alone, however tempting the figure looks.
+ *  So this proves it before proposing anything. The scheduler inserts every
+ *  missing row in ONE statement, so those rows share a created_at to the
+ *  microsecond. A row whose timestamp is identical to another's was written
+ *  with it and is left alone.
+ *
+ *  An earlier version compared to the MINUTE instead, which excluded fourteen
+ *  perfectly good rows for the crime of checking in during the same minute as a
+ *  colleague — 09:31, 09:32, 09:34 are the morning arrival rush, not a cron.
+ *
+ *  There is also a floor. check_in comes from Node and created_at from the
+ *  database, so a healthy row differs by a fraction of a second; the same
+ *  version proposed "repairing" arrivals by two seconds and recomputing
+ *  statuses off the back of it. Only a gap wide enough to be a lost arrival
+ *  counts, and MIN_GAP_MINUTES says how wide.
  *
  *  created_at is a timezone-free column holding a UTC wall clock, exactly as
  *  check_in is, so it has to be converted the same way. Reading it straight
@@ -32,6 +42,11 @@ require('dotenv').config();
 const pool = require('./db');
 const APPLY = process.argv.includes('--apply');
 const TZ = 'Asia/Kolkata';
+
+// Below this the two timestamps are just the round trip between Node and the
+// database, not a lost arrival. Override with --gap=N to look wider or closer.
+const gapArg = process.argv.find(a => a.startsWith('--gap='));
+const MIN_GAP_MINUTES = gapArg ? Math.max(0, Number(gapArg.slice(6))) : 5;
 
 const pad = (s, n) => String(s).padEnd(n);
 
@@ -60,7 +75,8 @@ const pad = (s, n) => String(s).padEnd(n);
              to_char(a.check_out  AT TIME ZONE 'UTC' AT TIME ZONE $1, 'HH24:MI:SS') AS stored_out,
              to_char(a.created_at AT TIME ZONE 'UTC' AT TIME ZONE $1, 'HH24:MI:SS') AS made_at,
              (a.created_at AT TIME ZONE 'UTC' AT TIME ZONE $1)::date AS made_on,
-             date_trunc('minute', a.created_at) AS made_minute,
+             a.created_at AS made_exact,
+             EXTRACT(EPOCH FROM (a.check_in - a.created_at))/60.0 AS gap_minutes,
              COALESCE(s.start_time::text, '09:30:00') AS shift_start,
              COALESCE(s.grace_minutes, 15) AS grace,
              (SELECT half_day_hours FROM settings LIMIT 1) AS half_day,
@@ -74,19 +90,21 @@ const pad = (s, n) => String(s).padEnd(n);
          -- Only where the row was made BEFORE the punch it holds: that gap is
          -- the whole symptom.
          AND a.created_at < a.check_in
+         -- A healthy row differs by the round trip, not by an arrival.
+         AND a.check_in - a.created_at >= ($2 || ' minutes')::interval
          -- And only when both fall on the same day, or created_at is not an
          -- arrival at all.
          AND (a.created_at AT TIME ZONE 'UTC' AT TIME ZONE $1)::date = a.date
     )
     SELECT c.*,
-           -- How many OTHER rows were written in the same minute. A check-in
-           -- is one person; the scheduler is everybody at once.
+           -- How many OTHER rows carry the very same timestamp. The scheduler
+           -- inserts them all in one statement, so they match exactly; two
+           -- people checking in during the same minute do not.
            (SELECT COUNT(*) FROM attendance x
-             WHERE x.date = c.d::date
-               AND date_trunc('minute', x.created_at) = c.made_minute
-               AND x.id <> c.id) AS same_minute
+             WHERE x.created_at = c.made_exact
+               AND x.id <> c.id) AS same_instant
       FROM candidate c
-     ORDER BY c.d, c.code`, [TZ]);
+     ORDER BY c.d, c.code`, [TZ, String(MIN_GAP_MINUTES)]);
 
   if (!rows.length) {
     console.log('  Nothing matches. Every arrival is at or before the row that holds it.\n');
@@ -94,8 +112,8 @@ const pad = (s, n) => String(s).padEnd(n);
     return;
   }
 
-  const safe = rows.filter(r => Number(r.same_minute) === 0);
-  const bulk = rows.filter(r => Number(r.same_minute) > 0);
+  const safe = rows.filter(r => Number(r.same_instant) === 0);
+  const bulk = rows.filter(r => Number(r.same_instant) > 0);
 
   console.log(`  ${safe.length} row(s) where created_at is an arrival and nothing else:\n`);
 
@@ -111,7 +129,9 @@ const pad = (s, n) => String(s).padEnd(n);
     const status = hours < half ? 'absent' : hours < full ? 'half-day'
       : (late > Number(r.grace) ? 'late' : 'present');
 
-    console.log(`    ${pad(r.code, 14)} ${r.d}   arrival ${r.stored_in} -> ${arrival}`);
+    const gap = Number(r.gap_minutes);
+    const gapText = gap >= 60 ? `${Math.floor(gap / 60)}h ${Math.round(gap % 60)}m` : `${Math.round(gap)}m`;
+    console.log(`    ${pad(r.code, 14)} ${r.d}   arrival ${r.stored_in} -> ${arrival}   (${gapText} earlier)`);
     const bits = [];
     if (Number(r.late_minutes) !== late) bits.push(`late ${r.late_minutes} -> ${late} min`);
     if (r.status !== status) bits.push(`status ${r.status} -> ${status}`);
@@ -135,7 +155,7 @@ const pad = (s, n) => String(s).padEnd(n);
     console.log(`\n  ${bulk.length} row(s) left alone — created_at is shared with other rows`);
     console.log('  the same minute, so it was written in bulk and is not an arrival:\n');
     for (const r of bulk) {
-      console.log(`    ${pad(r.code, 14)} ${r.d}   made at ${r.made_at} alongside ${r.same_minute} other row(s)`);
+      console.log(`    ${pad(r.code, 14)} ${r.d}   made at ${r.made_at} alongside ${r.same_instant} other row(s)`);
     }
   }
 

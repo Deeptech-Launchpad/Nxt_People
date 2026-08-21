@@ -51,7 +51,23 @@ const seed = async (empId, madeAt, checkIn) => {
   const bulk = [];
   for (let i = 1; i < 4; i++) bulk.push(await seed(emps[i].id, '11:00:00', '15:15:00'));
 
-  console.log(`\n  seeded one lone row at 09:41 and three sharing 11:00\n`);
+  // A healthy row. check_in comes from Node and created_at from the database,
+  // so they differ by the round trip. Proposing to "repair" this by four
+  // seconds — and recomputing its status off the back of it — is exactly what
+  // the first version of this script did to twenty-two live rows.
+  const HEALTHY_DAY = '2019-12-13';
+  await pool.query(`DELETE FROM attendance WHERE employee_id=$1 AND date=$2`, [emps[0].id, HEALTHY_DAY]);
+  const healthy = (await pool.query(
+    `INSERT INTO attendance (employee_id, date, check_in, check_out, working_hours, status, late_minutes, created_at)
+     VALUES ($1, $2::date,
+       (($2::date + '09:20:04'::time) AT TIME ZONE 'Asia/Kolkata' AT TIME ZONE 'UTC'),
+       (($2::date + '18:00'::time)    AT TIME ZONE 'Asia/Kolkata' AT TIME ZONE 'UTC'),
+       8.5, 'present', 300,
+       (($2::date + '09:20:00'::time) AT TIME ZONE 'Asia/Kolkata' AT TIME ZONE 'UTC'))
+     RETURNING id`, [emps[0].id, HEALTHY_DAY])).rows[0].id;
+  made.push(() => pool.query(`DELETE FROM attendance WHERE id=$1`, [healthy]));
+
+  console.log(`\n  seeded one lone row at 09:41, three sharing 11:00, and one healthy row 4s apart\n`);
 
   console.log('════ The dry run tells them apart ════\n');
 
@@ -67,6 +83,8 @@ const seed = async (empId, madeAt, checkIn) => {
     dry.split('\n').find(l => l.includes('->')));
   check('nothing was written by the dry run',
     (await readRow(lone)).ci === '14:30:00', await readRow(lone));
+  check('a row four seconds apart is not treated as a lost arrival',
+    !/09:20:04 ->/.test(dry), dry.split('\n').filter(l => l.includes('09:20')));
 
   console.log('\n════ Applying ════\n');
 
@@ -77,6 +95,10 @@ const seed = async (empId, madeAt, checkIn) => {
   check('and its late minutes were recomputed, not left at 300',
     Number(fixed.late_minutes) === 11, fixed.late_minutes);
   check('hours were not touched', Number(fixed.working_hours) === 8.5, fixed.working_hours);
+
+  const stillHealthy = await readRow(healthy);
+  check('and the healthy row survives the apply untouched',
+    stillHealthy.ci === '09:20:04' && Number(stillHealthy.late_minutes) === 300, stillHealthy);
 
   for (const id of bulk) {
     const row = await readRow(id);
