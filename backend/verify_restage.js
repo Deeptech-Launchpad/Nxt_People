@@ -117,21 +117,49 @@ const pad = (s, n) => String(s ?? '-').padEnd(n);
       + `${odd ? '   ← the timezone conversion is wrong' : '   (as expected)'}`);
     if (odd) problems++;
 
-    // check-out minus check-in against the hours stored on the row.
-    const drift = (await pool.query(
+    /* check-out minus check-in against the hours on the row — but the two
+     * directions mean completely different things, and treating them alike
+     * reported five perfectly good days as faults.
+     *
+     * Zoho's TotalHours sums EACH in/out pair, so a lunch break is excluded.
+     * check_in and check_out hold only the first and the last. So on any day
+     * somebody punched out mid-day, the span is legitimately LONGER than the
+     * hours worked, and the hours are the truer figure — which is also what
+     * this org's policy asks for (calculateHoursFrom 'every', and reports.js
+     * reads working_hours directly in that mode).
+     *
+     * Stored longer than the span is the impossible one: nobody works more
+     * hours than elapsed between arriving and leaving. */
+    const rows = (await pool.query(
       `SELECT date::text AS d, working_hours AS stored,
               ROUND(EXTRACT(EPOCH FROM (check_out - check_in))/3600.0, 2) AS spanned
          FROM attendance
         WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date
           AND check_in IS NOT NULL AND check_out IS NOT NULL
           AND ABS(EXTRACT(EPOCH FROM (check_out - check_in))/3600.0 - working_hours) > 0.02
-        ORDER BY date LIMIT 10`, [emp.id, START, END])).rows;
-    console.log(`    rows where the punches do not add up to the hours: ${drift.length}`
-      + `${drift.length ? '' : '   (as expected)'}`);
-    for (const r of drift) {
-      console.log(`      ${r.d}   stored ${r.stored}h   punches span ${r.spanned}h`);
+        ORDER BY date`, [emp.id, START, END])).rows;
+    const impossible = rows.filter(r => Number(r.stored) > Number(r.spanned));
+    const breaks = rows.filter(r => Number(r.stored) <= Number(r.spanned));
+
+    console.log(`    rows claiming more hours than the day is long: ${impossible.length}`
+      + `${impossible.length ? '   ← these cannot be right' : '   (as expected)'}`);
+    for (const r of impossible.slice(0, 10)) {
+      console.log(`      ${r.d}   stored ${r.stored}h   punches span only ${r.spanned}h`);
     }
-    if (drift.length) problems++;
+    if (impossible.length) problems++;
+
+    if (breaks.length) {
+      console.log(`    rows where the day spans longer than the hours worked: ${breaks.length}`);
+      console.log('      (mid-day punch-outs — the gap is a break, and the hours are right)');
+      for (const r of breaks.slice(0, 5)) {
+        console.log(`      ${r.d}   worked ${r.stored}h   present ${r.spanned}h`);
+      }
+      // Only the first and last punch were imported, so a switch to
+      // 'first_last' would recompute these days from a span that includes the
+      // break and hand back hours nobody worked.
+      console.log('      NOTE: switching the policy to first_last would count'
+        + ' those breaks as worked time.');
+    }
 
     const nulls = (await pool.query(
       `SELECT COUNT(*)::int n FROM attendance
