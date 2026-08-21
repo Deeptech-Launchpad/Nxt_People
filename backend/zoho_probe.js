@@ -1,20 +1,26 @@
 /* ── What will Zoho actually give us? ──────────────────────────────────────
- *  Before building anything that compares two systems, find out what the other
- *  one returns. Zoho's People API is inconsistent between forms and modules —
- *  some endpoints answer with { response: { result: [...] } }, some with a
- *  bare array, some 404 on a plan that does not include the module.
+ *  Comparing two systems needs the other one's answers first, and Zoho's
+ *  People API is inconsistent between forms and modules. The first run of this
+ *  found the split clearly:
  *
- *  So this asks, rather than assumes. It tries the endpoints that could carry
- *  attendance, leave and loss of pay for ONE employee over a short range, and
- *  reports which answered and what shape came back.
+ *    forms/…            answered
+ *    attendance/…       401 — the token refreshed fine and was then refused
+ *    leave/…            404 — wrong path
  *
- *  Read-only in both directions. Every Zoho call is a GET, the mail transport
- *  is replaced with one that cannot connect, and our own database is only
- *  read from — proved on startup by a write that is refused.
+ *  A 401 AFTER a successful refresh is not a bad credential. It is a missing
+ *  OAuth scope: Zoho grants them per module, and a token holding
+ *  ZohoPeople.forms.ALL is refused by the attendance module however valid it
+ *  is. So this now reports the granted scopes outright, which settles that
+ *  question rather than leaving it to be guessed at.
+ *
+ *  And since forms/ answers, it asks Zoho to list its forms. Attendance is
+ *  stored in one; knowing its link name beats trying names.
+ *
+ *  Read-only in both directions. Every Zoho call is a GET, our own database
+ *  refuses any statement that is not a SELECT and proves it on startup, and
+ *  the mail transport cannot connect. Nothing is imported.
  *
  *    docker compose exec backend node zoho_probe.js ANXT2600149 2026-07-01 2026-07-31
- *
- *  Nothing is imported. This only reports what is reachable.
  * ────────────────────────────────────────────────────────────────────────── */
 process.env.EMAIL_DISABLED = 'true';
 const nodemailer = require('nodemailer');
@@ -42,35 +48,48 @@ const CODE = process.argv[2];
 const START = process.argv[3];
 const END = process.argv[4];
 
-// Zoho's date parameters are dd-MM-yyyy in most of the People API, which is
-// not the format anything else here uses.
 const zohoDate = iso => {
   const [y, m, d] = String(iso).slice(0, 10).split('-');
   return `${d}-${m}-${y}`;
 };
 
 const shapeOf = (v, depth = 0) => {
-  if (v === null) return 'null';
+  if (v === null || v === undefined) return 'null';
   if (Array.isArray(v)) return v.length ? `[${v.length} × ${shapeOf(v[0], depth + 1)}]` : '[]';
   if (typeof v === 'object') {
     const keys = Object.keys(v);
     if (depth >= 2) return `{${keys.length} keys}`;
-    return `{ ${keys.slice(0, 8).join(', ')}${keys.length > 8 ? `, +${keys.length - 8}` : ''} }`;
+    return `{ ${keys.slice(0, 6).join(', ')}${keys.length > 6 ? `, +${keys.length - 6}` : ''} }`;
   }
   return typeof v;
 };
 
 async function attempt(label, endpoint) {
-  process.stdout.write(`  ${label.padEnd(34)}`);
+  process.stdout.write(`  ${label.padEnd(38)}`);
   try {
     const json = await zohoApi(endpoint);
     const body = json?.response?.result ?? json?.response ?? json;
     console.log(`ok    ${shapeOf(body)}`);
     return { label, endpoint, ok: true, body };
   } catch (err) {
-    console.log(`—     ${String(err.message).split('\n')[0].slice(0, 90)}`);
-    return { label, endpoint, ok: false };
+    const m = String(err.message);
+    const code = (m.match(/\((\d{3})\)/) || [])[1] || '?';
+    console.log(`${code === '401' ? 'scope?' : code === '404' ? 'path? '.padEnd(6) : '—     '} ${code}`);
+    return { label, endpoint, ok: false, code };
   }
+}
+
+/** What the refresh token is actually allowed to reach. */
+async function grantedScopes() {
+  const params = new URLSearchParams({
+    refresh_token: process.env.ZOHO_REFRESH_TOKEN || '',
+    client_id: process.env.ZOHO_CLIENT_ID || '',
+    client_secret: process.env.ZOHO_CLIENT_SECRET || '',
+    grant_type: 'refresh_token',
+  });
+  const r = await fetch(`${process.env.ZOHO_AUTH_URL}?${params.toString()}`, { method: 'POST' });
+  const body = await r.json();
+  return body.scope || null;
 }
 
 (async () => {
@@ -93,67 +112,97 @@ async function attempt(label, endpoint) {
     console.log('  ok    a deliberate write attempt was refused\n');
   }
 
-  // Our own side first, so the two can be lined up afterwards.
   const emp = (await pool.query(
     `SELECT id, employee_id AS code, TRIM(CONCAT(first_name,' ',last_name)) AS name, email
        FROM employees WHERE employee_id = $1 AND deleted_at IS NULL`, [CODE])).rows[0];
-  if (!emp) {
-    console.log(`  ${CODE} is not in this database. Check the code.\n`);
-    await pool.end();
-    return;
-  }
+  if (!emp) { console.log(`  ${CODE} is not in this database.\n`); await pool.end(); return; }
   const ours = (await pool.query(
     `SELECT COUNT(*)::int n FROM attendance WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date`,
     [emp.id, START, END])).rows[0].n;
-  console.log(`  Here:  ${emp.name} (${emp.email || 'no email'}) — ${ours} attendance row(s) in range\n`);
+  console.log(`  Here:  ${emp.name} — ${ours} attendance row(s) in range\n`);
 
+  // ── The question the 401s raise ──────────────────────────────────────────
   console.log('──────────────────────────────────────────────────────────');
-  console.log('  Zoho endpoints');
+  console.log('  What this token is allowed to reach');
+  console.log('──────────────────────────────────────────────────────────\n');
+  try {
+    const scope = await grantedScopes();
+    if (!scope) {
+      console.log('  Zoho returned no scope on the token. Cannot tell from here.\n');
+    } else {
+      for (const s of String(scope).split(/[\s,]+/).filter(Boolean)) console.log(`    ${s}`);
+      const has = k => String(scope).toLowerCase().includes(k);
+      console.log('');
+      console.log(`  attendance module   ${has('attendance') ? 'GRANTED' : 'NOT GRANTED — this is why those calls 401'}`);
+      console.log(`  leave module        ${has('leave') ? 'GRANTED' : 'not granted'}`);
+      console.log(`  forms               ${has('forms') ? 'GRANTED' : 'not granted'}\n`);
+    }
+  } catch (e) {
+    console.log(`  Could not read the scopes: ${e.message}\n`);
+  }
+
+  // ── What forms exist, since forms/ is what answers ───────────────────────
+  console.log('──────────────────────────────────────────────────────────');
+  console.log('  Forms Zoho is offering');
+  console.log('──────────────────────────────────────────────────────────\n');
+  let attendanceForms = [];
+  try {
+    const list = await zohoApi('forms');
+    const forms = list?.response?.result || list?.response || list || [];
+    const flat = Array.isArray(forms) ? forms : Object.values(forms).flat();
+    const named = flat
+      .map(f => ({ name: f.formLinkName || f.linkName || f.formName || f.displayName, label: f.displayName || f.formName }))
+      .filter(f => f.name);
+    console.log(`  ${named.length} form(s).\n`);
+    attendanceForms = named.filter(f => /attend|shift|time/i.test(`${f.name} ${f.label}`));
+    const leaveForms = named.filter(f => /leave|permission/i.test(`${f.name} ${f.label}`));
+    for (const f of [...attendanceForms, ...leaveForms]) {
+      console.log(`    ${String(f.name).padEnd(30)} ${f.label || ''}`);
+    }
+    if (!attendanceForms.length) console.log('    (nothing that looks like attendance)');
+    console.log('');
+  } catch (e) {
+    console.log(`  Could not list forms: ${String(e.message).slice(0, 120)}\n`);
+  }
+
+  // ── Endpoints ────────────────────────────────────────────────────────────
+  console.log('──────────────────────────────────────────────────────────');
+  console.log('  Endpoints');
   console.log('──────────────────────────────────────────────────────────\n');
 
   const enc = encodeURIComponent;
   const results = [];
 
-  // Attendance. Zoho exposes this several ways depending on the plan, and the
-  // parameter names differ between them — hence trying rather than picking.
-  results.push(await attempt('attendance/getAttendanceEntries',
-    `attendance/getAttendanceEntries?empId=${enc(CODE)}&date=${enc(zohoDate(START))}`));
+  // Whatever the form list suggested, plus the names Zoho commonly uses.
+  const candidates = [...new Set([
+    ...attendanceForms.map(f => f.name),
+    'P_AttendanceEntry', 'attendance', 'Attendance', 'P_Attendance',
+  ])];
+  for (const name of candidates) {
+    results.push(await attempt(`forms/${name}/getRecords`,
+      `forms/${enc(name)}/getRecords?sIndex=1&limit=5`));
+  }
+
   results.push(await attempt('attendance/getUserReport',
     `attendance/getUserReport?empId=${enc(CODE)}&sdate=${enc(zohoDate(START))}&edate=${enc(zohoDate(END))}`));
-  results.push(await attempt('attendance/getAttendanceReport',
-    `attendance/getAttendanceReport?empId=${enc(CODE)}&fromDate=${enc(zohoDate(START))}&toDate=${enc(zohoDate(END))}`));
 
-  // Leave, and whatever the loss-of-pay figure hangs off.
-  results.push(await attempt('leave/getRecords',
-    `leave/getRecords?empId=${enc(CODE)}&from=${enc(zohoDate(START))}&to=${enc(zohoDate(END))}`));
-  results.push(await attempt('forms/leave/getRecords',
-    `forms/leave/getRecords?sIndex=1&limit=50`));
-  results.push(await attempt('leave/getLeaveTypeDetails',
-    `leave/getLeaveTypeDetails?empId=${enc(CODE)}`));
-  results.push(await attempt('leave/getBalanceReport',
-    `leave/getBalanceReport?empId=${enc(CODE)}`));
-
-  // The employee form, which is known to work — a control, so a wall of
-  // failures above can be told apart from broken credentials.
-  results.push(await attempt('forms/employee/getRecords (control)',
-    `forms/employee/getRecords?sIndex=1&limit=1`));
+  // Leave answered last time; the useful question now is whether it can be
+  // narrowed to one person and one range rather than paged through wholesale.
+  results.push(await attempt('forms/leave (filtered by employee)',
+    `forms/leave/getRecords?sIndex=1&limit=50&searchParams=${enc(JSON.stringify({
+      searchField: 'Employee_ID', searchOperator: 'Contains', searchText: CODE,
+    }))}`));
 
   const ok = results.filter(r => r.ok);
-  console.log(`\n  ${ok.length} of ${results.length} endpoint(s) answered.\n`);
+  console.log(`\n  ${ok.length} of ${results.length} answered.\n`);
 
-  if (!ok.length) {
-    console.log('  None answered. Either the credentials are wrong or this Zoho');
-    console.log('  plan does not expose these modules over the API.\n');
-  } else {
-    console.log('──────────────────────────────────────────────────────────');
-    console.log('  A sample of what came back');
-    console.log('──────────────────────────────────────────────────────────\n');
-    for (const r of ok) {
-      console.log(`  ── ${r.label}`);
-      const sample = Array.isArray(r.body) ? r.body[0] : r.body;
-      console.log(JSON.stringify(sample, null, 1).split('\n').slice(0, 22).map(l => `     ${l}`).join('\n'));
-      console.log('');
-    }
+  for (const r of ok) {
+    console.log(`  ── ${r.label}`);
+    const first = Array.isArray(r.body) ? r.body[0] : r.body;
+    const inner = first && typeof first === 'object' && !Array.isArray(first)
+      ? (Object.values(first)[0]?.[0] ?? first) : first;
+    console.log(JSON.stringify(inner, null, 1).split('\n').slice(0, 26).map(l => `     ${l}`).join('\n'));
+    console.log('');
   }
 
   console.log('══════════════════════════════════════════════════════════');
