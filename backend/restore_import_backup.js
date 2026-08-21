@@ -35,9 +35,24 @@ const APPLY = process.argv.includes('--apply');
 
 const pad = (s, n) => String(s).padEnd(n);
 
-// Which column holds the date each table is ranged by. Anything not named here
-// cannot be restored, and saying so beats guessing at a column name.
-const DATE_COLUMN = { leaves: 'start_date', attendance: 'date' };
+/* How each table is put back.
+ *
+ *   'range'  clear the employee's rows between two dates and reinsert the
+ *            stored ones. Right for attendance and leave, where the backup is
+ *            every row in a window and rows may have been added since.
+ *
+ *   'row'    update the existing row back to its stored values. Right for a
+ *            profile: the row is one somebody logs in as and that half the
+ *            database points at by id, so deleting and reinserting it would
+ *            take the foreign keys with it. Nothing was ever added or removed,
+ *            only edited, so editing it back is the exact reverse.
+ *
+ * Anything not named here cannot be restored, and saying so beats guessing. */
+const STRATEGY = {
+  leaves:     { how: 'range', dateColumn: 'start_date' },
+  attendance: { how: 'range', dateColumn: 'date' },
+  employees:  { how: 'row',   key: 'id' },
+};
 
 (async () => {
   if (!(await pool.query(`SELECT to_regclass('import_backups') AS t`)).rows[0].t) {
@@ -96,9 +111,9 @@ const DATE_COLUMN = { leaves: 'start_date', attendance: 'date' };
     const d = m.row_data;
     const tables = [];
     for (const table of d.tables || []) {
-      const col = DATE_COLUMN[table];
-      if (!col) {
-        console.log(`  ${table} has no date column named here — cannot restore this batch.\n`);
+      const strategy = STRATEGY[table];
+      if (!strategy) {
+        console.log(`  ${table} has no restore strategy here — cannot restore this batch.\n`);
         await pool.end();
         process.exit(1);
       }
@@ -106,20 +121,24 @@ const DATE_COLUMN = { leaves: 'start_date', attendance: 'date' };
         `SELECT COUNT(*)::int n FROM import_backups
           WHERE batch = $1 AND table_name = $2 AND employee_id = $3`,
         [BATCH, table, m.employee_id])).rows[0].n;
-      const now = (await pool.query(
-        `SELECT COUNT(*)::int n FROM ${table}
-          WHERE employee_id = $1 AND ${col} BETWEEN $2::date AND $3::date`,
-        [m.employee_id, d.start, d.end])).rows[0].n;
-      tables.push({ table, col, held, now });
+      const now = strategy.how === 'range'
+        ? (await pool.query(
+            `SELECT COUNT(*)::int n FROM ${table}
+              WHERE employee_id = $1 AND ${strategy.dateColumn} BETWEEN $2::date AND $3::date`,
+            [m.employee_id, d.start, d.end])).rows[0].n
+        : held;
+      tables.push({ table, strategy, held, now });
     }
     work.push({ employeeId: m.employee_id, d, tables });
   }
 
   for (const w of work) {
-    console.log(`  ${w.d.name}   ${w.d.code}   ${w.d.start} to ${w.d.end}\n`);
+    console.log(`  ${w.d.name}   ${w.d.code}`
+      + `${w.d.start ? `   ${w.d.start} to ${w.d.end}` : ''}\n`);
     for (const t of w.tables) {
-      console.log(`    ${pad(t.table, 14)}${pad(`${t.now} row(s) there now`, 24)}`
-        + `→ ${t.held} row(s) put back`);
+      console.log(`    ${pad(t.table, 14)}${t.strategy.how === 'range'
+        ? `${pad(`${t.now} row(s) there now`, 24)}→ ${t.held} row(s) put back`
+        : `${pad(`${(w.d.fields || []).length} field(s) changed`, 24)}→ put back as it was`}`);
     }
     console.log('');
   }
@@ -136,24 +155,50 @@ const DATE_COLUMN = { leaves: 'start_date', attendance: 'date' };
 
     for (const w of work) {
       for (const t of w.tables) {
-        await client.query(
-          `DELETE FROM ${t.table}
-            WHERE employee_id = $1 AND ${t.col} BETWEEN $2::date AND $3::date`,
-          [w.employeeId, w.d.start, w.d.end]);
+        if (t.strategy.how === 'range') {
+          await client.query(
+            `DELETE FROM ${t.table}
+              WHERE employee_id = $1 AND ${t.strategy.dateColumn} BETWEEN $2::date AND $3::date`,
+            [w.employeeId, w.d.start, w.d.end]);
 
-        // jsonb_populate_record rebuilds the row against whatever columns the
-        // table has now, so this keeps working when the schema moves on.
-        const back = await client.query(
-          `INSERT INTO ${t.table}
-           SELECT (jsonb_populate_record(NULL::${t.table}, row_data)).*
-             FROM import_backups
-            WHERE batch = $1 AND table_name = $2 AND employee_id = $3`,
-          [BATCH, t.table, w.employeeId]);
+          // jsonb_populate_record rebuilds the row against whatever columns the
+          // table has now, so this keeps working when the schema moves on.
+          const back = await client.query(
+            `INSERT INTO ${t.table}
+             SELECT (jsonb_populate_record(NULL::${t.table}, row_data)).*
+               FROM import_backups
+              WHERE batch = $1 AND table_name = $2 AND employee_id = $3`,
+            [BATCH, t.table, w.employeeId]);
 
-        if (back.rowCount !== t.held) {
-          throw new Error(`${t.table}: put back ${back.rowCount} of ${t.held} rows`);
+          if (back.rowCount !== t.held) {
+            throw new Error(`${t.table}: put back ${back.rowCount} of ${t.held} rows`);
+          }
+          console.log(`    ${pad(w.d.name, 24)}${pad(t.table, 14)}${back.rowCount} row(s) restored`);
+          continue;
         }
-        console.log(`    ${pad(w.d.name, 24)}${pad(t.table, 14)}${back.rowCount} row(s) restored`);
+
+        /* Edited in place, so put it back in place — and only the columns the
+         * import actually wrote. Restoring the whole row would revert anything
+         * a person legitimately changed in the meantime, which is not undoing
+         * the import, it is undoing them as well. */
+        const fields = w.d.fields || [];
+        if (!fields.length) {
+          console.log(`    ${pad(w.d.name, 24)}${t.table}   nothing to put back`);
+          continue;
+        }
+        const sets = fields.map(f => `${f} = (src.r).${f}`).join(', ');
+        const back = await client.query(
+          `UPDATE ${t.table} t SET ${sets}, updated_at = NOW()
+             FROM (SELECT jsonb_populate_record(NULL::${t.table}, row_data) AS r
+                     FROM import_backups
+                    WHERE batch = $1 AND table_name = $2 AND employee_id = $3
+                    LIMIT 1) src
+            WHERE t.${t.strategy.key} = $3`,
+          [BATCH, t.table, w.employeeId]);
+        if (back.rowCount !== 1) {
+          throw new Error(`${t.table}: updated ${back.rowCount} row(s), expected exactly 1`);
+        }
+        console.log(`    ${pad(w.d.name, 24)}${pad(t.table, 14)}${fields.length} field(s) put back`);
       }
     }
 
