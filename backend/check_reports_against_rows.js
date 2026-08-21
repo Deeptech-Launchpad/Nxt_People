@@ -114,6 +114,20 @@ const OFF_CODES = /^(W|H|-)$/;
   console.log('══════════════════════════════════════════════════════════\n');
   console.log('  ok    a deliberate write attempt was refused\n');
 
+  // The two rules that legitimately change hours between the row and the
+  // report. Printing them turns "these numbers disagree" into a question
+  // somebody can actually answer.
+  const pol = (await pool.query(
+    `SELECT attendance_policy_config AS c FROM settings LIMIT 1`)).rows[0]?.c || {};
+  const cap = { on: pol.maxHours?.enabled === true, full: Number(pol.maxHours?.fullDay) || 8.5 };
+  console.log('──────────────────────────────────────────────────────────');
+  console.log('  What may legitimately change hours on the way out');
+  console.log('──────────────────────────────────────────────────────────\n');
+  console.log(`    maximum hours a day    ${cap.on ? `${cap.full} h — anything longer is cut to this` : 'off'}`);
+  console.log(`    round off              ${pol.roundOff
+    ? `${pol.roundOffMode || 'nearest'} ${pol.roundOffMinutes || 15} min` : 'off'}`);
+  console.log(`    hours counted from     ${pol.calculateHoursFrom || 'every'}\n`);
+
   const ms = months(FROM, TO);
 
   for (const code of CODES) {
@@ -182,9 +196,35 @@ const OFF_CODES = /^(W|H|-)$/;
         note(code, m.label, `${truth.rows} attendance row(s) exist but the grid shows none of them`);
       }
 
+      /* A gap between the stored hours and the reported hours is not by itself
+       * a fault — the policy screen has a maximum-hours ceiling and a round-off
+       * rule, and both are applied on the way OUT of the database by design.
+       * Reporting "these disagree" and stopping just sends somebody to read the
+       * same two numbers again. What is worth knowing is which rule took the
+       * hours, and whether it was meant to. */
       if (Number.isFinite(reported) && Math.abs(reported - Number(truth.hours)) > 0.05) {
-        note(code, m.label, 'the hours reported are not the hours on the rows',
-          `rows total ${Number(truth.hours).toFixed(2)}h, the report says ${reported.toFixed(2)}h`);
+        const perDay = new Map((hb.j?.data || [])
+          .filter(r => Number(r.totalHours) > 0).map(r => [r.date, Number(r.totalHours)]));
+        const stored = (await pool.query(
+          `SELECT date::text AS d, working_hours::float AS h FROM attendance
+            WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date
+              AND working_hours > 0 ORDER BY date`, [emp.id, m.start, m.end])).rows;
+
+        const cut = stored
+          .map(r => ({ d: r.d, was: r.h, now: perDay.get(r.d) }))
+          .filter(r => r.now !== undefined && Math.abs(r.was - r.now) > 0.005);
+        const capped = cut.filter(r => cap.on && Math.abs(r.now - cap.full) < 0.005 && r.was > cap.full);
+        const rounded = cut.filter(r => !capped.includes(r));
+        const lost = cut.reduce((s, r) => s + (r.was - r.now), 0);
+
+        note(code, m.label,
+          `${lost.toFixed(2)}h fewer than the rows hold, across ${cut.length} day(s)`,
+          `${capped.length} capped at ${cap.full}h`
+          + `, ${rounded.length} changed by round-off`
+          + `   (rows ${Number(truth.hours).toFixed(2)}h → report ${reported.toFixed(2)}h)`);
+        for (const r of cut.slice(0, 3)) {
+          console.log(`                  ${r.d}  ${r.was.toFixed(2)}h → ${r.now.toFixed(2)}h`);
+        }
       }
       if (!Number.isFinite(reported) && truth.rows > 0) {
         note(code, m.label, `hours breakup gave no total for a month with ${truth.rows} row(s)`,
