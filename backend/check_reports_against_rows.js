@@ -132,13 +132,34 @@ const OFF_CODES = /^(W|H|-)$/;
 
   for (const code of CODES) {
     const emp = (await pool.query(
-      `SELECT id, TRIM(CONCAT(first_name,' ',last_name)) AS name
-         FROM employees WHERE employee_id = $1 AND deleted_at IS NULL`, [code])).rows[0];
+      `SELECT id, TRIM(CONCAT(first_name,' ',last_name)) AS name,
+              joining_date::text AS joined, exit_date::text AS exited,
+              (SELECT MIN(date)::text FROM attendance
+                WHERE employee_id = e.id AND check_in IS NOT NULL) AS "firstPunch"
+         FROM employees e WHERE employee_id = $1 AND deleted_at IS NULL`, [code])).rows[0];
     if (!emp) { console.log(`  ${code} is not here.\n`); continue; }
 
     console.log('──────────────────────────────────────────────────────────');
     console.log(`  ${emp.name}   ${code}`);
     console.log('──────────────────────────────────────────────────────────\n');
+
+    /* Joining date decides which days count as absence, and nothing else
+     * checks it. Balaji's seventeen January absences are correct by this
+     * system's own reckoning — he is on rolls from before January — and wrong
+     * if he actually started in the week of his first punch. Only a person can
+     * settle that, so put both dates where they can be compared. */
+    console.log(`    joined ${emp.joined || 'not recorded'}`
+      + `${emp.exited ? `, exited ${emp.exited}` : ''}`
+      + `    first punch ever ${emp.firstPunch || 'none'}`);
+    if (emp.firstPunch && (!emp.joined || emp.joined < emp.firstPunch)) {
+      const gap = Math.round(
+        (Date.parse(emp.firstPunch) - Date.parse(emp.joined || emp.firstPunch)) / 86400000);
+      if (!emp.joined || gap > 7) {
+        console.log(`    ${gap} day(s) on rolls before the first punch`
+          + ' — every working day in there counts as an absence');
+      }
+    }
+    console.log('');
     console.log(`    ${pad('month', 10)}${pad('rows', 6)}${pad('P/HD', 8)}${pad('A', 5)}`
       + `${pad('leave', 7)}${pad('off', 6)}${pad('hours: rows', 13)}report`);
 
