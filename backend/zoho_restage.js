@@ -33,6 +33,7 @@ nodemailer.createTransport = () => ({
 
 const pool = require('./db');
 const { zohoApi } = require('./utils/zoho');
+const { classifyDay } = require('./utils/attendanceRule');
 
 const CODES = String(process.argv[2] || '').split(/[,\s]+/).filter(Boolean);
 const START = process.argv[3];
@@ -71,15 +72,12 @@ const LEAVE_TYPES = {
 };
 const STATUSES = { approved: 'approved', pending: 'pending', rejected: 'rejected', cancelled: 'cancelled' };
 
-/* Attendance became reachable the moment the scope landed, and this script
- * deletes what it can replace. It cannot replace attendance yet — the punch
- * times come back in a format nobody here has seen a worked day in, and
- * guessing at it would write a hundred wrong timestamps rather than none.
- *
- * So reachable is necessary but not sufficient. Until the importer exists and
- * has been read against real days, attendance is left alone and this says so.
- * Flipping it on without writing the importer wipes both people's attendance. */
-const ATTENDANCE_IMPORT_READY = false;
+/* Reaching Zoho's attendance and being able to replace ours with it are two
+ * different things, and this script deletes only what it can put back. The gap
+ * between them was real: the scope landed a while before anything here could
+ * parse a punch, and treating reachable as good enough would have emptied both
+ * people's attendance in exchange for nothing. Keep them separate. */
+const ATTENDANCE_IMPORT_READY = true;
 
 /* Everything downstream — the classifier, the muster roll, payroll — reads
  * is_half_day, never total_days. A Zoho half day imported with total_days 0.5
@@ -109,6 +107,32 @@ const shapeOfLeave = (r) => {
   return { isHours, taken, halfDay, session, guessed, odd };
 };
 
+/* What was already granted on each day, read from the Zoho leave that is about
+ * to replace ours rather than from the rows still sitting here. Classifying a
+ * day against leave we are in the middle of deleting would judge it on a record
+ * that will not exist in a moment. */
+function leaveFactsByDate(records) {
+  const byDate = new Map();
+  const touch = d => {
+    if (!byDate.has(d)) byDate.set(d, { leavePortion: 0, permissionHours: 0 });
+    return byDate.get(d);
+  };
+  for (const r of records) {
+    const from = fromZohoDate(r.From), to = fromZohoDate(r.To) || from;
+    if (!from) continue;
+    if (String(r.ApprovalStatus || '').trim().toLowerCase() !== 'approved') continue;
+    const shape = shapeOfLeave(r);
+    const isPermission = String(r.Leavetype || '').trim().toLowerCase() === 'permission';
+    for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+      const iso = d.toISOString().slice(0, 10);
+      const f = touch(iso);
+      if (isPermission) f.permissionHours += shape.taken;
+      else f.leavePortion = Math.max(f.leavePortion, shape.halfDay ? 0.5 : 1);
+    }
+  }
+  return byDate;
+}
+
 async function zohoLeave(code) {
   const search = encodeURIComponent(JSON.stringify({
     searchField: 'Employee_ID', searchOperator: 'Contains', searchText: code,
@@ -124,12 +148,106 @@ async function zohoLeave(code) {
   return out;
 }
 
-/** Does the attendance module answer at all? Everything downstream turns on it. */
+/* A day, keyed by ISO date. dateFormat is not optional — without it Zoho
+ * refuses the whole call over the organization's date format, which reads as a
+ * permissions problem and is not one. */
 async function zohoAttendance(code, start, end) {
   const json = await zohoApi(
     `attendance/getUserReport?empId=${encodeURIComponent(code)}`
-    + `&sdate=${encodeURIComponent(zohoDMY(start))}&edate=${encodeURIComponent(zohoDMY(end))}`);
+    + `&sdate=${encodeURIComponent(zohoDMY(start))}&edate=${encodeURIComponent(zohoDMY(end))}`
+    + `&dateFormat=dd-MM-yyyy`);
   return json?.response?.result ?? json?.response ?? json;
+}
+
+const p2 = n => String(n).padStart(2, '0');
+
+// "08:39" is eight hours thirty-nine minutes, not 8.39 of anything.
+const hhmmToHours = (s) => {
+  const m = /^(\d{1,3}):(\d{2})$/.exec(String(s || '').trim());
+  return m ? Number(m[1]) + Number(m[2]) / 60 : null;
+};
+const hhmmToMinutes = (s) => {
+  const m = /^(\d{1,3}):(\d{2})$/.exec(String(s || '').trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+};
+
+/* "27/07/2026 09:39 AM" in Asia/Kolkata → the UTC wall clock this column holds.
+ *
+ * check_in and check_out are `timestamp without time zone` storing UTC, and
+ * every previous mistake in this codebase has been forgetting that: an IST
+ * clock written straight in reads back five and a half hours late, which looks
+ * like a real punch and quietly changes the hours worked. Zoho reports IST —
+ * entryTimezone says so on every record — so the shift happens here, once. */
+const fromZohoStamp = (s) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(String(s || '').trim());
+  if (!m) return null;
+  let h = Number(m[4]);
+  const ampm = (m[6] || '').toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  const utc = new Date(Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]), h, Number(m[5])) - 330 * 60000);
+  return `${utc.getUTCFullYear()}-${p2(utc.getUTCMonth() + 1)}-${p2(utc.getUTCDate())} `
+    + `${p2(utc.getUTCHours())}:${p2(utc.getUTCMinutes())}:00`;
+};
+
+const notDash = v => (v === '-' || v === '' || v === null || v === undefined) ? null : v;
+
+/* A coordinate, or nothing.
+ *
+ * Number(null) is 0, and 0 is finite — so testing the cleaned value and then
+ * converting the raw one let a "-" latitude through as NaN. It reads as null in
+ * a JSON dump, which is exactly how it stayed hidden. Clean once, then decide. */
+const num = (v) => {
+  const clean = notDash(v);
+  if (clean === null) return null;
+  const n = Number(clean);
+  return Number.isFinite(n) ? n : null;
+};
+
+/* What one Zoho day amounts to here.
+ *
+ * WorkingHours is NOT the hours worked — the weekend records carry
+ * WorkingHours 08:00 on days nobody was in. It is the shift's length.
+ * TotalHours is what was worked. Reading the friendlier-sounding name would
+ * make every weekend a full day. */
+const shapeOfDay = (iso, r) => {
+  const checkIn = fromZohoStamp(notDash(r.FirstIn));
+  const checkOut = fromZohoStamp(notDash(r.LastOut));
+  return {
+    date: iso,
+    zohoStatus: String(r.Status ?? '').trim(),
+    checkIn,
+    checkOut,
+    hasPunch: !!checkIn,
+    hours: hhmmToHours(r.TotalHours) ?? 0,
+    shiftHours: hhmmToHours(r.WorkingHours),
+    lateMinutes: hhmmToMinutes(r.Late_In),
+    inLat: num(r.FirstIn_Latitude),
+    inLng: num(r.FirstIn_Longitude),
+    outLat: num(r.LastOut_Latitude),
+    outLng: num(r.LastOut_Longitude),
+    inLoc: notDash(r.FirstIn_Location),
+    outLoc: notDash(r.LastOut_Location),
+  };
+};
+
+/* Zoho's own verdict is deliberately NOT imported. The whole point of putting
+ * real history in here is to run OUR rules over it and see where they disagree
+ * — copying Zoho's answer across would hide exactly what we came to find. So
+ * the punches and the hours are imported as facts, and the status is whatever
+ * this system's engine makes of them. */
+function ourVerdict(day, facts, cfg) {
+  return classifyDay({
+    workedHours: day.hours,
+    hasPunch: day.hasPunch,
+    leavePortion: facts.leavePortion,
+    permissionHours: facts.permissionHours,
+    onDuty: facts.onDuty,
+    lateMinutes: day.lateMinutes,
+    graceMinutes: facts.graceMinutes,
+    cfg,
+    shiftHours: day.shiftHours,
+  });
 }
 
 /** Copy rows out before they are deleted, and prove the copy landed. */
@@ -174,6 +292,11 @@ async function backup(client, batch, table, empId, where, params) {
     await pool.end();
     process.exit(1);
   }
+
+  // The policy this system would judge these days by. Zoho's own verdict is not
+  // imported — running our rules over real history is the entire point.
+  const cfg = (await pool.query(
+    `SELECT attendance_policy_config AS c FROM settings LIMIT 1`)).rows[0]?.c || {};
 
   // ── Gather, per person, before anything is written ───────────────────────
   const plan = [];
@@ -229,7 +352,33 @@ async function backup(client, batch, table, empId, where, params) {
         WHERE employee_id = $1 AND start_date BETWEEN $2::date AND $3::date`,
       [emp.id, START, END])).rows[0].n;
 
-    plan.push({ emp, leaveInRange, reached, attendanceReachable, attendanceError, hereAtt, hereLeave });
+    // Zoho's report is keyed by ISO date. Only days somebody actually punched
+    // become rows: this system has no row for a weekend or an absence, it has
+    // the absence of a row, and inventing them would put 6 weekends a month
+    // into a muster roll that never had them.
+    const dayFacts = leaveFactsByDate(leaveInRange);
+    const grace = (await pool.query(
+      `SELECT COALESCE(sh.grace_minutes, 15) AS g
+         FROM employees e LEFT JOIN shifts sh ON sh.id = e.shift_id WHERE e.id = $1`,
+      [emp.id])).rows[0]?.g ?? 15;
+
+    const allDays = reached && attendance && typeof attendance === 'object'
+      ? Object.entries(attendance)
+          .filter(([k]) => /^\d{4}-\d{2}-\d{2}$/.test(k))
+          .filter(([k]) => k >= START && k <= END)
+          .map(([iso, rec]) => shapeOfDay(iso, rec))
+          .sort((a, b) => a.date.localeCompare(b.date))
+      : [];
+    const days = allDays.filter(d => d.hasPunch);
+    const skipped = allDays.filter(d => !d.hasPunch);
+
+    for (const d of days) {
+      const f = dayFacts.get(d.date) || { leavePortion: 0, permissionHours: 0 };
+      d.verdict = ourVerdict(d, { ...f, onDuty: false, graceMinutes: Number(grace) }, cfg);
+    }
+
+    plan.push({ emp, leaveInRange, reached, attendanceReachable, attendanceError,
+                hereAtt, hereLeave, days, skipped, allDays });
   }
 
   // ── Say plainly what would happen to each person ─────────────────────────
@@ -273,6 +422,61 @@ async function backup(client, batch, table, empId, where, params) {
         console.log('    field we recognise. These are the fields it did send:\n');
         console.log(`      ${Object.keys(guessed[0]).join(', ')}\n`);
       }
+    }
+  }
+
+  // ── What our rules make of Zoho's days ───────────────────────────────────
+  // The reason for importing real history at all. Where Zoho called a day
+  // Present and this system would not, that gap is the finding — so it is
+  // printed before anything is written, not discovered afterwards in a report.
+  if (!APPLY) {
+    for (const p of plan) {
+      if (!p.days?.length) continue;
+      console.log('──────────────────────────────────────────────────────────');
+      console.log(`  ${p.emp.name} — ${p.days.length} day(s) with a punch`);
+      console.log('──────────────────────────────────────────────────────────\n');
+
+      const bySkipped = new Map();
+      for (const d of p.skipped) bySkipped.set(d.zohoStatus, (bySkipped.get(d.zohoStatus) || 0) + 1);
+      if (bySkipped.size) {
+        console.log('    no punch, so no row is created:\n');
+        for (const [st, n] of [...bySkipped].sort((a, b) => b[1] - a[1])) {
+          console.log(`      ${pad(st || '(none)', 34)}${n} day(s)`);
+        }
+        console.log('');
+      }
+
+      const ours = new Map();
+      for (const d of p.days) ours.set(d.verdict.status, (ours.get(d.verdict.status) || 0) + 1);
+      console.log('    what this system would call them:\n');
+      for (const [st, n] of [...ours].sort((a, b) => b[1] - a[1])) {
+        console.log(`      ${pad(st, 34)}${n} day(s)`);
+      }
+
+      // Zoho says "Present" where our vocabulary says "present" or "late", and
+      // both mean the person was in. Only a real disagreement is worth printing.
+      const agrees = (zoho, our) => {
+        const z = zoho.toLowerCase();
+        if (z.startsWith('present')) return our === 'present' || our === 'late';
+        if (z.startsWith('absent')) return our === 'absent';
+        if (z.includes('half')) return our === 'half-day';
+        return null;
+      };
+      const clashes = p.days.filter(d => agrees(d.zohoStatus, d.verdict.status) === false);
+      console.log(`\n    disagreements with Zoho: ${clashes.length} of ${p.days.length}\n`);
+      for (const d of clashes.slice(0, 25)) {
+        console.log(`      ${d.date}  ${pad(d.hours.toFixed(2) + 'h', 8)}`
+          + `${pad(`owed ${d.verdict.expected}h`, 12)}`
+          + `Zoho ${pad(d.zohoStatus, 30)}we say ${d.verdict.status}`);
+      }
+      if (clashes.length > 25) console.log(`      … and ${clashes.length - 25} more`);
+      console.log('');
+
+      const first = p.days[0];
+      console.log('    first day, as it would be stored:\n');
+      console.log(`      ${first.date}   check_in ${first.checkIn} UTC   check_out ${first.checkOut} UTC`);
+      console.log(`      that is ${first.hours.toFixed(2)} hours, late ${first.lateMinutes} min,`
+        + ` status ${first.verdict.status}\n`);
     }
   }
 
@@ -332,7 +536,7 @@ async function backup(client, batch, table, empId, where, params) {
     console.log('  Replacing');
     console.log('──────────────────────────────────────────────────────────\n');
 
-    let totalCreated = 0, totalUnmapped = 0;
+    let totalCreated = 0, totalUnmapped = 0, totalDays = 0;
     for (const p of plan) {
       await client.query(
         `DELETE FROM leaves WHERE employee_id = $1 AND start_date BETWEEN $2::date AND $3::date`,
@@ -370,13 +574,36 @@ async function backup(client, batch, table, empId, where, params) {
       console.log(`    ${pad(p.emp.name, 24)} ${created} leave record(s) imported`
         + `${halves ? `, ${halves} half day(s)` : ''}`
         + `${unmapped ? `, ${unmapped} as unpaid` : ''}`);
+
+      // Attendance last, because the day facts it was classified against come
+      // from the leave that has just been written.
+      if (p.attendanceReachable) {
+        let rows = 0;
+        for (const d of p.days) {
+          await client.query(
+            `INSERT INTO attendance
+               (employee_id, date, check_in, check_out, working_hours, status, late_minutes,
+                check_in_location, check_out_location,
+                check_in_latitude, check_in_longitude, check_out_latitude, check_out_longitude,
+                created_at)
+             VALUES ($1,$2::date,$3::timestamp,$4::timestamp,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+                     (NOW() AT TIME ZONE 'UTC'))`,
+            [p.emp.id, d.date, d.checkIn, d.checkOut,
+             Number(d.hours.toFixed(2)), d.verdict.status, d.lateMinutes,
+             d.inLoc, d.outLoc, d.inLat, d.inLng, d.outLat, d.outLng]);
+          rows++;
+        }
+        totalDays += rows;
+        console.log(`    ${pad('', 24)} ${rows} attendance day(s) imported`
+          + `, ${p.skipped.length} day(s) had no punch and got no row`);
+      }
     }
 
     await client.query('COMMIT');
 
     console.log('');
     console.log('══════════════════════════════════════════════════════════');
-    console.log(`  ${totalCreated} leave record(s) imported across ${plan.length} people.`);
+    console.log(`  ${totalCreated} leave record(s) and ${totalDays} attendance day(s) imported across ${plan.length} people.`);
     if (totalUnmapped) console.log(`  ${totalUnmapped} had a leave type we do not have, imported as unpaid.`);
     console.log('');
     console.log(`  To undo:  node restore_import_backup.js ${batch} --apply`);
