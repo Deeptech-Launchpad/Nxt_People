@@ -1136,11 +1136,12 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
     const compUsed = parseFloat(compRes.rows[0].used) || 0;
     const absentCount = absentRes.rows[0].count;
 
-    // Only accruals up to today count — one that hasn't happened yet isn't
-    // spendable.
-    const upToMonth = year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12;
+    // The whole year's accruals, as the reference grants them — see
+    // utils/leavePolicy.js. Bounding this at the current month read 32 hours of
+    // permission in August where Zoho reads 48, for the same employee and the
+    // same policy.
     const granted = (code, opts = {}) =>
-      grantedToDate(policies.get(code), { year, upToMonth, joiningDate: emp.joiningDate, ...opts });
+      grantedToDate(policies.get(code), { year, joiningDate: emp.joiningDate, ...opts });
 
     // Casual is the one type whose allocation is per-employee
     // (employees.casual_leave); the policy supplies the schedule, that column
@@ -1202,7 +1203,10 @@ router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admi
     }
     const now = new Date();
     const year = parseInt(req.query.year, 10) || now.getFullYear();
-    const monthsCount = year === now.getFullYear() ? now.getMonth() + 1 : 12;
+    // Twelve, not the month we are in: the accruals are granted for the whole
+    // year, so the month-by-month breakdown has to show all of them or its
+    // rows will not add up to the balance on the chart above it.
+    const monthsCount = 12;
 
     const empRes = await pool.query('SELECT joining_date::text AS "joiningDate", COALESCE(casual_leave,0) AS "casualAllocated" FROM employees WHERE id = $1', [employeeId]);
     if (!empRes.rows[0]) return res.status(404).json({ success: false, message: 'Employee not found' });
@@ -1300,7 +1304,7 @@ router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_adm
     }
     const now = new Date();
     const year = parseInt(req.query.year, 10) || now.getFullYear();
-    const upToMonth = year === now.getFullYear() ? now.getMonth() + 1 : 12;
+    const upToMonth = 12;
     const isHours = leaveType === 'permission';
 
     const [empRes, takenRes, compRes] = await Promise.all([

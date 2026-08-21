@@ -64,7 +64,15 @@ function entitlementStart(year, joiningDate) {
 
 /**
  * Every grant this policy makes to this employee in this year, up to
- * `upToMonth` — an accrual that hasn't happened yet isn't spendable.
+ * `upToMonth`, which defaults to the whole year.
+ *
+ * It used to default to the month we are in, on the reasoning that an accrual
+ * which hasn't happened yet isn't spendable. The reference does not work that
+ * way: Zoho grants the year's twelve monthly accruals up front, so a permission
+ * balance reads 48 hours in August rather than 32, and an employee comparing
+ * the two systems sees the same number in both. Callers that genuinely need a
+ * cut-off — leave encashment, which values a balance as at a period end — pass
+ * `upToMonth` explicitly and are unaffected.
  *
  * `annualAmount` overrides the policy's amount for annual grants. Casual is
  * the one type with a per-employee allocation (`employees.casual_leave`), so
@@ -73,7 +81,7 @@ function entitlementStart(year, joiningDate) {
  * Returns [{ month, amount, date }]. Months before joining produce nothing at
  * all rather than a zero row.
  */
-function accrualEvents(policy, { year, upToMonth, joiningDate, annualAmount = null }) {
+function accrualEvents(policy, { year, upToMonth = 12, joiningDate, annualAmount = null }) {
   const [jy, jm, jd] = joiningDate ? String(joiningDate).slice(0, 10).split('-').map(Number) : [];
   if (jy > year) return [];
 
@@ -95,9 +103,18 @@ function accrualEvents(policy, { year, upToMonth, joiningDate, annualAmount = nu
       // The first entry is dated the joining day and the rest the 1st, so the
       // ledger's accrual rows land where the entitlement actually arrived.
       const day = jy === year && m === jm ? jd : 1;
+      // Somebody who joins on the 3rd did not have the whole of January, and
+      // the reference charges them for the part they had: 4 hours × 29 of 31
+      // days is 3.74, which is exactly what Zoho grants for a 3 January start.
+      // Every later month is whole.
+      const joiningMonth = jy === year && m === jm && jd > 1;
+      const daysInMonth = new Date(Date.UTC(year, m, 0)).getUTCDate();
+      const amount = joiningMonth
+        ? round2(policy.accrualAmount * ((daysInMonth - jd + 1) / daysInMonth))
+        : policy.accrualAmount;
       out.push({
         month: m,
-        amount: policy.accrualAmount,
+        amount,
         date: `${year}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
       });
     }
