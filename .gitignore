@@ -25,3 +25,8 @@ Thumbs.db
 
 # Vite writes these while building and does not always clean them up
 frontend/vite.config.js.timestamp-*
+
+# Built from whatever is in frontend/public/covers, every build. Tracking it
+# means anybody who adds or removes a banner locally gets a modified file they
+# did not edit, and a merge conflict on a file nobody writes by hand.
+frontend/public/covers/manifest.json
