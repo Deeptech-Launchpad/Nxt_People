@@ -335,13 +335,34 @@ const OFF_CODES = /^(W|H|-)$/;
       [emp.id, ms[0].start, ms[ms.length - 1].end])).rows;
 
     if (halfDays.length) {
-      console.log('\n    half-day leaves, and whether the other half was worked:\n');
+      console.log('\n    half-day leaves — what the grid actually renders:\n');
       for (const h of halfDays) {
+        /* Ask the grid, do not infer from the rows.
+         *
+         * The first version of this check read the database and concluded what
+         * the report must be showing. It would therefore have kept reporting
+         * this day after the rendering was fixed, because the underlying facts
+         * — half a day of leave, nobody came in — do not change. A check that
+         * cannot notice the fix is not checking anything. */
+        const month = h.d.slice(0, 7);
+        const mm = ms.find(x => x.label === month);
+        const roll = mm && await get(
+          `/reports/attendance/muster-roll?startDate=${mm.start}&endDate=${mm.end}`, token);
+        const row = roll?.j?.data?.find(r => r.employeeCode === code);
+        const idx = roll?.j?.dayLabels?.indexOf(h.d) ?? -1;
+        const cell = idx >= 0 ? String(row?.days?.[idx]?.code ?? '') : '(not found)';
+
+        const worked = h.punched && Number(h.hours) > 0;
+        const wants = worked ? '/0.5P' : '/0.5A';
         console.log(`      ${h.d}   ${pad(h.type, 10)}worked ${pad(h.hours + 'h', 8)}`
-          + `${h.punched ? `row says ${h.status}` : 'no punch at all'}`);
-        if (!h.punched || Number(h.hours) === 0) {
-          note(code, h.d.slice(0, 7),
-            `${h.d}: half a day of leave and no work, but the grid renders it 0.5/0.5 present`);
+          + `${pad(h.punched ? `row says ${h.status}` : 'no punch at all', 22)}grid: ${cell}`);
+
+        if (!cell.endsWith(wants)) {
+          note(code, month,
+            `${h.d}: the grid says ${cell}`,
+            worked
+              ? 'they worked the other half, so it should end 0.5P'
+              : 'they never came in, so the other half is absent, not present');
         }
       }
     }
