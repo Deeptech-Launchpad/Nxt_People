@@ -145,15 +145,52 @@ export default function LeaveRequestConfig() {
                 </div>
               )}
 
-              {/* Both are stored and returned intact, but the rule engine only
-                  interprets the live pay period and every policy. Saying so
-                  beats a setting that looks applied and is not. */}
-              {(cancel.pastScope === 'custom' || cancel.requestScope === 'specific') && (
+              {/* A custom window has to say how far back it reaches, or the
+                  word "custom" carries no rule at all. */}
+              {cancel.pastScope === 'custom' && (
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="text-[13px] text-slate-600">Cancellable up to</span>
+                  <input
+                    type="number" min="1" max="366"
+                    value={cancel.customDays ?? 30}
+                    onChange={e => setIn('cancellation', {
+                      customDays: e.target.value === '' ? 30 : Number(e.target.value) })}
+                    aria-label="Days back a past leave stays cancellable"
+                    className="w-20 text-[13.5px] rounded-md border border-slate-300 px-2.5 py-1.5 bg-white"
+                  />
+                  <span className="text-[13px] text-slate-600">days back, instead of the pay period</span>
+                </div>
+              )}
+
+              {cancel.requestScope === 'specific' && (
                 <p className="text-[12px] text-slate-400 max-w-[420px]">
-                  Saved, but not yet applied — cancellation is still judged against the live pay
-                  period and every leave policy.<NotWired />
+                  Anything not ticked cannot be cancelled once approved, whoever asks.
                 </p>
               )}
+
+              {/* The one that can disagree with money already paid. */}
+              <div className="border-t border-slate-200 pt-3 mt-1">
+                <p className="text-[13px] font-medium text-slate-700 mb-2">
+                  When payroll has already run for that month
+                </p>
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                  {[['block', 'Do not allow'], ['flag', 'Allow, and warn'], ['allow', 'Allow silently']].map(([v, l]) => (
+                    <label key={v} className="flex items-center gap-2 cursor-pointer text-[13.5px] text-slate-700">
+                      <input type="radio" name="payrollRun" className="w-4 h-4 accent-blue-600"
+                        checked={(cancel.payrollRun || 'block') === v}
+                        onChange={() => setIn('cancellation', { payrollRun: v })} />
+                      {l}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[12px] text-slate-400 mt-1.5 max-w-[440px]">
+                  {(cancel.payrollRun || 'block') === 'allow'
+                    ? 'The record will disagree with a payslip already issued, and nothing will say so.'
+                    : (cancel.payrollRun === 'flag'
+                      ? 'The cancellation goes through, with a warning that the payslip will not match.'
+                      : 'A payslip already issued cannot be contradicted. HR adjusts it instead.')}
+                </p>
+              </div>
             </div>
           )}
         />

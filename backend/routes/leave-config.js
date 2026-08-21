@@ -24,6 +24,7 @@ const RESOURCE_ACCESS = ['administrators', 'department_heads', 'employees_own_de
 const UNPAID_LEAVE = ['lop', 'carry_over'];
 const EXTENSION_ROWS = ['past_within_pay_period', 'current_and_upcoming', 'past_within_calendar_year'];
 const EXTENSION_ACTORS = ['self', 'manager', 'approver'];
+const PAYROLL_RUN_ACTIONS = ['block', 'flag', 'allow'];
 const PAST_SCOPES = ['current', 'custom'];
 const REQUEST_SCOPES = ['all', 'specific'];
 
@@ -107,6 +108,19 @@ const SECTIONS = {
       if (c.requestScope === 'specific' && !cancelPolicies.length) {
         throw new Error('Select at least one leave policy, or scope cancellation to all requests');
       }
+      // A custom window has to say how far back it reaches, or "custom" means
+      // nothing and the rule silently falls back to the pay period.
+      let customDays = 30;
+      if (c.customDays !== null && c.customDays !== undefined && c.customDays !== '') {
+        const n = Number(c.customDays);
+        if (!Number.isInteger(n) || n < 1 || n > 366) {
+          throw new Error('The custom cancellation window must be between 1 and 366 days');
+        }
+        customDays = n;
+      }
+      if (c.payrollRun !== undefined && !PAYROLL_RUN_ACTIONS.includes(c.payrollRun)) {
+        throw new Error('The rule for leave already paid is not valid');
+      }
 
       return {
         cancellationReasonMandatory: !!b.cancellationReasonMandatory,
@@ -115,6 +129,13 @@ const SECTIONS = {
           pastScope: c.pastScope || 'current',
           requestScope: c.requestScope || 'all',
           policies: cancelPolicies,
+          // Stored whatever the scope says, so switching to the pay period and
+          // back does not discard the window somebody configured.
+          customDays,
+          // What happens when a payslip already exists for the month the leave
+          // falls in. 'block' is the default: a cancellation that silently
+          // disagrees with a payslip already issued is the worst of the three.
+          payrollRun: PAYROLL_RUN_ACTIONS.includes(c.payrollRun) ? c.payrollRun : 'block',
           allowPartial: !!c.allowPartial,
         },
         extension: { policies, permissions: matrix(e.permissions), reasonMandatory: !!e.reasonMandatory },

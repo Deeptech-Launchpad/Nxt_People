@@ -41,14 +41,22 @@ const todayYmd = () => ymd(new Date());
  * A past leave in a previous year matches no row at all, and so is cancellable
  * by nobody. Returns null for that.
  */
-function classify(leave, payPeriod, now = new Date()) {
+function classify(leave, payPeriod, now = new Date(), cfg = null) {
   const today = ymd(now);
   const end = ymd(leave.end_date || leave.endDate);
   const start = ymd(leave.start_date || leave.startDate);
 
   if (end >= today) return 'current_and_upcoming';
 
-  if (payPeriod) {
+  // "Custom pay period" replaces the live cycle with a plain window of days
+  // back from today. The row is the same row — what changes is how far it
+  // reaches. Without this the setting saved and the cycle was used anyway.
+  if (cfg && cfg.pastScope === 'custom') {
+    const days = Number(cfg.customDays) > 0 ? Number(cfg.customDays) : 30;
+    const from = new Date(now);
+    from.setDate(from.getDate() - days);
+    if (start >= ymd(from)) return 'past_within_pay_period';
+  } else if (payPeriod) {
     const cycle = cycleFor(payPeriod, now);
     if (start >= cycle.startDate && end <= cycle.endDate) return 'past_within_pay_period';
   }
@@ -116,9 +124,22 @@ function normalise(config) {
 async function canCancel({ user, leave, config }) {
   const cfg = normalise(config);
   const period = await currentPayPeriod();
-  const row = classify(leave, period);
+  const row = classify(leave, period, new Date(), cfg);
   if (!row) {
     return { allowed: false, reason: 'This leave is from a previous calendar year and can no longer be cancelled.' };
+  }
+
+  // Scoping to specific leave policies. Anything outside the chosen set cannot
+  // be cancelled at all, whatever the permission matrix says — the narrower
+  // rule wins, or "specific" would mean nothing.
+  const type = String(leave.leave_type || leave.leaveType || '');
+  if (cfg.requestScope === 'specific'
+      && Array.isArray(cfg.policies) && cfg.policies.length
+      && !cfg.policies.includes(type)) {
+    return {
+      allowed: false, row,
+      reason: `${type || 'This'} leave cannot be cancelled once approved. This is set under Leave Tracker → Configuration → Leave Request.`,
+    };
   }
 
   const actors = await actorsFor(user, leave);
@@ -127,7 +148,28 @@ async function canCancel({ user, leave, config }) {
   }
 
   const allowed = [...actors].some(a => cfg.permissions[row][a]);
-  if (allowed) return { allowed: true, row };
+  if (allowed) {
+    // Payroll may already have paid for this leave. Cancelling it then leaves
+    // the record disagreeing with a payslip somebody has already been given,
+    // which is the one outcome nobody can see happening.
+    const paid = await payslipExistsFor(leave);
+    if (paid) {
+      const action = cfg.payrollRun || 'block';
+      if (action === 'block') {
+        return {
+          allowed: false, row, payrollRun: true,
+          reason: `Payroll has already run for ${paid.month}/${paid.year}. This leave cannot be cancelled — ask HR to adjust it instead.`,
+        };
+      }
+      if (action === 'flag') {
+        return {
+          allowed: true, row, payrollRun: true, flagged: true,
+          warning: `Payroll has already run for ${paid.month}/${paid.year}. Cancelling this will not match the payslip already issued.`,
+        };
+      }
+    }
+    return { allowed: true, row };
+  }
 
   const LABEL = {
     past_within_pay_period: 'past leave in the current pay period',
@@ -141,9 +183,45 @@ async function canCancel({ user, leave, config }) {
   };
 }
 
+/**
+ * Has a payslip already been issued covering this leave?
+ *
+ * The payslip table is keyed by month and year, so a leave spanning a boundary
+ * is checked against every month it touches — the earliest match is the one
+ * reported, because that is the payslip somebody already has in hand.
+ */
+async function payslipExistsFor(leave) {
+  const start = new Date(`${ymd(leave.start_date || leave.startDate)}T00:00:00`);
+  const end = new Date(`${ymd(leave.end_date || leave.endDate)}T00:00:00`);
+  const months = [];
+  const cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cur <= end && months.length < 24) {
+    months.push({ month: cur.getMonth() + 1, year: cur.getFullYear() });
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  if (!months.length) return null;
+
+  try {
+    // payroll_payslips is what Payroll Run actually writes. The older
+    // `payslips` table was archived, and asking it would mean this check never
+    // fired at all.
+    const r = await pool.query(
+      `SELECT pay_month AS month, pay_year AS year FROM payroll_payslips
+        WHERE employee_id = $1
+          AND (pay_month, pay_year) IN (${months.map((_, i) => `($${i * 2 + 2}, $${i * 2 + 3})`).join(', ')})
+        ORDER BY pay_year, pay_month LIMIT 1`,
+      [leave.employee_id || leave.employeeId, ...months.flatMap(m => [m.month, m.year])]);
+    return r.rows[0] || null;
+  } catch {
+    // No payslip table yet, or it cannot be read. Reporting "already paid"
+    // here would block every cancellation, so the safe direction is to say no.
+    return null;
+  }
+}
+
 async function loadConfig() {
   const r = await pool.query(`SELECT leave_request_config AS config FROM settings LIMIT 1`);
   return r.rows[0]?.config || {};
 }
 
-module.exports = { canCancel, classify, actorsFor, loadConfig, normalise, ROWS, ACTORS, ymd, todayYmd };
+module.exports = { canCancel, classify, actorsFor, loadConfig, normalise, payslipExistsFor, ROWS, ACTORS, ymd, todayYmd };
