@@ -133,7 +133,7 @@ const OFF_CODES = /^(W|H|-)$/;
   for (const code of CODES) {
     const emp = (await pool.query(
       `SELECT id, TRIM(CONCAT(first_name,' ',last_name)) AS name,
-              joining_date::text AS joined, exit_date::text AS exited,
+              joining_date::date::text AS joined, exit_date::date::text AS exited,
               (SELECT MIN(date)::text FROM attendance
                 WHERE employee_id = e.id AND check_in IS NOT NULL) AS "firstPunch"
          FROM employees e WHERE employee_id = $1 AND deleted_at IS NULL`, [code])).rows[0];

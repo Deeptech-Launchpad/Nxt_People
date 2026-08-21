@@ -374,7 +374,7 @@ async function backup(client, batch, table, empId, where, params) {
     // one that stops here.
     const matches = (await pool.query(
       `SELECT id, employee_id AS code, TRIM(CONCAT(first_name,' ',last_name)) AS name,
-              joining_date::text AS joined, exit_date::text AS exited
+              joining_date::date::text AS joined, exit_date::date::text AS exited
          FROM employees
         WHERE deleted_at IS NULL
           AND (employee_id = $1 OR CONCAT(first_name,' ',last_name) ILIKE '%' || $1 || '%')
