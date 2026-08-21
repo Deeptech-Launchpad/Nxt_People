@@ -98,7 +98,13 @@ const FIELDS = [
   ['Source_of_hire',      'source_of_hire',      clean],
   ['AboutMe',             'about_me',            clean],
   ['Expertise',           'expertise',           clean],
-  ['total_experience',    'total_experience',    clean],
+  /* Zoho carries this twice: total_experience is a raw month count (109) and
+   * total_experience.displayValue is what it shows a person ("9 year(s) 1
+   * month(s)"). Reading the raw one would have replaced Shivanie's
+   * "9 year(s) 1 month(s)" with "109" in a varchar column — not a wrong number,
+   * a wrong KIND of value, in a field nothing would ever recompute. Prefer the
+   * display value and fall back to the raw one only if it is missing. */
+  [['total_experience.displayValue', 'total_experience'], 'total_experience', clean],
   ['Dateofjoining',       'joining_date',        toDate],
   ['Dateofjoining',       'date_of_joining',     toDate],   // both columns exist
   ['Dateofexit',          'exit_date',           toDate],
@@ -191,8 +197,13 @@ if (require.main !== module) return;
     const changes = [];
     const unreadable = [];
     for (const [zField, col, read] of FIELDS) {
-      const value = read(theirs[zField]);
-      if (value === undefined) { unreadable.push([zField, col, theirs[zField]]); continue; }
+      // A field may be given as a list of candidates, best first — Zoho stores
+      // some values twice and the raw one is not always the useful one.
+      const raw = Array.isArray(zField)
+        ? zField.map(f => theirs[f]).find(v => clean(v) !== null)
+        : theirs[zField];
+      const value = read(raw);
+      if (value === undefined) { unreadable.push([String(zField), col, raw]); continue; }
       if (value === null) continue;              // Zoho has nothing; keep ours
       const current = mine[col] instanceof Date
         ? mine[col].toISOString().slice(0, 10)
