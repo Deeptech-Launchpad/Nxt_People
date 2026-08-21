@@ -71,6 +71,16 @@ const LEAVE_TYPES = {
 };
 const STATUSES = { approved: 'approved', pending: 'pending', rejected: 'rejected', cancelled: 'cancelled' };
 
+/* Attendance became reachable the moment the scope landed, and this script
+ * deletes what it can replace. It cannot replace attendance yet — the punch
+ * times come back in a format nobody here has seen a worked day in, and
+ * guessing at it would write a hundred wrong timestamps rather than none.
+ *
+ * So reachable is necessary but not sufficient. Until the importer exists and
+ * has been read against real days, attendance is left alone and this says so.
+ * Flipping it on without writing the importer wipes both people's attendance. */
+const ATTENDANCE_IMPORT_READY = false;
+
 /* Everything downstream — the classifier, the muster roll, payroll — reads
  * is_half_day, never total_days. A Zoho half day imported with total_days 0.5
  * and is_half_day false counts as a WHOLE day off against expected hours, so
@@ -196,8 +206,11 @@ async function backup(client, batch, table, empId, where, params) {
     let attendance = null, attendanceError = null;
     try { attendance = await zohoAttendance(code, START, END); }
     catch (err) { attendanceError = String(err.message); }
-    const attendanceReachable = attendance !== null
-      && !(attendance && typeof attendance === 'object' && !Array.isArray(attendance) && 'errors' in attendance);
+    const reached = attendance !== null
+      && !(attendance && typeof attendance === 'object' && !Array.isArray(attendance)
+           && ('errors' in attendance || 'error' in attendance));
+    // Reaching it is not the same as being able to replace it.
+    const attendanceReachable = reached && ATTENDANCE_IMPORT_READY;
 
     const leave = await zohoLeave(code).catch(e => {
       console.log(`  ${code}: leave failed — ${String(e.message).slice(0, 120)}`); return [];
@@ -216,7 +229,7 @@ async function backup(client, batch, table, empId, where, params) {
         WHERE employee_id = $1 AND start_date BETWEEN $2::date AND $3::date`,
       [emp.id, START, END])).rows[0].n;
 
-    plan.push({ emp, leaveInRange, attendanceReachable, attendanceError, hereAtt, hereLeave });
+    plan.push({ emp, leaveInRange, reached, attendanceReachable, attendanceError, hereAtt, hereLeave });
   }
 
   // ── Say plainly what would happen to each person ─────────────────────────
@@ -233,7 +246,7 @@ async function backup(client, batch, table, empId, where, params) {
       + `${p.hereAtt.n ? `, ${p.hereAtt.first} to ${p.hereAtt.last}` : ''}`);
     console.log(`                       ${p.attendanceReachable
       ? '→ backed up, then replaced'
-      : '→ LEFT ALONE, Zoho cannot be read'}`);
+      : '→ LEFT ALONE'}`);
     console.log(`    here: leave        ${p.hereLeave} record(s)  → backed up, then replaced\n`);
 
     if (!APPLY && p.leaveInRange.length) {

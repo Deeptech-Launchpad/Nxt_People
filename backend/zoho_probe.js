@@ -48,6 +48,8 @@ const CODE = process.argv[2];
 const START = process.argv[3];
 const END = process.argv[4];
 
+const pad = (s, n) => String(s ?? '-').padEnd(n);
+
 const zohoDate = iso => {
   const [y, m, d] = String(iso).slice(0, 10).split('-');
   return `${d}-${m}-${y}`;
@@ -244,6 +246,50 @@ async function grantedScopes() {
   if (whys.length) {
     console.log('\n  What it objected to, in full:\n');
     for (const w of whys) console.log(`    ${w.slice(0, 400)}`);
+  }
+
+  // ── The days themselves ──────────────────────────────────────────────────
+  // Every sample printed so far has been a weekend, where every field is "-".
+  // What an importer actually has to parse is a day somebody worked, and the
+  // set of Status values it has to translate. Guessing at either would write
+  // wrong timestamps into every row rather than none.
+  const report = attResults.find(r => r.ok && r.body && typeof r.body === 'object')?.body;
+  if (report) {
+    const days = Object.entries(report).filter(([k]) => /^\d{4}-\d{2}-\d{2}$/.test(k));
+    console.log('\n──────────────────────────────────────────────────────────');
+    console.log(`  ${days.length} day(s) came back. What is in them`);
+    console.log('──────────────────────────────────────────────────────────\n');
+
+    const byStatus = new Map();
+    for (const [, v] of days) {
+      const s = v?.Status ?? '(none)';
+      byStatus.set(s, (byStatus.get(s) || 0) + 1);
+    }
+    console.log('  Status values, and how many days each:\n');
+    for (const [s, n] of [...byStatus].sort((a, b) => b[1] - a[1])) {
+      console.log(`    ${String(s).padEnd(28)}${n}`);
+    }
+
+    const worked = days.find(([, v]) => v?.FirstIn && v.FirstIn !== '-');
+    console.log('\n  A day with an actual punch — this is what has to be parsed:\n');
+    if (!worked) {
+      console.log('    None in this range had a FirstIn. Try a month with working days.\n');
+    } else {
+      console.log(`    ${worked[0]}`);
+      console.log(JSON.stringify(worked[1], null, 1).split('\n').map(l => `     ${l}`).join('\n'));
+    }
+
+    // Zoho names one field WorkingHours and another TotalHours, and on the
+    // weekend sample WorkingHours was 08:00 while nobody worked at all — so it
+    // is the shift's length, not what was worked. Printing both together is
+    // how that stays straight.
+    console.log('\n  TotalHours against WorkingHours, first ten days:\n');
+    for (const [d, v] of days.slice(0, 10)) {
+      console.log(`    ${d}  ${pad(v?.Status, 14)}`
+        + `in ${pad(v?.FirstIn, 12)}out ${pad(v?.LastOut, 12)}`
+        + `Total ${pad(v?.TotalHours, 9)}Working ${v?.WorkingHours}`);
+    }
+    console.log('');
   }
 
   const ok = results.filter(r => r.ok);
