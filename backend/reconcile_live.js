@@ -151,7 +151,14 @@ const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
   // A day with more than one session legitimately has working_hours (the sum
   // of the sessions) differing from check_out minus check_in (the span,
   // including the gap between them). Only single-session days are compared.
-  await q('stored working_hours match the punches',
+  //
+  // And only OVER-counting is a fault. Storing fewer hours than the punches
+  // span is what anybody who takes a lunch break looks like, and on a day from
+  // before session recording began there is no way to tell a break from a
+  // mistake. Reporting those as contradictions filled this list with twelve
+  // rows the moment the arrivals were repaired — the earlier the true arrival,
+  // the wider the span, and the more normal days looked broken.
+  await q('stored working_hours never exceed the punches',
     `SELECT e.employee_id AS code, TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name,
             a.date::text AS d, a.working_hours AS stored,
             ROUND(EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0, 2) AS derived
@@ -159,12 +166,12 @@ const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
       WHERE a.date BETWEEN $1::date AND $2::date
         AND a.check_in IS NOT NULL AND a.check_out IS NOT NULL
         AND a.working_hours IS NOT NULL
-        AND ABS(a.working_hours - EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0) > 0.05
+        AND a.working_hours - EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0 > 0.05
         AND (SELECT COUNT(*) FROM attendance_sessions s
               WHERE s.employee_id = a.employee_id AND s.date = a.date) < 2
       ORDER BY a.date LIMIT 200`,
     [START, END],
-    r => `${r.code} ${r.name} on ${r.d}: stored ${r.stored}h, punches say ${r.derived}h`);
+    r => `${r.code} ${r.name} on ${r.d}: stored ${r.stored}h, but the punches only span ${r.derived}h`);
 
   // The two shapes that cannot be a split shift, and are wrong either way.
   // Tolerance, not equality. A pair of punches seconds apart is not literally
@@ -285,7 +292,7 @@ const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
        FROM attendance a
       WHERE a.date BETWEEN $1::date AND $2::date
         AND a.check_in IS NOT NULL AND a.check_out IS NOT NULL AND a.working_hours IS NOT NULL
-        AND ABS(a.working_hours - EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0) > 0.05
+        AND a.working_hours - EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600.0 > 0.05
       GROUP BY 1 ORDER BY 2 DESC LIMIT 10`,
     [START, END]).catch(() => ({ rows: [] }));
 
