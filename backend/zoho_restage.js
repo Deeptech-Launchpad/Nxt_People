@@ -84,7 +84,7 @@ const ATTENDANCE_IMPORT_READY = true;
  * and is_half_day false counts as a WHOLE day off against expected hours, so
  * the person is credited time they did not take. Reading the fraction back out
  * into the flag is the whole point of this. */
-const shapeOfLeave = (r) => {
+const shapeOfLeave = (r, fromAttendance = null) => {
   const isHours = String(r.Unit || '').toLowerCase().startsWith('hour');
   const taken = Number(r.Daystaken) || 0;
   if (isHours) return { isHours, taken, halfDay: false, session: null, guessed: false, odd: false };
@@ -94,8 +94,11 @@ const shapeOfLeave = (r) => {
   // be called rather than assuming one.
   const raw = String(r.Session || r.SessionType || r.Sessions || r.Half_Day_Type
     || r.Session_1 || r.DayType || r.Day_Type || '').toLowerCase();
-  const read = /2|second|after/.test(raw) ? 'second_half'
-    : /1|first|fore|morn/.test(raw) ? 'first_half' : null;
+  // The attendance report is the reliable source; the leave record has never
+  // carried a session on this account.
+  const read = fromAttendance
+    || (/2|second|after/.test(raw) ? 'second_half'
+      : /1|first|fore|morn/.test(raw) ? 'first_half' : null);
   // Which half was taken decides which half of the day is expected, so a guess
   // here is not a small one. When Zoho does not say, this says so.
   const session = read || (halfDay ? 'first_half' : null);
@@ -107,11 +110,34 @@ const shapeOfLeave = (r) => {
   return { isHours, taken, halfDay, session, guessed, odd };
 };
 
+/* Which half of the day a half-day leave took, recovered from the ATTENDANCE
+ * report rather than the leave record.
+ *
+ * The leave form does not carry it — its full field list has no session
+ * anywhere, so the importer had to fall back on "first half" and say it was
+ * guessing. But the attendance day for the same date says it outright:
+ *
+ *     "Casual Leave(Second Half), 0.5 day Absent"
+ *
+ * and the first date this was checked against, Shivanie's 2026-06-01, was a
+ * second half that the guess had called a first half. Three of them would have
+ * gone in wrong. Zoho knew; we were asking the wrong endpoint. */
+function sessionsByDate(report) {
+  const out = new Map();
+  if (!report || typeof report !== 'object') return out;
+  for (const [iso, rec] of Object.entries(report)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+    const m = /\b(first|second)\s*half\b/i.exec(String(rec?.Status ?? ''));
+    if (m) out.set(iso, m[1].toLowerCase() === 'second' ? 'second_half' : 'first_half');
+  }
+  return out;
+}
+
 /* What was already granted on each day, read from the Zoho leave that is about
  * to replace ours rather than from the rows still sitting here. Classifying a
  * day against leave we are in the middle of deleting would judge it on a record
  * that will not exist in a moment. */
-function leaveFactsByDate(records) {
+function leaveFactsByDate(records, sessions = new Map()) {
   const byDate = new Map();
   const touch = d => {
     if (!byDate.has(d)) byDate.set(d, { leavePortion: 0, permissionHours: 0 });
@@ -121,7 +147,7 @@ function leaveFactsByDate(records) {
     const from = fromZohoDate(r.From), to = fromZohoDate(r.To) || from;
     if (!from) continue;
     if (String(r.ApprovalStatus || '').trim().toLowerCase() !== 'approved') continue;
-    const shape = shapeOfLeave(r);
+    const shape = shapeOfLeave(r, sessions.get(from));
     const isPermission = String(r.Leavetype || '').trim().toLowerCase() === 'permission';
     for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
       const iso = d.toISOString().slice(0, 10);
@@ -356,7 +382,8 @@ async function backup(client, batch, table, empId, where, params) {
     // become rows: this system has no row for a weekend or an absence, it has
     // the absence of a row, and inventing them would put 6 weekends a month
     // into a muster roll that never had them.
-    const dayFacts = leaveFactsByDate(leaveInRange);
+    const sessions = sessionsByDate(reached ? attendance : null);
+    const dayFacts = leaveFactsByDate(leaveInRange, sessions);
     const grace = (await pool.query(
       `SELECT COALESCE(sh.grace_minutes, 15) AS g
          FROM employees e LEFT JOIN shifts sh ON sh.id = e.shift_id WHERE e.id = $1`,
@@ -378,7 +405,7 @@ async function backup(client, batch, table, empId, where, params) {
     }
 
     plan.push({ emp, leaveInRange, reached, attendanceReachable, attendanceError,
-                hereAtt, hereLeave, days, skipped, allDays });
+                hereAtt, hereLeave, days, skipped, allDays, sessions });
   }
 
   // ── Say plainly what would happen to each person ─────────────────────────
@@ -403,7 +430,7 @@ async function backup(client, batch, table, empId, where, params) {
       for (const r of p.leaveInRange) {
         const from = fromZohoDate(r.From), to = fromZohoDate(r.To) || from;
         const type = LEAVE_TYPES[String(r.Leavetype || '').trim().toLowerCase()];
-        const s = shapeOfLeave(r);
+        const s = shapeOfLeave(r, p.sessions.get(from));
         console.log(`      ${pad(from, 12)}${pad(to === from ? '' : `to ${to}`, 14)}`
           + `${pad(r.Leavetype, 18)}${pad(r.ApprovalStatus, 10)}`
           + `${pad(`${s.taken}${s.isHours ? 'h' : 'd'}`, 8)}`
@@ -416,7 +443,8 @@ async function backup(client, batch, table, empId, where, params) {
       // A guessed session is a real guess: it decides which half of the day is
       // expected. If Zoho did name it under some field we have not tried, this
       // is where we find out what to call it.
-      const guessed = p.leaveInRange.filter(r => shapeOfLeave(r).guessed);
+      const guessed = p.leaveInRange.filter(
+        r => shapeOfLeave(r, p.sessions.get(fromZohoDate(r.From))).guessed);
       if (guessed.length) {
         console.log(`    ${guessed.length} half day(s) above have a GUESSED session — Zoho sent no`);
         console.log('    field we recognise. These are the fields it did send:\n');
@@ -552,7 +580,7 @@ async function backup(client, batch, table, empId, where, params) {
         const from = fromZohoDate(r.From), to = fromZohoDate(r.To) || from;
         const type = LEAVE_TYPES[String(r.Leavetype || '').trim().toLowerCase()];
         if (!type) unmapped++;
-        const s = shapeOfLeave(r);
+        const s = shapeOfLeave(r, p.sessions.get(from));
         if (s.halfDay) halves++;
         const status = STATUSES[String(r.ApprovalStatus || '').trim().toLowerCase()] || 'pending';
         await client.query(

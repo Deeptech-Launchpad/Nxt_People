@@ -30,8 +30,9 @@ const clear = async () => EMP && pool.query(
 // The mapping under test, lifted from zoho_restage.js by reading it rather than
 // copying it — a copy would keep passing after the original changed.
 const src = fs.readFileSync(require.resolve('./zoho_restage.js'), 'utf8');
-const shapeOfLeave = new Function('r', src
-  .slice(src.indexOf('const shapeOfLeave = (r) => {') + 'const shapeOfLeave = (r) => '.length,
+const shapeOfLeave = new Function('r', 'fromAttendance', src
+  .slice(src.indexOf('const shapeOfLeave = (r, fromAttendance = null) => {')
+           + 'const shapeOfLeave = (r, fromAttendance = null) => '.length,
          src.indexOf('\n};', src.indexOf('const shapeOfLeave')) + 2)
   .replace(/^\{/, '').replace(/\};?$/, ''));
 
@@ -70,6 +71,16 @@ const dayFacts = async (empId, date) => (await pool.query(
 
   const odd = shapeOfLeave({ Unit: 'Days', Daystaken: '2.5' });
   check('2.5 days is flagged, not silently rounded', odd.odd === true, odd);
+
+  // The leave record carries no session at all on this account, so the guess
+  // was wrong on the very first date it was checked against: Shivanie's
+  // 2026-06-01 was a second half. The attendance report is what knows.
+  const fromAtt = shapeOfLeave({ Unit: 'Days', Daystaken: '0.5' }, 'second_half');
+  check('a session read from the attendance report wins',
+    fromAtt.session === 'second_half' && fromAtt.guessed === false, fromAtt);
+  const noAtt = shapeOfLeave({ Unit: 'Days', Daystaken: '0.5' }, null);
+  check('and without one it still says it is guessing',
+    noAtt.session === 'first_half' && noAtt.guessed === true, noAtt);
 
   console.log('\n════ What the classifier then sees ════\n');
 
