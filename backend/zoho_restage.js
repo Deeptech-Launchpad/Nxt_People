@@ -46,6 +46,18 @@ const fromZohoDate = (s) => {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
 };
 
+// "13/07/2026 10:42 AM" — when the approval actually happened. Worth reading
+// rather than standing in the leave date, which can be months earlier.
+const fromZohoDateTime = (s) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)?/i.exec(String(s || ''));
+  if (!m) return null;
+  let h = Number(m[4]);
+  const ampm = (m[6] || '').toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${m[3]}-${m[2]}-${m[1]} ${String(h).padStart(2, '0')}:${m[5]}:00`;
+};
+
 // Zoho's leave type names against ours. Anything unrecognised lands as unpaid
 // and is reported, rather than dropped — a leave that vanishes in an import is
 // worse than one that arrives under the wrong name and says so.
@@ -335,10 +347,10 @@ async function backup(client, batch, table, empId, where, params) {
            s.halfDay, s.halfDay ? s.session : null,
            String(r.Reasonforleave || '').slice(0, 500) || 'Imported from Zoho',
            status,
-           // Zoho approved it on a date we are not reading here. Leaving this
-           // null would read as "approved by nobody, ever"; the leave date is
-           // the honest stand-in and keeps approval reports from going blank.
-           status === 'approved' ? from : null]);
+           // Zoho records when it was approved. Null here reads as "approved by
+           // nobody, ever" and blanks the approval reports; the leave date is
+           // only the fallback for a record that carries no approval time.
+           status === 'approved' ? (fromZohoDateTime(r.ApprovalTime) || from) : null]);
         created++;
       }
       totalCreated += created; totalUnmapped += unmapped;

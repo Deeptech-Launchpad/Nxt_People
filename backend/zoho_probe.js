@@ -74,11 +74,14 @@ async function attempt(label, endpoint) {
     // status code alone reported four failures as successes. An unknown form
     // is a failure whatever the transport says about it.
     const envelope = body && !Array.isArray(body) && typeof body === 'object'
-      && ('errors' in body || 'message' in body) && !('result' in body);
+      && ('errors' in body || 'message' in body || 'error' in body) && !('result' in body);
     if (envelope) {
-      const msg = String(body.message || JSON.stringify(body.errors || {})).slice(0, 70);
-      console.log(`no     200 but an error: ${msg}`);
-      return { label, endpoint, ok: false, code: 'envelope' };
+      // "error" belongs in that list too. Without it, getUserReport's refusal
+      // read as a success and then printed the first character of the error
+      // string as though it were the data — a single "T", which says nothing.
+      const msg = String(body.message || JSON.stringify(body.error || body.errors || {}));
+      console.log(`no     200 but an error: ${msg.slice(0, 90)}`);
+      return { label, endpoint, ok: false, code: 'envelope', why: msg };
     }
 
     console.log(`ok    ${shapeOf(body)}`);
@@ -195,15 +198,53 @@ async function grantedScopes() {
       `forms/${enc(name)}/getRecords?sIndex=1&limit=5`));
   }
 
-  results.push(await attempt('attendance/getUserReport',
-    `attendance/getUserReport?empId=${enc(CODE)}&sdate=${enc(zohoDate(START))}&edate=${enc(zohoDate(END))}`));
-
   // Leave answered last time; the useful question now is whether it can be
   // narrowed to one person and one range rather than paged through wholesale.
-  results.push(await attempt('forms/leave (filtered by employee)',
+  const leaveRes = await attempt('forms/leave (filtered by employee)',
     `forms/leave/getRecords?sIndex=1&limit=50&searchParams=${enc(JSON.stringify({
       searchField: 'Employee_ID', searchOperator: 'Contains', searchText: CODE,
-    }))}`));
+    }))}`);
+  results.push(leaveRes);
+
+  // Zoho's own internal id for this person, taken from a leave record rather
+  // than guessed. Some attendance endpoints want it and accept nothing else.
+  let erecno = null;
+  try {
+    const first = Object.values(leaveRes.body?.[0] || {})[0]?.[0];
+    erecno = first?.['Employee_ID.ID'] || null;
+  } catch { /* leave it null */ }
+
+  // ── Attendance, which is the whole reason for the new scope ──────────────
+  console.log('\n──────────────────────────────────────────────────────────');
+  console.log('  Attendance — the scope is granted, so now the arguments');
+  console.log('──────────────────────────────────────────────────────────\n');
+  console.log(`  employee code ${CODE}   email ${emp.email || '—'}   erecno ${erecno || '—'}\n`);
+
+  const sd = enc(zohoDate(START)), ed = enc(zohoDate(END));
+  const attempts = [
+    ['getUserReport empId', `attendance/getUserReport?empId=${enc(CODE)}&sdate=${sd}&edate=${ed}`],
+    ['getUserReport empId + dateFormat',
+      `attendance/getUserReport?empId=${enc(CODE)}&sdate=${sd}&edate=${ed}&dateFormat=dd-MM-yyyy`],
+    ...(emp.email ? [['getUserReport emailId',
+      `attendance/getUserReport?emailId=${enc(emp.email)}&sdate=${sd}&edate=${ed}&dateFormat=dd-MM-yyyy`]] : []),
+    ...(erecno ? [['getUserReport erecno',
+      `attendance/getUserReport?erecno=${enc(erecno)}&sdate=${sd}&edate=${ed}&dateFormat=dd-MM-yyyy`]] : []),
+    ['getAttendanceEntries (one day)',
+      `attendance/getAttendanceEntries?empId=${enc(CODE)}&date=${sd}&dateFormat=dd-MM-yyyy`],
+    ['getUserReport ISO dates',
+      `attendance/getUserReport?empId=${enc(CODE)}&sdate=${enc(String(START))}&edate=${enc(String(END))}&dateFormat=yyyy-MM-dd`],
+  ];
+  const attResults = [];
+  for (const [label, endpoint] of attempts) attResults.push(await attempt(label, endpoint));
+  results.push(...attResults);
+
+  // Zoho's refusals name the argument they object to, so print them in full
+  // rather than clipped — that sentence is the whole answer to what to send.
+  const whys = [...new Set(attResults.filter(r => r.why).map(r => r.why))];
+  if (whys.length) {
+    console.log('\n  What it objected to, in full:\n');
+    for (const w of whys) console.log(`    ${w.slice(0, 400)}`);
+  }
 
   const ok = results.filter(r => r.ok);
   console.log(`\n  ${ok.length} of ${results.length} answered.\n`);
