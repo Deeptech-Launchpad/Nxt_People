@@ -53,10 +53,35 @@ const LEAVE_TYPES = {
   'permission': 'permission', 'casual leave': 'casual', 'casual': 'casual',
   'sick leave': 'sick', 'sick': 'sick', 'earned leave': 'earned',
   'privilege leave': 'earned', 'loss of pay': 'unpaid', 'lop': 'unpaid',
-  'unpaid leave': 'unpaid', 'comp off': 'comp_off', 'compensatory off': 'comp_off',
+  'unpaid leave': 'unpaid', 'leave without pay': 'unpaid', 'lwp': 'unpaid',
+  'comp off': 'comp_off', 'compensatory off': 'comp_off',
   'maternity leave': 'maternity', 'paternity leave': 'paternity',
 };
 const STATUSES = { approved: 'approved', pending: 'pending', rejected: 'rejected', cancelled: 'cancelled' };
+
+/* Everything downstream — the classifier, the muster roll, payroll — reads
+ * is_half_day, never total_days. A Zoho half day imported with total_days 0.5
+ * and is_half_day false counts as a WHOLE day off against expected hours, so
+ * the person is credited time they did not take. Reading the fraction back out
+ * into the flag is the whole point of this. */
+const shapeOfLeave = (r) => {
+  const isHours = String(r.Unit || '').toLowerCase().startsWith('hour');
+  const taken = Number(r.Daystaken) || 0;
+  if (isHours) return { isHours, taken, halfDay: false, session: null, odd: false };
+
+  const halfDay = taken > 0 && taken < 1;
+  // Zoho names the session differently between accounts, so try what it might
+  // be called rather than assuming one.
+  const raw = String(r.Session || r.SessionType || r.Sessions || r.Half_Day_Type || '').toLowerCase();
+  const session = /2|second|after/.test(raw) ? 'second_half'
+    : /1|first|fore|morn/.test(raw) ? 'first_half'
+    : halfDay ? 'first_half' : null;
+
+  // 2.5 days cannot be said in this schema — one flag covers the whole record.
+  // Report it rather than rounding it away where nobody would see.
+  const odd = taken >= 1 && taken % 1 !== 0;
+  return { isHours, taken, halfDay, session, odd };
+};
 
 async function zohoLeave(code) {
   const search = encodeURIComponent(JSON.stringify({
@@ -200,10 +225,13 @@ async function backup(client, batch, table, empId, where, params) {
       for (const r of p.leaveInRange) {
         const from = fromZohoDate(r.From), to = fromZohoDate(r.To) || from;
         const type = LEAVE_TYPES[String(r.Leavetype || '').trim().toLowerCase()];
+        const s = shapeOfLeave(r);
         console.log(`      ${pad(from, 12)}${pad(to === from ? '' : `to ${to}`, 14)}`
-          + `${pad(r.Leavetype, 16)}${pad(r.ApprovalStatus, 10)}`
-          + `${r.Daystaken}${String(r.Unit || '').toLowerCase().startsWith('hour') ? 'h' : 'd'}`
-          + `${type ? '' : '   UNMAPPED → unpaid'}`);
+          + `${pad(r.Leavetype, 18)}${pad(r.ApprovalStatus, 10)}`
+          + `${pad(`${s.taken}${s.isHours ? 'h' : 'd'}`, 8)}`
+          + `${s.halfDay ? `half day, ${s.session.replace('_', ' ')}` : ''}`
+          + `${type ? '' : '   UNMAPPED → unpaid'}`
+          + `${s.odd ? '   ODD FRACTION — imported as whole days, check this one' : ''}`);
       }
       console.log('');
     }
@@ -276,24 +304,32 @@ async function backup(client, batch, table, empId, where, params) {
           [p.emp.id, START, END]);
       }
 
-      let created = 0, unmapped = 0;
+      let created = 0, unmapped = 0, halves = 0;
       for (const r of p.leaveInRange) {
         const from = fromZohoDate(r.From), to = fromZohoDate(r.To) || from;
         const type = LEAVE_TYPES[String(r.Leavetype || '').trim().toLowerCase()];
         if (!type) unmapped++;
-        const isHours = String(r.Unit || '').toLowerCase().startsWith('hour');
-        const taken = Number(r.Daystaken) || 0;
+        const s = shapeOfLeave(r);
+        if (s.halfDay) halves++;
+        const status = STATUSES[String(r.ApprovalStatus || '').trim().toLowerCase()] || 'pending';
         await client.query(
           `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, total_days, hours,
-                               reason, status, created_at)
-           VALUES ($1,$2,$3::date,$4::date,$5,$6,$7,$8,NOW())`,
-          [p.emp.id, type || 'unpaid', from, to, isHours ? 0 : taken, isHours ? taken : null,
+                               is_half_day, half_day_type, reason, status, approved_at, created_at)
+           VALUES ($1,$2,$3::date,$4::date,$5,$6,$7,$8,$9,$10,$11,NOW())`,
+          [p.emp.id, type || 'unpaid', from, to,
+           s.isHours ? 0 : s.taken, s.isHours ? s.taken : null,
+           s.halfDay, s.halfDay ? s.session : null,
            String(r.Reasonforleave || '').slice(0, 500) || 'Imported from Zoho',
-           STATUSES[String(r.ApprovalStatus || '').trim().toLowerCase()] || 'pending']);
+           status,
+           // Zoho approved it on a date we are not reading here. Leaving this
+           // null would read as "approved by nobody, ever"; the leave date is
+           // the honest stand-in and keeps approval reports from going blank.
+           status === 'approved' ? from : null]);
         created++;
       }
       totalCreated += created; totalUnmapped += unmapped;
       console.log(`    ${pad(p.emp.name, 24)} ${created} leave record(s) imported`
+        + `${halves ? `, ${halves} half day(s)` : ''}`
         + `${unmapped ? `, ${unmapped} as unpaid` : ''}`);
     }
 
