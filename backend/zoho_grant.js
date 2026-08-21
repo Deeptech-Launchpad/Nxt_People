@@ -36,6 +36,29 @@ const need = (k) => {
     process.exit(1);
   }
 
+  // Three exchanges in a row failed as "invalid_code" when the real fault was a
+  // truncated paste: the Zoho console shows the code with a trailing ellipsis,
+  // and hand-selecting it takes the dots along. Zoho cannot tell the difference
+  // between a cut code and an expired one, so it says expired — and you go and
+  // generate another, which pastes the same way. Checking the shape here ends
+  // that loop.
+  const shape = /^1000\.[0-9a-f]{32}\.[0-9a-f]{32}$/i;
+  if (!shape.test(CODE)) {
+    const tail = CODE.split('.').pop();
+    console.log('\n  That code is not the right shape, so it was not sent.\n');
+    console.log(`  Got:       ${CODE.length} characters, ${CODE.split('.').length - 1} dot(s)`);
+    console.log('  Expected:  1000. then 32 characters, a dot, then 32 more\n');
+    if (/\.$/.test(CODE) || /\.\.+/.test(CODE)) {
+      console.log('  It ends in dots. Those are the console\'s "..." for text too long to');
+      console.log('  show, not part of the code — the copy took the display, not the value.\n');
+    } else if (tail && tail.length < 32) {
+      console.log(`  The part after the last dot is ${tail.length} characters, not 32. It is cut short.\n`);
+    }
+    console.log('  Use the DOWNLOAD button rather than COPY, open the file it saves, and');
+    console.log('  take the code from there. Nothing in that file is truncated.\n');
+    process.exit(1);
+  }
+
   const authUrl = need('ZOHO_AUTH_URL');
   const clientId = need('ZOHO_CLIENT_ID');
   const clientSecret = need('ZOHO_CLIENT_SECRET');
