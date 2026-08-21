@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload, X, Check, Trash2 } from 'lucide-react';
+import { Upload, X, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
@@ -7,30 +7,32 @@ import { isFullAccess } from '../utils/roles';
 
 // Choosing the banner on My Space.
 //
-// Three sources, in the order somebody would look for them: banners the
-// organization uploaded for everybody, a handful of built-in gradients, and
-// your own file.
-//
-// The library exists instead of stock photographs shipped with the code, which
-// would mean binary assets in the repository and a licence question nobody
-// asked for. A company's own images are the better answer anyway, and an
-// administrator uploads them once.
+// Two sources: six banners shipped with the app, or a file from your own
+// computer. The shipped ones are SVG drawn for this — a photograph would bring
+// a licence question, and an SVG at a few kilobytes cannot fail to load.
 //
 // The two switches on Organization Policy govern what an EMPLOYEE may do here.
-// An administrator always has access and lands on the organization cover —
+// An administrator always has access and lands on the organization banner —
 // with both switches off there would otherwise be no way for anybody to set
-// the banner at all.
+// it at all.
+
+// A cover is either one of the banners shipped with the app (preset:name) or a
+// file somebody uploaded. Both end up as a background image; only the path
+// differs.
+export const coverUrl = (cover, presets) => {
+  if (!cover) return null;
+  if (cover.startsWith('preset:')) return presets?.[cover.slice(7)]?.url || null;
+  return cover;
+};
 
 export const coverStyle = (cover, presets) => {
-  if (!cover) return {};
-  if (cover.startsWith('preset:')) {
-    return {
-      backgroundImage: presets?.[cover.slice(7)]
-        || presets?.dusk
-        || 'linear-gradient(160deg,#16283f,#7f9bc4)',
-    };
-  }
-  return { backgroundImage: `url("${cover}")`, backgroundSize: 'cover', backgroundPosition: 'center 35%' };
+  const url = coverUrl(cover, presets);
+  if (!url) return { backgroundColor: '#1b2a4a' };
+  return {
+    backgroundImage: `url("${url}")`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center 45%',
+  };
 };
 
 /** Whether this person has any reason to see the cover control at all. */
@@ -62,7 +64,6 @@ export default function CoverImageDialog({ open, onClose, onChanged }) {
   // because that is what they came here to change.
   const [scope, setScope] = useState(admin ? 'org' : 'self');
   const ownFile = useRef(null);
-  const libFile = useRef(null);
 
   const load = () => api.get('/cover-image')
     .then(r => setState(r.data.data))
@@ -75,7 +76,6 @@ export default function CoverImageDialog({ open, onClose, onChanged }) {
   const canChange = state.allowSystemOptions || state.allowCustomUpload;
   const forOrg = admin && scope === 'org';
   const current = forOrg ? state.orgCover : state.own;
-  const library = state.library || [];
 
   const done = async (message) => {
     await load();
@@ -103,33 +103,17 @@ export default function CoverImageDialog({ open, onClose, onChanged }) {
     try {
       await api.post(`/cover-image/upload${target ? `?target=${target}` : ''}`, form,
         { headers: { 'Content-Type': 'multipart/form-data' } });
-      // A library upload stays on the dialog: adding several in a row is the
-      // normal case, and closing after each one would be tedious.
-      if (target === 'library') { await load(); toast.success('Added to the library'); }
-      else await done('Cover updated');
+      await done('Cover updated');
     } catch (e) {
       toast.error(e.response?.data?.message || 'Could not upload that image');
     } finally {
       setBusy(false);
       if (ownFile.current) ownFile.current.value = '';
-      if (libFile.current) libFile.current.value = '';
     }
   };
 
-  const removeFromLibrary = async (cover) => {
-    if (!window.confirm('Remove this banner from the library? Anybody already using it keeps it.')) return;
-    setBusy(true);
-    try {
-      await api.delete('/cover-image/library', { data: { cover } });
-      await load();
-      toast.success('Removed from the library');
-    } catch (e) {
-      toast.error(e.response?.data?.message || 'Could not remove it');
-    } finally { setBusy(false); }
-  };
-
-  const Tile = ({ value, style, onPick, onRemove, label }) => (
-    <div className="relative group">
+  const Tile = ({ value, style, onPick, label }) => (
+    <div className="relative">
       <button
         onClick={onPick} disabled={busy} aria-label={label}
         className={`w-full h-[58px] rounded-lg border-2 transition-all relative overflow-hidden ${
@@ -144,15 +128,6 @@ export default function CoverImageDialog({ open, onClose, onChanged }) {
           </span>
         )}
       </button>
-      {onRemove && (
-        <button
-          onClick={onRemove} disabled={busy}
-          aria-label="Remove from library"
-          className="absolute -top-1.5 -right-1.5 bg-white border border-slate-200 rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow"
-        >
-          <Trash2 size={11} className="text-rose-500" />
-        </button>
-      )}
     </div>
   );
 
@@ -190,50 +165,18 @@ export default function CoverImageDialog({ open, onClose, onChanged }) {
             </>
           )}
 
-          {/* The organization's own banners. */}
-          {(library.length > 0 || admin) && (
-            <div>
-              <p className="text-[13px] font-medium text-slate-600 mb-2">
-                {library.length ? 'Company banners' : 'Company banners — none yet'}
-              </p>
-              {library.length > 0 && (
-                <div className="grid grid-cols-4 gap-2.5">
-                  {library.map(url => (
-                    <Tile
-                      key={url} value={url} label="Company banner"
-                      style={{ backgroundImage: `url("${url}")`, backgroundSize: 'cover', backgroundPosition: 'center' }}
-                      onPick={() => choose(url)}
-                      onRemove={admin ? () => removeFromLibrary(url) : null}
-                    />
-                  ))}
-                </div>
-              )}
-              {admin && (
-                <>
-                  <input ref={libFile} type="file" accept=".jpg,.jpeg,.png,.webp"
-                    onChange={e => send(e.target.files?.[0], 'library')} className="hidden" />
-                  <button
-                    onClick={() => libFile.current?.click()} disabled={busy}
-                    className="mt-2.5 flex items-center gap-1.5 border border-dashed border-slate-300 hover:border-blue-400 hover:text-blue-600 px-3.5 py-1.5 rounded-md text-[13px] font-medium text-slate-600"
-                  >
-                    <Upload size={13} /> Add a banner everyone can pick
-                  </button>
-                  <p className="text-[12px] text-slate-400 mt-1.5">
-                    Uploaded once and offered to everybody. Hover a banner to remove it.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
-
           {(state.allowSystemOptions || forOrg) && (
-            <div className="border-t border-slate-100 pt-4">
-              <p className="text-[13px] font-medium text-slate-600 mb-2">Or a built-in one</p>
-              <div className="grid grid-cols-4 gap-2.5">
-                {Object.keys(state.presets || {}).map(key => (
+            <div>
+              <p className="text-[13px] font-medium text-slate-600 mb-2">Choose a banner</p>
+              <div className="grid grid-cols-3 gap-2.5">
+                {Object.entries(state.presets || {}).map(([key, p]) => (
                   <Tile
-                    key={key} value={`preset:${key}`} label={`Cover ${key}`}
-                    style={{ backgroundImage: state.presets[key] }}
+                    key={key} value={`preset:${key}`} label={p.label || key}
+                    style={{
+                      backgroundImage: `url("${p.url}")`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                    }}
                     onPick={() => choose(`preset:${key}`)}
                   />
                 ))}
@@ -244,7 +187,7 @@ export default function CoverImageDialog({ open, onClose, onChanged }) {
           {(state.allowCustomUpload || forOrg) && (
             <div className="border-t border-slate-100 pt-4">
               <p className="text-[13px] font-medium text-slate-600 mb-2">
-                {forOrg ? 'Or upload one just for the banner' : 'Or upload your own'}
+                {forOrg ? 'Or upload one for the company banner' : 'Or upload your own'}
               </p>
               <input ref={ownFile} type="file" accept=".jpg,.jpeg,.png,.webp"
                 onChange={e => send(e.target.files?.[0], forOrg ? 'org' : null)} className="hidden" />

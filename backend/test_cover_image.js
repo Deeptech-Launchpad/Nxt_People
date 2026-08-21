@@ -13,6 +13,8 @@ const app = require('./app');
 const pool = require('./db');
 const jwt = require('jsonwebtoken');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
 const checks = [];
 const check = (l, ok, x) => { checks.push(ok);
@@ -64,7 +66,7 @@ const setPolicy = (patch) => pool.query(
   check('and reports that neither is allowed',
     r.j.data.allowSystemOptions === false && r.j.data.allowCustomUpload === false, r.j.data);
 
-  r = await call('PUT', '/cover-image', T.emp, { cover: 'preset:forest' });
+  r = await call('PUT', '/cover-image', T.emp, { cover: 'preset:meadow' });
   check('choosing one is refused on the route, not just hidden',
     r.s === 403, { s: r.s, m: r.j?.message });
 
@@ -72,15 +74,29 @@ const setPolicy = (patch) => pool.query(
 
   await setPolicy({ allowSystemOptions: true, allowCustomUpload: false });
 
-  r = await call('PUT', '/cover-image', T.emp, { cover: 'preset:forest' });
+  r = await call('PUT', '/cover-image', T.emp, { cover: 'preset:meadow' });
   check('a preset can be chosen', r.s === 200, { s: r.s, m: r.j?.message });
 
   const stored = (await pool.query(
     `SELECT cover_image_url AS c FROM employees WHERE id=$1`, [EMP])).rows[0].c;
-  check('and it is what was stored', stored === 'preset:forest', stored);
+  check('and it is what was stored', stored === 'preset:meadow', stored);
 
   r = await call('PUT', '/cover-image', T.emp, { cover: 'preset:nonsense' });
   check('an unknown preset is refused', r.s === 400, { s: r.s, m: r.j?.message });
+
+  r = await call('GET', '/cover-image', T.emp);
+  const presets = r.j.data.presets || {};
+  check('six banners ship with the app', Object.keys(presets).length === 6, Object.keys(presets));
+  check('and each one points at a real file',
+    Object.values(presets).every(p => typeof p.url === 'string' && p.url.startsWith('/covers/')),
+    Object.values(presets).map(p => p.url));
+
+  // The path existing in the config says nothing about the file existing on
+  // disk. A preset naming a missing image is a broken banner that only shows
+  // up when somebody picks it.
+  const missing = Object.entries(presets).filter(([, p]) =>
+    !fs.existsSync(path.join(__dirname, '..', 'frontend', 'public', p.url.replace(/^\//, ''))));
+  check('and the file is actually there', missing.length === 0, missing.map(([k]) => k));
 
   r = await call('PUT', '/cover-image', T.emp, { cover: '/uploads/covers/../../etc/passwd' });
   check('a path outside the cover directory is refused', r.s === 400, { s: r.s, m: r.j?.message });
@@ -95,17 +111,17 @@ const setPolicy = (patch) => pool.query(
   r = await call('PUT', '/cover-image/org', T.admin, { cover: 'preset:tide' });
   check('an admin can set it', r.s === 200, { s: r.s, m: r.j?.message });
 
-  r = await call('PUT', '/cover-image/org', T.emp, { cover: 'preset:ember' });
+  r = await call('PUT', '/cover-image/org', T.emp, { cover: 'preset:dunes' });
   check('an employee cannot', r.s === 403, r.s);
 
   r = await call('GET', '/cover-image', T.emp);
   check('somebody with no cover of their own sees the organization one',
     r.j.data.cover === 'preset:tide' && r.j.data.own === null, r.j.data);
 
-  await call('PUT', '/cover-image', T.emp, { cover: 'preset:plum' });
+  await call('PUT', '/cover-image', T.emp, { cover: 'preset:pine' });
   r = await call('GET', '/cover-image', T.emp);
   check('and their own choice wins once made',
-    r.j.data.cover === 'preset:plum', r.j.data);
+    r.j.data.cover === 'preset:pine', r.j.data);
 
   console.log('\n════ The org cover survives an unrelated policy save ════\n');
 
@@ -136,10 +152,10 @@ const setPolicy = (patch) => pool.query(
   // it stayed on the default gradient forever.
   await setPolicy({ allowSystemOptions: false, allowCustomUpload: false });
 
-  r = await call('PUT', '/cover-image', T.emp, { cover: 'preset:ember' });
+  r = await call('PUT', '/cover-image', T.emp, { cover: 'preset:dunes' });
   check('an employee still cannot choose their own', r.s === 403, r.s);
 
-  r = await call('PUT', '/cover-image/org', T.admin, { cover: 'preset:ember' });
+  r = await call('PUT', '/cover-image/org', T.admin, { cover: 'preset:dunes' });
   check('but an admin can set the organization cover', r.s === 200, { s: r.s, m: r.j?.message });
 
   // This employee picked their own earlier, and their own correctly wins. The
@@ -147,46 +163,10 @@ const setPolicy = (patch) => pool.query(
   await pool.query(`UPDATE employees SET cover_image_url = NULL WHERE id = $1`, [EMP]);
   r = await call('GET', '/cover-image', T.emp);
   check('and anybody without a cover of their own sees it',
-    r.j.data.cover === 'preset:ember' && r.j.data.own === null, r.j.data);
+    r.j.data.cover === 'preset:dunes' && r.j.data.own === null, r.j.data);
 
   r = await call('POST', '/cover-image/upload?target=org', T.emp, {});
   check('an employee cannot upload one for the organization', r.s === 403, r.s);
-
-  console.log('\n════ The shared library ════\n');
-
-  await setPolicy({ allowSystemOptions: true, allowCustomUpload: false, library: [] });
-
-  r = await call('GET', '/cover-image', T.emp);
-  check('the library comes back empty to start',
-    Array.isArray(r.j.data.library) && r.j.data.library.length === 0, r.j.data.library);
-
-  // Seeded directly. The upload itself is multipart and its guards are covered
-  // above; what matters here is that a listed image can be chosen and an
-  // unlisted one cannot — otherwise any path under /uploads/covers would do.
-  const LIB = '/uploads/covers/probe-library.jpg';
-  await setPolicy({ allowSystemOptions: true, allowCustomUpload: false, library: [LIB] });
-
-  r = await call('GET', '/cover-image', T.emp);
-  check('and carries the image once added', (r.j.data.library || [])[0] === LIB, r.j.data.library);
-
-  r = await call('PUT', '/cover-image', T.emp, { cover: LIB });
-  check('an employee can choose a library banner', r.s === 200, { s: r.s, m: r.j?.message });
-
-  r = await call('PUT', '/cover-image', T.emp, { cover: '/uploads/covers/not-in-the-library.jpg' });
-  check('but not an upload that is not in the library', r.s === 400, { s: r.s, m: r.j?.message });
-
-  r = await call('DELETE', '/cover-image/library', T.emp, { cover: LIB });
-  check('an employee cannot remove one', r.s === 403, r.s);
-
-  r = await call('DELETE', '/cover-image/library', T.admin, { cover: LIB });
-  check('an admin can', r.s === 200, { s: r.s, m: r.j?.message });
-
-  r = await call('GET', '/cover-image', T.admin);
-  check('and it leaves the library', !(r.j.data.library || []).includes(LIB), r.j.data.library);
-
-  const stillSet = (await pool.query(
-    `SELECT cover_image_url AS c FROM employees WHERE id=$1`, [EMP])).rows[0].c;
-  check('somebody already using it keeps it', stillSet === LIB, stillSet);
 
   console.log('\n════ Restoring ════\n');
 

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 400" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Warm desert dunes">
+  <defs>
+    <linearGradient id="heat" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f2c98f"/>
+      <stop offset="100%" stop-color="#e8a765"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="400" fill="url(#heat)"/>
+  <circle cx="392" cy="118" r="52" fill="#fff2d4" opacity="0.85"/>
+
+  <!-- Dunes overlap rather than stack: each crest cuts across the one behind
+       it, which is what gives sand its folded look. -->
+  <path d="M0 246 C 260 196, 470 268, 720 236 S 1180 190, 1600 244 L1600 400 L0 400 Z" fill="#dd9556"/>
+  <path d="M0 292 C 200 254, 520 322, 820 282 S 1260 244, 1600 296 L1600 400 L0 400 Z" fill="#c87f45"/>
+  <path d="M0 340 C 300 306, 560 366, 880 332 S 1300 300, 1600 346 L1600 400 L0 400 Z" fill="#ab6836"/>
+  <path d="M0 382 C 340 362, 700 398, 1020 374 S 1400 356, 1600 386 L1600 400 L0 400 Z" fill="#8b512a"/>
+</svg>

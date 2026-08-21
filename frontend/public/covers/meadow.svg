@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 400" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Rolling green hills under a morning sky">
+  <defs>
+    <linearGradient id="morning" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#bfe3ef"/>
+      <stop offset="100%" stop-color="#eaf3e4"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.2" cy="0.18" r="0.3">
+      <stop offset="0%" stop-color="#fff6d8" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#fff6d8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="400" fill="url(#morning)"/>
+  <rect width="1600" height="400" fill="url(#sun)"/>
+
+  <!-- Hills lighten towards the back, the reverse of the dusk ridge: in
+       daylight the distant ground is hazier, not darker. -->
+  <path d="M0 236 C 260 188, 520 246, 780 218 S 1280 180, 1600 226 L1600 400 L0 400 Z" fill="#a8cf9c"/>
+  <path d="M0 282 C 300 240, 560 300, 860 268 S 1320 236, 1600 282 L1600 400 L0 400 Z" fill="#7cb578"/>
+  <path d="M0 330 C 280 296, 600 352, 900 320 S 1340 292, 1600 336 L1600 400 L0 400 Z" fill="#4f9159"/>
+  <path d="M0 374 C 320 350, 640 392, 960 366 S 1380 344, 1600 380 L1600 400 L0 400 Z" fill="#33703f"/>
+</svg>

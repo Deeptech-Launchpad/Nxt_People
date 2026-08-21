@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 400" preserveAspectRatio="xMidYMid slice" role="img" aria-label="A starlit night sky above a dark horizon">
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#06080f"/>
+      <stop offset="62%" stop-color="#131c33"/>
+      <stop offset="100%" stop-color="#2a3557"/>
+    </linearGradient>
+    <radialGradient id="moonglow" cx="0.82" cy="0.2" r="0.34">
+      <stop offset="0%" stop-color="#cdd9ff" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#cdd9ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="400" fill="url(#night)"/>
+  <rect width="1600" height="400" fill="url(#moonglow)"/>
+  <circle cx="1312" cy="80" r="26" fill="#e8eeff" opacity="0.9"/>
+
+  <!-- Stars thin out towards the horizon, where the sky is brighter and they
+       would not be visible anyway. -->
+  <g fill="#ffffff">
+    <circle cx="94" cy="52" r="1.7" opacity="0.9"/>   <circle cx="212" cy="118" r="1.2" opacity="0.7"/>
+    <circle cx="336" cy="44" r="2" opacity="0.95"/>    <circle cx="452" cy="150" r="1.1" opacity="0.55"/>
+    <circle cx="548" cy="76" r="1.5" opacity="0.85"/>  <circle cx="676" cy="132" r="1.3" opacity="0.6"/>
+    <circle cx="742" cy="38" r="1.8" opacity="0.9"/>   <circle cx="880" cy="104" r="1.2" opacity="0.65"/>
+    <circle cx="988" cy="62" r="1.6" opacity="0.85"/>  <circle cx="1096" cy="146" r="1" opacity="0.5"/>
+    <circle cx="1180" cy="40" r="1.4" opacity="0.8"/>  <circle cx="1420" cy="126" r="1.2" opacity="0.6"/>
+    <circle cx="1512" cy="66" r="1.7" opacity="0.85"/> <circle cx="286" cy="196" r="1" opacity="0.4"/>
+    <circle cx="1004" cy="204" r="0.9" opacity="0.35"/>
+  </g>
+
+  <path d="M0 300 L182 262 L344 302 L520 254 L700 306 L878 258 L1058 304 L1240 256 L1420 300 L1600 264 L1600 400 L0 400 Z"
+        fill="#0b1020" opacity="0.9"/>
+  <path d="M0 344 L214 318 L400 354 L594 314 L788 356 L980 318 L1178 356 L1366 316 L1540 352 L1600 340 L1600 400 L0 400 Z"
+        fill="#05070d"/>
+</svg>

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 400" preserveAspectRatio="xMidYMid slice" role="img" aria-label="A pine forest in morning mist">
+  <defs>
+    <linearGradient id="mist" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d6e5df"/>
+      <stop offset="100%" stop-color="#8fb3a8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="400" fill="url(#mist)"/>
+
+  <!-- Three ranks of trees, each darker and taller than the one behind. The
+       mist between them is the background showing through at low opacity,
+       rather than a blur — which keeps the file tiny and the edges crisp. -->
+  <g fill="#6e948b" opacity="0.55">
+    <path d="M60 300 L92 214 L124 300 Z"/>   <path d="M160 300 L196 200 L232 300 Z"/>
+    <path d="M270 300 L300 222 L330 300 Z"/> <path d="M380 300 L416 196 L452 300 Z"/>
+    <path d="M492 300 L522 220 L552 300 Z"/> <path d="M604 300 L640 202 L676 300 Z"/>
+    <path d="M716 300 L746 224 L776 300 Z"/> <path d="M826 300 L862 198 L898 300 Z"/>
+    <path d="M940 300 L970 220 L1000 300 Z"/><path d="M1050 300 L1086 200 L1122 300 Z"/>
+    <path d="M1164 300 L1194 222 L1224 300 Z"/><path d="M1276 300 L1312 196 L1348 300 Z"/>
+    <path d="M1390 300 L1420 220 L1450 300 Z"/><path d="M1500 300 L1536 202 L1572 300 Z"/>
+  </g>
+
+  <g fill="#3f6b60" opacity="0.85">
+    <path d="M0 348 L44 232 L88 348 Z"/>     <path d="M130 348 L180 218 L230 348 Z"/>
+    <path d="M272 348 L316 240 L360 348 Z"/> <path d="M404 348 L456 214 L508 348 Z"/>
+    <path d="M550 348 L594 238 L638 348 Z"/> <path d="M682 348 L734 216 L786 348 Z"/>
+    <path d="M828 348 L872 240 L916 348 Z"/> <path d="M958 348 L1010 212 L1062 348 Z"/>
+    <path d="M1104 348 L1148 238 L1192 348 Z"/><path d="M1236 348 L1288 216 L1340 348 Z"/>
+    <path d="M1382 348 L1426 240 L1470 348 Z"/><path d="M1512 348 L1564 214 L1616 348 Z"/>
+  </g>
+
+  <g fill="#1f4a41">
+    <path d="M-20 400 L46 250 L112 400 Z"/>  <path d="M150 400 L226 236 L302 400 Z"/>
+    <path d="M336 400 L402 256 L468 400 Z"/> <path d="M508 400 L584 232 L660 400 Z"/>
+    <path d="M700 400 L766 254 L832 400 Z"/> <path d="M872 400 L948 234 L1024 400 Z"/>
+    <path d="M1062 400 L1128 256 L1194 400 Z"/><path d="M1236 400 L1312 230 L1388 400 Z"/>
+    <path d="M1428 400 L1494 254 L1560 400 Z"/>
+  </g>
+  <rect y="392" width="1600" height="8" fill="#173c34"/>
+</svg>

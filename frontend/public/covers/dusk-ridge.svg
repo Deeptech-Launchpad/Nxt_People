@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 400" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Mountain ridges at dusk">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1b2a4a"/>
+      <stop offset="55%" stop-color="#54507e"/>
+      <stop offset="100%" stop-color="#c98a72"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.72" cy="0.78" r="0.42">
+      <stop offset="0%" stop-color="#ffd9a8" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#ffd9a8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="400" fill="url(#sky)"/>
+  <circle cx="1152" cy="312" r="46" fill="#ffe3ba" opacity="0.92"/>
+  <rect width="1600" height="400" fill="url(#glow)"/>
+
+  <!-- Ridges, furthest first. Each is a shade darker, which is what reads as
+       distance without any haze or blur. -->
+  <path d="M0 268 L190 214 L332 258 L505 196 L690 262 L858 210 L1030 266 L1216 208 L1392 262 L1600 218 L1600 400 L0 400 Z"
+        fill="#3f3f68" opacity="0.75"/>
+  <path d="M0 306 L152 268 L318 312 L470 260 L642 314 L812 268 L988 318 L1168 266 L1348 312 L1524 272 L1600 296 L1600 400 L0 400 Z"
+        fill="#2c2b4f" opacity="0.88"/>
+  <path d="M0 346 L214 316 L392 356 L586 312 L774 358 L960 318 L1148 360 L1330 316 L1508 356 L1600 336 L1600 400 L0 400 Z"
+        fill="#1c1c37"/>
+</svg>
