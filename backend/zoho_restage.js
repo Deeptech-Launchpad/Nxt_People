@@ -67,20 +67,24 @@ const STATUSES = { approved: 'approved', pending: 'pending', rejected: 'rejected
 const shapeOfLeave = (r) => {
   const isHours = String(r.Unit || '').toLowerCase().startsWith('hour');
   const taken = Number(r.Daystaken) || 0;
-  if (isHours) return { isHours, taken, halfDay: false, session: null, odd: false };
+  if (isHours) return { isHours, taken, halfDay: false, session: null, guessed: false, odd: false };
 
   const halfDay = taken > 0 && taken < 1;
   // Zoho names the session differently between accounts, so try what it might
   // be called rather than assuming one.
-  const raw = String(r.Session || r.SessionType || r.Sessions || r.Half_Day_Type || '').toLowerCase();
-  const session = /2|second|after/.test(raw) ? 'second_half'
-    : /1|first|fore|morn/.test(raw) ? 'first_half'
-    : halfDay ? 'first_half' : null;
+  const raw = String(r.Session || r.SessionType || r.Sessions || r.Half_Day_Type
+    || r.Session_1 || r.DayType || r.Day_Type || '').toLowerCase();
+  const read = /2|second|after/.test(raw) ? 'second_half'
+    : /1|first|fore|morn/.test(raw) ? 'first_half' : null;
+  // Which half was taken decides which half of the day is expected, so a guess
+  // here is not a small one. When Zoho does not say, this says so.
+  const session = read || (halfDay ? 'first_half' : null);
+  const guessed = halfDay && !read;
 
   // 2.5 days cannot be said in this schema — one flag covers the whole record.
   // Report it rather than rounding it away where nobody would see.
   const odd = taken >= 1 && taken % 1 !== 0;
-  return { isHours, taken, halfDay, session, odd };
+  return { isHours, taken, halfDay, session, guessed, odd };
 };
 
 async function zohoLeave(code) {
@@ -229,11 +233,21 @@ async function backup(client, batch, table, empId, where, params) {
         console.log(`      ${pad(from, 12)}${pad(to === from ? '' : `to ${to}`, 14)}`
           + `${pad(r.Leavetype, 18)}${pad(r.ApprovalStatus, 10)}`
           + `${pad(`${s.taken}${s.isHours ? 'h' : 'd'}`, 8)}`
-          + `${s.halfDay ? `half day, ${s.session.replace('_', ' ')}` : ''}`
+          + `${s.halfDay ? `half day, ${s.session.replace('_', ' ')}${s.guessed ? ' (GUESSED)' : ''}` : ''}`
           + `${type ? '' : '   UNMAPPED → unpaid'}`
           + `${s.odd ? '   ODD FRACTION — imported as whole days, check this one' : ''}`);
       }
       console.log('');
+
+      // A guessed session is a real guess: it decides which half of the day is
+      // expected. If Zoho did name it under some field we have not tried, this
+      // is where we find out what to call it.
+      const guessed = p.leaveInRange.filter(r => shapeOfLeave(r).guessed);
+      if (guessed.length) {
+        console.log(`    ${guessed.length} half day(s) above have a GUESSED session — Zoho sent no`);
+        console.log('    field we recognise. These are the fields it did send:\n');
+        console.log(`      ${Object.keys(guessed[0]).join(', ')}\n`);
+      }
     }
   }
 
