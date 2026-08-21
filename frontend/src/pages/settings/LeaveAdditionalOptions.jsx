@@ -34,9 +34,85 @@ export default function LeaveAdditionalOptions() {
           checked={sandwich.enabled}
           onChange={v => setIn('sandwichLeave', { enabled: v })}
         />
-        <p className="text-[12px] text-slate-400 mt-1.5 ml-14">
-          Leave day counts do not bridge weekends and holidays yet.<NotWired />
+        <p className="text-[12px] text-slate-400 mt-1.5 ml-14 max-w-[560px]">
+          Off, a weekend between two leave days costs nothing. On, it comes out of the
+          balance like any other leave day.
         </p>
+
+        {/* Each of these is a decision somebody has to make, and each of them
+            changes what a person's balance says. They are settings rather than
+            assumptions for that reason. Shown only while the policy is on —
+            they are stored either way, so switching off to check something and
+            back on does not discard how it was configured. */}
+        {sandwich.enabled && (
+          <div className="mt-4 ml-14 border border-slate-200 rounded-lg bg-slate-50 px-4 py-4 space-y-4 max-w-[560px]">
+            <div>
+              <p className="text-[13.5px] font-medium text-slate-700 mb-2">Apply it once the leave reaches</p>
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="number" min="0" max="30"
+                  value={sandwich.minDays ?? 0}
+                  onChange={e => setIn('sandwichLeave', {
+                    minDays: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) })}
+                  aria-label="Minimum leave days before bridging applies"
+                  className="w-24 text-[14px] rounded-md border border-slate-300 px-3 py-1.5 bg-white"
+                />
+                <span className="text-[13px] text-slate-500">days</span>
+              </div>
+              <p className="text-[12px] text-slate-400 mt-1.5">
+                {Number(sandwich.minDays) > 0
+                  ? `A shorter break is left alone; only leave of ${sandwich.minDays} days or more bridges.`
+                  : 'Zero bridges a single long weekend as readily as a fortnight.'}
+              </p>
+            </div>
+
+            <div className="border-t border-slate-200 pt-3.5">
+              <p className="text-[13.5px] font-medium text-slate-700 mb-2">A weekend counts as leave when</p>
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                <label className="flex items-center gap-2 cursor-pointer text-[13.5px] text-slate-700">
+                  <input type="radio" name="sandwichSides" className="w-4 h-4 accent-blue-600"
+                    checked={sandwich.requireBothSides !== false}
+                    onChange={() => setIn('sandwichLeave', { requireBothSides: true })} />
+                  There is leave on both sides of it
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-[13.5px] text-slate-700">
+                  <input type="radio" name="sandwichSides" className="w-4 h-4 accent-blue-600"
+                    checked={sandwich.requireBothSides === false}
+                    onChange={() => setIn('sandwichLeave', { requireBothSides: false })} />
+                  There is leave on either side
+                </label>
+              </div>
+              <p className="text-[12px] text-slate-400 mt-1.5">
+                {sandwich.requireBothSides === false
+                  ? 'A single Friday off also costs the weekend that follows it.'
+                  : 'A single Friday off costs one day. Friday and Monday cost four.'}
+              </p>
+            </div>
+
+            <div className="border-t border-slate-200 pt-3.5">
+              <p className="text-[13.5px] font-medium text-slate-700 mb-2">Applies to</p>
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                <label className="flex items-center gap-2 cursor-pointer text-[13.5px] text-slate-700">
+                  <input type="radio" name="sandwichTypes" className="w-4 h-4 accent-blue-600"
+                    checked={sandwich.appliesTo !== 'unpaid'}
+                    onChange={() => setIn('sandwichLeave', { appliesTo: 'all' })} />
+                  Every leave type
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-[13.5px] text-slate-700">
+                  <input type="radio" name="sandwichTypes" className="w-4 h-4 accent-blue-600"
+                    checked={sandwich.appliesTo === 'unpaid'}
+                    onChange={() => setIn('sandwichLeave', { appliesTo: 'unpaid' })} />
+                  Unpaid leave only
+                </label>
+              </div>
+              <p className="text-[12px] text-slate-400 mt-1.5">
+                {sandwich.appliesTo === 'unpaid'
+                  ? 'Costs pay rather than a balance somebody earned.'
+                  : 'Takes days from casual and earned balances people have accrued.'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Auto-reverse only means something while the policy is on, so it is
             disabled rather than hidden — hiding it made the card change height

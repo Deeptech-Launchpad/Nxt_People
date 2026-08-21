@@ -9,6 +9,7 @@ const { createLevels, getLevels, canUserAct, applyApproval, applyApproveAll, app
 const { sendMail, sendLeaveApprovalEmail, sendLeaveStatusEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const { countWorkingDays } = require('../utils/workingDays');
+const { sandwichedDays } = require('../utils/sandwichLeave');
 const { getLeavePolicies } = require('../utils/leavePolicy');
 const logger = require('../logger');
 const { fire } = require('../utils/workflowEngine');
@@ -294,7 +295,27 @@ router.post('/', [
 
     // Honour weekend_rules + holidays (no more hardcoded Sat/Sun).
     const workingDays = isPermission ? 0 : await countWorkingDays(start, end);
-    const totalDays = isPermission ? 0 : (isHalfDay ? 0.5 : workingDays);
+
+    // Sandwich leave: weekends and holidays sitting between leave days can be
+    // charged as leave themselves. Off by default, and every decision inside it
+    // is a setting — see utils/sandwichLeave.js. A half day cannot bridge
+    // anything, so it is left out.
+    let sandwich = { days: 0, dates: [] };
+    if (!isPermission && !isHalfDay) {
+      try {
+        const addCfg = (await pool.query(
+          `SELECT leave_additional_config AS c FROM settings LIMIT 1`)).rows[0]?.c || {};
+        sandwich = await sandwichedDays(pool, {
+          employeeId: req.user._id, start, end, leaveType, cfg: addCfg,
+        });
+      } catch (err) {
+        // A policy that cannot be read must not block somebody applying for
+        // leave. Charging nothing is the safe direction to fail in.
+        logger.warn({ err: err.message }, '[leaves] sandwich calculation skipped');
+      }
+    }
+
+    const totalDays = isPermission ? 0 : (isHalfDay ? 0.5 : workingDays + sandwich.days);
     if (!isPermission && totalDays <= 0) {
       return res.status(400).json({
         success: false,
@@ -378,14 +399,16 @@ router.post('/', [
       }
 
       ins = await client.query(
-        `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, total_days, reason, is_half_day, half_day_type, start_time, end_time, hours)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, total_days, reason, is_half_day, half_day_type, start_time, end_time, hours, sandwich_days, sandwich_dates)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date[])
          RETURNING id as "_id", leave_type as "leaveType", start_date as "startDate",
          end_date as "endDate", total_days as "totalDays", reason, status,
          is_half_day as "isHalfDay", half_day_type as "halfDayType", created_at as "createdAt",
-         start_time as "startTime", end_time as "endTime", hours`,
+         start_time as "startTime", end_time as "endTime", hours,
+         sandwich_days as "sandwichDays", sandwich_dates as "sandwichDates"`,
         [req.user._id, leaveType, startDate, endDateVal, totalDays, reason, isHalfDay || false, halfDayType || null,
-         permStartTime, permEndTime, isPermission ? permHours : null]
+         permStartTime, permEndTime, isPermission ? permHours : null,
+         sandwich.days, sandwich.dates.length ? sandwich.dates : null]
       );
 
       const leaveId = ins.rows[0]._id;

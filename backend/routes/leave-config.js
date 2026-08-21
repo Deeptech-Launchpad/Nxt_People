@@ -121,7 +121,24 @@ const SECTIONS = {
       return {
         // Auto-reverse only means anything while the policy is on; storing it
         // as true with the policy off would resurface silently if re-enabled.
-        sandwichLeave: { enabled: !!s.enabled, autoReverse: !!s.enabled && !!s.autoReverse },
+        //
+        // The rest are stored whatever the switch says: turning the policy off
+        // to check something and back on should not quietly discard how it was
+        // configured.
+        sandwichLeave: {
+          enabled: !!s.enabled,
+          autoReverse: !!s.enabled && !!s.autoReverse,
+          // 0 bridges a single long weekend as readily as a fortnight, which is
+          // rarely what an organization means by this policy.
+          minDays: Number.isFinite(Number(s.minDays)) && Number(s.minDays) >= 0
+            ? Math.min(30, Math.floor(Number(s.minDays))) : 0,
+          // True: a bridged day needs leave on both sides. False: leave on one
+          // side is enough, so a Friday off pulls in the weekend after it.
+          requireBothSides: s.requireBothSides !== false,
+          // Applying this to earned leave spends a balance somebody accrued;
+          // applying it only to unpaid leave costs pay instead.
+          appliesTo: s.appliesTo === 'unpaid' ? 'unpaid' : 'all',
+        },
         passwordProtectExports: !!b.passwordProtectExports,
         calendarSync: { format, updateEventStatusByType: !!c.updateEventStatusByType },
       };
