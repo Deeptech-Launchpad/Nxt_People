@@ -47,14 +47,28 @@ const shiftRange = ({ start, end }, n) => {
   return range(shift(s), shift(e));
 };
 
-const COLUMNS = [
+// Extra and deficit time are shown apart from the balance, which nets them
+// off: three hours short on Monday and three over on Tuesday reads as a quiet
+// zero, and that pattern is exactly what somebody would want to see. They only
+// appear when the organization measures them — see "Allow overtime and
+// deviation" on the Attendance Policy screen.
+const BASE_COLUMNS = [
   ['previousBalance', 'Previous Balance'],
   ['expectedHours', 'Expected Hours'],
   ['payableHours', 'Payable Hours'],
   ['balanceHours', 'Balance Hours'],
 ];
-const exportCols = (decimal) => COLUMNS.map(([key, header]) => ({
-  key, header, value: r => (decimal ? (Number(r[key]) || 0).toFixed(2) : hhmm(r[key])),
+const DEVIATION_COLUMNS = [
+  ['overtimeHours', 'Extra Time'],
+  ['deficitHours', 'Deficit Time'],
+];
+const columnsFor = tracked => (tracked ? [...BASE_COLUMNS, ...DEVIATION_COLUMNS] : BASE_COLUMNS);
+const exportCols = (decimal, tracked) => columnsFor(tracked).map(([key, header]) => ({
+  key, header,
+  // Null means the figure is not measured, and rendering that as 0.00 would
+  // claim the person worked their hours exactly.
+  value: r => (r[key] === null || r[key] === undefined ? ''
+    : decimal ? Number(r[key]).toFixed(2) : hhmm(r[key])),
 }));
 
 // A running hour ledger: what the period owed, what it paid for, and the
@@ -68,6 +82,8 @@ export default function ExpectedVsWorked() {
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS[0].value);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const [tracked, setTracked] = useState(false);
+  const COLUMNS = columnsFor(tracked);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const gridRef = useRef(null);
@@ -78,7 +94,10 @@ export default function ExpectedVsWorked() {
     const params = new URLSearchParams({ startDate: dateRange.start, endDate: dateRange.end, ...f.params() });
     appendDimensionFilters(params, f.dimFilters);
     api.get(`/reports/attendance/expected-vs-worked?${params}`)
-      .then(r => setRows(Array.isArray(r.data.data) ? r.data.data : []))
+      .then(r => {
+        setRows(Array.isArray(r.data.data) ? r.data.data : []);
+        setTracked(r.data.deviationTracked === true);
+      })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   };
@@ -151,7 +170,7 @@ export default function ExpectedVsWorked() {
                     // A negative balance is the one figure worth colouring —
                     // it means hours owed, not banked.
                     <td key={key} className={`px-4 py-2.5 tabular-nums border-r border-slate-200 last:border-r-0 ${key === 'balanceHours' && row[key] < 0 ? 'text-red-600' : 'text-slate-700'}`}>
-                      {hhmm(row[key])}
+                      {row[key] === null || row[key] === undefined ? '—' : hhmm(row[key])}
                     </td>
                   ))}
                 </tr>
@@ -162,7 +181,7 @@ export default function ExpectedVsWorked() {
       )}
       <LeaveExportModal
         open={exportOpen} onClose={() => setExportOpen(false)} rows={rows}
-        withIdentity columns={exportCols(false)} hourColumns={exportCols(true)}
+        withIdentity columns={exportCols(false, tracked)} hourColumns={exportCols(true, tracked)}
         sheetName="Expected vs Worked"
         meta={[['From Date', dateRange.start], ['To Date', dateRange.end]]}
         formats={['XLS', 'XLSX', 'CSV']}

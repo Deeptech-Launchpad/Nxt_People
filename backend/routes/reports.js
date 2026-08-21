@@ -2288,7 +2288,7 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
         });
       }
     }
-    res.json({ success: true, data, startDate: start, endDate: end });
+    res.json({ success: true, data, startDate: start, endDate: end, deviationTracked });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
@@ -2767,6 +2767,9 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
     const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, ledgerStart, end, { trackedOnly: true }), orgConfig()]);
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
     const PAID_OFF = paidOffKinds(cfg);
+    // The switch on Attendance Policy that decides whether extra and deficit
+    // time are measured at all.
+    const deviationTracked = cfg.policy?.allowOvertimeAndDeviation === true;
 
     const data = ctx.employees.map(emp => {
       const shiftHours = expectedDayHours(emp, cfg);
@@ -2774,6 +2777,10 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
       // zero, so the ledger opens at the period itself.
       const since = firstSeen.get(emp._id) || start;
       let prevExpected = 0, prevPayable = 0, expected = 0, payable = 0;
+      // Kept apart from the balance on purpose. A balance nets them off, so
+      // three hours short on Monday and three hours over on Tuesday reads as a
+      // quiet zero — which is exactly the pattern somebody would want to see.
+      let overtime = 0, deficit = 0;
 
       for (const d of ctx.days) {
         if (!ctx.onRolls(emp, d)) continue;
@@ -2809,6 +2816,8 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
         } else {
           expected += shiftHours;
           payable += dayPayable;
+          overtime += Math.max(0, dayPayable - shiftHours);
+          deficit += Math.max(0, shiftHours - dayPayable);
         }
       }
 
@@ -2821,6 +2830,12 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
         expectedHours: round(expected),
         payableHours: round(payable),
         balanceHours: round(previousBalance + payable - expected),
+        // "Allow overtime and deviation" off means the organization does not
+        // measure this. Null rather than zero — not measured and worked their
+        // hours exactly are different facts, and a column of zeros would claim
+        // the second.
+        overtimeHours: deviationTracked ? round(overtime) : null,
+        deficitHours: deviationTracked ? round(deficit) : null,
       };
     });
 
