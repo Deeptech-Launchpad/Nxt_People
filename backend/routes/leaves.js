@@ -1032,17 +1032,29 @@ router.get('/balance', async (req, res) => {
     );
     const emp = empRes.rows[0] || {};
 
-    // Count booked leaves this year per type
+    // Count booked leaves this year per type.
+    //
+    // Pending counts as booked. A request in flight is already reserved —
+    // applying debits leave_balances.available immediately and cancelling
+    // refunds it — so counting only approved days showed somebody 12 available
+    // and 4 booked while the system had in fact set 5 aside. The reference
+    // counts it the same way: Zoho reads 5 booked where 4 are approved and one
+    // is still waiting.
     const bookedRes = await pool.query(
-      `SELECT leave_type, COALESCE(SUM(total_days),0) as used
+      `SELECT leave_type,
+              COALESCE(SUM(total_days), 0) AS used,
+              COALESCE(SUM(hours), 0)      AS hours
        FROM leaves
-       WHERE employee_id=$1 AND status='approved'
+       WHERE employee_id=$1 AND status IN ('approved','pending')
          AND EXTRACT(YEAR FROM start_date) = $2
        GROUP BY leave_type`,
       [targetId, year]
     );
-    const booked = {};
-    bookedRes.rows.forEach(r => { booked[r.leave_type] = parseFloat(r.used); });
+    const booked = {}, bookedHours = {};
+    bookedRes.rows.forEach(r => {
+      booked[r.leave_type] = parseFloat(r.used);
+      bookedHours[r.leave_type] = parseFloat(r.hours);
+    });
 
     // Permission is hourly and capped per CURRENT calendar month with no
     // carry-forward, at whatever Leave Policy sets as its accrual.
@@ -1090,7 +1102,14 @@ router.get('/balance', async (req, res) => {
     const cards = [
       {
         code: 'casual', name: 'Casual Leave', icon: '☀️', color: '#f59e0b',
-        available: balanceRows.find(r => r.code === 'casual')?.available ?? (emp.casual_leave || 0),
+        // leave_balances.available is the live figure, debited on apply and
+        // refunded on cancel. Where no such row exists the fallback was
+        // employees.casual_leave — the ENTITLEMENT, which never moves. The card
+        // then read "Available 12, Booked 4" forever, and somebody planning
+        // around it would apply for days they do not have. An entitlement with
+        // the year's bookings taken off is the honest stand-in.
+        available: balanceRows.find(r => r.code === 'casual')?.available
+          ?? Math.max(0, round2((parseFloat(emp.casual_leave) || 0) - (booked['casual'] || 0))),
         booked: booked['casual'] || 0,
       },
       {
@@ -1113,7 +1132,46 @@ router.get('/balance', async (req, res) => {
       },
     ];
 
-    res.json({ success: true, data: cards, year });
+    /* The two figures in the header above the cards.
+     *
+     * They were being assembled in the browser by summing the leave list, and
+     * total_days arrives from pg as a STRING because it is numeric — so
+     * `0 + '0' + '2' + '1' + '1'` produced "00211 day(s)" on a screen an
+     * employee reads. Summing belongs here, next to the SQL, where the types
+     * are known.
+     *
+     * Days and hours are reported separately rather than added: two hours of
+     * permission is not a fraction of a leave day, and the reference says
+     * "5 day(s) and 2 hour(s)" for exactly that reason.
+     */
+    const totals = await pool.query(
+      `SELECT COALESCE(SUM(total_days), 0)::float AS days,
+              COALESCE(SUM(hours), 0)::float      AS hours
+         FROM leaves
+        WHERE employee_id = $1 AND status IN ('approved','pending')
+          AND EXTRACT(YEAR FROM start_date) = $2`,
+      [targetId, year]
+    );
+
+    // Absence is a stored attendance status here, which is the same definition
+    // the Leave Balance screen counts. It is NOT the reference's figure — Zoho
+    // counts absence recorded in its leave tracker, and reports 0 for somebody
+    // its own attendance shows absent — so the two will differ, deliberately.
+    const absent = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM attendance
+        WHERE employee_id = $1 AND status = 'absent'
+          AND EXTRACT(YEAR FROM date) = $2`,
+      [targetId, year]
+    );
+
+    res.json({
+      success: true, data: cards, year,
+      summary: {
+        bookedDays: round2(totals.rows[0].days),
+        bookedHours: round2(totals.rows[0].hours),
+        absentDays: absent.rows[0].n,
+      },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: 'An internal server error occurred' });
   }

@@ -340,6 +340,14 @@ function RejectModal({ leave, onConfirm, onClose }) {
   );
 }
 
+/* One map, because the same four names were written inline in each place that
+ * needed them and a fifth type would have had to be added to all of them. */
+const LEAVE_LABEL = {
+  casual: 'Casual Leave', comp_off: 'Compensatory Off',
+  unpaid: 'Leave Without Pay', permission: 'Permission',
+  sick: 'Sick Leave', earned: 'Earned Leave',
+};
+
 /* ── Status Pill ─────────────────────────────────────────────────────── */
 const STATUS_PILL = {
   approved:  'bg-green-100 text-green-700',
@@ -351,6 +359,7 @@ const STATUS_PILL = {
 /* ══════════════════════════════════════════════════════════════════════ */
 export default function LeaveSummary() {
   const [cards, setCards]           = useState([]);
+  const [summary, setSummary]       = useState({});
   const [leaves, setLeaves]         = useState([]);
   const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
   const [partLeave, setPartLeave] = useState(null);
@@ -385,6 +394,7 @@ export default function LeaveSummary() {
       }),
     ]).then(([b, l, h]) => {
       setCards(b.data.data || []);
+      setSummary(b.data.summary || {});
       setLeaves(l.data.data || []);
       setHolidays(h.data.data || []);
     }).catch(() => {}).finally(() => setLoading(false));
@@ -401,10 +411,26 @@ export default function LeaveSummary() {
   };
 
   const today = new Date();
-  const bookedTotal = leaves.filter(l => l.status === 'approved').reduce((s, l) => s + (l.totalDays || 0), 0);
 
-  // Upcoming holidays (future dates)
-  const upcomingHolidays = holidays.filter(h => new Date(h.date) >= today).slice(0, 10);
+  /* Upcoming Leaves AND Holidays — the heading says both and only holidays
+   * were ever rendered, so an employee with a leave approved for next week saw
+   * no sign of it here. The reference lists them together, in date order, with
+   * the reason and the approval state, which is the whole use of the panel:
+   * seeing that the thing you applied for is actually going to happen. */
+  const upcoming = [
+    ...holidays
+      .filter(h => new Date(h.date) >= today)
+      .map(h => ({ kind: 'holiday', date: h.date, title: h.name, note: h.description || `${h.name} Holiday` })),
+    ...leaves
+      .filter(l => l.status !== 'cancelled' && l.status !== 'rejected')
+      .filter(l => new Date(l.endDate || l.startDate) >= today)
+      .map(l => ({
+        kind: 'leave', date: l.startDate, leave: l,
+        title: LEAVE_LABEL[l.leaveType] || l.leaveType,
+        note: l.reason || '',
+      })),
+  ].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 10);
+
   // Past leaves
   const pastLeaves = leaves.filter(l => new Date(l.endDate || l.startDate) < today);
 
@@ -432,9 +458,16 @@ export default function LeaveSummary() {
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-4 text-[15px] text-gray-500">
           <BackButton to="/leave-tracker" label="Leave Tracker" />
-          <span className="font-semibold text-gray-700">Leave booked this year : <span className="text-[#1a73e8]">{bookedTotal} day(s)</span></span>
+          {/* Both figures come from the server now. They used to be summed in
+              the browser from a list whose totalDays arrive as strings, so
+              0 + '0' + '2' + '1' + '1' rendered as "00211 day(s)". Hours are
+              named separately because two hours of permission is not a
+              fraction of a leave day. */}
+          <span className="font-semibold text-gray-700">Leave booked this year : <span className="text-[#1a73e8]">
+            {summary.bookedDays || 0} day(s){summary.bookedHours ? ` and ${summary.bookedHours} hour(s)` : ''}
+          </span></span>
           <span className="text-gray-300">|</span>
-          <span>Absent : <span className="font-semibold">—</span></span>
+          <span>Absent : <span className="font-semibold">{summary.absentDays ?? 0}</span></span>
         </div>
         <div className="flex items-center gap-3">
           {/* Date range nav */}
@@ -516,18 +549,33 @@ export default function LeaveSummary() {
           </button>
           {section === 'upcoming' && (
             <div className="divide-y divide-gray-50">
-              {upcomingHolidays.length === 0 ? (
-                <p className="px-5 py-8 text-center text-[15px] text-gray-400">No upcoming holidays</p>
-              ) : upcomingHolidays.map((h, i) => (
+              {upcoming.length === 0 ? (
+                <p className="px-5 py-8 text-center text-[15px] text-gray-400">Nothing upcoming</p>
+              ) : upcoming.map((u, i) => (
                 <div key={i} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
                   <div className="text-[14px] font-semibold text-gray-600 w-[180px] flex-shrink-0">
-                    {fmtDateLong(h.date)}
+                    {fmtDateLong(u.date)}
                   </div>
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <Calendar size={13} className="text-gray-400" />
-                    <span className="text-[14px] font-medium text-gray-700">{h.name}</span>
+                  <div className="flex items-center gap-2 text-gray-500 w-[190px] flex-shrink-0">
+                    {u.kind === 'leave'
+                      ? <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 flex-shrink-0" />
+                      : <Calendar size={13} className="text-gray-400 flex-shrink-0" />}
+                    <span className="text-[14px] font-medium text-gray-700">{u.title}</span>
+                    {u.kind === 'leave' && (
+                      <span className="text-[13px] text-gray-400">
+                        {u.leave.totalDays > 0
+                          ? `${u.leave.totalDays} day${Number(u.leave.totalDays) !== 1 ? 's' : ''}`
+                          : `${u.leave.hours || 0}h`}
+                      </span>
+                    )}
                   </div>
-                  <span className="text-[14px] text-gray-500 ml-auto">{h.description || h.name + ' Holiday'}</span>
+                  <span className="text-[14px] text-gray-500 flex-1 truncate">{u.note}</span>
+                  {u.kind === 'leave' && (
+                    <span className={`text-[13px] font-bold px-2 py-0.5 rounded-full capitalize flex-shrink-0
+                      ${STATUS_PILL[u.leave.status] || 'bg-gray-100 text-gray-500'}`}>
+                      {u.leave.status}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -554,7 +602,7 @@ export default function LeaveSummary() {
                       <div className="mt-0.5">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[15px] font-semibold text-gray-800">
-                            {{ casual: 'Casual Leave', comp_off: 'Compensatory Off', unpaid: 'Leave Without Pay', permission: 'Permission' }[l.leaveType] || l.leaveType}
+                            {LEAVE_LABEL[l.leaveType] || l.leaveType}
                           </span>
                           <span className={`text-[13px] font-bold px-2 py-0.5 rounded-full capitalize ${STATUS_PILL[l.status] || 'bg-gray-100 text-gray-500'}`}>
                             {l.status}
