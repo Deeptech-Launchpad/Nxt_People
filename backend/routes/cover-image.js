@@ -38,15 +38,19 @@ const COVER_MAX_MB = 8;
 // Authoring them removes the licence question that stock images bring, and an
 // SVG at a few kilobytes cannot fail to load or be slow on a poor connection.
 // They live in frontend/public/covers and are served as ordinary static files.
-const PRESETS = {
-  'dusk-ridge': { url: '/covers/dusk-ridge.svg', label: 'Dusk ridge' },
-  'tide':       { url: '/covers/tide.svg',       label: 'Tide' },
-  'meadow':     { url: '/covers/meadow.svg',     label: 'Meadow' },
-  'nightfall':  { url: '/covers/nightfall.svg',  label: 'Nightfall' },
-  'dunes':      { url: '/covers/dunes.svg',      label: 'Dunes' },
-  'pine':       { url: '/covers/pine.svg',       label: 'Pine' },
-};
-const PRESET_KEYS = Object.keys(PRESETS);
+// The banners themselves live in the frontend's public/covers folder, and the
+// list of them is built from that folder at build time — drop an image in,
+// rebuild, and it appears with no code change anywhere.
+//
+// This container cannot see that folder, so it validates the SHAPE of a name
+// rather than checking membership of a list: a safe filename under /covers.
+// The worst a wrong name can do is leave one person with a missing image,
+// which is a broken tile rather than a way into anything.
+const SAFE_PRESET = /^[a-z0-9][a-z0-9._-]{0,60}$/i;
+
+// What a fresh install falls back to before anybody has chosen. It ships with
+// the app, so it is safe to name here.
+const DEFAULT_PRESET = 'preset:dusk-ridge';
 
 const coversDir = path.join(__dirname, '..', 'uploads', 'covers');
 if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true });
@@ -83,7 +87,7 @@ async function coverPolicy() {
   }
 }
 
-const isPreset = v => typeof v === 'string' && v.startsWith('preset:') && PRESET_KEYS.includes(v.slice(7));
+const isPreset = v => typeof v === 'string' && v.startsWith('preset:') && SAFE_PRESET.test(v.slice(7));
 const isUpload = v => typeof v === 'string' && v.startsWith('/uploads/covers/');
 
 /** What to render, and what the viewer is allowed to change. */
@@ -100,12 +104,11 @@ router.get('/', async (req, res) => {
         // Null means "not chosen", so the organization's cover answers for
         // them. Writing the org cover into everybody's row instead would
         // freeze it the day it was set.
-        cover: own || policy.orgCover || 'preset:dusk-ridge',
+        cover: own || policy.orgCover || DEFAULT_PRESET,
         own,
         orgCover: policy.orgCover || null,
         allowSystemOptions: policy.allowSystemOptions,
         allowCustomUpload: policy.allowCustomUpload,
-        presets: PRESETS,
       },
     });
   } catch (err) {
@@ -248,4 +251,3 @@ router.put('/org', authorize('admin', 'director', 'hr_admin'), async (req, res) 
 });
 
 module.exports = router;
-module.exports.PRESETS = PRESETS;

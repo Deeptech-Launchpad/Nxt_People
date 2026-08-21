@@ -13,7 +13,7 @@ import {
   MessageSquare, Briefcase, Filter, X, Activity, Settings, User, Search,
   ChevronLeft, ChevronRight
 } from 'lucide-react';
-import CoverImageDialog, { coverStyle, useCanChangeCover } from '../components/CoverImagePicker';
+import CoverImageDialog, { coverStyle, useCanChangeCover, loadCovers } from '../components/CoverImagePicker';
 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -413,12 +413,14 @@ export default function Dashboard() {
   // identifiers here, and the whole page rendered blank. esbuild does not
   // resolve free identifiers, so the build passed.
   const [cover, setCover] = useState(null);
+  const [covers, setCovers] = useState([]);
   const [showCover, setShowCover] = useState(false);
   const canChangeCover = useCanChangeCover();
   const loadCover = React.useCallback(() => {
     api.get('/cover-image').then(r => setCover(r.data.data)).catch(() => {});
   }, []);
   useEffect(() => { loadCover(); }, [loadCover]);
+  useEffect(() => { loadCovers().then(setCovers); }, []);
 
   const [activeTab, setActiveTab] = useState('activities');
   const [feedTab, setFeedTab] = useState('all');
@@ -844,7 +846,7 @@ export default function Dashboard() {
           whatever this person, or the organization, chose. */}
       <div
         className="w-full h-[200px] relative flex-shrink-0 bg-slate-700"
-        style={coverStyle(cover?.cover, cover?.presets)}
+        style={coverStyle(cover?.cover, covers)}
       >
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/10" />
         <div className="absolute top-4 right-6 flex items-center gap-2">

@@ -81,22 +81,31 @@ const setPolicy = (patch) => pool.query(
     `SELECT cover_image_url AS c FROM employees WHERE id=$1`, [EMP])).rows[0].c;
   check('and it is what was stored', stored === 'preset:meadow', stored);
 
+  // The banner list is built from a folder in the other container, so this one
+  // validates the SHAPE of a name rather than membership of a list. A safe but
+  // unknown name is accepted, and the worst it does is leave that one person
+  // with a missing image — a broken tile, not a way into anything.
   r = await call('PUT', '/cover-image', T.emp, { cover: 'preset:nonsense' });
-  check('an unknown preset is refused', r.s === 400, { s: r.s, m: r.j?.message });
+  check('a safe but unknown banner name is accepted, not refused',
+    r.s === 200, { s: r.s, m: r.j?.message });
 
-  r = await call('GET', '/cover-image', T.emp);
-  const presets = r.j.data.presets || {};
-  check('six banners ship with the app', Object.keys(presets).length === 6, Object.keys(presets));
-  check('and each one points at a real file',
-    Object.values(presets).every(p => typeof p.url === 'string' && p.url.startsWith('/covers/')),
-    Object.values(presets).map(p => p.url));
+  // The banners are listed in a manifest built from the folder itself, so the
+  // two can never disagree — but the manifest naming a file that is not there
+  // is a broken tile that only surfaces when somebody picks it.
+  const coversDir = path.join(__dirname, '..', 'frontend', 'public', 'covers');
+  const manifest = JSON.parse(fs.readFileSync(path.join(coversDir, 'manifest.json'), 'utf8'));
+  check('banners ship with the app', manifest.length >= 6, manifest.length);
+  check('every one names a file that is there',
+    manifest.every(c => fs.existsSync(path.join(coversDir, path.basename(c.url)))),
+    manifest.filter(c => !fs.existsSync(path.join(coversDir, path.basename(c.url)))).map(c => c.key));
 
-  // The path existing in the config says nothing about the file existing on
-  // disk. A preset naming a missing image is a broken banner that only shows
-  // up when somebody picks it.
-  const missing = Object.entries(presets).filter(([, p]) =>
-    !fs.existsSync(path.join(__dirname, '..', 'frontend', 'public', p.url.replace(/^\//, ''))));
-  check('and the file is actually there', missing.length === 0, missing.map(([k]) => k));
+  const onDisk = fs.readdirSync(coversDir)
+    .filter(f => /\.(svg|jpe?g|png|webp)$/i.test(f)).length;
+  check('and every file in the folder is offered', manifest.length === onDisk,
+    { manifest: manifest.length, onDisk });
+
+  r = await call('PUT', '/cover-image', T.emp, { cover: 'preset:../../etc/passwd' });
+  check('a traversal dressed as a preset is refused', r.s === 400, { s: r.s, m: r.j?.message });
 
   r = await call('PUT', '/cover-image', T.emp, { cover: '/uploads/covers/../../etc/passwd' });
   check('a path outside the cover directory is refused', r.s === 400, { s: r.s, m: r.j?.message });

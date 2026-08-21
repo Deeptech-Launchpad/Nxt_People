@@ -16,17 +16,32 @@ import { isFullAccess } from '../utils/roles';
 // with both switches off there would otherwise be no way for anybody to set
 // it at all.
 
-// A cover is either one of the banners shipped with the app (preset:name) or a
-// file somebody uploaded. Both end up as a background image; only the path
-// differs.
-export const coverUrl = (cover, presets) => {
+// The banners the app offers, built from public/covers at build time. Fetched
+// once and shared, so opening the dialog does not re-read a file that cannot
+// have changed since the page loaded.
+let manifestPromise = null;
+export const loadCovers = () => {
+  if (!manifestPromise) {
+    manifestPromise = fetch('/covers/manifest.json')
+      .then(r => (r.ok ? r.json() : []))
+      .catch(() => []);
+  }
+  return manifestPromise;
+};
+
+// A cover is either one of those banners (preset:name) or a file somebody
+// uploaded. Both end up as a background image; only the path differs.
+export const coverUrl = (cover, covers) => {
   if (!cover) return null;
-  if (cover.startsWith('preset:')) return presets?.[cover.slice(7)]?.url || null;
+  if (cover.startsWith('preset:')) {
+    const key = cover.slice(7);
+    return (covers || []).find(c => c.key === key)?.url || null;
+  }
   return cover;
 };
 
-export const coverStyle = (cover, presets) => {
-  const url = coverUrl(cover, presets);
+export const coverStyle = (cover, covers) => {
+  const url = coverUrl(cover, covers);
   if (!url) return { backgroundColor: '#1b2a4a' };
   return {
     backgroundImage: `url("${url}")`,
@@ -58,6 +73,7 @@ export default function CoverImageDialog({ open, onClose, onChanged }) {
   const { user } = useAuth();
   const admin = isFullAccess(user);
   const [state, setState] = useState(null);
+  const [covers, setCovers] = useState([]);
   const [busy, setBusy] = useState(false);
   // Which cover is being set: this person's own, or the one everybody without
   // a choice of their own sees. Administrators start on the organization one,
@@ -70,6 +86,7 @@ export default function CoverImageDialog({ open, onClose, onChanged }) {
     .catch(() => setState(null));
 
   useEffect(() => { if (open) load(); }, [open]);
+  useEffect(() => { loadCovers().then(setCovers); }, []);
 
   if (!open || !state) return null;
 
@@ -169,15 +186,15 @@ export default function CoverImageDialog({ open, onClose, onChanged }) {
             <div>
               <p className="text-[13px] font-medium text-slate-600 mb-2">Choose a banner</p>
               <div className="grid grid-cols-3 gap-2.5">
-                {Object.entries(state.presets || {}).map(([key, p]) => (
+                {covers.map(c => (
                   <Tile
-                    key={key} value={`preset:${key}`} label={p.label || key}
+                    key={c.key} value={`preset:${c.key}`} label={c.label || c.key}
                     style={{
-                      backgroundImage: `url("${p.url}")`,
+                      backgroundImage: `url("${c.url}")`,
                       backgroundSize: 'cover',
                       backgroundPosition: 'center',
                     }}
-                    onPick={() => choose(`preset:${key}`)}
+                    onPick={() => choose(`preset:${c.key}`)}
                   />
                 ))}
               </div>
