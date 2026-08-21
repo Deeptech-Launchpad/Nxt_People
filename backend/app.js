@@ -80,6 +80,11 @@ if (process.env.NODE_ENV !== 'test') {
 // Profile photos are displayed in <img> tags which cannot send Authorization headers.
 // Serve them publicly from the /photos sub-path; all other uploads require a valid JWT.
 app.use('/uploads/photos', express.static(path.join(__dirname, 'uploads', 'photos')));
+// Cover images are the same case: a CSS background cannot carry an
+// Authorization header either, and a banner is no more sensitive than the
+// profile photo beside it. Everything else under /uploads stays behind the
+// token check below.
+app.use('/uploads/covers', express.static(path.join(__dirname, 'uploads', 'covers')));
 const jwt = require('jsonwebtoken');
 app.use('/uploads', (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -150,6 +155,7 @@ app.use('/api/attendance-config', require('./routes/attendance-config'));
 app.use('/api/org-setup',        require('./routes/org-setup'));
 app.use('/api/org-users',        require('./routes/org-users'));
 app.use('/api/org-details',      require('./routes/org-details'));
+app.use('/api/cover-image',      require('./routes/cover-image'));
 app.use('/api/access',           require('./routes/access-control'));
 app.use('/api/workflows',        require('./routes/workflows'));
 app.use('/api/shift-patterns',   require('./routes/shift-patterns'));

@@ -13,6 +13,7 @@ import {
   MessageSquare, Briefcase, Filter, X, Activity, Settings, User, Search,
   ChevronLeft, ChevronRight
 } from 'lucide-react';
+import CoverImagePicker, { coverStyle } from '../components/CoverImagePicker';
 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -321,6 +322,13 @@ const FeedCard = ({ icon, children }) => (
  *    height guesses, no more bottom-row overflow. */
 const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
   const navigate = useNavigate();
+  // The banner. Null until it loads, and the container carries a plain colour
+  // underneath so nothing flashes white while it does.
+  const [cover, setCover] = useState(null);
+  const loadCover = React.useCallback(() => {
+    api.get('/cover-image').then(r => setCover(r.data.data)).catch(() => {});
+  }, []);
+  useEffect(() => { loadCover(); }, [loadCover]);
   const menuRef  = useRef(null);
   // Start fully off-screen on first paint so the user doesn't see a
   // flash at the wrong position; useLayoutEffect re-positions before
@@ -820,16 +828,17 @@ export default function Dashboard() {
     <div className="flex flex-col relative w-full min-h-full font-sans bg-[#f2f3f7]">
 
       {/* ─ Hero Banner ─ */}
+      {/* The banner used to be a hardcoded Unsplash URL, so every dashboard
+          load fetched an image from a third party and the two cover-image
+          settings on Organization Policy governed nothing. It now comes from
+          whatever this person, or the organization, chose. */}
       <div
-        className="w-full h-[200px] relative flex-shrink-0"
-        style={{
-          backgroundImage: 'url("https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?q=80&w=2000&auto=format&fit=crop")',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center 35%',
-        }}
+        className="w-full h-[200px] relative flex-shrink-0 bg-slate-700"
+        style={coverStyle(cover?.cover, cover?.presets)}
       >
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/10" />
         <div className="absolute top-4 right-6 flex items-center gap-2">
+          <CoverImagePicker onChanged={loadCover} />
           {/* Access My Payroll — only while payroll is live. */}
           {PAYROLL_ENABLED && (
             <button

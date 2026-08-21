@@ -129,6 +129,11 @@ function cleanPolicy(current, patch) {
     out.coverImage = {
       allowSystemOptions: bool(patch.coverImage.allowSystemOptions),
       allowCustomUpload: bool(patch.coverImage.allowCustomUpload),
+      // The organization's own cover, which everybody who has not chosen one
+      // sees. Carried through rather than dropped — this validator rebuilds the
+      // object, so an unlisted key is silently lost on the next save.
+      orgImageUrl: typeof patch.coverImage.orgImageUrl === 'string' && patch.coverImage.orgImageUrl
+        ? patch.coverImage.orgImageUrl.slice(0, 500) : null,
     };
   }
   if (patch.locale) {

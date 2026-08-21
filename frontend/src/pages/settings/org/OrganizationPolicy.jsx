@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../../utils/api';
-import { Note, NotWired, Spinner, selectClass } from '../configKit';
+import { Note, Spinner, selectClass } from '../configKit';
 
 // Organization Setup → Organization Policy.
 //
@@ -193,7 +193,6 @@ export default function OrganizationPolicy() {
       <Card
         title="Cover image preference"
         description="By default, the organization cover image set by the administrator is used as the My Space cover image for employees. Enable the options below to allow employees to choose a separate cover image for their My Space page."
-        actions={<NotWired>No cover image upload exists yet, so there is nothing to govern</NotWired>}
       >
         <Switch on={cover.allowSystemOptions} onChange={v => group('coverImage', { allowSystemOptions: v })}
           title="Allow employees to choose a cover image for My Space from the system-provided options." />
