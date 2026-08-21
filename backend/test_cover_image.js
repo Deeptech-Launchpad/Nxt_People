@@ -152,6 +152,42 @@ const setPolicy = (patch) => pool.query(
   r = await call('POST', '/cover-image/upload?target=org', T.emp, {});
   check('an employee cannot upload one for the organization', r.s === 403, r.s);
 
+  console.log('\n════ The shared library ════\n');
+
+  await setPolicy({ allowSystemOptions: true, allowCustomUpload: false, library: [] });
+
+  r = await call('GET', '/cover-image', T.emp);
+  check('the library comes back empty to start',
+    Array.isArray(r.j.data.library) && r.j.data.library.length === 0, r.j.data.library);
+
+  // Seeded directly. The upload itself is multipart and its guards are covered
+  // above; what matters here is that a listed image can be chosen and an
+  // unlisted one cannot — otherwise any path under /uploads/covers would do.
+  const LIB = '/uploads/covers/probe-library.jpg';
+  await setPolicy({ allowSystemOptions: true, allowCustomUpload: false, library: [LIB] });
+
+  r = await call('GET', '/cover-image', T.emp);
+  check('and carries the image once added', (r.j.data.library || [])[0] === LIB, r.j.data.library);
+
+  r = await call('PUT', '/cover-image', T.emp, { cover: LIB });
+  check('an employee can choose a library banner', r.s === 200, { s: r.s, m: r.j?.message });
+
+  r = await call('PUT', '/cover-image', T.emp, { cover: '/uploads/covers/not-in-the-library.jpg' });
+  check('but not an upload that is not in the library', r.s === 400, { s: r.s, m: r.j?.message });
+
+  r = await call('DELETE', '/cover-image/library', T.emp, { cover: LIB });
+  check('an employee cannot remove one', r.s === 403, r.s);
+
+  r = await call('DELETE', '/cover-image/library', T.admin, { cover: LIB });
+  check('an admin can', r.s === 200, { s: r.s, m: r.j?.message });
+
+  r = await call('GET', '/cover-image', T.admin);
+  check('and it leaves the library', !(r.j.data.library || []).includes(LIB), r.j.data.library);
+
+  const stillSet = (await pool.query(
+    `SELECT cover_image_url AS c FROM employees WHERE id=$1`, [EMP])).rows[0].c;
+  check('somebody already using it keeps it', stillSet === LIB, stillSet);
+
   console.log('\n════ Restoring ════\n');
 
   await pool.query(`UPDATE employees SET cover_image_url = NULL WHERE id = $1`, [EMP]);

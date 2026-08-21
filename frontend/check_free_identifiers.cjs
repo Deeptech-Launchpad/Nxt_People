@@ -99,6 +99,24 @@ function jsxReads(src) {
   return found;
 }
 
+// Components used in JSX that nothing imports or defines.
+//
+// The same failure with a different shape: `<CancelPartDialog />` used with no
+// import crashed a page here once, and `<ImageIcon />` did it again while this
+// checker was being written — it only looked at {expressions}, so a component
+// name sailed straight past it.
+function jsxComponents(src) {
+  const found = new Map();
+  src.split(/\r?\n/).forEach((line, i) => {
+    const t = line.trim();
+    if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
+    for (const m of line.split('//')[0].matchAll(/<([A-Z][\w$]*)[\s/>]/g)) {
+      if (!found.has(m[1])) found.set(m[1], i + 1);
+    }
+  });
+  return found;
+}
+
 let problems = 0;
 let scanned = 0;
 
@@ -114,6 +132,13 @@ for (const file of walk(SRC)) {
     const uses = (src.match(new RegExp(`\\b${name}\\b`, 'g')) || []).length;
     if (uses > 3) continue;   // widely used — almost certainly a real binding this crude scan missed
     console.log(`  ${path.relative(SRC, file)}:${line}  reads "${name}", which nothing here declares`);
+    problems++;
+  }
+
+  for (const [name, line] of jsxComponents(src)) {
+    if (declared.has(name) || GLOBALS.has(name)) continue;
+    if (name === 'Fragment') continue;
+    console.log(`  ${path.relative(SRC, file)}:${line}  renders <${name}>, which nothing here imports or defines`);
     problems++;
   }
 }

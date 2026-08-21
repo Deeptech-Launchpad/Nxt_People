@@ -7,13 +7,13 @@ import { useNavigate } from 'react-router-dom';
 import usePolling from '../hooks/usePolling';
 
 import {
-  Megaphone, Clock, ExternalLink, User as UserIcon,
+  Megaphone, Clock, ExternalLink, User as UserIcon, Image as ImageIcon,
   MoreHorizontal, LogIn, LogOut,
   Calendar, Star, CheckCircle,
   MessageSquare, Briefcase, Filter, X, Activity, Settings, User, Search,
   ChevronLeft, ChevronRight
 } from 'lucide-react';
-import CoverImagePicker, { coverStyle } from '../components/CoverImagePicker';
+import CoverImageDialog, { coverStyle, useCanChangeCover } from '../components/CoverImagePicker';
 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -413,6 +413,8 @@ export default function Dashboard() {
   // identifiers here, and the whole page rendered blank. esbuild does not
   // resolve free identifiers, so the build passed.
   const [cover, setCover] = useState(null);
+  const [showCover, setShowCover] = useState(false);
+  const canChangeCover = useCanChangeCover();
   const loadCover = React.useCallback(() => {
     api.get('/cover-image').then(r => setCover(r.data.data)).catch(() => {});
   }, []);
@@ -846,7 +848,6 @@ export default function Dashboard() {
       >
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/10" />
         <div className="absolute top-4 right-6 flex items-center gap-2">
-          <CoverImagePicker onChanged={loadCover} />
           {/* Access My Payroll — only while payroll is live. */}
           {PAYROLL_ENABLED && (
             <button
@@ -873,6 +874,18 @@ export default function Dashboard() {
                 >
                   <UserIcon size={14} className="text-slate-400" /> View Profile
                 </button>
+                {/* Alongside Profile and Settings rather than as a button on the
+                    banner: it is changed once and then never again, which is a
+                    menu item, not a permanent control over the page. Hidden
+                    entirely for anybody who is not allowed to change it. */}
+                {canChangeCover && (
+                  <button
+                    onClick={() => { setShowCover(true); setShowPayrollMore(false); }}
+                    className="w-full text-left px-4 py-2.5 text-[15px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                  >
+                    <ImageIcon size={14} className="text-slate-400" /> Cover image
+                  </button>
+                )}
                 {isFullAccess(user) && (
                   <button
                     onClick={() => { navigate('/settings'); setShowPayrollMore(false); }}
@@ -886,6 +899,8 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <CoverImageDialog open={showCover} onClose={() => setShowCover(false)} onChanged={loadCover} />
 
       {/* ─ Main content (overlaps banner by ~80px) ─ */}
       <div className="relative z-10 w-full px-6 -mt-[80px] pb-12">
