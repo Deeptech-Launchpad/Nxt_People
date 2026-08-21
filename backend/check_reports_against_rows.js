@@ -150,14 +150,26 @@ const OFF_CODES = /^(W|H|-)$/;
      * settle that, so put both dates where they can be compared. */
     console.log(`    joined ${emp.joined || 'not recorded'}`
       + `${emp.exited ? `, exited ${emp.exited}` : ''}`
-      + `    first punch ever ${emp.firstPunch || 'none'}`);
-    if (emp.firstPunch && (!emp.joined || emp.joined < emp.firstPunch)) {
-      const gap = Math.round(
-        (Date.parse(emp.firstPunch) - Date.parse(emp.joined || emp.firstPunch)) / 86400000);
-      if (!emp.joined || gap > 7) {
-        console.log(`    ${gap} day(s) on rolls before the first punch`
-          + ' — every working day in there counts as an absence');
+      + `    earliest row held ${emp.firstPunch || 'none'}`);
+
+    /* The gap only means something INSIDE the range being examined.
+     *
+     * Shivanie joined in November 2023 and her earliest row is 2 January 2026,
+     * because January 2026 is where this range starts and nothing older was
+     * ever imported. Calling that "793 days on rolls before the first punch"
+     * measures the import window, not her attendance, and reads as an alarm
+     * about a person who has none. Only a gap that opens after the range
+     * begins is about her. */
+    const rangeStart = ms[0].start;
+    if (emp.joined && emp.firstPunch && emp.joined >= rangeStart && emp.firstPunch > emp.joined) {
+      const gap = Math.round((Date.parse(emp.firstPunch) - Date.parse(emp.joined)) / 86400000);
+      if (gap > 7) {
+        console.log(`    on rolls ${gap} day(s) before the first punch,`
+          + ' inside this range — every working day in there counts as an absence');
       }
+    } else if (emp.firstPunch && emp.firstPunch <= rangeStart) {
+      console.log('    (nothing held before this range, so the earliest row is'
+        + ' the range start, not a first day)');
     }
     console.log('');
     console.log(`    ${pad('month', 10)}${pad('rows', 6)}${pad('P/HD', 8)}${pad('A', 5)}`
