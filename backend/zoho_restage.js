@@ -378,10 +378,19 @@ async function backup(client, batch, table, empId, where, params) {
         WHERE employee_id = $1 AND start_date BETWEEN $2::date AND $3::date`,
       [emp.id, START, END])).rows[0].n;
 
-    // Zoho's report is keyed by ISO date. Only days somebody actually punched
-    // become rows: this system has no row for a weekend or an absence, it has
-    // the absence of a row, and inventing them would put 6 weekends a month
-    // into a muster roll that never had them.
+    /* Zoho's report is keyed by ISO date, but not every day it returns should
+     * become a row here.
+     *
+     * A weekend or a holiday should not — the work calendar says what those
+     * are, and six invented weekend rows a month would show up in a muster
+     * roll that never had them. Nor should a day covered by leave: the leaves
+     * table carries that, and the report reads it from there.
+     *
+     * An ABSENCE should. This system does not represent absence as a missing
+     * row — reports.js counts rows with status 'absent' for the muster roll's
+     * A code and for the absent balance. Skipping them would have made
+     * Balaji's twenty-one absences disappear entirely and his absent count
+     * read zero, which is the most flattering possible way to be wrong. */
     const sessions = sessionsByDate(reached ? attendance : null);
     const dayFacts = leaveFactsByDate(leaveInRange, sessions);
     const grace = (await pool.query(
@@ -396,8 +405,9 @@ async function backup(client, batch, table, empId, where, params) {
           .map(([iso, rec]) => shapeOfDay(iso, rec))
           .sort((a, b) => a.date.localeCompare(b.date))
       : [];
-    const days = allDays.filter(d => d.hasPunch);
-    const skipped = allDays.filter(d => !d.hasPunch);
+    const isAbsence = d => !d.hasPunch && /\babsent\b/i.test(d.zohoStatus);
+    const days = allDays.filter(d => d.hasPunch || isAbsence(d));
+    const skipped = allDays.filter(d => !(d.hasPunch || isAbsence(d)));
 
     for (const d of days) {
       const f = dayFacts.get(d.date) || { leavePortion: 0, permissionHours: 0 };
