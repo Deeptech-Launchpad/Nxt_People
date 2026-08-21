@@ -130,6 +130,28 @@ const setPolicy = (patch) => pool.query(
   r = await call('POST', '/cover-image/upload', T.emp, {});
   check('with uploads off the route refuses', r.s === 403, { s: r.s, m: r.j?.message });
 
+  console.log('\n════ An administrator can always set the one everybody sees ════\n');
+
+  // Both switches off. Previously this left NOBODY able to set the banner, so
+  // it stayed on the default gradient forever.
+  await setPolicy({ allowSystemOptions: false, allowCustomUpload: false });
+
+  r = await call('PUT', '/cover-image', T.emp, { cover: 'preset:ember' });
+  check('an employee still cannot choose their own', r.s === 403, r.s);
+
+  r = await call('PUT', '/cover-image/org', T.admin, { cover: 'preset:ember' });
+  check('but an admin can set the organization cover', r.s === 200, { s: r.s, m: r.j?.message });
+
+  // This employee picked their own earlier, and their own correctly wins. The
+  // organization cover only answers for somebody who has not chosen.
+  await pool.query(`UPDATE employees SET cover_image_url = NULL WHERE id = $1`, [EMP]);
+  r = await call('GET', '/cover-image', T.emp);
+  check('and anybody without a cover of their own sees it',
+    r.j.data.cover === 'preset:ember' && r.j.data.own === null, r.j.data);
+
+  r = await call('POST', '/cover-image/upload?target=org', T.emp, {});
+  check('an employee cannot upload one for the organization', r.s === 403, r.s);
+
   console.log('\n════ Restoring ════\n');
 
   await pool.query(`UPDATE employees SET cover_image_url = NULL WHERE id = $1`, [EMP]);

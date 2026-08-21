@@ -132,7 +132,16 @@ router.put('/', async (req, res) => {
   }
 });
 
-/** Upload one. */
+/**
+ * Upload one.
+ *
+ * `?target=org` sets the organization's cover instead of the uploader's own.
+ * That path is gated on the role rather than on allowCustomUpload: those two
+ * switches govern what EMPLOYEES may do, and an administrator with both of
+ * them off still has to be able to set the banner everybody sees. Without
+ * this there was no way to set it at all, and the default gradient was
+ * permanent.
+ */
 router.post('/upload', (req, res) => {
   upload.single('cover')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
@@ -145,17 +154,42 @@ router.post('/upload', (req, res) => {
     if (err) return res.status(400).json({ success: false, message: 'That file could not be accepted' });
 
     try {
+      const forOrg = req.query.target === 'org';
       const policy = await coverPolicy();
-      if (!policy.allowCustomUpload) {
+
+      const refuse = (message) => {
         // Delete what multer already wrote: refusing the request while leaving
         // the file on disk is how an upload directory quietly fills up.
         if (req.file) fs.unlink(req.file.path, () => {});
-        return res.status(403).json({
-          success: false,
-          message: 'Uploading your own cover is switched off for this organization',
-        });
+        return res.status(403).json({ success: false, message });
+      };
+
+      if (forOrg && !isFullAccess(req.user.role)) {
+        return refuse('Only an administrator can set the organization cover');
+      }
+      if (!forOrg && !policy.allowCustomUpload) {
+        return refuse('Uploading your own cover is switched off for this organization');
       }
       if (!req.file) return res.status(400).json({ success: false, message: 'No image was sent' });
+
+      if (forOrg) {
+        const url = `/uploads/covers/${req.file.filename}`;
+        const r = await pool.query(`SELECT organization_policy_config AS c FROM settings LIMIT 1`);
+        const cfg = r.rows[0]?.c || {};
+        const before = (cfg.coverImage || {}).orgImageUrl || null;
+        await pool.query(
+          `UPDATE settings SET organization_policy_config = $1::jsonb WHERE id = (SELECT id FROM settings LIMIT 1)`,
+          [JSON.stringify({ ...cfg, coverImage: { ...(cfg.coverImage || {}), orgImageUrl: url } })]);
+        if (isUpload(before) && before !== url) {
+          fs.unlink(path.join(coversDir, path.basename(before)), () => {});
+        }
+        await logAudit(req, {
+          action: 'UPDATE', resource: 'Organization policy', resourceId: 'coverImage',
+          changes: { section: 'coverImage', summary: 'organization cover image',
+                     fields: [{ field: 'coverImage.orgImageUrl', from: before, to: url }] },
+        });
+        return res.json({ success: true, message: 'Organization cover updated', data: { cover: url } });
+      }
 
       const url = `/uploads/covers/${req.file.filename}`;
       const prior = (await pool.query(
