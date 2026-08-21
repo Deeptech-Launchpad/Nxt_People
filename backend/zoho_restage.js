@@ -511,21 +511,42 @@ async function backup(client, batch, table, empId, where, params) {
         console.log(`      ${pad(st, 34)}${n} day(s)`);
       }
 
-      // Zoho says "Present" where our vocabulary says "present" or "late", and
-      // both mean the person was in. Only a real disagreement is worth printing.
+      /* Zoho writes a day's verdict at the END of the status, after whatever
+       * was granted on it:
+       *
+       *     "Present"
+       *     "Casual Leave(Second Half), 0.5 day Absent"
+       *     "Permission(02:00 hours), 0.75 day Present"
+       *
+       * Reading the front of that string is what produced a false
+       * disagreement on 2026-06-01: it contains the word "Half", so a
+       * contains-check expected our "half-day", when Zoho was in fact saying
+       * half a day of leave plus half a day absent — which is exactly what
+       * this system recorded. The verdict is the tail, and the fraction in
+       * front of it says whether it covers the whole day.
+       *
+       * Zoho has no separate word for lateness, so its "Present" covers our
+       * "present" and "late" both. */
       const agrees = (zoho, our) => {
-        const z = zoho.toLowerCase();
-        if (z.startsWith('present')) return our === 'present' || our === 'late';
-        if (z.startsWith('absent')) return our === 'absent';
-        if (z.includes('half')) return our === 'half-day';
-        return null;
+        const tail = zoho.split(',').pop().trim().toLowerCase();
+        const m = /^(?:([\d.]+)\s*day\s+)?(present|absent)$/.exec(tail);
+        if (!m) return null;
+        const whole = !m[1] || Number(m[1]) >= 1;
+        if (m[2] === 'present') {
+          return whole ? (our === 'present' || our === 'late')
+            : (our === 'half-day' || our === 'present' || our === 'late');
+        }
+        return whole ? our === 'absent' : (our === 'absent' || our === 'half-day' || our === 'leave');
       };
       const clashes = p.days.filter(d => agrees(d.zohoStatus, d.verdict.status) === false);
       console.log(`\n    disagreements with Zoho: ${clashes.length} of ${p.days.length}\n`);
       for (const d of clashes.slice(0, 25)) {
+        // owed, not expected: `expected` is the full day before leave and
+        // permission come off it, so printing it under the word "owed" showed
+        // 8h on a day half covered by leave and read as a bug that was not one.
         console.log(`      ${d.date}  ${pad(d.hours.toFixed(2) + 'h', 8)}`
-          + `${pad(`owed ${d.verdict.expected}h`, 12)}`
-          + `Zoho ${pad(d.zohoStatus, 30)}we say ${d.verdict.status}`);
+          + `${pad(`owed ${d.verdict.owed}h`, 12)}`
+          + `Zoho ${pad(d.zohoStatus, 34)}  we say ${d.verdict.status}`);
       }
       if (clashes.length > 25) console.log(`      … and ${clashes.length - 25} more`);
       console.log('');
