@@ -72,6 +72,22 @@ const LEAVE_TYPES = {
 };
 const STATUSES = { approved: 'approved', pending: 'pending', rejected: 'rejected', cancelled: 'cancelled' };
 
+/* Zoho names a new leave type every year.
+ *
+ *     Casual Leave        Casual Leave 2023        Casual Leave2025
+ *     Permission          Permission2022          Permission2025
+ *
+ * Matching the name exactly worked for one year of history and fails for four:
+ * fifty of one person's seventy-three records fell through to unpaid, which is
+ * Loss of Pay. Casual leave silently recorded as LOP, across four years, is a
+ * pay-affecting error nobody would find by reading a report.
+ *
+ * So the year is stripped before the lookup, with or without the space. */
+const normaliseLeaveType = (raw) => String(raw ?? '')
+  .replace(/\s*(19|20)\d{2}\s*$/, '')
+  .trim()
+  .toLowerCase();
+
 /* Reaching Zoho's attendance and being able to replace ours with it are two
  * different things, and this script deletes only what it can put back. The gap
  * between them was real: the scope landed a while before anything here could
@@ -148,7 +164,7 @@ function leaveFactsByDate(records, sessions = new Map()) {
     if (!from) continue;
     if (String(r.ApprovalStatus || '').trim().toLowerCase() !== 'approved') continue;
     const shape = shapeOfLeave(r, sessions.get(from));
-    const isPermission = String(r.Leavetype || '').trim().toLowerCase() === 'permission';
+    const isPermission = normaliseLeaveType(r.Leavetype) === 'permission';
     for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
       const iso = d.toISOString().slice(0, 10);
       const f = touch(iso);
@@ -198,7 +214,35 @@ async function zohoLeave(code) {
 /* A day, keyed by ISO date. dateFormat is not optional — without it Zoho
  * refuses the whole call over the organization's date format, which reads as a
  * permissions problem and is not one. */
+/* Zoho refuses a long range outright — four and a half years came back NOT
+ * REACHABLE while eight months answered fine. It fails rather than truncating,
+ * which is the merciful version, but a migration that wants four years still
+ * has to ask for them a year at a time and stitch the answers together.
+ *
+ * The days are keyed by ISO date, so merging is just merging. */
 async function zohoAttendance(code, start, end) {
+  const firstYear = Number(start.slice(0, 4));
+  const lastYear = Number(end.slice(0, 4));
+  if (lastYear > firstYear) {
+    const all = {};
+    for (let y = firstYear; y <= lastYear; y++) {
+      const from = y === firstYear ? start : `${y}-01-01`;
+      const to = y === lastYear ? end : `${y}-12-31`;
+      const part = await zohoAttendanceWindow(code, from, to);
+      // One year refusing is not the same as that year being empty, and
+      // stitching a hole into the middle of a history would look like an
+      // employee who stopped coming in for twelve months.
+      if (!part || typeof part !== 'object' || 'error' in part || 'errors' in part) {
+        throw new Error(`(000) Zoho would not answer for ${y}`);
+      }
+      Object.assign(all, part);
+    }
+    return all;
+  }
+  return zohoAttendanceWindow(code, start, end);
+}
+
+async function zohoAttendanceWindow(code, start, end) {
   const json = await patiently(() => zohoApi(
     `attendance/getUserReport?empId=${encodeURIComponent(code)}`
     + `&sdate=${encodeURIComponent(zohoDMY(start))}&edate=${encodeURIComponent(zohoDMY(end))}`
@@ -533,7 +577,7 @@ async function backup(client, batch, table, empId, where, params) {
       console.log('    the leave that would arrive:\n');
       for (const r of p.leaveInRange) {
         const from = fromZohoDate(r.From), to = fromZohoDate(r.To) || from;
-        const type = LEAVE_TYPES[String(r.Leavetype || '').trim().toLowerCase()];
+        const type = LEAVE_TYPES[normaliseLeaveType(r.Leavetype)];
         const s = shapeOfLeave(r, p.sessions.get(from));
         console.log(`      ${pad(from, 12)}${pad(to === from ? '' : `to ${to}`, 14)}`
           + `${pad(r.Leavetype, 18)}${pad(r.ApprovalStatus, 10)}`
@@ -649,12 +693,54 @@ async function backup(client, batch, table, empId, where, params) {
     console.log('  other half.\n');
   }
 
+  /* A leave type we cannot name lands as unpaid, and unpaid is Loss of Pay.
+   *
+   * That is the one mapping failure that changes what somebody is paid, so an
+   * apply will not do it quietly. Zoho renaming its types every year is exactly
+   * how a new unknown name appears without anybody touching this code — and the
+   * dry run showing "UNMAPPED → unpaid" in a list of seventy records is easy to
+   * read past. Refusing is not.
+   *
+   * --allow-unmapped is the deliberate second decision, for when somebody has
+   * looked at the names and is content for them to be unpaid. */
+  const unknownTypes = new Map();
+  for (const p of plan) {
+    for (const r of p.leaveInRange) {
+      const name = normaliseLeaveType(r.Leavetype);
+      if (!LEAVE_TYPES[name]) {
+        const label = name || '(blank)';
+        unknownTypes.set(label, (unknownTypes.get(label) || 0) + 1);
+      }
+    }
+  }
+  if (unknownTypes.size) {
+    console.log('──────────────────────────────────────────────────────────');
+    console.log('  Leave types with no equivalent here');
+    console.log('──────────────────────────────────────────────────────────\n');
+    for (const [name, n] of [...unknownTypes].sort((a, b) => b[1] - a[1])) {
+      console.log(`    ${pad(name, 34)}${n} record(s)`);
+    }
+    console.log('\n  These would be imported as UNPAID, which is Loss of Pay.\n');
+  }
+
   if (!APPLY) {
     console.log('══════════════════════════════════════════════════════════');
     console.log('  Nothing was written. Re-run with --apply.');
     console.log('══════════════════════════════════════════════════════════\n');
     await pool.end();
     return;
+  }
+
+  if (unknownTypes.size && !process.argv.includes('--allow-unmapped')) {
+    console.log('══════════════════════════════════════════════════════════');
+    console.log('  Refusing to import — nothing was written.');
+    console.log('══════════════════════════════════════════════════════════\n');
+    console.log('  Recording those as Loss of Pay changes what people are paid,');
+    console.log('  and this will not do it on a guess. Either add the names to');
+    console.log('  LEAVE_TYPES in this file, or say so explicitly:\n');
+    console.log('    --allow-unmapped\n');
+    await pool.end();
+    process.exit(1);
   }
 
   // ── Apply — one transaction covering everybody ───────────────────────────
@@ -728,7 +814,7 @@ async function backup(client, batch, table, empId, where, params) {
       let created = 0, unmapped = 0, halves = 0;
       for (const r of p.leaveInRange) {
         const from = fromZohoDate(r.From), to = fromZohoDate(r.To) || from;
-        const type = LEAVE_TYPES[String(r.Leavetype || '').trim().toLowerCase()];
+        const type = LEAVE_TYPES[normaliseLeaveType(r.Leavetype)];
         if (!type) unmapped++;
         const s = shapeOfLeave(r, p.sessions.get(from));
         if (s.halfDay) halves++;
