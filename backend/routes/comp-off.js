@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { fire } = require('../utils/workflowEngine');
@@ -66,6 +66,39 @@ async function workedOn(db, employeeId, date) {
   return r.rows.length > 0;
 }
 
+/* Whose comp-off is this, and may the caller file it?
+ *
+ * Zoho reaches the same form through two doors: My Data files for yourself and
+ * has no employee field at all, while Operations puts an employee selector on
+ * top and files for anybody. One form, one record, two contexts — so this takes
+ * an optional employeeId and decides, rather than there being two endpoints
+ * that could drift apart.
+ *
+ * Filing for somebody else grants them a paid day off, so it is an
+ * administrative act and is gated like one. Absent or self-addressed, nothing
+ * changes and the employee's own route behaves exactly as it did. */
+const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+async function resolveSubject(db, user, employeeId) {
+  if (!employeeId || String(employeeId) === String(user._id)) {
+    return { id: user._id, onBehalf: false };
+  }
+  if (!isFullAccess(user.role)) {
+    return { error: 403, message: 'Only HR and administrators can file a comp-off for another employee.' };
+  }
+  // An id that is not a UUID would reach postgres as a cast error and surface
+  // as a 500, which reads as "the server broke" rather than "that is not an
+  // employee". Refuse it here where the reason can still be stated.
+  if (!UUID.test(String(employeeId))) {
+    return { error: 400, message: 'That is not a valid employee.' };
+  }
+  const r = await db.query(
+    `SELECT id, TRIM(CONCAT(first_name, ' ', last_name)) AS name
+       FROM employees WHERE id = $1 AND deleted_at IS NULL`, [employeeId]);
+  if (!r.rows.length) return { error: 404, message: 'That employee no longer exists.' };
+  return { id: r.rows[0].id, name: r.rows[0].name, onBehalf: true };
+}
+
 // Today's date in the app's default timezone as YYYY-MM-DD, so the
 // past/future guards match what users see.
 async function todayIst(db) {
@@ -84,8 +117,12 @@ router.get('/my', async (req, res) => {
               c.expires_at as "expiresAt", c.status,
               c.rejection_reason as "rejectionReason", c.created_at as "createdAt",
               (c.expires_at IS NOT NULL AND c.expires_at < CURRENT_DATE) as "expired",
+              CASE WHEN c.applied_by IS NULL THEN NULL
+                   ELSE TRIM(CONCAT(f.first_name, ' ', f.last_name)) END as "appliedBy",
               ${COMPOFF_LEVELS_JSON} as "approvalLevels"
-         FROM comp_offs c WHERE c.employee_id = $1 ORDER BY c.created_at DESC`,
+         FROM comp_offs c
+         LEFT JOIN employees f ON f.id = c.applied_by
+        WHERE c.employee_id = $1 ORDER BY c.created_at DESC`,
       [req.user._id]
     );
     // Available balance = approved credits still inside their validity window.
@@ -106,6 +143,8 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       `SELECT c.id as "_id", c.worked_date as "workedDate", c.comp_off_date as "compOffDate",
               c.reason, c.days_earned as "daysEarned", c.expires_at as "expiresAt",
               c.status, c.created_at as "createdAt",
+              CASE WHEN c.applied_by IS NULL THEN NULL
+                   ELSE TRIM(CONCAT(f.first_name, ' ', f.last_name)) END as "appliedBy",
               json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                 'department', e.department, 'employeeId', e.employee_id) as employee,
               ${COMPOFF_LEVELS_JSON} as "approvalLevels",
@@ -114,7 +153,9 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                   WHERE x.request_type = 'comp_off' AND x.request_id = c.id
                     AND x.approver_id = $1 AND x.status = 'pending'
               )) as "canAct"
-         FROM comp_offs c JOIN employees e ON c.employee_id = e.id
+         FROM comp_offs c
+         JOIN employees e ON c.employee_id = e.id
+         LEFT JOIN employees f ON f.id = c.applied_by
         WHERE c.status = 'pending'
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
@@ -128,14 +169,69 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+/* What the attendance says about this employee on this day.
+ *
+ * Zoho puts exactly this beside the Add Request form — First in, Last out,
+ * Overtime, Total hours — and it is not decoration. An administrator filing on
+ * somebody else's behalf has no idea whether that person actually came in on a
+ * given Sunday; without this they pick a date, submit, and get a refusal with
+ * no way to find the right one. The rules that would reject the request are
+ * answered here first, so the form can say so before anybody submits.
+ *
+ * Read-only, and it reveals only what an approver already sees on a request. */
+router.get('/eligibility', async (req, res) => {
+  try {
+    const { date, employeeId } = req.query;
+    if (!date) return res.status(400).json({ success: false, message: 'A date is required' });
+
+    const subject = await resolveSubject(pool, req.user, employeeId);
+    if (subject.error) return res.status(subject.error).json({ success: false, message: subject.message });
+
+    const [nonWorking, att, dup] = await Promise.all([
+      isNonWorkingDate(pool, date),
+      pool.query(
+        `SELECT to_char(check_in  AT TIME ZONE 'UTC' AT TIME ZONE $3, 'HH24:MI') AS "firstIn",
+                to_char(check_out AT TIME ZONE 'UTC' AT TIME ZONE $3, 'HH24:MI') AS "lastOut",
+                working_hours::float AS hours, status
+           FROM attendance
+          WHERE employee_id = $1 AND date = $2::date LIMIT 1`,
+        [subject.id, date, DEFAULT_TZ]),
+      pool.query(
+        'SELECT id FROM comp_offs WHERE employee_id = $1 AND worked_date = $2::date LIMIT 1',
+        [subject.id, date]),
+    ]);
+
+    const a = att.rows[0] || null;
+    const worked = !!(a && a.firstIn);
+    res.json({
+      success: true,
+      data: {
+        // Each of these maps to one refusal the create handler can give, so the
+        // form can explain the problem instead of relaying an error.
+        isNonWorkingDay: nonWorking,
+        worked,
+        alreadyClaimed: dup.rows.length > 0,
+        eligible: nonWorking && worked && dup.rows.length === 0,
+        attendance: a ? { firstIn: a.firstIn, lastOut: a.lastOut, hours: a.hours, status: a.status } : null,
+      },
+    });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
 // POST apply comp-off — validates the worked day, attendance, the requested
 // comp-off day, and the configured validity window, then builds the approval chain.
 router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
   const client = await pool.connect();
   try {
-    const { workedDate, compOffDate, reason, daysEarned = 1 } = req.body;
+    const { workedDate, compOffDate, reason, daysEarned = 1, employeeId } = req.body;
     if (!workedDate) return res.status(400).json({ success: false, message: 'Worked date is required' });
     if (!compOffDate) return res.status(400).json({ success: false, message: 'Requested comp-off date is required' });
+
+    const subject = await resolveSubject(client, req.user, employeeId);
+    if (subject.error) return res.status(subject.error).json({ success: false, message: subject.message });
+    // Every rule below is about the person the day belongs to, never the person
+    // typing. Reading req.user here was the whole reason HR could not do this.
+    const who = subject.onBehalf ? subject.name : 'you';
 
     const today = await todayIst(client);
     // Worked date must be in the past (or today) — you can't earn for future work.
@@ -147,8 +243,11 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Comp-Off can only be earned for working on a weekend or holiday, as set by the work calendar.' });
     }
     // Attendance must prove the employee actually worked that day.
-    if (!(await workedOn(client, req.user._id, workedDate))) {
-      return res.status(400).json({ success: false, message: 'No attendance is recorded for you on that date. Comp-Off needs a recorded check-in on the worked day.' });
+    if (!(await workedOn(client, subject.id, workedDate))) {
+      return res.status(400).json({
+        success: false,
+        message: `No attendance is recorded for ${who} on that date. Comp-Off needs a recorded check-in on the worked day.`,
+      });
     }
     // Requested comp-off day must be a FUTURE working day.
     if (compOffDate <= today) {
@@ -175,22 +274,30 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
     await client.query('BEGIN');
     const dupCheck = await client.query(
       'SELECT id FROM comp_offs WHERE employee_id=$1 AND worked_date=$2 FOR UPDATE',
-      [req.user._id, workedDate]
+      [subject.id, workedDate]
     );
     if (dupCheck.rows.length > 0) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'You have already claimed comp-off for this worked date.' });
+      return res.status(400).json({
+        success: false,
+        message: subject.onBehalf
+          ? `${subject.name} has already claimed comp-off for this worked date.`
+          : 'You have already claimed comp-off for this worked date.',
+      });
     }
     const r = await client.query(
-      `INSERT INTO comp_offs (employee_id, worked_date, comp_off_date, reason, days_earned, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO comp_offs (employee_id, worked_date, comp_off_date, reason, days_earned, expires_at, applied_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        RETURNING id as "_id", worked_date as "workedDate", comp_off_date as "compOffDate",
-                 reason, days_earned as "daysEarned", expires_at as "expiresAt", status, created_at as "createdAt"`,
-      [req.user._id, workedDate, compOffDate, reason || null, daysEarned, expiresAt]
+                 reason, days_earned as "daysEarned", expires_at as "expiresAt", status,
+                 applied_by as "appliedBy", created_at as "createdAt"`,
+      [subject.id, workedDate, compOffDate, reason || null, daysEarned, expiresAt,
+       subject.onBehalf ? req.user._id : null]
     );
     const created = r.rows[0];
-    // Build the same 3-level approval chain leaves use.
-    try { await createLevels(client, 'comp_off', created._id, req.user._id); }
+    // The chain belongs to the employee, not to whoever filed it — an HR-raised
+    // request still goes to that person's own reporting line for approval.
+    try { await createLevels(client, 'comp_off', created._id, subject.id); }
     catch (e) { /* soft-fail: a missing hierarchy still leaves an HR-approvable request */ }
     await client.query('COMMIT');
 

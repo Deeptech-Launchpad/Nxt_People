@@ -1,10 +1,10 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, X, CheckCircle, XCircle, Gift, Send, CheckCheck, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import BackButton from '../components/BackButton';
-import { isApprover } from '../utils/roles';
+import { isApprover, isFullAccess } from '../utils/roles';
 import ApprovalTimeline from '../components/ApprovalTimeline';
 import CompOffDetailModal from '../components/CompOffDetailModal';
 
@@ -28,7 +28,22 @@ export default function CompOff() {
   const [modal, setModal] = useState(false);
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [form, setForm] = useState({ workedDate: '', compOffDate: '', reason: '', daysEarned: 1 });
+  const [form, setForm] = useState({ workedDate: '', compOffDate: '', reason: '', daysEarned: 1, employeeId: '' });
+
+  /* Filing for somebody else, the way Zoho's Operations page does it.
+   *
+   * Zoho reaches one form through two doors: My Data has no employee field and
+   * files for you, Operations puts a selector on top and files for anybody.
+   * Same idea here — the selector only appears for full access, and leaving it
+   * on "Myself" is exactly the form everyone had before. */
+  const canFileForOthers = isFullAccess(user);
+  const [people, setPeople] = useState([]);
+  useEffect(() => {
+    if (!canFileForOthers) return;
+    api.get('/employees?limit=500&status=active')
+      .then(r => setPeople(r.data.data || []))
+      .catch(() => {});
+  }, [canFileForOthers]);
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
   const [tab, setTab] = useState(user?.role === 'team_member' ? 'my' : 'pending');
@@ -43,6 +58,28 @@ export default function CompOff() {
       .then(r => setExpiryMonths(parseInt(r.data.data?.compOffExpiryMonths, 10) || 3))
       .catch(() => {});
   }, []);
+
+  /* What the attendance says about the chosen person and day.
+   *
+   * An administrator filing for somebody else cannot know whether that person
+   * came in on a given Sunday, and without this they pick a date, submit, and
+   * get a refusal with nothing to go on. Zoho shows First in / Last out /
+   * Overtime / Total hours beside its form for the same reason. Asked as the
+   * date changes, so the answer is on screen before Submit is pressed. */
+  const [eligibility, setEligibility] = useState(null);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    if (!modal || !form.workedDate) { setEligibility(null); return; }
+    let live = true;
+    setChecking(true);
+    const params = { date: form.workedDate };
+    if (form.employeeId) params.employeeId = form.employeeId;
+    api.get('/comp-off/eligibility', { params })
+      .then(r => { if (live) setEligibility(r.data.data); })
+      .catch(() => { if (live) setEligibility(null); })
+      .finally(() => { if (live) setChecking(false); });
+    return () => { live = false; };
+  }, [modal, form.workedDate, form.employeeId]);
 
   const canApproveAll = ['admin', 'director', 'manager', 'hr_admin'].includes(user?.role);
   const today = new Date();
@@ -68,8 +105,12 @@ export default function CompOff() {
     e.preventDefault(); setSaving(true);
     try {
       await api.post('/comp-off', form);
-      toast.success('Comp-off request submitted!');
-      setModal(false); setForm({ workedDate: '', compOffDate: '', reason: '', daysEarned: 1 }); load();
+      const who = people.find(p => p._id === form.employeeId);
+      toast.success(who ? `Comp-off filed for ${who.firstName} ${who.lastName}` : 'Comp-off request submitted!');
+      setModal(false);
+      setForm({ workedDate: '', compOffDate: '', reason: '', daysEarned: 1, employeeId: '' });
+      setEligibility(null);
+      load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setSaving(false); }
   };
@@ -151,6 +192,11 @@ export default function CompOff() {
                       <p className="font-medium text-slate-700 text-base">Worked on {fmtDate(r.workedDate, { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}</p>
                       <p className="text-sm text-slate-500 mt-0.5">Comp-off requested for <span className="font-medium text-slate-700">{fmtDate(r.compOffDate)}</span></p>
                       {r.reason && <p className="text-sm text-slate-400 mt-0.5">{r.reason} · {r.daysEarned} day{Number(r.daysEarned) !== 1 ? 's' : ''}</p>}
+                      {/* An approver should never mistake an HR-raised request
+                          for one the employee made themselves. */}
+                      {r.appliedBy && (
+                        <p className="text-[13px] text-indigo-500 mt-0.5">Filed on their behalf by {r.appliedBy}</p>
+                      )}
                       {r.expiresAt && (
                         <p className={`text-[13px] mt-0.5 ${r.expired ? 'text-rose-500 font-medium' : 'text-slate-400'}`}>
                           {r.expired ? 'Expired' : 'Valid till'} {fmtDate(r.expiresAt, { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -198,14 +244,77 @@ export default function CompOff() {
               <button onClick={() => setModal(false)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"><X size={16} /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
+              {canFileForOthers && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1.5">Employee *</label>
+                  <select
+                    value={form.employeeId}
+                    onChange={e => setForm({ ...form, employeeId: e.target.value })}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"
+                  >
+                    <option value="">Myself</option>
+                    {people
+                      .filter(p => p._id !== user?._id)
+                      .map(p => (
+                        <option key={p._id} value={p._id}>
+                          {p.employeeId ? `${p.employeeId} — ` : ''}{p.firstName} {p.lastName}
+                        </option>
+                      ))}
+                  </select>
+                  {form.employeeId && (
+                    <p className="text-[13px] text-amber-600 mt-1">
+                      This grants them a paid day off. It is recorded against your name and
+                      still goes to their own reporting line for approval.
+                    </p>
+                  )}
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Worked Date (weekend / holiday) *</label>
                 <input type="date" value={form.workedDate} onChange={e => setForm({ ...form, workedDate: e.target.value })} required min={ymd(earliestWorkedDate)} max={ymd(today)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
-                <p className="text-[13px] text-slate-400 mt-1">Must be a weekend or holiday you actually worked, within the last {monthsLabel}.</p>
+                <p className="text-[13px] text-slate-400 mt-1">
+                  Must be a weekend or holiday {form.employeeId ? 'they' : 'you'} actually worked, within the last {monthsLabel}.
+                </p>
               </div>
+
+              {/* What the attendance actually says about that day. Every line
+                  here corresponds to a reason the request would be refused, so
+                  the problem is visible before Submit rather than after. */}
+              {form.workedDate && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
+                  {checking ? (
+                    <p className="text-sm text-slate-400">Checking that day…</p>
+                  ) : !eligibility ? (
+                    <p className="text-sm text-slate-400">Could not read that day&rsquo;s attendance.</p>
+                  ) : (
+                    <>
+                      <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Attendance on this day</p>
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                        <dt className="text-slate-400">First in</dt>
+                        <dd className="text-slate-700 text-right">{eligibility.attendance?.firstIn || '—'}</dd>
+                        <dt className="text-slate-400">Last out</dt>
+                        <dd className="text-slate-700 text-right">{eligibility.attendance?.lastOut || '—'}</dd>
+                        <dt className="text-slate-400">Total hours</dt>
+                        <dd className="text-slate-700 text-right">
+                          {eligibility.attendance?.hours != null ? `${Number(eligibility.attendance.hours).toFixed(2)}h` : '—'}
+                        </dd>
+                      </dl>
+                      {!eligibility.eligible && (
+                        <p className="text-sm text-rose-600 mt-2.5">
+                          {eligibility.alreadyClaimed
+                            ? 'Comp-off has already been claimed for this worked date.'
+                            : !eligibility.isNonWorkingDay
+                              ? 'That is a normal working day — comp-off is earned only on a weekend or holiday.'
+                              : 'No check-in is recorded on that day, so this cannot be claimed.'}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Reason / Work Details *</label>
-                <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} required rows={2} placeholder="What did you work on that day?" className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none" />
+                <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} required rows={2} placeholder={form.employeeId ? 'What did they work on that day?' : 'What did you work on that day?'} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Requested Comp-Off Date *</label>
@@ -221,7 +330,7 @@ export default function CompOff() {
               </div>
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                <button type="submit" disabled={saving || checking || (eligibility && !eligibility.eligible)} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
                   <Send size={14} />{saving ? 'Submitting...' : 'Submit Request'}
                 </button>
               </div>
