@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { fire } = require('../utils/workflowEngine');
@@ -506,13 +506,22 @@ router.post('/send-onboarding', authorize('admin', 'director', 'hr_admin'), asyn
     const hrEmail = hrEmployee?.email || process.env.EMAIL_USER;
     const hrPhone = hrEmployee?.phone || '';
 
+    /* The candidate is emailed the raw token; the table stores only its hash.
+     *
+     * That is deliberate — a leaked row must not be a usable invite — and both
+     * readers, validate-token and submit, hash the token out of the URL before
+     * looking it up. This route stored the RAW value, so the lookup searched
+     * for a hash, found nothing, and every invite sent from Send Preboarding
+     * came back "Invalid token." It had never worked. The Registrations page
+     * hashes correctly, which is why the bug hid. */
     const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     await pool.query(
       'INSERT INTO onboarding_tokens (token, email, created_by, expires_at) VALUES ($1, $2, $3, $4)',
-      [token, email, req.user._id, expiresAt]
+      [tokenHash, email, req.user._id, expiresAt]
     );
 
     await sendOnboardingEmail({
