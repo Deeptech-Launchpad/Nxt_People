@@ -403,16 +403,39 @@ const num = (v) => {
  * WorkingHours 08:00 on days nobody was in. It is the shift's length.
  * TotalHours is what was worked. Reading the friendlier-sounding name would
  * make every weekend a full day. */
+/* Hours worked cannot exceed the time between the first punch and the last.
+ *
+ * Zoho breaks that on five days out of eighty-eight thousand, and three of them
+ * are exactly doubled: 28.77 hours against a 14.38-hour span, 23.33 against
+ * 11.67, 18.03 against 9.02. It counted the same day twice — the same bug we
+ * found and fixed in this system's own check-in code, except it happened inside
+ * Zoho years ago and there is nothing to fix at the source.
+ *
+ * Twenty-eight hours in a day is not a number anybody worked, and it inflates
+ * that person's totals and their overtime. So the span wins where the two
+ * disagree, and only where they disagree: everywhere else Zoho's TotalHours is
+ * the more accurate figure, because it excludes the breaks the span includes. */
+const cappedHours = (reported, checkIn, checkOut) => {
+  if (reported == null) return reported;
+  if (!checkIn || !checkOut) return reported;
+  const span = (new Date(checkOut + 'Z') - new Date(checkIn + 'Z')) / 3600000;
+  if (!Number.isFinite(span) || span <= 0) return reported;
+  // A minute of slack, so rounding at either end is not treated as impossible.
+  return reported > span + (1 / 60) ? Math.round(span * 100) / 100 : reported;
+};
+
 const shapeOfDay = (iso, r) => {
   const checkIn = fromZohoStamp(notDash(r.FirstIn));
   const checkOut = fromZohoStamp(notDash(r.LastOut));
+  const reportedHours = hhmmToHours(r.TotalHours) ?? 0;
   return {
     date: iso,
     zohoStatus: String(r.Status ?? '').trim(),
     checkIn,
     checkOut,
     hasPunch: !!checkIn,
-    hours: hhmmToHours(r.TotalHours) ?? 0,
+    hours: cappedHours(reportedHours, checkIn, checkOut) ?? 0,
+    reportedHours,
     shiftHours: hhmmToHours(r.WorkingHours),
     lateMinutes: latenessOf(r),
     inLat: num(r.FirstIn_Latitude),

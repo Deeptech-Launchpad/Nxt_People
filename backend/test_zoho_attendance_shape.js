@@ -48,9 +48,10 @@ const scope = new Function(`
   ${liftLine('notDash', 'const notDash = v =>')}
   ${liftBlock('clockMinutes', 'const clockMinutes = (s) => {')}
   ${liftBlock('latenessOf', 'const latenessOf = (r) => {')}
+  ${liftBlock('cappedHours', 'const cappedHours = (reported, checkIn, checkOut) => {')}
   ${liftBlock('num', 'const num = (v) => {')}
   ${liftBlock('shapeOfDay', 'const shapeOfDay = (iso, r) => {')}
-  return { hhmmToHours, hhmmToMinutes, fromZohoStamp, shapeOfDay, latenessOf };
+  return { hhmmToHours, hhmmToMinutes, fromZohoStamp, shapeOfDay, latenessOf, cappedHours };
 `)();
 
 // Balaji's 2026-07-27, exactly as Zoho returned it.
@@ -144,6 +145,36 @@ const REAL_WEEKEND = {
   const span = (new Date(d.checkOut + 'Z') - new Date(d.checkIn + 'Z')) / 3600000;
   check('check-out minus check-in equals the hours Zoho reported',
     Math.abs(span - d.hours) < 1e-9, { span, hours: d.hours });
+
+  console.log('\n════ Hours cannot exceed the punches ════\n');
+
+  /* Zoho reports more hours than the punches allow on five days, three of them
+   * exactly doubled. Twenty-eight hours in a day is not a number anybody worked
+   * and it inflates that person's totals and their overtime. */
+  const IN = '2022-12-29 04:12:00';    // 09:42 IST
+  const OUT = '2022-12-29 15:52:00';   // 09:22 PM IST — 11h40m apart
+  check('an honest figure is left exactly as Zoho reported it',
+    scope.cappedHours(8.65, IN, OUT) === 8.65, scope.cappedHours(8.65, IN, OUT));
+  check('23.33 hours across an 11.67-hour span is capped to the span',
+    scope.cappedHours(23.33, IN, OUT) === 11.67, scope.cappedHours(23.33, IN, OUT));
+  check('and the cap is the span, not half the reported number',
+    scope.cappedHours(23.33, IN, OUT) !== 23.33 / 2);
+  check('a figure equal to the span is not treated as impossible',
+    scope.cappedHours(11.67, IN, OUT) === 11.67);
+  check('a minute over the span is slack, not a violation',
+    scope.cappedHours(11.68, IN, OUT) === 11.68, scope.cappedHours(11.68, IN, OUT));
+  check('a day with no punch out is left alone — there is no span to judge it by',
+    scope.cappedHours(9.5, IN, null) === 9.5);
+  check('and a day with neither punch is left alone too',
+    scope.cappedHours(9.5, null, null) === 9.5);
+
+  const impossible = { ...REAL_DAY,
+    FirstIn: '29/12/2022 09:42 AM', LastOut: '29/12/2022 09:22 PM', TotalHours: '23:20' };
+  const fixed = scope.shapeOfDay('2022-12-29', impossible);
+  check('the impossible day imports as its span, not as 23.33 hours',
+    Math.abs(fixed.hours - 11.67) < 0.02, fixed.hours);
+  check('and what Zoho claimed is kept beside it, so the correction is visible',
+    Math.abs(fixed.reportedHours - 23.33) < 0.02, fixed.reportedHours);
 
   console.log('\n════ A weekend ════\n');
 
