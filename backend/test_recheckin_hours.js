@@ -95,6 +95,18 @@ const rewind = (minutes, { sessionOnly = false } = {}) => pool.query(
   r = await call('POST', '/attendance/checkin', token, {});
   check('re-checked in', r.s === 200 || r.s === 201, { s: r.s, m: r.j?.message });
 
+  /* The check-in RESPONSE has to carry it, not just /today.
+   *
+   * The browser starts its clock from whatever this returns, and that is a
+   * different code path from the one that loads the page. Fixing only the page
+   * load left re-check-in still counting from the day's arrival — 34 minutes
+   * banked and the clock reading 1:07 the instant they came back. */
+  check('the check-in response carries the session start',
+    !!r.j?.data?.sessionStartedAt, Object.keys(r.j?.data || {}));
+  check('and it is this stretch, not the morning arrival',
+    new Date(r.j.data.sessionStartedAt) > new Date(r.j.data.checkIn),
+    { checkIn: r.j?.data?.checkIn, session: r.j?.data?.sessionStartedAt });
+
   const row2 = (await pool.query(
     `SELECT check_in, session_started_at, working_hours FROM attendance
       WHERE employee_id=$1 AND date=$2::date`, [EMP.id, today])).rows[0];

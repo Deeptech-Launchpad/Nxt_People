@@ -27,11 +27,25 @@ export const AttendanceProvider = ({ children }) => {
   const currentDateRef = useRef(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
 
   /* ── Start/restart the live timer ─────────────────────────────── */
-  const startTimer = useCallback((checkInTime, baseSeconds = 0) => {
+  /* Takes the whole record and works out both halves itself.
+   *
+   * It used to take a start time and a base, and every caller decided which
+   * start time to pass. Two of them did, one was corrected and the other was
+   * not, so re-checking in still counted from the day's arrival on top of the
+   * hours already banked: 34 minutes worked, back at the desk, and the clock
+   * read 1:07 immediately. Deriving it here means a third caller cannot get it
+   * wrong.
+   *
+   * checkIn is when they arrived and is what lateness is measured from.
+   * sessionStartedAt is when the current stretch began — the same instant on a
+   * day with one stretch, and the only correct basis on a day with more. */
+  const startTimer = useCallback((rec) => {
     if (timerRef.current) clearInterval(timerRef.current);
+    if (!rec?.checkIn) return;
+    const from = new Date(rec.sessionStartedAt || rec.checkIn).getTime();
+    const baseSeconds = Math.round((parseFloat(rec.workingHours) || 0) * 3600);
     const tick = () => {
-      const s = baseSeconds + Math.max(0, Math.floor((Date.now() - new Date(checkInTime).getTime()) / 1000));
-      setElapsed(s);
+      setElapsed(baseSeconds + Math.max(0, Math.floor((Date.now() - from) / 1000)));
     };
     tick(); // Set immediately to avoid 1s delay
     timerRef.current = setInterval(tick, 1000);
@@ -59,13 +73,7 @@ export const AttendanceProvider = ({ children }) => {
         const rec = r.data.data;
         setRecord(rec);
         if (rec?.checkIn && !rec?.checkOut) {
-          // Banked hours plus the CURRENT stretch. Counting from checkIn
-          // instead charged the earlier stretch twice on any day somebody
-          // checked out and came back — 2:02 PM to 6:21, back at 6:23, and the
-          // clock read 8:39 before five hours had passed. checkIn is when they
-          // arrived; sessionStartedAt is when this stretch began.
-          const baseSeconds = Math.round(parseFloat(rec.workingHours || 0) * 3600);
-          startTimer(rec.sessionStartedAt || rec.checkIn, baseSeconds);
+          startTimer(rec);
         } else if (rec?.checkOut) {
           // Show total worked hours (static, no live tick)
           setElapsed(Math.round(parseFloat(rec.workingHours || 0) * 3600));
@@ -174,8 +182,7 @@ export const AttendanceProvider = ({ children }) => {
       const rec = r.data.data;
       setRecord(rec);
 
-      const baseSeconds = Math.round(parseFloat(rec.workingHours || 0) * 3600);
-      startTimer(rec.checkIn, baseSeconds);
+      startTimer(rec);
       toast.success(r.data.lateMessage || 'Checked in successfully!');
 
       captureLocationInBackground('checkin');
