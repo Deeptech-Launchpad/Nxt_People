@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Users, CalendarDays, Gift, CalendarCheck, Scale, SlidersHorizontal, CalendarPlus } from 'lucide-react';
 import BackButton from '../../components/BackButton';
 import CompOff from '../CompOff';
-import Approvals from '../Approvals';
+import OpsLeaveRequests from './leavetracker/OpsLeaveRequests';
 import OpsUserSpecific from './leavetracker/OpsUserSpecific';
 import OpsCustomizeBalance from './leavetracker/OpsCustomizeBalance';
 import OpsCustomizePolicy from './leavetracker/OpsCustomizePolicy';
@@ -82,7 +82,7 @@ export default function OperationsLeaveTracker() {
       {/* Each tab is its own component rather than a branch in one giant file,
           so a change to Customize Balance cannot break Compensatory Request. */}
       {tab === 'user'     && <OpsUserSpecific />}
-      {tab === 'requests' && <Approvals embedded />}
+      {tab === 'requests' && <OpsLeaveRequests />}
       {tab === 'compoff'  && <CompOff scope="operations" />}
       {tab === 'holidays' && <OpsHolidays />}
       {tab === 'balance'  && <OpsCustomizeBalance />}

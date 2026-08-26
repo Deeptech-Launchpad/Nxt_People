@@ -158,6 +158,32 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
 });
 
 // ── POST apply leave ───────────────────────────────────────────────────────────
+/* Whose leave is this, and may the caller file it?
+ *
+ * Zoho reaches one form through two doors: My Data files for you and has no
+ * employee field, Operations puts a selector on top and files for anybody.
+ * Filing for somebody else spends THEIR balance and can cost them pay, so it is
+ * an administrative act and gated like one — a team lead approving a report is
+ * not the same authority as booking leave in their name. */
+const LEAVE_UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+async function resolveLeaveSubject(user, employeeId) {
+  if (!employeeId || String(employeeId) === String(user._id)) {
+    return { id: user._id, onBehalf: false };
+  }
+  if (!isFullAccess(user.role)) {
+    return { error: 403, message: 'Only HR and administrators can apply leave for another employee.' };
+  }
+  if (!LEAVE_UUID.test(String(employeeId))) {
+    return { error: 400, message: 'That is not a valid employee.' };
+  }
+  const r = await pool.query(
+    `SELECT id, TRIM(CONCAT(first_name, ' ', last_name)) AS name
+       FROM employees WHERE id = $1 AND deleted_at IS NULL`, [employeeId]);
+  if (!r.rows.length) return { error: 404, message: 'That employee no longer exists.' };
+  return { id: r.rows[0].id, name: r.rows[0].name, onBehalf: true };
+}
+
 router.post('/', [
   body('leaveType').isString().trim().notEmpty(),
   body('startDate').isISO8601().withMessage('startDate must be YYYY-MM-DD'),
@@ -170,6 +196,16 @@ router.post('/', [
   if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
   try {
     const { leaveType, startDate, endDate, reason, isHalfDay, halfDayType } = req.body;
+
+    /* Applying for somebody else, the way Zoho's Operations -> Leave Tracker ->
+     * Leave Requests does it. My Data has no employee field; Operations puts one
+     * on top and HR can file for a person who is already away and could not.
+     *
+     * Every rule below — balance, overlap, sandwich, the approval chain — is
+     * about the person the leave belongs to, never the person typing. */
+    const subject = await resolveLeaveSubject(req.user, req.body.employeeId);
+    if (subject.error) return res.status(subject.error).json({ success: false, message: subject.message });
+    const subjectId = subject.id;
 
     if (!VALID_LEAVE_TYPES.includes(leaveType)) {
       return res.status(400).json({ success: false, message: `Invalid leave type. Must be one of: ${VALID_LEAVE_TYPES.join(', ')}` });
@@ -249,7 +285,7 @@ router.post('/', [
           WHERE employee_id = $1 AND leave_type = 'permission'
             AND status IN ('pending', 'approved')
             AND date_trunc('month', start_date) = date_trunc('month', $2::date)`,
-        [req.user._id, startDate]
+        [subjectId, startDate]
       );
       const usedHrs = parseFloat(usedRes.rows[0].used) || 0;
       if (usedHrs + permHours > permMonthlyCap) {
@@ -268,7 +304,7 @@ router.post('/', [
             AND start_time = $3
             AND end_time = $4
           LIMIT 1`,
-        [req.user._id, startDate, permStartTime, permEndTime]
+        [subjectId, startDate, permStartTime, permEndTime]
       );
       if (dupPerm.rows.length > 0) {
         return res.status(400).json({
@@ -283,7 +319,7 @@ router.post('/', [
             AND status IN ('pending', 'pending_approval', 'approved')
             AND start_date <= $3::date AND end_date >= $2::date
           LIMIT 1`,
-        [req.user._id, startDate, endDate]
+        [subjectId, startDate, endDate]
       );
       if (overlap.rows.length > 0) {
         return res.status(400).json({
@@ -306,7 +342,7 @@ router.post('/', [
         const addCfg = (await pool.query(
           `SELECT leave_additional_config AS c FROM settings LIMIT 1`)).rows[0]?.c || {};
         sandwich = await sandwichedDays(pool, {
-          employeeId: req.user._id, start, end, leaveType, cfg: addCfg,
+          employeeId: subjectId, start, end, leaveType, cfg: addCfg,
         });
       } catch (err) {
         // A policy that cannot be read must not block somebody applying for
@@ -333,7 +369,7 @@ router.post('/', [
     let ins;
     try {
       await client.query('BEGIN');
-      await client.query('SELECT 1 FROM employees WHERE id = $1 FOR UPDATE', [req.user._id]);
+      await client.query('SELECT 1 FROM employees WHERE id = $1 FOR UPDATE', [subjectId]);
 
       // Re-verify inside the lock — catches any race that slipped through the pre-checks.
       if (isPermission) {
@@ -342,7 +378,7 @@ router.post('/', [
             WHERE employee_id = $1 AND leave_type = 'permission'
               AND status IN ('pending', 'approved')
               AND date_trunc('month', start_date) = date_trunc('month', $2::date)`,
-          [req.user._id, startDate]
+          [subjectId, startDate]
         );
         const usedHrs = parseFloat(recheck.rows[0].used) || 0;
         if (usedHrs + permHours > permMonthlyCap) {
@@ -357,7 +393,7 @@ router.post('/', [
               AND status IN ('pending', 'pending_approval', 'approved')
               AND start_date <= $3::date AND end_date >= $2::date
             LIMIT 1`,
-          [req.user._id, startDate, endDate]
+          [subjectId, startDate, endDate]
         );
         if (recheck.rows.length > 0) {
           await client.query('ROLLBACK');
@@ -372,7 +408,7 @@ router.post('/', [
         // knew only casual and permission — so an employee holding two days of
         // comp-off was shown "2 available" on the card and refused here with
         // "Available: 0 day(s)".
-        const { available, store } = await availableFor(client, req.user._id, leaveType, year);
+        const { available, store } = await availableFor(client, subjectId, leaveType, year);
 
         // null is "this type has no ceiling", not "nothing left". Treating the
         // two the same would refuse leave that has no balance to run out of.
@@ -393,7 +429,7 @@ router.post('/', [
           await client.query(
             `UPDATE leave_balances SET available = available - $1
               WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
-            [totalDays, req.user._id, lt.rows[0].id, year]
+            [totalDays, subjectId, lt.rows[0].id, year]
           );
         }
       }
@@ -406,7 +442,7 @@ router.post('/', [
          is_half_day as "isHalfDay", half_day_type as "halfDayType", created_at as "createdAt",
          start_time as "startTime", end_time as "endTime", hours,
          sandwich_days as "sandwichDays", sandwich_dates as "sandwichDates"`,
-        [req.user._id, leaveType, startDate, endDateVal, totalDays, reason, isHalfDay || false, halfDayType || null,
+        [subjectId, leaveType, startDate, endDateVal, totalDays, reason, isHalfDay || false, halfDayType || null,
          permStartTime, permEndTime, isPermission ? permHours : null,
          sandwich.days, sandwich.dates.length ? sandwich.dates : null]
       );
@@ -416,7 +452,7 @@ router.post('/', [
       // ── Build the hierarchy-based approval chain (Employee Tree) ──
       let approverLevels = [];
       try {
-        approverLevels = await createLevels(client, 'leave', leaveId, req.user._id);
+        approverLevels = await createLevels(client, 'leave', leaveId, subjectId);
       } catch (e) {
         await client.query('ROLLBACK');
         logger.error({ err: e.message }, '[leaves] createLevels failed — rolling back leave apply');
@@ -433,7 +469,7 @@ router.post('/', [
         const empName = `${req.user.firstName} ${req.user.lastName}`;
         const msg = `${req.user.firstName} applied ${leaveType} leave from ${startLabel} for ${totalDays} day(s).`;
 
-        await createFeedEntry(req.user._id, 'leave', 'Leave Applied', msg, '📅');
+        await createFeedEntry(subjectId, 'leave', 'Leave Applied', msg, '📅');
 
         const approverIds = approverLevels.map(l => l.approverId).filter(Boolean);
         let hierarchyApprovers = [];
@@ -489,7 +525,7 @@ router.post('/', [
           requestType: 'leave',
           record: { leaveType, totalDays, startDate, endDate },
           approverEmails: allRecipients.map(a => a.email).filter(Boolean),
-          employeeId: req.user._id,
+          employeeId: subjectId,
           vars: {
             EmployeeName: empName, LeaveType: leaveTypeDisplay,
             FromDate: startDate, ToDate: endDateVal, Days: totalDays,
@@ -542,7 +578,7 @@ router.post('/', [
 
       // Fire-and-forget by design: the leave is already committed, and a
       // workflow must never be able to fail or delay the request that raised it.
-      fire('leave', 'created', { recordId: ins.rows[0].id, actorId: req.user._id });
+      fire('leave', 'created', { recordId: ins.rows[0].id, actorId: subjectId });
       res.status(201).json({ success: true, data: ins.rows[0], message: 'Leave applied successfully' });
     } catch (txErr) {
       await client.query('ROLLBACK').catch(() => {});
