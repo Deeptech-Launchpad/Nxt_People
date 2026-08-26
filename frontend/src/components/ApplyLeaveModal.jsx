@@ -43,7 +43,7 @@ function getGPS() {
 
 // ── Apply Leave Modal ─────────────────────────────────────────────────────────
 function ApplyLeaveModal({ onClose, onSuccess, leaveTypes }) {
-  const [form, setForm] = useState({ leaveType: leaveTypes?.[0]?.code || 'casual', startDate: '', endDate: '', reason: '', isHalfDay: false, startTime: '', endTime: '' });
+  const [form, setForm] = useState({ leaveType: leaveTypes?.[0]?.code || 'casual', startDate: '', endDate: '', reason: '', isHalfDay: false, halfDayType: 'first_half', startTime: '', endTime: '' });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const isPermission = form.leaveType === 'permission';
@@ -70,7 +70,13 @@ function ApplyLeaveModal({ onClose, onSuccess, leaveTypes }) {
       // hours and enforces the 4h monthly cap.
       const payload = isPermission
         ? { leaveType: form.leaveType, startDate: form.startDate, endDate: form.startDate, reason: form.reason, startTime: form.startTime, endTime: form.endTime }
-        : form;
+        : {
+            ...form,
+            // A range cannot be half of anything, and a full day must not carry
+            // a session it does not have.
+            isHalfDay: form.isHalfDay && form.startDate === form.endDate,
+            halfDayType: form.isHalfDay && form.startDate === form.endDate ? form.halfDayType : null,
+          };
       await api.post('/leaves', payload);
       toast.success(isPermission ? 'Permission applied!' : 'Leave applied!'); onSuccess();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
@@ -102,9 +108,25 @@ function ApplyLeaveModal({ onClose, onSuccess, leaveTypes }) {
                 <div><label className="text-[13px] text-slate-500">From</label><input type="date" required value={form.startDate} onChange={e => set('startDate', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
                 <div><label className="text-[13px] text-slate-500">To</label><input type="date" required value={form.endDate} onChange={e => set('endDate', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
               </div>
-              <label className="flex items-center gap-2 text-[15px] text-slate-600 cursor-pointer">
-                <input type="checkbox" checked={form.isHalfDay} onChange={e => set('isHalfDay', e.target.checked)} className="rounded"/> Half Day
-              </label>
+              {/* Which half, not just whether. The checkbox alone sent
+                  isHalfDay with no session, and the muster roll renders the
+                  other half of the day from half_day_type — so every half day
+                  applied for here was recorded as a morning, whether or not it
+                  was one. Only offered for a single day. */}
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-[15px] text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={form.isHalfDay}
+                    disabled={!!form.startDate && form.startDate !== form.endDate}
+                    onChange={e => set('isHalfDay', e.target.checked)} className="rounded"/> Half Day
+                </label>
+                {form.isHalfDay && (
+                  <select value={form.halfDayType} onChange={e => set('halfDayType', e.target.value)}
+                    className="border border-slate-200 rounded-lg px-2 py-1 text-[14px] focus:outline-none focus:border-blue-400">
+                    <option value="first_half">1st Half</option>
+                    <option value="second_half">2nd Half</option>
+                  </select>
+                )}
+              </div>
             </>
           )}
           <textarea required rows={3} placeholder="Reason" value={form.reason} onChange={e => set('reason', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400 resize-none"/>

@@ -477,7 +477,7 @@ export default function Dashboard() {
 
    /* ─ Leave state */
    const [leaveModal, setLeaveModal] = useState(false);
-   const [leaveForm, setLeaveForm] = useState({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '', startTime: '', endTime: '' });
+   const [leaveForm, setLeaveForm] = useState({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '', startTime: '', endTime: '', isHalfDay: false, halfDayType: 'first_half' });
    const [leaveCards, setLeaveCards] = useState([]);   // all active leave types + balances
 
    /* ─ Time Log state */
@@ -1973,6 +1973,42 @@ export default function Dashboard() {
                     </div>
                   )}
 
+                  {/* Half a day, and which half.
+                      This form had no half-day option at all, so somebody
+                      needing a morning off from here had to take a whole day.
+                      Which half is not decoration: the muster roll renders the
+                      other half from it, and a leave stored without one lands
+                      as a first half whether or not that is true. Only offered
+                      for a single day — half of a range is not a thing either
+                      system supports. */}
+                  {leaveForm.fromDate && leaveForm.fromDate === leaveForm.toDate && (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                      <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Duration</label>
+                      <div className="flex-1 flex items-center gap-3">
+                        <select
+                          value={leaveForm.isHalfDay ? 'half' : 'full'}
+                          onChange={e => setLeaveForm({ ...leaveForm, isHalfDay: e.target.value === 'half' })}
+                          className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500">
+                          <option value="full">Full Day</option>
+                          <option value="half">Half Day</option>
+                        </select>
+                        <select
+                          value={leaveForm.halfDayType}
+                          disabled={!leaveForm.isHalfDay}
+                          onChange={e => setLeaveForm({ ...leaveForm, halfDayType: e.target.value })}
+                          className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400">
+                          <option value="first_half">1st Half</option>
+                          <option value="second_half">2nd Half</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                  {leaveForm.isHalfDay && (
+                    <p className="text-[13px] text-blue-600 sm:ml-[9.5rem]">
+                      Half a day will be deducted from your balance, not a whole one.
+                    </p>
+                  )}
+
                   <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-6">
                     <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0 pt-2">Reason for leave</label>
                     <textarea value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})} rows={3} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500 resize-none" />
@@ -2001,11 +2037,15 @@ export default function Dashboard() {
                     leaveType: leaveForm.type,
                     startDate: leaveForm.fromDate,
                     endDate: leaveForm.toDate,
-                    reason: leaveForm.reason
+                    reason: leaveForm.reason,
+                    // Only ever on a single day, so a range cannot arrive
+                    // claiming to be half of something.
+                    isHalfDay: leaveForm.isHalfDay && leaveForm.fromDate === leaveForm.toDate,
+                    halfDayType: leaveForm.isHalfDay ? leaveForm.halfDayType : null,
                   });
                   toast.success(isPerm ? 'Permission submitted to reporting person' : 'Leave request submitted to reporting person');
                   setLeaveModal(false);
-                  setLeaveForm({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '', startTime: '', endTime: '' });
+                  setLeaveForm({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '', startTime: '', endTime: '', isHalfDay: false, halfDayType: 'first_half' });
                 } catch (err) {
                   toast.error(err.response?.data?.message || 'Error applying leave');
                 }

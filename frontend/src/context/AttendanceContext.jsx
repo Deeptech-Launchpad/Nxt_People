@@ -59,9 +59,13 @@ export const AttendanceProvider = ({ children }) => {
         const rec = r.data.data;
         setRecord(rec);
         if (rec?.checkIn && !rec?.checkOut) {
-          // Include any previously worked hours today as base for cumulative timer
+          // Banked hours plus the CURRENT stretch. Counting from checkIn
+          // instead charged the earlier stretch twice on any day somebody
+          // checked out and came back — 2:02 PM to 6:21, back at 6:23, and the
+          // clock read 8:39 before five hours had passed. checkIn is when they
+          // arrived; sessionStartedAt is when this stretch began.
           const baseSeconds = Math.round(parseFloat(rec.workingHours || 0) * 3600);
-          startTimer(rec.checkIn, baseSeconds);
+          startTimer(rec.sessionStartedAt || rec.checkIn, baseSeconds);
         } else if (rec?.checkOut) {
           // Show total worked hours (static, no live tick)
           setElapsed(Math.round(parseFloat(rec.workingHours || 0) * 3600));

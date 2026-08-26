@@ -28,6 +28,7 @@ router.get('/today', async (req, res) => {
     const [result, sessionsRes] = await Promise.all([
       pool.query(
         `SELECT id as "_id", check_in as "checkIn", check_out as "checkOut",
+         session_started_at as "sessionStartedAt",
          working_hours as "workingHours", status, late_minutes as "lateMinutes",
          check_in_location as "checkInLocation", check_out_location as "checkOutLocation"
          FROM attendance WHERE employee_id = $1 AND date = $2::date`,
@@ -204,11 +205,16 @@ router.post('/checkin', async (req, res) => {
     // silently double-writing.
     const upRes = await pool.query(
       `INSERT INTO attendance
-         (employee_id, date, check_in, status, late_minutes,
+         (employee_id, date, check_in, session_started_at, status, late_minutes,
           check_in_location, check_in_latitude, check_in_longitude, shift_id)
-       VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9)
+       VALUES ($1, $2::date, $3, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (employee_id, date) DO UPDATE
+         -- check_in stays the day's arrival, which is what lateness is
+         -- measured from. session_started_at moves to NOW, because the stretch
+         -- being timed starts here. Leaving it at check_in is what made a
+         -- re-check-in count the first session a second time.
          SET check_in           = LEAST(attendance.check_in, EXCLUDED.check_in),
+             session_started_at = EXCLUDED.session_started_at,
              check_out          = NULL,
              status             = attendance.status,
              late_minutes       = attendance.late_minutes,
@@ -219,6 +225,7 @@ router.post('/checkin', async (req, res) => {
              updated_at         = NOW()
          WHERE attendance.check_out IS NOT NULL
        RETURNING id as "_id", check_in as "checkIn", check_out as "checkOut",
+                 session_started_at as "sessionStartedAt",
                  working_hours as "workingHours", status, late_minutes as "lateMinutes"`,
       [req.user._id, today, now, status, lateMinutes, locLabel,
        latitude || null, longitude || null, shift?.id || null]
@@ -371,12 +378,24 @@ router.post('/checkout', async (req, res) => {
     // String(dateObj) produces an unstructured locale string that breaks ISO parsing.
     // If it's already a Date, use it directly; if it's a string (older pg configs),
     // convert the "YYYY-MM-DD HH:MM:SS" format to ISO before parsing.
-    const checkInDate = record.check_in instanceof Date
-      ? record.check_in
-      : new Date(String(record.check_in).replace(' ', 'T') + (String(record.check_in).includes('+') || String(record.check_in).endsWith('Z') ? '' : 'Z'));
-    
+    const asDate = (v) => v instanceof Date
+      ? v
+      : new Date(String(v).replace(' ', 'T')
+          + (String(v).includes('+') || String(v).endsWith('Z') ? '' : 'Z'));
+
+    /* Measure the session from when the session began, not from when the
+     * person arrived. On a day with one check-in those are the same instant.
+     * On a day somebody checked out and came back they are not, and using
+     * check_in charged the first stretch again on top of the hours already
+     * banked — 2:02 PM to 6:21, back at 6:23, and the day read 8:39 worked
+     * before five hours had passed.
+     *
+     * Falling back to check_in keeps rows written before the column existed
+     * working exactly as they did. */
+    const sessionStart = asDate(record.session_started_at || record.check_in);
+
     // Round to nearest minute logic (if seconds >= 35, count as a full minute)
-    const diffSeconds = isFinite(checkInDate) ? (now - checkInDate) / 1000 : 0;
+    const diffSeconds = isFinite(sessionStart) ? (now - sessionStart) / 1000 : 0;
     let diffMinutes = Math.floor(diffSeconds / 60);
     const remainderSeconds = diffSeconds % 60;
     if (remainderSeconds >= 35) {
