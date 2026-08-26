@@ -27,12 +27,18 @@ const STEPS = [
    )`,
   `CREATE INDEX IF NOT EXISTS idx_import_backups_batch ON import_backups(batch)`,
   `CREATE INDEX IF NOT EXISTS idx_import_backups_employee ON import_backups(employee_id)`,
+  /* Not everything imported belongs to a person. Departments and designations
+   * are reference rows the whole company shares, and putting their id in a
+   * column called employee_id would make the table lie about what it holds. */
+  `ALTER TABLE import_backups ADD COLUMN IF NOT EXISTS target_id UUID`,
+  `ALTER TABLE import_backups ADD COLUMN IF NOT EXISTS created BOOLEAN NOT NULL DEFAULT FALSE`,
 ];
 
 (async () => {
   console.log('');
   for (const sql of STEPS) {
-    const name = (sql.match(/(?:TABLE|INDEX) IF NOT EXISTS ([a-z_]+)/) || [])[1] || 'step';
+    const name = (sql.match(/ADD COLUMN IF NOT EXISTS ([a-z_]+)/)
+      || sql.match(/(?:TABLE|INDEX) IF NOT EXISTS ([a-z_]+)/) || [])[1] || 'step';
     try {
       await pool.query(sql);
       console.log(`  ok    ${name}`);

@@ -89,6 +89,78 @@ const STRATEGY = {
   console.log(`  Restore ${BATCH} — ${APPLY ? 'APPLYING' : 'DRY RUN, nothing will be written'}`);
   console.log('══════════════════════════════════════════════════════════\n');
 
+  /* Reference rows — departments and designations — are not keyed to a person
+   * and have no manifest. They are recorded one at a time, each saying whether
+   * the import created the row or only filled empty fields in it, so undoing
+   * means removing the first kind and putting the second kind back. */
+  const refs = (await pool.query(
+    `SELECT id, table_name, target_id, created, row_data, restored_at
+       FROM import_backups
+      WHERE batch = $1 AND target_id IS NOT NULL ORDER BY created DESC, created_at`,
+    [BATCH])).rows;
+
+  if (refs.length) {
+    const made = refs.filter(r => r.created);
+    const edited = refs.filter(r => !r.created);
+    console.log(`  ${made.length} row(s) were created and would be removed`);
+    console.log(`  ${edited.length} row(s) had empty fields filled and would be put back\n`);
+
+    if (refs.some(r => r.restored_at)) {
+      console.log('  This batch has already been restored.\n');
+      await pool.end();
+      process.exit(1);
+    }
+
+    if (!APPLY) {
+      console.log('  Nothing was written. Re-run with --apply.\n');
+      await pool.end();
+      return;
+    }
+
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      for (const r of edited) {
+        const fields = r.row_data?.fields || [];
+        if (!fields.length) continue;
+        const sets = fields.map(f => `${f} = (src.r).${f}`).join(', ');
+        await c.query(
+          `UPDATE ${r.table_name} t SET ${sets}, updated_at = NOW()
+             FROM (SELECT jsonb_populate_record(NULL::${r.table_name}, $2::jsonb) AS r) src
+            WHERE t.id = $1`,
+          [r.target_id, JSON.stringify(r.row_data?.row || {})]);
+      }
+      /* Created rows go last, and their links to each other are cut first.
+       *
+       * An import can create a department and then create its child pointing at
+       * it. Deleting the parent while the child still references it violates
+       * departments_parent_id_fkey and rolls the whole restore back — the child
+       * is about to be deleted too, but the database has no way to know that.
+       * Cutting the links between rows that are all leaving is safe precisely
+       * because none of them will exist in a moment. */
+      const madeIds = made.map(r => r.target_id);
+      if (madeIds.length) {
+        await c.query(
+          `UPDATE departments SET parent_id = NULL
+            WHERE id = ANY($1::uuid[]) AND parent_id = ANY($1::uuid[])`, [madeIds]);
+      }
+      for (const r of made) {
+        await c.query(`DELETE FROM ${r.table_name} WHERE id = $1`, [r.target_id]);
+      }
+      await c.query(`UPDATE import_backups SET restored_at = NOW() WHERE batch = $1`, [BATCH]);
+      await c.query('COMMIT');
+      console.log(`  Removed ${made.length}, put back ${edited.length}.\n`);
+    } catch (err) {
+      await c.query('ROLLBACK').catch(() => {});
+      console.log(`\n  Stopped and rolled back: ${err.message}`);
+      console.log('  A created row is probably still referenced by somebody.\n');
+      process.exitCode = 1;
+    } finally { c.release(); }
+
+    await pool.end();
+    return;
+  }
+
   const manifests = (await pool.query(
     `SELECT employee_id, row_data, restored_at FROM import_backups
       WHERE batch = $1 AND table_name = '_manifest' ORDER BY created_at`, [BATCH])).rows;
