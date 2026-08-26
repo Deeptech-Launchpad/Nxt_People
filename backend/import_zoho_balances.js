@@ -98,7 +98,17 @@ const codeOf = (cell) => (String(cell || '').match(/ANXT\w+/) || [])[0] || null;
   const lines = fs.readFileSync(FILE, 'utf8').split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) { console.log('  The file has no rows.\n'); await pool.end(); process.exit(1); }
 
-  const header = splitCsvLine(lines[0]);
+  /* Zoho exports the grid with a TWO-ROW header: the Paid / Unpaid banner sits
+   * above the leave type names, with blanks under it for the columns it spans.
+   * Reading the first row gets you "Paid", ten blanks and "Unpaid" — and
+   * "Unpaid" happens to match a leave type here, so the wrong column's figures
+   * would have been written under Leave Without Pay.
+   *
+   * So the header is whichever of the first few rows names the most leave
+   * types, and the data starts after it. Chosen rather than assumed, and
+   * printed below, because an export format is not something to hard-code
+   * against one file. */
+  const headerRows = lines.slice(0, 4).map(splitCsvLine);
   const [types, people] = await Promise.all([
     pool.query(`SELECT id, name, code FROM leave_types WHERE is_active = true`),
     pool.query(`SELECT id, employee_id AS code, TRIM(CONCAT(first_name,' ',last_name)) AS name
@@ -108,10 +118,34 @@ const codeOf = (cell) => (String(cell || '').match(/ANXT\w+/) || [])[0] || null;
   // Zoho's column name against our leave type, by normalised name then by code.
   const byName = new Map(types.rows.map(t => [normalise(t.name), t]));
   const byCode = new Map(types.rows.map(t => [normalise(t.code), t]));
-  const columnType = header.map((h, i) => {
+  const matchColumn = (h, i) => {
     if (i === 0) return null;
-    return byName.get(normalise(h)) || byCode.get(normalise(h)) || null;
-  });
+    const n = normalise(h);
+    if (!n) return null;
+    return byName.get(n) || byCode.get(n) || null;
+  };
+  const scored = headerRows.map((row, idx) => ({
+    idx, row, matches: row.filter((h, i) => matchColumn(h, i)).length,
+  }));
+  const best = scored.reduce((a, b) => (b.matches > a.matches ? b : a), scored[0]);
+  const header = best.row;
+  const headerIndex = best.idx;
+  const columnType = header.map(matchColumn);
+
+  console.log('──────────────────────────────────────────────────────────');
+  console.log('  Which row is the header');
+  console.log('──────────────────────────────────────────────────────────\n');
+  for (const c of scored) {
+    console.log(`    row ${c.idx + 1}${c.idx === headerIndex ? '  ← used' : '        '}   `
+      + `${c.matches} leave type(s) matched   ${c.row.slice(0, 4).map(x => x || '(blank)').join(' | ').slice(0, 70)}`);
+  }
+  console.log('');
+  if (!best.matches) {
+    console.log('  No row names a leave type this system has. Nothing can be imported');
+    console.log('  from this file without knowing which column is which.\n');
+    await pool.end();
+    process.exit(1);
+  }
 
   const unmatched = header.filter((h, i) => i > 0 && !columnType[i]);
   console.log('──────────────────────────────────────────────────────────');
@@ -132,7 +166,7 @@ const codeOf = (cell) => (String(cell || '').match(/ANXT\w+/) || [])[0] || null;
   const missing = [];
   let cells = 0;
 
-  for (const line of lines.slice(1)) {
+  for (const line of lines.slice(headerIndex + 1)) {
     const cols = splitCsvLine(line);
     const code = codeOf(cols[0]);
     if (!code) continue;
@@ -155,7 +189,7 @@ const codeOf = (cell) => (String(cell || '').match(/ANXT\w+/) || [])[0] || null;
   console.log('──────────────────────────────────────────────────────────');
   console.log('  What would be written');
   console.log('──────────────────────────────────────────────────────────\n');
-  console.log(`    ${pad(lines.length - 1, 6)}row(s) in the file`);
+  console.log(`    ${pad(lines.length - headerIndex - 1, 6)}data row(s), after the header`);
   console.log(`    ${pad(missing.length, 6)}employee(s) in the file this system does not have`);
   console.log(`    ${pad(cells, 6)}figure(s) read`);
   console.log(`    ${pad(totals.size, 6)}balance(s) to write`);
