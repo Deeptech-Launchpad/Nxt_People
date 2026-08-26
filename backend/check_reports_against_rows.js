@@ -130,6 +130,15 @@ const OFF_CODES = /^(W|H|-)$/;
 
   const ms = months(FROM, TO);
 
+  const rollCache = new Map();
+  const musterRoll = async (m, token) => {
+    if (!rollCache.has(m.label)) {
+      rollCache.set(m.label, await get(
+        `/reports/attendance/muster-roll?startDate=${m.start}&endDate=${m.end}`, token));
+    }
+    return rollCache.get(m.label);
+  };
+
   for (const code of CODES) {
     const emp = (await pool.query(
       `SELECT id, TRIM(CONCAT(first_name,' ',last_name)) AS name,
@@ -187,8 +196,13 @@ const OFF_CODES = /^(W|H|-)$/;
           WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date`,
         [emp.id, m.start, m.end])).rows[0];
 
-      const roll = await get(
-        `/reports/attendance/muster-roll?startDate=${m.start}&endDate=${m.end}`, token);
+      /* One fetch per month, shared by everybody.
+       *
+       * The muster roll returns the WHOLE company for a month, and this was
+       * asking for it again for each person — fifty-three people across eight
+       * months is four hundred and twenty-four fetches of the same handful of
+       * grids, each one recomputing every employee's row. Ask once. */
+      const roll = await musterRoll(m, token);
       const mine = roll.j?.data?.find(r => r.employeeCode === code);
 
       const counts = { present: 0, absent: 0, leave: 0, off: 0, other: 0 };
@@ -346,8 +360,7 @@ const OFF_CODES = /^(W|H|-)$/;
          * cannot notice the fix is not checking anything. */
         const month = h.d.slice(0, 7);
         const mm = ms.find(x => x.label === month);
-        const roll = mm && await get(
-          `/reports/attendance/muster-roll?startDate=${mm.start}&endDate=${mm.end}`, token);
+        const roll = mm && await musterRoll(mm, token);
         const row = roll?.j?.data?.find(r => r.employeeCode === code);
         const idx = roll?.j?.dayLabels?.indexOf(h.d) ?? -1;
         const cell = idx >= 0 ? String(row?.days?.[idx]?.code ?? '') : '(not found)';
