@@ -212,7 +212,22 @@ async function zohoLeave(code) {
   for (let i = 1; i <= 2000; i += 200) {
     const json = await patiently(() =>
       zohoApi(`forms/leave/getRecords?sIndex=${i}&limit=200&searchParams=${search}`));
-    const rows = json?.response?.result || [];
+    /* Zoho answers a refusal with HTTP 200 and an error envelope carrying no
+     * `result` key at all. Reading `result || []` turned that refusal into
+     * "this person has no leave", and the import then DELETED their leave and
+     * replaced it with nothing — the same failure that once wiped 43 people,
+     * arriving by a different door. An error is not an empty list; say so and
+     * let the caller abort. */
+    const resp = json?.response;
+    const envelope = resp && typeof resp === 'object' && !Array.isArray(resp)
+      && !('result' in resp)
+      && ('errors' in resp || 'error' in resp || 'message' in resp);
+    if (envelope) {
+      const why = String(resp.message || JSON.stringify(resp.error || resp.errors || {}));
+      throw new Error(`(000) Zoho refused the leave read for ${code}: ${why.slice(0, 120)}`);
+    }
+
+    const rows = resp?.result || [];
     if (!Array.isArray(rows) || !rows.length) break;
     for (const w of rows) { const rec = Object.values(w)[0]?.[0]; if (rec) out.push(rec); }
     if (rows.length < 200) break;
