@@ -6,6 +6,9 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { getLeavePolicies } = require('../utils/leavePolicy');
+const { ledgerFor } = require('../utils/leaveLedger');
+const { audit } = require('../middleware/audit');
 const { isFullAccess } = require('../utils/roles');
 const { serverError } = require('../utils/serverError');
 
@@ -184,46 +187,149 @@ router.delete('/policies/:id', authorize('admin', 'director', 'hr_admin'), async
 router.get('/balances/all', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const year = parseInt(req.query.year, 10) || new Date().getFullYear();
+    const now = new Date();
+    // Only accrue up to the month actually reached. Granting December's
+    // entitlement in March shows a balance nobody has earned yet.
+    const upToMonth = year < now.getFullYear() ? 12
+      : year > now.getFullYear() ? 0 : now.getMonth() + 1;
 
-    const [types, people, balances] = await Promise.all([
-      pool.query(`SELECT id, name, code, max_days_per_year FROM leave_types WHERE is_active = true ORDER BY name`),
+    const [policies, types, people, leaves, stored, comp] = await Promise.all([
+      getLeavePolicies(),
+      pool.query(`SELECT id, name, code, unit, pay_type AS "payType", max_days_per_year
+                    FROM leave_types WHERE is_active = true ORDER BY sort_order, name`),
       pool.query(
         `SELECT id, employee_id AS "employeeCode", TRIM(CONCAT(first_name,' ',last_name)) AS name,
-                department, casual_leave, sick_leave, earned_leave
+                department, joining_date::text AS "joiningDate"
            FROM employees
           WHERE deleted_at IS NULL AND status = 'active'
           ORDER BY employee_id`),
       pool.query(
-        `SELECT employee_id, leave_type_id, available, booked
-           FROM leave_balances WHERE year = $1`, [year]),
+        `SELECT employee_id, leave_type AS "leaveType", start_date::text AS "startDate",
+                total_days AS "totalDays", hours, reason
+           FROM leaves
+          WHERE status = 'approved' AND EXTRACT(YEAR FROM start_date) = $1`, [year]),
+      pool.query(`SELECT employee_id, leave_type_id, available FROM leave_balances WHERE year = $1`, [year]),
+      pool.query(
+        `SELECT employee_id, COALESCE(SUM(days_earned), 0)::float AS earned
+           FROM comp_offs
+          WHERE status = 'approved' AND EXTRACT(YEAR FROM worked_date) = $1
+          GROUP BY employee_id`, [year]),
     ]);
 
-    const byKey = new Map(balances.rows.map(b => [`${b.employee_id}|${b.leave_type_id}`, b]));
-    const LEGACY = { casual: 'casual_leave', sick: 'sick_leave', earned: 'earned_leave' };
+    const leavesByEmp = new Map();
+    for (const l of leaves.rows) {
+      if (!leavesByEmp.has(l.employee_id)) leavesByEmp.set(l.employee_id, []);
+      leavesByEmp.get(l.employee_id).push(l);
+    }
+    const storedByKey = new Map(stored.rows.map(b => [`${b.employee_id}|${b.leave_type_id}`, b.available]));
+    const earnedByEmp = new Map(comp.rows.map(c => [c.employee_id, c.earned]));
 
-    const rows = people.rows.map(p => ({
-      _id: p.id, employeeCode: p.employeeCode, name: p.name, department: p.department,
-      balances: types.rows.map(t => {
-        const b = byKey.get(`${p.id}|${t.id}`);
-        const legacyCol = LEGACY[t.code];
-        const fallback = legacyCol != null && p[legacyCol] != null
-          ? parseFloat(p[legacyCol])
-          : (t.max_days_per_year == null ? null : parseFloat(t.max_days_per_year));
-        return {
-          leaveTypeId: t.id,
-          available: b ? parseFloat(b.available) : fallback,
-          booked: b ? parseFloat(b.booked) : 0,
-          // Whether this is a real stored figure or the type's default, so the
-          // grid can say which ones nobody has actually set.
-          set: !!b,
-        };
-      }),
-    }));
+    const rows = people.rows.map(p => {
+      const mine = leavesByEmp.get(p.id) || [];
+      return {
+        _id: p.id, employeeCode: p.employeeCode, name: p.name, department: p.department,
+        balances: types.rows.map(t => {
+          const l = ledgerFor(policies.get(t.code), p, mine.filter(x => x.leaveType === t.code), {
+            year, upToMonth,
+            stored: storedByKey.get(`${p.id}|${t.id}`) ?? null,
+            earnedAmount: earnedByEmp.get(p.id) || 0,
+          });
+          return {
+            leaveTypeId: t.id, available: l.balance, granted: l.granted,
+            used: l.used, overridden: l.overridden, unit: l.unit,
+          };
+        }),
+      };
+    });
 
     res.json({
       success: true, year,
-      types: types.rows.map(t => ({ _id: t.id, name: t.name, code: t.code, maxDays: t.max_days_per_year })),
+      types: types.rows.map(t => ({
+        _id: t.id, name: t.name, code: t.code, unit: t.unit,
+        payType: t.payType, maxDays: t.max_days_per_year,
+      })),
       data: rows,
+    });
+  } catch (err) { serverError(res, err); }
+});
+
+/* One employee's policies, with the working shown - Zoho's Customize Policy.
+ *
+ * Its table is the balance per leave type; its View History is the ledger
+ * behind one of them. Both come from here in one read, because a screen that
+ * fetches the history separately can show a total that disagrees with the rows
+ * underneath it. */
+router.get('/ledger', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const { employeeId } = req.query;
+    if (!employeeId) return res.status(400).json({ success: false, message: 'An employee is required' });
+    const year = parseInt(req.query.year, 10) || new Date().getFullYear();
+    const now = new Date();
+    const upToMonth = year < now.getFullYear() ? 12
+      : year > now.getFullYear() ? 0 : now.getMonth() + 1;
+
+    const emp = (await pool.query(
+      `SELECT id, employee_id AS "employeeCode", TRIM(CONCAT(first_name,' ',last_name)) AS name,
+              department, designation, joining_date::text AS "joiningDate"
+         FROM employees WHERE id = $1 AND deleted_at IS NULL`, [employeeId])).rows[0];
+    if (!emp) return res.status(404).json({ success: false, message: 'That employee no longer exists.' });
+
+    const [policies, types, leaves, stored, comp] = await Promise.all([
+      getLeavePolicies(),
+      pool.query(`SELECT id, name, code, unit, pay_type AS "payType"
+                    FROM leave_types WHERE is_active = true ORDER BY sort_order, name`),
+      pool.query(
+        `SELECT leave_type AS "leaveType", start_date::text AS "startDate",
+                end_date::text AS "endDate", total_days AS "totalDays", hours, reason
+           FROM leaves
+          WHERE employee_id = $1 AND status = 'approved'
+            AND EXTRACT(YEAR FROM start_date) = $2
+          ORDER BY start_date`, [employeeId, year]),
+      pool.query(`SELECT leave_type_id, available FROM leave_balances WHERE employee_id = $1 AND year = $2`,
+        [employeeId, year]),
+      pool.query(
+        `SELECT COALESCE(SUM(days_earned), 0)::float AS earned FROM comp_offs
+          WHERE employee_id = $1 AND status = 'approved' AND EXTRACT(YEAR FROM worked_date) = $2`,
+        [employeeId, year]),
+    ]);
+
+    const storedByType = new Map(stored.rows.map(b => [b.leave_type_id, b.available]));
+    const earned = comp.rows[0]?.earned || 0;
+
+    const data = types.rows.map(t => ({
+      leaveTypeId: t.id,
+      ...ledgerFor(policies.get(t.code), emp, leaves.rows.filter(l => l.leaveType === t.code), {
+        year, upToMonth, stored: storedByType.get(t.id) ?? null, earnedAmount: earned,
+      }),
+    }));
+
+    res.json({ success: true, year, employee: emp, data });
+  } catch (err) { serverError(res, err); }
+});
+
+/* Rerun a policy - drop the override and let the calculation stand again.
+ *
+ * Zoho's button of the same name. It does NOT invent a figure: it deletes the
+ * stored row, after which the balance is whatever the policy and the leave
+ * taken say it is. That is the only safe meaning, because a stored row exists
+ * because somebody corrected something, and the honest way to undo a
+ * correction is to remove it rather than write a different number over it. */
+router.post('/ledger/rerun', authorize('admin', 'director', 'hr_admin'),
+  audit('RERUN', 'leave_balance'), async (req, res) => {
+  try {
+    const { employeeId, leaveTypeId, year } = req.body;
+    if (!employeeId || !leaveTypeId) {
+      return res.status(400).json({ success: false, message: 'An employee and a leave type are required' });
+    }
+    const y = parseInt(year, 10) || new Date().getFullYear();
+    const r = await pool.query(
+      `DELETE FROM leave_balances WHERE employee_id = $1 AND leave_type_id = $2 AND year = $3`,
+      [employeeId, leaveTypeId, y]);
+    res.json({
+      success: true,
+      message: r.rowCount
+        ? 'The override was removed. The balance now follows the policy.'
+        : 'There was no override - this balance already follows the policy.',
     });
   } catch (err) { serverError(res, err); }
 });
