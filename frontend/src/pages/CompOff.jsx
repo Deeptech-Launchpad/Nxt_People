@@ -19,10 +19,23 @@ const fmtDate = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', y
 // Local YYYY-MM-DD (no timezone shift) for the date input bounds.
 const ymd = (dt) => dt.toLocaleDateString('en-CA');
 
-export default function CompOff() {
+/* One form, two doors — the shape Zoho uses.
+ *
+ *   scope="mine"        Leave Tracker -> Comp-Off. Your own. No employee field
+ *                       at all, exactly as Zoho's My Data has none.
+ *   scope="operations"  Operations -> Leave Tracker -> Compensatory Request.
+ *                       Everybody's, with an employee selector on top.
+ *
+ * The selector was first built into the personal page, which put an
+ * administrative act in the employee's own workspace and showed a pointless
+ * "Myself" dropdown to people who can only ever pick themselves. Same
+ * component, same endpoint; the context decides what it offers. */
+export default function CompOff({ scope = 'mine' }) {
+  const operations = scope === 'operations';
   const { user } = useAuth();
   const [myRequests, setMyRequests] = useState([]);
   const [pending, setPending] = useState([]);
+  const [everyone, setEveryone] = useState([]);
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
@@ -36,7 +49,7 @@ export default function CompOff() {
    * files for you, Operations puts a selector on top and files for anybody.
    * Same idea here — the selector only appears for full access, and leaving it
    * on "Myself" is exactly the form everyone had before. */
-  const canFileForOthers = isFullAccess(user);
+  const canFileForOthers = operations && isFullAccess(user);
   const [people, setPeople] = useState([]);
   useEffect(() => {
     if (!canFileForOthers) return;
@@ -46,7 +59,7 @@ export default function CompOff() {
   }, [canFileForOthers]);
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
-  const [tab, setTab] = useState(user?.role === 'team_member' ? 'my' : 'pending');
+  const [tab, setTab] = useState(scope === 'operations' ? 'all' : (user?.role === 'team_member' ? 'my' : 'pending'));
   const [expanded, setExpanded] = useState(null); // request id whose timeline is open
   const [viewItem, setViewItem] = useState(null); // item open in CompOffDetailModal
 
@@ -89,12 +102,17 @@ export default function CompOff() {
 
   const load = () => {
     setLoading(true);
+    /* The Operations door asks a different question. My Data wants "mine" and
+     * "waiting on me"; Operations wants every comp-off in the company, whatever
+     * its status — which is what Zoho's Compensatory Request tab lists. */
     const calls = [api.get('/comp-off/my')];
     if (isApprover(user)) calls.push(api.get('/comp-off/pending'));
-    Promise.all(calls).then(([myRes, pendingRes]) => {
+    if (operations) calls.push(api.get('/comp-off/all'));
+    Promise.all(calls).then(([myRes, pendingRes, allRes]) => {
       setMyRequests(myRes.data.data || []);
       setBalance(myRes.data.balance || 0);
       if (pendingRes) setPending(pendingRes.data.data || []);
+      if (allRes) setEveryone(allRes.data.data || []);
     }).catch(err => toast.error(err.response?.data?.message || 'Failed to load comp-off requests')).finally(() => setLoading(false));
   };
 
@@ -125,15 +143,18 @@ export default function CompOff() {
     finally { setActionLoading(''); }
   };
 
-  const displayList = tab === 'my' ? myRequests : pending;
+  const displayList = tab === 'all' ? everyone : tab === 'my' ? myRequests : pending;
 
   return (
     <div className="space-y-5">
-      <div className="pt-5 pb-1">
-        <BackButton to="/leave-tracker" label="Leave Tracker" />
-      </div>
-      {/* Balance cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+      {!operations && (
+        <div className="pt-5 pb-1">
+          <BackButton to="/leave-tracker" label="Leave Tracker" />
+        </div>
+      )}
+      {/* Balance cards — yours. Meaningless on the Operations tab, which is
+          about other people, so they are not shown there. */}
+      <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 items-start ${operations ? 'hidden' : ''}`}>
         <div className="rounded-2xl p-5 border bg-green-50 text-green-700 border-green-200">
           <p className="text-sm font-semibold uppercase tracking-wider mb-2 opacity-70">Available Balance</p>
           <p className="text-4xl font-display font-bold">{balance.toFixed(1)}</p>
@@ -165,9 +186,12 @@ export default function CompOff() {
             <Plus size={16} /> Apply Comp-Off
           </button>
         </div>
-        {isApprover(user) && (
+        {(isApprover(user) || operations) && (
           <div className="flex border-b border-slate-100">
-            {[['my', 'My Requests'], ['pending', `Team Pending (${pending.length})`]].map(([id, label]) => (
+            {(operations
+              ? [['all', `All Requests (${everyone.length})`], ['pending', `Awaiting Approval (${pending.length})`], ['my', 'My Requests']]
+              : [['my', 'My Requests'], ['pending', `Team Pending (${pending.length})`]]
+            ).map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)} className={`px-6 py-3.5 text-base font-medium border-b-2 transition-colors ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{label}</button>
             ))}
           </div>
@@ -188,7 +212,7 @@ export default function CompOff() {
                       <Gift size={18} />
                     </div>
                     <div>
-                      {tab === 'pending' && <p className="font-semibold text-slate-700 text-base">{r.employee?.firstName} {r.employee?.lastName} <span className="text-sm text-slate-400">· {r.employee?.department}</span></p>}
+                      {(tab === 'pending' || tab === 'all') && <p className="font-semibold text-slate-700 text-base">{r.employee?.firstName} {r.employee?.lastName} <span className="text-sm text-slate-400">· {r.employee?.department}</span></p>}
                       <p className="font-medium text-slate-700 text-base">Worked on {fmtDate(r.workedDate, { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}</p>
                       <p className="text-sm text-slate-500 mt-0.5">Comp-off requested for <span className="font-medium text-slate-700">{fmtDate(r.compOffDate)}</span></p>
                       {r.reason && <p className="text-sm text-slate-400 mt-0.5">{r.reason} · {r.daysEarned} day{Number(r.daysEarned) !== 1 ? 's' : ''}</p>}

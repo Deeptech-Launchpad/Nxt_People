@@ -42,7 +42,10 @@ const saveSeen = (obj) => {
   try { localStorage.setItem(SEEN_KEY, JSON.stringify(obj)); } catch (_) {}
 };
 
-export default function Approvals() {
+/* `embedded` renders this inside Operations -> Leave Tracker, where the page
+ * already has its own heading and back button. Same component either way — a
+ * second copy for the tab would be the thing that drifts. */
+export default function Approvals({ embedded = false }) {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   // Approve All is available to HR / Super Admin and Team Leads (managers).

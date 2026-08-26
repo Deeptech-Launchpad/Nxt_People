@@ -171,6 +171,63 @@ router.delete('/policies/:id', authorize('admin', 'director', 'hr_admin'), async
 });
 
 // GET /api/leave-types/balances?year=2025&employeeId=  (employee sees own, admin can pass id)
+/* Every employee's balance for every leave type, in one read.
+ *
+ * Zoho's Customize Balance is a grid — people down the side, leave types along
+ * the top — and /balances answers for one person at a time. Asking it once per
+ * employee would be a hundred and fifty requests to draw one screen, so the
+ * grid gets its own query.
+ *
+ * A person with no row for a type has not been given one yet; that reads as the
+ * type's annual maximum, which is what /balances falls back to for a single
+ * employee. Same rule, so the grid and the detail cannot disagree. */
+router.get('/balances/all', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const year = parseInt(req.query.year, 10) || new Date().getFullYear();
+
+    const [types, people, balances] = await Promise.all([
+      pool.query(`SELECT id, name, code, max_days_per_year FROM leave_types WHERE is_active = true ORDER BY name`),
+      pool.query(
+        `SELECT id, employee_id AS "employeeCode", TRIM(CONCAT(first_name,' ',last_name)) AS name,
+                department, casual_leave, sick_leave, earned_leave
+           FROM employees
+          WHERE deleted_at IS NULL AND status = 'active'
+          ORDER BY employee_id`),
+      pool.query(
+        `SELECT employee_id, leave_type_id, available, booked
+           FROM leave_balances WHERE year = $1`, [year]),
+    ]);
+
+    const byKey = new Map(balances.rows.map(b => [`${b.employee_id}|${b.leave_type_id}`, b]));
+    const LEGACY = { casual: 'casual_leave', sick: 'sick_leave', earned: 'earned_leave' };
+
+    const rows = people.rows.map(p => ({
+      _id: p.id, employeeCode: p.employeeCode, name: p.name, department: p.department,
+      balances: types.rows.map(t => {
+        const b = byKey.get(`${p.id}|${t.id}`);
+        const legacyCol = LEGACY[t.code];
+        const fallback = legacyCol != null && p[legacyCol] != null
+          ? parseFloat(p[legacyCol])
+          : (t.max_days_per_year == null ? null : parseFloat(t.max_days_per_year));
+        return {
+          leaveTypeId: t.id,
+          available: b ? parseFloat(b.available) : fallback,
+          booked: b ? parseFloat(b.booked) : 0,
+          // Whether this is a real stored figure or the type's default, so the
+          // grid can say which ones nobody has actually set.
+          set: !!b,
+        };
+      }),
+    }));
+
+    res.json({
+      success: true, year,
+      types: types.rows.map(t => ({ _id: t.id, name: t.name, code: t.code, maxDays: t.max_days_per_year })),
+      data: rows,
+    });
+  } catch (err) { serverError(res, err); }
+});
+
 router.get('/balances', async (req, res) => {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();

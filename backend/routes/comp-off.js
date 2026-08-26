@@ -218,6 +218,40 @@ router.get('/eligibility', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
 
+/* Every comp-off in the company, whatever its status.
+ *
+ * This is Zoho's Operations -> Leave Tracker -> Compensatory Request tab, and
+ * it is a different question from /my (mine) and /pending (waiting on me). An
+ * administrator looking at this tab wants the whole picture — credited, taken,
+ * still to be approved, already expired — which neither of the other two can
+ * answer. Full access only, because it shows everybody. */
+router.get('/all', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT c.id as "_id", c.worked_date as "workedDate", c.comp_off_date as "compOffDate",
+              c.reason, c.days_earned as "daysEarned", c.days_used as "daysUsed",
+              c.expires_at as "expiresAt", c.status,
+              c.rejection_reason as "rejectionReason", c.created_at as "createdAt",
+              (c.expires_at IS NOT NULL AND c.expires_at < CURRENT_DATE) as "expired",
+              CASE WHEN c.applied_by IS NULL THEN NULL
+                   ELSE TRIM(CONCAT(f.first_name, ' ', f.last_name)) END as "appliedBy",
+              json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
+                'department', e.department, 'employeeId', e.employee_id) as employee,
+              -- Who it goes to, which is Zoho's "Reporting to" column.
+              CASE WHEN m.id IS NULL THEN NULL
+                   ELSE TRIM(CONCAT(m.first_name, ' ', m.last_name)) END as "reportingTo",
+              ${COMPOFF_LEVELS_JSON} as "approvalLevels",
+              TRUE as "canAct"
+         FROM comp_offs c
+         JOIN employees e ON c.employee_id = e.id
+         LEFT JOIN employees f ON f.id = c.applied_by
+         LEFT JOIN employees m ON m.id = e.reporting_manager_id
+        ORDER BY c.created_at DESC
+        LIMIT 500`);
+    res.json({ success: true, data: r.rows });
+  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+});
+
 // POST apply comp-off — validates the worked day, attendance, the requested
 // comp-off day, and the configured validity window, then builds the approval chain.
 router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
