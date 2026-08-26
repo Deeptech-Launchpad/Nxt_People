@@ -120,7 +120,14 @@ const runRestage = (args) => new Promise(resolve => {
     // Unhurried on purpose. A few hundred Zoho calls fired back to back is how
     // an account gets throttled, and a throttled read is indistinguishable from
     // an employee who simply has no attendance.
-    await sleep(1200);
+    /* Five seconds, not one.
+     *
+     * A 1.2s gap across fifty-three people was enough to get throttled after
+     * ten, and the restage then had no retry — forty-three people had their
+     * leave deleted against a call that never got an answer. The restage
+     * retries now, and this leaves more room besides. A migration that takes
+     * five minutes instead of one is not a cost worth optimising. */
+    await sleep(5000);
   }
 
   console.log('\n──────────────────────────────────────────────────────────');

@@ -93,11 +93,20 @@ const STRATEGY = {
    * and have no manifest. They are recorded one at a time, each saying whether
    * the import created the row or only filled empty fields in it, so undoing
    * means removing the first kind and putting the second kind back. */
-  const refs = (await pool.query(
+  /* target_id arrived with department support, and a database that has not had
+   * that migration run does not have the column. Asking for it unconditionally
+   * made the restore fail on a batch that contains no reference rows at all —
+   * so a missing migration blocked a RECOVERY, which is the one thing a restore
+   * must never do. Look before asking. */
+  const hasTargetId = (await pool.query(
+    `SELECT COUNT(*)::int n FROM information_schema.columns
+      WHERE table_name = 'import_backups' AND column_name = 'target_id'`)).rows[0].n > 0;
+
+  const refs = hasTargetId ? (await pool.query(
     `SELECT id, table_name, target_id, created, row_data, restored_at
        FROM import_backups
       WHERE batch = $1 AND target_id IS NOT NULL ORDER BY created DESC, created_at`,
-    [BATCH])).rows;
+    [BATCH])).rows : [];
 
   if (refs.length) {
     const made = refs.filter(r => r.created);

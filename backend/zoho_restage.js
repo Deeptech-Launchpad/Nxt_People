@@ -159,13 +159,34 @@ function leaveFactsByDate(records, sessions = new Map()) {
   return byDate;
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* Zoho throttles, and this script deletes. The pre-flight already retried on a
+ * 429 and reported it as UNKNOWN rather than empty; the destructive script did
+ * not, which is the wrong way round. Every Zoho read here now goes through
+ * this, and a call that never succeeds throws rather than returning nothing. */
+async function patiently(fn) {
+  let last;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try { return await fn(); }
+    catch (err) {
+      last = err;
+      const code = (String(err.message).match(/\((\d{3})\)/) || [])[1];
+      if (code !== '429' && code !== '503' && code !== '502') throw err;
+      await sleep(attempt * 5000);
+    }
+  }
+  throw last;
+}
+
 async function zohoLeave(code) {
   const search = encodeURIComponent(JSON.stringify({
     searchField: 'Employee_ID', searchOperator: 'Contains', searchText: code,
   }));
   const out = [];
   for (let i = 1; i <= 2000; i += 200) {
-    const json = await zohoApi(`forms/leave/getRecords?sIndex=${i}&limit=200&searchParams=${search}`);
+    const json = await patiently(() =>
+      zohoApi(`forms/leave/getRecords?sIndex=${i}&limit=200&searchParams=${search}`));
     const rows = json?.response?.result || [];
     if (!Array.isArray(rows) || !rows.length) break;
     for (const w of rows) { const rec = Object.values(w)[0]?.[0]; if (rec) out.push(rec); }
@@ -178,10 +199,10 @@ async function zohoLeave(code) {
  * refuses the whole call over the organization's date format, which reads as a
  * permissions problem and is not one. */
 async function zohoAttendance(code, start, end) {
-  const json = await zohoApi(
+  const json = await patiently(() => zohoApi(
     `attendance/getUserReport?empId=${encodeURIComponent(code)}`
     + `&sdate=${encodeURIComponent(zohoDMY(start))}&edate=${encodeURIComponent(zohoDMY(end))}`
-    + `&dateFormat=dd-MM-yyyy`);
+    + `&dateFormat=dd-MM-yyyy`));
   return json?.response?.result ?? json?.response ?? json;
 }
 
@@ -404,9 +425,27 @@ async function backup(client, batch, table, empId, where, params) {
     // Reaching it is not the same as being able to replace it.
     const attendanceReachable = reached && ATTENDANCE_IMPORT_READY;
 
-    const leave = await zohoLeave(code).catch(e => {
-      console.log(`  ${code}: leave failed — ${String(e.message).slice(0, 120)}`); return [];
-    });
+    /* A read that FAILED is not a person with no leave.
+     *
+     * This used to catch the error and carry on with an empty list, and the
+     * apply then deleted their leave and imported nothing in its place. Zoho
+     * throttled partway through a fifty-three person run and forty-three people
+     * lost their leave records to a call that never got an answer.
+     *
+     * Attendance already had this rule — it refuses to delete what it could not
+     * fetch. Leave did not, and leave is the half that had no guard. Now
+     * neither proceeds on silence. */
+    let leave;
+    try {
+      leave = await zohoLeave(code);
+    } catch (e) {
+      console.log(`\n  ${code}: could not read leave from Zoho — ${String(e.message).slice(0, 120)}`);
+      console.log('  Nothing has been written for this person. A failed read is not');
+      console.log('  an empty result, and deleting their leave to import nothing is');
+      console.log('  exactly the mistake this refuses to make.\n');
+      await pool.end();
+      process.exit(1);
+    }
     const leaveInRange = leave.filter(r => {
       const f = fromZohoDate(r.From);
       return f && f >= START && f <= END;
