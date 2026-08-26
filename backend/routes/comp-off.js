@@ -259,7 +259,17 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
   try {
     const { workedDate, compOffDate, reason, daysEarned = 1, employeeId } = req.body;
     if (!workedDate) return res.status(400).json({ success: false, message: 'Worked date is required' });
-    if (!compOffDate) return res.status(400).json({ success: false, message: 'Requested comp-off date is required' });
+    /* Naming the day off is OPTIONAL, because claiming a credit and spending it
+     * are two separate acts — which is how Zoho works and, as it turns out, how
+     * this already worked underneath. utils/leaveBalance.js keeps a FIFO ledger
+     * over comp_offs: applying leave of type comp_off checks the credit and
+     * draws it down oldest-first on approval, refunding on cancellation.
+     *
+     * Requiring the date here forced somebody to decide, on the Monday after a
+     * Sunday they worked, exactly which future day they would take — before
+     * they could possibly know. The credit is the thing being claimed; the day
+     * off is a leave request like any other. Anyone who does know can still say
+     * so, and the checks below still run on it. */
 
     const subject = await resolveSubject(client, req.user, employeeId);
     if (subject.error) return res.status(subject.error).json({ success: false, message: subject.message });
@@ -283,11 +293,12 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
         message: `No attendance is recorded for ${who} on that date. Comp-Off needs a recorded check-in on the worked day.`,
       });
     }
-    // Requested comp-off day must be a FUTURE working day.
-    if (compOffDate <= today) {
+    // Only checked when a day was named. A credit with no day yet is the
+    // normal case, not an incomplete one.
+    if (compOffDate && compOffDate <= today) {
       return res.status(400).json({ success: false, message: 'The comp-off date must be a future date.' });
     }
-    if (await isNonWorkingDate(client, compOffDate)) {
+    if (compOffDate && await isNonWorkingDate(client, compOffDate)) {
       return res.status(400).json({ success: false, message: 'Comp-Off can only be taken on a working day — that date is already a weekend or holiday.' });
     }
     // Validity window is configurable. Compare as ISO strings (YYYY-MM-DD)
@@ -298,7 +309,7 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
       [workedDate, expiryMonths]
     );
     const expiresAt = expRes.rows[0].exp; // 'YYYY-MM-DD'
-    if (compOffDate > expiresAt) {
+    if (compOffDate && compOffDate > expiresAt) {
       return res.status(400).json({
         success: false,
         message: `Comp-Off must be used within ${expiryMonths} month${expiryMonths === 1 ? '' : 's'} of the worked date. Please pick an earlier date.`,
@@ -325,7 +336,7 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
        RETURNING id as "_id", worked_date as "workedDate", comp_off_date as "compOffDate",
                  reason, days_earned as "daysEarned", expires_at as "expiresAt", status,
                  applied_by as "appliedBy", created_at as "createdAt"`,
-      [subject.id, workedDate, compOffDate, reason || null, daysEarned, expiresAt,
+      [subject.id, workedDate, compOffDate || null, reason || null, daysEarned, expiresAt,
        subject.onBehalf ? req.user._id : null]
     );
     const created = r.rows[0];

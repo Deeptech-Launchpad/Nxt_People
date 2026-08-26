@@ -227,7 +227,7 @@ export default function OpsCompOff() {
             <dl className="space-y-2.5 text-[15px]">
               {[
                 ['Worked on', fmt(detail.workedDate)],
-                ['Comp-off date', fmt(detail.compOffDate)],
+                ['Comp-off date', detail.compOffDate ? fmt(detail.compOffDate) : 'Not yet taken — banked'],
                 ['Reporting to', detail.reportingTo || '—'],
                 ['Credited', `${detail.daysEarned} day${Number(detail.daysEarned) === 1 ? '' : 's'}`],
                 ['Taken', parseFloat(detail.daysUsed) ? `${detail.daysUsed} day(s)` : '—'],

@@ -158,11 +158,19 @@ export default function CompOffApplyModal({
               className={`${field} resize-none`} />
           </div>
 
+          {/* Optional, because claiming the credit and taking the day are two
+              separate acts. Requiring it forced somebody to decide, on the
+              Monday after a Sunday they worked, exactly which future day they
+              would take — before they could possibly know. */}
           <div>
-            <label className={label}>Requested Comp-Off Date *</label>
-            <input type="date" value={form.compOffDate} required min={ymd(tomorrow)} className={field}
+            <label className={label}>Requested Comp-Off Date <span className="text-slate-400 font-normal">(optional)</span></label>
+            <input type="date" value={form.compOffDate} min={ymd(tomorrow)} className={field}
               onChange={e => setForm({ ...form, compOffDate: e.target.value })} />
-            <p className="text-[13px] text-slate-400 mt-1">A future working day, within {monthsLabel} of the worked date.</p>
+            <p className="text-[13px] text-slate-400 mt-1">
+              Leave this blank to bank the credit and take the day later, by applying{' '}
+              <span className="text-slate-500">Compensatory Off</span> leave. If you already know the day,
+              it must be a future working day within {monthsLabel} of the worked date.
+            </p>
           </div>
 
           <div>
