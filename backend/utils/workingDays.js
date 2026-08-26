@@ -31,6 +31,48 @@ function holidayClosesOffice(type) {
   return !!type && !NON_CLOSING_HOLIDAY_TYPES.has(type);
 }
 
+/* Does this holiday apply to this person?
+ *
+ * Some holidays are for the office and not for WFH, so a holiday carries a set
+ * of locations and a set of shifts it is for.
+ *
+ * NO SCOPE MEANS EVERYONE. That is not a convenience default — it is what
+ * makes this safe to introduce. Four years of attendance were judged against a
+ * calendar where every holiday was company-wide, and every one of those rows
+ * has no scope, so every one of them still applies to everybody and no day
+ * already recorded is re-judged. Narrowing happens only where somebody chose it.
+ *
+ * The two kinds are independent and both must pass: a holiday for the office,
+ * general shift only, does not apply to somebody at the office on nights.
+ *
+ * @param {object} holiday   { locationIds?: [], shiftIds?: [] }
+ * @param {object} employee  { workLocationId, shiftId }
+ */
+function holidayAppliesTo(holiday, employee = {}) {
+  const locations = holiday?.locationIds || [];
+  const shifts = holiday?.shiftIds || [];
+
+  if (locations.length) {
+    // Somebody with no location recorded is not excluded by a location scope
+    // they cannot be matched against — silently dropping a holiday because a
+    // field is blank would mark them absent on a day the office was shut.
+    if (employee.workLocationId && !locations.map(String).includes(String(employee.workLocationId))) {
+      return false;
+    }
+  }
+  if (shifts.length) {
+    if (employee.shiftId && !shifts.map(String).includes(String(employee.shiftId))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** True when this holiday closes the office FOR THIS PERSON. */
+function holidayClosesFor(holiday, employee) {
+  return holidayClosesOffice(holiday?.type) && holidayAppliesTo(holiday, employee);
+}
+
 function atMidnight(d) {
   const out = new Date(d);
   out.setHours(0, 0, 0, 0);
@@ -226,4 +268,6 @@ async function loadWeekendResolver() {
   };
 }
 
-module.exports = { isNonWorkingDay, ruleMatchesDate, countWorkingDays, holidayClosesOffice, loadWeekendResolver };
+module.exports = {
+  holidayAppliesTo,
+  holidayClosesFor, isNonWorkingDay, ruleMatchesDate, countWorkingDays, holidayClosesOffice, loadWeekendResolver };
