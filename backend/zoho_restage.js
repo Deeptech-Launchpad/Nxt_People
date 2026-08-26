@@ -671,15 +671,30 @@ async function backup(client, batch, table, empId, where, params) {
     process.exit(1);
   }
   const batch = supplied || `restage-${stamp}`;
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
+  /* One transaction PER EMPLOYEE, all inside this one process.
+   *
+   * It used to be a single transaction around everybody: twelve thousand rows,
+   * where one bad record rolls back the other fifty-two and says nothing about
+   * which. The bulk runner solved that by spawning a process per person — and
+   * every process mints a fresh Zoho access token, which Zoho caps. Exactly ten
+   * people went through and the rest were refused, which is how forty-three
+   * people nearly lost their leave to a call that never got an answer.
+   *
+   * So: one process, one token, and a transaction each. A person who fails
+   * rolls back alone and is named at the end; everybody else is already
+   * committed and stays that way. */
+  let totalCreated = 0, totalUnmapped = 0, totalDays = 0;
+  const succeeded = [], failures = [];
 
-    console.log('──────────────────────────────────────────────────────────');
-    console.log(`  Backing up as ${batch}`);
-    console.log('──────────────────────────────────────────────────────────\n');
+  console.log('──────────────────────────────────────────────────────────');
+  console.log(`  Importing under ${batch}`);
+  console.log('──────────────────────────────────────────────────────────\n');
 
-    for (const p of plan) {
+  for (const p of plan) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
       // What the restore has to undo, written down rather than inferred. A
       // person who had no leave at all backs up zero rows, and without this the
       // restore would have no way to know the imported ones should go.
@@ -700,17 +715,7 @@ async function backup(client, batch, table, empId, where, params) {
           't.employee_id = $1 AND t.date BETWEEN $2::date AND $3::date',
           [p.emp.id, START, END]);
       }
-      console.log(`    ${pad(p.emp.name, 24)} leaves ${pad(bl, 5)}`
-        + `attendance ${p.attendanceReachable ? ba : 'not touched'}`);
-    }
-    console.log('');
 
-    console.log('──────────────────────────────────────────────────────────');
-    console.log('  Replacing');
-    console.log('──────────────────────────────────────────────────────────\n');
-
-    let totalCreated = 0, totalUnmapped = 0, totalDays = 0;
-    for (const p of plan) {
       await client.query(
         `DELETE FROM leaves WHERE employee_id = $1 AND start_date BETWEEN $2::date AND $3::date`,
         [p.emp.id, START, END]);
@@ -743,15 +748,11 @@ async function backup(client, batch, table, empId, where, params) {
            status === 'approved' ? (fromZohoDateTime(r.ApprovalTime) || from) : null]);
         created++;
       }
-      totalCreated += created; totalUnmapped += unmapped;
-      console.log(`    ${pad(p.emp.name, 24)} ${created} leave record(s) imported`
-        + `${halves ? `, ${halves} half day(s)` : ''}`
-        + `${unmapped ? `, ${unmapped} as unpaid` : ''}`);
 
       // Attendance last, because the day facts it was classified against come
       // from the leave that has just been written.
+      let rows = 0;
       if (p.attendanceReachable) {
-        let rows = 0;
         for (const d of p.days) {
           await client.query(
             `INSERT INTO attendance
@@ -766,27 +767,39 @@ async function backup(client, batch, table, empId, where, params) {
              d.inLoc, d.outLoc, d.inLat, d.inLng, d.outLat, d.outLng]);
           rows++;
         }
-        totalDays += rows;
-        console.log(`    ${pad('', 24)} ${rows} attendance day(s) imported`
-          + `, ${p.skipped.length} day(s) had no punch and got no row`);
       }
-    }
 
-    await client.query('COMMIT');
+      await client.query('COMMIT');
+      totalCreated += created; totalUnmapped += unmapped; totalDays += rows;
+      succeeded.push(p.emp.code);
+      console.log(`    ${pad(p.emp.code, 14)}${pad(p.emp.name.slice(0, 22), 24)}`
+        + `${String(rows).padStart(4)} day(s), ${created} leave`
+        + `${halves ? `, ${halves} half day(s)` : ''}`
+        + `${unmapped ? `, ${unmapped} as unpaid` : ''}`
+        + `   (backed up ${ba} + ${bl})`);
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      failures.push({ code: p.emp.code, why: String(err.message).slice(0, 140) });
+      console.log(`    ${pad(p.emp.code, 14)}${pad(p.emp.name.slice(0, 22), 24)}FAILED — rolled back, nothing changed for them`);
+    } finally { client.release(); }
+  }
 
-    console.log('');
-    console.log('══════════════════════════════════════════════════════════');
-    console.log(`  ${totalCreated} leave record(s) and ${totalDays} attendance day(s) imported across ${plan.length} people.`);
-    if (totalUnmapped) console.log(`  ${totalUnmapped} had a leave type we do not have, imported as unpaid.`);
-    console.log('');
-    console.log(`  To undo:  node restore_import_backup.js ${batch} --apply`);
-    console.log('══════════════════════════════════════════════════════════\n');
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    console.log(`\n  Stopped and rolled back: ${err.message}`);
-    console.log('  Nothing was deleted.\n');
+  console.log('');
+  console.log('══════════════════════════════════════════════════════════');
+  console.log(`  ${succeeded.length} of ${plan.length} imported — ${totalCreated} leave record(s), ${totalDays} attendance day(s).`);
+  if (totalUnmapped) console.log(`  ${totalUnmapped} had a leave type we do not have, imported as unpaid.`);
+  if (failures.length) {
+    console.log(`
+  ${failures.length} failed. They were rolled back individually; everybody`);
+    console.log('  else is committed and is NOT affected:\n');
+    for (const f of failures) console.log(`    ${pad(f.code, 14)}${f.why}`);
+    console.log(`
+  Re-run with --batch=${batch} to retry only these.`);
     process.exitCode = 1;
-  } finally { client.release(); }
+  }
+  console.log('');
+  console.log(`  To undo:  node restore_import_backup.js ${batch} --apply`);
+  console.log('══════════════════════════════════════════════════════════\n');
 
   await pool.end();
 })().catch(e => { console.error(e); process.exit(1); });

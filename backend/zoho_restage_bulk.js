@@ -1,29 +1,20 @@
-/* ── A whole company, one employee at a time ────────────────────────────────
- *  zoho_restage.js takes a list and would happily accept all fifty-three. It
- *  would also do them in ONE transaction: twelve thousand rows, and a single
- *  bad record rolls back the other fifty-two with nothing to say which one it
- *  was. That is fine for two people and wrong for a company.
+/* ── SUPERSEDED — do not use for a migration ────────────────────────────────
+ *  This ran the restage once per person, in its own process, so that one bad
+ *  record could not roll back everybody else. The isolation was right; the
+ *  mechanism was wrong.
  *
- *  So this runs the restage once per person, in its own process and its own
- *  transaction, and:
+ *  Every process mints a fresh Zoho access token on startup, and Zoho caps how
+ *  many can be minted from one refresh token in a short window. Exactly ten
+ *  people went through and the remaining forty-three were refused — which,
+ *  before the restage learned that a failed read is not an empty result,
+ *  deleted their leave and imported nothing.
  *
- *    they all share ONE batch name, so the whole migration is one thing to
- *      undo rather than fifty-three things to remember
- *    somebody who fails does not stop the rest — they are listed at the end
- *    a re-run SKIPS anybody already done in this batch, so a run that dies
- *      halfway is resumed rather than repeated
- *    it paces itself, because Zoho throttles and a throttled read looks
- *      exactly like an employee with no attendance
+ *  zoho_restage.js now does the same isolation properly: one process, one
+ *  token, and a transaction per employee. Give it the whole list directly.
  *
- *  Nothing is imported by this file itself. It is a supervisor: the mapping,
- *  the backup, the counting and the refusal to delete what it cannot replace
- *  all still live in zoho_restage.js, and are not duplicated here.
+ *    docker compose exec backend node zoho_restage.js CODE,CODE,... START END --apply
  *
- *  Dry run by default — it reports the plan and runs each person's own dry run.
- *
- *    docker compose exec backend node zoho_restage_bulk.js CODE,CODE,... 2026-01-01 2026-08-31
- *    docker compose exec backend node zoho_restage_bulk.js CODE,CODE,... 2026-01-01 2026-08-31 --apply
- *    ... --apply --batch=migration-2026-08-26      (to resume a named run)
+ *  Kept only so the reason is written down where somebody would look for it.
  * ────────────────────────────────────────────────────────────────────────── */
 require('dotenv').config();
 process.env.EMAIL_DISABLED = 'true';
@@ -50,6 +41,15 @@ const runRestage = (args) => new Promise(resolve => {
 });
 
 (async () => {
+  console.log('\n  This script is superseded. It spawned a process per employee,');
+  console.log('  and every process mints a Zoho access token — Zoho caps those, so');
+  console.log('  exactly ten people went through and the rest were refused.\n');
+  console.log('  zoho_restage.js now does per-employee transactions in ONE process.');
+  console.log('  Use it directly with the whole list:\n');
+  console.log('    node zoho_restage.js CODE,CODE,... START END --apply\n');
+  process.exit(1);
+
+  /* eslint-disable no-unreachable */
   if (!CODES.length || !START || !END) {
     console.log('\n  usage: node zoho_restage_bulk.js <CODE,CODE,...> <START> <END> [--apply] [--batch=NAME]\n');
     process.exit(1);
