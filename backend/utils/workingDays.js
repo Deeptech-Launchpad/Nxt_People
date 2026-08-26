@@ -68,6 +68,36 @@ function holidayAppliesTo(holiday, employee = {}) {
   return true;
 }
 
+/* The holiday type in force on a date FOR THIS PERSON.
+ *
+ * holMap holds an ARRAY per date, because a date can now carry more than one
+ * holiday scoped to different people: the office shuts for one thing while WFH
+ * does not. This picks the one that applies to the person asking.
+ *
+ * When several apply, a closure wins over a working-day exception. Both are
+ * deliberate statements and neither is obviously stronger, but the errors are
+ * not equal: marking somebody absent on a day they were told not to come in is
+ * worse than counting a day they did come in as a holiday.
+ *
+ * `employee` may be undefined. Everything then applies, which is exactly how
+ * this behaved before scopes existed — so a caller that has not been taught
+ * about them degrades to the old answer rather than to a wrong one.
+ */
+function holidayTypeFor(holMap, key, employee) {
+  const rows = holMap?.get(key);
+  if (!rows) return undefined;
+  // Tolerate the old shape, so a map built somewhere this refactor missed
+  // still answers instead of silently reading as "no holiday" — which would
+  // mark a whole company absent on Deepavali.
+  if (typeof rows === 'string') return rows;
+
+  const mine = rows.filter(h => holidayAppliesTo(h, employee));
+  if (!mine.length) return undefined;
+  const closing = mine.find(h => holidayClosesOffice(h.type));
+  if (closing) return closing.type;
+  return mine[0].type;
+}
+
 /** True when this holiday closes the office FOR THIS PERSON. */
 function holidayClosesFor(holiday, employee) {
   return holidayClosesOffice(holiday?.type) && holidayAppliesTo(holiday, employee);
@@ -270,4 +300,5 @@ async function loadWeekendResolver() {
 
 module.exports = {
   holidayAppliesTo,
+  holidayTypeFor,
   holidayClosesFor, isNonWorkingDay, ruleMatchesDate, countWorkingDays, holidayClosesOffice, loadWeekendResolver };

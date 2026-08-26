@@ -4,7 +4,7 @@ const pool = require('../db');
 const logger = require('../logger');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
-const { countWorkingDays, ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
+const { countWorkingDays, ruleMatchesDate, holidayClosesOffice, holidayTypeFor } = require('../utils/workingDays');
 const { unregularizedDaysForRange } = require('../utils/unregularizedAbsence');
 const { lopDaysForRange, absentDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
 const { lopForPeriod, activePayPeriod } = require('../utils/lopCarryOver');
@@ -1064,7 +1064,7 @@ router.get('/leave/resource-availability', authorize('admin', 'director', 'hr_ad
     const data = empRes.rows.map(emp => {
       const cells = days.map(day => {
         const key = `${day.getFullYear()}-${day.getMonth() + 1}-${day.getDate()}`;
-        const holType = holMap.get(key);
+        const holType = holidayTypeFor(holMap, key, emp);
         if (holidayClosesOffice(holType)) return 'H';
         if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, day))) return 'WO';
         const leave = (leavesByEmp.get(emp._id) || []).find(l => day >= l.start && day <= l.end);
@@ -1402,7 +1402,7 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
         return set.size;
       })();
       const r = await pool.query(
-        `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate",
+        `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId",
                 COALESCE(perm.hours, 0) AS "permissionBooked"
            FROM employees e
            LEFT JOIN (SELECT employee_id, SUM(hours) AS hours FROM leaves WHERE status='approved' AND leave_type='permission' AND start_date <= $2::date AND end_date >= $1::date GROUP BY employee_id) perm ON perm.employee_id = e.id
@@ -1419,7 +1419,7 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
     }
 
     const r = await pool.query(
-      `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate",
+      `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId",
               -- NULL means no allocation exists, which is not the same statement as an
               -- allocation of zero. COALESCE erased that difference; the report
               -- renders the first as N/A and the second as 0.
@@ -1487,7 +1487,7 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
     const year = parseInt(req.query.year, 10) || new Date().getFullYear();
     const filters = standardEmployeeFilters(req, 'e', 3, { trackedOnly: true });
     const r = await pool.query(
-      `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate",
+      `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId",
               ${leaveType === 'casual' ? 'COALESCE(e.casual_leave,0)' : 'NULL'} AS granted,
               COALESCE(SUM(l.total_days) FILTER (WHERE l.status='approved'), 0) AS booked,
               COALESCE(SUM(l.hours) FILTER (WHERE l.status='approved'), 0) AS "bookedHours"
@@ -1551,7 +1551,7 @@ router.get('/leave/encashment', authorize('admin', 'director', 'hr_admin', 'mana
     const [empRes, policies] = await Promise.all([
       pool.query(
         `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
-                e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.joining_date::text AS "joiningDate",
+                e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId", e.joining_date::text AS "joiningDate",
                 COALESCE(e.casual_leave, 0) AS "casualAllocated"
            FROM employees e WHERE 1=1${filters.clause} ORDER BY e.employee_id`,
         filters.params
@@ -1748,7 +1748,7 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
       let weekendCount = 0, holidayCount = 0;
       for (const d = new Date(effStart); d <= effEnd; d.setDate(d.getDate() + 1)) {
         const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-        const holType = holMap.get(key);
+        const holType = holidayTypeFor(holMap, key, emp);
         if (holidayClosesOffice(holType)) holidayCount++;
         else if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, d))) weekendCount++;
       }
@@ -1878,9 +1878,9 @@ function shiftMinutes(t) {
 // On Duty is work done elsewhere — a client visit, or a day worked from home —
 // so it outranks a plain absence but never a holiday, a weekend or approved
 // leave: those say the day was not worked at all.
-function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, isFuture }) {
+function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, isFuture, employee }) {
   if (isFuture) return { code: '-', kind: 'future' };
-  const holType = holMap.get(`${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`);
+  const holType = holidayTypeFor(holMap, `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`, employee);
   if (holidayClosesOffice(holType)) return { code: 'H', kind: 'holiday' };
   if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, date))) return { code: 'W', kind: 'weekend' };
   if (onDuty) return { code: 'OD', kind: 'onDuty' };
@@ -1917,7 +1917,7 @@ async function loadAttendanceContext(req, start, end, opts = {}) {
   const [empRes, attRes, leaveRes, odRes, cal] = await Promise.all([
     pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
-              e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.joining_date AS "joiningDate",
+              e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId", e.joining_date AS "joiningDate",
               ${EMP_IDENTITY_SQL},
               s.name AS "shiftName", s.start_time AS "shiftStart", s.end_time AS "shiftEnd"
          FROM employees e
@@ -2179,6 +2179,7 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
       const dayLeaves = ctx.leavesOn(emp._id, day);
       const cls = classifyAttendanceDay({
         date: day, holMap: ctx.holMap, rules: ctx.rules,
+        employee: emp,
         // A permission is hours off inside a working day, so when it sits
         // alongside a real leave the leave is what classifies the day.
         attStatus: att?.status,
@@ -2257,6 +2258,7 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
         const dayLeaves = ctx.leavesOn(emp._id, d);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
+          employee: emp,
           attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
           leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
           onDuty: ctx.onDutyOn(emp._id, d),
@@ -2345,6 +2347,7 @@ router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admi
         const dayLeaves = ctx.leavesOn(emp._id, d);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
+          employee: emp,
           attStatus: att?.status,
           leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
           onDuty: ctx.onDutyOn(emp._id, d),
@@ -2404,7 +2407,7 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
 
     const empRes = await pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
-              e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.joining_date AS "joiningDate",
+              e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId", e.joining_date AS "joiningDate",
               ${EMP_IDENTITY_SQL},
               s.name AS "shiftName", s.start_time AS "shiftStart", s.end_time AS "shiftEnd"
          FROM employees e LEFT JOIN shifts s ON e.shift_id = s.id WHERE e.id = $1`,
@@ -2477,6 +2480,7 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
       // day means.
       const cls = classifyAttendanceDay({
         date: day, holMap: cal.holMap, rules: cal.rules,
+        employee: emp,
         attStatus: att?.status,
         leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
         onDuty: onDutyOnDay(ymd),
@@ -2569,6 +2573,7 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
+          employee: emp,
           attStatus: att?.status, leave: ctx.leaveOn(emp._id, d),
           onDuty: ctx.onDutyOn(emp._id, d), isFuture: false,
         });
@@ -2650,6 +2655,7 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
           const dayLeaves = ctx.leavesOn(emp._id, d);
           const cls = classifyAttendanceDay({
             date: d, holMap: ctx.holMap, rules: ctx.rules,
+            employee: emp,
             attStatus: att?.status,
             leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
             onDuty: ctx.onDutyOn(emp._id, d),
@@ -2726,6 +2732,7 @@ router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'h
         const dayLeaves = ctx.leavesOn(emp._id, d);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
+          employee: emp,
           attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
           leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
           onDuty: ctx.onDutyOn(emp._id, d),
@@ -2818,6 +2825,7 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
         const dayLeaves = ctx.leavesOn(emp._id, d);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
+          employee: emp,
           attStatus: att?.status,
           leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
           onDuty: ctx.onDutyOn(emp._id, d),

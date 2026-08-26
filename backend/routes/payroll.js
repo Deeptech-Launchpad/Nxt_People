@@ -19,7 +19,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { logAudit } = require('../utils/audit');
 const { sendMail } = require('../utils/mailer');
-const { ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
+const { ruleMatchesDate, holidayClosesOffice, holidayTypeFor } = require('../utils/workingDays');
 const {
   resolveComplianceSettings, resolveSalaryStructure,
   computePF, computeEmployerPF, computeESIEmployee, computeEmployerESI, computePT,
@@ -257,22 +257,34 @@ async function loadHolidaysAndRules(month, year) {
   const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
   const monthEnd = new Date(year, month, 0).toLocaleDateString('en-CA');
   const [holsRes, rulesRes] = await Promise.all([
-    pool.query(`SELECT date, type FROM holidays WHERE date BETWEEN $1::date AND $2::date`, [monthStart, monthEnd]),
+    pool.query(
+      `SELECT h.date, h.type,
+                COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'location'), '{}') AS location_ids,
+                COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'shift'), '{}') AS shift_ids
+           FROM holidays h
+           LEFT JOIN holiday_scopes s ON s.holiday_id = h.id
+          WHERE h.date BETWEEN $1::date AND $2::date
+          GROUP BY h.id, h.date, h.type`, [monthStart, monthEnd]),
     pool.query(
       `SELECT days_of_week, weeks_of_month, interval_weeks,
               start_date, end_type, end_date, end_count, is_active
          FROM weekend_rules WHERE is_active = TRUE`
     ),
   ]);
+  /* A date maps to an ARRAY, because two holidays can share a day when they
+   * are scoped to different people. holidayTypeFor picks the one that applies
+   * to whoever is asking. */
   const holMap = new Map();
   for (const h of holsRes.rows) {
     const d = new Date(h.date);
-    holMap.set(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`, h.type);
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+    if (!holMap.has(key)) holMap.set(key, []);
+    holMap.get(key).push({ type: h.type, locationIds: h.location_ids || [], shiftIds: h.shift_ids || [] });
   }
   return { holMap, rules: rulesRes.rows };
 }
 
-function workingDaysInRange(start, end, holMap, rules) {
+function workingDaysInRange(start, end, holMap, rules, employee) {
   if (!start || !end || start > end) return 0;
   let working = 0;
   const cursor = new Date(start);
@@ -281,7 +293,7 @@ function workingDaysInRange(start, end, holMap, rules) {
   stop.setHours(0, 0, 0, 0);
   while (cursor <= stop) {
     const key = `${cursor.getFullYear()}-${cursor.getMonth() + 1}-${cursor.getDate()}`;
-    const holType = holMap.get(key);
+    const holType = holidayTypeFor(holMap, key, employee);
     if (holType === 'working_day') {
       working++;
     } else if (!holidayClosesOffice(holType)) {
@@ -304,7 +316,7 @@ function listWorkingDays(start, end, holMap, rules) {
   stop.setHours(0, 0, 0, 0);
   while (cursor <= stop) {
     const key = `${cursor.getFullYear()}-${cursor.getMonth() + 1}-${cursor.getDate()}`;
-    const holType = holMap.get(key);
+    const holType = holidayTypeFor(holMap, key, employee);
     if (holType === 'working_day') {
       days.push(new Date(cursor));
     } else if (!holidayClosesOffice(holType)) {

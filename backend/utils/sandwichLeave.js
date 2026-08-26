@@ -30,7 +30,7 @@
  *  side cannot charge for them again.
  * ────────────────────────────────────────────────────────────────────────── */
 
-const { loadWeekendResolver, holidayClosesOffice } = require('./workingDays');
+const { loadWeekendResolver, holidayClosesOffice, holidayTypeFor } = require('./workingDays');
 
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -106,15 +106,31 @@ async function sandwichedDays(db, { employeeId, start, end, leaveType, cfg, excl
   //
   // Loaded before the sets below are built, because whether a date counts as a
   // leave day or as a candidate for bridging depends on it.
-  const [resolver, holRes] = await Promise.all([
+  const [resolver, holRes, whoRes] = await Promise.all([
     loadWeekendResolver(),
-    db.query(`SELECT date::text AS ymd, type FROM holidays WHERE date BETWEEN $1::date AND $2::date`,
+    db.query(
+      `SELECT h.date::text AS ymd, h.type,
+              COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'location'), '{}') AS location_ids,
+              COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'shift'), '{}') AS shift_ids
+         FROM holidays h
+         LEFT JOIN holiday_scopes s ON s.holiday_id = h.id
+        WHERE h.date BETWEEN $1::date AND $2::date
+        GROUP BY h.id, h.date, h.type`,
       [ymd(addDays(from, -REACH)), ymd(addDays(to, REACH))]),
+    // Which holidays reach this person depends on where they work and on what
+    // shift, so the bridging question cannot be answered without them.
+    db.query(`SELECT work_location_id AS "workLocationId", shift_id AS "shiftId"
+                FROM employees WHERE id = $1`, [employeeId]),
   ]);
-  const holMap = new Map(holRes.rows.map(h => [h.ymd, h.type]));
+  const employee = whoRes.rows[0] || {};
+  const holMap = new Map();
+  for (const h of holRes.rows) {
+    if (!holMap.has(h.ymd)) holMap.set(h.ymd, []);
+    holMap.get(h.ymd).push({ type: h.type, locationIds: h.location_ids || [], shiftIds: h.shift_ids || [] });
+  }
 
   const isOff = (d) => {
-    const type = holMap.get(ymd(d));
+    const type = holidayTypeFor(holMap, ymd(d), employee);
     // An explicit working-day override beats the weekend rules; a closing
     // holiday beats everything.
     if (holidayClosesOffice(type)) return true;

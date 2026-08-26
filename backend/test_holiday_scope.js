@@ -96,6 +96,40 @@ const nights   = { workLocationId: OFFICE, shiftId: NIGHT };
   check('a matching id still matches when the types differ',
     holidayAppliesTo({ locationIds: [String(OFFICE)] }, { workLocationId: String(OFFICE) }) === true);
 
+  console.log('\n════ The map every report reads ════\n');
+
+  /* holMap changed shape: a date now maps to an ARRAY, because two holidays can
+   * share a day when they are scoped to different people. Every reader goes
+   * through holidayTypeFor, and if one were missed it would compare an array to
+   * a string, find no holiday, and mark a whole company absent on Deepavali.
+   *
+   * So this builds the map the way the routes build it and reads it back. */
+  const { holidayTypeFor } = require('./utils/workingDays');
+  const holMap = new Map();
+  const put = (key, row) => {
+    if (!holMap.has(key)) holMap.set(key, []);
+    holMap.get(key).push(row);
+  };
+  put('2026-10-20', { type: 'company', locationIds: [], shiftIds: [] });
+  put('2026-11-07', { type: 'company', locationIds: [OFFICE], shiftIds: [] });
+  put('2026-11-07', { type: 'working_day', locationIds: [WFH], shiftIds: [] });
+
+  check('an unscoped holiday reads as a closure for everybody',
+    holidayTypeFor(holMap, '2026-10-20', atHome) === 'company');
+  check('a date nobody has a holiday on reads as nothing',
+    holidayTypeFor(holMap, '2026-06-06', atOffice) === undefined);
+  check('two holidays on one day resolve differently per person',
+    holidayTypeFor(holMap, '2026-11-07', atOffice) === 'company'
+      && holidayTypeFor(holMap, '2026-11-07', atHome) === 'working_day',
+    { office: holidayTypeFor(holMap, '2026-11-07', atOffice), home: holidayTypeFor(holMap, '2026-11-07', atHome) });
+  check('and with no employee it still answers, as it did before scopes existed',
+    holidayTypeFor(holMap, '2026-10-20', undefined) === 'company');
+
+  // A map built somewhere this refactor missed must not read as "no holiday".
+  const oldShape = new Map([['2026-10-20', 'company']]);
+  check('the old date-to-string shape is still understood',
+    holidayTypeFor(oldShape, '2026-10-20', atOffice) === 'company');
+
   const failed = checks.filter(c => !c).length;
   console.log(`\n${checks.length - failed}/${checks.length} passed\n`);
   process.exit(failed ? 1 : 0);
