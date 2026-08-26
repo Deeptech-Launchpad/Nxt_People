@@ -153,8 +153,9 @@ const NAV = {
     },
     subNav: {
       operations:   [
-        { to: '/more-services/operations',               label: 'Services'      },
-        { to: '/more-services/operations/leave-tracker', label: 'Leave Tracker' },
+        { to: '/more-services/operations',                label: 'Services'        },
+        { to: '/more-services/operations/leave-tracker',  label: 'Leave Tracker'   },
+        { to: '/more-services/operations/leave-approvals', label: 'Leave Approvals' },
       ],
       files:        [{ to: '/more-services/files',        label: 'Document Storage' }],
       travel:       [{ to: '/more-services/travel',       label: 'Travel Requests'  }],

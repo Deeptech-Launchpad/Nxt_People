@@ -242,6 +242,10 @@ const AppRoutes = () => {
           {/* Operations workspace + admin Leave Tracker — Super Admin / HR only. */}
           <Route path="more-services/operations"               element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Operations/></ProtectedRoute>}/>
           <Route path="more-services/operations/leave-tracker" element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><OperationsLeaveTracker/></ProtectedRoute>}/>
+          {/* Approving and rejecting is a different job from administering the
+              calendar, and it was reachable from Operations before the Leave
+              Tracker took that tile. It gets its own. */}
+          <Route path="more-services/operations/leave-approvals" element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
           <Route path="more-services/operations/permission-usage" element={<ProtectedRoute roles={['admin','director','hr_admin']}><PermissionUsage/></ProtectedRoute>}/>
           <Route path="more-services/operations/conference" element={<ProtectedRoute roles={['admin','director','hr_admin']}><Conference/></ProtectedRoute>}/>
           <Route path="more-services/travel"       element={<Travel/>}/>

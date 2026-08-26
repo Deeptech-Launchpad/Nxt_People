@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Users, CalendarDays, Gift, CalendarCheck, Scale, SlidersHorizontal, CalendarPlus } from 'lucide-react';
-import BackButton from '../../components/BackButton';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import OpsCompOff from './leavetracker/OpsCompOff';
 import OpsLeaveRequests from './leavetracker/OpsLeaveRequests';
 import OpsUserSpecific from './leavetracker/OpsUserSpecific';
@@ -30,19 +29,20 @@ import OpsWorkingDays from './leavetracker/OpsWorkingDays';
  * ────────────────────────────────────────────────────────────────────────── */
 
 const TABS = [
-  { id: 'user',      label: 'User-specific Operations', icon: Users },
-  { id: 'requests',  label: 'Leave Requests',           icon: CalendarDays },
-  { id: 'compoff',   label: 'Compensatory Request',     icon: Gift },
-  { id: 'holidays',  label: 'Holidays',                 icon: CalendarCheck },
-  { id: 'balance',   label: 'Customize Balance',        icon: Scale },
-  { id: 'policy',    label: 'Customize Policy',         icon: SlidersHorizontal },
-  { id: 'workdays',  label: 'Exceptional Working days',  icon: CalendarPlus },
+  { id: 'user',     label: 'User-specific Operations' },
+  { id: 'requests', label: 'Leave Requests' },
+  { id: 'compoff',  label: 'Compensatory Request' },
+  { id: 'holidays', label: 'Holidays' },
+  { id: 'balance',  label: 'Customize Balance' },
+  { id: 'policy',   label: 'Customize Policy' },
+  { id: 'workdays', label: 'Exceptional Working days' },
 ];
 
 export default function OperationsLeaveTracker() {
   // The tab lives in the URL so a link to Customize Balance opens Customize
   // Balance, and the back button steps through tabs the way it looks like it
   // should. Zoho does the same thing with its own hash routes.
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const fromUrl = params.get('tab');
   const [tab, setTab] = useState(TABS.some(t => t.id === fromUrl) ? fromUrl : 'user');
@@ -50,30 +50,34 @@ export default function OperationsLeaveTracker() {
   const go = (id) => { setTab(id); setParams({ tab: id }, { replace: true }); };
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
-      <BackButton to="/more-services/operations" label="Operations" />
+    <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
+      {/* One bar, the way Zoho does it: back, title and every tab on a single
+          line. This used to be three stacked layers — the section sub-nav, a
+          back link, a heading and a paragraph — above a tab strip that then
+          did not fit and grew its own scrollbar. Four rows of chrome before
+          any content is four rows nobody asked for. */}
+      <div className="flex items-center gap-4 border-b border-slate-200 mb-5 overflow-x-auto">
+        <button
+          onClick={() => navigate('/more-services/operations')}
+          title="Back to Operations"
+          className="flex items-center gap-1.5 flex-shrink-0 text-slate-500 hover:text-slate-700 pb-2.5"
+        >
+          <ArrowLeft size={16} />
+          <span className="font-display font-semibold text-slate-800 text-[17px]">Leave Tracker</span>
+        </button>
 
-      <div className="mt-4 mb-6">
-        <h1 className="font-display text-2xl font-semibold text-slate-800">Leave Tracker</h1>
-        <p className="text-[15px] text-slate-500 mt-1">
-          Acting on other people&rsquo;s leave. Your own is under{' '}
-          <span className="font-medium text-slate-600">Leave Tracker</span> in the sidebar.
-        </p>
-      </div>
-
-      <div className="border-b border-slate-200 mb-6 overflow-x-auto">
-        <div className="flex gap-1 min-w-max">
-          {TABS.map(({ id, label, icon: Icon }) => (
+        <div className="flex gap-0.5 flex-shrink-0">
+          {TABS.map(({ id, label }) => (
             <button
               key={id}
               onClick={() => go(id)}
-              className={`flex items-center gap-2 px-4 py-3 text-[15px] font-medium border-b-2 whitespace-nowrap transition-colors ${
+              className={`px-3 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
                 tab === id
                   ? 'border-brand-600 text-brand-600'
                   : 'border-transparent text-slate-500 hover:text-slate-700'
               }`}
             >
-              <Icon size={15} /> {label}
+              {label}
             </button>
           ))}
         </div>
