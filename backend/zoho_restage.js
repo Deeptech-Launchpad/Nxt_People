@@ -204,6 +204,55 @@ async function patiently(fn) {
   throw last;
 }
 
+/* Every leave record in the form, read once and grouped by employee code.
+ *
+ * Needed because Zoho answers a per-person search that matches NOTHING with
+ * the same "Error occurred" envelope it uses for a real failure. The two are
+ * indistinguishable from the answer alone, and guessing either way is a bug:
+ * guess "empty" and a failed read wipes somebody's leave, guess "failed" and
+ * thirteen people who genuinely took no leave can never be imported.
+ *
+ * A read that SUCCEEDS settles it. The unfiltered sweep reached all 6,213
+ * records on live and confirmed those thirteen hold none. So a zero is only
+ * ever believed when it comes from a read that worked. */
+let sweepCache = null;
+async function zohoLeaveSweep() {
+  if (sweepCache) return sweepCache;
+  const byCode = new Map();
+  for (let i = 1; i <= 40000; i += 200) {
+    const json = await patiently(() => zohoApi(`forms/leave/getRecords?sIndex=${i}&limit=200`));
+    if (leaveEnvelope(json)) {
+      throw new Error(`(000) Zoho refused the unfiltered leave read at record ${i}`);
+    }
+    const rows = json?.response?.result || [];
+    if (!Array.isArray(rows) || !rows.length) break;
+    for (const w of rows) {
+      const rec = Object.values(w)[0]?.[0];
+      if (!rec) continue;
+      const m = /\b(ANXT\w+)\b/.exec(String(rec.Employee_ID || ''));
+      if (m) {
+        if (!byCode.has(m[1])) byCode.set(m[1], []);
+        byCode.get(m[1]).push(rec);
+      }
+    }
+    if (rows.length < 200) break;
+  }
+  sweepCache = byCode;
+  return byCode;
+}
+
+// A 200 carrying no `result` key is not an answer. Zoho uses it both for a
+// genuine refusal and for a search that matched nothing.
+const leaveEnvelope = (json) => {
+  const resp = json?.response;
+  if (!resp || typeof resp !== 'object' || Array.isArray(resp)) return 'no response object';
+  if ('result' in resp) return null;
+  if ('errors' in resp || 'error' in resp || 'message' in resp) {
+    return String(resp.message || JSON.stringify(resp.error || resp.errors || {})).slice(0, 80);
+  }
+  return 'no result and no error';
+};
+
 async function zohoLeave(code) {
   const search = encodeURIComponent(JSON.stringify({
     searchField: 'Employee_ID', searchOperator: 'Contains', searchText: code,
@@ -218,16 +267,16 @@ async function zohoLeave(code) {
      * replaced it with nothing — the same failure that once wiped 43 people,
      * arriving by a different door. An error is not an empty list; say so and
      * let the caller abort. */
-    const resp = json?.response;
-    const envelope = resp && typeof resp === 'object' && !Array.isArray(resp)
-      && !('result' in resp)
-      && ('errors' in resp || 'error' in resp || 'message' in resp);
-    if (envelope) {
-      const why = String(resp.message || JSON.stringify(resp.error || resp.errors || {}));
-      throw new Error(`(000) Zoho refused the leave read for ${code}: ${why.slice(0, 120)}`);
+    const why = leaveEnvelope(json);
+    if (why) {
+      /* Cannot tell a refusal from "nothing matched" here, so do not decide
+       * here. Fall back to the sweep, which either produces this person's
+       * records or proves there are none. */
+      const swept = await zohoLeaveSweep();
+      return swept.get(code) || [];
     }
 
-    const rows = resp?.result || [];
+    const rows = json?.response?.result || [];
     if (!Array.isArray(rows) || !rows.length) break;
     for (const w of rows) { const rec = Object.values(w)[0]?.[0]; if (rec) out.push(rec); }
     if (rows.length < 200) break;
