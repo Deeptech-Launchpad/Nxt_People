@@ -81,6 +81,34 @@ router.post('/import', authorize('admin', 'director', 'hr_admin'), audit('IMPORT
   }
 });
 
+
+/* Who a holiday is for. Empty arrays mean everybody, which is what every
+ * holiday in the calendar is until somebody narrows one. */
+const SCOPE_COLS = `
+  COALESCE((SELECT ARRAY_AGG(sc.ref_id::text) FROM holiday_scopes sc
+             WHERE sc.holiday_id = h.id AND sc.kind = 'location'), '{}') AS "locationIds",
+  COALESCE((SELECT ARRAY_AGG(sc.ref_id::text) FROM holiday_scopes sc
+             WHERE sc.holiday_id = h.id AND sc.kind = 'shift'), '{}') AS "shiftIds"`;
+
+/* Replace a holiday's scope in one go.
+ *
+ * Written as delete-then-insert rather than a diff, because the set is tiny and
+ * a partial update is how a holiday ends up narrowed to a location nobody meant
+ * — which silently marks that location's people absent. */
+async function setScopes(db, holidayId, locationIds = [], shiftIds = []) {
+  await db.query('DELETE FROM holiday_scopes WHERE holiday_id = $1', [holidayId]);
+  const rows = [
+    ...(locationIds || []).map(id => ['location', id]),
+    ...(shiftIds || []).map(id => ['shift', id]),
+  ].filter(([, id]) => !!id);
+  for (const [kind, refId] of rows) {
+    await db.query(
+      `INSERT INTO holiday_scopes (holiday_id, kind, ref_id) VALUES ($1,$2,$3)
+       ON CONFLICT (holiday_id, kind, ref_id) DO NOTHING`,
+      [holidayId, kind, refId]);
+  }
+}
+
 const SELECT_COLS = `
   h.id as "_id", h.name, h.date, h.type, h.year, h.description,
   h.category, h.is_compensatory AS "isCompensatory", h.mail_body AS "mailBody",
@@ -100,7 +128,7 @@ router.get('/', async (req, res) => {
       params.push(parseInt(year));
     }
     const result = await pool.query(
-      `SELECT ${SELECT_COLS} FROM holidays h ${where} ORDER BY h.date ASC`,
+      `SELECT ${SELECT_COLS}, ${SCOPE_COLS} FROM holidays h ${where} ORDER BY h.date ASC`,
       params
     );
     res.json({ success: true, data: result.rows });
@@ -127,6 +155,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), audit('CREATE', 'ho
         compensationType || null, compensatedHolidayId || null, compensatedRuleId || null,
       ]
     );
+    await setScopes(pool, result.rows[0]._id || result.rows[0].id, req.body.locationIds, req.body.shiftIds);
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
@@ -154,6 +183,15 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), audit('UPDATE', '
         req.params.id,
       ]
     );
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, message: 'That holiday no longer exists.' });
+    }
+    // Only touch the scope when the caller actually sent one. A PUT that omits
+    // it is editing the name or the date, and silently widening a narrowed
+    // holiday to the whole company would be the worst kind of side effect.
+    if ('locationIds' in req.body || 'shiftIds' in req.body) {
+      await setScopes(pool, req.params.id, req.body.locationIds, req.body.shiftIds);
+    }
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
 });
