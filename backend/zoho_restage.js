@@ -620,7 +620,18 @@ async function backup(client, batch, table, empId, where, params) {
 
   // ── Apply — one transaction covering everybody ───────────────────────────
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T-]/g, '');
-  const batch = `restage-${stamp}`;
+  /* A caller may supply the batch, so a bulk run across many people lands in
+   * ONE batch and is therefore one thing to undo. Without it each employee
+   * would get their own, and reversing a company-wide import would mean
+   * running the restore fifty-three times and hoping none of them was missed. */
+  const supplied = (process.argv.find(a => a.startsWith('--batch=')) || '').slice(8).trim();
+  if (supplied && !/^[a-z0-9][a-z0-9._-]{0,79}$/i.test(supplied)) {
+    console.log(`
+  "${supplied}" is not a usable batch name.
+`);
+    process.exit(1);
+  }
+  const batch = supplied || `restage-${stamp}`;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
