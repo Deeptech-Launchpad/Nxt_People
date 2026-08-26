@@ -81,8 +81,18 @@ const hhmm = (h) => {
 
   // A day is only at risk if somebody has already been in and out of it today.
   const risky = rows.filter(r => r.n_closed > 0);
+  /* A minute, not an instant.
+   *
+   * check_in and the session row are written a moment apart by the same
+   * check-in, so they routinely differ by a second or two. Comparing them
+   * exactly reported "would double count" for two people whose clocks read
+   * 09:43 against 09:43 — true to the letter, worth nothing, and the kind of
+   * noise that gets a real finding skipped over. A gap under a minute cannot
+   * meaningfully change an hours figure. */
+  const OFF_BY = 60 * 1000;
   const clockWrong = risky.filter(r =>
-    r.open_in && r.session_started_at && +r.open_in !== +r.session_started_at);
+    r.open_in && r.session_started_at
+    && Math.abs(+r.open_in - +r.session_started_at) >= OFF_BY);
   const inflated = risky.filter(r => Number(r.banked) - Number(r.closed_hours) > 0.02);
 
   console.log(`  ${risky.length} of them have already finished a stretch today,`);
