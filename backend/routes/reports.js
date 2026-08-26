@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const logger = require('../logger');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
 const { countWorkingDays, ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
@@ -2236,6 +2237,12 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
     const end = req.query.endDate || start;
     const [ctx, cfg] = await Promise.all([loadAttendanceContext(req, start, end, { trackedOnly: true }), orgConfig()]);
     const tz = cfg.tz;
+    /* Whether the org measures overtime and deviation at all. The response has
+     * always claimed to return this, but the name was only ever declared inside
+     * a DIFFERENT route's handler — so the reference threw on the last line of
+     * the try, after every row had been built, and the catch turned it into a
+     * bare 500. The report was correct and unreachable. */
+    const deviationTracked = cfg.policy?.allowOvertimeAndDeviation === true;
     const { firstCheckIn, lastCheckOut } = req.query;
 
     const data = [];
@@ -2302,7 +2309,13 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
       }
     }
     res.json({ success: true, data, startDate: start, endDate: end, deviationTracked });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) {
+    // A catch that says nothing is how a one-word bug survived in here: the
+    // screen showed "An internal server error occurred" and the server kept
+    // the reason to itself. Log it.
+    logger.error({ err: err?.message, stack: err?.stack }, 'early-late report failed');
+    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+  }
 });
 
 // Employee × date calendar grid of attendance codes — Zoho's Employee
