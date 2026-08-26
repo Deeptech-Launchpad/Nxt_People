@@ -148,17 +148,29 @@ function classifyDay({
   const p = resolvePolicy(cfg);
   const { full } = expectedFor(cfg, shiftHours);
   const worked = Math.max(0, num(workedHours, 0));
-  const leave = Math.min(1, Math.max(0, num(leavePortion, 0)));
+  let leave = Math.min(1, Math.max(0, num(leavePortion, 0)));
   const permission = Math.max(0, num(permissionHours, 0));
 
-  // A day fully covered by approved leave is not a working day at all. It is
-  // not judged, not counted short, and not marked absent.
-  if (leave >= 1) {
+  /* A day fully covered by approved leave is not a working day at all. It is
+   * not judged, not counted short, and not marked absent.
+   *
+   * Unless they came in and worked it anyway. Somebody with leave approved who
+   * turns up and does eight and a half hours has not taken that leave, and
+   * recording the day as leave loses the work AND spends a day of their
+   * balance. The reference agrees: Zoho reads such a day as Present, and two
+   * of Stephen's — 8.48 and 11.23 hours against approved casual leave — were
+   * the only real disagreements left once the zero-day records were fixed.
+   *
+   * The leave record itself is untouched; this is only what the DAY is called. */
+  const workedThroughLeave = leave >= 1 && hasPunch && worked > 0;
+  if (leave >= 1 && !workedThroughLeave) {
     return {
       status: 'leave', present: 0, absent: 0, leave: 1,
       owed: 0, expected: full, deficit: null, overtime: null,
     };
   }
+  // They worked, so judge the day on the work rather than on the leave.
+  if (workedThroughLeave) leave = 0;
 
   // What they owed once the company's own approvals are taken off.
   const workingPortion = 1 - leave;

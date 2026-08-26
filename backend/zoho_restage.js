@@ -169,7 +169,16 @@ function leaveFactsByDate(records, sessions = new Map()) {
       const iso = d.toISOString().slice(0, 10);
       const f = touch(iso);
       if (isPermission) f.permissionHours += shape.taken;
-      else f.leavePortion = Math.max(f.leavePortion, shape.halfDay ? 0.5 : 1);
+      // A record of ZERO days is not a day off.
+      //
+      // Zoho holds comp-off records with Daystaken 0 — an entitlement granted
+      // rather than time taken. `halfDay` is false for 0, so these were landing
+      // as a WHOLE day of leave, and three of Stephen's days read as leave
+      // where Zoho says Absent. The record exists; the absence from work does
+      // not.
+      else if (shape.taken > 0) {
+        f.leavePortion = Math.max(f.leavePortion, shape.halfDay ? 0.5 : 1);
+      }
     }
   }
   return byDate;

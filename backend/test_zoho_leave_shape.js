@@ -82,6 +82,26 @@ const dayFacts = async (empId, date) => (await pool.query(
   check('and without one it still says it is guessing',
     noAtt.session === 'first_half' && noAtt.guessed === true, noAtt);
 
+  console.log('\n════ Leave that was approved but not taken ════\n');
+
+  /* Both of these came from real days in Stephen David's four-year history,
+   * and both were reported as disagreements with Zoho until they were fixed. */
+  const { classifyDay } = require('./utils/attendanceRule');
+  const day = o => classifyDay({ cfg: {}, graceMinutes: 15, ...o }).status;
+
+  check('leave approved and nobody came in — still leave',
+    day({ leavePortion: 1, hasPunch: false, workedHours: 0 }) === 'leave');
+  check('leave approved but they worked 8.48h — present, as Zoho reads it',
+    day({ leavePortion: 1, hasPunch: true, workedHours: 8.48 }) === 'present',
+    day({ leavePortion: 1, hasPunch: true, workedHours: 8.48 }));
+  check('and 11.23h — present, not leave',
+    day({ leavePortion: 1, hasPunch: true, workedHours: 11.23 }) === 'present');
+  // A punch with no hours is not working through the leave — it is a punch.
+  check('punched in on a leave day but worked nothing — still leave',
+    day({ leavePortion: 1, hasPunch: true, workedHours: 0 }) === 'leave');
+  check('half-day leave is unaffected',
+    day({ leavePortion: 0.5, hasPunch: true, workedHours: 4.2 }) === 'half-day');
+
   console.log('\n════ What the classifier then sees ════\n');
 
   EMP = (await pool.query(
