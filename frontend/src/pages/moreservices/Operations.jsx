@@ -51,7 +51,6 @@ export default function Operations() {
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 min-h-[calc(100vh-12rem)]">
       <div className="px-6 py-5 border-b border-slate-100">
         <h2 className="text-[18px] font-semibold text-slate-900">Services</h2>
-        <p className="text-[15px] text-slate-500 mt-1">Operations workspace — open <span className="font-semibold text-blue-700">Leave Tracker</span> to administer leave, or <span className="font-semibold text-emerald-700">Leave Approvals</span> to act on what is waiting.</p>
       </div>
 
       <div className="p-6">

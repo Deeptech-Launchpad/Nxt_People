@@ -56,7 +56,7 @@ export default function CompOffApplyModal({
   const earliest = new Date(today.getFullYear(), today.getMonth() - expiryMonths, today.getDate());
   const ymd = (d) => d.toLocaleDateString('en-CA');
   const monthsLabel = `${expiryMonths} month${expiryMonths === 1 ? '' : 's'}`;
-  const them = form.employeeId ? 'they' : 'you';
+  const them = forOthers ? 'they' : 'you';
 
   const submit = async (e) => {
     e.preventDefault();
@@ -89,20 +89,23 @@ export default function CompOffApplyModal({
           {forOthers && (
             <div>
               <label className={label}>Employee *</label>
-              <select value={form.employeeId} onChange={e => setForm({ ...form, employeeId: e.target.value })} className={field}>
-                <option value="">Myself</option>
+              {/* No "Myself" here. Reaching this form through Operations means
+                  filing for somebody else — that is the entire reason the door
+                  exists. An admin claiming their own comp-off uses the personal
+                  Leave Tracker, where there is no employee field at all. */}
+              <select value={form.employeeId} required
+                onChange={e => setForm({ ...form, employeeId: e.target.value })} className={field}>
+                <option value="">Select an employee</option>
                 {people.filter(p => p._id !== currentUserId).map(p => (
                   <option key={p._id} value={p._id}>
                     {p.employeeId ? `${p.employeeId} — ` : ''}{p.firstName} {p.lastName}
                   </option>
                 ))}
               </select>
-              {form.employeeId && (
-                <p className="text-[13px] text-amber-600 mt-1">
-                  This grants them a paid day off. It is recorded against your name and still goes
-                  to their own reporting line for approval.
-                </p>
-              )}
+              <p className="text-[13px] text-amber-600 mt-1">
+                This grants them a paid day off. It is recorded against your name and still goes
+                to their own reporting line for approval.
+              </p>
             </div>
           )}
 
@@ -151,7 +154,7 @@ export default function CompOffApplyModal({
           <div>
             <label className={label}>Reason / Work Details *</label>
             <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} required rows={2}
-              placeholder={form.employeeId ? 'What did they work on that day?' : 'What did you work on that day?'}
+              placeholder={forOthers ? 'What did they work on that day?' : 'What did you work on that day?'}
               className={`${field} resize-none`} />
           </div>
 

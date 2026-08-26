@@ -506,7 +506,13 @@ export default function Topbar() {
   // Strip nav entries the current user isn't allowed to see — keeps employees
   // from seeing "Team" / "Daily Attendance" tabs that would just bounce them home.
   const canSee = (entry) => !entry.roles || entry.roles.includes(user?.role);
-  const primaryTabs  = (config?.primaryTabs || []).filter(canSee);
+  /* Operations is a workspace, not a tab. Zoho shows a bar that says
+   * "Operations" and nothing else, then the workspace's own navigation below
+   * it. Ours was still offering Files / Travel / Compensation / HR Letters at
+   * the top of every Operations page — four destinations nobody standing in
+   * Operations is looking for, above two more rows of navigation. */
+  const inOperations = location.pathname.startsWith('/more-services/operations');
+  const primaryTabs  = inOperations ? [] : (config?.primaryTabs || []).filter(canSee);
   const activeTab    = isHome ? homeTab : (config?.getActiveTab?.(location.pathname) || primaryTabs[0]?.key);
   const subNavItems  = (config?.subNav?.[activeTab] || []).filter(canSee);
 
@@ -557,8 +563,10 @@ export default function Topbar() {
           ) : (
           <>
           {!isHome && (
-            <span className="text-white text-[16px] font-semibold mr-3 border-r border-white/20 pr-4 flex-shrink-0">
-              {config.label}
+            <span className={`text-white text-[16px] font-semibold flex-shrink-0 ${
+              inOperations ? '' : 'mr-3 border-r border-white/20 pr-4'
+            }`}>
+              {inOperations ? 'Operations' : config.label}
             </span>
           )}
           <div className="flex items-center h-full gap-1 min-w-0 overflow-x-auto scrollbar-none">
