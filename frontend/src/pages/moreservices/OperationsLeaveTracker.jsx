@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Users, CalendarDays, Gift, CalendarCheck, Scale, SlidersHorizontal, CalendarPlus } from 'lucide-react';
 import BackButton from '../../components/BackButton';
-import CompOff from '../CompOff';
+import OpsCompOff from './leavetracker/OpsCompOff';
 import OpsLeaveRequests from './leavetracker/OpsLeaveRequests';
 import OpsUserSpecific from './leavetracker/OpsUserSpecific';
 import OpsCustomizeBalance from './leavetracker/OpsCustomizeBalance';
@@ -83,7 +83,7 @@ export default function OperationsLeaveTracker() {
           so a change to Customize Balance cannot break Compensatory Request. */}
       {tab === 'user'     && <OpsUserSpecific />}
       {tab === 'requests' && <OpsLeaveRequests />}
-      {tab === 'compoff'  && <CompOff scope="operations" />}
+      {tab === 'compoff'  && <OpsCompOff />}
       {tab === 'holidays' && <OpsHolidays />}
       {tab === 'balance'  && <OpsCustomizeBalance />}
       {tab === 'policy'   && <OpsCustomizePolicy />}

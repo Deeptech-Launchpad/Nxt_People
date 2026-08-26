@@ -4,9 +4,10 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import BackButton from '../components/BackButton';
-import { isApprover, isFullAccess } from '../utils/roles';
+import { isApprover } from '../utils/roles';
 import ApprovalTimeline from '../components/ApprovalTimeline';
 import CompOffDetailModal from '../components/CompOffDetailModal';
+import CompOffApplyModal from '../components/CompOffApplyModal';
 
 const STATUS_STYLE = { pending: 'bg-amber-100 text-amber-700', approved: 'bg-emerald-100 text-emerald-700', rejected: 'bg-red-100 text-red-700' };
 
@@ -19,47 +20,26 @@ const fmtDate = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', y
 // Local YYYY-MM-DD (no timezone shift) for the date input bounds.
 const ymd = (dt) => dt.toLocaleDateString('en-CA');
 
-/* One form, two doors — the shape Zoho uses.
+/* The personal Comp-Off page — Zoho's My Data door.
  *
- *   scope="mine"        Leave Tracker -> Comp-Off. Your own. No employee field
- *                       at all, exactly as Zoho's My Data has none.
- *   scope="operations"  Operations -> Leave Tracker -> Compensatory Request.
- *                       Everybody's, with an employee selector on top.
+ * No employee field anywhere, because the only person you can file for here is
+ * yourself. Acting on somebody else lives in Operations -> Leave Tracker ->
+ * Compensatory Request, which is a table rather than this card list.
  *
- * The selector was first built into the personal page, which put an
- * administrative act in the employee's own workspace and showed a pointless
- * "Myself" dropdown to people who can only ever pick themselves. Same
- * component, same endpoint; the context decides what it offers. */
-export default function CompOff({ scope = 'mine' }) {
-  const operations = scope === 'operations';
+ * The apply form itself is shared with that page (CompOffApplyModal), so the
+ * rules cannot drift between the two doors. */
+export default function CompOff() {
   const { user } = useAuth();
   const [myRequests, setMyRequests] = useState([]);
   const [pending, setPending] = useState([]);
-  const [everyone, setEveryone] = useState([]);
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [form, setForm] = useState({ workedDate: '', compOffDate: '', reason: '', daysEarned: 1, employeeId: '' });
 
-  /* Filing for somebody else, the way Zoho's Operations page does it.
-   *
-   * Zoho reaches one form through two doors: My Data has no employee field and
-   * files for you, Operations puts a selector on top and files for anybody.
-   * Same idea here — the selector only appears for full access, and leaving it
-   * on "Myself" is exactly the form everyone had before. */
-  const canFileForOthers = operations && isFullAccess(user);
-  const [people, setPeople] = useState([]);
-  useEffect(() => {
-    if (!canFileForOthers) return;
-    api.get('/employees?limit=500&status=active')
-      .then(r => setPeople(r.data.data || []))
-      .catch(() => {});
-  }, [canFileForOthers]);
-  const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
-  const [tab, setTab] = useState(scope === 'operations' ? 'all' : (user?.role === 'team_member' ? 'my' : 'pending'));
+  const [tab, setTab] = useState(user?.role === 'team_member' ? 'my' : 'pending');
   const [expanded, setExpanded] = useState(null); // request id whose timeline is open
   const [viewItem, setViewItem] = useState(null); // item open in CompOffDetailModal
 
@@ -72,27 +52,6 @@ export default function CompOff({ scope = 'mine' }) {
       .catch(() => {});
   }, []);
 
-  /* What the attendance says about the chosen person and day.
-   *
-   * An administrator filing for somebody else cannot know whether that person
-   * came in on a given Sunday, and without this they pick a date, submit, and
-   * get a refusal with nothing to go on. Zoho shows First in / Last out /
-   * Overtime / Total hours beside its form for the same reason. Asked as the
-   * date changes, so the answer is on screen before Submit is pressed. */
-  const [eligibility, setEligibility] = useState(null);
-  const [checking, setChecking] = useState(false);
-  useEffect(() => {
-    if (!modal || !form.workedDate) { setEligibility(null); return; }
-    let live = true;
-    setChecking(true);
-    const params = { date: form.workedDate };
-    if (form.employeeId) params.employeeId = form.employeeId;
-    api.get('/comp-off/eligibility', { params })
-      .then(r => { if (live) setEligibility(r.data.data); })
-      .catch(() => { if (live) setEligibility(null); })
-      .finally(() => { if (live) setChecking(false); });
-    return () => { live = false; };
-  }, [modal, form.workedDate, form.employeeId]);
 
   const canApproveAll = ['admin', 'director', 'manager', 'hr_admin'].includes(user?.role);
   const today = new Date();
@@ -102,36 +61,18 @@ export default function CompOff({ scope = 'mine' }) {
 
   const load = () => {
     setLoading(true);
-    /* The Operations door asks a different question. My Data wants "mine" and
-     * "waiting on me"; Operations wants every comp-off in the company, whatever
-     * its status — which is what Zoho's Compensatory Request tab lists. */
     const calls = [api.get('/comp-off/my')];
     if (isApprover(user)) calls.push(api.get('/comp-off/pending'));
-    if (operations) calls.push(api.get('/comp-off/all'));
-    Promise.all(calls).then(([myRes, pendingRes, allRes]) => {
+    Promise.all(calls).then(([myRes, pendingRes]) => {
       setMyRequests(myRes.data.data || []);
       setBalance(myRes.data.balance || 0);
       if (pendingRes) setPending(pendingRes.data.data || []);
-      if (allRes) setEveryone(allRes.data.data || []);
     }).catch(err => toast.error(err.response?.data?.message || 'Failed to load comp-off requests')).finally(() => setLoading(false));
   };
 
   useEffect(() => { if (user !== undefined) load(); }, [user?.role]);
   useEffect(() => { if (user?.role === 'team_member') setTab('my'); }, [user?.role]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault(); setSaving(true);
-    try {
-      await api.post('/comp-off', form);
-      const who = people.find(p => p._id === form.employeeId);
-      toast.success(who ? `Comp-off filed for ${who.firstName} ${who.lastName}` : 'Comp-off request submitted!');
-      setModal(false);
-      setForm({ workedDate: '', compOffDate: '', reason: '', daysEarned: 1, employeeId: '' });
-      setEligibility(null);
-      load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
-    finally { setSaving(false); }
-  };
 
   const handleAction = async (id, action, reason, approveAll = false) => {
     setActionLoading(id);
@@ -143,18 +84,15 @@ export default function CompOff({ scope = 'mine' }) {
     finally { setActionLoading(''); }
   };
 
-  const displayList = tab === 'all' ? everyone : tab === 'my' ? myRequests : pending;
+  const displayList = tab === 'my' ? myRequests : pending;
 
   return (
     <div className="space-y-5">
-      {!operations && (
-        <div className="pt-5 pb-1">
-          <BackButton to="/leave-tracker" label="Leave Tracker" />
-        </div>
-      )}
-      {/* Balance cards — yours. Meaningless on the Operations tab, which is
-          about other people, so they are not shown there. */}
-      <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 items-start ${operations ? 'hidden' : ''}`}>
+      <div className="pt-5 pb-1">
+        <BackButton to="/leave-tracker" label="Leave Tracker" />
+      </div>
+      {/* Balance cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
         <div className="rounded-2xl p-5 border bg-green-50 text-green-700 border-green-200">
           <p className="text-sm font-semibold uppercase tracking-wider mb-2 opacity-70">Available Balance</p>
           <p className="text-4xl font-display font-bold">{balance.toFixed(1)}</p>
@@ -186,12 +124,9 @@ export default function CompOff({ scope = 'mine' }) {
             <Plus size={16} /> Apply Comp-Off
           </button>
         </div>
-        {(isApprover(user) || operations) && (
+        {isApprover(user) && (
           <div className="flex border-b border-slate-100">
-            {(operations
-              ? [['all', `All Requests (${everyone.length})`], ['pending', `Awaiting Approval (${pending.length})`], ['my', 'My Requests']]
-              : [['my', 'My Requests'], ['pending', `Team Pending (${pending.length})`]]
-            ).map(([id, label]) => (
+            {[['my', 'My Requests'], ['pending', `Team Pending (${pending.length})`]].map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)} className={`px-6 py-3.5 text-base font-medium border-b-2 transition-colors ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{label}</button>
             ))}
           </div>
@@ -212,7 +147,7 @@ export default function CompOff({ scope = 'mine' }) {
                       <Gift size={18} />
                     </div>
                     <div>
-                      {(tab === 'pending' || tab === 'all') && <p className="font-semibold text-slate-700 text-base">{r.employee?.firstName} {r.employee?.lastName} <span className="text-sm text-slate-400">· {r.employee?.department}</span></p>}
+                      {tab === 'pending' && <p className="font-semibold text-slate-700 text-base">{r.employee?.firstName} {r.employee?.lastName} <span className="text-sm text-slate-400">· {r.employee?.department}</span></p>}
                       <p className="font-medium text-slate-700 text-base">Worked on {fmtDate(r.workedDate, { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}</p>
                       <p className="text-sm text-slate-500 mt-0.5">Comp-off requested for <span className="font-medium text-slate-700">{fmtDate(r.compOffDate)}</span></p>
                       {r.reason && <p className="text-sm text-slate-400 mt-0.5">{r.reason} · {r.daysEarned} day{Number(r.daysEarned) !== 1 ? 's' : ''}</p>}
@@ -260,108 +195,12 @@ export default function CompOff({ scope = 'mine' }) {
         )}
       </div>
 
-      {modal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100 flex-shrink-0">
-              <h3 className="font-display font-semibold text-slate-800 text-xl">Apply for Comp-Off</h3>
-              <button onClick={() => setModal(false)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"><X size={16} /></button>
-            </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
-              {canFileForOthers && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1.5">Employee *</label>
-                  <select
-                    value={form.employeeId}
-                    onChange={e => setForm({ ...form, employeeId: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"
-                  >
-                    <option value="">Myself</option>
-                    {people
-                      .filter(p => p._id !== user?._id)
-                      .map(p => (
-                        <option key={p._id} value={p._id}>
-                          {p.employeeId ? `${p.employeeId} — ` : ''}{p.firstName} {p.lastName}
-                        </option>
-                      ))}
-                  </select>
-                  {form.employeeId && (
-                    <p className="text-[13px] text-amber-600 mt-1">
-                      This grants them a paid day off. It is recorded against your name and
-                      still goes to their own reporting line for approval.
-                    </p>
-                  )}
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">Worked Date (weekend / holiday) *</label>
-                <input type="date" value={form.workedDate} onChange={e => setForm({ ...form, workedDate: e.target.value })} required min={ymd(earliestWorkedDate)} max={ymd(today)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
-                <p className="text-[13px] text-slate-400 mt-1">
-                  Must be a weekend or holiday {form.employeeId ? 'they' : 'you'} actually worked, within the last {monthsLabel}.
-                </p>
-              </div>
-
-              {/* What the attendance actually says about that day. Every line
-                  here corresponds to a reason the request would be refused, so
-                  the problem is visible before Submit rather than after. */}
-              {form.workedDate && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
-                  {checking ? (
-                    <p className="text-sm text-slate-400">Checking that day…</p>
-                  ) : !eligibility ? (
-                    <p className="text-sm text-slate-400">Could not read that day&rsquo;s attendance.</p>
-                  ) : (
-                    <>
-                      <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Attendance on this day</p>
-                      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                        <dt className="text-slate-400">First in</dt>
-                        <dd className="text-slate-700 text-right">{eligibility.attendance?.firstIn || '—'}</dd>
-                        <dt className="text-slate-400">Last out</dt>
-                        <dd className="text-slate-700 text-right">{eligibility.attendance?.lastOut || '—'}</dd>
-                        <dt className="text-slate-400">Total hours</dt>
-                        <dd className="text-slate-700 text-right">
-                          {eligibility.attendance?.hours != null ? `${Number(eligibility.attendance.hours).toFixed(2)}h` : '—'}
-                        </dd>
-                      </dl>
-                      {!eligibility.eligible && (
-                        <p className="text-sm text-rose-600 mt-2.5">
-                          {eligibility.alreadyClaimed
-                            ? 'Comp-off has already been claimed for this worked date.'
-                            : !eligibility.isNonWorkingDay
-                              ? 'That is a normal working day — comp-off is earned only on a weekend or holiday.'
-                              : 'No check-in is recorded on that day, so this cannot be claimed.'}
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">Reason / Work Details *</label>
-                <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} required rows={2} placeholder={form.employeeId ? 'What did they work on that day?' : 'What did you work on that day?'} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">Requested Comp-Off Date *</label>
-                <input type="date" value={form.compOffDate} onChange={e => setForm({ ...form, compOffDate: e.target.value })} required min={ymd(tomorrow)} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
-                <p className="text-[13px] text-slate-400 mt-1">A future working day, within {monthsLabel} of the worked date.</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">Days to Claim *</label>
-                <select value={form.daysEarned} onChange={e => setForm({ ...form, daysEarned: parseFloat(e.target.value) })} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400">
-                  <option value={0.5}>Half Day (0.5)</option>
-                  <option value={1}>Full Day (1)</option>
-                </select>
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50">Cancel</button>
-                <button type="submit" disabled={saving || checking || (eligibility && !eligibility.eligible)} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                  <Send size={14} />{saving ? 'Submitting...' : 'Submit Request'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <CompOffApplyModal
+        open={modal}
+        onClose={() => setModal(false)}
+        onDone={load}
+        expiryMonths={expiryMonths}
+      />
 
       {viewItem && (
         <CompOffDetailModal
