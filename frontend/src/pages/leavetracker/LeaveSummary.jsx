@@ -515,23 +515,60 @@ export default function LeaveSummary() {
                   </div>
                   {/* Name */}
                   <p className="text-[14px] font-bold text-gray-600 mb-3">{card.name}{isPerm && <span className="ml-1 text-[12px] font-medium text-gray-400">/ 4h month</span>}</p>
-                  {/* Available */}
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[14px] text-gray-500">Available</span>
-                    <span className={`text-[15px] font-bold ${AVAIL_COLOR[card.code] || 'text-[#34a853]'}`}>
-                      {fmt(card.available)}
-                    </span>
-                  </div>
-                  {/* Booked / Used this month */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-[14px] text-gray-500">{isPerm ? 'Used this month' : 'Booked'}</span>
-                    <span className="flex items-center gap-1 text-[14px] font-semibold text-gray-700">
-                      {fmt(card.booked)}
-                      <button className="text-gray-300 hover:text-gray-500 transition-colors">
-                        <Info size={11} />
-                      </button>
-                    </span>
-                  </div>
+                  {/* Permission is the odd one: it accrues monthly and is capped
+                      per month, so the card carried only this month's remainder.
+                      "Available 4h" then said nothing about whether the year had
+                      cost two hours or forty — which is the figure anybody asking
+                      about permission actually wants. The year leads, the month
+                      follows it. */}
+                  {isPerm ? (
+                    <>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[14px] text-gray-500">Total available</span>
+                        <span className={`text-[15px] font-bold ${AVAIL_COLOR[card.code] || 'text-[#34a853]'}`}>
+                          {fmt(card.availableYear)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[14px] text-gray-500">Total booked</span>
+                        <span className="flex items-center gap-1 text-[14px] font-semibold text-gray-700">
+                          {fmt(card.bookedYear)}
+                          <button className="text-gray-300 hover:text-gray-500 transition-colors">
+                            <Info size={11} />
+                          </button>
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-1.5 border-t border-gray-100">
+                        <span className="text-[14px] text-gray-500">Available this month</span>
+                        <span className="text-[14px] font-semibold text-[#8b5cf6]">{fmt(card.available)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Loss of Pay has no allowance, so "Available —" is a blank
+                          where a number should be. What there is to report is how
+                          much has been taken. */}
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[14px] text-gray-500">
+                          {card.available === null ? 'Booked' : 'Available'}
+                        </span>
+                        <span className={`text-[15px] font-bold ${AVAIL_COLOR[card.code] || 'text-[#34a853]'}`}>
+                          {card.available === null ? fmt(card.booked) : fmt(card.available)}
+                        </span>
+                      </div>
+                      {card.available !== null && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-[14px] text-gray-500">Booked</span>
+                          <span className="flex items-center gap-1 text-[14px] font-semibold text-gray-700">
+                            {fmt(card.booked)}
+                            <button className="text-gray-300 hover:text-gray-500 transition-colors">
+                              <Info size={11} />
+                            </button>
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               );
             })}

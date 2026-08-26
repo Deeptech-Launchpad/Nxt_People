@@ -10,7 +10,7 @@ const { sendMail, sendLeaveApprovalEmail, sendLeaveStatusEmail } = require('../u
 const { logAudit } = require('../utils/audit');
 const { countWorkingDays } = require('../utils/workingDays');
 const { sandwichedDays } = require('../utils/sandwichLeave');
-const { getLeavePolicies } = require('../utils/leavePolicy');
+const { getLeavePolicies, grantedToDate } = require('../utils/leavePolicy');
 const logger = require('../logger');
 const { fire } = require('../utils/workflowEngine');
 const { canCancel, loadConfig } = require('../utils/leaveCancellation');
@@ -1063,7 +1063,7 @@ router.get('/balance', async (req, res) => {
 
     // Get from employees (legacy columns)
     const empRes = await pool.query(
-      'SELECT casual_leave, sick_leave, earned_leave, unpaid_leave FROM employees WHERE id=$1',
+      'SELECT casual_leave, sick_leave, earned_leave, unpaid_leave, joining_date::text AS "joiningDate" FROM employees WHERE id=$1',
       [targetId]
     );
     const emp = empRes.rows[0] || {};
@@ -1108,6 +1108,16 @@ router.get('/balance', async (req, res) => {
     const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
     const permUsed = round2(parseFloat(permRes.rows[0].used) || 0);
     const permAvailable = round2(Math.max(0, permMonthly - permUsed));
+
+    /* This month is what you may still take; the year is how much permission
+     * you have had. The card showed only the month, so "Available 4h" told
+     * somebody nothing about whether they had used two hours this year or
+     * forty — which is the figure that matters when anybody asks about it. */
+    const permGrantedYear = round2(grantedToDate(permPolicy, {
+      year, upToMonth: new Date().getMonth() + 1, joiningDate: emp?.joiningDate,
+    }) || 0);
+    const permBookedYear = round2(bookedHours['permission'] || 0);
+    const permAvailableYear = round2(permGrantedYear - permBookedYear);
 
     // Comp-Off is an earned-credit system in its own table: available =
     // approved credits still within their validity window, minus any used.
@@ -1165,6 +1175,10 @@ router.get('/balance', async (req, res) => {
         unit: 'hours', monthlyLimit: permMonthly,
         available: permAvailable,
         booked: permUsed,
+        // The year, beside the month.
+        grantedYear: permGrantedYear,
+        bookedYear: permBookedYear,
+        availableYear: permAvailableYear,
       },
     ];
 

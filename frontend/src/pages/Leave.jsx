@@ -108,16 +108,27 @@ export default function Leave() {
     <div className="space-y-5">
       {/* Balance cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {LEAVE_TYPES.map(t => (
-          <div key={t} className={`rounded-2xl p-5 border ${leaveTypeColors[t]}`}>
-            <p className="text-sm font-semibold uppercase tracking-wider mb-2 opacity-70">{LEAVE_TYPE_LABELS[t]}</p>
-            {/* Permission is hourly (4h/month); other types are day-based. */}
-            <p className="text-4xl font-display font-bold">
-              {t === 'permission' ? `${balance?.permission ?? 0}h` : (balance?.[t] === 999 ? '∞' : (balance?.[t] ?? '—'))}
-            </p>
-            <p className="text-sm mt-1 opacity-60">{t === 'permission' ? 'remaining this month' : 'days remaining'}</p>
-          </div>
-        ))}
+        {LEAVE_TYPES.map(t => {
+          /* Loss of Pay has no allowance to run down, so "days remaining" was a
+           * dash where a number should be — a tile saying nothing. What there is
+           * to report is how much of it has been taken. */
+          const unlimited = t === 'unpaid';
+          const bookedDays = balanceCards?.find(c => c.code === t)?.booked ?? 0;
+          return (
+            <div key={t} className={`rounded-2xl p-5 border ${leaveTypeColors[t]}`}>
+              <p className="text-sm font-semibold uppercase tracking-wider mb-2 opacity-70">{LEAVE_TYPE_LABELS[t]}</p>
+              {/* Permission is hourly (4h/month); other types are day-based. */}
+              <p className="text-4xl font-display font-bold">
+                {t === 'permission' ? `${balance?.permission ?? 0}h`
+                  : unlimited ? bookedDays
+                  : (balance?.[t] === 999 ? '∞' : (balance?.[t] ?? '—'))}
+              </p>
+              <p className="text-sm mt-1 opacity-60">
+                {t === 'permission' ? 'remaining this month' : unlimited ? 'days booked' : 'days remaining'}
+              </p>
+            </div>
+          );
+        })}
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
