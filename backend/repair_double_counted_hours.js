@@ -42,7 +42,13 @@ const { classifyDay } = require('./utils/attendanceRule');
 
 const APPLY = process.argv.includes('--apply');
 const pad = (s, n) => String(s ?? '').padEnd(n);
-const hhmm = h => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+/* Round to whole minutes FIRST, then split.
+ * Flooring the hours and rounding the remainder separately printed 9.9958
+ * hours as "09:60" — not a time, in a report about time being wrong. */
+const hhmm = (h) => {
+  const total = Math.round(h * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+};
 
 (async () => {
   console.log('\n══════════════════════════════════════════════════════════');
