@@ -64,7 +64,7 @@ const pad = (s, n) => String(s ?? '').padEnd(n);
     `SELECT e.employee_id AS code,
             TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name,
             d::date::text AS day,
-            l.total_days, l.reason, l.status AS leave_status,
+            l.total_days, l.is_half_day, l.reason, l.status AS leave_status,
             a.status AS att_status,
             a.working_hours::float AS hours
        FROM leaves l
@@ -77,7 +77,19 @@ const pad = (s, n) => String(s ?? '').padEnd(n);
         AND l.start_date BETWEEN $1::date AND $2::date
       ORDER BY e.employee_id, d`, [START, END])).rows;
 
-  const worked = rows.filter(r => ['present', 'late', 'half-day'].includes(r.att_status));
+  /* A HALF day of Loss of Pay against a day the attendance calls a half day is
+   * not a contradiction — it is the two halves of one day agreeing with each
+   * other. The first version of this check counted those as "worked while on
+   * LOP" and reported forty-two problems where about a dozen were real. The
+   * reasons on them said so plainly: "Went to Family Function", four to seven
+   * hours worked. Half the day off, half the day in.
+   *
+   * What remains a contradiction is a FULL day of Loss of Pay against a day
+   * they were here for full hours. */
+  const halfAgainstHalf = r => r.is_half_day === true && r.att_status === 'half-day';
+  const consistentHalf = rows.filter(halfAgainstHalf);
+  const worked = rows.filter(r =>
+    ['present', 'late', 'half-day'].includes(r.att_status) && !halfAgainstHalf(r));
   const absent = rows.filter(r => r.att_status === 'absent');
   const noRow = rows.filter(r => !r.att_status);
   const other = rows.filter(r =>
@@ -85,6 +97,7 @@ const pad = (s, n) => String(s ?? '').padEnd(n);
 
   console.log(`  ${rows.length} day(s) covered by an approved Loss of Pay record.\n`);
   console.log(`    ${pad(absent.length, 6)}the attendance also says absent — consistent`);
+  console.log(`    ${pad(consistentHalf.length, 6)}half a day of LOP against a half day worked — consistent`);
   console.log(`    ${pad(noRow.length, 6)}no attendance row — nothing to check against`);
   console.log(`    ${pad(other.length, 6)}some other status`);
   console.log(`    ${pad(worked.length, 6)}the attendance says they WORKED`
@@ -95,7 +108,9 @@ const pad = (s, n) => String(s ?? '').padEnd(n);
     console.log('  Loss of Pay on a day the attendance says was worked');
     console.log('──────────────────────────────────────────────────────────\n');
     console.log('  Either the leave record is wrong, or the attendance is. One of');
-    console.log('  the two is costing somebody a day of pay for a day they were here.\n');
+    console.log('  the two is costing somebody a day of pay for a day they were here.');
+    console.log('  Half-day LOP beside a half day worked is NOT listed here — that');
+    console.log('  pair agrees with itself.\n');
     console.log(`  ${pad('code', 14)}${pad('who', 24)}${pad('day', 12)}`
       + `${pad('attendance', 12)}${pad('hours', 8)}reason`);
     for (const r of worked.slice(0, 60)) {

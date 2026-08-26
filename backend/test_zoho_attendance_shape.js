@@ -46,9 +46,11 @@ const scope = new Function(`
   ${liftBlock('hhmmToMinutes', 'const hhmmToMinutes = (s) => {')}
   ${liftBlock('fromZohoStamp', 'const fromZohoStamp = (s) => {')}
   ${liftLine('notDash', 'const notDash = v =>')}
+  ${liftBlock('clockMinutes', 'const clockMinutes = (s) => {')}
+  ${liftBlock('latenessOf', 'const latenessOf = (r) => {')}
   ${liftBlock('num', 'const num = (v) => {')}
   ${liftBlock('shapeOfDay', 'const shapeOfDay = (iso, r) => {')}
-  return { hhmmToHours, hhmmToMinutes, fromZohoStamp, shapeOfDay };
+  return { hhmmToHours, hhmmToMinutes, fromZohoStamp, shapeOfDay, latenessOf };
 `)();
 
 // Balaji's 2026-07-27, exactly as Zoho returned it.
@@ -115,7 +117,24 @@ const REAL_WEEKEND = {
   check('hours worked come from TotalHours', Math.abs(d.hours - 8.65) < 1e-9, d.hours);
   check('the shift length comes from WorkingHours', d.shiftHours === 8, d.shiftHours);
   check('hours worked and shift length are NOT the same field', d.hours !== d.shiftHours);
-  check('lateness is nine minutes', d.lateMinutes === 9, d.lateMinutes);
+  check('lateness is nine minutes — 09:39 against a 09:30 shift',
+    d.lateMinutes === 9, d.lateMinutes);
+
+  /* Zoho's own Late_In cannot be trusted across the whole history. In the
+   * older years it holds the CLOCK TIME rather than the lateness: 09:05 comes
+   * back as 545, and 9x60+5 is 545. Imported verbatim it made people who
+   * arrived EARLY read as nine hours late, for years. */
+  const early = { ...REAL_DAY, FirstIn: '02/08/2022 09:05 AM', Late_In: '09:05' };
+  check('somebody arriving at 09:05 for a 09:30 shift is not late at all',
+    scope.latenessOf(early) === 0, scope.latenessOf(early));
+  check('and Zoho saying 545 minutes does not change that',
+    scope.shapeOfDay('2022-08-02', early).lateMinutes === 0,
+    scope.shapeOfDay('2022-08-02', early).lateMinutes);
+  const late = { ...REAL_DAY, FirstIn: '02/08/2022 10:14 AM', Late_In: '10:14' };
+  check('and 10:14 for a 09:30 shift is 44 minutes',
+    scope.latenessOf(late) === 44, scope.latenessOf(late));
+  check('a day with no shift has nothing to be late against',
+    scope.latenessOf({ ...REAL_DAY, ShiftStartTime: '-' }) === 0);
   check('the location is kept', /NSR Road/.test(d.inLoc), d.inLoc);
   check('coordinates are numbers', d.inLat === 11.026046738240684 && d.inLng === 76.943207, [d.inLat, d.inLng]);
   check('it counts as a punch', d.hasPunch === true);

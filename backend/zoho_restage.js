@@ -292,6 +292,35 @@ const fromZohoStamp = (s) => {
 
 const notDash = v => (v === '-' || v === '' || v === null || v === undefined) ? null : v;
 
+// "09:30 AM" or "06:00 PM" → minutes past midnight.
+const clockMinutes = (s) => {
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(String(s ?? '').trim());
+  if (!m) return null;
+  let h = Number(m[1]);
+  const ampm = (m[3] || '').toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return h * 60 + Number(m[2]);
+};
+
+/* How late they were, computed here rather than taken from Zoho.
+ *
+ * Zoho's Late_In cannot be trusted across the whole history. In the older
+ * years it holds the CLOCK TIME instead of the lateness: somebody arriving at
+ * 09:05 against a 09:30 shift is reported as 545 minutes late, and 9x60+5 is
+ * 545. Imported verbatim, that made almost every day of 2022 to 2024 "late" —
+ * including days people arrived early.
+ *
+ * The same record carries ShiftStartTime and FirstIn, so the answer is right
+ * there. Where the shift is missing there is nothing to be late against, and
+ * zero is the honest answer rather than a number from a broken field. */
+const latenessOf = (r) => {
+  const shiftStart = clockMinutes(r.ShiftStartTime);
+  const arrived = clockMinutes(String(notDash(r.FirstIn) ?? '').split(/\s+/).slice(1).join(' '));
+  if (shiftStart === null || arrived === null) return 0;
+  return Math.max(0, arrived - shiftStart);
+};
+
 /* A coordinate, or nothing.
  *
  * Number(null) is 0, and 0 is finite — so testing the cleaned value and then
@@ -321,7 +350,7 @@ const shapeOfDay = (iso, r) => {
     hasPunch: !!checkIn,
     hours: hhmmToHours(r.TotalHours) ?? 0,
     shiftHours: hhmmToHours(r.WorkingHours),
-    lateMinutes: hhmmToMinutes(r.Late_In),
+    lateMinutes: latenessOf(r),
     inLat: num(r.FirstIn_Latitude),
     inLng: num(r.FirstIn_Longitude),
     outLat: num(r.LastOut_Latitude),
