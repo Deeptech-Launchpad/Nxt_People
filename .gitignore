@@ -30,3 +30,20 @@ frontend/vite.config.js.timestamp-*
 # means anybody who adds or removes a banner locally gets a modified file they
 # did not edit, and a merge conflict on a file nobody writes by hand.
 frontend/public/covers/manifest.json
+
+# Uploaded files. On the server this holds real employee documents — Aadhaar
+# and PAN scans, certificates, photos. A `git add -A` there swept 129 of them
+# into a commit; the push happened to fail for want of credentials, which is
+# the only reason they did not reach GitHub. They are never source.
+backend/uploads/
+
+# One-off import data pulled out of Zoho. Holds employee leave balances.
+/balances.csv
+
+# Stray copies of frontend/public/covers/* that land in the repo root.
+/coast.jpg
+/forest.jpg
+/leaves.jpg
+/mountains.jpg
+/road.jpg
+/space.jpg
