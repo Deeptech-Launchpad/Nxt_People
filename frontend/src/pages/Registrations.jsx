@@ -283,7 +283,18 @@ function ConfirmModal({ employee, onClose, onConfirmed }) {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {data.documents.map((doc, i) => {
                       const _tok = localStorage.getItem('nxt_token');
-                      const fileUrl = `${doc.filePath}${_tok ? `?t=${encodeURIComponent(_tok)}` : ''}`;
+                      /* A document row missing a field must not take the page
+                         with it. This rendered doc.documentType.replace(...)
+                         directly, so one undefined value threw during render
+                         and HR got a blank white screen with nothing to act on
+                         — worse than showing the row with a gap in it. */
+                      const label = String(doc.documentType || 'Document')
+                        .replace(/[_-]+/g, ' ')
+                        .replace(/([A-Z])/g, ' $1')
+                        .trim();
+                      const fileUrl = doc.filePath
+                        ? `${doc.filePath}${_tok ? `?t=${encodeURIComponent(_tok)}` : ''}`
+                        : null;
                       return (
                         <div key={i} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200 hover:border-brand-300 transition-colors group">
                           <div className="flex items-center gap-3 overflow-hidden">
@@ -291,17 +302,23 @@ function ConfirmModal({ employee, onClose, onConfirmed }) {
                               <FileText size={16} />
                             </div>
                             <div className="truncate">
-                              <div className="text-base font-medium text-slate-800 capitalize truncate">{doc.documentType.replace(/([A-Z])/g, ' $1').trim()}</div>
-                              <div className="text-sm text-slate-400 truncate">{doc.originalName}</div>
+                              <div className="text-base font-medium text-slate-800 capitalize truncate">{label}</div>
+                              <div className="text-sm text-slate-400 truncate">{doc.originalName || 'No file name recorded'}</div>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-                            <a href={fileUrl} target="_blank" rel="noreferrer" title="Preview" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
-                              <Eye size={16} />
-                            </a>
-                            <a href={fileUrl} download={doc.originalName} title="Download" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
-                              <Download size={16} />
-                            </a>
+                            {fileUrl ? (
+                              <>
+                                <a href={fileUrl} target="_blank" rel="noreferrer" title="Preview" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
+                                  <Eye size={16} />
+                                </a>
+                                <a href={fileUrl} download={doc.originalName || undefined} title="Download" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
+                                  <Download size={16} />
+                                </a>
+                              </>
+                            ) : (
+                              <span className="text-sm text-slate-300">No file</span>
+                            )}
                           </div>
                         </div>
                       );

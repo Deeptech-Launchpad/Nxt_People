@@ -533,11 +533,21 @@ router.get('/:id/full', async (req, res) => {
     const { password, mfa_secret, mfa_backup_codes, reset_password_token, reset_password_expires, ...safeRow } = empRes.rows[0];
     const candidate = safeRow;
     candidate.education = eduRes.rows;
+    /* Read the columns the table actually has, falling back to the ones it had
+     * before the migration.
+     *
+     * This mapped only the pre-migration names — document_type, original_name,
+     * file_path, upload_date — none of which exist on a fresh deploy. SELECT *
+     * does not complain about a column nobody named, so every field came back
+     * undefined and the screen blanked on `doc.documentType.replace(...)`.
+     * A 500 would have been kinder than a white page. */
     candidate.documents = docRes.rows.map(d => ({
-      documentType: d.document_type,
-      originalName: d.original_name,
-      filePath: d.file_path,
-      uploadDate: d.upload_date
+      id: d.id,
+      documentType: d.type || d.document_type || 'other',
+      originalName: d.name || d.original_name || 'Document',
+      filePath: d.file_url || d.file_path || null,
+      fileSize: d.file_size ?? d.size ?? null,
+      uploadDate: d.created_at || d.upload_date || d.uploaded_at || null,
     }));
 
     res.json({ success: true, data: candidate });
