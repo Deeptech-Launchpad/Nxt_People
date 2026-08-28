@@ -306,27 +306,50 @@ router.post('/submit/:token', (req, res, next) => {
       offerLetter:        'offer_letter',
     };
 
+    /* What to call the file once it is stored.
+     *
+     * The type says what kind of document it is; an Aadhaar and a PAN card are
+     * both 'id_proof'. Whoever opens this record needs to know WHICH, and the
+     * uploaded filename is usually "scan.pdf", so the name is the slot the
+     * candidate uploaded it into. */
+    const FIELD_TO_LABEL = {
+      aadhaarCard:        'Aadhaar Card',
+      panCard:            'PAN Card',
+      tenthCertificate:   '10th Certificate',
+      twelfthCertificate: '12th Certificate',
+      ugCertificate:      'UG Certificate',
+      pgCertificate:      'PG Certificate',
+      experienceLetters:  'Experience Letters',
+      resume:             'Resume',
+      passportPhoto:      'Passport Photo',
+      addressProof:       'Address Proof',
+      offerLetter:        'Offer Letter',
+    };
+
     // upload.fields() puts files in req.files keyed by fieldname.
     // Flatten back to a list and insert each.
     const filesFlat = Object.values(req.files || {}).flat();
     for (const file of filesFlat) {
       const fileUrl = `/uploads/${file.filename}`;
       const docType = FIELD_TO_TYPE[file.fieldname] || 'other';
+      /* Only the columns this table actually has.
+       *
+       * This wrote document_type, file_path, original_name, mime_type and size
+       * as well — the shape employee_documents had before it was migrated. A
+       * fresh deploy never had those columns, so every onboarding submission
+       * died on `column "document_type" does not exist` after the candidate had
+       * filled in the whole form. routes/documents.js has always written the
+       * six below; this is the same shape. */
       await client.query(`
         INSERT INTO employee_documents (
-          employee_id,
-          document_type, file_path, original_name, mime_type, size,
-          name, type, file_url, file_size, uploaded_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $4, $7, $8, $6, $1)
+          employee_id, name, type, file_url, file_size, uploaded_by
+        ) VALUES ($1, $2, $3, $4, $5, $1)
       `, [
         employeeId,
-        file.fieldname,
-        fileUrl,
-        file.originalname,
-        file.mimetype,
-        file.size,
+        FIELD_TO_LABEL[file.fieldname] || file.originalname,
         docType,
         fileUrl,
+        file.size,
       ]);
     }
 

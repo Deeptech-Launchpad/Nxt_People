@@ -643,21 +643,20 @@ router.post('/zoho-sync-documents', async (req, res) => {
           const fileUrl = `/uploads/${localName}`;
           const docType = inferDocType(f.fileName);
 
+          /* The same six columns routes/documents.js writes. This used to write
+           * the pre-migration set as well, which a fresh deploy does not have —
+           * the identical fault that killed every onboarding submission, sitting
+           * here waiting for somebody to import documents from Zoho. */
           await pool.query(
             `INSERT INTO employee_documents
-               (employee_id,
-                document_type, file_path, original_name, mime_type, size,
-                name, type, file_url, file_size, uploaded_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $4, $7, $8, $6, $1)`,
+               (employee_id, name, type, file_url, file_size, uploaded_by)
+             VALUES ($1, $2, $3, $4, $5, $1)`,
             [
               employeeId,
-              docType,                  // legacy document_type
-              fileUrl,                  // legacy file_path (using full URL for downloads)
-              f.fileName,               // original_name + name
-              f.fileType || null,       // mime_type
+              f.fileName,
+              docType,
+              fileUrl,
               f.fileSize ? parseInt(f.fileSize, 10) : buf.length,
-              docType,                  // modern type
-              fileUrl,                  // modern file_url
             ]
           );
           stats.downloaded++;
