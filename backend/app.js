@@ -147,6 +147,7 @@ app.use('/api/time-logs',        require('./routes/time-logs'));
 app.use('/api/jobs',             require('./routes/jobs'));
 app.use('/api/reports',          require('./routes/reports'));
 app.use('/api/report-favorites', require('./routes/report-favorites'));
+app.use('/api/manual-attendance', require('./routes/manual-attendance'));
 app.use('/api/exports', require('./routes/exports'));
 app.use('/api/shifts',           require('./routes/shifts'));
 app.use('/api/holidays',         require('./routes/holidays'));

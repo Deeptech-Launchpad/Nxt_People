@@ -13,6 +13,7 @@ import {
 
 // Functional tiles → their route. Everything else is a presentational placeholder.
 const ROUTES = {
+  attendance:         '/more-services/operations/attendance-marking',
   'leave-tracker':    '/more-services/operations/leave-tracker',
   'leave-approvals':  '/more-services/operations/leave-approvals',
   'permission-usage': '/more-services/operations/permission-usage',
