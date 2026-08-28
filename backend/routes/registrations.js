@@ -122,6 +122,42 @@ function handleOnboardingUploadError(err, req, res, next) {
   return next(err);
 }
 
+/* An HTML form sends an untouched field as "", never as null.
+ *
+ * Most columns here are text and take that happily. Two do not: date_of_birth
+ * is a DATE and year_of_passing is an INT, and postgres answers "" with
+ * `invalid input syntax` — which this route turned into "An internal server
+ * error occurred". A candidate who left one date blank filled in the entire
+ * form and was told nothing, three times over.
+ *
+ * Blank means "not given", and not given is null. */
+const blankToNull = (v) => {
+  if (v === undefined || v === null) return null;
+  const t = String(v).trim();
+  return t === '' ? null : t;
+};
+
+/** A date the column will accept, or null. Never the empty string. */
+const dateOrNull = (v) => {
+  const t = blankToNull(v);
+  if (!t) return null;
+  // Anything postgres cannot read as a date is treated as not given rather
+  // than thrown, because a malformed date is not worth losing a whole
+  // submission over.
+  return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : null;
+};
+
+/** A year the INT column will accept, or null. */
+const yearOrNull = (v) => {
+  const t = blankToNull(v);
+  if (!t) return null;
+  // "2020-2024" is a range somebody typed into a year box; take the end of it.
+  const m = t.match(/(\d{4})\s*$/) || t.match(/(\d{4})/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
+};
+
 router.post('/submit/:token', (req, res, next) => {
   upload.fields(UPLOAD_FIELDS)(req, res, (err) => {
     if (err) return handleOnboardingUploadError(err, req, res, next);
@@ -213,10 +249,14 @@ router.post('/submit/:token', (req, res, next) => {
         'pending', false, 'team_member'
       ) RETURNING id
     `, [
-      firstName, lastName, personalEmail, mobile, gender, dateOfBirth, maritalStatus, bloodGroup,
-      alternateMobile, currentAddress, permanentAddress, city, state, country, pinCode,
-      aadhaarNumber, panNormalized, passportNumber, drivingLicense, voterId, uanNumber,
-      emergencyContactName, emergencyContactRelationship, emergencyContactNumber, emergencyContactAlternate
+      blankToNull(firstName), blankToNull(lastName), personalEmail.trim(), blankToNull(mobile),
+      blankToNull(gender), dateOrNull(dateOfBirth), blankToNull(maritalStatus), blankToNull(bloodGroup),
+      blankToNull(alternateMobile), blankToNull(currentAddress), blankToNull(permanentAddress),
+      blankToNull(city), blankToNull(state), blankToNull(country), blankToNull(pinCode),
+      blankToNull(aadhaarNumber), blankToNull(panNormalized), blankToNull(passportNumber),
+      blankToNull(drivingLicense), blankToNull(voterId), blankToNull(uanNumber),
+      blankToNull(emergencyContactName), blankToNull(emergencyContactRelationship),
+      blankToNull(emergencyContactNumber), blankToNull(emergencyContactAlternate)
     ]);
 
     const employeeId = empInsert.rows[0].id;
@@ -229,14 +269,22 @@ router.post('/submit/:token', (req, res, next) => {
         return res.status(400).json({ success: false, message: 'Invalid education data format.' });
       }
       for (let ed of eduArray) {
+        // A row the candidate started and abandoned carries nothing worth
+        // storing, and storing it makes the record look filled in when it is not.
+        const hasAnything = [ed.highestQualification, ed.degree, ed.course,
+          ed.universityOrInstitution, ed.yearOfPassing, ed.percentageOrCgpa, ed.certifications]
+          .some(v => blankToNull(v) !== null);
+        if (!hasAnything) continue;
         await client.query(`
           INSERT INTO employee_education (
             employee_id, highest_qualification, degree, course,
             university_or_institution, year_of_passing, percentage_or_cgpa, certifications
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `, [
-          employeeId, ed.highestQualification, ed.degree || null, ed.course || null,
-          ed.universityOrInstitution, ed.yearOfPassing, ed.percentageOrCgpa, ed.certifications
+          employeeId, blankToNull(ed.highestQualification), blankToNull(ed.degree),
+          blankToNull(ed.course), blankToNull(ed.universityOrInstitution),
+          yearOrNull(ed.yearOfPassing), blankToNull(ed.percentageOrCgpa),
+          blankToNull(ed.certifications)
         ]);
       }
     }
@@ -303,6 +351,15 @@ router.post('/submit/:token', (req, res, next) => {
       return res.status(409).json({
         success: false,
         message: 'Some of these details are already registered against another person — most often the email address. Please check with HR.',
+      });
+    }
+    // 22P02 is a value postgres could not read for the column's type — an
+    // empty date, a year that is not a number. The coercions above should mean
+    // this never fires; if it does, the field is worth naming.
+    if (err?.code === '22P02') {
+      return res.status(400).json({
+        success: false,
+        message: 'One of the dates or numbers could not be read. Please check your date of birth and your year of passing, then try again.',
       });
     }
     // 23502 is a NOT NULL violation: a required field arrived empty.
