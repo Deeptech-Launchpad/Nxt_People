@@ -6,15 +6,16 @@
  *  employee_documents and a dozen other tables cascade off it. So this will
  *  only touch a row that is unmistakably a test registration:
  *
- *    it came through the onboarding form   registration_status = 'pending'
- *    nobody has approved it                has_accepted = false
  *    it has no working life behind it      no attendance, leave, comp-off,
  *                                          payslip or regularisation
  *    it has never signed in                no last_login
  *
- *  Any one of those failing stops the whole thing and says which. A real
- *  employee cannot satisfy them, which is the point: the guard is what makes
- *  this safe to hand to somebody in a hurry.
+ *  Those never bend. A real employee cannot satisfy them, which is the point:
+ *  the guard is what makes this safe to hand to somebody in a hurry.
+ *
+ *  Being still pending and unaccepted is checked too, but a test run gets
+ *  confirmed like anything else — so that one is asked for in as many words
+ *  with --confirmed, and reported when it is used.
  *
  *  Dry run by default. Sends no mail.
  *
@@ -33,6 +34,11 @@ nodemailer.createTransport = () => ({
 const pool = require('./db');
 const EMAIL = process.argv[2];
 const APPLY = process.argv.includes('--apply');
+/* A record that has been confirmed is one step closer to being a real
+ * person, so removing one has to be asked for in as many words. The checks
+ * that actually protect somebody — no attendance, no leave, no pay, never
+ * signed in — are not relaxed by this and never can be. */
+const CONFIRMED = process.argv.includes('--confirmed');
 const pad = (s, n) => String(s ?? '').padEnd(n);
 
 /* Every table that would tell us this is a real person with a history. If any
@@ -79,8 +85,18 @@ const HISTORY = [
 
   // ── The guard ─────────────────────────────────────────────────────────────
   const refusals = [];
-  if (emp.reg !== 'pending') refusals.push(`its registration status is "${emp.reg}", not "pending"`);
-  if (emp.accepted) refusals.push('it has been accepted');
+  const softened = [];
+
+  /* Being confirmed is not evidence of being real — a test run gets confirmed
+   * like anything else. It is evidence that somebody meant it, so it needs
+   * --confirmed rather than being waved through. */
+  if (emp.reg !== 'pending' || emp.accepted) {
+    const what = `it has been confirmed (status "${emp.reg}"${emp.accepted ? ', accepted' : ''})`;
+    if (CONFIRMED) softened.push(what);
+    else refusals.push(`${what} — pass --confirmed if that is expected`);
+  }
+
+  // Never relaxed. Somebody who has signed in is using this account.
   if (emp.last_login) refusals.push('somebody has signed in as this person');
 
   for (const [table, label] of HISTORY) {
@@ -89,6 +105,12 @@ const HISTORY = [
     const n = (await pool.query(
       `SELECT count(*)::int AS n FROM ${table} WHERE employee_id = $1`, [emp.id])).rows[0].n;
     if (n) refusals.push(`it has ${n} ${label}`);
+  }
+
+  if (softened.length) {
+    console.log('  Allowed by --confirmed:\n');
+    for (const w of softened) console.log(`    · ${w}`);
+    console.log('');
   }
 
   if (refusals.length) {
@@ -112,7 +134,7 @@ const HISTORY = [
     `SELECT count(*)::int AS n FROM onboarding_tokens WHERE LOWER(email) = LOWER($1)`, [EMAIL])).rows[0].n;
 
   console.log('  Would remove:\n');
-  console.log(`    ${pad(1, 6)}employee row`);
+  console.log(`    ${pad(1, 6)}employee row${emp.code ? `  (frees the code ${emp.code})` : ''}`);
   console.log(`    ${pad(counts.employee_education, 6)}education record(s)`);
   console.log(`    ${pad(counts.employee_documents, 6)}uploaded document row(s)`);
   console.log(`    ${pad(tokens, 6)}onboarding invite(s) for this address`);
@@ -148,7 +170,17 @@ const HISTORY = [
 
   console.log('══════════════════════════════════════════════════════════');
   console.log(`  Removed. ${left} employee(s) now hold that address.`);
-  console.log('  The address is free to test with again.');
+  if (emp.code && /^ANXT/.test(emp.code)) {
+    /* The next id is MAX(sequence) + 1 over the rows matching the company's
+     * format, so removing the highest one hands it straight back. Printed
+     * because freeing the code is usually the reason for doing this. */
+    const next = (await pool.query(
+      `SELECT COALESCE(MAX(CAST(SUBSTRING(employee_id FROM 7) AS INTEGER)), 0) + 1 AS n
+         FROM employees WHERE employee_id ~ ('^ANXT' || $1 || '[0-9]{5}$')`,
+      [emp.code.slice(4, 6)])).rows[0].n;
+    console.log(`  The next AltiusNxt employee will be ANXT${emp.code.slice(4, 6)}${String(next).padStart(5, '0')}.`);
+  }
+  console.log('  The address is free to use again.');
   console.log('══════════════════════════════════════════════════════════\n');
 
   await pool.end();
