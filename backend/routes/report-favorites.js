@@ -8,7 +8,11 @@ const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
 
+const { requireFunction } = require('../utils/functionAccess');
+
 router.use(protect);
+// Every route here serves the Favorites row and nothing else.
+router.use(requireFunction('favorites'));
 
 // GET /api/report-favorites — get all starred report keys for current user
 router.get('/', async (req, res) => {

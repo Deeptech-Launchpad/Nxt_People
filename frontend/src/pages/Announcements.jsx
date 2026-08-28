@@ -3,6 +3,7 @@ import { Megaphone, Plus, Trash2, Pin, X, AlertTriangle, Info, Calendar, Bell } 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { useFunctionAccess } from '../context/FunctionAccessContext';
 import { isFullAccess } from '../utils/roles';
 
 const TYPE_CONFIG = {
@@ -26,6 +27,11 @@ function timeAgo(dateStr) {
 
 export default function Announcements() {
   const { user } = useAuth();
+  /* Add / Edit / Delete is the sub-control beside Announcements under Function
+   * Based Permissions. It narrows the existing role guard and never widens it,
+   * so both have to pass. The API enforces the same pair. */
+  const { can, optionOf } = useFunctionAccess();
+  const canManage = isFullAccess(user) && can('announcements') && !!optionOf('announcements').manage;
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
@@ -92,7 +98,7 @@ export default function Announcements() {
           <h2 className="font-display font-bold text-slate-800 text-xl">Announcements</h2>
           <p className="text-slate-400 text-base mt-0.5">Company-wide notices and updates</p>
         </div>
-        {isFullAccess(user) && (
+        {canManage && (
           <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
             <Plus size={16} /> New Announcement
           </button>
@@ -170,7 +176,7 @@ export default function Announcements() {
                       )}
                     </div>
                   </div>
-                  {isFullAccess(user) && (
+                  {canManage && (
                     <button onClick={() => handleDelete(a._id)} disabled={busyId === a._id} className="flex-shrink-0 p-2 rounded-lg hover:bg-black/5 transition-colors text-slate-500 hover:text-red-500 disabled:opacity-60">
                       <Trash2 size={15} />
                     </button>

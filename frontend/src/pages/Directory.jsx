@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Search, Phone, Mail, Building2, Users, X, ChevronDown } from 'lucide-react';
 import api from '../utils/api';
+import { useFunctionAccess } from '../context/FunctionAccessContext';
 
 function EmployeeCard({ emp }) {
   const [imgError, setImgError] = useState(false);
@@ -44,6 +45,11 @@ function EmployeeCard({ emp }) {
 }
 
 export default function Directory() {
+  /* Search Employee under Function Based Permissions. It governs searching by
+   * name, not the directory itself — the department, designation and location
+   * filters are a separate thing and stay. */
+  const { can } = useFunctionAccess();
+  const canSearch = can('search_employee');
   const [employees, setEmployees] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [search, setSearch] = useState('');
@@ -93,6 +99,7 @@ export default function Directory() {
     <div className="flex flex-col md:flex-row gap-4 items-start">
       {/* Mobile search + filter toggle — always reachable, unlike the sidebar below */}
       <div className="w-full md:hidden flex items-center gap-2">
+        {canSearch && (
         <div className="relative flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -103,6 +110,7 @@ export default function Directory() {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
+        )}
         <button onClick={() => setShowFilters(v => !v)} className="flex-shrink-0 border border-slate-200 rounded px-3 py-2 text-[14px] font-semibold text-slate-600 bg-white">
           Filters
         </button>
@@ -113,20 +121,22 @@ export default function Directory() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 text-slate-700">
             <Search size={14} />
-            <h3 className="text-[15px] font-bold">Search Employee</h3>
+            <h3 className="text-[15px] font-bold">{canSearch ? 'Search Employee' : 'Filters'}</h3>
           </div>
           <button onClick={clearFilters} className="text-slate-400 hover:text-slate-700" title="Clear Filters">
              <X size={14} />
           </button>
         </div>
         
-        <input 
-          type="text" 
-          placeholder="Search" 
-          className="w-full border border-slate-200 rounded text-[14px] px-3 py-2 mb-4 focus:outline-none focus:border-blue-400"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+        {canSearch && (
+          <input
+            type="text"
+            placeholder="Search"
+            className="w-full border border-slate-200 rounded text-[14px] px-3 py-2 mb-4 focus:outline-none focus:border-blue-400"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        )}
 
         <div className="space-y-4">
           {/* Department Filter */}

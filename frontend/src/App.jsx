@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AttendanceProvider } from './context/AttendanceContext';
 import { WeekendRulesProvider } from './context/WeekendRulesContext';
+import { FunctionAccessProvider } from './context/FunctionAccessContext';
 import { ChatProvider } from './context/ChatContext';
 import MobileBlocker from './components/layout/MobileBlocker';
 
@@ -359,24 +360,26 @@ export default function App() {
   return (
     <MobileBlocker>
       <AuthProvider>
-        <WeekendRulesProvider>
-          <AttendanceProvider>
-            <ChatProvider>
-              <Toaster
-                position="bottom-right"
-                toastOptions={{
-                  duration: 4000,
-                  style: { fontSize: '13px', fontWeight: 600 },
-                  // Errors deserve more dwell time — 4s isn't enough to read
-                  // a stack-trace-style message before it disappears.
-                  error: { duration: 7000 },
-                  success: { duration: 3500 },
-                }}
-              />
-              <AppRoutes/>
-            </ChatProvider>
-          </AttendanceProvider>
-        </WeekendRulesProvider>
+        <FunctionAccessProvider>
+          <WeekendRulesProvider>
+            <AttendanceProvider>
+              <ChatProvider>
+                <Toaster
+                  position="bottom-right"
+                  toastOptions={{
+                    duration: 4000,
+                    style: { fontSize: '13px', fontWeight: 600 },
+                    // Errors deserve more dwell time — 4s isn't enough to read
+                    // a stack-trace-style message before it disappears.
+                    error: { duration: 7000 },
+                    success: { duration: 3500 },
+                  }}
+                />
+                <AppRoutes/>
+              </ChatProvider>
+            </AttendanceProvider>
+          </WeekendRulesProvider>
+        </FunctionAccessProvider>
       </AuthProvider>
     </MobileBlocker>
   );

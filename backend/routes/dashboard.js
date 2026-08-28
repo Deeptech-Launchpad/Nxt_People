@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
+const { allows, optionsFor } = require('../utils/functionAccess');
 const { serverError } = require('../utils/serverError');
 router.use(protect);
 
@@ -131,15 +132,35 @@ router.get('/stats', async (req, res) => {
        ORDER BY a.created_at DESC LIMIT 5`
     );
 
+    /* Function Based Permissions, applied by omission rather than refusal.
+     *
+     * This one response carries five widgets. Refusing it because a role has
+     * Birthday Buddy switched off would blank the whole dashboard over one
+     * card, so a switched-off widget comes back empty and the card renders as
+     * "nothing to show" — which is what the person is meant to see. */
+    const [showBirthdays, showAnniversaries, showAnnouncements] = await Promise.all([
+      allows(req, 'birthday_buddy'),
+      allows(req, 'work_anniversary'),
+      allows(req, 'announcements'),
+    ]);
+    const anniversaryOpts = await optionsFor(req, 'work_anniversary');
+
     res.json({
       success: true,
       data: {
         totalEmployees, present, absent, late, onLeave, pendingLeaves, weekData,
         recentActivity: recentAttendanceRes.rows,
-        birthdays: birthdaysRes.rows,
-        anniversaries: anniversariesRes.rows,
+        birthdays: showBirthdays ? birthdaysRes.rows : [],
+        // "Show year of experience" is the sub-control beside Work Anniversary.
+        // Off means the years figure is not sent at all, rather than sent and
+        // hidden by the browser.
+        anniversaries: showAnniversaries
+          ? anniversariesRes.rows.map(r => (
+              anniversaryOpts.showYearsOfExperience ? r : { ...r, years: undefined }
+            ))
+          : [],
         deptBreakdown: deptRes.rows,
-        announcements: announcementsRes.rows
+        announcements: showAnnouncements ? announcementsRes.rows : []
       }
     });
   } catch (err) {

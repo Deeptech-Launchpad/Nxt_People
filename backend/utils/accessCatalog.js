@@ -3,30 +3,41 @@
  *  same list.
  *
  *  FUNCTIONS is the reference's Function Based Permissions table: sixteen
- *  rows, in its order, with its labels and its sub-controls. `wired` says
- *  whether this application has the feature to switch off. The ones marked
- *  false are stored and returned faithfully but enforce nothing — the screen
- *  says so on the row rather than implying a switch that does something.
+ *  rows, in its order, with its labels and its sub-controls.
+ *
+ *  `wired` says whether switching this row off actually does anything. The
+ *  ones marked false are stored and returned faithfully but enforce nothing,
+ *  and the screen says so on the row rather than implying a switch that does
+ *  something. It used to mean "this application has the feature", which is a
+ *  different claim: eleven rows carried wired: true while nothing anywhere
+ *  read them, so the five honest rows were surrounded by ten that quietly
+ *  were not. utils/functionAccess.js is what reads them now, and `wired` means
+ *  what it says.
+ *
+ *  `default` is what a role gets when it has no stored row. It is what this
+ *  application does today, not what the reference's screenshots show — three
+ *  of these sit off in the reference, and seeding them off while switching
+ *  enforcement on would have silently withdrawn three working features.
  *
  *  SERVICES is the Administrator matrix's columns. The reference lists the
  *  modules its org has; these are the modules ours has.
  * ───────────────────────────────────────────────────────────────────────── */
 
 const FUNCTIONS = [
-  { key: 'search_employee', label: 'Search Employee', wired: true },
-  { key: 'delegation', label: 'Delegation', wired: false },
-  { key: 'quick_links', label: 'Quick Links', wired: true },
-  { key: 'tags', label: 'Tags', wired: false },
-  { key: 'api_access', label: 'API Access', wired: false },
-  { key: 'designation_by_permission', label: 'Show designation based on permission', wired: false },
+  { key: 'search_employee', label: 'Search Employee', wired: true, default: true },
+  { key: 'delegation', label: 'Delegation', wired: false, default: false },
+  { key: 'quick_links', label: 'Quick Links', wired: false, default: true },
+  { key: 'tags', label: 'Tags', wired: false, default: true },
+  { key: 'api_access', label: 'API Access', wired: false, default: false },
+  { key: 'designation_by_permission', label: 'Show designation based on permission', wired: false, default: false },
   {
-    key: 'announcements', label: 'Announcements', wired: true,
+    key: 'announcements', label: 'Announcements', wired: true, default: true, defaultOptions: { manage: true },
     control: { type: 'check', key: 'manage', label: 'Add / Edit / Delete' },
   },
-  { key: 'department_tree', label: 'Department Tree', wired: true },
-  { key: 'department_data', label: 'Department data', wired: true },
+  { key: 'department_tree', label: 'Department Tree', wired: true, default: true },
+  { key: 'department_data', label: 'Department data', wired: true, default: true },
   {
-    key: 'employee_tree', label: 'Employee Tree', wired: true,
+    key: 'employee_tree', label: 'Employee Tree', wired: true, default: true, defaultOptions: { tree: 'organization' },
     control: {
       type: 'radio', key: 'tree',
       options: [
@@ -35,18 +46,18 @@ const FUNCTIONS = [
       ],
     },
   },
-  { key: 'birthday_buddy', label: 'Birthday Buddy', wired: true },
-  { key: 'new_joinee_list', label: 'New joinee list', wired: true },
-  { key: 'favorites', label: 'Favorites', wired: true },
+  { key: 'birthday_buddy', label: 'Birthday Buddy', wired: true, default: true },
+  { key: 'new_joinee_list', label: 'New joinee list', wired: true, default: true },
+  { key: 'favorites', label: 'Favorites', wired: true, default: true },
   {
-    key: 'work_anniversary', label: 'Work Anniversary', wired: true,
+    key: 'work_anniversary', label: 'Work Anniversary', wired: true, default: true, defaultOptions: { showYearsOfExperience: true },
     control: {
       type: 'check', key: 'showYearsOfExperience', label: 'Show year of experience',
       hint: 'Shows how long the person has been with the organization beside the anniversary.',
     },
   },
-  { key: 'wedding_anniversary', label: 'Wedding Anniversary', wired: false },
-  { key: 'location_in_org_tab', label: 'Show location details in the organization tab', wired: true },
+  { key: 'wedding_anniversary', label: 'Wedding Anniversary', wired: false, default: false },
+  { key: 'location_in_org_tab', label: 'Show location details in the organization tab', wired: true, default: true },
 ];
 
 const FUNCTION_KEYS = new Set(FUNCTIONS.map(f => f.key));

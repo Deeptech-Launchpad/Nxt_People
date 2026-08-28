@@ -4,6 +4,8 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const logger = require('../logger');
 const { serverError } = require('../utils/serverError');
+const { requireFunction, allows, optionsFor } = require('../utils/functionAccess');
+
 router.use(protect);
 
 // Shared projection — every read endpoint returns the same shape.
@@ -29,7 +31,21 @@ const SELECT_FIELDS = `
 // GET /api/announcements/active — announcements that are still live for the
 // current user. Returns at most 5 rows, prioritising urgent → unread → recent.
 // Each row carries an `isRead` flag so the UI can highlight new items.
-router.get('/active', async (req, res) => {
+/* The Add / Edit / Delete checkbox beside Announcements. The role guard stays:
+ * this narrows who may write, it never widens it. */
+const canManage = async (req, res, next) => {
+  try {
+    if ((await allows(req, 'announcements')) && (await optionsFor(req, 'announcements')).manage) return next();
+    return res.status(403).json({
+      success: false,
+      code: 'FUNCTION_NOT_ALLOWED',
+      functionKey: 'announcements',
+      message: 'Add / Edit / Delete for Announcements is switched off for your role under Function Based Permissions.',
+    });
+  } catch (err) { next(err); }
+};
+
+router.get('/active', requireFunction('announcements'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT ${SELECT_FIELDS},
@@ -69,7 +85,7 @@ router.post('/:id/read', async (req, res) => {
 });
 
 // GET /api/announcements — all active announcements (pinned first).
-router.get('/', async (req, res) => {
+router.get('/', requireFunction('announcements'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT ${SELECT_FIELDS}
@@ -86,7 +102,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/announcements — create announcement (admin only)
-router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+router.post('/', authorize('admin', 'director', 'hr_admin'), canManage, async (req, res) => {
   try {
     const { title, body, type = 'general', isPinned = true, pinnedUntil, expiresAt } = req.body;
     if (!title || !body) return res.status(400).json({ success: false, message: 'Title and body are required' });
@@ -130,7 +146,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
 // PUT /api/announcements/:id — update an announcement (admin only).
 // Each of title/body/type/isActive/isPinned/pinnedUntil/expiresAt is optional;
 // omitted fields keep their current value (COALESCE).
-router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+router.put('/:id', authorize('admin', 'director', 'hr_admin'), canManage, async (req, res) => {
   try {
     const { title, body, type, isActive, isPinned, pinnedUntil, expiresAt } = req.body;
     const result = await pool.query(
@@ -169,7 +185,7 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
 });
 
 // DELETE /api/announcements/:id — delete (admin only)
-router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director', 'hr_admin'), canManage, async (req, res) => {
   try {
     await pool.query('DELETE FROM announcements WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Deleted' });

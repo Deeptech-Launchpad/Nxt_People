@@ -7,11 +7,12 @@ const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
+const { requireFunction, optionsFor } = require('../utils/functionAccess');
 
 router.use(protect);
 
 // ── GET /api/org/birthdays?month=5&year=2026 ──────────────────────────────────
-router.get('/birthdays', async (req, res) => {
+router.get('/birthdays', requireFunction('birthday_buddy'), async (req, res) => {
   try {
     const month = parseInt(req.query.month) || (new Date().getMonth() + 1);
     const year  = parseInt(req.query.year)  || new Date().getFullYear();
@@ -35,7 +36,7 @@ router.get('/birthdays', async (req, res) => {
 });
 
 // ── GET /api/org/new-hires ────────────────────────────────────────────────────
-router.get('/new-hires', async (req, res) => {
+router.get('/new-hires', requireFunction('new_joinee_list'), async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 15;
     const r = await pool.query(
@@ -55,7 +56,7 @@ router.get('/new-hires', async (req, res) => {
 });
 
 // ── GET /api/org/departments ──────────────────────────────────────────────────
-router.get('/departments', async (req, res) => {
+router.get('/departments', requireFunction('department_tree'), async (req, res) => {
   try {
     // Try departments table first
     let r;
@@ -84,7 +85,7 @@ router.get('/departments', async (req, res) => {
 });
 
 // ── GET /api/org/departments/:id/employees ────────────────────────────────────
-router.get('/departments/:id/employees', async (req, res) => {
+router.get('/departments/:id/employees', requireFunction('department_data'), async (req, res) => {
   try {
     const { search } = req.query;
     let q = `SELECT id as "_id", employee_id as "employeeId",
@@ -131,6 +132,13 @@ router.get('/departments/:id/employees', async (req, res) => {
 // org for everyone. Deliberately excludes salary/CTC/documents/leave/personal
 // records — viewing the directory grants no access to sensitive data, which
 // stays behind its own RBAC guards (profile pages, payroll, documents, edits).
+/* Not guarded by search_employee.
+ *
+ * This endpoint looks like the Search Employee feature and is not: the leave
+ * tracker's employee picker, the attendance location screen, the org chart and
+ * two dashboard widgets all read it. A 403 here would switch off four
+ * unrelated screens to honour one row on a settings page. The switch is
+ * applied where the feature actually lives — the search control itself. */
 router.get('/directory', async (req, res) => {
   try {
     const r = await pool.query(
@@ -161,7 +169,7 @@ router.get('/directory', async (req, res) => {
   }
 });
 
-router.get('/employee-tree', async (req, res) => {
+router.get('/employee-tree', requireFunction('employee_tree'), async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT id, employee_id as "employeeId", first_name as "firstName",
@@ -194,6 +202,16 @@ router.get('/employee-tree', async (req, res) => {
       return subtree;
     };
     roots.forEach(computeCounts);
+
+    /* The sub-control beside Employee Tree on the permissions screen. Organization
+     * shows the whole company from its roots; Reportee shows only the caller and
+     * everyone under them. The counts are computed before this narrows the result,
+     * so a manager still sees the true size of their own subtree. */
+    const { tree } = await optionsFor(req, 'employee_tree');
+    if (tree === 'reportee') {
+      const mine = map[req.user?.id];
+      return res.json({ success: true, data: mine ? [mine] : [] });
+    }
 
     res.json({ success: true, data: roots });
   } catch (err) {

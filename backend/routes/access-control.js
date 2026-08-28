@@ -25,6 +25,7 @@ const {
   FUNCTIONS, FUNCTION_KEYS, SERVICES, SERVICE_KEYS, ACCESS_LEVELS,
   PERMISSIONS, PERMISSION_KEYS, APPLICABILITY_FIELDS, CRITERIA_FIELDS,
 } = require('../utils/accessCatalog');
+const { forRole, invalidate } = require('../utils/functionAccess');
 
 router.use(protect);
 
@@ -373,6 +374,24 @@ router.post('/roles/:id/members', authorize(...WRITE), async (req, res) => {
 });
 
 // ── Function Based Permissions ─────────────────────────────────────────────
+
+/* What the signed-in user's own role allows. Every screen needs this to decide
+ * what to render, so it is deliberately not behind WRITE — a team member has
+ * to be able to ask what they are allowed to see. It answers for the caller's
+ * role only and takes no parameters, so it cannot be used to enumerate what
+ * other roles can do. */
+router.get('/my-functions', async (req, res) => {
+  try {
+    const map = await forRole(req.user?.role);
+    const out = {};
+    for (const f of FUNCTIONS) {
+      const row = map.get(f.key);
+      out[f.key] = { allowed: !!row?.allowed, options: row?.options || {} };
+    }
+    res.json({ success: true, data: { role: req.user?.role || null, functions: out } });
+  } catch (err) { fail(res, err); }
+});
+
 router.get('/functions', async (req, res) => {
   try {
     const roleId = uuidOrNull(req.query.roleId, 'Role');
@@ -396,8 +415,12 @@ router.get('/functions', async (req, res) => {
         // ones a migration remembered.
         functions: FUNCTIONS.map(f => ({
           ...f,
-          allowed: byKey.get(f.key)?.allowed ?? false,
-          options: byKey.get(f.key)?.options ?? {},
+          // Falls back to the catalogue default, not to false — the same
+          // fallback utils/functionAccess.js applies when it enforces these.
+          // Showing "off" for a row that behaves as "on" is the one way this
+          // screen can lie now that something reads it.
+          allowed: byKey.get(f.key)?.allowed ?? f.default,
+          options: byKey.get(f.key)?.options ?? f.defaultOptions ?? {},
         })),
       },
     });
@@ -420,6 +443,9 @@ router.patch('/functions/:roleId', authorize(...WRITE), async (req, res) => {
       );
     }
     await client.query('COMMIT');
+    // Something reads these now, so a save has to take effect immediately
+    // rather than when the cache happens to expire.
+    invalidate();
     const rows = await pool.query(
       `SELECT function_key AS "functionKey", allowed, options FROM role_functions WHERE role_id = $1`,
       [req.params.roleId]
@@ -427,7 +453,7 @@ router.patch('/functions/:roleId', authorize(...WRITE), async (req, res) => {
     const byKey = new Map(rows.rows.map(r => [r.functionKey, r]));
     res.json({
       success: true,
-      data: FUNCTIONS.map(f => ({ ...f, allowed: byKey.get(f.key)?.allowed ?? false, options: byKey.get(f.key)?.options ?? {} })),
+      data: FUNCTIONS.map(f => ({ ...f, allowed: byKey.get(f.key)?.allowed ?? f.default, options: byKey.get(f.key)?.options ?? f.defaultOptions ?? {} })),
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

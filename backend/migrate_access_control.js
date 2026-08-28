@@ -62,28 +62,16 @@ const SEED_PERMISSIONS = {
   team_member:   [],
 };
 
-// Function Based Permissions. The order, the labels, the defaults and the
-// sub-controls are all read off the reference. Every role in the reference org
-// shows the same values, so every role is seeded the same — there is no
-// per-role variation in the screenshots to copy.
-const FUNCTIONS = [
-  { key: 'search_employee',      allowed: true,  options: {} },
-  { key: 'delegation',           allowed: false, options: {} },
-  { key: 'quick_links',          allowed: true,  options: {} },
-  { key: 'tags',                 allowed: true,  options: {} },
-  { key: 'api_access',           allowed: false, options: {} },
-  { key: 'designation_by_permission', allowed: false, options: {} },
-  { key: 'announcements',        allowed: true,  options: { manage: false } },
-  { key: 'department_tree',      allowed: true,  options: {} },
-  { key: 'department_data',      allowed: true,  options: {} },
-  { key: 'employee_tree',        allowed: true,  options: { tree: 'organization' } },
-  { key: 'birthday_buddy',       allowed: true,  options: {} },
-  { key: 'new_joinee_list',      allowed: true,  options: {} },
-  { key: 'favorites',            allowed: true,  options: {} },
-  { key: 'work_anniversary',     allowed: false, options: { showYearsOfExperience: false } },
-  { key: 'wedding_anniversary',  allowed: false, options: {} },
-  { key: 'location_in_org_tab',  allowed: true,  options: {} },
-];
+/* Function Based Permissions seed. The list itself lives in the catalogue so
+ * the screen, the seed and the code that enforces the switches all read one
+ * source — this held a second copy of the sixteen keys, and a copy is a thing
+ * that drifts. */
+const { FUNCTIONS: CATALOG } = require('./utils/accessCatalog');
+const FUNCTIONS = CATALOG.map(f => ({
+  key: f.key,
+  allowed: f.default,
+  options: f.defaultOptions || {},
+}));
 
 async function migrate() {
   const client = await pool.connect();

@@ -13,6 +13,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
+const { allows } = require('../utils/functionAccess');
 const logger = require('../logger');
 const { serverError } = require('../utils/serverError');
 
@@ -99,6 +100,11 @@ router.get('/space', async (req, res) => {
       ),
     ]);
 
+    const [showNewHires, showBirthdays] = await Promise.all([
+      allows(req, 'new_joinee_list'),
+      allows(req, 'birthday_buddy'),
+    ]);
+
     res.json({
       success: true,
       data: {
@@ -111,8 +117,10 @@ router.get('/space', async (req, res) => {
         },
         locationDiversity:  locRes.rows,
         recentlyCheckedIn:  recentRes.rows,
-        newHires:           newHiresRes.rows,
-        birthdayBuddy:      birthdaysRes.rows,
+        // Omitted rather than refused — this response is the whole Team Space
+        // page, and one switched-off card should not take the other five with it.
+        newHires:           showNewHires  ? newHiresRes.rows  : [],
+        birthdayBuddy:      showBirthdays ? birthdaysRes.rows : [],
       },
     });
   } catch (err) {

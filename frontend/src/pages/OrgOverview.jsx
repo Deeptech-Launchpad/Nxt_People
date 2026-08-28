@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import { CalendarCheck, Clock, CalendarDays, Trophy, FileText, Plane, DollarSign, CheckSquare, FileCheck, MapPin, Link2 } from 'lucide-react';
 import api from '../utils/api';
+import { useFunctionAccess } from '../context/FunctionAccessContext';
 import toast from 'react-hot-toast';
 
 const SERVICE_TILES = [
@@ -26,6 +27,7 @@ const Tab = ({ active, onClick, children }) => (
 
 export default function OrgOverview() {
   const navigate = useNavigate();
+  const { can } = useFunctionAccess();
   const [tab, setTab] = useState('services');
   const [stats, setStats] = useState(null);
 
@@ -39,9 +41,14 @@ export default function OrgOverview() {
     <div className="p-6 max-w-5xl">
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex items-center gap-6 px-5 border-b border-slate-100">
-          {[['services','Services'],['location','Location'],['quicklinks','Quick Links']].map(([k,l]) => (
-            <Tab key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</Tab>
-          ))}
+          {/* Location is the "Show location details in the organization tab" row
+              under Function Based Permissions. Filtered out rather than
+              disabled — a tab that cannot be opened is just clutter. */}
+          {[['services','Services'],['location','Location'],['quicklinks','Quick Links']]
+            .filter(([k]) => k !== 'location' || can('location_in_org_tab'))
+            .map(([k,l]) => (
+              <Tab key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</Tab>
+            ))}
         </div>
 
         <div className="p-6">
