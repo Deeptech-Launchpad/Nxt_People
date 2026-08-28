@@ -8,7 +8,7 @@
  *
  *    it has no working life behind it      no attendance, leave, comp-off,
  *                                          payslip or regularisation
- *    it has never signed in                no last_login
+ *    nobody has signed in as it            no refresh token
  *
  *  Those never bend. A real employee cannot satisfy them, which is the point:
  *  the guard is what makes this safe to hand to somebody in a hurry.
@@ -49,6 +49,13 @@ const HISTORY = [
   ['comp_offs',         'comp-off record(s)'],
   ['regularizations',   'regularisation(s)'],
   ['payslips',          'payslip(s)'],
+  /* There is no last_login column on employees — I assumed one and the script
+   * died on `column "last_login" does not exist`, which is the same mistake
+   * this whole session has been about. A refresh token is the real evidence
+   * that somebody has signed in as this account, and every entry here is
+   * checked with to_regclass first, so a table this installation lacks is
+   * skipped rather than fatal. */
+  ['refresh_tokens',    'sign-in session(s)'],
 ];
 
 (async () => {
@@ -66,7 +73,7 @@ const HISTORY = [
   const emp = (await pool.query(
     `SELECT id, employee_id AS code, TRIM(CONCAT(first_name,' ',last_name)) AS name,
             email, status, registration_status AS reg, has_accepted AS accepted,
-            last_login, created_at
+            created_at
        FROM employees WHERE LOWER(email) = LOWER($1)`, [EMAIL])).rows[0];
 
   if (!emp) {
@@ -95,9 +102,6 @@ const HISTORY = [
     if (CONFIRMED) softened.push(what);
     else refusals.push(`${what} — pass --confirmed if that is expected`);
   }
-
-  // Never relaxed. Somebody who has signed in is using this account.
-  if (emp.last_login) refusals.push('somebody has signed in as this person');
 
   for (const [table, label] of HISTORY) {
     const exists = (await pool.query(`SELECT to_regclass($1) AS t`, [table])).rows[0].t;
