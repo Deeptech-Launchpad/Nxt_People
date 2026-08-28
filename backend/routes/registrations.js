@@ -160,6 +160,38 @@ router.post('/submit/:token', (req, res, next) => {
       education // JSON string
     } = req.body;
 
+    /* Everything that can be refused is refused BEFORE anything is written.
+     *
+     * These checks used to sit after the INSERT, so a candidate whose address
+     * was already on an employee row hit the UNIQUE constraint first and got
+     * "An internal server error occurred" — for a situation the form could have
+     * explained in a sentence. They had filled in the whole form by then. */
+    if (!personalEmail || !String(personalEmail).trim()) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Your email address is required — it has to be the address this invitation was sent to.',
+      });
+    }
+    if (personalEmail.trim().toLowerCase() !== String(tokenRes.rows[0].email).trim().toLowerCase()) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: `This invitation was sent to ${tokenRes.rows[0].email}. Please use that address, or ask HR to send a new invitation to the one you want to use.`,
+      });
+    }
+    // employees.email is UNIQUE, so this would otherwise fail as a constraint
+    // violation and read as the server breaking.
+    const taken = await client.query(
+      'SELECT 1 FROM employees WHERE LOWER(email) = LOWER($1) LIMIT 1', [personalEmail.trim()]);
+    if (taken.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        message: 'Somebody is already registered with this email address. If you have already submitted this form, there is nothing more to do — HR will be in touch. Otherwise please tell HR.',
+      });
+    }
+
     // Normalize PAN before storing — otherwise the same value gets stored
     // inconsistently ("abcde1234f", "ABCDE 1234F", ...) depending on how the
     // candidate typed it.
@@ -188,12 +220,6 @@ router.post('/submit/:token', (req, res, next) => {
     ]);
 
     const employeeId = empInsert.rows[0].id;
-
-    // M-05: validate that the submitted personal email matches the invite address
-    if (personalEmail && personalEmail.toLowerCase() !== tokenRes.rows[0].email.toLowerCase()) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, message: 'Email address does not match the invite.' });
-    }
 
     // Insert education records.
     if (education) {
@@ -264,7 +290,29 @@ router.post('/submit/:token', (req, res, next) => {
     res.json({ success: true, message: 'Submitted successfully. HR will review and contact you.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    /* A candidate who has just filled in a long form deserves better than a
+     * blank refusal, and so does whoever has to work out why. This route said
+     * "An internal server error occurred" and logged nothing, so the one thing
+     * that knew what was wrong kept it to itself. */
+    logger.error({ err: err?.message, code: err?.code, constraint: err?.constraint, stack: err?.stack },
+      'onboarding submission failed');
+
+    // A unique violation here is a real situation with a real explanation, not
+    // a server fault. 23505 is postgres for "that already exists".
+    if (err?.code === '23505') {
+      return res.status(409).json({
+        success: false,
+        message: 'Some of these details are already registered against another person — most often the email address. Please check with HR.',
+      });
+    }
+    // 23502 is a NOT NULL violation: a required field arrived empty.
+    if (err?.code === '23502') {
+      return res.status(400).json({
+        success: false,
+        message: 'A required field was left empty. Please check the form and try again.',
+      });
+    }
+    res.status(500).json({ success: false, message: 'Something went wrong saving your details. Please tell HR — they can see what happened.' });
   } finally {
     client.release();
   }
