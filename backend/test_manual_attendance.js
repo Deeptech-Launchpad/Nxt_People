@@ -85,12 +85,21 @@ const run = async () => {
 
   // ── working days ─────────────────────────────────────────────────────────
   console.log('\n  Working days\n');
-  const monSat = { days_of_week: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'] };
+  /* working_days, as shifts already stores it — ["Mon","Tue",…]. This read
+   * days_of_week until that turned out to be a column duplicating one the
+   * table already had; the Sunday case then passed for the wrong reason,
+   * because an unrecognised field reads as no days at all. */
+  const monSat = { working_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] };
   check('a Mon–Sat shift runs on Saturday, whatever the company weekend says',
     runsOn(monSat, '2026-08-29') === true);
-  check('and not on Sunday', runsOn(monSat, '2026-08-30') === false);
-  check('a shift with no days runs on no days', runsOn({ days_of_week: [] }, '2026-08-29') === false);
+  check('and not on Sunday — with real days set, so this fails for the right reason',
+    runsOn(monSat, '2026-08-30') === false && monSat.working_days.length === 6);
+  check('lowercase input still matches the capitalised stored form',
+    runsOn({ working_days: ['sat'] }, '2026-08-29') === true);
+  check('a shift with no days runs on no days', runsOn({ working_days: [] }, '2026-08-29') === false);
   check('an unparseable date does not throw', runsOn(monSat, 'not-a-date') === false);
+  check('the dropped duplicate column is not read any more',
+    runsOn({ days_of_week: ['Sat'] }, '2026-08-29') === false);
 
   // ── pay mode ─────────────────────────────────────────────────────────────
   console.log('\n  Pay mode\n');
@@ -177,6 +186,10 @@ const run = async () => {
 
   check('marks may only ever be present or absent — presumed is not a state',
     /CHECK \(state IN \('present','absent'\)\)/.test(migSrc));
+  check('the duplicate working-days column is dropped, not left behind',
+    /DROP COLUMN IF EXISTS days_of_week/.test(migSrc));
+  check('manual shifts take their weekend from the shift, not from weekend_rules',
+    /weekend_source = 'shift'/.test(routeSrc) || /'shift'/.test(routeSrc));
   check('nothing inserts a presumed mark',
     !/INSERT INTO manual_attendance_marks[\s\S]{0,200}presumed/.test(routeSrc));
   check('the summary counts presumed days on read instead',

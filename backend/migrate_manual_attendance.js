@@ -10,11 +10,11 @@
  *     rotation, patterns, auto-assignment and every shift picker, because
  *     three cleaners' shifts should not appear in a dropdown for 155 people.
  *
- *     A manual shift also carries its OWN working days. That is what lets
- *     housekeeping work Saturday: weekend_rules has no scoping of any kind and
- *     is global, so rather than teach it to exclude people, a manual shift
- *     simply declares the days it runs and the company's weekend never enters
- *     into it. Same for holidays, via observes_holidays.
+ *     Saturdays are handled by machinery that already exists: shifts carries
+ *     working_days and weekend_source, and weekend_source 'shift' hands the
+ *     weekend decision to that shift's own days. A manual shift is one with
+ *     weekend_source = 'shift', so weekend_rules never has to learn about it.
+ *     Holidays are the same idea, via observes_holidays.
  *
  *  2. Assignments. Who works which shift, with no unique key on the employee
  *     alone — one person can hold two shifts a day, which is the whole point.
@@ -64,12 +64,29 @@ async function migrate() {
      * Set per shift because the shift is where the span already lives. */
     await client.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS pay_mode VARCHAR(10) NOT NULL DEFAULT 'fixed'`);
 
-    /* Which days this shift runs. Only consulted for manual shifts, where it
-     * replaces the company weekend entirely. */
+    /* Which days a manual shift runs is NOT a new column.
+     *
+     * shifts already carries working_days and weekend_source, and
+     * migrate_shift_model.js already gave them exactly this meaning:
+     * weekend_source 'location' leaves weekend_rules in charge, 'shift' hands
+     * the decision to that shift's own working_days. A manual shift is simply
+     * one with weekend_source = 'shift', which is how housekeeping work
+     * Saturday without weekend_rules needing any scoping.
+     *
+     * This first added a days_of_week column before noticing, which would have
+     * left two lists of working days on the same table for the same question.
+     * It is dropped here rather than left behind for somebody to find and
+     * wonder which one wins. Nothing ever read it: the column and the feature
+     * shipped together.
+     *
+     * Both are ensured rather than assumed, because migrate_shift_model.js is
+     * one of the forty migrations npm run migrate does not run. */
     await client.query(
-      `ALTER TABLE shifts ADD COLUMN IF NOT EXISTS days_of_week JSONB NOT NULL
-         DEFAULT '["mon","tue","wed","thu","fri","sat"]'::jsonb`
-    );
+      `ALTER TABLE shifts ADD COLUMN IF NOT EXISTS working_days JSONB NOT NULL
+         DEFAULT '["Mon","Tue","Wed","Thu","Fri"]'::jsonb`);
+    await client.query(
+      `ALTER TABLE shifts ADD COLUMN IF NOT EXISTS weekend_source VARCHAR(10) NOT NULL DEFAULT 'location'`);
+    await client.query(`ALTER TABLE shifts DROP COLUMN IF EXISTS days_of_week`);
 
     /* FALSE means the shift runs on company holidays. Housekeeping do.
      * Ordinary shifts are unaffected: this is read only for manual ones. */

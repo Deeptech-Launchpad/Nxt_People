@@ -44,10 +44,14 @@ const fail = (res, err) => {
 const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || ''));
 
+/* shifts has no is_active column — that was read off a superseded definition
+ * in migrate_all.js and 500'd every request to this file. The live table comes
+ * from migrate_shift_model.js and carries working_days / weekend_source
+ * instead, which is what these shifts now use. */
 const SHIFT_COLS = `
   s.id, s.name, s.start_time AS "startTime", s.end_time AS "endTime",
-  s.pay_mode AS "payMode", s.days_of_week AS "daysOfWeek",
-  s.observes_holidays AS "observesHolidays", s.is_active AS "isActive"`;
+  s.pay_mode AS "payMode", s.working_days AS "daysOfWeek",
+  s.observes_holidays AS "observesHolidays", s.weekend_source AS "weekendSource"`;
 
 // The same columns without the table alias, for RETURNING.
 const SHIFT_RETURNING = SHIFT_COLS.replace(/\bs\./g, '');
@@ -66,8 +70,12 @@ function readShift(body) {
 
   const payMode = body?.payMode === 'actual' ? 'actual' : 'fixed';
 
-  const days = Array.isArray(body?.daysOfWeek) ? body.daysOfWeek.map(d => String(d).toLowerCase()) : [];
-  const clean = DAY_KEYS.filter(d => days.includes(d));
+  /* Stored the way working_days already stores them — "Mon", "Tue". Accepted
+   * in any case so a caller sending "mon" is not silently dropped. */
+  const sent = Array.isArray(body?.daysOfWeek)
+    ? body.daysOfWeek.map(d => String(d).trim().slice(0, 3).toLowerCase())
+    : [];
+  const clean = DAY_KEYS.filter(d => sent.includes(d.toLowerCase()));
   if (!clean.length) throw bad('Choose at least one day this shift runs');
 
   return {
@@ -95,8 +103,11 @@ router.post('/shifts', audit('CREATE', 'manual_shift'), async (req, res) => {
   try {
     const s = readShift(req.body);
     const { rows } = await pool.query(
-      `INSERT INTO shifts (name, start_time, end_time, is_manual, pay_mode, days_of_week, observes_holidays, is_active)
-       VALUES ($1, $2::time, $3::time, TRUE, $4, $5::jsonb, $6, TRUE)
+      /* weekend_source 'shift' is what makes working_days govern this shift's
+       * weekend instead of weekend_rules. Without it a Saturday shift would
+       * still be a company weekend. */
+      `INSERT INTO shifts (name, start_time, end_time, is_manual, pay_mode, working_days, observes_holidays, weekend_source)
+       VALUES ($1, $2::time, $3::time, TRUE, $4, $5::jsonb, $6, 'shift')
        RETURNING ${SHIFT_RETURNING}`,
       [s.name, s.start, s.end, s.payMode, JSON.stringify(s.days), s.observesHolidays]);
     res.status(201).json({ success: true, data: rows[0] });
@@ -111,7 +122,8 @@ router.put('/shifts/:id', audit('UPDATE', 'manual_shift'), async (req, res) => {
     await client.query('BEGIN');
     const { rows } = await client.query(
       `UPDATE shifts SET name = $2, start_time = $3::time, end_time = $4::time,
-              pay_mode = $5, days_of_week = $6::jsonb, observes_holidays = $7
+              pay_mode = $5, working_days = $6::jsonb, observes_holidays = $7,
+              weekend_source = 'shift'
         WHERE id = $1 AND is_manual
         RETURNING id`,
       [req.params.id, s.name, s.start, s.end, s.payMode, JSON.stringify(s.days), s.observesHolidays]);
@@ -160,7 +172,7 @@ router.get('/staff', async (req, res) => {
               COALESCE(json_agg(json_build_object(
                 'id', s.id, 'name', s.name,
                 'startTime', s.start_time, 'endTime', s.end_time,
-                'payMode', s.pay_mode, 'daysOfWeek', s.days_of_week,
+                'payMode', s.pay_mode, 'daysOfWeek', s.working_days,
                 'observesHolidays', s.observes_holidays
               ) ORDER BY s.start_time) FILTER (WHERE s.id IS NOT NULL), '[]') AS shifts
          FROM manual_attendance_assignments a
@@ -226,7 +238,7 @@ router.get('/day', async (req, res) => {
               e.joining_date AS "joiningDate", e.status AS "employeeStatus",
               s.id AS "shiftId", s.name AS "shiftName",
               s.start_time AS "startTime", s.end_time AS "endTime",
-              s.pay_mode AS "payMode", s.days_of_week AS "daysOfWeek",
+              s.pay_mode AS "payMode", s.working_days AS "daysOfWeek",
               s.observes_holidays AS "observesHolidays",
               m.state, m.hours, m.note, m.marked_at AS "markedAt",
               TRIM(CONCAT(mb.first_name, ' ', COALESCE(mb.last_name, ''))) AS "markedBy"
@@ -242,7 +254,7 @@ router.get('/day', async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
     const rowsOut = rows.map(r => {
       const scheduled =
-        runsOn({ days_of_week: r.daysOfWeek }, date) &&
+        runsOn({ working_days: r.daysOfWeek }, date) &&
         !(r.observesHolidays && holidays.has(date)) &&
         (!r.joiningDate || new Date(r.joiningDate).toISOString().slice(0, 10) <= date);
       return {
@@ -341,7 +353,7 @@ router.post('/mark-all', audit('UPDATE', 'manual_attendance_mark'), async (req, 
 
     const holidays = await holidaySet(date, date);
     const { rows } = await client.query(
-      `SELECT a.employee_id, a.shift_id, s.days_of_week, s.observes_holidays
+      `SELECT a.employee_id, a.shift_id, s.working_days, s.observes_holidays
          FROM manual_attendance_assignments a
          JOIN shifts s ON s.id = a.shift_id
          JOIN employees e ON e.id = a.employee_id AND e.deleted_at IS NULL
@@ -351,7 +363,7 @@ router.post('/mark-all', audit('UPDATE', 'manual_attendance_mark'), async (req, 
       [date]);
 
     const due = rows.filter(r =>
-      runsOn({ days_of_week: r.days_of_week }, date) && !(r.observes_holidays && holidays.has(date)));
+      runsOn({ working_days: r.working_days }, date) && !(r.observes_holidays && holidays.has(date)));
 
     await client.query('BEGIN');
     for (const r of due) {
@@ -395,7 +407,7 @@ router.get('/summary', async (req, res) => {
               TRIM(CONCAT(e.first_name, ' ', COALESCE(e.last_name, ''))) AS name,
               e.designation, e.joining_date,
               s.name AS shift_name, s.start_time, s.end_time, s.pay_mode,
-              s.days_of_week, s.observes_holidays
+              s.working_days, s.observes_holidays
          FROM manual_attendance_assignments a
          JOIN employees e ON e.id = a.employee_id AND e.deleted_at IS NULL
          JOIN shifts s ON s.id = a.shift_id
@@ -431,7 +443,7 @@ router.get('/summary', async (req, res) => {
       for (const d of dates) {
         if (d > today) continue;
         if (joined && d < joined) continue;
-        if (!runsOn({ days_of_week: row.days_of_week }, d)) continue;
+        if (!runsOn({ working_days: row.working_days }, d)) continue;
         if (row.observes_holidays && holidays.has(d)) continue;
 
         agg.scheduled += 1;

@@ -99,9 +99,13 @@ export default function StaffShifts() {
     }
   };
 
+  /* The API stores these as working_days does — "Mon", "Tue" — and accepts any
+   * case. Comparisons here are case-insensitive so a shift loaded for editing
+   * shows the right days ticked. */
+  const has = (list, k) => (list || []).some(d => String(d).slice(0, 3).toLowerCase() === k);
   const toggleDay = (k) => setForm(f => ({
     ...f,
-    daysOfWeek: f.daysOfWeek.includes(k) ? f.daysOfWeek.filter(d => d !== k) : [...f.daysOfWeek, k],
+    daysOfWeek: has(f.daysOfWeek, k) ? f.daysOfWeek.filter(d => String(d).slice(0, 3).toLowerCase() !== k) : [...f.daysOfWeek, k],
   }));
 
   return (
@@ -152,7 +156,7 @@ export default function StaffShifts() {
                 {DAYS.map(({ k, l }) => (
                   <button key={k} onClick={() => toggleDay(k)}
                     className={`px-2.5 py-1.5 rounded-lg text-[12.5px] font-medium border transition-colors ${
-                      form.daysOfWeek.includes(k)
+                      has(form.daysOfWeek, k)
                         ? 'bg-brand-600 border-brand-600 text-white'
                         : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}>{l}</button>

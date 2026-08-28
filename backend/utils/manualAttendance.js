@@ -29,7 +29,9 @@
  *  payable at all, is not decided. Nothing here feeds payroll today.
  * ───────────────────────────────────────────────────────────────────────── */
 
-const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+/* Canonical as shifts.working_days already stores them — ["Mon","Tue",…].
+ * Indexed by Date#getDay(), so Sunday leads. */
+const DAY_KEYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** 'HH:MM' or 'HH:MM:SS' → minutes since midnight. Null if unparseable. */
 function clockMinutes(t) {
@@ -56,15 +58,27 @@ function shiftSpanHours(shift) {
   return Math.round((span / 60) * 100) / 100;
 }
 
-/** Does this manual shift run on this date? Its own days, not the company's. */
+/**
+ * Does this manual shift run on this date?
+ *
+ * Reads shifts.working_days, which already exists and already means this —
+ * a shift with weekend_source 'shift' takes its weekend from these days
+ * instead of from weekend_rules. That is how housekeeping work Saturday
+ * without weekend_rules needing any scoping of its own.
+ *
+ * Compared case-insensitively because the column holds "Mon" and callers
+ * reasonably send "mon".
+ */
 function runsOn(shift, date) {
-  const days = Array.isArray(shift?.days_of_week) ? shift.days_of_week
+  const days = Array.isArray(shift?.working_days) ? shift.working_days
+             : Array.isArray(shift?.workingDays) ? shift.workingDays
              : Array.isArray(shift?.daysOfWeek) ? shift.daysOfWeek
              : [];
   if (!days.length) return false;
   const d = date instanceof Date ? date : new Date(`${date}T00:00:00`);
   if (Number.isNaN(d.getTime())) return false;
-  return days.map(x => String(x).toLowerCase()).includes(DAY_KEYS[d.getDay()]);
+  const want = DAY_KEYS[d.getDay()].toLowerCase();
+  return days.some(x => String(x).trim().slice(0, 3).toLowerCase() === want);
 }
 
 /**
