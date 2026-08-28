@@ -157,7 +157,7 @@ async function migrate() {
              (SELECT COUNT(*) FROM manual_attendance_marks)               AS marks,
              (SELECT COUNT(*) FROM attendance WHERE source = 'manual')    AS manual_days`)).rows[0];
 
-    console.log('\n  ok   shifts: is_manual, pay_mode, days_of_week, observes_holidays');
+    console.log('\n  ok   shifts: is_manual, pay_mode, observes_holidays (working days reuse working_days)');
     console.log('  ok   manual_attendance_assignments');
     console.log('  ok   manual_attendance_marks');
     console.log('  ok   attendance.source');
