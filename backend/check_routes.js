@@ -121,13 +121,20 @@ function collectRoutes(app) {
     currentRoute = path;
     let status = 0;
     let body = '';
-    try {
-      const r = await fetch(base + path, { headers: { Authorization: `Bearer ${token}` } });
-      status = r.status;
-      body = (await r.text()).slice(0, 200);
-    } catch (e) {
-      status = -1;
-      body = e.message;
+    /* Retried once, because a dropped socket partway through two hundred
+     * sequential requests is the harness having a bad moment, not the route
+     * being broken. One run reported a route as failing that answers 400 in
+     * ten milliseconds when asked on its own. */
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const r = await fetch(base + path, { headers: { Authorization: `Bearer ${token}` } });
+        status = r.status;
+        body = (await r.text()).slice(0, 200);
+        break;
+      } catch (e) {
+        status = -1;
+        body = `could not be reached — ${e.message}`;
+      }
     }
     currentRoute = null;
 

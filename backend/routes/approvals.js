@@ -27,6 +27,14 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
     const reportFilter = full ? '' : ' AND (e.reporting_manager_id = $1 OR e.approving_authority_id = $1)';
     const simpleParams = full ? [] : [userId];
 
+    /* Every one of these joins employees and none of them excluded a
+     * soft-deleted one, so `e.deleted_at IS NULL` now appears on all seven.
+     *
+     * Employment status is filtered only on the Approved / Rejected query.
+     * A PENDING request from somebody who has left is still work to clear,
+     * and hiding it would leave it pending for ever; a finished one is a
+     * report, and last year's leave for people who have gone does not
+     * belong on this month's. */
     // Order here must match the order of the queries below, exactly.
     const [leavesRes, timesheetsRes, regRes, wfhRes, onDutyRes, compOffRes, approvedLeavesRes] = await Promise.all([
       pool.query(`
@@ -43,6 +51,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         FROM leaves l
         JOIN employees e ON l.employee_id = e.id
         WHERE l.status = 'pending'
+          AND e.deleted_at IS NULL
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1 AND x.status = 'pending'
@@ -56,7 +65,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee
         FROM timesheets t JOIN employees e ON t.employee_id = e.id
-        WHERE t.status = 'submitted'${reportFilter} ORDER BY t.created_at DESC
+        WHERE t.status = 'submitted' AND e.deleted_at IS NULL${reportFilter} ORDER BY t.created_at DESC
       `, simpleParams),
 
       // Regularizations now flow through the same hierarchy engine as leaves.
@@ -72,6 +81,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                )) as "canAct"
         FROM attendance_regularizations r JOIN employees e ON r.employee_id = e.id
         WHERE r.status = 'pending'
+          AND e.deleted_at IS NULL
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'regularization' AND x.request_id = r.id AND x.approver_id = $1 AND x.status = 'pending'
@@ -90,6 +100,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                )) as "canAct"
         FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
         WHERE w.status = 'pending'
+          AND e.deleted_at IS NULL
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'wfh' AND x.request_id = w.id AND x.approver_id = $1 AND x.status = 'pending'
@@ -111,6 +122,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                )) as "canAct"
         FROM on_duty_requests o JOIN employees e ON o.employee_id = e.id
         WHERE o.status = 'pending'
+          AND e.deleted_at IS NULL
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'on_duty' AND x.request_id = o.id AND x.approver_id = $1 AND x.status = 'pending'
@@ -132,6 +144,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                )) as "canAct"
         FROM comp_offs c JOIN employees e ON c.employee_id = e.id
         WHERE c.status = 'pending'
+          AND e.deleted_at IS NULL
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'comp_off' AND x.request_id = c.id AND x.approver_id = $1 AND x.status = 'pending'
@@ -152,7 +165,26 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         JOIN employees e ON l.employee_id = e.id
         WHERE ${full ? 'TRUE' : `EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1)`}
           AND l.status IN ('approved', 'rejected')
-        ORDER BY l.created_at DESC LIMIT 500
+          /* This month only. It had no date bound at all, so the Approved and
+           * Rejected tabs were showing 2024 alongside today and the 500-row cap
+           * was being spent on history nobody was looking for.
+           *
+           * Overlap rather than start date, so a leave running from the 30th
+           * into next month still belongs to this month too. */
+          AND l.start_date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
+          AND l.end_date   >= date_trunc('month', CURRENT_DATE)::date
+          /* People, not records. Deleted rows were never excluded here at all.
+           *
+           * Somebody whose last working day falls inside this month is still
+           * this month's business — they were an employee for part of it and
+           * their leave belongs on the report. It is only once their last day
+           * is behind the month that they drop off. */
+          AND e.deleted_at IS NULL
+          AND (
+            e.status = 'active'
+            OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date
+          )
+        ORDER BY l.start_date DESC LIMIT 500
       `, full ? [] : [userId]),
     ]);
 
