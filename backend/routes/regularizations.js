@@ -356,12 +356,30 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
           ? `${reg.date.getFullYear()}-${String(reg.date.getMonth() + 1).padStart(2, '0')}-${String(reg.date.getDate()).padStart(2, '0')}`
           : String(reg.date).slice(0, 10);
 
+        /* The day as it stands. Read here rather than further down because a
+         * request that supplies only a check-out has to be measured from the
+         * check-in ALREADY recorded — that is precisely what "I forgot to
+         * check out" means. */
+        const exists = await client.query(
+          `SELECT id, check_in, check_out, working_hours,
+                  TO_CHAR(check_in AT TIME ZONE 'UTC' AT TIME ZONE '${DEFAULT_TZ}', 'HH24:MI:SS') AS check_in_local
+             FROM attendance WHERE employee_id=$1 AND date=$2`,
+          [reg.employee_id, reg.date]
+        );
+        const existingCheckIn = exists.rows[0]?.check_in_local || null;
+
+        /* What the day actually started at: the corrected time if one was
+         * given, otherwise the one already on the record. Without this a
+         * check-out-only correction measured from nothing, computed no hours,
+         * and stamped the day present with zero worked. */
+        const effectiveCheckIn = reg.check_in || existingCheckIn;
+
         let workingHours = null;
         let newStatus = 'present';
         let newLateMinutes = 0;
 
-        if (reg.check_in) {
-          const ciTime = new Date(`${regDate}T${reg.check_in}`);
+        if (effectiveCheckIn) {
+          const ciTime = new Date(`${regDate}T${effectiveCheckIn}`);
           const checkInMins = ciTime.getHours() * 60 + ciTime.getMinutes();
           const minsLate = checkInMins - shiftStartMins;
           if (minsLate > 0) newLateMinutes = minsLate;
@@ -407,11 +425,13 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         const regCfg = await attendanceConfig.section('regularization');
         const addsEntry = regCfg.entryMode === 'create';
 
-        const exists = await client.query(
-          'SELECT id, check_in, check_out, working_hours FROM attendance WHERE employee_id=$1 AND date=$2',
-          [reg.employee_id, reg.date]
-        );
-        if (exists.rows.length > 0 && addsEntry && exists.rows[0].check_in) {
+        /* Adding a SECOND stint only makes sense when the request supplies both
+         * ends of it. A one-sided correction is completing the entry that is
+         * already there, and taking this branch inserted a session row with a
+         * null check_in — which that table forbids, so every "forgot to check
+         * out" approval died on a not-null violation. */
+        if (exists.rows.length > 0 && addsEntry && exists.rows[0].check_in
+            && reg.check_in && reg.check_out) {
           const row = exists.rows[0];
           // The day now spans the earliest check-in to the latest check-out,
           // and its hours are the sum of both pairs rather than either one.
