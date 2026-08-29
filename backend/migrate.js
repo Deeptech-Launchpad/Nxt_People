@@ -49,6 +49,89 @@ const ORDER = [
   'migrate_rename_roles.js',             // rename roles: super_admin→admin, hr→director, employee→team_member
   'migrate_sessions.js',                 // attendance_sessions (per check-in/out pairs)
   'migrate_payroll_v2.js',               // payroll rebuild: templates, increments/arrears, versioned compliance settings, declaration windows, extended payslips
+  /* ── Everything below was on disk but not in this list ───────────────────
+   *  A fresh install built from the list above produced 79 tables where a
+   *  working installation has 112. Thirty-three were missing outright,
+   *  including roles, role_permissions and role_functions — the entire access
+   *  control system — along with workflows, designations, work_locations and
+   *  pay_periods. Anyone installing this from scratch got a database the
+   *  running code could not use.
+   *
+   *  Ordered by what depends on what: organisation structure first because
+   *  designations, locations and companies are referenced later; then access
+   *  control, since function permissions seed against roles; then shifts,
+   *  which rotation and patterns build on; then leave, comp-off and
+   *  approvals; payroll and one-off repairs last.
+   * ────────────────────────────────────────────────────────────────────── */
+
+  // Organisation: designations, work_locations, business_units, divisions
+  'migrate_org_setup.js',
+  'migrate_org_details.js',
+  'migrate_org_structure.js',
+  'migrate_merge_locations.js',
+  'migrate_user_accounts.js',            // employees.company_id + is_user
+  'migrate_user_page.js',
+  'migrate_privacy_prefs.js',
+
+  // Access control: roles, role_permissions, role_functions, administrators
+  'migrate_rbac_roles.js',
+  'migrate_access_control.js',
+  'migrate_function_permissions_enforce.js',  // seeds against roles, so after it
+
+  /* Approvals come before shifts: migrate_shift_change_requests references
+   * approval_rules, which migrate_approvals_automation creates. Placed after
+   * shifts on the first attempt, the fresh-install build stopped there with
+   * `relation "approval_rules" does not exist`. */
+  'migrate_approvals_automation.js',     // approval_rules, email_templates, email_alerts
+  'migrate_generalize_approvals.js',     // approval_levels
+  'migrate_approval_flow.js',            // reads approval_rules, so it follows
+  'migrate_approval_followups.js',
+  'migrate_workflows.js',
+  'migrate_on_duty.js',
+
+  // Shifts: the model patterns and rotation build on
+  'migrate_shift_config.js',
+  'migrate_default_shift.js',
+  'migrate_shift_model.js',              // working_days, weekend_source, shift_patterns
+  'migrate_shift_rotation.js',
+  'migrate_shift_change_requests.js',
+
+  // Attendance
+  'migrate_attendance_config.js',
+  'migrate_expected_hours.js',
+  'migrate_session_start.js',
+  'migrate_cover_image.js',
+
+  /* pay_periods is created here and ALTERed by migrate_work_calendar, so it
+   * has to exist first. Placed after the calendar on the first attempt, its
+   * whole table went missing and every later ALTER reported
+   * `relation "pay_periods" does not exist`. */
+  'migrate_pay_periods.js',
+
+  // Leave and the calendar it depends on
+  'migrate_work_calendar.js',
+  'migrate_holiday_scope.js',            // holiday_scopes — needs holidays
+  'migrate_leave_policy.js',
+  'migrate_leave_methods.js',
+  'migrate_leave_config_rest.js',
+  'migrate_leave_approvals.js',
+  'migrate_leave_balance_source.js',
+  'migrate_leave_cancellation.js',
+  'migrate_leave_extension.js',
+  'migrate_sandwich_leave.js',
+
+  // Comp-off
+  'migrate_comp_off_config.js',
+  'migrate_compoff_holiday_config.js',
+  'migrate_comp_off_on_behalf.js',       // comp_offs.applied_by
+
+  // Attendance marking for staff who cannot punch — needs shifts and employees
+  'migrate_manual_attendance.js',
+
+  // One-off repairs and safety nets
+  'migrate_import_backup.js',
+  'migrate_fix_encoding.js',
+
   'migrate_indexes.js',                  // perf indexes — run last
 ];
 

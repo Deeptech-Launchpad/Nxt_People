@@ -32,10 +32,19 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# nginx:alpine ships with a curl-less image; the healthcheck uses wget which
-# is included in busybox.
+# nginx:alpine ships without curl; busybox provides wget.
+#
+# 127.0.0.1, not localhost. nginx binds IPv4 (`listen 80;`), and in a container
+# where localhost also resolves to ::1 the probe can hit the v6 address and be
+# refused — which is how this reported ten consecutive failures while nginx was
+# serving the site perfectly.
+#
+# stderr is deliberately NOT redirected away. It was, so the failure recorded
+# exit code 1 with completely empty output and `docker inspect` could not say
+# what had gone wrong. A healthcheck that cannot explain itself is barely
+# better than no healthcheck.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1
+  CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

@@ -282,6 +282,16 @@ async function loadHolidaysAndRules(month, year) {
     if (!holMap.has(key)) holMap.set(key, []);
     holMap.get(key).push({ type: h.type, locationIds: h.location_ids || [], shiftIds: h.shift_ids || [] });
   }
+  /* No active weekend rule means every day of the week counts as a working
+   * day, everywhere: Sundays become absences, expected hours roughly double,
+   * and Loss of Pay follows them. That is a plausible state — a brand new
+   * installation has none — but it is never a silent one, because the numbers
+   * it produces look ordinary and are wrong by a factor of about two. */
+  if (!rulesRes.rows.length) {
+    logger.warn({ month, year },
+      '[weekends] no active weekend rule — every day is being treated as a working day');
+  }
+
   return { holMap, rules: rulesRes.rows };
 }
 

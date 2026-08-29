@@ -113,6 +113,26 @@ async function migrate() {
   try {
     await client.query('BEGIN');
 
+    /* settings.full_day_hours is read by the attendance policy screen, the
+     * entry editor and the regularization engine, and WRITTEN by the policy
+     * screen's save — but nothing ever created it. schema.sql declares
+     * half_day_hours and not its partner, and no migration adds it, so a
+     * database built from scratch had reads quietly falling back to 7.5 and
+     * the save throwing `column "full_day_hours" does not exist`.
+     *
+     * Both are NUMERIC(4,2) here because that is what a working installation
+     * actually holds — schema.sql still says INT, which cannot express the 7.5
+     * the code falls back to, nor a 4.5-hour half day. Widening an INT column
+     * is safe and keeps existing values. */
+    await client.query(
+      `ALTER TABLE settings ADD COLUMN IF NOT EXISTS full_day_hours NUMERIC(4,2) DEFAULT 7.5`);
+    await client.query(
+      `ALTER TABLE settings ALTER COLUMN full_day_hours TYPE NUMERIC(4,2)`);
+    await client.query(
+      `ALTER TABLE settings ALTER COLUMN half_day_hours TYPE NUMERIC(4,2)`);
+    await client.query(
+      `UPDATE settings SET full_day_hours = 7.5 WHERE full_day_hours IS NULL`);
+
     for (const [column, value] of Object.entries(DEFAULTS)) {
       await client.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS ${column} JSONB`);
       // Only fill a row that has never been configured. Re-running must not

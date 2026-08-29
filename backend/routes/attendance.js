@@ -525,7 +525,10 @@ router.patch('/location', async (req, res) => {
     }
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false });
+    /* Was a bare `{ success: false }` with no message and nothing logged — the
+     * browser learned nothing and neither did the log, so a broken location
+     * update would have stayed invisible indefinitely. */
+    serverError(res, err);
   }
 });
 

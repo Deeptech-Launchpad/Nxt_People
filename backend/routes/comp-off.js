@@ -51,10 +51,67 @@ async function isNonWorkingDate(db, ymd) {
   return rules.rows.some(rule => ruleMatchesDate(rule, date));
 }
 
-// How long an earned credit stays usable — Configuration → Compensatory Off.
-async function compOffExpiryMonths(db) {
-  const r = await db.query('SELECT comp_off_expiry_months FROM settings LIMIT 1');
-  return parseInt(r.rows[0]?.comp_off_expiry_months, 10) || 3;
+/* When a credit earned on `workedDate` stops being usable.
+ *
+ * Configuration → Compensatory Off offers three units and a calendar-year-end
+ * mode, but only ONE of them — months — was ever copied into the legacy
+ * comp_off_expiry_months column that this check used to read. Choosing
+ * "30 calendar days" or "end of the calendar year" left that column holding
+ * whatever it said before, so the screen and the rule it was supposed to set
+ * quietly disagreed: you could configure a year and still be refused after
+ * three months.
+ *
+ * The stored config is now the source of truth. The old column is still read,
+ * but only as a fallback for an installation whose config has never been
+ * saved.
+ *
+ * Returns { date: 'YYYY-MM-DD', describe: 'a human phrase' } so the refusal
+ * can say what the rule actually is rather than always saying "months".
+ */
+async function compOffExpiresAt(db, workedDate) {
+  const r = await db.query(
+    'SELECT comp_off_config, comp_off_expiry_months FROM settings LIMIT 1');
+  const cfg = r.rows[0]?.comp_off_config?.expiry;
+
+  if (cfg?.mode === 'calendar_year_end') {
+    const q = await db.query(
+      `SELECT to_char(date_trunc('year', $1::date) + INTERVAL '1 year - 1 day', 'YYYY-MM-DD') AS exp`,
+      [workedDate]);
+    return { date: q.rows[0].exp, describe: 'the end of that calendar year' };
+  }
+
+  const amount = Number(cfg?.amount);
+  if (cfg?.mode === 'after' && Number.isInteger(amount) && amount > 0) {
+    if (cfg.unit === 'months' || cfg.unit === 'calendar_days') {
+      const unit = cfg.unit === 'months' ? 'months' : 'days';
+      const q = await db.query(
+        `SELECT to_char(($1::date) + ($2 || ' ${unit}')::interval, 'YYYY-MM-DD') AS exp`,
+        [workedDate, amount]);
+      return {
+        date: q.rows[0].exp,
+        describe: `${amount} ${cfg.unit === 'months' ? 'month' : 'day'}${amount === 1 ? '' : 's'} of the worked date`,
+      };
+    }
+    if (cfg.unit === 'business_days') {
+      /* Counted forward over working days only, so a weekend does not eat into
+       * the window. Capped so a misconfiguration cannot walk forever. */
+      let d = workedDate;
+      let counted = 0;
+      for (let step = 0; step < amount * 5 + 30 && counted < amount; step += 1) {
+        d = (await db.query(`SELECT to_char(($1::date) + INTERVAL '1 day', 'YYYY-MM-DD') AS d`, [d])).rows[0].d;
+        if (!(await isNonWorkingDate(db, d))) counted += 1;
+      }
+      return { date: d, describe: `${amount} working day${amount === 1 ? '' : 's'} of the worked date` };
+    }
+  }
+
+  // Nothing configured — the column this used to be the only reading of.
+  const legacy = parseInt(r.rows[0]?.comp_off_expiry_months, 10);
+  const months = Number.isFinite(legacy) && legacy > 0 ? legacy : 3;
+  const q = await db.query(
+    `SELECT to_char(($1::date) + ($2 || ' months')::interval, 'YYYY-MM-DD') AS exp`,
+    [workedDate, months]);
+  return { date: q.rows[0].exp, describe: `${months} month${months === 1 ? '' : 's'} of the worked date` };
 }
 
 // Did the employee actually work (a recorded check-in) on `date`?
@@ -304,16 +361,11 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
     }
     // Validity window is configurable. Compare as ISO strings (YYYY-MM-DD)
     // to avoid any JS Date timezone drift.
-    const expiryMonths = await compOffExpiryMonths(client);
-    const expRes = await client.query(
-      `SELECT to_char(($1::date) + ($2 || ' months')::interval, 'YYYY-MM-DD') AS exp`,
-      [workedDate, expiryMonths]
-    );
-    const expiresAt = expRes.rows[0].exp; // 'YYYY-MM-DD'
-    if (compOffDate && compOffDate > expiresAt) {
+    const expiry = await compOffExpiresAt(client, workedDate);
+    if (compOffDate && compOffDate > expiry.date) {
       return res.status(400).json({
         success: false,
-        message: `Comp-Off must be used within ${expiryMonths} month${expiryMonths === 1 ? '' : 's'} of the worked date. Please pick an earlier date.`,
+        message: `Comp-Off must be used within ${expiry.describe} (by ${expiry.date}). Please pick an earlier date.`,
       });
     }
 
@@ -549,3 +601,6 @@ router.patch('/config', authorize('admin', 'director', 'hr_admin'), async (req, 
 });
 
 module.exports = router;
+/* Exported for the test that covers each expiry unit. The route is the only
+ * caller in the application. */
+module.exports.compOffExpiresAt = compOffExpiresAt;

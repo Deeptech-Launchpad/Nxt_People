@@ -143,6 +143,18 @@ const lpad = (s, n) => String(s ?? '').padStart(n);
   console.log('  already excluded. These are working days the person simply did not');
   console.log('  attend, as the Consecutive Absences report counts them.\n');
 
+  /* Said out loud, because the failure is silent otherwise: with no active
+   * weekend rule every Sunday counts as an absence and these totals are
+   * roughly double what they should be, while looking perfectly ordinary. */
+  const activeRules = (await pool.query(
+    'SELECT count(*)::int AS n FROM weekend_rules WHERE is_active = TRUE')).rows[0].n;
+  if (!activeRules) {
+    console.log('  !  No weekend rule is switched on, so every day of the week is being');
+    console.log('     counted as a working day. Sundays are showing as absences and these');
+    console.log('     figures are roughly double. Check Settings -> Attendance -> Weekend');
+    console.log('     rules before relying on this.\n');
+  }
+
   const table = (rows) => {
     console.log(`  ${pad('Employee ID', 15)}${pad('Name', 26)}${lpad('Days', 5)}${lpad('Runs', 6)}${lpad('Longest', 9)}   Range`);
     console.log(`  ${'─'.repeat(90)}`);

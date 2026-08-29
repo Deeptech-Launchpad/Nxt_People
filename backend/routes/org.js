@@ -141,6 +141,18 @@ router.get('/departments/:id/employees', requireFunction('department_data'), asy
  * applied where the feature actually lives — the search control itself. */
 router.get('/directory', async (req, res) => {
   try {
+    /* An optional department narrows the result.
+     *
+     * The dashboard polls this every five seconds per open tab, purely to work
+     * out who else is in the viewer's own department — and was fetching the
+     * whole company to find them. With a dozen people signed in that is the
+     * entire directory, with its attendance and leave joins, several times a
+     * second. Omitting the parameter still returns everybody, so every other
+     * caller is unaffected. */
+    const department = String(req.query.department || '').trim();
+    const params = department ? [department] : [];
+    const narrow = department ? 'AND e.department = $1' : '';
+
     const r = await pool.query(
       `SELECT e.id as "_id", e.employee_id as "employeeId",
               e.first_name as "firstName", e.last_name as "lastName",
@@ -160,8 +172,9 @@ router.get('/directory', async (req, res) => {
               END as presence
          FROM employees e
          LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
-        WHERE e.status = 'active' AND e.deleted_at IS NULL
-        ORDER BY e.first_name ASC`
+        WHERE e.status = 'active' AND e.deleted_at IS NULL ${narrow}
+        ORDER BY e.first_name ASC`,
+      params
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {

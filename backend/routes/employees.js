@@ -547,7 +547,11 @@ router.post('/send-onboarding', authorize('admin', 'director', 'hr_admin'), asyn
     res.json({ success: true, message: `Onboarding email sent to ${email}` });
   } catch (err) {
     logger.error({ err: err?.message }, 'Onboarding email failed');
-    res.status(500).json({ success: false, message: 'An internal server error occurred' || 'Failed to send email' });
+    /* Was `'An internal server error occurred' || 'Failed to send email'` — a
+     * non-empty string is truthy, so the second half could never be reached.
+     * The real detail is in the log line above; the caller gets the one
+     * sentence every other handler gives. */
+    serverError(res, err);
   }
 });
 

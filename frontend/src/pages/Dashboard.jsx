@@ -650,7 +650,14 @@ export default function Dashboard() {
       if (!profileData?.department) return;
       if (!silent) setLoadingDeptMembers(true);
       const myId = user?._id || profileData?.id;
-      api.get('/org/directory')
+      /* Ask for the department rather than the whole company.
+       *
+       * This polls every five seconds per open tab, and was fetching all 68
+       * employees with their attendance and leave joins to find the handful in
+       * one department — then discarding the rest here in the browser. The
+       * filter is still applied below, because the department name is what the
+       * server matched on and self is still excluded. */
+      api.get(`/org/directory?department=${encodeURIComponent(profileData.department)}`)
         .then(r => {
           const members = (r.data.data || []).filter(m =>
             m.department === profileData.department && String(m._id) !== String(myId)
