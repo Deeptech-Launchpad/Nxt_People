@@ -9,12 +9,13 @@
 //   August. The reference grants all twelve up front: 48.
 //
 //   Zoho charges a joining month by the days actually worked. Balaji joined on
-//   3 January and Zoho grants him 3.74 hours for it: 4 × 29/31. We granted the
-//   month whole.
+//   3 January and Zoho granted him 3.74 hours for it: 4 × 29/31.
 //
-// The decision was to match Zoho, so these are the numbers the reference gives
-// and this asserts them exactly rather than approximately — 3.74 is not "about
-// four".
+// The first was matched. The second was matched and then deliberately undone:
+// pro-rating is what made a balance read 29.74 where 30 was expected, and the
+// decision was that a month is a month whichever day of it somebody starts on.
+// So the year is Zoho's and the joining month is not, and these assert both
+// exactly — a joining month is 4, not "about four".
 require('dotenv').config();
 
 const { accrualEvents, grantedToDate } = require('./utils/leavePolicy');
@@ -36,32 +37,34 @@ check('and not 32, which is what stopping at August gave',
 check('a caller that asks for a cut-off still gets one',
   total(monthly(4), { upToMonth: 8 }) === 32, total(monthly(4), { upToMonth: 8 }));
 
-console.log('\n════ The joining month is charged by the day ════\n');
+console.log('\n════ The joining month is granted whole ════\n');
 
-// Balaji: joined 3 January 2026, 4 hours a month. Zoho grants 47.74.
+// Balaji: joined 3 January 2026, 4 hours a month.
 const balaji = total(monthly(4), { joiningDate: '2026-01-03' });
-check('joining on 3 January grants 47.74 hours, exactly as the reference does',
-  balaji === 47.74, balaji);
+check('joining on 3 January grants the full 48 hours', balaji === 48, balaji);
+check('and not 47.74, which is what charging January by the day gave',
+  balaji !== 47.74);
 
 const events = accrualEvents(monthly(4), { year: 2026, joiningDate: '2026-01-03' });
 check('twelve accruals, one per month', events.length === 12, events.length);
-check('January is 3.74 — four hours × 29 of its 31 days',
-  events[0].amount === 3.74, events[0]);
-check('February is whole', events[1].amount === 4, events[1]);
-check('and it is dated the joining day, not the 1st',
+check('January is a whole 4, not 3.74', events[0].amount === 4, events[0]);
+check('February is whole too', events[1].amount === 4, events[1]);
+check('and January is still dated the joining day, not the 1st',
   events[0].date === '2026-01-03', events[0].date);
 
-check('joining on the 1st is not prorated at all',
-  total(monthly(4), { joiningDate: '2026-01-01' }) === 48,
+check('joining on the 1st grants the same as joining on the 3rd',
+  total(monthly(4), { joiningDate: '2026-01-01' }) === balaji,
   total(monthly(4), { joiningDate: '2026-01-01' }));
 
-// February has 28 days in 2026, so a mid-month join there proves the divisor
-// is the month's own length and not a hardcoded 30 or 31.
+// February 2026 has 28 days. Under the old rule a join on the 15th gave
+// 4 × 14/28 = 2; the month is now whole however short the month is.
 const feb = accrualEvents(monthly(4), { year: 2026, joiningDate: '2026-02-15' });
-check('February the 15th grants 4 × 14/28 = 2',
-  feb[0].amount === 2, feb[0]);
+check('February the 15th grants a whole 4, not 2', feb[0].amount === 4, feb[0]);
 check('and the year then runs February to December — eleven accruals',
   feb.length === 11, feb.length);
+check('so a February joiner has 44, not 42',
+  total(monthly(4), { joiningDate: '2026-02-15' }) === 44,
+  total(monthly(4), { joiningDate: '2026-02-15' }));
 
 console.log('\n════ Joining mid-year ════\n');
 
@@ -89,12 +92,12 @@ check('a type with no entitlement still reports null, not zero',
 check('an earned type still counts its own events',
   total({ accrualMode: 'earned' }, { earnedAmount: 2.5 }) === 2.5);
 
-console.log('\n════ Shivanie and Balaji, as the reference shows them ════\n');
+console.log('\n════ Shivanie and Balaji, the two who were checked by hand ════\n');
 
 check('Shivanie: 48 granted − 11.5 taken = 36.5',
   Math.round((total(monthly(4), { joiningDate: '2023-11-01' }) - 11.5) * 100) / 100 === 36.5);
-check('Balaji: 47.74 granted − 2 taken = 45.74',
-  Math.round((total(monthly(4), { joiningDate: '2026-01-03' }) - 2) * 100) / 100 === 45.74);
+check('Balaji: 48 granted − 2 taken = 46, where the card read 29.74',
+  Math.round((total(monthly(4), { joiningDate: '2026-01-03' }) - 2) * 100) / 100 === 46);
 
 const failed = checks.filter(c => !c).length;
 console.log(`\n${checks.length - failed}/${checks.length} passed\n`);

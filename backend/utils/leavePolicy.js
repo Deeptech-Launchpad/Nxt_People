@@ -103,18 +103,19 @@ function accrualEvents(policy, { year, upToMonth = 12, joiningDate, annualAmount
       // The first entry is dated the joining day and the rest the 1st, so the
       // ledger's accrual rows land where the entitlement actually arrived.
       const day = jy === year && m === jm ? jd : 1;
-      // Somebody who joins on the 3rd did not have the whole of January, and
-      // the reference charges them for the part they had: 4 hours × 29 of 31
-      // days is 3.74, which is exactly what Zoho grants for a 3 January start.
-      // Every later month is whole.
-      const joiningMonth = jy === year && m === jm && jd > 1;
-      const daysInMonth = new Date(Date.UTC(year, m, 0)).getUTCDate();
-      const amount = joiningMonth
-        ? round2(policy.accrualAmount * ((daysInMonth - jd + 1) / daysInMonth))
-        : policy.accrualAmount;
+      // Every month grants the whole amount, the joining month included.
+      //
+      // This used to charge a joining month by the days actually worked, the
+      // way Zoho did: somebody starting on 3 January got 4 × 29/31 = 3.74
+      // hours for it. That is where a permission balance reading 29.74 came
+      // from where 30 was expected — the 0.26 was January's missing part. The
+      // decision was to stop pro-rating: a month is a month, whichever day of
+      // it somebody starts on, which is a rule HR can explain without a
+      // calculator. It does mean joining-year figures no longer match the
+      // migrated Zoho history to the second decimal place.
       out.push({
         month: m,
-        amount,
+        amount: policy.accrualAmount,
         date: `${year}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
       });
     }

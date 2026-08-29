@@ -1114,8 +1114,13 @@ router.get('/balance', async (req, res) => {
      * you have had. The card showed only the month, so "Available 4h" told
      * somebody nothing about whether they had used two hours this year or
      * forty — which is the figure that matters when anybody asks about it. */
+    /* The whole year, not the year so far. This passed the current month as a
+     * cut-off, so in August the card showed 32 hours granted where the leave
+     * ledger — which has always granted all twelve — showed 48. Same employee,
+     * same year, two different figures on two screens. The cut-off was removed
+     * from the accrual engine for exactly this reason; this caller was missed. */
     const permGrantedYear = round2(grantedToDate(permPolicy, {
-      year, upToMonth: new Date().getMonth() + 1, joiningDate: emp?.joiningDate,
+      year, joiningDate: emp?.joiningDate,
     }) || 0);
     const permBookedYear = round2(bookedHours['permission'] || 0);
     const permAvailableYear = round2(permGrantedYear - permBookedYear);

@@ -9,7 +9,7 @@
  *  working as a ledger. What has to hold:
  *
  *    an annual grant arrives whole; a monthly one only up to the month reached
- *    the joining month is prorated by the day, as Zoho does
+ *    the joining month is granted whole, however late in it somebody started
  *    permission is counted in hours, everything else in days
  *    the running balance is arithmetic, not a per-row guess
  *    a stored figure is an OVERRIDE and wins - it exists because somebody
@@ -62,15 +62,18 @@ const hrs = (d, h, reason) => ({ startDate: d, totalDays: 0, hours: h, reason })
 
   console.log('\n════ Joining part-way through ════\n');
 
-  // Joined 10 March: March is charged for 22 of its 31 days, then April to
-  // August whole. 4 x 22/31 = 2.84, plus five whole months = 22.84.
+  // Joined 10 March: March counts whole, then April to August. Six months of
+  // four hours is 24. March used to be charged for 22 of its 31 days — 2.84,
+  // for a total of 22.84 — which is where a card reading 29.74 instead of 30
+  // came from. A month is now a month whichever day of it somebody starts on.
   const j = ledgerFor(monthly, NEW, [], { year: 2026, upToMonth: 8 });
   check('nothing accrues before they joined',
     j.events.every(e => e.date >= '2026-03-01'), j.events.map(e => e.date));
-  check('the joining month is prorated by the day, not granted whole',
-    j.events[0].added < 4 && j.events[0].added > 0, j.events[0]);
-  check('and every later month is whole',
+  check('the joining month is granted whole, not charged by the day',
+    j.events[0].added === 4, j.events[0]);
+  check('and every later month is whole too',
     j.events.slice(1).every(e => e.added === 4), j.events.map(e => e.added));
+  check('so six months from March is a flat 24', j.granted === 24, j.granted);
   check('somebody who joined in March has less than somebody who was here all year',
     j.granted < m.granted, { joinedMarch: j.granted, hereAllYear: m.granted });
 
