@@ -146,6 +146,13 @@ export default function Approvals({ embedded = false }) {
   };
 
   useEffect(load, []);
+  /* Approving the last backlog item removes its tab from under the person who
+   * just cleared it. Send them back to the main queue rather than leaving them
+   * on a tab that no longer exists, staring at nothing. */
+  useEffect(() => {
+    if (tab === 'backlog' && !loading && !data.backlog?.length) setTab('leaves');
+  }, [tab, loading, data.backlog?.length]);
+
 
   // Picks up newly submitted / approved requests without a manual refresh.
   usePolling(() => load(true), 5000);
@@ -217,7 +224,10 @@ export default function Approvals({ embedded = false }) {
     ['wfh', 'WFH Requests', data.wfhRequests?.length],
     ['compoff', 'Comp-Off', data.compOffs?.length],
     ['onduty', 'On Duty', data.onDuty?.length],
-    ['backlog', 'Backlog', data.backlog?.length],
+    /* Only while there is something in it. Clearing the migrated backlog
+     * makes the tab disappear on its own, and anything that falls behind
+     * in future brings it back rather than going unnoticed. */
+    ...(data.backlog?.length ? [['backlog', 'Backlog', data.backlog.length]] : []),
   ];
 
   const ActionBtns = ({ endpoint, id, type, canActLeave, status }) => {
@@ -294,7 +304,7 @@ export default function Approvals({ embedded = false }) {
           ['WFH Requests',    data.wfhRequests?.length,      'bg-green-50 text-green-700',  'wfh'],
           ['Comp-Off',        data.compOffs?.length,         'bg-orange-50 text-orange-700','compoff'],
           ['On Duty',         data.onDuty?.length,           'bg-violet-50 text-violet-700','onduty'],
-          ['Backlog',         data.backlog?.length,          'bg-rose-50 text-rose-700',    'backlog'],
+          ...(data.backlog?.length ? [['Backlog', data.backlog.length, 'bg-rose-50 text-rose-700', 'backlog']] : []),
         ].map(([l, v, c, tabId]) => (
           <div
             key={l}
@@ -764,7 +774,12 @@ export default function Approvals({ embedded = false }) {
                         {x.reason && <p className="text-slate-400 text-sm mt-1">{x.reason}</p>}
                       </div>
                     </div>
-                    <ActionBtns endpoint={x.endpoint} id={x._id} type={x.kind} canActLeave={x.canAct} />
+                    {/* status is what ActionBtns gates on — without it every row
+                        rendered as a read-only "Pending" badge with nothing to press.
+                        Timesheets are "submitted" rather than "pending". */}
+                    <ActionBtns endpoint={x.endpoint} id={x._id} type={x.kind}
+                      canActLeave={x.canAct !== undefined ? x.canAct : true}
+                      status={x.status || (x.endpoint === 'timesheets' ? 'submitted' : 'pending')} />
                   </div>
                 ))}
                 <ShowMoreFooter tabId="backlog" total={list.length} shown={getVisible('backlog', list).length} />

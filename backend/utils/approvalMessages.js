@@ -143,11 +143,46 @@ async function approvalEmail({ requestType, record, approverEmails, employeeId, 
   };
 }
 
+/* Whether this request's dates finished before the current month began.
+ *
+ * A decision on a request from a past month is a filing exercise, not news.
+ * The Zoho import brought years of unactioned requests across as pending, and
+ * approving them is tidying the record — telling somebody their leave from
+ * August 2022 has just been approved would confuse them at best. It is also
+ * how thirty-five people get an unexpected email in one afternoon, because
+ * live has neither EMAIL_DISABLED nor EMAIL_ALLOWLIST set.
+ *
+ * The rule matches the Backlog tab exactly: if it is in that tab, acting on it
+ * does not notify. Anything still in the ordinary queue — including a late
+ * decision on THIS month's leave — notifies as it always did.
+ */
+const HISTORIC_END = {
+  leave:          r => r.end_date ?? r.endDate,
+  regularization: r => r.date,
+  wfh:            r => r.date,
+  on_duty:        r => r.end_date ?? r.endDate,
+  comp_off:       r => r.comp_off_date ?? r.compOffDate ?? r.worked_date ?? r.workedDate,
+};
+
+function isHistoric(requestType, record) {
+  const pick = HISTORIC_END[requestType];
+  if (!pick || !record) return false;
+  const end = pick(record);
+  if (!end) return false;
+  const d = new Date(end);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d < new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
 /**
  * Whether the requester is told about a decision, and with what wording.
  * @param event 'approved' | 'rejected'
  */
 async function outcomeEmail({ requestType, record, event, vars = {} }) {
+  // Settled history is not announced. See isHistoric above.
+  if (isHistoric(requestType, record)) return { send: false, reason: 'historic' };
+
   const messages = await messagesFor(requestType, record);
   const cfg = messages?.[event === 'approved' ? 'onApproved' : 'onRejected'];
   // Absent config means the switch was never touched, and the switch defaults
@@ -164,4 +199,4 @@ async function outcomeEmail({ requestType, record, event, vars = {} }) {
   };
 }
 
-module.exports = { approvalEmail, outcomeEmail, messagesFor, recipientsFor, renderTemplate };
+module.exports = { approvalEmail, outcomeEmail, messagesFor, recipientsFor, renderTemplate, isHistoric };
