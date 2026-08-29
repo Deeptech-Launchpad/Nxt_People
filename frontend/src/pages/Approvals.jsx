@@ -92,6 +92,10 @@ export default function Approvals({ embedded = false }) {
       .then(res => {
         const d = res.data.data || {};
         const allLeaves = d.leaves || [];
+        /* The API returns approved and rejected together in one list, already
+         * scoped to this month, and the two tabs are that list split by status. */
+        const approved = (d.approvedLeaves || []).filter(l => l.status === 'approved');
+        const rejected = (d.approvedLeaves || []).filter(l => l.status === 'rejected');
         const permissions = allLeaves.filter(l => l.leaveType === 'permission');
         const leaves = allLeaves.filter(l => l.leaveType !== 'permission');
         setData({
