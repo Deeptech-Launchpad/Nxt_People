@@ -16,6 +16,7 @@ const { nextIdForCompany } = require('../utils/employeeId');
 const { mergeRows } = require('../utils/mergeRows');
 const { orgPolicy, applyPrivacy } = require('../utils/orgPolicy');
 const { serverError } = require('../utils/serverError');
+const { announceNewJoiner } = require('../utils/newJoinerNotice');
 
 // GET next suggested employee_id — used by Confirm Registration + Add Employee
 // modals to prefill. Pass ?company=AltiusNxt for the per-company format
@@ -327,6 +328,13 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
     // to fail or delay creating one.
     fire('employee', 'created', { recordId: result.rows[0]._id, actorId: req.user._id });
     res.status(201).json({ success: true, data: result.rows[0] });
+
+    /* An employee added here is a new joiner too, so colleagues hear about it
+     * the same way. After the response and never able to fail the create.
+     * Bulk loading goes through /org-users/import instead, which does NOT
+     * announce — importing a hundred and fifty people would otherwise write
+     * twenty-two thousand notifications. */
+    announceNewJoiner(result.rows[0]._id).catch(() => {});
   } catch (err) {
     // The pre-check above closes most races, but two submissions using the
     // same server-suggested employee_id (double-click, or two admins adding

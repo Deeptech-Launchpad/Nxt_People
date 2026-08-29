@@ -47,3 +47,9 @@ backend/uploads/
 /mountains.jpg
 /road.jpg
 /space.jpg
+
+# Report output generated on the server. Holds real employee data — a
+# no-check-in CSV is forty people's attendance — and is regenerated on demand,
+# so it is never source.
+/no-checkin-*.csv
+/*-report.csv

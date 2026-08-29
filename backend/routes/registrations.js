@@ -11,6 +11,7 @@ const path = require('path');
 const { protect, authorize } = require('../middleware/auth');
 const { nextIdForCompany } = require('../utils/employeeId');
 const { serverError } = require('../utils/serverError');
+const { announceNewJoiner } = require('../utils/newJoinerNotice');
 
 // Nodemailer setup
 const transporter = nodemailer.createTransport({
@@ -637,6 +638,11 @@ router.put('/:id/confirm', async (req, res) => {
     `, queryParams);
 
     res.json({ success: true, message: 'Employee confirmed successfully' });
+
+    /* After the response, deliberately. Confirming somebody is done and
+     * committed; telling their colleagues is a courtesy that must never be
+     * able to fail or delay it. In-app only — no mail is sent. */
+    announceNewJoiner(id).catch(() => {});
   } catch (err) {
     serverError(res, err);
   }
