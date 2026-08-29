@@ -9,7 +9,7 @@ const { unregularizedDaysForRange } = require('../utils/unregularizedAbsence');
 const { lopDaysForRange, absentDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
 const { lopForPeriod, activePayPeriod } = require('../utils/lopCarryOver');
 const { cycleFor } = require('../utils/payPeriodCycle');
-const { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
+const { getLeavePolicies, getJoiningRule, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const attendanceConfig = require('../utils/attendanceConfig');
 const { roundHours, lateNightMinutes } = require('../utils/hoursPolicy');
@@ -1129,6 +1129,7 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
     ]);
 
     const policies = await getLeavePolicies();
+    const joiningRule = await getJoiningRule();
     const byType = new Map(leaveRes.rows.map(r => [r.leaveType, r]));
     const casualBooked = parseFloat(byType.get('casual')?.days) || 0;
     const casualAllocated = parseFloat(emp.casualAllocated) || 0;
@@ -1143,12 +1144,14 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
     // permission in August where Zoho reads 48, for the same employee and the
     // same policy.
     const granted = (code, opts = {}) =>
-      grantedToDate(policies.get(code), { year, joiningDate: emp.joiningDate, ...opts });
+      grantedToDate(policies.get(code), { year, joiningDate: emp.joiningDate, joiningRule, ...opts });
 
-    // Casual is the one type whose allocation is per-employee
-    // (employees.casual_leave); the policy supplies the schedule, that column
-    // the amount.
-    const casualGranted = granted('casual', { annualAmount: casualAllocated });
+    /* Casual takes its amount from the policy now, not from
+     * employees.casual_leave. That column was a running balance approval
+     * subtracted from, so feeding it back in as an allocation reported
+     * somebody's remaining days as though they were their entitlement, and the
+     * report shrank every time they took a day. */
+    const casualGranted = granted('casual');
     const compGranted = granted('comp_off', { earnedAmount: compEarned });
     const unpaidGranted = granted('unpaid');
     const absentGranted = granted('absent');
@@ -1347,7 +1350,7 @@ router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_adm
       // the preceding January.
       accrualEvents(policy, {
         year, upToMonth, joiningDate: empRes.rows[0].joiningDate,
-        annualAmount: leaveType === 'casual' ? parseFloat(empRes.rows[0].casualAllocated) || 0 : null,
+        joiningRule: await getJoiningRule(),
       }).forEach(a => events.push({ date: a.date, type: 'Accrual', added: a.amount }));
     }
     takenRes.rows.forEach(r => events.push({
@@ -1549,7 +1552,7 @@ router.get('/leave/encashment', authorize('admin', 'director', 'hr_admin', 'mana
     if (!types.length) return res.json({ success: true, data: [], unit, year });
 
     const filters = standardEmployeeFilters(req, 'e', 1, { trackedOnly: true });
-    const [empRes, policies] = await Promise.all([
+    const [empRes, policies, joiningRule] = await Promise.all([
       pool.query(
         `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
                 e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId", e.joining_date::text AS "joiningDate",
@@ -1558,6 +1561,7 @@ router.get('/leave/encashment', authorize('admin', 'director', 'hr_admin', 'mana
         filters.params
       ),
       getLeavePolicies(),
+      getJoiningRule(),
     ]);
     if (!empRes.rows.length) return res.json({ success: true, data: [], unit });
 
@@ -1591,8 +1595,7 @@ router.get('/leave/encashment', authorize('admin', 'director', 'hr_admin', 'mana
         const policy = policies.get(code);
         if (!policy) continue;
         const allocated = grantedToDate(policy, {
-          year, upToMonth, joiningDate: emp.joiningDate,
-          annualAmount: code === 'casual' ? parseFloat(emp.casualAllocated) || 0 : null,
+          year, upToMonth, joiningDate: emp.joiningDate, joiningRule,
         });
         // A type with no entitlement in this system has nothing to encash —
         // that is N/A, not zero, so the row is left out rather than shown at 0.

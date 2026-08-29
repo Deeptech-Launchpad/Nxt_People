@@ -10,11 +10,11 @@ const { sendMail, sendLeaveApprovalEmail, sendLeaveStatusEmail } = require('../u
 const { logAudit } = require('../utils/audit');
 const { countWorkingDays } = require('../utils/workingDays');
 const { sandwichedDays } = require('../utils/sandwichLeave');
-const { getLeavePolicies, grantedToDate } = require('../utils/leavePolicy');
+const { getLeavePolicies, getJoiningRule, grantedToDate } = require('../utils/leavePolicy');
 const logger = require('../logger');
 const { fire } = require('../utils/workflowEngine');
 const { canCancel, loadConfig } = require('../utils/leaveCancellation');
-const { availableFor, debitOnApproval, refundApproved, typeCode: dbTypeCode } = require('../utils/leaveBalance');
+const { availableFor, computedFor, debitOnApproval, refundApproved, typeCode: dbTypeCode } = require('../utils/leaveBalance');
 const { partialAllowed } = require('../utils/leaveExtension');
 const { notifyChainOfCancellation } = require('../utils/cancellationNotice');
 const { approvalEmail, outcomeEmail } = require('../utils/approvalMessages');
@@ -1120,7 +1120,7 @@ router.get('/balance', async (req, res) => {
      * same year, two different figures on two screens. The cut-off was removed
      * from the accrual engine for exactly this reason; this caller was missed. */
     const permGrantedYear = round2(grantedToDate(permPolicy, {
-      year, joiningDate: emp?.joiningDate,
+      year, joiningDate: emp?.joiningDate, joiningRule: await getJoiningRule(),
     }) || 0);
     const permBookedYear = round2(bookedHours['permission'] || 0);
     const permAvailableYear = round2(permGrantedYear - permBookedYear);
@@ -1135,6 +1135,16 @@ router.get('/balance', async (req, res) => {
       [targetId]
     );
     const compOffAvailable = Math.max(0, round2(parseFloat(coRes.rows[0].avail) || 0));
+
+    /* Casual, from the one function that also decides whether an application
+     * is allowed. `granted` rides along so the card can say where the number
+     * came from — an accrual that has only reached August is not the same as a
+     * year's allowance already spent, and the figure alone cannot tell them
+     * apart. */
+    const casualStore = await availableFor(pool, targetId, 'casual', year);
+    const casualBalance = casualStore.store === 'computed'
+      ? await computedFor(pool, targetId, 'casual', year)
+      : { available: casualStore.available, granted: null };
 
     // Try leave_balances table first
     let balanceRows = [];
@@ -1154,15 +1164,17 @@ router.get('/balance', async (req, res) => {
     const cards = [
       {
         code: 'casual', name: 'Casual Leave', icon: '☀️', color: '#f59e0b',
-        // leave_balances.available is the live figure, debited on apply and
-        // refunded on cancel. Where no such row exists the fallback was
-        // employees.casual_leave — the ENTITLEMENT, which never moves. The card
-        // then read "Available 12, Booked 4" forever, and somebody planning
-        // around it would apply for days they do not have. An entitlement with
-        // the year's bookings taken off is the honest stand-in.
-        available: balanceRows.find(r => r.code === 'casual')?.available
-          ?? Math.max(0, round2((parseFloat(emp.casual_leave) || 0) - (booked['casual'] || 0))),
+        /* The same answer the application check uses, from the same function.
+         *
+         * This used to do its own arithmetic — employees.casual_leave minus the
+         * year's bookings — on the belief that the column was a fixed
+         * entitlement. It is not: approval had already subtracted from it, so
+         * approved days came off twice here and once there, and an employee was
+         * shown a smaller number than the system would actually let them book.
+         * Two numbers for one question is worse than either being wrong. */
+        available: casualBalance.available,
         booked: booked['casual'] || 0,
+        granted: casualBalance.granted,
       },
       {
         code: 'comp_off', name: 'Compensatory Off', icon: '⭐', color: '#22c55e',

@@ -80,14 +80,59 @@ async function availableFor(db, employeeId, leaveType, year) {
     }
   }
 
-  const col = LEGACY_COLUMN[leaveType];
-  if (col && VALID_LEGACY.has(col)) {
-    const e = await db.query(`SELECT ${col} AS bal FROM employees WHERE id = $1`, [employeeId]);
-    return { available: round2(parseFloat(e.rows[0]?.bal) || 0), store: 'legacy' };
+  /* No stored row, so the balance is worked out from the policy and the leave
+   * actually taken.
+   *
+   * It used to read employees.casual_leave. That column was written as a fixed
+   * entitlement, but debitOnApproval subtracted from it on every approval while
+   * the balance card went on subtracting the year's bookings from it as though
+   * it had not moved — so an approved day came off twice on the card and once
+   * here, and the two screens quoted different numbers at the same person.
+   * Nothing reset it in January either, so leave taken in earlier years was
+   * still being charged against this year.
+   *
+   * Deriving it from the leaves table removes the second copy rather than
+   * trying to keep two in step. The rows are the ledger: cancel a leave and the
+   * balance returns on its own, with nothing to refund. */
+  if (leaveType === 'casual') {
+    const { available } = await computedFor(db, employeeId, leaveType, year);
+    return { available, store: 'computed' };
   }
 
   // A type with no balance anywhere. Not zero — unknown.
   return { available: null, store: 'none' };
+}
+
+/**
+ * Granted by the policy for this year, less what has been taken and what is
+ * waiting. Pending counts: a request in flight is spoken for, and letting two
+ * of them each pass the check separately is how somebody ends up approved past
+ * their entitlement.
+ */
+async function computedFor(db, employeeId, leaveType, year) {
+  const { getLeavePolicies, getJoiningRule, grantedToDate } = require('./leavePolicy');
+
+  const e = await db.query(
+    `SELECT joining_date::text AS joining FROM employees WHERE id = $1`, [employeeId]);
+  const [policies, joiningRule] = await Promise.all([getLeavePolicies(), getJoiningRule()]);
+
+  const granted = grantedToDate(policies.get(leaveType), {
+    year, joiningDate: e.rows[0]?.joining, joiningRule,
+  });
+  // null is "no entitlement configured" — pass it through rather than calling
+  // it zero, which would read as an exhausted allowance.
+  if (granted === null) return { available: null, granted: null, taken: 0 };
+
+  const t = await db.query(
+    `SELECT COALESCE(SUM(total_days), 0)::float AS taken
+       FROM leaves
+      WHERE employee_id = $1 AND leave_type = $2
+        AND status IN ('approved','pending')
+        AND EXTRACT(YEAR FROM start_date) = $3`,
+    [employeeId, leaveType, year]);
+  const taken = round2(parseFloat(t.rows[0].taken) || 0);
+
+  return { available: Math.max(0, round2(granted - taken)), granted: round2(granted), taken };
 }
 
 /**
@@ -134,12 +179,13 @@ async function debitOnApproval(db, { employeeId, leaveType, days, year }) {
     if (lb.rows.length > 0) return 'leave_balances';
   }
 
-  const col = LEGACY_COLUMN[leaveType];
-  if (col && VALID_LEGACY.has(col)) {
-    await db.query(`UPDATE employees SET ${col} = GREATEST(0, ${col} - $1) WHERE id = $2`,
-      [amount, employeeId]);
-    return 'legacy';
-  }
+  /* Nothing is debited for a computed type. Its balance is derived from the
+   * leaves table, so the approved row IS the debit — writing a second copy to
+   * employees.casual_leave is what made the card and this disagree, and it was
+   * never reset in January either. Refunds have nothing to put back: cancel the
+   * leave and the balance returns because the row is gone. */
+  if (leaveType === 'casual') return 'computed';
+
   return 'none';
 }
 
@@ -203,12 +249,18 @@ async function refundApproved(db, { employeeId, leaveType, days, year, store }) 
     }
   }
 
+  /* A computed balance has nothing to give back — the days return the moment
+   * the leave row stops counting. Said explicitly so this does not fall
+   * through to the warning below, which would fire on every cancellation and
+   * train everyone to ignore it. */
+  if (target === 'computed') return 'computed';
+
   logger.warn({ employeeId, leaveType, days: amount, store: target },
     '[leaveBalance] approved leave refunded but no store could take the days back');
   return 'none';
 }
 
 module.exports = {
-  availableFor, debitOnApproval, refundApproved,
+  availableFor, computedFor, debitOnApproval, refundApproved,
   LEGACY_COLUMN, VALID_LEGACY, typeCode, round2,
 };

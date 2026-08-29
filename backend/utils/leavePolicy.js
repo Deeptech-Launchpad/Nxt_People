@@ -53,6 +53,36 @@ async function getLeavePolicies() {
   return { get: code => map.get(code) || { code, name: code, ...NO_POLICY } };
 }
 
+/* The joining month rule, from Settings -> Leave Tracker -> Leave Accrual.
+ *
+ * Falls back to the rule being OFF, never on. A missing column — an install
+ * that has not run migrate_leave_joining_rule.js — must grant people their
+ * whole joining month rather than silently withhold it: too much leave is a
+ * conversation, too little is a support ticket from somebody who cannot book
+ * the day they were promised.
+ */
+const NO_JOINING_RULE = Object.freeze({
+  skipWhenShortMonth: false, minDaysRemaining: 0, appliesToJoinersFrom: null,
+  grandfatherFullYear: [],
+});
+
+async function getJoiningRule() {
+  try {
+    const r = await pool.query(`SELECT leave_accrual_config AS c FROM settings LIMIT 1`);
+    const jm = r.rows[0]?.c?.joiningMonth;
+    if (!jm) return NO_JOINING_RULE;
+    return {
+      skipWhenShortMonth: !!jm.skipWhenShortMonth,
+      minDaysRemaining: Number(jm.minDaysRemaining) || 0,
+      appliesToJoinersFrom: jm.appliesToJoinersFrom || null,
+      grandfatherFullYear: Array.isArray(r.rows[0].c.grandfatherFullYear)
+        ? r.rows[0].c.grandfatherFullYear : [],
+    };
+  } catch (_) {
+    return NO_JOINING_RULE;
+  }
+}
+
 // The date a year's entitlement starts for this employee: their joining date
 // if they joined mid-year, otherwise January 1st. An annual allocation is
 // granted whole on that date — it's a flat allocation in this system, and the
@@ -81,7 +111,7 @@ function entitlementStart(year, joiningDate) {
  * Returns [{ month, amount, date }]. Months before joining produce nothing at
  * all rather than a zero row.
  */
-function accrualEvents(policy, { year, upToMonth = 12, joiningDate, annualAmount = null }) {
+function accrualEvents(policy, { year, upToMonth = 12, joiningDate, annualAmount = null, joiningRule = null }) {
   const [jy, jm, jd] = joiningDate ? String(joiningDate).slice(0, 10).split('-').map(Number) : [];
   if (jy > year) return [];
 
@@ -97,7 +127,44 @@ function accrualEvents(policy, { year, upToMonth = 12, joiningDate, annualAmount
   }
 
   if (policy.accrualMode === 'monthly') {
-    const startMonth = jy === year ? jm : 1;
+    let startMonth = jy === year ? jm : 1;
+
+    /* The joining month only counts if enough of it was left. Expressed as
+     * days remaining rather than a day of the month: "after the 24th" is seven
+     * days in August but four in February, so a fixed day would change the
+     * rule's width through the year. Seven days remaining means the final week
+     * does not accrue.
+     *
+     *   joined 24 Aug -> 31 - 24 + 1 = 8 remain -> August accrues
+     *   joined 25 Aug -> 31 - 25 + 1 = 7 remain -> it does not
+     *
+     * Only applies to people who joined on or after the rule's start date.
+     * Everyone already on the books keeps what they have been told they have,
+     * so switching this on moves nobody's existing balance. */
+    const joinedThisYear = jy === year;
+    const subject = joinedThisYear && joiningRule?.appliesToJoinersFrom
+      && String(joiningDate).slice(0, 10) >= joiningRule.appliesToJoinersFrom;
+
+    if (subject && joiningRule.skipWhenShortMonth) {
+      const daysInJoinMonth = new Date(Date.UTC(year, jm, 0)).getUTCDate();
+      const remaining = daysInJoinMonth - jd + 1;
+      if (remaining <= (joiningRule.minDaysRemaining ?? 0)) startMonth = jm + 1;
+    }
+
+    /* Types listed in grandfatherFullYear were granted whole before this rule
+     * existed, so somebody already on the books keeps the whole year rather
+     * than losing days they have been told they have and may already have
+     * booked. Casual is listed because it was an annual twelve until now;
+     * permission is not, because it has always accrued by the month and
+     * nobody's figure should move.
+     *
+     * Only bites in the joining year — from the next year on, everybody is a
+     * full-year employee and the two paths agree anyway. */
+    if (joinedThisYear && !subject
+        && (joiningRule?.grandfatherFullYear || []).includes(policy.code)) {
+      startMonth = 1;
+    }
+
     const out = [];
     for (let m = startMonth; m <= upToMonth; m++) {
       // The first entry is dated the joining day and the rest the 1st, so the
@@ -139,4 +206,6 @@ function grantedToDate(policy, opts) {
   return round2(accrualEvents(policy, opts).reduce((sum, a) => sum + a.amount, 0));
 }
 
-module.exports = { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2 };
+module.exports = {
+  getLeavePolicies, getJoiningRule, accrualEvents, grantedToDate, entitlementStart, round2,
+};

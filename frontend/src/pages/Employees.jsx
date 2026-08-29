@@ -66,6 +66,7 @@ export default function Employees() {
   const [zohoResult, setZohoResult]   = useState(null);
   const [modal, setModal] = useState(false);
   const [editEmp, setEditEmp] = useState(null);
+  const [leaveBalance, setLeaveBalance] = useState(null);
   const [viewEmpId, setViewEmpId] = useState(null);
   const [viewEmpData, setViewEmpData] = useState(null);
   const [loadingView, setLoadingView] = useState(false);
@@ -208,6 +209,15 @@ export default function Employees() {
     setAppAccessLoading(true);
     setAppAccessList([]);
     setSelectedApps(new Set());
+    /* Leave is no longer a number typed on this form. It is worked out from
+       the joining date, the accrual policy and the leave already taken, so the
+       form reads it rather than owning it — a hand-typed figure here was the
+       only record of what somebody had, and it silently disagreed with every
+       screen that calculated the same thing. */
+    setLeaveBalance(null);
+    api.get('/leaves/balance', { params: { employeeId: emp._id } })
+      .then(r => setLeaveBalance(r.data.data || []))
+      .catch(() => setLeaveBalance([]));
     api.get(`/employees/${emp._id}/app-access`)
       .then(r => {
         const list = r.data.data || [];
@@ -895,18 +905,37 @@ export default function Employees() {
                 </div>
               )}
 
-              {/* Leave Balance */}
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Leave Balance (days)</p>
-                <div className="grid grid-cols-3 gap-3">
-                  {[['casualLeave','Casual']].map(([f,l])=>(
-                    <div key={f}>
-                      <label className="block text-sm font-medium text-slate-600 mb-1.5">{l}</label>
-                      <input type="number" value={form[f]} onChange={e=>setForm({...form,[f]:e.target.value})} min={0} max={365} step={0.5} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+              {/* Leave Balance — read-only. Calculated, not entered. */}
+              {editEmp && (
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Leave Balance</p>
+                  <p className="text-[13px] text-slate-500 mb-3">
+                    Worked out from the joining date and the leave taken. Change it under
+                    Settings &rarr; Leave Tracker &rarr; Leave Accrual.
+                  </p>
+                  {leaveBalance === null ? (
+                    <p className="text-[13px] text-slate-400">Loading balance...</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        ['casual', 'Casual', 'days', c => `${c.available} of ${c.granted ?? '-'}`],
+                        ['permission', 'Permission', 'hours', c => `${c.availableYear}h of ${c.grantedYear}h`],
+                      ].map(([code, label, unit, fmt]) => {
+                        const card = leaveBalance.find(c => c.code === code);
+                        return (
+                          <div key={code} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                            <p className="text-sm font-medium text-slate-600">{label}</p>
+                            <p className="text-base font-semibold text-slate-800">
+                              {card ? fmt(card) : '-'}
+                            </p>
+                            <p className="text-[12px] text-slate-400">available this year, in {unit}</p>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={()=>setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50 transition-colors">Cancel</button>

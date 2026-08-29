@@ -119,6 +119,7 @@ const ORDER = [
   'migrate_leave_cancellation.js',
   'migrate_leave_extension.js',
   'migrate_sandwich_leave.js',
+  'migrate_leave_joining_rule.js',       // casual accrues monthly; joining-month rule
 
   // Comp-off
   'migrate_comp_off_config.js',

@@ -21,6 +21,7 @@ const SELECT_COLS = `
   allow_remote_check_in as "allowRemoteCheckIn",
   leave_policy as "leavePolicy",
   leave_accrual_enabled as "leaveAccrualEnabled",
+  leave_accrual_config as "leaveAccrualConfig",
   casual_accrual_per_month as "casualAccrualPerMonth",
   sick_accrual_per_month as "sickAccrualPerMonth",
   earned_accrual_per_month as "earnedAccrualPerMonth",
@@ -51,7 +52,7 @@ router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => 
       lateAfterMinutes, halfDayHours, fullDayHours, allowRemoteCheckIn,
       compOffExpiryMonths,
       leavePolicy,
-      leaveAccrualEnabled, casualAccrualPerMonth, sickAccrualPerMonth, earnedAccrualPerMonth,
+      leaveAccrualEnabled, leaveAccrualConfig, casualAccrualPerMonth, sickAccrualPerMonth, earnedAccrualPerMonth,
       officeLatitude, officeLongitude, gpsRadiusMeters, requireGps,
       requireManagerApprovalBeforeLock,
       mfaRequiredRoles
@@ -113,6 +114,7 @@ router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => 
         mfa_required_roles = COALESCE($20, mfa_required_roles),
         full_day_hours = COALESCE($22, full_day_hours),
         comp_off_expiry_months = COALESCE($23, comp_off_expiry_months),
+        leave_accrual_config = COALESCE($24::jsonb, leave_accrual_config),
         updated_at = NOW()
       WHERE id = $21
       RETURNING ${SELECT_COLS}
@@ -129,6 +131,7 @@ router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => 
       id,
       fullDayHours === undefined ? null : fullDayHours,
       compOffExpiryMonths === undefined ? null : compOffExpiryMonths,
+      leaveAccrualConfig ? JSON.stringify(leaveAccrualConfig) : null,
     ]);
 
     await logAudit(req, {
