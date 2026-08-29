@@ -101,6 +101,40 @@ async function migrate() {
         updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
       )`);
 
+    /* CREATE TABLE IF NOT EXISTS declares request_type UNIQUE, but it only
+     * declares it on a table it actually creates. This one predates that
+     * column being unique, so the create silently did nothing and the
+     * constraint never appeared — and the seeding INSERT below, which relies
+     * on ON CONFLICT (request_type), then failed with "there is no unique or
+     * exclusion constraint matching the ON CONFLICT specification".
+     *
+     * Because migrations run on every container start, that took the whole
+     * backend down rather than merely failing a step.
+     *
+     * Added here rather than assumed. Duplicates would block it, so they are
+     * folded first — keeping the oldest row of each request_type, which is the
+     * one anything else already references. */
+    await client.query(`
+      DELETE FROM approval_rules a
+       USING approval_rules b
+       WHERE a.request_type = b.request_type
+         AND a.created_at > b.created_at`);
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+           WHERE conrelid = 'approval_rules'::regclass
+             AND contype = 'u'
+             AND conkey = ARRAY[(SELECT attnum FROM pg_attribute
+                                  WHERE attrelid = 'approval_rules'::regclass
+                                    AND attname = 'request_type')]
+        ) THEN
+          ALTER TABLE approval_rules
+            ADD CONSTRAINT approval_rules_request_type_key UNIQUE (request_type);
+        END IF;
+      END $$`);
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS email_templates (
         id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
