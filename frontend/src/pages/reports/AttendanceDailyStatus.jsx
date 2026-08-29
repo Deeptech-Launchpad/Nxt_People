@@ -48,6 +48,14 @@ const EXPORT_COLUMNS = [
   { key: 'firstIn', header: 'First In', value: r => fmtTime(r.firstIn) }, { key: 'lastOut', header: 'Last Out', value: r => fmtTime(r.lastOut) },
   { key: 'totalHours', header: 'Total Hours', value: r => fmtHrs(r.totalHours) },
   { key: 'status', header: 'Status' }, { key: 'shiftName', header: 'Shift' },
+  /* Housekeeping and anyone else HR marks for cannot punch, so a blank First
+     In on their row reads as a missed check-in rather than as a check-in that
+     was never going to happen. They are kept out of the on-screen "Yet to
+     check-in" list for that reason; the export still carries them, and this
+     column is what stops them looking like absentees in a spreadsheet nobody
+     can ask a question of. */
+  { key: 'attendanceMarkedByAdmin', header: 'Attendance Recorded By',
+    value: r => (r.attendanceMarkedByAdmin ? 'Marked by HR' : 'Self check-in') },
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
@@ -286,7 +294,9 @@ export default function AttendanceDailyStatus() {
                   {/* Plain text, not a coloured pill: the cell names the day's
                       actual leave records, which run long enough that a pill
                       would wrap into a block of colour. */}
-                  <td className="px-4 py-2.5 max-w-xs truncate text-slate-700" title={row.status || ''}>{row.status || '—'}</td>
+                  <td className="px-4 py-2.5 max-w-xs truncate text-slate-700" title={row.status || ''}>
+                    {row.status || (row.attendanceMarkedByAdmin ? <span className="text-slate-400 italic">Marked by HR</span> : '—')}
+                  </td>
                   <td className="px-4 py-2.5 text-slate-500">{row.shiftName || '—'}</td>
                 </tr>
               ))}

@@ -2174,8 +2174,23 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
     const statusFilter = [].concat(req.query.status || []).filter(Boolean);
 
     const counts = { present: 0, onDuty: 0, paidLeave: 0, absent: 0, unpaidLeave: 0, holiday: 0, weekend: 0 };
-    const presence = { in: 0, out: 0, yetToCheckIn: 0 };
+    const presence = { in: 0, out: 0, yetToCheckIn: 0, notTracked: 0 };
     let employees = [];
+
+    /* Staff whose attendance is marked for them — Operations -> Attendance
+     * Marking — cannot check in at all, so counting them as "yet to check in"
+     * measures nothing but the marking not having been done yet, and puts
+     * housekeeping at the top of a list HR reads as people who are late.
+     * Marking them is the admin's job, not theirs.
+     *
+     * They stay in `employees`, so the export still carries them and their day
+     * is still visible; they are only kept out of the presence donut and the
+     * "Yet to check-in" drill-down.
+     *
+     * Employee Profiles need no handling here — loadAttendanceContext is asked
+     * for trackedOnly, which already excludes anybody who is not a user. */
+    const markedForThem = new Set((await pool.query(
+      `SELECT DISTINCT employee_id FROM manual_attendance_assignments`)).rows.map(r => r.employee_id));
 
     for (const emp of ctx.employees) {
       if (!ctx.onRolls(emp, day)) continue;
@@ -2199,7 +2214,16 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
       const kind = cls.kind === 'absent' && isToday ? 'pending' : cls.kind;
       if (kind !== 'future' && kind !== 'pending') counts[kind] = (counts[kind] || 0) + 1;
 
-      const presenceKey = att?.checkIn && !att?.checkOut ? 'in' : att?.checkIn ? 'out' : 'yetToCheckIn';
+      /* `notTracked` covers the whole donut for these people, not just the
+       * yet-to-check-in slice: a housekeeper HR has marked present did not
+       * punch either, so showing them as checked "out" would be just as wrong
+       * as showing them as late. The donut answers who is at their desk right
+       * now, and it cannot answer that for somebody who never punches. */
+      const managed = markedForThem.has(emp._id);
+      const presenceKey = managed ? 'notTracked'
+        : att?.checkIn && !att?.checkOut ? 'in'
+        : att?.checkIn ? 'out'
+        : 'yetToCheckIn';
       // Only working days can leave someone "yet to check in" — nobody is
       // pending a punch on a holiday or weekend.
       if (presenceKey !== 'yetToCheckIn' || kind === 'present' || kind === 'absent' || kind === 'pending') presence[presenceKey]++;
@@ -2218,6 +2242,9 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
         // falls back to the bucket label otherwise.
         status: dayLeaves.length ? leaveStatusText(dayLeaves) : (ATT_STATUS_LABEL[kind] || null),
         presenceKey, shiftName: emp.shiftName || null,
+        // Named on the row so the export can say why this person has no punch,
+        // rather than leaving a blank that reads as a missing check-in.
+        attendanceMarkedByAdmin: managed,
       });
     }
 
