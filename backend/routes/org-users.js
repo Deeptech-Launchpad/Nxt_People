@@ -25,6 +25,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -108,7 +109,7 @@ router.get('/', authorize(...ADMIN), async (req, res) => {
 
     res.json({ success: true, data: rows.rows, counts: counts.rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -166,7 +167,7 @@ router.patch('/:id/login', authorize(...ADMIN), async (req, res) => {
     );
     res.json({ success: true, data: r.rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -206,7 +207,7 @@ router.patch('/:id/account', authorize(...ADMIN), async (req, res) => {
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Employee not found' });
     res.json({ success: true, data: r.rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -229,7 +230,7 @@ router.get('/next-code', authorize(...ADMIN), async (req, res) => {
     const next = prefix + String(Number(digits) + 1).padStart(digits.length, '0');
     res.json({ success: true, data: { last, next } });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -283,7 +284,7 @@ router.post('/', authorize(...ADMIN), async (req, res) => {
     res.status(201).json({ success: true, data: r.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'That email or employee id already exists' });
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -338,7 +339,7 @@ router.delete('/:id', authorize(...ADMIN), async (req, res) => {
     );
     res.json({ success: true, message: `${target.rows[0].name} deleted` });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -485,7 +486,7 @@ router.patch('/accounts', authorize(...ADMIN), async (req, res) => {
     res.json({ success: true, data: { moved: r.rowCount, names: r.rows.map(x => x.name) } });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally { client.release(); }
 });
 

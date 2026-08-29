@@ -11,6 +11,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -118,7 +119,7 @@ router.get('/', async (req, res) => {
         workWeekLabel: `${DAY_NAMES[c.workWeekStart]} - ${DAY_NAMES[c.workWeekEnd]}`,
       })),
     });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
@@ -145,7 +146,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
   } catch (err) {
     await client.query('ROLLBACK');
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'A work calendar already exists for that location' });
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally { client.release(); }
 });
 
@@ -196,7 +197,7 @@ router.patch('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res
   } catch (err) {
     await client.query('ROLLBACK');
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'A work calendar already exists for that location' });
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally { client.release(); }
 });
 
@@ -209,7 +210,7 @@ router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, re
     if (!r.rows[0].location) return res.status(400).json({ success: false, message: 'The Default work calendar cannot be deleted' });
     await pool.query('DELETE FROM work_calendars WHERE id = $1', [req.params.id]);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

@@ -15,6 +15,7 @@ router.use(protect);
 const { nextIdForCompany } = require('../utils/employeeId');
 const { mergeRows } = require('../utils/mergeRows');
 const { orgPolicy, applyPrivacy } = require('../utils/orgPolicy');
+const { serverError } = require('../utils/serverError');
 
 // GET next suggested employee_id — used by Confirm Registration + Add Employee
 // modals to prefill. Pass ?company=AltiusNxt for the per-company format
@@ -24,7 +25,7 @@ router.get('/next-id', async (req, res) => {
     const suggested = await nextIdForCompany(pool, req.query.company);
     res.json({ success: true, data: { suggested } });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -60,7 +61,7 @@ router.get('/metadata', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -162,7 +163,7 @@ router.get('/', async (req, res) => {
 
     res.json({ success: true, data, total, page: Number(page), pages: Math.ceil(total / limitNum) });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -268,7 +269,7 @@ router.get('/:id', async (req, res) => {
     
     res.json({ success: true, data: empData });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -341,7 +342,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
       }
       return res.status(400).json({ success: false, message: 'Email already exists' });
     }
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -487,7 +488,7 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'Email already exists' });
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -591,7 +592,7 @@ router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, re
 
     res.json({ success: true, message: 'Employee archived' });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -618,7 +619,7 @@ router.get('/:id/app-access', authorize('admin', 'director', 'hr_admin'), async 
        ORDER BY a.name ASC
     `, [req.params.id]);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PUT /api/employees/:id/app-access — sync this employee's access list
@@ -656,7 +657,7 @@ router.put('/:id/app-access', authorize('admin', 'director', 'hr_admin'), async 
     res.json({ success: true, granted: wanted.length });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally { client.release(); }
 });
 

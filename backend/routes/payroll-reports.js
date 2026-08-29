@@ -13,6 +13,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -110,7 +111,7 @@ router.get('/epf-summary/:employeeId', async (req, res) => {
       doc.text(`Total — Your EPF: ${totalEmp.toFixed(2)}   Employer EPF: ${totalEpf.toFixed(2)}   Employer EPS: ${totalEps.toFixed(2)}`);
       doc.text(`Grand Total Contribution: ${(totalEmp + totalEpf + totalEps).toFixed(2)}`);
     });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/esi-summary/:employeeId', async (req, res) => {
@@ -151,7 +152,7 @@ router.get('/esi-summary/:employeeId', async (req, res) => {
       doc.text(`Total — Your Contribution: ${totalEmp.toFixed(2)}   Employer Contribution: ${totalEr.toFixed(2)}`);
       doc.text(`Grand Total: ${(totalEmp + totalEr).toFixed(2)}`);
     });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

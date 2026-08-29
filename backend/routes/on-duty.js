@@ -168,7 +168,7 @@ router.get('/config', async (req, res) => {
         attachmentTypes: ALLOWED_ATTACHMENTS,
       },
     });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST submit a request

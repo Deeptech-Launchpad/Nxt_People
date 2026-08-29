@@ -199,7 +199,7 @@ router.post('/staff', audit('CREATE', 'manual_attendance_assignment'), async (re
     await pool.query(
       `INSERT INTO manual_attendance_assignments (employee_id, shift_id, created_by)
        VALUES ($1, $2, $3) ON CONFLICT (employee_id, shift_id) DO NOTHING`,
-      [employeeId, shiftId, req.user.id]);
+      [employeeId, shiftId, req.user._id]);
     res.status(201).json({ success: true, message: 'Added' });
   } catch (err) { fail(res, err); }
 });
@@ -324,7 +324,7 @@ router.post('/mark', audit('UPDATE', 'manual_attendance_mark'), async (req, res)
          ON CONFLICT (employee_id, shift_id, date) DO UPDATE
             SET state = EXCLUDED.state, hours = EXCLUDED.hours, note = EXCLUDED.note,
                 marked_by = EXCLUDED.marked_by, marked_at = NOW()`,
-        [employeeId, shiftId, date, state, hours, note, req.user.id]);
+        [employeeId, shiftId, date, state, hours, note, req.user._id]);
     }
 
     const sync = await syncAttendanceDay(client, employeeId, date);
@@ -371,7 +371,7 @@ router.post('/mark-all', audit('UPDATE', 'manual_attendance_mark'), async (req, 
         `INSERT INTO manual_attendance_marks (employee_id, shift_id, date, state, marked_by, marked_at)
          VALUES ($1, $2, $3::date, 'present', $4, NOW())
          ON CONFLICT (employee_id, shift_id, date) DO NOTHING`,
-        [r.employee_id, r.shift_id, date, req.user.id]);
+        [r.employee_id, r.shift_id, date, req.user._id]);
     }
     for (const id of new Set(due.map(r => r.employee_id))) {
       await syncAttendanceDay(client, id, date);

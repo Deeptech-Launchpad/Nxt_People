@@ -320,7 +320,7 @@ router.post('/accept-terms', async (req, res) => {
       data: updated.rows[0]
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -632,7 +632,7 @@ router.put('/change-password', protect, async (req, res) => {
 
     res.json({ success: true, message: 'Password updated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -740,7 +740,7 @@ router.put('/reset-password/:token', async (req, res) => {
 
     res.json({ success: true, message: 'Password reset successfully. You can now log in.' });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 

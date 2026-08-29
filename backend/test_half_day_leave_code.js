@@ -28,10 +28,20 @@ const src = fs.readFileSync(require.resolve('./routes/reports.js'), 'utf8');
 const from = src.indexOf('function classifyAttendanceDay(');
 if (from < 0) throw new Error('classifyAttendanceDay not found');
 const body = src.slice(from, src.indexOf('\n}', from) + 2);
+/* Every free name the lifted function reaches for has to be supplied here.
+ * holidayTypeFor was added to it when holidays gained location and shift
+ * scoping, and this harness was not updated — so the suite threw
+ * "holidayTypeFor is not defined" on its first assertion and had been failing
+ * ever since. A test that always fails hides the regressions it exists to
+ * catch, which is worse than not having it.
+ *
+ * The stubs answer "no holiday, no weekend", so these cases turn purely on
+ * the leave and attendance status they are actually about. */
 const classify = new Function(`
   const ATT_LEAVE_CODE = { casual: 'CL', sick: 'SL', unpaid: 'LOP', earned: 'EL', comp_off: 'CO' };
   const holidayClosesOffice = () => false;
   const ruleMatchesDate = () => false;
+  const holidayTypeFor = () => null;
   ${body}
   return classifyAttendanceDay;
 `)();

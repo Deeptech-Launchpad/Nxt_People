@@ -14,6 +14,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
 const { resolveSalaryStructure } = require('../utils/payroll-calc');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect, authorize('admin', 'director', 'hr_admin'));
 
@@ -69,7 +70,7 @@ router.get('/', async (req, res) => {
       status ? [status] : []
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/pending', async (req, res) => {
@@ -82,7 +83,7 @@ router.get('/pending', async (req, res) => {
         WHERE i.status = 'pending' ORDER BY i.created_at ASC`
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/employee/:employeeId', async (req, res) => {
@@ -95,7 +96,7 @@ router.get('/employee/:employeeId', async (req, res) => {
       [req.params.employeeId]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/', audit('PROPOSE', 'increment'), async (req, res) => {
@@ -125,7 +126,7 @@ router.post('/', audit('PROPOSE', 'increment'), async (req, res) => {
     if (err.code === '23505') {
       return res.status(400).json({ success: false, message: 'This employee already has a pending increment proposal.' });
     }
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -192,7 +193,7 @@ router.put('/:id/approve', audit('APPROVE', 'increment'), async (req, res) => {
     res.json({ success: true, arrears });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally { client.release(); }
 });
 
@@ -210,7 +211,7 @@ router.put('/:id/reject', audit('REJECT', 'increment'), async (req, res) => {
     );
     if (r.rows.length === 0) return res.status(400).json({ success: false, message: 'This increment has already been actioned.' });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

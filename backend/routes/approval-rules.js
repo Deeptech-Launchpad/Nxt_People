@@ -16,6 +16,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { CRITERIA_FIELDS, OPERATORS, APPROVER_TYPES, pickRule } = require('../utils/approvalRules');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -167,7 +168,7 @@ router.get('/meta', async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -182,7 +183,7 @@ router.get('/', async (req, res) => {
       data: rows.map(x => ({ ...x, formLabel: REQUEST_TYPES[x.requestType]?.label || x.requestType })),
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -362,7 +363,7 @@ router.get('/preview/:requestType', async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 

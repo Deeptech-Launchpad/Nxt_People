@@ -744,7 +744,7 @@ router.put('/:id/approve', async (req, res) => {
     res.json({ success: true, message: `${emp.firstName} ${emp.lastName} approved successfully.`, data: emp });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally {
     client.release();
   }

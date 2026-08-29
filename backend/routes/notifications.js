@@ -6,6 +6,7 @@ const logger = require('../logger');
 // Borrow the chat WebSocket hub for real-time delivery — same persistent
 // socket every logged-in user already has open, no extra connection cost.
 const chatHub = require('../ws-chat');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // GET /api/notifications — get current user's notifications
@@ -28,7 +29,7 @@ router.get('/', async (req, res) => {
     const unreadCount = countRes.rows[0].n;
     res.json({ success: true, data: result.rows, unreadCount });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -41,7 +42,7 @@ router.put('/read-all', async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -54,7 +55,7 @@ router.put('/:id/read', async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 

@@ -17,6 +17,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { LAST_DAY, cycleFor, nextCycle, dayInMonthOf, dayLabel, cycleLabel } = require('../utils/payPeriodCycle');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -102,7 +103,7 @@ router.get('/', async (req, res) => {
         ORDER BY name ASC`
     );
     res.json({ success: true, data: r.rows.map(decorate) });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // The stored start_date/end_date columns predate the cycle model and are still
@@ -136,7 +137,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
     res.status(201).json({ success: true, data: decorate(r.rows[0]) });
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'A pay period with that name already exists' });
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -182,7 +183,7 @@ router.patch('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res
     res.json({ success: true, data: decorate(r.rows[0]) });
   } catch (err) {
     if (err.code === '23505') return res.status(400).json({ success: false, message: 'A pay period with that name already exists' });
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -191,7 +192,7 @@ router.delete('/:id', authorize('admin', 'director', 'hr_admin'), async (req, re
     const r = await pool.query('DELETE FROM pay_periods WHERE id = $1 RETURNING id', [req.params.id]);
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Pay period not found' });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

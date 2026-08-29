@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { reportsScope, canActOnEmployee } = require('../utils/roles');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -10,7 +11,7 @@ router.get('/my', async (req, res) => {
   try {
     const result = await pool.query('SELECT id as "_id", week_start_date as "weekStartDate", week_end_date as "weekEndDate", total_hours as "totalHours", status, rejection_reason as "rejectionReason", notes FROM timesheets WHERE employee_id = $1 ORDER BY week_start_date DESC', [req.user._id]);
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -32,7 +33,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager'), async (re
       ORDER BY t.created_at DESC
     `, params);
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/', async (req, res) => {
@@ -48,7 +49,7 @@ router.post('/', async (req, res) => {
       RETURNING id as "_id", week_start_date as "weekStartDate", week_end_date as "weekEndDate", total_hours as "totalHours", status, notes
     `, [req.user._id, weekStartDate, weekEndDate, hours, status || 'draft', notes]);
     res.status(201).json({ success: true, data: result.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.put('/:id', async (req, res) => {
@@ -63,7 +64,7 @@ router.put('/:id', async (req, res) => {
       RETURNING id as "_id", week_start_date as "weekStartDate", week_end_date as "weekEndDate", total_hours as "totalHours", status, notes
     `, [hours, notes, req.params.id, req.user._id]);
     res.json({ success: true, data: result.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.put('/:id/submit', async (req, res) => {
@@ -73,7 +74,7 @@ router.put('/:id/submit', async (req, res) => {
       RETURNING id as "_id", week_start_date as "weekStartDate", week_end_date as "weekEndDate", total_hours as "totalHours", status, notes
     `, [req.params.id, req.user._id]);
     res.json({ success: true, data: result.rows[0], message: 'Timesheet submitted' });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -105,7 +106,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager'),
       [status, req.user._id, rejectionReason || null, req.params.id]
     );
     res.json({ success: true, data: result.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

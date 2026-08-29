@@ -21,6 +21,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
 const { diffConfig, summarise } = require('../utils/configDiff');
 const { invalidate } = require('../utils/attendanceConfig');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -455,7 +456,7 @@ router.post('/policy/reprocess', authorize('admin', 'director', 'hr_admin'), asy
 
     res.json({ success: true, data: { ...result, from, applied: apply } });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally { client.release(); }
 });
 
@@ -469,7 +470,7 @@ router.get('/:section', async (req, res) => {
     const extra = section.extra ? await section.extra(client) : {};
     res.json({ success: true, data: { ...config, ...extra } });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally { client.release(); }
 });
 

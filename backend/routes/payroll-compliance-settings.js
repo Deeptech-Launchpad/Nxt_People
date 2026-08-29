@@ -9,6 +9,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -27,14 +28,14 @@ router.get('/', async (req, res) => {
       `SELECT ${COLS} FROM payroll_compliance_settings WHERE effective_from <= CURRENT_DATE ORDER BY effective_from DESC LIMIT 1`
     );
     res.json({ success: true, data: r.rows[0] || null });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/history', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
     const r = await pool.query(`SELECT ${COLS} FROM payroll_compliance_settings ORDER BY effective_from DESC`);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/', authorize('admin', 'director', 'hr_admin'), audit('CREATE', 'compliance_settings'), async (req, res) => {
@@ -59,7 +60,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), audit('CREATE', 'co
       [pfRate, pfWageCeiling, esiEmployeeRate, esiEmployerRate, esiThreshold, JSON.stringify(ptSlabs), effectiveFrom, req.user._id]
     );
     res.status(201).json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

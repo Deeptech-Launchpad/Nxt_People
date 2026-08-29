@@ -24,6 +24,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { logAudit } = require('../utils/audit');
 const logger = require('../logger');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -112,7 +113,7 @@ router.get('/', async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -138,7 +139,7 @@ router.put('/', async (req, res) => {
     await pool.query(`UPDATE employees SET cover_image_url = $1 WHERE id = $2`, [cover, req.user._id]);
     res.json({ success: true, message: 'Cover updated', data: { cover } });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -246,7 +247,7 @@ router.put('/org', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     }
     res.json({ success: true, message: 'Organization cover updated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 

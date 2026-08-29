@@ -5,6 +5,7 @@ const multer = require('multer');
 const xlsx = require('xlsx');
 const { protect, authorize } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
+const { serverError } = require('../utils/serverError');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -77,7 +78,7 @@ router.post('/import', authorize('admin', 'director', 'hr_admin'), audit('IMPORT
 
     res.json({ success: true, message: `Successfully imported ${count} holidays.` });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -132,7 +133,7 @@ router.get('/', async (req, res) => {
       params
     );
     res.json({ success: true, data: result.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/', authorize('admin', 'director', 'hr_admin'), audit('CREATE', 'holiday'), async (req, res) => {
@@ -157,7 +158,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), audit('CREATE', 'ho
     );
     await setScopes(pool, result.rows[0]._id || result.rows[0].id, req.body.locationIds, req.body.shiftIds);
     res.status(201).json({ success: true, data: result.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.put('/:id', authorize('admin', 'director', 'hr_admin'), audit('UPDATE', 'holiday'), async (req, res) => {
@@ -193,14 +194,14 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), audit('UPDATE', '
       await setScopes(pool, req.params.id, req.body.locationIds, req.body.shiftIds);
     }
     res.json({ success: true, data: result.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.delete('/:id', authorize('admin', 'director', 'hr_admin'), audit('DELETE', 'holiday'), async (req, res) => {
   try {
     await pool.query('DELETE FROM holidays WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Holiday deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Send the holiday's mail_body to every active employee. Idempotent — admin
@@ -242,7 +243,7 @@ router.post('/:id/notify', authorize('admin', 'director', 'hr_admin'), audit('NO
       await pool.query('UPDATE holidays SET notified_at = NOW() WHERE id = $1', [req.params.id]);
     }
     res.json({ success: true, sent, failed, total: emps.rows.length });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/holidays/config — the Holidays configuration screen: the reminder
@@ -251,7 +252,7 @@ router.get('/config', async (req, res) => {
   try {
     const r = await pool.query('SELECT holiday_config AS config FROM settings LIMIT 1');
     res.json({ success: true, data: r.rows[0]?.config || {} });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.patch('/config', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
@@ -283,7 +284,7 @@ router.patch('/config', authorize('admin', 'director', 'hr_admin'), async (req, 
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Settings row not found' });
     res.json({ success: true, data: r.rows[0].config });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

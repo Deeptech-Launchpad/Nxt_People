@@ -13,6 +13,7 @@ const { getLeavePolicies, accrualEvents, grantedToDate, entitlementStart, round2
 const { DEFAULT_TZ } = require('../utils/timezone');
 const attendanceConfig = require('../utils/attendanceConfig');
 const { roundHours, lateNightMinutes } = require('../utils/hoursPolicy');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // Sentinel for the "Not Specified" filter option. Deliberately not a value any
@@ -223,7 +224,7 @@ router.get('/attendance', authorize('admin', 'director', 'hr_admin', 'manager'),
 
     const data = [...attRes.rows, ...leaveRows].sort((a, b) => new Date(b.date) - new Date(a.date));
     res.json({ success: true, data });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Bug #10 + #20 fix: single aggregation query, also accepts startDate/endDate
@@ -292,7 +293,7 @@ router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager'), as
     ]);
 
     res.json({ success: true, data: results, workingDays: { total: totalWorkingDays, elapsed: elapsedWorkingDays } });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Single-day snapshot for the Daily Report pie chart: how many employees are
@@ -352,7 +353,7 @@ router.get('/daily', authorize('admin', 'director', 'hr_admin', 'manager'), asyn
     });
 
     res.json({ success: true, date, counts, data });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ══════════════════════ Employee Information reports ══════════════════════
@@ -500,7 +501,7 @@ router.get('/employee/dashboard', authorize('admin', 'director', 'hr_admin', 'ma
         last6MonthsAttrition: attritionSeries,
       },
     });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Year-over-year headcount trend: how many employees were active as of the
@@ -564,7 +565,7 @@ router.get('/employee/filter-options', authorize('admin', 'director', 'hr_admin'
       success: true,
       data: { department, designation, company, division, workLocation, employmentType, role, gender, shiftId, experience, businessUnit: [] },
     });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/employee/headcount-trend', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -595,7 +596,7 @@ router.get('/employee/headcount-trend', authorize('admin', 'director', 'hr_admin
       return { ...row, growth };
     });
     res.json({ success: true, data });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Dense month-by-month series (zero-count months included, matching Zoho's
@@ -729,7 +730,7 @@ router.get('/employee/addition-trend', authorize('admin', 'director', 'hr_admin'
     const months = Math.min(24, Math.max(1, parseInt(req.query.months, 10) || 12));
     const data = await monthlySeriesWithGrowth('joining_date', months, req.user, null, req.query);
     res.json({ success: true, data });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/employee/attrition-trend', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -737,7 +738,7 @@ router.get('/employee/attrition-trend', authorize('admin', 'director', 'hr_admin
     const months = Math.min(24, Math.max(1, parseInt(req.query.months, 10) || 12));
     const data = await monthlySeriesWithGrowth('exit_date', months, req.user, req.query.employmentType, req.query);
     res.json({ success: true, data });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/employee/distribution', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -765,7 +766,7 @@ router.get('/employee/distribution', authorize('admin', 'director', 'hr_admin', 
     const totalActive = totalRes.rows[0]?.count || 0;
     const assigned = r.rows.reduce((s, row) => s + row.count, 0);
     res.json({ success: true, data: r.rows, totalActive, without: totalActive - assigned });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Employees behind one slice of a Distribution/Diversity chart — clicking a
@@ -798,7 +799,7 @@ router.get('/employee/drilldown', authorize('admin', 'director', 'hr_admin', 'ma
       [value, ...extra.params, ...scope.params]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // 5-year-wide buckets for age (date_of_birth) or current tenure
@@ -886,7 +887,7 @@ router.get('/employee/diversity', authorize('admin', 'director', 'hr_admin', 'ma
       [...extra.params, ...scope.params]
     );
     res.json({ success: true, type, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Per-year buckets (<1, 1, 2, 3, ...) rather than wide bands, matching
@@ -949,7 +950,7 @@ router.get('/employee/experience-exit', authorize('admin', 'director', 'hr_admin
     const { startDate, endDate, employmentType } = req.query;
     const data = await experienceExitBuckets(req.user, { startDate, endDate, employmentType, query: req.query });
     res.json({ success: true, data });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ══════════════════════════ Leave Tracker reports ══════════════════════════
@@ -1002,7 +1003,7 @@ router.get('/leave/daily-status', authorize('admin', 'director', 'hr_admin', 'ma
     ]);
     const employees = listRes.rows.map(row => ({ ...row, category: LEAVE_CATEGORY[row.leaveType] || null }));
     res.json({ success: true, date, byType: typeRes.rows, employees });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Day-by-day leave calendar grid across a date range — same walk pattern as
@@ -1076,7 +1077,7 @@ router.get('/leave/resource-availability', authorize('admin', 'director', 'hr_ad
     });
 
     res.json({ success: true, data, dayLabels: days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Per-employee balance (pick one employee, see their figures) — matches
@@ -1180,7 +1181,7 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
       },
     ];
     res.json({ success: true, employee: emp, year, dayData, hourData });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Month-by-month drilldown for one employee + one leave type — the modal
@@ -1279,7 +1280,7 @@ router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admi
     }
 
     res.json({ success: true, data, leaveType, year, unit: leaveType === 'permission' ? 'hours' : 'days' });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Transaction-level ledger behind the monthly summary above — the reference's
@@ -1376,7 +1377,7 @@ router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_adm
     });
 
     res.json({ success: true, data, leaveType, year, unit: isHours ? 'hours' : 'days' });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
@@ -1460,7 +1461,7 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
       };
     });
     res.json({ success: true, data, unit, startDate: start, endDate: end });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Leave types + years that actually have data — feeds the "Leave type"
@@ -1474,7 +1475,7 @@ router.get('/leave/types-available', authorize('admin', 'director', 'hr_admin', 
          FROM leaves ORDER BY leave_type, year DESC`
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Per-employee ledger for ONE leave type + year. openingBalance and lapsed
@@ -1510,7 +1511,7 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
       };
     });
     res.json({ success: true, data, leaveType, year });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Leave encashment eligibility for a pay cycle: how many days (or hours) each
@@ -1615,7 +1616,7 @@ router.get('/leave/encashment', authorize('admin', 'director', 'hr_admin', 'mana
     }
 
     res.json({ success: true, data, unit, year });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Reuses the exact same lopDaysForRange() Payroll Run computes with, so
@@ -1702,7 +1703,7 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
         totalUnpayable: round2(lopDays + absentDays) });
     }
     res.json({ success: true, data });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Per-employee payroll-period summary — Total days / Loss of Pay / Paid
@@ -1803,7 +1804,7 @@ router.get('/leave/payroll-export', authorize('admin', 'director', 'hr_admin', '
     res.json({ success: true, data: finalData, reportType, unit, startDate: start, endDate: end,
       payable: { weekendsPayable: payableCfg.includeWeekendsAsPayable !== false,
                  holidaysPayable: payableCfg.includeHolidaysAsPayable !== false } });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // ══════════════════════════ Attendance reports ═════════════════════════════
@@ -2225,7 +2226,7 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
 
     const byStatus = Object.entries(counts).map(([key, count]) => ({ key, label: ATT_STATUS_LABEL[key], count }));
     res.json({ success: true, date, totalUsers, byStatus, presence, employees });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Entry (Early | Late) and Exit (Early | Late) against each employee's shift,
@@ -2316,7 +2317,7 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
     // screen showed "An internal server error occurred" and the server kept
     // the reason to itself. Log it.
     logger.error({ err: err?.message, stack: err?.stack }, 'early-late report failed');
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -2389,7 +2390,7 @@ router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admi
 
     res.json({ success: true, data, showLeaveTypes: showTypes,
       dayLabels: ctx.days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Per-employee day-by-day presence ledger + a Day/Hour summary — Zoho's
@@ -2533,7 +2534,7 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
     );
 
     res.json({ success: true, employee: emp, data: filtered, summaryDays, summaryHours, shiftHours, startDate: start, endDate: end });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Grouped payroll summary per employee — Payable / Expected / Worked / Paid
@@ -2623,7 +2624,7 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
     });
 
     res.json({ success: true, data, unit, simple, startDate: start, endDate: end });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Day-by-day grid showing BOTH the rostered shift and the resulting status
@@ -2690,7 +2691,7 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
 
     res.json({ success: true, data, showLeaveTypes: showTypes,
       dayLabels: ctx.days.map(d => d.toLocaleDateString('en-CA')), startDate: start, endDate: end });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Unbroken runs of absence per employee. Absence is derived here exactly as it
@@ -2749,7 +2750,7 @@ router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'h
     }
 
     res.json({ success: true, data, minDays, startDate: start, endDate: end });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // A running hour ledger per employee, as in the reference: what the period
@@ -2874,7 +2875,7 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
     });
 
     res.json({ success: true, data, startDate: start, endDate: end });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

@@ -7,6 +7,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const logger = require('../logger');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -62,7 +63,7 @@ router.get('/', async (req, res) => {
       [req.user._id, parseInt(limit), offset]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/feeds/company — company-wide feed (announcements + approvals visible to all)
@@ -78,7 +79,7 @@ router.get('/company', async (req, res) => {
        ORDER BY a.created_at DESC LIMIT 10`
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST /api/feeds — create a feed entry (internal / system use)
@@ -94,7 +95,7 @@ router.post('/', async (req, res) => {
       [empId, type || 'info', title || '', body || null, icon || '📌']
     );
     res.status(201).json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 /**

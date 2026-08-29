@@ -17,6 +17,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
 const { diffConfig, summarise } = require('../utils/configDiff');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -185,7 +186,7 @@ router.get('/:section', async (req, res) => {
   try {
     const r = await pool.query(`SELECT ${section.column} AS config FROM settings LIMIT 1`);
     res.json({ success: true, data: r.rows[0]?.config || {} });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.patch('/:section', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
@@ -223,7 +224,7 @@ router.patch('/:section', authorize('admin', 'director', 'hr_admin'), async (req
       });
     }
     res.json({ success: true, data: r.rows[0].config });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

@@ -37,7 +37,7 @@ router.get('/policies', authorize('admin', 'director', 'hr_admin'), async (req, 
          FROM leave_types ORDER BY sort_order, name`
     );
     res.json({ success: true, data: r.rows.map(x => ({ ...x, accrualAmount: parseFloat(x.accrualAmount) || 0 })) });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // PATCH /api/leave-types/policies/:id — partial update from that screen.
@@ -97,7 +97,7 @@ router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async 
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Leave policy not found' });
     res.json({ success: true, data: { ...r.rows[0], accrualAmount: parseFloat(r.rows[0].accrualAmount) || 0 } });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST /api/leave-types/policies/:id/clone — duplicate a policy.
@@ -126,7 +126,7 @@ router.post('/policies/:id/clone', authorize('admin', 'director', 'hr_admin'), a
        row.max_days_per_year, row.sort_order]
     );
     res.status(201).json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // DELETE /api/leave-types/policies/:id — remove a policy outright.
@@ -170,7 +170,7 @@ router.delete('/policies/:id', authorize('admin', 'director', 'hr_admin'), async
     await pool.query(`DELETE FROM leave_balances WHERE leave_type_id = $1`, [req.params.id]);
     await pool.query(`DELETE FROM leave_types WHERE id = $1`, [req.params.id]);
     res.json({ success: true, message: `${row.name} deleted` });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/leave-types/balances?year=2025&employeeId=  (employee sees own, admin can pass id)
@@ -427,7 +427,7 @@ router.get('/methods', async (req, res) => {
   try {
     const r = await pool.query('SELECT comp_off_enabled AS "compOffEnabled" FROM settings LIMIT 1');
     res.json({ success: true, data: r.rows[0] || { compOffEnabled: true } });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.patch('/methods', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
@@ -442,7 +442,7 @@ router.patch('/methods', authorize('admin', 'director', 'hr_admin'), async (req,
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Settings row not found' });
     res.json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

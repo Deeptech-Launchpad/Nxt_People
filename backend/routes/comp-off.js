@@ -11,6 +11,7 @@ const {
 } = require('../utils/leaveApproval');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // Comp-Off approval chain as JSON for the shared ApprovalTimeline (same engine
@@ -130,7 +131,7 @@ router.get('/my', async (req, res) => {
       .filter(x => x.status === 'approved' && !x.expired)
       .reduce((s, x) => s + (parseFloat(x.daysEarned) - parseFloat(x.daysUsed)), 0);
     res.json({ success: true, data: r.rows, balance: Math.max(0, balance) });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET pending (admin/manager) — same hierarchy scoping as the leave queue:
@@ -166,7 +167,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       [req.user._id, full]
     );
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 /* What the attendance says about this employee on this day.
@@ -215,7 +216,7 @@ router.get('/eligibility', async (req, res) => {
         attendance: a ? { firstIn: a.firstIn, lastOut: a.lastOut, hours: a.hours, status: a.status } : null,
       },
     });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 /* Every comp-off in the company, whatever its status.
@@ -249,7 +250,7 @@ router.get('/all', authorize('admin', 'director', 'hr_admin'), async (req, res) 
         ORDER BY c.created_at DESC
         LIMIT 500`);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST apply comp-off — validates the worked day, attendance, the requested
@@ -349,7 +350,7 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
     res.status(201).json({ success: true, data: created });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally {
     client.release();
   }
@@ -436,7 +437,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
     return res.json({ success: true, status: 'rejected', message: 'Comp-off rejected.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally {
     client.release();
   }
@@ -462,7 +463,7 @@ router.post('/:id/use', audit('USE', 'comp_off'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'This comp-off credit is not available, has expired, or does not have enough remaining days for that request.' });
     }
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // GET /api/comp-off/config — the Compensatory Off configuration screen.
@@ -473,7 +474,7 @@ router.get('/config', async (req, res) => {
   try {
     const r = await pool.query('SELECT comp_off_config AS config FROM settings LIMIT 1');
     res.json({ success: true, data: r.rows[0]?.config || {} });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 const RAISABLE = ['full_day', 'half_day', 'quarter_day', 'hourly'];
@@ -544,7 +545,7 @@ router.patch('/config', authorize('admin', 'director', 'hr_admin'), async (req, 
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Settings row not found' });
     res.json({ success: true, data: r.rows[0].config });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

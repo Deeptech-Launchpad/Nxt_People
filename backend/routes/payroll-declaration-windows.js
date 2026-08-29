@@ -12,6 +12,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -21,7 +22,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => 
   try {
     const r = await pool.query(`SELECT ${COLS} FROM payroll_declaration_windows ORDER BY financial_year DESC`);
     res.json({ success: true, data: r.rows });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // Any authenticated employee needs to know whether they can submit right now.
@@ -32,7 +33,7 @@ router.get('/current', async (req, res) => {
       ? await pool.query(`SELECT ${COLS} FROM payroll_declaration_windows WHERE financial_year = $1`, [fy])
       : await pool.query(`SELECT ${COLS} FROM payroll_declaration_windows ORDER BY financial_year DESC LIMIT 1`);
     res.json({ success: true, data: r.rows[0] || null });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/', authorize('admin', 'director', 'hr_admin'), audit('UPSERT', 'declaration_window'), async (req, res) => {
@@ -48,7 +49,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), audit('UPSERT', 'de
       [financialYear, !!isOpen, opensAt || null, closesAt || null]
     );
     res.json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.put('/:id/toggle', authorize('admin', 'director', 'hr_admin'), audit('TOGGLE', 'declaration_window'), async (req, res) => {
@@ -59,7 +60,7 @@ router.put('/:id/toggle', authorize('admin', 'director', 'hr_admin'), audit('TOG
     );
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Window not found' });
     res.json({ success: true, data: r.rows[0] });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

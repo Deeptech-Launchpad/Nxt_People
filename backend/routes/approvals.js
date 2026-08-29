@@ -4,6 +4,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { approvalLevelsJson } = require('../utils/leaveApproval');
+const { serverError } = require('../utils/serverError');
 router.use(protect);
 
 // Hierarchy approval chain as JSON for the timeline, per request type/table.
@@ -168,7 +169,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       success: true,
       data: { leaves, timesheets, regularizations, wfhRequests, compOffs, onDuty, approvedLeaves, total }
     });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

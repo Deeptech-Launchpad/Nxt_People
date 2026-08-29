@@ -10,6 +10,7 @@ const { DEFAULT_TZ } = require('../utils/timezone');
 const { classifyDay } = require('../utils/attendanceRule');
 const { loadWeekendResolver } = require('../utils/workingDays');
 const attendanceAlerts = require('../utils/attendanceAlerts');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -48,7 +49,7 @@ router.get('/today', async (req, res) => {
     }
     res.json({ success: true, data: row });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -66,7 +67,7 @@ router.get('/by-date', async (req, res) => {
     const row = result.rows[0] || null;
     res.json({ success: true, data: row });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -295,7 +296,7 @@ router.post('/checkin', async (req, res) => {
       } catch (e) { logger.error({ err: e.message }, '[attendance] notify/feed soft-fail'); }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -494,7 +495,7 @@ router.post('/checkout', async (req, res) => {
       } catch (_) {}
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -657,7 +658,7 @@ router.get('/my', async (req, res) => {
 
     res.json({ success: true, data: mapped });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -728,7 +729,7 @@ router.get('/team', authorize('admin', 'director', 'hr_admin', 'manager', 'team_
 
     res.json({ success: true, data: mapped, employees: employeesRes.rows, isWeekend: isWeekendDay });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -868,7 +869,7 @@ router.get('/summary', async (req, res) => {
 
     res.json({ success: true, data: summary, range: { start, end } });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -964,7 +965,7 @@ router.get('/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(lines.join('\n'));
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -988,7 +989,7 @@ router.get('/holidays', async (req, res) => {
     // Logged, not just swallowed. The generic reply with no log is why a
     // permanently broken query went unnoticed.
     logger.error({ err: err.message }, '[attendance] holidays list failed');
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 

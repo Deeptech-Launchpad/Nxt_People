@@ -32,6 +32,7 @@ const attendanceConfig = require('../utils/attendanceConfig');
 const { sendCheckOutReminderEmail } = require('../utils/mailer');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const logger = require('../logger');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -72,7 +73,7 @@ router.get('/:employeeId/:date', authorize('admin', 'director', 'hr_admin', 'man
         },
       });
     } catch (err) {
-      res.status(500).json({ success: false, message: 'An internal server error occurred' });
+      serverError(res, err);
     }
   });
 
@@ -308,7 +309,7 @@ router.put('/:employeeId/:date', authorize('admin', 'director', 'hr_admin', 'man
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       logger.error({ err: err.message }, '[attendance-entry] update failed');
-      res.status(500).json({ success: false, message: 'An internal server error occurred' });
+      serverError(res, err);
     } finally { client.release(); }
   });
 

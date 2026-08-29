@@ -9,6 +9,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
 const { splitCtcFromTemplate } = require('../utils/payroll-calc');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect, authorize('admin', 'director', 'hr_admin'));
 
@@ -24,7 +25,7 @@ router.get('/', async (req, res) => {
     components.rows.forEach(c => { (byTemplate[c.templateId] ||= []).push(c); });
     const data = templates.rows.map(t => ({ ...t, components: byTemplate[t.id] || [] }));
     res.json({ success: true, data });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 router.post('/', audit('CREATE', 'salary_template'), async (req, res) => {
@@ -57,7 +58,7 @@ router.post('/', audit('CREATE', 'salary_template'), async (req, res) => {
     res.status(201).json({ success: true, id: t.rows[0].id });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally { client.release(); }
 });
 
@@ -93,7 +94,7 @@ router.put('/:id', audit('UPDATE', 'salary_template'), async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally { client.release(); }
 });
 
@@ -105,7 +106,7 @@ router.delete('/:id', audit('DELETE', 'salary_template'), async (req, res) => {
     const r = await pool.query(`DELETE FROM salary_templates WHERE id = $1 RETURNING id`, [req.params.id]);
     if (r.rows.length === 0) return res.status(404).json({ success: false, message: 'Template not found' });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 // POST /:id/apply-preview — { ctcAnnual } -> computed monthly split, no write.
@@ -122,7 +123,7 @@ router.post('/:id/apply-preview', async (req, res) => {
     if (components.rows.length === 0) return res.status(404).json({ success: false, message: 'Template not found or has no components' });
     const split = splitCtcFromTemplate(ctcAnnual, components.rows);
     res.json({ success: true, data: split });
-  } catch (err) { res.status(500).json({ success: false, message: 'An internal server error occurred' }); }
+  } catch (err) { serverError(res, err); }
 });
 
 module.exports = router;

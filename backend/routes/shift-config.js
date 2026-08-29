@@ -16,6 +16,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { invalidate } = require('../utils/shiftConfig');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -73,7 +74,7 @@ router.get('/general', async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -115,7 +116,7 @@ router.patch('/general', authorize('admin', 'director', 'hr_admin'), async (req,
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally { client.release(); }
 });
 

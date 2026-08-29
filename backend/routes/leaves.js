@@ -18,6 +18,7 @@ const { availableFor, debitOnApproval, refundApproved, typeCode: dbTypeCode } = 
 const { partialAllowed } = require('../utils/leaveExtension');
 const { notifyChainOfCancellation } = require('../utils/cancellationNotice');
 const { approvalEmail, outcomeEmail } = require('../utils/approvalMessages');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -86,7 +87,7 @@ router.get('/my', async (req, res) => {
     ]);
     res.json({ success: true, data: result.rows, total: countRes.rows[0]?.n || 0, page, limit });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -153,7 +154,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
 
     res.json({ success: true, data: result.rows, total: countRes.rows[0]?.n || 0, page, limit });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -587,7 +588,7 @@ router.post('/', [
       client.release();
     }
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -811,7 +812,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
 
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally {
     client.release();
   }
@@ -916,7 +917,7 @@ router.put('/:id/cancel', async (req, res) => {
     return res.json({ success: true, status: 'cancelled', message: 'Leave cancelled.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally {
     client.release();
   }
@@ -1015,7 +1016,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true, message: 'Leave cancelled' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   } finally {
     client.release();
   }
@@ -1223,7 +1224,7 @@ router.get('/balance', async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -1269,7 +1270,7 @@ router.get('/permission-usage', authorize('admin', 'director', 'hr_admin'), asyn
     });
     res.json({ success: true, data, month, year, monthlyLimit: MONTHLY_LIMIT });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -1311,7 +1312,7 @@ router.get('/team-pending', async (req, res) => {
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -1349,7 +1350,7 @@ router.get('/pending-approvals', async (req, res) => {
     );
     res.json({ success: true, data: r.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 

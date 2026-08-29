@@ -19,6 +19,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
+const { serverError } = require('../utils/serverError');
 
 router.use(protect);
 
@@ -244,7 +245,7 @@ router.get('/:resource', async (req, res) => {
     const result = await pool.query(`SELECT ${r.select} FROM ${r.from} ORDER BY ${r.order}`);
     res.json({ success: true, data: result.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -271,7 +272,7 @@ router.get('/:resource/:id/employees', async (req, res) => {
     );
     res.json({ success: true, data: result.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
@@ -410,7 +411,7 @@ router.delete('/:resource/:id', authorize(...WRITE_ROLES), async (req, res) => {
     if (!del.rows.length) return res.status(404).json({ success: false, message: `${r.label} not found` });
     res.json({ success: true, message: `${r.label} deleted` });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'An internal server error occurred' });
+    serverError(res, err);
   }
 });
 
