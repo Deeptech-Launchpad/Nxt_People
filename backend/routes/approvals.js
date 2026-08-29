@@ -7,6 +7,30 @@ const { approvalLevelsJson } = require('../utils/leaveApproval');
 const { serverError } = require('../utils/serverError');
 router.use(protect);
 
+/* ── This month, and everything still waiting from before it ───────────────
+ *  The pending queue listed every unactioned request ever made, so leave from
+ *  2022 and 2024 — most of it inherited from the Zoho migration and never
+ *  cleared — sat above this week's. Filtering it out would have hidden work
+ *  nobody could then action, so instead it is separated: the ordinary tabs
+ *  show this month, and a Backlog tab shows what is still waiting from before.
+ *
+ *  A request is backlog once its whole date range finished before this month
+ *  began. A request for NEXT month is not backlog — it is upcoming work and
+ *  belongs in the ordinary queue, or it could never be approved.
+ * ───────────────────────────────────────────────────────────────────────── */
+const MONTH_START = `date_trunc('month', CURRENT_DATE)::date`;
+
+const isBacklog = (endCol) => `(${endCol} < ${MONTH_START})`;
+
+/* Soft-deleted employees never appear anywhere.
+ *
+ * Current-month work is for people still here, or leaving this month — they
+ * were an employee for part of it. Backlog deliberately includes people who
+ * have left: clearing their stuck requests is the entire reason that tab
+ * exists, and excluding them would strand those rows as pending for ever. */
+const visiblePeople = (endCol) =>
+  `e.deleted_at IS NULL AND (${isBacklog(endCol)} OR e.status = 'active' OR e.exit_date >= ${MONTH_START})`;
+
 // Hierarchy approval chain as JSON for the timeline, per request type/table.
 const LEAVE_LEVELS_JSON = approvalLevelsJson('leave', 'l');
 const REG_LEVELS_JSON   = approvalLevelsJson('regularization', 'r');
@@ -44,6 +68,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee,
                ${LEAVE_LEVELS_JSON} as "approvalLevels",
+               ${isBacklog('l.end_date')} as "isBacklog",
                ($2::boolean OR EXISTS (
                   SELECT 1 FROM approval_levels x
                    WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1 AND x.status = 'pending'
@@ -51,7 +76,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         FROM leaves l
         JOIN employees e ON l.employee_id = e.id
         WHERE l.status = 'pending'
-          AND e.deleted_at IS NULL
+          AND ${visiblePeople('l.end_date')}
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1 AND x.status = 'pending'
@@ -63,9 +88,10 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         SELECT t.id as "_id", t.week_start_date as "weekStartDate", t.week_end_date as "weekEndDate",
                t.total_hours as "totalHours", t.status, t.notes, t.created_at as "createdAt",
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
-                 'department', e.department, 'employeeId', e.employee_id) as employee
+                 'department', e.department, 'employeeId', e.employee_id) as employee,
+               ${isBacklog('t.week_end_date')} as "isBacklog"
         FROM timesheets t JOIN employees e ON t.employee_id = e.id
-        WHERE t.status = 'submitted' AND e.deleted_at IS NULL${reportFilter} ORDER BY t.created_at DESC
+        WHERE t.status = 'submitted' AND ${visiblePeople('t.week_end_date')}${reportFilter} ORDER BY t.created_at DESC
       `, simpleParams),
 
       // Regularizations now flow through the same hierarchy engine as leaves.
@@ -75,13 +101,14 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee,
                ${REG_LEVELS_JSON} as "approvalLevels",
+               ${isBacklog('r.date')} as "isBacklog",
                ($2::boolean OR EXISTS (
                   SELECT 1 FROM approval_levels x
                    WHERE x.request_type = 'regularization' AND x.request_id = r.id AND x.approver_id = $1 AND x.status = 'pending'
                )) as "canAct"
         FROM attendance_regularizations r JOIN employees e ON r.employee_id = e.id
         WHERE r.status = 'pending'
-          AND e.deleted_at IS NULL
+          AND ${visiblePeople('r.date')}
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'regularization' AND x.request_id = r.id AND x.approver_id = $1 AND x.status = 'pending'
@@ -94,13 +121,14 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee,
                ${WFH_LEVELS_JSON} as "approvalLevels",
+               ${isBacklog('w.date')} as "isBacklog",
                ($2::boolean OR EXISTS (
                   SELECT 1 FROM approval_levels x
                    WHERE x.request_type = 'wfh' AND x.request_id = w.id AND x.approver_id = $1 AND x.status = 'pending'
                )) as "canAct"
         FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
         WHERE w.status = 'pending'
-          AND e.deleted_at IS NULL
+          AND ${visiblePeople('w.date')}
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'wfh' AND x.request_id = w.id AND x.approver_id = $1 AND x.status = 'pending'
@@ -116,13 +144,14 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee,
                ${OD_LEVELS_JSON} as "approvalLevels",
+               ${isBacklog('o.end_date')} as "isBacklog",
                ($2::boolean OR EXISTS (
                   SELECT 1 FROM approval_levels x
                    WHERE x.request_type = 'on_duty' AND x.request_id = o.id AND x.approver_id = $1 AND x.status = 'pending'
                )) as "canAct"
         FROM on_duty_requests o JOIN employees e ON o.employee_id = e.id
         WHERE o.status = 'pending'
-          AND e.deleted_at IS NULL
+          AND ${visiblePeople('o.end_date')}
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'on_duty' AND x.request_id = o.id AND x.approver_id = $1 AND x.status = 'pending'
@@ -138,13 +167,14 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee,
                ${COMPOFF_LEVELS_JSON} as "approvalLevels",
+               ${isBacklog('GREATEST(c.worked_date, COALESCE(c.comp_off_date, c.worked_date))')} as "isBacklog",
                ($2::boolean OR EXISTS (
                   SELECT 1 FROM approval_levels x
                    WHERE x.request_type = 'comp_off' AND x.request_id = c.id AND x.approver_id = $1 AND x.status = 'pending'
                )) as "canAct"
         FROM comp_offs c JOIN employees e ON c.employee_id = e.id
         WHERE c.status = 'pending'
-          AND e.deleted_at IS NULL
+          AND ${visiblePeople("GREATEST(c.worked_date, COALESCE(c.comp_off_date, c.worked_date))")}
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'comp_off' AND x.request_id = c.id AND x.approver_id = $1 AND x.status = 'pending'

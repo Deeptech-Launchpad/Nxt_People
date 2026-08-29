@@ -51,7 +51,7 @@ export default function Approvals({ embedded = false }) {
   // Approve All is available to HR / Super Admin and Team Leads (managers).
   // Managers are still scoped server-side to requests they actually approve.
   const canApproveAll = ['admin', 'director', 'hr_admin', 'manager'].includes(user?.role);
-  const [data, setData] = useState({ leaves: [], permissions: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], onDuty: [], total: 0 });
+  const [data, setData] = useState({ leaves: [], permissions: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], onDuty: [], backlog: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
@@ -91,23 +91,54 @@ export default function Approvals({ embedded = false }) {
     api.get('/approvals/pending')
       .then(res => {
         const d = res.data.data || {};
-        const allLeaves = d.leaves || [];
+
+        /* Anything whose dates finished before this month is backlog — mostly
+         * requests inherited from the Zoho migration that were never actioned.
+         * They are not hidden, because then nobody could ever clear them; they
+         * move to their own tab so this month's queue is only this month's. */
+        const current = arr => (arr || []).filter(x => !x.isBacklog);
+        const backlogOf = (arr, kind, endpoint, dateOf) =>
+          (arr || []).filter(x => x.isBacklog).map(x => ({ ...x, kind, endpoint, when: dateOf(x) }));
+
+        const allLeaves = current(d.leaves);
         const approved = (d.approvedLeaves || []).filter(l => l.status === 'approved');
         const rejected = (d.approvedLeaves || []).filter(l => l.status === 'rejected');
         // Separate permission leaves from other leave types
         const permissions = allLeaves.filter(l => l.leaveType === 'permission');
         const leaves = allLeaves.filter(l => l.leaveType !== 'permission');
+        const leaveBacklog = backlogOf(d.leaves, 'Leave', 'leaves', x => `${x.startDate} – ${x.endDate}`);
+        const backlog = [
+          ...leaveBacklog.filter(x => x.leaveType !== 'permission'),
+          ...leaveBacklog.filter(x => x.leaveType === 'permission').map(x => ({ ...x, kind: 'Permission' })),
+          ...backlogOf(d.timesheets, 'Timesheet', 'timesheets', x => `${x.weekStartDate} – ${x.weekEndDate}`),
+          ...backlogOf(d.regularizations, 'Regularization', 'regularizations', x => x.date),
+          ...backlogOf(d.wfhRequests, 'WFH', 'wfh', x => x.date),
+          ...backlogOf(d.onDuty, 'On Duty', 'on-duty', x => `${x.startDate} – ${x.endDate}`),
+          ...backlogOf(d.compOffs, 'Comp-Off', 'comp-off', x => x.workedDate),
+        ].sort((a, b) => String(a.when).localeCompare(String(b.when)));
+
+        const currentTimesheets = current(d.timesheets);
+        const currentRegs = current(d.regularizations);
+        const currentWfh = current(d.wfhRequests);
+        const currentCompOffs = current(d.compOffs);
+        const currentOnDuty = current(d.onDuty);
+
         setData({
           leaves,
           permissions,
-          timesheets: d.timesheets || [],
-          regularizations: d.regularizations || [],
-          wfhRequests: d.wfhRequests || [],
-          compOffs: d.compOffs || [],
-          onDuty: d.onDuty || [],
+          timesheets: currentTimesheets,
+          regularizations: currentRegs,
+          wfhRequests: currentWfh,
+          compOffs: currentCompOffs,
+          onDuty: currentOnDuty,
           approvedLeaves: approved,
           rejectedLeaves: rejected,
-          total: d.total || 0,
+          backlog,
+          /* Counted from what is actually on screen. `total` from the API
+           * still includes the backlog, and a headline that disagrees with the
+           * tabs beneath it is worse than no headline. */
+          total: leaves.length + permissions.length + currentTimesheets.length + currentRegs.length
+               + currentWfh.length + currentCompOffs.length + currentOnDuty.length,
         });
       })
       .catch(err => { if (!silent) toast.error(err.response?.data?.message || 'Failed to load approvals'); })
@@ -186,6 +217,7 @@ export default function Approvals({ embedded = false }) {
     ['wfh', 'WFH Requests', data.wfhRequests?.length],
     ['compoff', 'Comp-Off', data.compOffs?.length],
     ['onduty', 'On Duty', data.onDuty?.length],
+    ['backlog', 'Backlog', data.backlog?.length],
   ];
 
   const ActionBtns = ({ endpoint, id, type, canActLeave, status }) => {
@@ -262,6 +294,7 @@ export default function Approvals({ embedded = false }) {
           ['WFH Requests',    data.wfhRequests?.length,      'bg-green-50 text-green-700',  'wfh'],
           ['Comp-Off',        data.compOffs?.length,         'bg-orange-50 text-orange-700','compoff'],
           ['On Duty',         data.onDuty?.length,           'bg-violet-50 text-violet-700','onduty'],
+          ['Backlog',         data.backlog?.length,          'bg-rose-50 text-rose-700',    'backlog'],
         ].map(([l, v, c, tabId]) => (
           <div
             key={l}
@@ -698,6 +731,45 @@ export default function Approvals({ embedded = false }) {
                 <ShowMoreFooter tabId="compoff" total={data.compOffs.length} shown={getVisible('compoff', data.compOffs).length} />
                 </>
             )}
+
+            {/* Backlog — every kind of request, still waiting from before this
+                month. Mostly inherited from the Zoho migration. One list rather
+                than nine, because the job here is to clear it, and the type is
+                a label on the row rather than a reason to go somewhere else. */}
+            {tab === 'backlog' && (() => {
+              const list = (data.backlog || []).filter(x => !searchFilter ||
+                `${x.employee?.firstName} ${x.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase()));
+              return list.length === 0
+                ? <EmptyState icon={CheckCircle} message="Nothing outstanding from before this month" />
+                : <>
+                {getVisible('backlog', list).map(x => (
+                  <div key={`${x.kind}-${x._id}`} className="p-5 flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center text-rose-600 flex-shrink-0">
+                        <Clock size={18} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-slate-700">{x.employee?.firstName} {x.employee?.lastName}</p>
+                          <span className="text-sm text-slate-600">{x.employee?.employeeId}</span>
+                          <span className="text-sm bg-rose-50 text-rose-700 px-2 py-0.5 rounded-full">{x.kind}</span>
+                          {x.employee?.department && (
+                            <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{x.employee.department}</span>
+                          )}
+                        </div>
+                        <p className="text-slate-500 text-sm mt-1">
+                          {String(x.when).split(' – ').map(d => fmtDay(d)).join(' – ')}
+                          {x.leaveType ? ` · ${String(x.leaveType).replace(/_/g, ' ')}` : ''}
+                        </p>
+                        {x.reason && <p className="text-slate-400 text-sm mt-1">{x.reason}</p>}
+                      </div>
+                    </div>
+                    <ActionBtns endpoint={x.endpoint} id={x._id} type={x.kind} canActLeave={x.canAct} />
+                  </div>
+                ))}
+                <ShowMoreFooter tabId="backlog" total={list.length} shown={getVisible('backlog', list).length} />
+                </>;
+            })()}
 
           </div>
         )}
