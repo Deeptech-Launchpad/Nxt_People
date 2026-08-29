@@ -130,6 +130,31 @@ const QUEUES = [
     return;
   }
 
+  /* A regularization is a request to CORRECT an attendance record. Marking one
+   * approved without applying the correction leaves the person believing their
+   * day was fixed when it was not — worse than leaving it pending.
+   *
+   * For leave inherited from Zoho that problem does not arise: the attendance
+   * and balances came across already reflecting those days. But the Zoho import
+   * never created a regularization or a WFH request, so any of those here were
+   * raised in this system by somebody who wants something changed. */
+  const corrections = plan.filter(p => ['Regularizations', 'WFH requests'].includes(p.label) && p.n);
+  if (corrections.length) {
+    console.log('  ⚠  These are not migration leftovers\n');
+    for (const c of corrections) {
+      console.log(`     ${c.n} ${c.label.toLowerCase()} (${c.oldest} → ${c.newest})`);
+    }
+    console.log('');
+    console.log('     The Zoho import never created either kind, so these were raised here');
+    console.log('     by somebody asking for a correction. This script records the decision');
+    console.log('     but does NOT apply it — attendance would stay exactly as it is.');
+    console.log('');
+    console.log('     Action those through the screen instead, where approving actually');
+    console.log('     makes the correction. Approving a past-month request sends no mail.');
+    console.log('     To leave them alone, pass a cutoff before they were raised, e.g.');
+    console.log(`     --until ${plan.find(p => p.label === 'Leaves')?.newest || '2026-05-31'}\n`);
+  }
+
   // What stays behind, so the number on screen afterwards is not a surprise.
   const remaining = [];
   for (const q of QUEUES) {
@@ -150,14 +175,33 @@ const QUEUES = [
   const client = await pool.connect();
   let done = 0;
   try {
+    /* Which columns each table actually has, rather than which ones it ought
+     * to. wfh_requests and comp_offs have no updated_at, and naming it made
+     * Postgres reject the statement even for a queue with nothing in it — it
+     * validates the column before it counts the rows. Deployments drift; the
+     * statement is built from what is there. */
+    const columnsOf = async (table) => {
+      const r = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = $1`, [table]);
+      return new Set(r.rows.map(x => x.column_name));
+    };
+
     await client.query('BEGIN');
     for (const q of QUEUES) {
-      const target = q.table === 'timesheets' ? 'approved' : 'approved';
+      // Nothing to do, nothing to risk.
+      if (!plan.find(p => p.table === q.table)?.n) continue;
+
+      const cols = await columnsOf(q.table);
+      const sets = ['status = $2'];
+      if (cols.has('approved_by')) sets.push('approved_by = $3');
+      if (cols.has('approved_at')) sets.push('approved_at = NOW()');
+      if (cols.has('updated_at')) sets.push('updated_at = NOW()');
+
       const r = await client.query(
         `UPDATE ${q.table}
-            SET status = $2, approved_by = $3, approved_at = NOW(), updated_at = NOW()
+            SET ${sets.join(', ')}
           WHERE ${q.pending} AND ${q.end} <= $1::date
-        RETURNING id`, [until, target, actor.id]);
+        RETURNING id`, [until, 'approved', actor.id]);
       done += r.rowCount;
 
       /* Close the approval chain too. A settled request with levels still
