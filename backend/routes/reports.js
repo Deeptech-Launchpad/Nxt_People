@@ -2709,7 +2709,12 @@ router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'h
     const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
     // "Absent consecutively for more than N days" — the threshold is exclusive,
     // as in the reference, so N=3 lists runs of 4 and up.
-    const minDays = Math.max(0, parseInt(req.query.minDays, 10) || 3);
+    /* `parseInt(x) || 3` cannot express zero: parseInt('0') is 0, which is
+     * falsy, so asking for every run however short silently became a run of
+     * four. Nothing could request a threshold below 1, and the screen's own
+     * field could not either. */
+    const asked = parseInt(req.query.minDays, 10);
+    const minDays = Number.isFinite(asked) && asked >= 0 ? asked : 3;
     const ctx = await loadAttendanceContext(req, start, end, { trackedOnly: true });
     const todayYmd = ctx.today.toLocaleDateString('en-CA');
 

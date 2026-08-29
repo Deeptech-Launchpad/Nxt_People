@@ -90,6 +90,15 @@ const lpad = (s, n) => String(s ?? '').padStart(n);
   const manual = new Set((await pool.query(
     `SELECT DISTINCT employee_id FROM manual_attendance_assignments`)).rows.map(r => r.employee_id));
 
+  /* Employee Profiles — Manage Accounts → Users → Employee Profiles — are
+   * records rather than people who sign in and punch. Counting their missing
+   * check-ins is counting something that was never going to happen. Excluded
+   * here by reading the flag directly, rather than trusting the report to have
+   * filtered them, because they turned up in it once already. */
+  const profiles = new Map((await pool.query(
+    `SELECT id, TRIM(CONCAT(first_name, ' ', COALESCE(last_name, ''))) AS name, employee_id AS code
+       FROM employees WHERE is_user = FALSE AND deleted_at IS NULL`)).rows.map(r => [r.id, r]));
+
   const byEmployee = new Map();
   for (const r of runs) {
     if (!byEmployee.has(r._id)) {
@@ -110,7 +119,9 @@ const lpad = (s, n) => String(s ?? '').padStart(n);
     if (!e.last || r.endDate > e.last) e.last = r.endDate;
   }
 
-  const all = [...byEmployee.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  const everyone = [...byEmployee.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  const excluded = everyone.filter(e => profiles.has(e.id));
+  const all = everyone.filter(e => !profiles.has(e.id));
   const punching = all.filter(e => !manual.has(e.id));
   const marked = all.filter(e => manual.has(e.id));
 
@@ -166,6 +177,12 @@ const lpad = (s, n) => String(s ?? '').padStart(n);
     console.log(`  ${notSetUp} active employee(s) have NO attendance row at all in this range.`);
     console.log('  Either they never came in, or they are somebody who does not punch and');
     console.log('  has not been set up on Attendance Marking.\n');
+  }
+
+  if (excluded.length) {
+    console.log(`  ${excluded.length} Employee Profile(s) left out — they never sign in or punch:`);
+    console.log(`    ${excluded.map(e => `${e.name} (${e.code})`).join(', ')}
+`);
   }
 
   console.log('══════════════════════════════════════════════════════════════════════');
