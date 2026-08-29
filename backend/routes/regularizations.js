@@ -435,12 +435,16 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
           const row = exists.rows[0];
           // The day now spans the earliest check-in to the latest check-out,
           // and its hours are the sum of both pairs rather than either one.
+          /* session_hours is cast explicitly. Without ::numeric Postgres types
+           * the parameter from the bare 0 beside it in COALESCE — as an
+           * INTEGER — so a real day of 8.6 hours was rejected outright.
+           * Whole-hour test data hid it; live data is never that tidy. */
           await client.query(
             `INSERT INTO attendance_sessions (attendance_id, employee_id, date, check_in, check_out, session_hours)
              VALUES ($1, $2, $3::date,
                (($3::date + $4::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC'),
                CASE WHEN $5::time IS NOT NULL THEN (($3::date + $5::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC') END,
-               COALESCE($6, 0))`,
+               COALESCE($6::numeric, 0))`,
             [row.id, reg.employee_id, reg.date, reg.check_in, reg.check_out, workingHours]
           );
           const combined = workingHours === null

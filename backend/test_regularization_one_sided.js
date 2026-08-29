@@ -101,9 +101,10 @@ const made = { regs: [], days: [] };
               TO_CHAR(check_out AT TIME ZONE 'UTC' AT TIME ZONE '${TZ}', 'HH24:MI') AS cout
          FROM attendance WHERE employee_id=$1 AND date=$2::date`, [emp.id, date])).rows[0];
     const sessions = (await pool.query(
-      `SELECT count(*)::int AS n, count(*) FILTER (WHERE check_in IS NULL)::int AS nulls
+      `SELECT count(*)::int AS n, count(*) FILTER (WHERE check_in IS NULL)::int AS nulls,
+              max(session_hours)::float AS max_hours
          FROM attendance_sessions WHERE employee_id=$1 AND date=$2::date`, [emp.id, date])).rows[0];
-    return { status: res.status, day, sessions };
+    return { status: res.status, day, sessions, sessionHours: sessions.max_hours };
   };
 
   console.log('  Forgot to check out — checked in 09:30, request supplies 18:00\n');
@@ -123,10 +124,17 @@ const made = { regs: [], days: [] };
   check('no null-check-in session', b.sessions.nulls === 0, b.sessions);
 
   console.log('\n  Both times supplied — still a second stint\n');
-  const c = await scenario('2026-07-23', '09:30:00', '13:00:00', '14:00:00', '18:00:00');
-  check('it approves', c.status === 200, c.status);
+  /* Deliberately NOT round. 10:14 to 18:50 is 8.6 hours, and passing that into
+   * COALESCE($n, 0) made Postgres type the parameter from the bare 0 as an
+   * INTEGER and reject it outright. The first version of this test used
+   * 14:00–18:00 — exactly 4 hours — which parses fine as an integer and hid the
+   * bug completely. Real punches are never that tidy. */
+  const c = await scenario('2026-07-23', '09:00:00', '09:45:00', '10:14:00', '18:50:00');
+  check('it approves with fractional hours', c.status === 200, c.status);
   check('a session row is written for the second stint', c.sessions.n >= 1, c.sessions);
   check('and it has a check-in', c.sessions.nulls === 0, c.sessions);
+  check('the fractional span is stored, not truncated or rejected',
+    c.sessionHours !== null && Math.abs(c.sessionHours - 8.6) < 0.02, c.sessionHours);
 
   console.log('\n  No attendance row at all\n');
   const d = await scenario('2026-07-24', null, null, '09:30:00', '18:00:00');
