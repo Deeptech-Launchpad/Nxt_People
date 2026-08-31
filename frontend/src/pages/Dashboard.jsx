@@ -1628,9 +1628,23 @@ export default function Dashboard() {
                       const todayCA   = new Date().toLocaleDateString('en-CA');
                       const isToday   = row.dateStr === todayCA;
                       const isPast    = row.dateStr < todayCA;
-                      // Regularize only when there is something to correct:
-                      // today, or a past day with an attendance record.
-                      const canRegularize = !isWeekend && (isToday || (isPast && !!att));
+                      /* Any working day up to today. This required an
+                       * attendance record to exist, which hid the option on
+                       * exactly the days that most need it: a day with no
+                       * punch at all shows as Absent and cannot be corrected,
+                       * while a day already punched — the one that needs
+                       * correcting least — offers it. Forgetting to check in
+                       * is the ordinary reason to regularize.
+                       *
+                       * The backend never had this restriction. It accepts a
+                       * date with no attendance row and, on approval, inserts
+                       * one. Only the button was missing.
+                       *
+                       * isWeekend covers holidays too — getCurrentWeek sets it
+                       * for any holiday that closes the office. The deadline is
+                       * left to the server, which knows each person's window
+                       * and says when it closed. */
+                      const canRegularize = !isWeekend && (isToday || isPast);
 
                       // Pretty-print "09:48 AM" — Zoho's exact format.
                       const fmtClock = (iso) =>

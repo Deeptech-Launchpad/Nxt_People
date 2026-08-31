@@ -696,7 +696,14 @@ export default function MyAttendance() {
                              // its own height and decides above/below.
                              const rect = e.currentTarget.getBoundingClientRect();
                              const isPastDay = ds < todayStr;
-                             const canRegularize = (ds === todayStr) || (isPastDay && !!record);
+                             /* Not gated on a record existing. Requiring one
+                              * hid Regularize on days with no punch at all —
+                              * the days it exists for — and offered it only
+                              * where attendance was already recorded. The
+                              * server accepts a date with no attendance row and
+                              * creates one when the request is approved, and it
+                              * owns the deadline. */
+                             const canRegularize = (ds === todayStr) || isPastDay;
                              setShowRequestMenu({
                                buttonRect: {
                                  top: rect.top, bottom: rect.bottom,
