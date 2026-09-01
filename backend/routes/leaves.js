@@ -1152,16 +1152,17 @@ router.get('/balance', async (req, res) => {
      * came from — an accrual that has only reached August is not the same as a
      * year's allowance already spent, and the figure alone cannot tell them
      * apart. */
-    const casualStore = await availableFor(pool, targetId, 'casual', year);
-    const casualBalance = casualStore.store === 'computed'
-      ? await computedFor(pool, targetId, 'casual', year)
-      : { available: casualStore.available, granted: null };
-
-    // Try leave_balances table first
+    /* Try leave_balances table first.
+     *
+     * This selected lb.total and lb.used, columns the table has never had —
+     * it only has available and booked (migrate_zoho_features.js). The query
+     * has been throwing on every single call and silently swallowed by the
+     * catch below, so balanceRows has always been empty and nothing has ever
+     * actually been read out of it. */
     let balanceRows = [];
     try {
       const lbRes = await pool.query(
-        `SELECT lb.year, lb.total, lb.available, lb.used,
+        `SELECT lb.year, lb.available, lb.booked,
          lt.name, lt.code, lt.icon, lt.color
          FROM leave_balances lb
          JOIN leave_types lt ON lb.leave_type_id = lt.id
@@ -1170,6 +1171,28 @@ router.get('/balance', async (req, res) => {
       );
       balanceRows = lbRes.rows;
     } catch (_) {}
+
+    const casualStore = await availableFor(pool, targetId, 'casual', year);
+    /* `available` is always availableFor's number — the same one the apply-time
+     * check uses, so the card can never promise more than a request would
+     * actually be allowed.
+     *
+     * `granted` is the "22 of -" gap: an imported balance has no accrual to
+     * compute, so there was never a number to put after "of". The table has
+     * no stored total either — but available + booked reconstructs it exactly,
+     * because every write to this store preserves that sum: applying moves a
+     * day out of available, approving moves it into booked, rejecting or
+     * cancelling an approved leave puts it back the other way. Whatever the
+     * split between the two, they always add back up to the year's grant. */
+    const casualBalance = casualStore.store === 'computed'
+      ? await computedFor(pool, targetId, 'casual', year)
+      : {
+          available: casualStore.available,
+          granted: (() => {
+            const row = balanceRows.find(r => r.code === 'casual');
+            return row ? round2((parseFloat(row.available) || 0) + (parseFloat(row.booked) || 0)) : null;
+          })(),
+        };
 
     // Build response: priority order = Casual, Comp-Off, LWP, Permission
     const cards = [

@@ -7,10 +7,12 @@
  * inconsistently:
  *
  *   leave_balances       the designed store — available/booked, per type, per
- *                        year. Empty on every database this has run against,
- *                        so in practice nothing reads out of it yet.
- *   employees.<x>_leave  legacy columns. Because leave_balances is empty these
- *                        are where every real debit actually lands.
+ *                        year. Holds a row per employee per year once the
+ *                        Zoho import or leave-types seeding has run; casual
+ *                        for most active employees lives here.
+ *   employees.<x>_leave  legacy columns. Where casual lands for anyone with
+ *                        no leave_balances row for the year instead — new
+ *                        joiners onboarded since the accrual engine, mainly.
  *   comp_offs            a FIFO credit ledger, and the only truth for comp-off.
  *
  * Two problems came out of that split.
