@@ -2843,7 +2843,15 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
     // time are measured at all.
     const deviationTracked = cfg.policy?.allowOvertimeAndDeviation === true;
 
-    const data = ctx.employees.map(emp => {
+    // Narrows to one person's row rather than the whole org's — the request
+    // is already role-scoped by loadAttendanceContext above (a manager only
+    // ever sees their own reportees in ctx.employees), so this can only ever
+    // narrow further, never widen who a caller is allowed to see.
+    const employees = req.query.employeeId
+      ? ctx.employees.filter(e => e._id === req.query.employeeId)
+      : ctx.employees;
+
+    const data = employees.map(emp => {
       const shiftHours = expectedDayHours(emp, cfg);
       // Nothing recorded for this person ever: their history is unknown, not
       // zero, so the ledger opens at the period itself.

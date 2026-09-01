@@ -100,8 +100,12 @@ const daySpan = (start, end) =>
 // GET my on-duty requests
 router.get('/my', async (req, res) => {
   try {
-    const { status, from, to } = req.query;
-    const params = [req.user._id];
+    const { status, from, to, employeeId } = req.query;
+    // Same guard as elsewhere: a full-access caller may look at somebody
+    // else's history, everybody else always gets their own regardless of
+    // what they pass.
+    const empId = isFullAccess(req.user.role) && employeeId ? employeeId : req.user._id;
+    const params = [empId];
     let clause = '';
     if (status && status !== 'all') { params.push(status); clause += ` AND o.status = $${params.length}`; }
     if (from) { params.push(from); clause += ` AND o.end_date >= $${params.length}::date`; }

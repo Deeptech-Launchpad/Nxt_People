@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import OpsBiometricMapping from './attendance/OpsBiometricMapping';
 import OpsCheckInOutImportExport from './attendance/OpsCheckInOutImportExport';
-import OpsNotBuilt from './attendance/OpsNotBuilt';
+import OpsUserSpecific from './attendance/OpsUserSpecific';
 
 /* ── Operations → Attendance ──────────────────────────────────────────────
  *  Zoho's Attendance section has five tabs: User-specific Operations,
@@ -26,12 +26,15 @@ import OpsNotBuilt from './attendance/OpsNotBuilt';
  *                          was written to avoid — a divergent copy is worse
  *                          than a door to the real one.
  *
- *  Built inline: Biometric ID mapping, Check-in/out Import & Export. Still a
- *  placeholder: User-specific Operations — see OpsNotBuilt.
+ *  Built inline: all three — User-specific Operations, Biometric ID mapping,
+ *  Check-in/out Import & Export. User-specific Operations covers Attendance
+ *  Summary as a list (not yet the timeline/calendar views Zoho also offers),
+ *  Expected vs Worked Hours, Regularization and On Duty — see
+ *  attendance/OpsUserSpecific.jsx for what each sub-tab does and does not
+ *  cover yet.
  * ────────────────────────────────────────────────────────────────────────── */
 const TABS = [
-  { id: 'user', label: 'User-specific Operations',
-    description: 'Search any employee and drill into their attendance summary, expected-vs-worked hours, regularizations and on-duty requests.' },
+  { id: 'user', label: 'User-specific Operations' },
   { id: 'regularization', label: 'Regularization', link: '/approvals?tab=regularizations' },
   { id: 'onduty', label: 'On Duty', link: '/approvals?tab=onduty' },
   { id: 'biometric', label: 'Biometric ID mapping' },
@@ -81,9 +84,7 @@ export default function OperationsAttendance() {
         </div>
       </div>
 
-      {tab === 'user' && (
-        <OpsNotBuilt title="User-specific Operations" description={TABS.find(t => t.id === 'user').description} />
-      )}
+      {tab === 'user' && <OpsUserSpecific />}
       {tab === 'biometric' && <OpsBiometricMapping />}
       {tab === 'import-export' && <OpsCheckInOutImportExport />}
     </div>

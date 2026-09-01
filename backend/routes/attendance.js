@@ -543,7 +543,7 @@ router.patch('/location', async (req, res) => {
 // daily reports; the computed value is purely a display helper.
 router.get('/my', async (req, res) => {
   try {
-    const { month, year } = req.query;
+    const { month, year, employeeId } = req.query;
     const now = new Date();
     const parsedM = parseInt(month, 10);
     const m = Number.isFinite(parsedM) ? parsedM : now.getMonth();
@@ -551,6 +551,12 @@ router.get('/my', async (req, res) => {
 
     const start = toDateStr(new Date(y, m, 1));
     const end   = toDateStr(new Date(y, m + 1, 0));
+
+    // Same guard /summary already uses a few dozen lines below: a full-access
+    // caller may look at somebody else's month, everybody else always gets
+    // their own regardless of what they pass. Absent employeeId this is
+    // req.user._id exactly as before — self-service behaviour is unchanged.
+    const empId = isFullAccess(req.user.role) && employeeId ? employeeId : req.user._id;
 
     // Read the org timezone from settings (defaults to DEFAULT_TZ) so the
     // SQL EXTRACT below returns the wall-clock time the employee actually
@@ -582,13 +588,13 @@ router.get('/my', async (req, res) => {
            FROM attendance
           WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date
           ORDER BY date ASC`,
-        [req.user._id, start, end, null]
+        [empId, start, end, null]
       ),
       pool.query(
         `SELECT s.start_time
            FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
           WHERE e.id = $1`,
-        [req.user._id]
+        [empId]
       ),
       pool.query(`SELECT late_after_minutes, timezone FROM settings LIMIT 1`),
     ]);
@@ -618,7 +624,7 @@ router.get('/my', async (req, res) => {
            FROM attendance
           WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date
           ORDER BY date ASC`,
-        [req.user._id, start, end, tz]
+        [empId, start, end, tz]
       );
       rows = r2.rows;
     }
@@ -629,7 +635,7 @@ router.get('/my', async (req, res) => {
       const sessRes = await pool.query(
         `SELECT attendance_id, id, check_in as "checkIn", check_out as "checkOut", session_hours as "sessionHours"
          FROM attendance_sessions WHERE employee_id = $1 AND date >= $2 AND date <= $3 ORDER BY check_in ASC`,
-        [req.user._id, start, end]
+        [empId, start, end]
       );
       sessRes.rows.forEach(s => {
         if (!sessionsByAtt[s.attendance_id]) sessionsByAtt[s.attendance_id] = [];
@@ -637,7 +643,7 @@ router.get('/my', async (req, res) => {
         sessionsByAtt[s.attendance_id].push(sData);
       });
     } catch (err) {
-      logger.error({ err: err.message, employeeId: req.user._id }, '[attendance] sessions range query failed');
+      logger.error({ err: err.message, employeeId: empId }, '[attendance] sessions range query failed');
     }
 
     const mapped = rows.map(r => {

@@ -49,6 +49,10 @@ const REG_LEVELS_JSON = approvalLevelsJson('regularization', 'r');
 // GET my regularization requests
 router.get('/my', async (req, res) => {
   try {
+    // Same guard as elsewhere: a full-access caller may look at somebody
+    // else's history (Operations -> Attendance -> User-specific Operations),
+    // everybody else always gets their own regardless of what they pass.
+    const empId = isFullAccess(req.user.role) && req.query.employeeId ? req.query.employeeId : req.user._id;
     const result = await pool.query(
       `SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
        r.reason, r.status, r.rejection_reason as "rejectionReason", r.created_at as "createdAt",
@@ -57,7 +61,7 @@ router.get('/my', async (req, res) => {
        FROM attendance_regularizations r
        LEFT JOIN employees m ON r.approved_by = m.id
        WHERE r.employee_id = $1 ORDER BY r.created_at DESC`,
-      [req.user._id]
+      [empId]
     );
     res.json({ success: true, data: result.rows });
   } catch (err) { serverError(res, err); }
