@@ -102,6 +102,7 @@ const ORDER = [
   'migrate_session_start.js',
   'migrate_cover_image.js',
   'migrate_attendance_tracked.js',        // employees.attendance_tracked — login without attendance tracking
+  'migrate_biometric_id_mapping.js',      // biometric_id_mappings — device user ID per employee
 
   /* pay_periods is created here and ALTERed by migrate_work_calendar, so it
    * has to exist first. Placed after the calendar on the first attempt, its

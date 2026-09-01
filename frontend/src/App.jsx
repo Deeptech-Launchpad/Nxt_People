@@ -130,6 +130,7 @@ const Travel       = lazy(() => import('./pages/moreservices/Travel'));
 const Compensation = lazy(() => import('./pages/moreservices/Compensation'));
 const HRLetters    = lazy(() => import('./pages/moreservices/HRLetters'));
 const Operations       = lazy(() => import('./pages/moreservices/Operations'));
+const OperationsAttendance = lazy(() => import('./pages/moreservices/OperationsAttendance'));
 const OperationsLeaveTracker = lazy(() => import('./pages/moreservices/OperationsLeaveTracker'));
 const ManualAttendance = lazy(() => import('./pages/moreservices/ManualAttendance'));
 const LeaveTrackerAdmin = lazy(() => import('./pages/moreservices/LeaveTrackerAdmin'));
@@ -250,6 +251,7 @@ const AppRoutes = () => {
           <Route path="more-services/operations/leave-approvals" element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
           {/* Attendance for staff with no login. Full access only — marking is
               one person asserting another person's attendance. */}
+          <Route path="more-services/operations/attendance" element={<ProtectedRoute roles={['admin','director','hr_admin']}><OperationsAttendance/></ProtectedRoute>}/>
           <Route path="more-services/operations/attendance-marking" element={<ProtectedRoute roles={['admin','director','hr_admin']}><ManualAttendance/></ProtectedRoute>}/>
           <Route path="more-services/operations/permission-usage" element={<ProtectedRoute roles={['admin','director','hr_admin']}><PermissionUsage/></ProtectedRoute>}/>
           <Route path="more-services/operations/conference" element={<ProtectedRoute roles={['admin','director','hr_admin']}><Conference/></ProtectedRoute>}/>

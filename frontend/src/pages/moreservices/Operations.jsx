@@ -13,7 +13,10 @@ import {
 
 // Functional tiles → their route. Everything else is a presentational placeholder.
 const ROUTES = {
-  attendance:         '/more-services/operations/attendance-marking',
+  // The hub with Zoho's five Attendance tabs, plus Attendance Marking as a
+  // sixth link out — not marking directly, which is still reachable on its
+  // own at /attendance-marking for anyone with that link already.
+  attendance:         '/more-services/operations/attendance',
   'leave-tracker':    '/more-services/operations/leave-tracker',
   'leave-approvals':  '/more-services/operations/leave-approvals',
   'permission-usage': '/more-services/operations/permission-usage',
