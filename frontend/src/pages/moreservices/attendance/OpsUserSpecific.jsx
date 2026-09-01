@@ -13,12 +13,11 @@ import useEmployeeList, { labelOf } from '../leavetracker/useEmployeeList';
  *  /attendance/expected-vs-worked) rather than a parallel admin copy of
  *  each.
  *
- *  Attendance Summary here is the list view only. Zoho also offers a
- *  timeline/grid view and a calendar view of the same data — deferred,
- *  deliberately, rather than built thin and wrong under the same time as
- *  everything else in this pass. The list view is the one that carries
- *  every figure (First In, Last Out, Total Hours, Status), so it is the
- *  one worth having correct first.
+ *  Attendance Summary offers the same three views the reference does, over
+ *  one month's data fetched once: List carries every figure, Timeline shows
+ *  when in the day the hours fell, Calendar shows the shape of the month.
+ *  Switching between them costs nothing — it is the same rows read three
+ *  ways, not three requests.
  */
 const STATUS_LABEL = {
   present: { label: 'Present', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
@@ -58,9 +57,104 @@ const REQ_STATUS_CLS = {
   rejected: 'bg-red-100 text-red-600', cancelled: 'bg-slate-100 text-slate-500', submitted: 'bg-amber-100 text-amber-700',
 };
 
+/* The day's worked stretch drawn against the working day, so a short day or
+ * a late start is visible without reading a number. Bounded 08:00–20:00 —
+ * a fixed window keeps every row's bar comparable, which is the only reason
+ * to draw them rather than list them. */
+const DAY_START_MIN = 8 * 60, DAY_END_MIN = 20 * 60;
+const minutesOf = (iso) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const ist = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  return ist.getHours() * 60 + ist.getMinutes();
+};
+const pct = (min) => Math.max(0, Math.min(100, ((min - DAY_START_MIN) / (DAY_END_MIN - DAY_START_MIN)) * 100));
+
+function TimelineView({ rows }) {
+  return (
+    <div className="border border-slate-200 rounded-2xl divide-y divide-slate-50">
+      <div className="flex items-center px-4 py-2 bg-slate-50 text-[12px] text-slate-400">
+        <span className="w-28 flex-shrink-0">Day</span>
+        <span className="flex-1 flex justify-between">
+          {['08:00', '11:00', '14:00', '17:00', '20:00'].map(t => <span key={t}>{t}</span>)}
+        </span>
+        <span className="w-24 text-right flex-shrink-0">Worked</span>
+      </div>
+      {rows.map(r => {
+        const inMin = minutesOf(r.checkIn), outMin = minutesOf(r.checkOut);
+        const left = inMin === null ? null : pct(inMin);
+        const right = outMin === null ? null : pct(outMin);
+        return (
+          <div key={r.date} className="flex items-center px-4 py-2.5 hover:bg-slate-50/60">
+            <span className="w-28 flex-shrink-0 text-[13.5px] text-slate-600">{fmtDate(r.date)}</span>
+            <span className="flex-1 relative h-6 bg-slate-100 rounded">
+              {left !== null && (
+                <span
+                  className={`absolute top-0 h-6 rounded ${r.status === 'absent' ? 'bg-red-300' : r.lateMinutes > 0 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                  style={{ left: `${left}%`, width: `${Math.max(1.5, (right === null ? left + 1.5 : right) - left)}%` }}
+                  title={`${fmtTime(r.checkIn)} – ${fmtTime(r.checkOut)}`}
+                />
+              )}
+              {left === null && (
+                <span className="absolute inset-0 flex items-center justify-center text-[12px] text-slate-400">
+                  No check-in
+                </span>
+              )}
+            </span>
+            <span className="w-24 text-right flex-shrink-0 font-mono text-[13.5px] text-slate-700">{fmtHM(r.workingHours)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CalendarView({ rows, cursor }) {
+  const byDate = new Map(rows.map(r => [String(r.date).slice(0, 10), r]));
+  const first = new Date(cursor.year, cursor.month, 1);
+  const daysInMonth = new Date(cursor.year, cursor.month + 1, 0).getDate();
+  const leading = first.getDay();
+  const cells = [
+    ...Array.from({ length: leading }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+
+  return (
+    <div className="border border-slate-200 rounded-2xl overflow-hidden">
+      <div className="grid grid-cols-7 bg-slate-50 text-[12.5px] text-slate-500">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+          <div key={d} className="px-2 py-2 font-medium">{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7">
+        {cells.map((day, i) => {
+          if (day === null) return <div key={`x${i}`} className="min-h-[86px] border-t border-r border-slate-100 bg-slate-50/40" />;
+          const ymd = `${cursor.year}-${String(cursor.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const r = byDate.get(ymd);
+          return (
+            <div key={ymd} className="min-h-[86px] border-t border-r border-slate-100 p-1.5">
+              <div className="text-[12.5px] text-slate-400 mb-1">{day}</div>
+              {r && (
+                <div className={`rounded px-1.5 py-1 text-[12px] leading-tight border ${
+                  STATUS_LABEL[r.status]?.cls || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                  <span className="block font-medium">{STATUS_LABEL[r.status]?.label || r.status}</span>
+                  {Number(r.workingHours) > 0 && <span className="block font-mono">{fmtHM(r.workingHours)}</span>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const VIEWS = [['list', 'List'], ['timeline', 'Timeline'], ['calendar', 'Calendar']];
+
 function AttendanceSummaryTab({ employee }) {
   const [cursor, setCursor] = useState(() => { const d = new Date(); return { month: d.getMonth(), year: d.getFullYear() }; });
   const [rows, setRows] = useState(null);
+  const [view, setView] = useState('list');
 
   useEffect(() => {
     setRows(null);
@@ -74,7 +168,7 @@ function AttendanceSummaryTab({ employee }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div className="flex items-center gap-2">
           <button onClick={() => setCursor(c => c.month === 0 ? { month: 11, year: c.year - 1 } : { ...c, month: c.month - 1 })}
             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500"><ChevronLeft size={16} /></button>
@@ -82,13 +176,31 @@ function AttendanceSummaryTab({ employee }) {
           <button onClick={() => setCursor(c => c.month === 11 ? { month: 0, year: c.year + 1 } : { ...c, month: c.month + 1 })}
             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500"><ChevronRight size={16} /></button>
         </div>
-        {shift && <span className="text-[13px] text-slate-400">{shift}</span>}
+        <div className="flex items-center gap-3">
+          {shift && <span className="text-[13px] text-slate-400">{shift}</span>}
+          {/* Same month, three ways of reading it — the reference offers all
+              three and they answer different questions: what happened, when
+              in the day it happened, and how the month looks as a whole. */}
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+            {VIEWS.map(([id, label]) => (
+              <button key={id} onClick={() => setView(id)}
+                className={`px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                  view === id ? 'bg-brand-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {rows === null ? (
         <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
-      ) : rows.length === 0 ? (
+      ) : rows.length === 0 && view !== 'calendar' ? (
         <p className="text-center text-slate-400 py-16">No attendance recorded for {monthLabel}.</p>
+      ) : view === 'timeline' ? (
+        <TimelineView rows={rows} />
+      ) : view === 'calendar' ? (
+        <CalendarView rows={rows} cursor={cursor} />
       ) : (
         <div className="border border-slate-200 rounded-2xl overflow-auto">
           <table className="w-full text-[14.5px] min-w-max">

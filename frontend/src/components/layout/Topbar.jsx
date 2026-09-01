@@ -2,6 +2,7 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal, Settings as SettingsIcon, ArrowLeft } from 'lucide-react';
 import { serviceByKey, tabsOf, BASE as SETTINGS_BASE } from '../../pages/settings/serviceCatalog';
+import { operationsWorkspaceFor, tabHref } from '../../pages/moreservices/operationsWorkspaces';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
 import { roleLabel, isFullAccess } from '../../utils/roles';
@@ -522,8 +523,8 @@ export default function Topbar() {
    * whole answer. Suppressed here, on these two routes only: the Operations
    * Services grid and Leave Approvals have no navigation of their own and
    * still need this bar to get anywhere. */
-  const inOperationsWorkspace = /^\/more-services\/operations\/(leave-tracker|attendance)(\/|$)/
-    .test(location.pathname);
+  const opsWorkspace = operationsWorkspaceFor(location.pathname, location.search);
+  const inOperationsWorkspace = !!opsWorkspace;
   const primaryTabs  = inOperations ? [] : (config?.primaryTabs || []).filter(canSee);
   const activeTab    = isHome ? homeTab : (config?.getActiveTab?.(location.pathname) || primaryTabs[0]?.key);
   const subNavItems  = (config?.subNav?.[activeTab] || []).filter(canSee);
@@ -546,7 +547,37 @@ export default function Topbar() {
       {/* ── Navy primary bar ─────────────────────────────────────────── */}
       <div className="h-[48px] bg-[#1a2040] flex items-center justify-between px-5 shadow-sm flex-shrink-0">
         <div className="flex items-center h-full gap-1 min-w-0 flex-1">
-          {settingsWorkspace ? (
+          {/* An Operations workspace carries its own navigation here, for the
+              same reason Settings does below: one bar with a way back, the
+              workspace name and its tabs, rather than one bar per component
+              stacked down the page. */}
+          {opsWorkspace ? (
+            <>
+              <button
+                onClick={() => navigate('/more-services/operations')}
+                aria-label="Back to Operations"
+                className="w-7 h-7 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 text-white flex-shrink-0 mr-3"
+              >
+                <ArrowLeft size={15} />
+              </button>
+              <span className="text-white text-[16px] font-semibold mr-3 border-r border-white/20 pr-4 flex-shrink-0">
+                {opsWorkspace.title}
+              </span>
+              <div className="flex items-center h-full gap-1 min-w-0 overflow-x-auto scrollbar-none">
+                {opsWorkspace.tabs.map(t => {
+                  const active = t.id === opsWorkspace.activeId;
+                  return (
+                    <button key={t.id}
+                      onClick={() => navigate(tabHref(opsWorkspace.base, t))}
+                      className={`h-full px-4 flex items-center text-[16px] border-b-[3px] transition-all duration-150 tracking-[-0.01em] flex-shrink-0
+                        ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`}>
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : settingsWorkspace ? (
             <>
               <button
                 onClick={() => navigate('/settings')}
@@ -574,7 +605,7 @@ export default function Topbar() {
             </>
           ) : (
           <>
-          {!isHome && !inOperationsWorkspace && (
+          {!isHome && (
             <span className={`text-white text-[16px] font-semibold flex-shrink-0 ${
               inOperations ? '' : 'mr-3 border-r border-white/20 pr-4'
             }`}>
@@ -582,7 +613,7 @@ export default function Topbar() {
             </span>
           )}
           <div className="flex items-center h-full gap-1 min-w-0 overflow-x-auto scrollbar-none">
-          {!config.isLanding && !inOperationsWorkspace && primaryTabs.map(({ key, label, to, disabled }) => {
+          {!config.isLanding && primaryTabs.map(({ key, label, to, disabled }) => {
             const active = isHome ? homeTab === key : activeTab === key;
             // Disabled primary tabs (e.g. Travel / Compensation in More
             // Services) render visible but non-clickable until the

@@ -1,90 +1,40 @@
-import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import React from 'react';
+import { useSearchParams } from 'react-router-dom';
 import OpsBiometricMapping from './attendance/OpsBiometricMapping';
 import OpsCheckInOutImportExport from './attendance/OpsCheckInOutImportExport';
 import OpsUserSpecific from './attendance/OpsUserSpecific';
+import OpsRegularizationQueue from './attendance/OpsRegularizationQueue';
+import OpsOnDutyQueue from './attendance/OpsOnDutyQueue';
 
 /* ── Operations → Attendance ──────────────────────────────────────────────
- *  Zoho's Attendance section has five tabs: User-specific Operations,
- *  Regularization, On Duty, Biometric ID mapping, and Check-in/out Import &
- *  Export. This is the sixth — Attendance Marking, for staff who have no
- *  login at all and so can never appear in any of the other five, which
- *  Zoho's model does not have a place for.
+ *  The five tabs the reference has, plus a sixth — Attendance Marking, for
+ *  staff who have no login at all and so can never appear in any of the
+ *  other five. That one is a route of its own (ManualAttendance.jsx) because
+ *  it is a whole page with its own sub-tabs; the rest are panels here.
  *
- *  Three of the six are links out, not tabs rendered here:
+ *  The tab strip itself is NOT drawn here. It lives in the navy bar with the
+ *  back button and the workspace name, defined once in
+ *  ../operationsWorkspaces.js and rendered by components/layout/Topbar.jsx —
+ *  see that file for why. This component only decides which panel the active
+ *  tab means.
  *
- *    Attendance Marking   its own page (ManualAttendance.jsx), already built
- *                          and tested.
- *    Regularization        the org-wide regularization queue Zoho describes
- *    On Duty               here already exists — it is the Approvals page,
- *                          under a different door (Operations -> Leave
- *                          Approvals routes here too). Rebuilding a second
- *                          admin table for the same `attendance_regularizations`
- *                          / `on_duty_requests` rows would be exactly the
- *                          "two places to fix" trap OperationsLeaveTracker.jsx
- *                          was written to avoid — a divergent copy is worse
- *                          than a door to the real one.
- *
- *  Built inline: all three — User-specific Operations, Biometric ID mapping,
- *  Check-in/out Import & Export. User-specific Operations covers Attendance
- *  Summary as a list (not yet the timeline/calendar views Zoho also offers),
- *  Expected vs Worked Hours, Regularization and On Duty — see
- *  attendance/OpsUserSpecific.jsx for what each sub-tab does and does not
- *  cover yet.
+ *  Regularization and On Duty are the org-wide queues, rendered here rather
+ *  than linking out to the Approvals page. They read the same endpoints
+ *  Approvals does, so there is still one source of truth for the data and
+ *  the actions; what differs is only the table, which follows the
+ *  reference's Old/New column layout. Sending an admin to a page under a
+ *  different section — with a different header, in a different part of the
+ *  app — to act on a queue that belongs to Attendance was the wrong trade.
  * ────────────────────────────────────────────────────────────────────────── */
-const TABS = [
-  { id: 'user', label: 'User-specific Operations' },
-  { id: 'regularization', label: 'Regularization', link: '/approvals?tab=regularizations' },
-  { id: 'onduty', label: 'On Duty', link: '/approvals?tab=onduty' },
-  { id: 'biometric', label: 'Biometric ID mapping' },
-  { id: 'import-export', label: 'Check-in/out Import & Export',
-    description: 'Bulk import or export raw check-in/out records, including source and location.' },
-  { id: 'marking', label: 'Attendance Marking', link: '/more-services/operations/attendance-marking' },
-];
-
 export default function OperationsAttendance() {
-  const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
-  const fromUrl = params.get('tab');
-  const inPageTabs = TABS.filter(t => !t.link);
-  const [tab, setTab] = useState(inPageTabs.some(t => t.id === fromUrl) ? fromUrl : 'user');
-
-  const go = (t) => {
-    if (t.link) { navigate(t.link); return; }
-    setTab(t.id);
-    setParams({ tab: t.id }, { replace: true });
-  };
+  const [params] = useSearchParams();
+  const tab = params.get('tab') || 'user';
 
   return (
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
-      <div className="flex items-center gap-4 border-b border-slate-200 mb-5 overflow-x-auto">
-        <button
-          onClick={() => navigate('/more-services/operations')}
-          title="Back to Operations"
-          className="flex items-center gap-1.5 flex-shrink-0 text-slate-500 hover:text-slate-700 pb-2.5"
-        >
-          <ArrowLeft size={16} />
-          <span className="font-display font-semibold text-slate-800 text-[17px]">Attendance</span>
-        </button>
-
-        <div className="flex gap-0.5 flex-shrink-0">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => go(t)}
-              title={t.link ? `Opens ${t.label}, its own page` : undefined}
-              className={`px-3 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
-                !t.link && tab === t.id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {tab === 'user' && <OpsUserSpecific />}
+      {tab === 'regularization' && <OpsRegularizationQueue />}
+      {tab === 'onduty' && <OpsOnDutyQueue />}
       {tab === 'biometric' && <OpsBiometricMapping />}
       {tab === 'import-export' && <OpsCheckInOutImportExport />}
     </div>

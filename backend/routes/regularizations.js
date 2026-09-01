@@ -77,6 +77,11 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       `SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
        r.reason, r.status, r.created_at as "createdAt",
        json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'employeeId', e.employee_id, 'department', e.department) as employee,
+       -- What the day says NOW, so a queue can show the correction as the
+       -- before-and-after it actually is rather than only the requested
+       -- times. Null where no attendance row exists at all — which is the
+       -- ordinary case for the day somebody forgot to check in entirely.
+       a.working_hours as "oldHours", a.status as "oldStatus",
        ${REG_LEVELS_JSON} as "approvalLevels",
        ($2::boolean OR EXISTS (
           SELECT 1 FROM approval_levels x
@@ -84,6 +89,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
        )) as "canAct"
        FROM attendance_regularizations r
        JOIN employees e ON r.employee_id = e.id
+       LEFT JOIN attendance a ON a.employee_id = r.employee_id AND a.date = r.date
        WHERE r.status = 'pending'
          AND ($2::boolean OR EXISTS (
               SELECT 1 FROM approval_levels x

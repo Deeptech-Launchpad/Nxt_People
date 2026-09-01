@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import MarkDay from './manualattendance/MarkDay';
 import StaffShifts from './manualattendance/StaffShifts';
 import MarkSummary from './manualattendance/MarkSummary';
@@ -25,7 +24,6 @@ const TABS = [
 ];
 
 export default function ManualAttendance() {
-  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const fromUrl = params.get('tab');
   const [tab, setTab] = useState(TABS.some(t => t.id === fromUrl) ? fromUrl : 'mark');
@@ -34,16 +32,10 @@ export default function ManualAttendance() {
 
   return (
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
+      {/* Back and the "Attendance Marking" name are in the navy bar now, with
+          the rest of the Attendance workspace — see ../operationsWorkspaces.js.
+          These three are this page's own tabs, a level below that. */}
       <div className="flex items-center gap-4 border-b border-slate-200 mb-5 overflow-x-auto">
-        <button
-          onClick={() => navigate('/more-services/operations')}
-          title="Back to Operations"
-          className="flex items-center gap-1.5 flex-shrink-0 text-slate-500 hover:text-slate-700 pb-2.5"
-        >
-          <ArrowLeft size={16} />
-          <span className="font-display font-semibold text-slate-800 text-[17px]">Attendance Marking</span>
-        </button>
-
         <div className="flex gap-0.5 flex-shrink-0">
           {TABS.map(({ id, label }) => (
             <button
