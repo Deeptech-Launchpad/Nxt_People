@@ -223,6 +223,7 @@ router.get('/:id', async (req, res) => {
               e.status_applied_at      AS "statusAppliedAt",
               e.exit_date              AS "exitDate",
               e.total_experience       AS "totalExperience",
+              e.attendance_tracked     AS "attendanceTracked",
               json_build_object('name', s.name, 'startTime', s.start_time, 'endTime', s.end_time) AS shift,
               json_build_object('firstName', m.first_name, 'lastName', m.last_name, 'email', m.email, 'id', m.id, 'employeeId', m.employee_id, 'designation', m.designation) AS manager,
               json_build_object('firstName', aa.first_name, 'lastName', aa.last_name, 'email', aa.email, 'id', aa.id, 'employeeId', aa.employee_id, 'designation', aa.designation) AS "approvingAuthority"
@@ -373,6 +374,9 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
       exitDate, totalExperience, expertise,
       // Employment status workflow (post-meeting feature)
       noticePeriodEndDate, statusReason, rehireEligibility, isBlacklisted, statusAppliedAt,
+      // Whether attendance applies to this person at all — independent of
+      // login. See migrate_attendance_tracked.js.
+      attendanceTracked,
     } = req.body;
 
     // Nothing prevented setting someone as their own reporting manager —
@@ -459,6 +463,10 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     if (rehireEligibility !== undefined)        { updates.push(`rehire_eligibility = $${i++}`);        params.push(rehireEligibility || null); }
     if (isBlacklisted !== undefined)            { updates.push(`is_blacklisted = $${i++}`);            params.push(!!isBlacklisted); }
     if (statusAppliedAt !== undefined)          { updates.push(`status_applied_at = $${i++}`);         params.push(statusAppliedAt || null); }
+    // Per person, not per role — a title is not a promise about whether
+    // someone punches a clock. Independent of login: is_user/login_enabled
+    // are untouched here.
+    if (attendanceTracked !== undefined)        { updates.push(`attendance_tracked = $${i++}`);        params.push(!!attendanceTracked); }
 
     if (updates.length === 0) return res.json({ success: true, message: 'Nothing to update' });
 

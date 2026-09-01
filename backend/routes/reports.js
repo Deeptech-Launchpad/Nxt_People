@@ -123,9 +123,12 @@ function employeeIdClause(req, alias, paramIndex) {
 // for headcount and is still paid. A filter applied inside the shared context
 // loader would have taken them out of payroll too.
 //
-// is_user is NOT NULL with a default of true, so there is no third state to
-// reason about here.
-const trackedOnly = alias => ` AND ${alias}.is_user = TRUE`;
+// is_user alone used to be enough — an Employee Profile has no login and
+// nothing was ever going to punch it. attendance_tracked adds a second
+// reason to be left out: a person WITH a login who is not expected to check
+// in at all (the Founder, a Super Admin) — still staff, still paid, just not
+// something an attendance report should ever flag as late or absent.
+const trackedOnly = alias => ` AND ${alias}.is_user = TRUE AND ${alias}.attendance_tracked = TRUE`;
 
 function standardEmployeeFilters(req, alias, startIndex, opts = {}) {
   let idx = startIndex;

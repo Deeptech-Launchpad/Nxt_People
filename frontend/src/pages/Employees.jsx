@@ -29,6 +29,9 @@ const initForm = {
   workLocation:'', employmentType:'', status:'active',
   // Zoho extras
   exitDate:'', totalExperience:'', expertise:'',
+  // Whether attendance/Yet-to-check-in applies to this person. Independent
+  // of login — defaults on, same as every existing employee.
+  attendanceTracked: true,
 };
 
 // Company list must match the backend COMPANY_PREFIXES in
@@ -255,6 +258,9 @@ export default function Employees() {
       monthlyCTC:  get('monthlyCTC',  'monthly_ctc'),
       basicSalary: get('basicSalary', 'basic_salary'),
       casualLeave: full.casualLeave ?? full.casual_leave ?? '',
+      // ?? rather than || : a genuine `false` (attendance switched off for
+      // this person) must survive, only a missing value should default on.
+      attendanceTracked: full.attendanceTracked ?? full.attendance_tracked ?? true,
       // Personal
       nickName:      get('nickName',      'nick_name'),
       dateOfBirth:  (get('dateOfBirth',   'date_of_birth') || '').split?.('T')[0] || '',
@@ -934,6 +940,31 @@ export default function Employees() {
                       })}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Attendance tracking — separate from login. Somebody with a
+                  login (the Founder, a Super Admin) can still be exempt from
+                  Yet to check-in and every attendance report without losing
+                  access to the system. Per person, not per role. */}
+              {editEmp && (
+                <div className="border-t border-slate-100 pt-4">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.attendanceTracked}
+                      onChange={e => setForm({ ...form, attendanceTracked: e.target.checked })}
+                      className="w-4 h-4 accent-brand-600"
+                    />
+                    <div>
+                      <p className="text-base font-medium text-slate-700">Track attendance for this employee</p>
+                      <p className="text-[13px] text-slate-400">
+                        Off means they never appear in Yet to check-in or any attendance report,
+                        however they clock in or out. They can still sign in normally — this only
+                        changes whether attendance applies to them.
+                      </p>
+                    </div>
+                  </label>
                 </div>
               )}
 

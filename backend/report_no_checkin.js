@@ -15,6 +15,8 @@
  *    · days before someone joined or after they left
  *    · today, and anything in the future — nobody has failed to attend until
  *      the day is over
+ *    · anyone with attendance_tracked = FALSE — a login that exists, but that
+ *      attendance simply does not apply to (the Founder, a Super Admin)
  *
  *  Read-only. Writes nothing, sends no mail.
  *
@@ -94,10 +96,14 @@ const lpad = (s, n) => String(s ?? '').padStart(n);
    * records rather than people who sign in and punch. Counting their missing
    * check-ins is counting something that was never going to happen. Excluded
    * here by reading the flag directly, rather than trusting the report to have
-   * filtered them, because they turned up in it once already. */
+   * filtered them, because they turned up in it once already.
+   *
+   * The same applies to anyone marked attendance_tracked = FALSE — a login
+   * that exists (the Founder, a Super Admin) but that attendance simply does
+   * not apply to. They are on record, not on this list. */
   const profiles = new Map((await pool.query(
     `SELECT id, TRIM(CONCAT(first_name, ' ', COALESCE(last_name, ''))) AS name, employee_id AS code
-       FROM employees WHERE is_user = FALSE AND deleted_at IS NULL`)).rows.map(r => [r.id, r]));
+       FROM employees WHERE deleted_at IS NULL AND (is_user = FALSE OR attendance_tracked = FALSE)`)).rows.map(r => [r.id, r]));
 
   const byEmployee = new Map();
   for (const r of runs) {
@@ -182,6 +188,7 @@ const lpad = (s, n) => String(s ?? '').padStart(n);
   const notSetUp = (await pool.query(
     `SELECT count(*)::int AS n FROM employees e
       WHERE e.status = 'active' AND e.deleted_at IS NULL AND e.is_user = TRUE
+        AND e.attendance_tracked = TRUE
         AND NOT EXISTS (SELECT 1 FROM manual_attendance_assignments m WHERE m.employee_id = e.id)
         AND NOT EXISTS (SELECT 1 FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN $1::date AND $2::date)`,
     [from, to])).rows[0].n;
@@ -192,7 +199,7 @@ const lpad = (s, n) => String(s ?? '').padStart(n);
   }
 
   if (excluded.length) {
-    console.log(`  ${excluded.length} Employee Profile(s) left out — they never sign in or punch:`);
+    console.log(`  ${excluded.length} left out — an Employee Profile, or attendance not tracked for them:`);
     console.log(`    ${excluded.map(e => `${e.name} (${e.code})`).join(', ')}
 `);
   }
