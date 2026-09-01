@@ -17,6 +17,7 @@ const { sweepApprovalFollowups } = require('./utils/approvalFollowups');
 const { sweepAttendanceAlerts } = require('./utils/attendanceAlerts');
 const { sweepRegularizationReminders } = require('./utils/regularizationReminders');
 const { sweepShiftRotations } = require('./utils/shiftRotation');
+const { runYearEndRollover } = require('./utils/leaveYearEnd');
 // The email-alerts cron below has called automationConfig.* since it was
 // written without this line, so every run logged "automationConfig is not
 // defined" and sent nothing.
@@ -226,6 +227,16 @@ cron.schedule('5 0 1 1 *', async () => {
       [maxEarned]
     );
     logger.info({ affected: r.rowCount }, 'Yearly leave carry forward complete');
+
+    // leave_balances — the store 57 of 59 active employees' casual balance
+    // actually lives in — was never touched by the block above, which only
+    // ever wrote to the legacy employees.* columns. See utils/leaveYearEnd.js.
+    const now = new Date();
+    const result = await runYearEndRollover(pool, {
+      fromYear: now.getFullYear() - 1, toYear: now.getFullYear(), apply: true,
+    });
+    logger.info({ carried: result.carried.length, lapsed: result.lapsed.length },
+      'Yearly leave_balances rollover complete');
   } catch (err) {
     logger.error({ err }, 'Yearly carry forward cron failed');
   }

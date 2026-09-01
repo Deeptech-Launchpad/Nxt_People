@@ -29,14 +29,18 @@ const canonicalCode = code => CODE_ALIASES[code] || code;
 // Rows the reports show that have no leave_types record — `absent` is
 // attendance data rather than a leave type — fall back to no entitlement,
 // which is exactly how they behaved when the rules were hardcoded.
-const NO_POLICY = { unit: 'days', payType: 'unpaid', accrualMode: 'none', accrualAmount: 0 };
+const NO_POLICY = {
+  unit: 'days', payType: 'unpaid', accrualMode: 'none', accrualAmount: 0,
+  carryForward: false, maxDaysPerYear: null,
+};
 
 // Read fresh per request rather than cached: the Leave Policy screen writes
 // this table, and a report still quoting the previous policy for the next
 // minute would look like a bug in the report.
 async function getLeavePolicies() {
   const r = await pool.query(
-    `SELECT code, name, unit, pay_type, accrual_mode, accrual_amount FROM leave_types`
+    `SELECT code, name, unit, pay_type, accrual_mode, accrual_amount,
+            carry_forward, max_days_per_year FROM leave_types`
   );
   const map = new Map();
   for (const row of r.rows) {
@@ -48,6 +52,11 @@ async function getLeavePolicies() {
       payType: row.pay_type,
       accrualMode: row.accrual_mode,
       accrualAmount: parseFloat(row.accrual_amount) || 0,
+      // Per type, HR-configurable — Settings -> Leave Tracker -> Leave Policy.
+      // Casual is seeded off: unused days do not survive into next year.
+      carryForward: !!row.carry_forward,
+      // The ceiling on what carries — irrelevant when carryForward is off.
+      maxDaysPerYear: row.max_days_per_year === null ? null : parseFloat(row.max_days_per_year),
     });
   }
   return { get: code => map.get(code) || { code, name: code, ...NO_POLICY } };
@@ -206,6 +215,28 @@ function grantedToDate(policy, opts) {
   return round2(accrualEvents(policy, opts).reduce((sum, a) => sum + a.amount, 0));
 }
 
+/**
+ * How much of an unused balance survives into the next year, per
+ * leave_types.carry_forward — the whole point of the flag, unenforced until
+ * now. Off means everything left over lapses: `available` is what an
+ * imported or hand-set balance still holds, and none of it moves forward.
+ * On carries it capped at max_days_per_year, so "carry forward" cannot
+ * silently become "carry forward without limit" the moment somebody switches
+ * it on.
+ *
+ * Pure. What happens to the difference — logging a lapse, writing a row for
+ * the new year — is the caller's decision, not this function's.
+ */
+function carryForwardAmount(policy, available) {
+  if (!policy.carryForward) return 0;
+  const amt = Math.max(0, round2(parseFloat(available) || 0));
+  const cap = policy.maxDaysPerYear;
+  // null/undefined is the only "no cap" — 0 is a real cap (nothing carries),
+  // not the absence of one. `cap > 0` here would have let a 0-day cap through
+  // uncapped, the opposite of what setting it to 0 is for.
+  return (cap === null || cap === undefined) ? amt : Math.min(amt, round2(cap));
+}
+
 module.exports = {
-  getLeavePolicies, getJoiningRule, accrualEvents, grantedToDate, entitlementStart, round2,
+  getLeavePolicies, getJoiningRule, accrualEvents, grantedToDate, carryForwardAmount, entitlementStart, round2,
 };

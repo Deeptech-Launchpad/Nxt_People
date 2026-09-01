@@ -368,6 +368,36 @@ export default function LeavePolicy() {
           ) : <span className="text-slate-300">—</span>}
         </span>
       </td>
+      <td className="px-5 py-3.5">
+        <span className="flex items-center gap-2">
+          <button
+            onClick={() => patch(row, { carryForward: !row.carryForward })}
+            role="switch" aria-checked={row.carryForward}
+            title={row.carryForward
+              ? 'Unused days carry into next year (capped below)'
+              : 'Unused days lapse at year end — nothing carries forward'}
+            className={`w-9 h-[18px] rounded-full transition-colors relative flex-shrink-0 ${row.carryForward ? 'bg-blue-600' : 'bg-slate-300'}`}
+          >
+            <span className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full transition-all ${row.carryForward ? 'left-[19px]' : 'left-0.5'}`} />
+          </button>
+          {row.carryForward ? (
+            <>
+              <input
+                type="number" min="0" step="0.5" defaultValue={row.maxDaysPerYear ?? ''}
+                placeholder="no cap"
+                aria-label={`${row.name} carry-forward cap`}
+                title="Most that can carry into next year — the rest lapses"
+                onBlur={e => {
+                  const v = e.target.value === '' ? null : Number(e.target.value);
+                  if (v !== (row.maxDaysPerYear ?? null)) patch(row, { maxDaysPerYear: v });
+                }}
+                className="w-16 text-[12.5px] rounded border border-slate-200 px-2 py-1 text-right"
+              />
+              <span className="text-[12px] text-slate-400">cap</span>
+            </>
+          ) : <span className="text-[12px] text-slate-400">lapses yearly</span>}
+        </span>
+      </td>
       <td className="px-5 py-3.5 text-center">
         <button
           onClick={() => patch(row, { isActive: !row.isActive })}
@@ -399,6 +429,7 @@ export default function LeavePolicy() {
             <th className="text-left px-5 py-3">Policy type</th>
             <th className="text-left px-5 py-3">Unit</th>
             <th className="text-left px-5 py-3">Accrual</th>
+            <th className="text-left px-5 py-3">Carry forward</th>
             <th className="text-center px-5 py-3 w-[90px]">Status</th>
             <th className="w-[80px]" />
           </tr>

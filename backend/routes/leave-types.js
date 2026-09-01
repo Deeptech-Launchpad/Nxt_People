@@ -51,7 +51,8 @@ const POLICY_TYPES = ['fixed', 'experience', 'grant', 'attendance'];
 
 router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
   try {
-    const { name, color, isActive, payType, unit, accrualMode, accrualAmount, carryForward, policyType } = req.body;
+    const { name, color, isActive, payType, unit, accrualMode, accrualAmount,
+      carryForward, maxDaysPerYear, policyType } = req.body;
 
     if (payType !== undefined && !PAY_TYPES.includes(payType)) {
       return res.status(400).json({ success: false, message: 'Invalid pay type' });
@@ -64,6 +65,12 @@ router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async 
     }
     if (accrualAmount !== undefined && (Number.isNaN(Number(accrualAmount)) || Number(accrualAmount) < 0)) {
       return res.status(400).json({ success: false, message: 'Accrual amount must be a non-negative number' });
+    }
+    // null is a real value — "carries forward with no cap". Only a defined,
+    // non-null value has to pass the non-negative check.
+    if (maxDaysPerYear !== undefined && maxDaysPerYear !== null
+        && (Number.isNaN(Number(maxDaysPerYear)) || Number(maxDaysPerYear) < 0)) {
+      return res.status(400).json({ success: false, message: 'The carry-forward cap must be a non-negative number' });
     }
     if (policyType !== undefined && policyType && !POLICY_TYPES.includes(policyType)) {
       return res.status(400).json({ success: false, message: 'Invalid policy type' });
@@ -79,7 +86,11 @@ router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async 
     if (unit !== undefined) add('unit', unit);
     if (accrualMode !== undefined) add('accrual_mode', accrualMode);
     if (accrualAmount !== undefined) add('accrual_amount', Number(accrualAmount));
+    // Company preference, per leave type — off by default (casual, seeded
+    // false) so nothing carries into the next year unless somebody switches
+    // it on. utils/leaveYearEnd.js is what actually enforces it.
     if (carryForward !== undefined) add('carry_forward', !!carryForward);
+    if (maxDaysPerYear !== undefined) add('max_days_per_year', maxDaysPerYear === null ? null : Number(maxDaysPerYear));
     // Blank is a real value here: comp-off and no-entitlement types show no
     // policy type at all, so null has to be settable rather than ignored.
     if (policyType !== undefined) add('policy_type', policyType || null);
@@ -92,7 +103,7 @@ router.patch('/policies/:id', authorize('admin', 'director', 'hr_admin'), async 
        RETURNING id AS "_id", name, code, color, is_active AS "isActive",
                  pay_type AS "payType", unit, accrual_mode AS "accrualMode",
                  accrual_amount AS "accrualAmount", carry_forward AS "carryForward",
-                 policy_type AS "policyType"`,
+                 max_days_per_year AS "maxDaysPerYear", policy_type AS "policyType"`,
       params
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Leave policy not found' });
