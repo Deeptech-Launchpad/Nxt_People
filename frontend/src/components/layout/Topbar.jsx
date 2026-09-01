@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal, Settings as SettingsIcon, ArrowLeft } from 'lucide-react';
 import { serviceByKey, tabsOf, BASE as SETTINGS_BASE } from '../../pages/settings/serviceCatalog';
 import { operationsWorkspaceFor, tabHref } from '../../pages/moreservices/operationsWorkspaces';
+import WorkspaceTabs from './WorkspaceTabs';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
 import { roleLabel, isFullAccess } from '../../utils/roles';
@@ -563,19 +564,11 @@ export default function Topbar() {
               <span className="text-white text-[16px] font-semibold mr-3 border-r border-white/20 pr-4 flex-shrink-0">
                 {opsWorkspace.title}
               </span>
-              <div className="flex items-center h-full gap-1 min-w-0 overflow-x-auto scrollbar-none">
-                {opsWorkspace.tabs.map(t => {
-                  const active = t.id === opsWorkspace.activeId;
-                  return (
-                    <button key={t.id}
-                      onClick={() => navigate(tabHref(opsWorkspace.base, t))}
-                      className={`h-full px-4 flex items-center text-[16px] border-b-[3px] transition-all duration-150 tracking-[-0.01em] flex-shrink-0
-                        ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`}>
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <WorkspaceTabs
+                tabs={opsWorkspace.tabs}
+                activeId={opsWorkspace.activeId}
+                onSelect={t => navigate(tabHref(opsWorkspace.base, t))}
+              />
             </>
           ) : settingsWorkspace ? (
             <>

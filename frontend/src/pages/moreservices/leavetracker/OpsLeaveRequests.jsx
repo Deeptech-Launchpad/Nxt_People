@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Check, X, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Check, X, Eye, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../../utils/api';
 import useEmployeeList, { labelOf } from './useEmployeeList';
+import RowMenu from './RowMenu';
 
 /* ── Operations → Leave Tracker → Leave Requests ────────────────────────────
  *  Zoho's table of EVERY leave request, whatever its status, with Add Request
@@ -55,6 +56,8 @@ export default function OpsLeaveRequests() {
   const [acting, setActing] = useState('');
   const [modal, setModal] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [toDelete, setToDelete] = useState(null);
+  const [delReason, setDelReason] = useState('');
   const [types, setTypes] = useState([]);
   const LIMIT = 20;
 
@@ -85,6 +88,22 @@ export default function OpsLeaveRequests() {
       load();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Could not update that request');
+    } finally { setActing(''); }
+  };
+
+  /* Delete moves a leave balance — an approved leave gives the days back to
+   * the employee, not to whoever pressed the button. The confirm exists
+   * because there is no undo, and the reason is carried because the
+   * cancellation settings can require one. */
+  const remove = async () => {
+    const r = toDelete;
+    setActing(r._id);
+    try {
+      await api.delete(`/leaves/${r._id}`, { data: { reason: delReason.trim() } });
+      toast.success('Leave deleted and the balance returned');
+      setToDelete(null); setDelReason(''); load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not delete that request');
     } finally { setActing(''); }
   };
 
@@ -173,10 +192,6 @@ export default function OpsLeaveRequests() {
                   <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{fmt(r.createdAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5 justify-end">
-                      <button onClick={() => setDetail(r)} title="View"
-                        className="w-8 h-8 flex items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50">
-                        <Eye size={15} />
-                      </button>
                       {r.status === 'pending' && (
                         <>
                           <button onClick={() => act(r._id, 'approved')} disabled={!!acting} title="Approve"
@@ -189,6 +204,14 @@ export default function OpsLeaveRequests() {
                           </button>
                         </>
                       )}
+                      <RowMenu items={[
+                        { label: 'View', icon: <Eye size={15} />, onClick: () => setDetail(r) },
+                        { label: 'Edit', icon: <Pencil size={15} />,
+                          disabled: 'Not built yet — editing an approved leave has to move the balance both ways' },
+                        (r.status === 'pending' || r.status === 'approved') && {
+                          label: 'Delete', icon: <Trash2 size={15} />, danger: true,
+                          onClick: () => { setDelReason(''); setToDelete(r); } },
+                      ]} />
                     </div>
                   </td>
                 </tr>
@@ -307,6 +330,40 @@ export default function OpsLeaveRequests() {
               className="mt-5 w-full border border-slate-200 text-slate-600 py-2.5 rounded-xl text-[15px] font-medium hover:bg-slate-50">
               Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {toDelete && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
+            <h3 className="font-display font-semibold text-slate-800 text-xl">Delete this leave?</h3>
+            <p className="text-slate-500 text-[15px] mt-2">
+              {toDelete.employee?.firstName} {toDelete.employee?.lastName} ·{' '}
+              <span className="capitalize">{String(toDelete.leaveType || '').replace(/_/g, ' ')}</span> ·{' '}
+              {fmt(toDelete.startDate)} – {fmt(toDelete.endDate)}
+            </p>
+            {/* Say what it costs before they press it, not after. */}
+            <p className="text-[14px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 mt-3">
+              {toDelete.leaveType === 'unpaid'
+                ? 'Unpaid leave holds no balance, so nothing is returned.'
+                : `${takenLabel(toDelete)} will be returned to their balance.`}
+              {' '}This cannot be undone.
+            </p>
+            <label className="block text-sm font-medium text-slate-600 mt-4 mb-1.5">Reason</label>
+            <input value={delReason} onChange={e => setDelReason(e.target.value)}
+              placeholder="Why this is being deleted"
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-[15px] focus:outline-none focus:border-brand-400" />
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setToDelete(null)}
+                className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-[15px] font-medium hover:bg-slate-50">
+                Cancel
+              </button>
+              <button onClick={remove} disabled={!!acting}
+                className="flex-1 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white py-2.5 rounded-xl text-[15px] font-medium">
+                {acting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

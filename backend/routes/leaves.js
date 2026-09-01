@@ -944,9 +944,18 @@ router.delete('/:id', async (req, res) => {
     // BEGIN before SELECT so FOR UPDATE locks the row, preventing a concurrent
     // approval from changing status between our check and the DELETE.
     await client.query('BEGIN');
+    /* Full access may act on somebody else's leave — that is what the
+     * Operations door is for, and the reference offers Delete there freely.
+     * Scoped so nothing about the self-service path changes: acting on your
+     * OWN leave still runs the cancellation rules below exactly as before,
+     * whatever your role. Only an admin correcting SOMEBODY ELSE'S record
+     * takes the override branch. */
+    const adminActing = isFullAccess(req.user.role);
     const leaveRes = await client.query(
-      'SELECT id, employee_id, status, leave_type, start_date, end_date, total_days, balance_source FROM leaves WHERE id=$1 AND employee_id=$2 FOR UPDATE',
-      [req.params.id, req.user._id]
+      adminActing
+        ? 'SELECT id, employee_id, status, leave_type, start_date, end_date, total_days, balance_source FROM leaves WHERE id=$1 FOR UPDATE'
+        : 'SELECT id, employee_id, status, leave_type, start_date, end_date, total_days, balance_source FROM leaves WHERE id=$1 AND employee_id=$2 FOR UPDATE',
+      adminActing ? [req.params.id] : [req.params.id, req.user._id]
     );
     if (leaveRes.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -966,7 +975,16 @@ router.delete('/:id', async (req, res) => {
     // Until this was wired an employee could withdraw a leave from any month of
     // the year as long as it had not been approved.
     const config = await loadConfig();
-    const verdict = await canCancel({ user: req.user, leave, config });
+    /* An admin correcting somebody else's record is a different act from an
+     * employee withdrawing their own, and the cancellation matrix is written
+     * for the second. The matrix still runs for your OWN leave whatever your
+     * role, so no existing behaviour moves; it is overridden only when full
+     * access acts on another person, and the audit entry records that. */
+    const ownLeave = String(leave.employee_id) === String(req.user._id);
+    const override = adminActing && !ownLeave;
+    const verdict = override
+      ? { allowed: true, row: 'admin_override' }
+      : await canCancel({ user: req.user, leave, config });
     if (!verdict.allowed) {
       await client.query('ROLLBACK');
       return res.status(403).json({ success: false, message: verdict.reason });
@@ -996,7 +1014,7 @@ router.delete('/:id', async (req, res) => {
             `UPDATE leave_balances
                 SET available = available + $1
               WHERE employee_id=$2 AND leave_type_id=$3 AND year=$4`,
-            [leave.total_days, req.user._id, ltRes.rows[0].id, year]
+            [leave.total_days, leave.employee_id, ltRes.rows[0].id, year]
           );
         }
       }
