@@ -512,6 +512,18 @@ export default function Topbar() {
    * the top of every Operations page — four destinations nobody standing in
    * Operations is looking for, above two more rows of navigation. */
   const inOperations = location.pathname.startsWith('/more-services/operations');
+  /* Leave Tracker and Attendance are workspaces inside Operations, each with
+   * its own back button + tab strip already rendered by the page itself
+   * (OperationsLeaveTracker.jsx / OperationsAttendance.jsx) — the same shape
+   * Zoho uses for these two screens. Above that, this component was still
+   * adding a navy "Operations" label and, below that, a second white bar
+   * repeating "Services / Leave Tracker / Leave Approvals" — three rows of
+   * navigation before any content, where the page's own bar is already the
+   * whole answer. Suppressed here, on these two routes only: the Operations
+   * Services grid and Leave Approvals have no navigation of their own and
+   * still need this bar to get anywhere. */
+  const inOperationsWorkspace = /^\/more-services\/operations\/(leave-tracker|attendance)(\/|$)/
+    .test(location.pathname);
   const primaryTabs  = inOperations ? [] : (config?.primaryTabs || []).filter(canSee);
   const activeTab    = isHome ? homeTab : (config?.getActiveTab?.(location.pathname) || primaryTabs[0]?.key);
   const subNavItems  = (config?.subNav?.[activeTab] || []).filter(canSee);
@@ -562,7 +574,7 @@ export default function Topbar() {
             </>
           ) : (
           <>
-          {!isHome && (
+          {!isHome && !inOperationsWorkspace && (
             <span className={`text-white text-[16px] font-semibold flex-shrink-0 ${
               inOperations ? '' : 'mr-3 border-r border-white/20 pr-4'
             }`}>
@@ -570,7 +582,7 @@ export default function Topbar() {
             </span>
           )}
           <div className="flex items-center h-full gap-1 min-w-0 overflow-x-auto scrollbar-none">
-          {!config.isLanding && primaryTabs.map(({ key, label, to, disabled }) => {
+          {!config.isLanding && !inOperationsWorkspace && primaryTabs.map(({ key, label, to, disabled }) => {
             const active = isHome ? homeTab === key : activeTab === key;
             // Disabled primary tabs (e.g. Travel / Compensation in More
             // Services) render visible but non-clickable until the
@@ -807,8 +819,9 @@ export default function Topbar() {
         </div>
       </div>
 
-      {/* ── White sub-nav — hidden on landing pages (subNavItems is empty) */}
-      {!config.isLanding && subNavItems.length > 0 && (
+      {/* ── White sub-nav — hidden on landing pages (subNavItems is empty),
+          and on Operations workspace pages, whose own bar already covers it */}
+      {!config.isLanding && !inOperationsWorkspace && subNavItems.length > 0 && (
         <div className="h-[42px] bg-white dark:bg-[#1a2040] border-b border-slate-200 dark:border-[#2d3748] flex items-center px-5 shadow-sm relative">
           <SubNav items={subNavItems} />
         </div>
