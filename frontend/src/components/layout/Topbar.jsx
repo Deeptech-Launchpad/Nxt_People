@@ -582,19 +582,14 @@ export default function Topbar() {
               <span className="text-white text-[16px] font-semibold mr-3 border-r border-white/20 pr-4 flex-shrink-0">
                 {settingsWorkspace.service.label}
               </span>
-              <div className="flex items-center h-full gap-1 min-w-0 overflow-x-auto scrollbar-none">
-                {settingsWorkspace.tabs.map(t => {
-                  const active = t.key === settingsWorkspace.activeTabKey;
-                  return (
-                    <button key={t.key}
-                      onClick={() => navigate(`${SETTINGS_BASE}/${settingsWorkspace.service.key}/${t.key}`)}
-                      className={`h-full px-4 flex items-center text-[16px] border-b-[3px] transition-all duration-150 tracking-[-0.01em] flex-shrink-0
-                        ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`}>
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
+              {/* Same overflow behaviour as Operations: a horizontal scroll in
+                  the navy bar is invisible, so tabs that do not fit go behind
+                  a "…" instead of off the edge. */}
+              <WorkspaceTabs
+                tabs={settingsWorkspace.tabs.map(t => ({ id: t.key, label: t.label }))}
+                activeId={settingsWorkspace.activeTabKey}
+                onSelect={t => navigate(`${SETTINGS_BASE}/${settingsWorkspace.service.key}/${t.id}`)}
+              />
             </>
           ) : (
           <>
@@ -605,32 +600,20 @@ export default function Topbar() {
               {inOperations ? 'Operations' : config.label}
             </span>
           )}
-          <div className="flex items-center h-full gap-1 min-w-0 overflow-x-auto scrollbar-none">
-          {!config.isLanding && primaryTabs.map(({ key, label, to, disabled }) => {
-            const active = isHome ? homeTab === key : activeTab === key;
-            // Disabled primary tabs (e.g. Travel / Compensation in More
-            // Services) render visible but non-clickable until the
-            // feature is wired up. Greyed text + cursor-not-allowed +
-            // "Coming soon" tooltip.
-            if (disabled) {
-              return (
-                <span key={key} title="Coming soon"
-                  className="h-full px-4 flex items-center text-[16px] border-b-[3px] border-transparent text-white/30 font-semibold cursor-not-allowed flex-shrink-0">
-                  {label}
-                </span>
-              );
-            }
-            return (
-              <button key={key}
-                {...(key === 'team' && isHome ? { 'data-tour': 'topbar-team' } : {})}
-                onClick={() => navigate(to)}
-                className={`h-full px-4 flex items-center text-[16px] border-b-[3px] transition-all duration-150 tracking-[-0.01em] flex-shrink-0
-                  ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`}>
-                {label}
-              </button>
-            );
-          })}
-          </div>
+          {/* Disabled primary tabs (e.g. Travel / Compensation in More
+              Services) still render, greyed and non-clickable with a
+              "Coming soon" tooltip — WorkspaceTabs carries that through to
+              the overflow menu as well. */}
+          {!config.isLanding && (
+            <WorkspaceTabs
+              tabs={primaryTabs.map(({ key, label, to, disabled }) => ({
+                id: key, label, to, disabled,
+                ...(key === 'team' && isHome ? { attrs: { 'data-tour': 'topbar-team' } } : {}),
+              }))}
+              activeId={isHome ? homeTab : activeTab}
+              onSelect={t => navigate(t.to)}
+            />
+          )}
           </>
           )}
         </div>

@@ -16,6 +16,13 @@ import { MoreHorizontal } from 'lucide-react';
  *  A highlighted tab you cannot see is worse than one out of order.
  * ────────────────────────────────────────────────────────────────────────── */
 const MORE_BUTTON_WIDTH = 52;
+/* Breathing room between the last tab and the global icons. The gap is a real
+ * margin on the strip (mr-7 below) rather than arithmetic, so the measured
+ * width is gutter-free by construction and the space cannot be eaten by a tab
+ * that "just fits". Without it the strip filled every pixel and the "…" ended
+ * up touching the + button, which is why six cramped tabs were fitting where
+ * the reference fits five. This constant only absorbs sub-pixel rounding. */
+const ROUNDING_SLACK = 4;
 
 export default function WorkspaceTabs({ tabs, activeId, onSelect }) {
   const rowRef = useRef(null);
@@ -32,8 +39,8 @@ export default function WorkspaceTabs({ tabs, activeId, onSelect }) {
 
     const recompute = () => {
       const widths = Array.from(measure.children).map(c => c.getBoundingClientRect().width);
-      const available = row.getBoundingClientRect().width;
-      if (!widths.length || !available) return;
+      const available = row.getBoundingClientRect().width - ROUNDING_SLACK;
+      if (!widths.length || available <= 0) return;
 
       let used = 0;
       let n = 0;
@@ -79,16 +86,27 @@ export default function WorkspaceTabs({ tabs, activeId, onSelect }) {
      ${active ? 'border-blue-400 text-white font-semibold' : 'border-transparent text-white/60 font-medium hover:text-white'}`;
 
   return (
-    <div ref={rowRef} className="flex items-center h-full min-w-0 flex-1 relative">
+    <div ref={rowRef} className="flex items-center h-full min-w-0 flex-1 relative mr-7">
       {/* Hidden full-width copy, only ever read for its measurements. */}
       <div ref={measureRef} aria-hidden className="absolute invisible pointer-events-none flex whitespace-nowrap" style={{ top: -9999, left: 0 }}>
-        {tabs.map(t => <span key={t.id} className={tabClass(false)}>{t.label}</span>)}
+        {/* Measured in the ACTIVE weight — semibold is wider than medium, so
+            this over-estimates rather than under-estimates and a tab can never
+            become the one that overflows just by being selected. */}
+        {tabs.map(t => <span key={t.id} className={tabClass(true)}>{t.label}</span>)}
       </div>
 
       {visible.map(t => (
-        <button key={t.id} onClick={() => onSelect(t)} className={tabClass(t.id === activeId)}>
-          {t.label}
-        </button>
+        t.disabled ? (
+          <span key={t.id} title={t.disabledReason || 'Coming soon'}
+            className={`${tabClass(false)} !text-white/30 font-semibold cursor-not-allowed`}>
+            {t.label}
+          </span>
+        ) : (
+          <button key={t.id} {...(t.attrs || {})} onClick={() => onSelect(t)}
+            className={tabClass(t.id === activeId)}>
+            {t.label}
+          </button>
+        )
       ))}
 
       {overflow.length > 0 && (
@@ -106,9 +124,13 @@ export default function WorkspaceTabs({ tabs, activeId, onSelect }) {
               {overflow.map(t => (
                 <button
                   key={t.id}
-                  onClick={() => { setMenuOpen(false); onSelect(t); }}
-                  className={`w-full text-left px-4 py-2.5 text-[14px] hover:bg-slate-50 ${
-                    t.id === activeId ? 'text-brand-600 font-medium' : 'text-slate-700'}`}
+                  disabled={!!t.disabled}
+                  title={t.disabled ? (t.disabledReason || 'Coming soon') : undefined}
+                  onClick={() => { if (t.disabled) return; setMenuOpen(false); onSelect(t); }}
+                  className={`w-full text-left px-4 py-2.5 text-[14px] ${
+                    t.disabled ? 'text-slate-300 cursor-not-allowed'
+                      : t.id === activeId ? 'text-brand-600 font-medium hover:bg-slate-50'
+                      : 'text-slate-700 hover:bg-slate-50'}`}
                 >
                   {t.label}
                 </button>
