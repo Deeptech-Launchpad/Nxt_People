@@ -508,16 +508,27 @@ router.post('/', [
         const notifMsg = leaveType === 'permission'
           ? `${empName} requested permission on ${startLabel} (${permStartTime}–${permEndTime}).`
           : `${empName} requested ${leaveType} leave from ${startLabel} (${totalDays} day${totalDays !== 1 ? 's' : ''}).`;
+        /* Approvals, not the Leave Tracker. This pointed at
+         * /more-services/operations/leave-tracker?openId=..., which reads a
+         * `tab` parameter but has never read `openId` — so the id was dropped
+         * and the approver landed on User-specific Operations, an empty search
+         * box, with nothing to tell them which request they had come for.
+         *
+         * No tab is given because the Approvals screen works out which one the
+         * id belongs to and opens the request itself. Regularization and
+         * on-duty have always linked here; leave was the odd one out. */
         await Promise.all(allRecipients.map(a => createNotification(
           a.id, 'approval', notifTitle, notifMsg,
-          `/more-services/operations/leave-tracker?openId=${leaveId}`
+          `/approvals?openId=${leaveId}`
         ).catch(err => logger.warn({ err: err.message }, '[leaves] notify approver failed'))));
 
         const baseUrl = process.env.APP_URL || 'https://nxtpeople.altiusnxt.tech';
         const leaveTypeDisplay = leaveType === 'permission' ? 'Permission' :
                                  leaveType === 'comp_off' ? 'Compensatory Off' :
                                  leaveType.charAt(0).toUpperCase() + leaveType.slice(1) + ' Leave';
-        const approvalLink = `${baseUrl}/more-services/operations/leave-tracker?openId=${leaveId}`;
+        // Same destination as the in-app notification above, so the mail and
+        // the bell do not land the approver in two different places.
+        const approvalLink = `${baseUrl}/approvals?openId=${leaveId}`;
 
         // Settings > Approvals > Messages decides who is written to, with what
         // subject, and whether a template replaces the built-in wording. Until

@@ -96,8 +96,11 @@ async function notifyChainOfCancellation({ leave, actor, kind, detail = {} }) {
 
     let sent = 0;
     for (const r of recipients) {
+      // Named tab. Without one the Leave Tracker opens User-specific
+      // Operations, a search box, which tells an approver nothing about the
+      // cancellation they were just told about.
       await createNotification(r.id, 'leave', subject, body.split('\n')[0],
-        '/more-services/operations/leave-tracker').catch(() => {});
+        '/more-services/operations/leave-tracker?tab=requests').catch(() => {});
       if (!r.email) continue;
       await sendMail({
         to: r.email,

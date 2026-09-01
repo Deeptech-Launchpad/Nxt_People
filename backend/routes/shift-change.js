@@ -218,7 +218,11 @@ async function notifyShiftChange(requestId) {
       : `You have been placed on ${shift}, ${when}.`;
 
     if (want.feeds) {
-      await createNotification(r.employeeId, 'shift', 'Shift Changed', line, '/attendance/shifts')
+      // /attendance/shifts is not a route. App.jsx has no such path, so the
+      // catch-all redirected anyone who clicked this to the home page and the
+      // notification looked like it did nothing. /shift-change is the screen an
+      // employee actually has for their own shift.
+      await createNotification(r.employeeId, 'shift', 'Shift Changed', line, '/shift-change')
         .catch(() => {});
       await pool.query(
         `INSERT INTO feeds (employee_id, type, title, body, icon)
