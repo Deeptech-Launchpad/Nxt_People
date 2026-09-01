@@ -113,9 +113,31 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
     if (startDate)           { query += ` AND l.end_date >= $${idx++}`;        params.push(startDate); }
     if (endDate)             { query += ` AND l.start_date <= $${idx++}`;      params.push(endDate); }
     if (req.query.leaveId)   { query += ` AND l.id = $${idx++}::uuid`;         params.push(req.query.leaveId); }
+    // The filter panel sends leave type and a free-text search; both are
+    // optional and neither widens what reportsScope already allows below.
+    if (req.query.leaveType)  { query += ` AND l.leave_type = $${idx++}`;      params.push(req.query.leaveType); }
+    if (req.query.location)   { query += ` AND e.work_location = $${idx++}`;   params.push(req.query.location); }
+    const q = String(req.query.q || '').trim();
+    if (q) {
+      query += ` AND (e.first_name ILIKE $${idx} OR e.last_name ILIKE $${idx} OR e.employee_id ILIKE $${idx}
+                      OR (e.first_name || ' ' || e.last_name) ILIKE $${idx})`;
+      params.push(`%${q}%`); idx++;
+    }
 
     // Full-access sees every employee's leaves; managers only their direct
     // reports' (the per-record /:id/action guard still governs who can act).
+    /* Sortable column headers. Whitelisted rather than interpolated — a sort
+     * key arrives straight from the query string and ORDER BY cannot be
+     * parameterised, so anything not on this list falls back to the default. */
+    const SORTABLE = {
+      startDate: 'l.start_date', createdAt: 'l.created_at', status: 'l.status',
+      leaveType: 'l.leave_type', totalDays: 'l.total_days',
+      employee: 'e.first_name',
+    };
+    const sortCol = SORTABLE[req.query.sortBy] || 'l.start_date';
+    const sortDir = String(req.query.sortDir).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    const orderBy = `${sortCol} ${sortDir}`;
+
     const scope = reportsScope(req.user, 'e', idx);
     if (scope.clause) { query += scope.clause; params.push(...scope.params); idx += scope.params.length; }
 
@@ -146,7 +168,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
          LEFT JOIN employees aa ON e.approving_authority_id = aa.id
          LEFT JOIN employees a ON l.approved_by = a.id
          ${query}
-         ORDER BY l.start_date DESC
+         ORDER BY ${orderBy}
          LIMIT $${idx++} OFFSET $${idx++}`,
         [...params, limit, offset]
       ),
