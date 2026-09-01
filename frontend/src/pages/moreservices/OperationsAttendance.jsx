@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import OpsBiometricMapping from './attendance/OpsBiometricMapping';
+import OpsCheckInOutImportExport from './attendance/OpsCheckInOutImportExport';
 import OpsNotBuilt from './attendance/OpsNotBuilt';
 
 /* ── Operations → Attendance ──────────────────────────────────────────────
@@ -25,8 +26,8 @@ import OpsNotBuilt from './attendance/OpsNotBuilt';
  *                          was written to avoid — a divergent copy is worse
  *                          than a door to the real one.
  *
- *  Built inline: Biometric ID mapping. Still placeholders: User-specific
- *  Operations and Check-in/out Import & Export — see OpsNotBuilt.
+ *  Built inline: Biometric ID mapping, Check-in/out Import & Export. Still a
+ *  placeholder: User-specific Operations — see OpsNotBuilt.
  * ────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { id: 'user', label: 'User-specific Operations',
@@ -84,9 +85,7 @@ export default function OperationsAttendance() {
         <OpsNotBuilt title="User-specific Operations" description={TABS.find(t => t.id === 'user').description} />
       )}
       {tab === 'biometric' && <OpsBiometricMapping />}
-      {tab === 'import-export' && (
-        <OpsNotBuilt title="Check-in/out Import & Export" description={TABS.find(t => t.id === 'import-export').description} />
-      )}
+      {tab === 'import-export' && <OpsCheckInOutImportExport />}
     </div>
   );
 }
