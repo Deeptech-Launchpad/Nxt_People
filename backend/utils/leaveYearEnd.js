@@ -41,12 +41,26 @@ const { carryForwardAmount } = require('./leavePolicy');
  * would happen, so this can be checked before it runs for real. The cron
  * calls it with `apply: true`.
  */
+/* Permission, unpaid and comp-off all have rows in leave_balances — the Zoho
+ * import wrote every column it found, including Permission — but
+ * availableFor() (utils/leaveBalance.js) never reads leave_balances for any
+ * of the three: permission is hours against a monthly cap, unpaid has no
+ * ceiling, comp-off is its own FIFO ledger. Those rows are inert data, never
+ * the live balance anybody's application or approval actually checks.
+ *
+ * Rolling them over anyway would write "lapsed, does not carry forward" for
+ * a number nothing ever enforced in the first place — true of the row, false
+ * of what actually happened to the employee. This mirrors availableFor's own
+ * exclusion exactly, rather than inventing a second opinion about which types
+ * are real. */
+const NOT_LIVE_IN_LEAVE_BALANCES = new Set(['permission', 'unpaid', 'compoff']);
+
 async function runYearEndRollover(pool, { fromYear, toYear, apply = false }) {
   const types = (await pool.query(
     `SELECT id, code, name, carry_forward AS "carryForward",
             max_days_per_year AS "maxDaysPerYear"
        FROM leave_types WHERE is_active = TRUE`
-  )).rows;
+  )).rows.filter(t => !NOT_LIVE_IN_LEAVE_BALANCES.has(t.code));
 
   const rows = (await pool.query(
     `SELECT lb.id, lb.employee_id AS "employeeId", lb.leave_type_id AS "leaveTypeId",

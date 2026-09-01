@@ -73,6 +73,7 @@ console.log('\n════ runYearEndRollover — against real rows, then rever
 
   const YEAR = 2099; // far outside any real data, so nothing here can collide
   const cleanup = [];
+  let testLtId = null;
 
   try {
     const casualLt = (await pool.query(`SELECT id FROM leave_types WHERE code = 'casual'`)).rows[0];
@@ -94,23 +95,28 @@ console.log('\n════ runYearEndRollover — against real rows, then rever
     // carry_forward is a property of the TYPE, not the person, so two people
     // on the same type cannot be made to behave differently. Person A sits on
     // real, untouched casual (carry_forward = false, never modified here) and
-    // must lapse. Person B sits on a different type, temporarily switched to
-    // carry forward with a cap, to prove the mechanism moves a balance when
-    // it is told to — in the same rollover call, so this also proves the
-    // decision is genuinely per-type rather than global.
-    const permLt = (await pool.query(`SELECT id FROM leave_types WHERE code = 'permission'`)).rows[0];
-    if (!permLt) { console.log('  skipped — no permission leave type in this database\n'); return finish(0); }
+    // must lapse. Person B sits on a throwaway leave type created just for
+    // this test, with carry forward switched on and capped, to prove the
+    // mechanism moves a balance when it is told to — in the same rollover
+    // call, so this also proves the decision is genuinely per-type rather
+    // than global. Not permission or unpaid: both have real leave_balances
+    // rows from the Zoho import but are deliberately excluded from this job
+    // (see NOT_LIVE_IN_LEAVE_BALANCES in utils/leaveYearEnd.js) because
+    // availableFor() never treats leave_balances as their live balance.
+    const testLt = (await pool.query(
+      `INSERT INTO leave_types (name, code, unit, accrual_mode, carry_forward, max_days_per_year, is_active)
+       VALUES ('__test_carry_type__', '__test_carry_type__', 'days', 'none', TRUE, 15, TRUE)
+       RETURNING id`)).rows[0];
+    testLtId = testLt.id;
 
     const insA = await pool.query(
       `INSERT INTO leave_balances (employee_id, leave_type_id, year, available, booked)
        VALUES ($1,$2,$3,22,0) RETURNING id`, [emp[0].id, casualLt.id, YEAR]);
     cleanup.push(insA.rows[0].id);
 
-    const original = (await pool.query(`SELECT carry_forward, max_days_per_year FROM leave_types WHERE id=$1`, [permLt.id])).rows[0];
-    await pool.query(`UPDATE leave_types SET carry_forward = TRUE, max_days_per_year = 15 WHERE id = $1`, [permLt.id]);
     const insB = await pool.query(
       `INSERT INTO leave_balances (employee_id, leave_type_id, year, available, booked)
-       VALUES ($1,$2,$3,22,0) RETURNING id`, [emp[1].id, permLt.id, YEAR]);
+       VALUES ($1,$2,$3,22,0) RETURNING id`, [emp[1].id, testLt.id, YEAR]);
     cleanup.push(insB.rows[0].id);
 
     // Dry run first — must report correctly and write nothing.
@@ -119,13 +125,13 @@ console.log('\n════ runYearEndRollover — against real rows, then rever
       dry.applied === false && dry.carried.length === 1 && dry.lapsed.length === 1, dry);
 
     const beforeRow = await pool.query(
-      `SELECT 1 FROM leave_balances WHERE leave_type_id=$1 AND year=$2`, [permLt.id, YEAR + 1]);
+      `SELECT 1 FROM leave_balances WHERE leave_type_id=$1 AND year=$2`, [testLt.id, YEAR + 1]);
     check("and genuinely wrote nothing", beforeRow.rows.length === 0);
 
     // Now for real.
     const applied = await runYearEndRollover(pool, { fromYear: YEAR, toYear: YEAR + 1, apply: true });
     cleanup.push(...(await pool.query(
-      `SELECT id FROM leave_balances WHERE leave_type_id=$1 AND year=$2`, [permLt.id, YEAR + 1])).rows.map(r => r.id));
+      `SELECT id FROM leave_balances WHERE leave_type_id=$1 AND year=$2`, [testLt.id, YEAR + 1])).rows.map(r => r.id));
 
     check("person B's carry_forward=true balance carried, capped at 15",
       applied.carried.some(c => c.employeeId === emp[1].id && c.carried === 15), applied.carried);
@@ -134,7 +140,7 @@ console.log('\n════ runYearEndRollover — against real rows, then rever
 
     const nextYearRow = (await pool.query(
       `SELECT available FROM leave_balances WHERE employee_id=$1 AND leave_type_id=$2 AND year=$3`,
-      [emp[1].id, permLt.id, YEAR + 1])).rows[0];
+      [emp[1].id, testLt.id, YEAR + 1])).rows[0];
     check(`the new year's row for person B actually holds 15, not 22`,
       parseFloat(nextYearRow?.available) === 15, nextYearRow);
 
@@ -149,7 +155,7 @@ console.log('\n════ runYearEndRollover — against real rows, then rever
     const second = await runYearEndRollover(pool, { fromYear: YEAR, toYear: YEAR + 1, apply: true });
     const stillOneRow = (await pool.query(
       `SELECT available FROM leave_balances WHERE employee_id=$1 AND leave_type_id=$2 AND year=$3`,
-      [emp[1].id, permLt.id, YEAR + 1])).rows;
+      [emp[1].id, testLt.id, YEAR + 1])).rows;
     check("running it twice does not create a second row for the same year",
       stillOneRow.length === 1 && parseFloat(stillOneRow[0].available) === 15, stillOneRow);
     const logCount = (await pool.query(
@@ -159,19 +165,21 @@ console.log('\n════ runYearEndRollover — against real rows, then rever
     check("or a second lapse log entry", logCount === 1, logCount);
     void second;
 
-    await pool.query(`UPDATE leave_types SET carry_forward=$1, max_days_per_year=$2 WHERE id=$3`,
-      [original.carry_forward, original.max_days_per_year, permLt.id]);
     await pool.query(
       `DELETE FROM leave_accrual_log
         WHERE employee_id = ANY($1::uuid[])
           AND (reason LIKE 'Lapsed at the end of%' OR reason LIKE 'Carried forward into%')`,
       [[emp[0].id, emp[1].id]]);
     for (const id of cleanup) await pool.query(`DELETE FROM leave_balances WHERE id = $1`, [id]);
+    // Cascades: any leave_balances row still pointing at the temp type goes
+    // with it, so this alone is enough even if an assertion threw earlier.
+    await pool.query(`DELETE FROM leave_types WHERE id = $1`, [testLt.id]);
 
     finish(0);
   } catch (e) {
     console.error('\n  setup/db failed —', e.message, '\n');
     for (const id of cleanup) { try { await pool.query(`DELETE FROM leave_balances WHERE id = $1`, [id]); } catch {} }
+    if (testLtId) { try { await pool.query(`DELETE FROM leave_types WHERE id = $1`, [testLtId]); } catch {} }
     finish(1);
   }
 
