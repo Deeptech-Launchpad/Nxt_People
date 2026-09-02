@@ -4,6 +4,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
 const { serverError } = require('../utils/serverError');
+const attendanceConfig = require('../utils/attendanceConfig');
 router.use(protect);
 
 const SELECT_COLS = `
@@ -133,6 +134,15 @@ router.put('/', authorize('admin', 'director', 'hr_admin'), async (req, res) => 
       compOffExpiryMonths === undefined ? null : compOffExpiryMonths,
       leaveAccrualConfig ? JSON.stringify(leaveAccrualConfig) : null,
     ]);
+
+    /* This write touches timezone, full_day_hours, half_day_hours and
+     * late_after_minutes — all of which reports.js caches, keyed on the
+     * attendance-config generation. Without bumping it, a saved timezone kept
+     * every attendance report on the old one for up to a minute, which
+     * orgConfig's own comment calls "indistinguishable from the setting not
+     * working". Attendance Configuration already invalidates on save; this
+     * screen writes the same columns and did not. */
+    attendanceConfig.invalidate();
 
     await logAudit(req, {
       action: 'UPDATE',
