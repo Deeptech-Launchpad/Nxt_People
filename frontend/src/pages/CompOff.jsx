@@ -87,7 +87,7 @@ export default function CompOff() {
   const displayList = tab === 'my' ? myRequests : pending;
 
   return (
-    <div className="space-y-5">
+    <div className="p-5 space-y-5">
       <div className="pt-5 pb-1">
         <BackButton to="/leave-tracker" label="Leave Tracker" />
       </div>

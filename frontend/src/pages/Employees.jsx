@@ -456,7 +456,7 @@ export default function Employees() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="p-5 space-y-5">
       {/* Employee status filter — plain style matching the Department/
           Designation/Role filters below it, with breathing room above so
           it's clearly separated from the top bar. */}

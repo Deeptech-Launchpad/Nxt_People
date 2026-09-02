@@ -46,7 +46,7 @@ export default function ServiceHub() {
   const initials = `${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.toUpperCase() || 'U';
 
   return (
-    <div className="space-y-4">
+    <div className="p-5 space-y-4">
       <div className="bg-white rounded-xl border border-slate-200 px-5 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-[16px] font-semibold text-slate-900 truncate">

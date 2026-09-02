@@ -60,7 +60,7 @@ export default function Timesheets() {
   const totalHours = entries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0);
 
   return (
-    <div className="space-y-5">
+    <div className="p-5 space-y-5">
       <div className="pt-5 pb-1">
         <BackButton to="/time-tracker" label="Time Tracker" />
       </div>

@@ -83,7 +83,7 @@ export default function CheckInOut() {
   const dateStr = time.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' });
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
+    <div className="p-5 max-w-2xl mx-auto space-y-5">
       <div className="pt-5 pb-1">
         <BackButton to="/attendance" label="Attendance" />
       </div>

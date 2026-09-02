@@ -252,7 +252,7 @@ export default function Approvals({ embedded = false }) {
   );
 
   return (
-    <div className="space-y-5">
+    <div className="p-5 space-y-5">
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
         {[

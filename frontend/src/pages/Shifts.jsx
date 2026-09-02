@@ -286,7 +286,7 @@ export default function Shifts() {
   const toggleSort = key => setSort(s => ({ key, dir: s.key === key ? -s.dir : 1 }));
 
   return (
-    <div className="pb-4">
+    <div className="px-5 pt-5 pb-4">
       <div className="flex items-center justify-end mb-4">
         <button onClick={() => setEditing(blank())}
           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-[13.5px] font-medium">

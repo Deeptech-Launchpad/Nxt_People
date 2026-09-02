@@ -107,7 +107,7 @@ export default function DailyAttendance() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="p-5 space-y-5">
       <div className="pt-5 pb-1">
         <BackButton to="/reports" label="Reports" />
       </div>

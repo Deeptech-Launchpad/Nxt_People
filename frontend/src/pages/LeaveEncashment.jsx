@@ -48,7 +48,7 @@ export default function LeaveEncashment() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="p-5 max-w-4xl mx-auto space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-2"><DollarSign className="text-brand-500" /> Leave Encashment</h1>
       </div>

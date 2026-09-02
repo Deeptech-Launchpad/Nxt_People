@@ -11,14 +11,16 @@
 // dead entry point we keep refusing to ship. They get added as they gain
 // something to configure.
 //
-// The reference also gives every service five tabs — Configuration, Extend
-// Service, Approvals, Automation, Permissions. Extend Service is a custom-form
-// and custom-button builder, empty in the reference org and a project of its
-// own, so no service here declares it. A service only declares the tabs it has.
+// The reference gives every service five tabs — Configuration, Extend
+// Service, Approvals, Automation, Permissions. A service only declares the tabs
+// it has, so a service with nothing to extend simply omits that one; Employee
+// Information declares it, and its position in SERVICE_TABS is what keeps our
+// tab row in the same order as the reference's.
 
 export const SERVICE_TABS = [
   { key: 'users', label: 'Users' },
   { key: 'configuration', label: 'Configuration' },
+  { key: 'extend-service', label: 'Extend Service' },
   { key: 'approvals', label: 'Approvals' },
   { key: 'automation', label: 'Automation' },
   { key: 'permissions', label: 'Permissions' },
@@ -129,14 +131,13 @@ export const SERVICES = [
             { key: 'faq', label: 'FAQ' },
           ],
         },
-        {
-          key: 'extend-service', label: 'Extend Service',
-          children: [
-            { key: 'forms', label: 'Forms' },
-            { key: 'custom-button', label: 'Custom Button' },
-            { key: 'web-forms', label: 'Web forms' },
-          ],
-        },
+      ],
+      /* Its own tab, as in the reference, rather than a group inside Policy.
+       * The reference's five tabs are the shape people navigate by. */
+      'extend-service': [
+        { key: 'forms', label: 'Forms' },
+        { key: 'custom-button', label: 'Custom Button' },
+        { key: 'web-forms', label: 'Web forms' },
       ],
       approvals: [
         { key: 'approvals', label: 'Approvals' },

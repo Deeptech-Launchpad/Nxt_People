@@ -71,8 +71,14 @@ export default function ServiceWorkspace() {
 
   const Screen = SECTION_SCREENS[`${service.key}.${activeTab.key}.${activeSection.key}`];
 
+  /* The gutter belongs here rather than on the shell's <main>, which is
+   * deliberately bare so that full-height pages can size themselves against
+   * the viewport. Without it every settings section sat flush against the navy
+   * bar and the icon rail — the first line of a section's own text ran under
+   * the header. p-5 is the same gutter the Operations workspaces use, so the
+   * two halves of the product line up. */
   return (
-    <div className="w-full max-w-full min-w-0">
+    <div className="w-full max-w-full min-w-0 p-5">
       <div>
         <div className="flex items-start gap-5">
           {sections.length > 1 && (

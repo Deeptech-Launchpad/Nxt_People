@@ -89,9 +89,9 @@ const SECTION_SCREENS = {
   'employee-information.configuration.streams': EmpStreams,
   'employee-information.configuration.knowledge-base': EmpKnowledgeBase,
   'employee-information.configuration.faq': EmpFaqs,
-  'employee-information.configuration.forms': EmpForms,
-  'employee-information.configuration.custom-button': EmpCustomButton,
-  'employee-information.configuration.web-forms': EmpWebForms,
+  'employee-information.extend-service.forms': EmpForms,
+  'employee-information.extend-service.custom-button': EmpCustomButton,
+  'employee-information.extend-service.web-forms': EmpWebForms,
 
   /* Not ApprovalRules. That engine approves REQUESTS — leave, regularization,
    * on duty. The reference's Employee Information approvals govern changes to

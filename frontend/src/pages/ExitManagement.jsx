@@ -85,7 +85,7 @@ export default function ExitManagement() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="p-5 space-y-5">
       {/* Employee's own exit status */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between p-5 border-b border-slate-100">

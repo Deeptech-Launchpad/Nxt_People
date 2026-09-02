@@ -92,7 +92,7 @@ export default function Announcements() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="p-5 space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display font-bold text-slate-800 text-xl">Announcements</h2>
