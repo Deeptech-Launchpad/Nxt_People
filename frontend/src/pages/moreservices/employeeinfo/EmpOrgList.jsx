@@ -38,14 +38,16 @@ export default function EmpOrgList({ resource, title, singular, extraColumns = [
   const [importing, setImporting] = useState(false);
   const [picked, setPicked] = useState([]);
 
+  // Widths, so one long designation cannot stretch its column across the
+  // screen and squeeze the dates out of view.
   const columns = useMemo(() => [
-    { key: 'name', label: `${singular} Name` },
-    { key: 'mailAlias', label: 'Mail Alias', render: r => dash(r.mailAlias) },
+    { key: 'name', label: `${singular} Name`, width: 260 },
+    { key: 'mailAlias', label: 'Mail Alias', width: 170, render: r => dash(r.mailAlias) },
     ...extraColumns,
-    { key: 'addedBy', label: 'Added By', render: r => dash(r.addedBy) },
-    { key: 'addedTime', label: 'Added Time', render: r => dash(fmtDateTime(r.addedTime)) },
-    { key: 'modifiedBy', label: 'Modified By', render: r => dash(r.modifiedBy) },
-    { key: 'modifiedTime', label: 'Modified Time', render: r => dash(fmtDateTime(r.modifiedTime)) },
+    { key: 'addedBy', label: 'Added By', width: 180, render: r => dash(r.addedBy) },
+    { key: 'addedTime', label: 'Added Time', width: 170, render: r => dash(fmtDateTime(r.addedTime)) },
+    { key: 'modifiedBy', label: 'Modified By', width: 180, render: r => dash(r.modifiedBy) },
+    { key: 'modifiedTime', label: 'Modified Time', width: 170, render: r => dash(fmtDateTime(r.modifiedTime)) },
   ], [extraColumns, singular]);
 
   const fields = useMemo(() => [

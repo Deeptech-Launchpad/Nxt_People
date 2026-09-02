@@ -47,17 +47,41 @@ const masked = (has, value) => {
     : <span className="text-slate-300">—</span>;
 };
 
+/* The eye on a masked column header. Toggles back to hidden once revealed,
+ * so a screen left open does not sit there showing identity numbers. */
+function MaskEye({ on, onClick }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      title={on ? 'Hide these values' : 'Show these values (recorded in the audit trail)'}
+      className={`ml-1.5 w-6 h-6 inline-flex items-center justify-center rounded
+        ${on ? 'text-brand-600 hover:bg-brand-50' : 'text-slate-400 hover:bg-slate-200/70 hover:text-slate-600'}`}>
+      {on ? <EyeOff size={14} /> : <Eye size={14} />}
+    </button>
+  );
+}
+
 export default function EmpEmployees() {
   const navigate = useNavigate();
-  /* Opens on CURRENT employees, which is what the reference's default
-   * "Employee View" shows and why its count reads 58 where an unfiltered list
-   * of every row ever created reads 153. It is a real, removable criterion
-   * rather than a hidden WHERE, so the chip above the table says it is on and
-   * clearing it shows everyone including leavers. */
+  /* Opens on CURRENTLY EMPLOYED people, which is what the reference's default
+   * "Employee View" shows and why its count reads 58 where every row ever
+   * created reads 153.
+   *
+   * BOTH conditions are needed, and which one does the work differs by
+   * database. Locally `status` is maintained, so it alone narrows 155 to 68.
+   * On live the Zoho migration brought exit dates across but left everybody
+   * marked active — so status alone changes nothing there and only the exit
+   * date separates leavers. Requiring both is correct on either.
+   *
+   * They are real, removable criteria rather than a hidden WHERE: the chips
+   * above the table say the filter is on, and clearing them shows leavers. */
   const lv = useListView({
     endpoint: '/employees', module: 'employees',
     defaultSort: { by: '', dir: 'desc' },
-    initialCriteria: [{ field: 'status', operator: 'is', value: 'active' }],
+    initialCriteria: [
+      { field: 'status', operator: 'is', value: 'active' },
+      { field: 'exitDate', operator: 'is_empty' },
+    ],
   });
   const [wizard, setWizard] = useState(false);
   const [taskFor, setTaskFor] = useState(null);
@@ -67,6 +91,7 @@ export default function EmpEmployees() {
   const [importing, setImporting] = useState(false);
   const [photos, setPhotos] = useState(false);
   const [revealing, setRevealing] = useState(false);
+  const [revealCol, setRevealCol] = useState(null);   // which masked column asked
   /* Revealed identity numbers live only in this component's state for as long
    * as the page is open. They are never written back into the row data, so a
    * refetch re-masks them rather than leaving them on screen indefinitely. */
@@ -85,20 +110,20 @@ export default function EmpEmployees() {
   }, []);
 
   const columns = useMemo(() => [
-    { key: 'employeeId', label: 'Employee ID' },
-    { key: 'firstName', label: 'First Name' },
-    { key: 'lastName', label: 'Last Name' },
-    { key: 'nickName', label: 'Nick name', render: r => dash(r.nickName) },
-    { key: 'email', label: 'Email address' },
-    { key: 'photo', label: 'Photo', sortable: false, render: r => (
+    { key: 'employeeId', label: 'Employee ID', width: 150 },
+    { key: 'firstName', label: 'First Name', width: 150 },
+    { key: 'lastName', label: 'Last Name', width: 150 },
+    { key: 'nickName', label: 'Nick name', width: 120, render: r => dash(r.nickName) },
+    { key: 'email', label: 'Email address', width: 250 },
+    { key: 'photo', label: 'Photo', sortable: false, width: 80, render: r => (
         r.photoUrl
           ? <img src={r.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
           : <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
               <Image size={14} />
             </span>
       ) },
-    { key: 'department', label: 'Department', render: r => dash(r.department) },
-    { key: 'designation', label: 'Designation', render: r => dash(r.designation) },
+    { key: 'department', label: 'Department', width: 180, render: r => dash(r.department) },
+    { key: 'designation', label: 'Designation', width: 230, render: r => dash(r.designation) },
     { key: 'role', label: 'Role', render: r => <span className="capitalize">{String(r.role || '').replace(/_/g, ' ')}</span> },
     { key: 'employmentType', label: 'Employment Type', render: r => dash(r.employmentType) },
     { key: 'status', label: 'Employee Status', render: r => (
@@ -110,30 +135,37 @@ export default function EmpEmployees() {
     { key: 'sourceOfHire', label: 'Source of Hire', render: r => dash(r.sourceOfHire) },
     { key: 'joiningDate', label: 'Date of Joining', render: r => dash(fmtDate(r.dateOfJoining || r.joiningDate)) },
     { key: 'totalExperience', label: 'Total Experience', render: r => dash(r.totalExperience) },
-    { key: 'reportingManager', label: 'Reporting Manager', render: r =>
+    { key: 'reportingManager', label: 'Reporting Manager', width: 210, render: r =>
         dash(r.manager?.firstName ? `${r.manager.firstName} ${r.manager.lastName || ''}`.trim() : '') },
     { key: 'dateOfBirth', label: 'Date of Birth', render: r => dash(fmtDate(r.dateOfBirth)) },
     { key: 'gender', label: 'Gender', render: r => <span className="capitalize">{dash(r.gender)}</span> },
     { key: 'maritalStatus', label: 'Marital Status', render: r => <span className="capitalize">{dash(r.maritalStatus)}</span> },
-    { key: 'aboutMe', label: 'About Me', render: r => dash(r.aboutMe) },
-    { key: 'expertise', label: 'Ask me about/Expertise', render: r => dash(r.expertise) },
+    { key: 'aboutMe', label: 'About Me', width: 220, render: r => dash(r.aboutMe) },
+    { key: 'expertise', label: 'Ask me about/Expertise', width: 210, render: r => dash(r.expertise) },
     { key: 'workPhone', label: 'Work Phone Number', render: r => dash(r.workPhone) },
     { key: 'extension', label: 'Extension', render: r => dash(r.extension) },
     { key: 'workLocation', label: 'Location', render: r => dash(r.workLocation) },
     { key: 'phone', label: 'Personal Mobile Number', render: r => dash(r.phone) },
-    { key: 'personalEmail', label: 'Personal Email Address', render: r => dash(r.personalEmail) },
+    { key: 'personalEmail', label: 'Personal Email Address', width: 230, render: r => dash(r.personalEmail) },
     { key: 'exitDate', label: 'Date of Exit', render: r => dash(fmtDate(r.exitDate)) },
     { key: 'addedTime', label: 'Added Time', render: r => dash(fmtDateTime(r.addedTime)) },
     { key: 'modifiedTime', label: 'Modified Time', render: r => dash(fmtDateTime(r.modifiedTime)) },
-    { key: 'presentAddress', label: 'Present Address', render: r => dash(r.presentAddress) },
-    { key: 'permanentAddress', label: 'Permanent Address', render: r => dash(r.permanentAddress) },
-    { key: 'aadhaar', label: 'Aadhaar', sortable: false,
+    { key: 'presentAddress', label: 'Present Address', width: 260, render: r => dash(r.presentAddress) },
+    { key: 'permanentAddress', label: 'Permanent Address', width: 260, render: r => dash(r.permanentAddress) },
+    /* The reference puts an eye in the HEADER of each masked column, so you
+     * reveal one column rather than hunting through a menu. It still goes
+     * through the same audited request — the values are not in the browser
+     * until the server is asked for them. */
+    { key: 'aadhaar', label: 'Aadhaar', sortable: false, width: 150,
+      headerAction: <MaskEye on={!!Object.keys(revealed).length} onClick={() => askReveal('aadhaar')} />,
       render: r => masked(r.hasAadhaar, revealed[r._id]?.aadhaarNumber) },
-    { key: 'pan', label: 'PAN', sortable: false,
+    { key: 'pan', label: 'PAN', sortable: false, width: 140,
+      headerAction: <MaskEye on={!!Object.keys(revealed).length} onClick={() => askReveal('pan')} />,
       render: r => masked(r.hasPan, revealed[r._id]?.panNumber) },
-    { key: 'uan', label: 'UAN', sortable: false,
+    { key: 'uan', label: 'UAN', sortable: false, width: 150,
+      headerAction: <MaskEye on={!!Object.keys(revealed).length} onClick={() => askReveal('uan')} />,
       render: r => masked(r.hasUan, revealed[r._id]?.uanNumber) },
-  ], [revealed]);
+  ], [revealed, lv.rows]);
 
   // The filter offers only what the server will actually honour; anything else
   // would be accepted and quietly ignored.
@@ -183,6 +215,16 @@ export default function EmpEmployees() {
     setBulkBusy(false); setBulkDelete(false); setPicked([]); lv.reload();
     if (ok) toast.success(`${ok} employee(s) archived`);
     if (failed.length) toast.error(`${failed.length} could not be archived - ${failed[0]}`, { duration: 6000 });
+  };
+
+  /* One dialog serves all three columns: the reveal returns Aadhaar, PAN and
+   * UAN together because they come from one row, and asking three times would
+   * mean three audit entries for one glance. */
+  const askReveal = (col) => {
+    if (Object.keys(revealed).length) { setRevealed({}); return; }
+    if (!lv.rows.length) return toast.error('Nothing on this page to reveal');
+    setRevealCol(col);
+    setRevealing(true);
   };
 
   const remove = async () => {

@@ -19,9 +19,9 @@ import EmpDelegation from './EmpDelegation';
 // Departments carries two fields Designations does not, so the shared list
 // component takes them as extras rather than branching inside itself.
 const DEPARTMENT_EXTRA_COLUMNS = [
-  { key: 'headName', label: 'Department Lead',
+  { key: 'headName', label: 'Department Lead', width: 230,
     render: r => r.headName || <span className="text-slate-300">—</span> },
-  { key: 'parentName', label: 'Parent Department',
+  { key: 'parentName', label: 'Parent Department', width: 210,
     render: r => r.parentName || <span className="text-slate-300">—</span> },
 ];
 const DEPARTMENT_EXTRA_FIELDS = [

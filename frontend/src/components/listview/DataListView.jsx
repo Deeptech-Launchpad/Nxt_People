@@ -153,15 +153,24 @@ export default function DataListView({
   const allPicked = selectableRows.length > 0 && selectableRows.every(r => selected.includes(r._id ?? r.id));
   const idOf = r => r._id ?? r.id;
 
+  /* Every column carries a width. Without one the browser sizes to content, so
+   * a single long address stretches its column across the screen and squeezes
+   * everything else — which is exactly what the address columns were doing.
+   * Fixed widths plus truncation is what the reference does, and it is the
+   * only way the row stays readable whatever the data. */
+  const widthOf = (c) => c.width || 170;
+
   const th = (c, i) => {
     const isFrozen = i < frozenCount;
     const active = sort?.by === c.key;
+    const w = widthOf(c);
     return (
       <th key={c.key}
         ref={el => { if (isFrozen) headRefs.current[i] = el; }}
-        className={`px-4 py-2.5 font-medium text-left whitespace-nowrap bg-slate-50
-          ${isFrozen ? 'sticky z-20' : ''}`}
-        style={isFrozen ? { left: offsets[i] ?? 0 } : undefined}>
+        className={`px-4 py-2.5 font-medium text-left whitespace-nowrap bg-slate-50 sticky top-0
+          ${isFrozen ? 'z-30' : 'z-20'}`}
+        style={{ width: w, minWidth: w, maxWidth: w,
+                 ...(isFrozen ? { left: offsets[i] ?? 0 } : {}) }}>
         {c.sortable === false ? c.label : (
           <button onClick={() => onSort(c.key)}
             className={`flex items-center gap-1 group/sort hover:text-slate-700 ${active ? 'text-slate-700' : ''}`}>
@@ -174,6 +183,8 @@ export default function DataListView({
               : <ChevronsUpDown size={12} className="text-slate-300 group-hover/sort:text-slate-400" />}
           </button>
         )}
+        {/* Per-column control, e.g. the eye that reveals a masked column. */}
+        {c.headerAction}
       </th>
     );
   };
@@ -213,15 +224,23 @@ export default function DataListView({
         </div>
       )}
 
-      <div className="border border-slate-200 rounded-xl bg-white overflow-auto">
-        <table className="w-full text-[15px] min-w-max border-collapse">
+      {/* A bounded height, so the horizontal scrollbar sits at the bottom of the
+          visible area instead of the bottom of the content. Without it you had
+          to scroll the whole page down to reach the bar that scrolls the table
+          sideways — the reference keeps it in view at all times. The header row
+          sticks for the same reason. */}
+      <div className="border border-slate-200 rounded-xl bg-white overflow-auto"
+        style={{ maxHeight: expanded ? 'calc(100vh - 190px)' : 'calc(100vh - 300px)' }}>
+        <table className="text-[15px] border-collapse table-fixed">
           <thead className="bg-slate-50 text-slate-500 text-[13.5px]">
             <tr>
-              <th className="w-10 px-2 py-2.5 bg-slate-50 sticky left-0 z-20">
+              <th className="w-10 px-2 py-2.5 bg-slate-50 sticky left-0 top-0 z-30"
+                style={{ width: 44, minWidth: 44 }}>
                 {onHidden && <ColumnPicker columns={columns} hidden={hidden} onSave={onHidden} />}
               </th>
               {selectable && (
-                <th className="w-10 px-2 py-2.5 bg-slate-50 sticky z-20" style={{ left: 44 }}>
+                <th className="w-10 px-2 py-2.5 bg-slate-50 sticky top-0 z-30"
+                  style={{ left: 44, width: 44, minWidth: 44 }}>
                   <input type="checkbox" checked={allPicked} disabled={selectableRows.length === 0}
                     onChange={() => onSelected(allPicked ? [] : selectableRows.map(idOf))}
                     className="w-4 h-4 rounded border-slate-300 accent-brand-600 disabled:opacity-40" />
@@ -257,14 +276,23 @@ export default function DataListView({
                         className="w-4 h-4 rounded border-slate-300 accent-brand-600 disabled:opacity-30" />
                     </td>
                   )}
-                  {visible.map((c, i) => (
-                    <td key={c.key}
-                      className={`px-4 py-2.5 text-slate-700 whitespace-nowrap
-                        ${i < frozenCount ? `sticky z-10 ${picked ? 'bg-brand-50/50' : 'bg-white'}` : ''}`}
-                      style={i < frozenCount ? { left: offsets[i] ?? 0 } : undefined}>
-                      {c.render ? c.render(r) : (r[c.key] ?? <span className="text-slate-300">—</span>)}
-                    </td>
-                  ))}
+                  {visible.map((c, i) => {
+                    const w = widthOf(c);
+                    return (
+                      <td key={c.key}
+                        className={`px-4 py-2.5 text-slate-700
+                          ${i < frozenCount ? `sticky z-10 ${picked ? 'bg-brand-50/50' : 'bg-white'}` : ''}`}
+                        style={{ width: w, minWidth: w, maxWidth: w,
+                                 ...(i < frozenCount ? { left: offsets[i] ?? 0 } : {}) }}>
+                        {/* truncate needs a block box with a width to bite on,
+                            which the cell now has — long values end in an
+                            ellipsis instead of stretching the column. */}
+                        <div className="truncate" title={typeof r[c.key] === 'string' ? r[c.key] : undefined}>
+                          {c.render ? c.render(r) : (r[c.key] ?? <span className="text-slate-300">—</span>)}
+                        </div>
+                      </td>
+                    );
+                  })}
                   {rowMenu && <td className="px-3" />}
                 </tr>
               );
