@@ -78,6 +78,10 @@ function ChildTable({ title, columns, rows, empty }) {
 export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onChanged }) {
   const [emp, setEmp] = useState(null);
   const [education, setEducation] = useState([]);
+  const [experience, setExperience] = useState([]);
+  const [dependents, setDependents] = useState([]);
+  const [health, setHealth] = useState(undefined);        // undefined = form is off
+  const [vaccinations, setVaccinations] = useState(undefined);
   const [loading, setLoading] = useState(true);
   const [identity, setIdentity] = useState(null);   // revealed values, if asked for
   const [revealing, setRevealing] = useState(false);
@@ -91,6 +95,23 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
       })
       .catch(err => toast.error(err.response?.data?.message || 'Could not open that record'))
       .finally(() => setLoading(false));
+
+    /* The child sections are their own tables and their own permissions, so
+     * they are fetched separately and a refusal on one leaves the rest of the
+     * record readable rather than blanking the whole modal. */
+    api.get(`/employee-records/${employeeId}/experience`)
+      .then(r => setExperience(r.data.data || [])).catch(() => setExperience([]));
+    api.get(`/employee-records/${employeeId}/dependents`)
+      .then(r => setDependents(r.data.data || [])).catch(() => setDependents([]));
+
+    /* Health and Vaccination are optional forms. The endpoint refuses while the
+     * form is switched off, and that refusal is what hides the section — so a
+     * disabled form leaves no trace on the record rather than an empty card
+     * inviting somebody to fill it in. */
+    api.get(`/employee-records/${employeeId}/health`)
+      .then(r => setHealth(r.data.data || null)).catch(() => setHealth(undefined));
+    api.get(`/employee-records/${employeeId}/vaccinations`)
+      .then(r => setVaccinations(r.data.data || [])).catch(() => setVaccinations(undefined));
   }, [employeeId]);
 
   const reveal = async () => {
@@ -238,18 +259,61 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
                 empty="No rows found."
               />
 
-              {/* The reference also carries Work experience, Dependents and
-                  Related Forms (Asset, Benefit, Exit Details, Travel). Those
-                  are tables we do not have, so they are named rather than
-                  faked — an empty grid would imply the data was simply blank. */}
+              <ChildTable
+                title="Work experience"
+                columns={['Company name', 'Job Title', 'From Date', 'To Date', 'Job Description', 'Relevant']}
+                rows={experience.map(e => [
+                  e.companyName, e.jobTitle, fmtDate(e.fromDate), fmtDate(e.toDate),
+                  e.jobDescription, e.relevant ? 'Yes' : 'No',
+                ])}
+                empty="No rows found."
+              />
+
+              <ChildTable
+                title="Dependent Details"
+                columns={['Name', 'Relationship', 'Date of Birth']}
+                rows={dependents.map(d => [d.name, d.relationship, fmtDate(d.dateOfBirth)])}
+                empty="No rows found."
+              />
+
+              {health !== undefined && (
+                <Section title="Employee Health Data">
+                  <Row label="Blood Group" value={health?.bloodGroup} />
+                  <Row label="Emergency Contact" value={health?.emergencyContactName} />
+                  <Row label="Height (cm)" value={health?.heightCm} />
+                  <Row label="Emergency Contact Number" value={health?.emergencyContactPhone} />
+                  <Row label="Weight (kg)" value={health?.weightKg} />
+                  <Row label="Doctor" value={health?.doctorName} />
+                  <Row label="Allergies" value={health?.allergies} />
+                  <Row label="Doctor's Number" value={health?.doctorPhone} />
+                  <Row label="Chronic Conditions" value={health?.chronicConditions} />
+                  <Row label="Insurance Provider" value={health?.insuranceProvider} />
+                  <Row label="Medications" value={health?.medications} />
+                  <Row label="Policy Number" value={health?.insuranceNumber} />
+                  <Row label="Notes" value={health?.notes} />
+                  <Row label="Last Updated" value={fmtWhen(health?.updatedAt)} />
+                </Section>
+              )}
+
+              {vaccinations !== undefined && (
+                <ChildTable
+                  title="Vaccination Status"
+                  columns={['Vaccine', 'Dose', 'Vaccinated On', 'Notes']}
+                  rows={vaccinations.map(v => [v.vaccine, v.dose, fmtDate(v.vaccinatedOn), v.notes])}
+                  empty="No rows found."
+                />
+              )}
+
+              {/* Related Forms — Asset, Benefit, Exit Details, Travel — are
+                  separate modules rather than sections of this record, so they
+                  are named rather than drawn as empty grids. */}
               <div className="bg-white border border-slate-200 rounded-xl p-5">
                 <h3 className="text-[16px] font-semibold text-slate-800 pb-3 mb-3 border-b border-slate-100">
-                  Not built yet
+                  Related Forms
                 </h3>
                 <p className="text-[14px] text-slate-500">
-                  Work experience, Dependent Details and Related Forms (Asset, Benefit, Exit Details,
-                  Travel Request) each need their own table. They are listed here rather than shown as
-                  empty grids, which would suggest the data exists and happens to be blank.
+                  Asset, Benefit, Exit Details and Travel are modules of their own rather than sections
+                  of this record. They are not linked here yet.
                 </p>
               </div>
             </>

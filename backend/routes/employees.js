@@ -10,6 +10,7 @@ const { sendOnboardingEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
 const { hiddenFieldsFor } = require('./employee-info-permissions');
+const { shouldHold, queueChange } = require('./record-approvals');
 
 /* What the Employees list tab may filter and sort on. The SQL always uses
  * `column` from here, never anything from the request, because neither a
@@ -642,6 +643,34 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
      * Audit History timeline depends on this pair. */
     const beforeRes = await pool.query('SELECT * FROM employees WHERE id = $1', [req.params.id]);
     const before = beforeRes.rows[0] || {};
+
+    /* Record-change approvals. When they are on for this form and this actor
+     * is not exempt, the edit is QUEUED and nothing is written — which is the
+     * whole point, and why the decision sits here rather than after the write.
+     *
+     * The diff is computed against `before` for the queue entry, so an
+     * approver sees {field, from, to} exactly as the audit trail renders it
+     * rather than a blob of raw body. */
+    const writtenColumns = updates
+      .map(u => String(u).split('=')[0].trim())
+      .filter(c => c && c !== 'updated_at' && c !== 'updated_by');
+    const hold = await shouldHold(req.user, 'employee', writtenColumns).catch(() => null);
+    if (hold) {
+      const pendingFields = [];
+      for (const col of writtenColumns) {
+        if (REDACTED_AUDIT_COLUMNS.has(col)) { pendingFields.push({ field: col, from: '(hidden)', to: '(hidden)' }); continue; }
+        const from = before[col] ?? null;
+        pendingFields.push({ field: col, from, to: null });
+      }
+      const id = await queueChange({
+        form: 'employee', recordId: req.params.id, userId: req.user._id,
+        changes: pendingFields, payload: req.body,
+      });
+      return res.json({
+        success: true, pending: true, requestId: id,
+        message: 'Sent for approval. Nothing has been changed on the record yet.',
+      });
+    }
 
     updates.push(`updated_at = NOW()`);
 

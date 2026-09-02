@@ -173,6 +173,8 @@ app.use('/api/employee-io',      require('./routes/employee-io'));
 // Settings -> Employee Information: the rules behind those records.
 app.use('/api/employee-info-settings',    require('./routes/employee-info-settings'));
 app.use('/api/employee-info-permissions', require('./routes/employee-info-permissions'));
+app.use('/api/employee-records',          require('./routes/employee-records'));
+app.use('/api/record-approvals',          require('./routes/record-approvals'));
 app.use('/api/attendance',       require('./routes/attendance'));
 // Editing a reportee's entry. Its own file because the checks it needs — the
 // setting, the reporting line, the audit trail — do not belong in the punch

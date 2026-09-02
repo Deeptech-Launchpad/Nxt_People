@@ -76,10 +76,12 @@ const FIELD_SECTIONS = [
   ] },
 ];
 
+/* All three have a table behind them now, so these grids govern real writes —
+ * employee-records.js asks tabularAllows() before every add, edit and delete. */
 const TABULAR_SECTIONS = [
   { key: 'education', label: 'Education Details', built: true },
-  { key: 'work_experience', label: 'Work experience', built: false },
-  { key: 'dependents', label: 'Dependent Details', built: false },
+  { key: 'work_experience', label: 'Work experience', built: true },
+  { key: 'dependents', label: 'Dependent Details', built: true },
 ];
 
 const FORMS = ['employee', 'department', 'designation'];

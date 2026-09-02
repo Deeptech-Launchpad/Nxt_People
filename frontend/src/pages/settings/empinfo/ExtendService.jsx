@@ -83,12 +83,15 @@ export function Forms() {
         </table>
       </div>
 
-      {/* Switching one on creates the setting, not the screens behind it.
-          Better said here than discovered by an admin who turns it on and
-          finds nothing changed. */}
+      {/* The switch governs the API, not only the screen: while a form is off
+          its endpoints refuse reads and writes. Worth saying, because an admin
+          who switches it off should know the data stops being reachable
+          rather than merely hidden. */}
       <p className="text-[13.5px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5">
-        Employee Health Data and Vaccination Status record the choice today; the forms themselves are
-        not built yet, so switching one on does not add a screen.
+        Employee Health Data and Vaccination Status appear on the employee record while they are on.
+        Switching one off hides its section and refuses the endpoint — rows already recorded are
+        kept, not deleted. Health records are readable only by the person themselves and by full
+        access, and every reading of somebody else's is written to the audit trail.
       </p>
     </div>
   );
