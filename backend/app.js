@@ -39,7 +39,23 @@ const rateLimit  = require('express-rate-limit');
 const logger = require('./logger');
 
 const app = express();
-app.set('trust proxy', 1);
+/* Two proxies sit in front of us, not one: the VPS system nginx terminates TLS
+ * for nxtpeople.altiusnxt.tech and forwards to 127.0.0.1:3006, which is the
+ * frontend container's nginx, which forwards to this app. Each appends to
+ * X-Forwarded-For, so the header arriving here reads `realClientIP, 127.0.0.1`.
+ *
+ * `trust proxy: 1` trusted only one hop and therefore resolved req.ip to
+ * 127.0.0.1 for EVERY request from EVERY employee. Every per-IP rate limiter
+ * was consequently one shared bucket for the whole company — 100 requests per
+ * 15 minutes across all of /api/auth, which the morning login rush exhausted
+ * in minutes and locked everybody out.
+ *
+ * Trusting the proxies by address rather than by a hop count is deliberate: a
+ * count silently resolves to the wrong entry the day a proxy is added or
+ * removed, whereas loopback + RFC1918 describes exactly where our proxies live.
+ * It is also spoof-proof — a client that forges X-Forwarded-For with a public
+ * address just makes the walk stop there, on its own real address. */
+app.set('trust proxy', ['loopback', 'uniquelocal']);
 
 // Sentry's request handler must be the FIRST middleware on the app — only when enabled.
 if (sentryEnabled && Sentry.Handlers?.requestHandler) {
@@ -107,7 +123,20 @@ const authLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV !== 'production' || process.env.RATE_LIMIT_DISABLED === 'true',
+  skip: (req) => {
+    if (process.env.NODE_ENV !== 'production' || process.env.RATE_LIMIT_DISABLED === 'true') return true;
+    /* Session upkeep, not a credential-guessing surface. /auth/me runs on every
+     * page load (AuthContext) and already requires a valid token, so billing it
+     * to the brute-force budget meant ordinary use consumed the allowance that
+     * exists to stop password guessing. /auth/refresh carries a credential and
+     * stays limited. */
+    if (req.path === '/me') return true;
+    return false;
+  },
+  /* Without an explicit message express-rate-limit answers with a plain-text
+   * body, so the UI cannot read `data.message` and shows the raw axios string
+   * "Request failed with status code 429" — which tells the person nothing. */
+  message: { success: false, message: 'Too many requests. Please wait a few minutes and try again.' },
 });
 
 // ── Mutating-method limiter — defence against a logged-in client (or stolen
