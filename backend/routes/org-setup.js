@@ -20,6 +20,36 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
+const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
+
+// Departments and Designations record who added and last changed a row; the
+// other resources in this file do not have those columns.
+const AUTHORED = new Set(['departments', 'designations']);
+
+/* Field registries for the Employee Information list tabs. Only what is here
+ * can be filtered or sorted on, and the SQL always uses `column` from this
+ * table rather than anything from the request. `label` is what the filter
+ * panel and the column picker show. */
+const LIST_FIELDS = {
+  departments: {
+    name:       { column: 'd.name',        label: 'Department Name', type: 'text' },
+    mailAlias:  { column: 'd.mail_alias',  label: 'Mail Alias',      type: 'text' },
+    headName:   { column: "TRIM(CONCAT(h.first_name, ' ', h.last_name))", label: 'Department Lead', type: 'text' },
+    parentName: { column: 'p.name',        label: 'Parent Department', type: 'text' },
+    addedBy:    { column: "TRIM(CONCAT(cb.first_name, ' ', cb.last_name))", label: 'Added By', type: 'text' },
+    addedTime:  { column: 'd.created_at',  label: 'Added Time',      type: 'datetime' },
+    modifiedBy: { column: "TRIM(CONCAT(ub.first_name, ' ', ub.last_name))", label: 'Modified By', type: 'text' },
+    modifiedTime: { column: 'd.updated_at', label: 'Modified Time',  type: 'datetime' },
+  },
+  designations: {
+    name:       { column: 'g.name',        label: 'Designation Name', type: 'text' },
+    mailAlias:  { column: 'g.mail_alias',  label: 'Mail Alias',       type: 'text' },
+    addedBy:    { column: "TRIM(CONCAT(cb.first_name, ' ', cb.last_name))", label: 'Added By', type: 'text' },
+    addedTime:  { column: 'g.created_at',  label: 'Added Time',       type: 'datetime' },
+    modifiedBy: { column: "TRIM(CONCAT(ub.first_name, ' ', ub.last_name))", label: 'Modified By', type: 'text' },
+    modifiedTime: { column: 'g.updated_at', label: 'Modified Time',   type: 'datetime' },
+  },
+};
 
 router.use(protect);
 
@@ -91,13 +121,18 @@ const RESOURCES = {
       d.is_active AS "isActive",
       TRIM(CONCAT(h.first_name, ' ', h.last_name)) AS "headName",
       p.name AS "parentName",
+      d.created_at AS "addedTime", d.updated_at AS "modifiedTime",
+      TRIM(CONCAT(cb.first_name, ' ', cb.last_name)) AS "addedBy",
+      TRIM(CONCAT(ub.first_name, ' ', ub.last_name)) AS "modifiedBy",
       (SELECT COUNT(*)::int FROM employees e
         WHERE e.department_id = d.id AND e.deleted_at IS NULL AND e.status = 'active') AS "userCount",
       (SELECT COUNT(*)::int FROM employees e
         WHERE e.department_id = d.id AND e.deleted_at IS NULL) AS "totalCount"`,
     from: `departments d
              LEFT JOIN employees h ON h.id = d.head_id
-             LEFT JOIN departments p ON p.id = d.parent_id`,
+             LEFT JOIN departments p ON p.id = d.parent_id
+             LEFT JOIN employees cb ON cb.id = d.created_by
+             LEFT JOIN employees ub ON ub.id = d.updated_by`,
     order: 'd.name',
     clean: b => ({
       name: str(b.name, 'Department name', { required: true }),
@@ -222,11 +257,16 @@ const RESOURCES = {
     label: 'Designation',
     select: `
       g.id, g.name, g.mail_alias AS "mailAlias", g.is_active AS "isActive",
+      g.created_at AS "addedTime", g.updated_at AS "modifiedTime",
+      TRIM(CONCAT(cb.first_name, ' ', cb.last_name)) AS "addedBy",
+      TRIM(CONCAT(ub.first_name, ' ', ub.last_name)) AS "modifiedBy",
       (SELECT COUNT(*)::int FROM employees e
         WHERE e.designation_id = g.id AND e.deleted_at IS NULL AND e.status = 'active') AS "userCount",
       (SELECT COUNT(*)::int FROM employees e
         WHERE e.designation_id = g.id AND e.deleted_at IS NULL) AS "totalCount"`,
-    from: 'designations g',
+    from: `designations g
+             LEFT JOIN employees cb ON cb.id = g.created_by
+             LEFT JOIN employees ub ON ub.id = g.updated_by`,
     order: 'g.name',
     clean: b => ({
       name: str(b.name, 'Designation name', { required: true }),
@@ -238,15 +278,61 @@ const RESOURCES = {
 
 const resourceOf = req => RESOURCES[req.params.resource] || null;
 
+/* Settings -> Organization Setup calls this with no query at all and must keep
+ * getting the whole list in one response, so paging is OPT-IN: without `page`
+ * or `limit` nothing about the old behaviour changes. Employee Information's
+ * list tabs pass them, plus criteria and a sort key. */
 router.get('/:resource', async (req, res) => {
   const r = resourceOf(req);
   if (!r) return res.status(404).json({ success: false, message: 'Unknown resource' });
   try {
-    const result = await pool.query(`SELECT ${r.select} FROM ${r.from} ORDER BY ${r.order}`);
-    res.json({ success: true, data: result.rows });
+    const fields = LIST_FIELDS[req.params.resource] || {};
+    const { clause, params, applied } = buildCriteria(fields, req.query.criteria, 1);
+
+    // `q` is the panel's plain search box: the resource's own name column.
+    const search = String(req.query.q || '').trim();
+    let where = clause;
+    const allParams = [...params];
+    if (search) {
+      allParams.push(`%${search}%`);
+      where += ` AND ${r.alias}.name ILIKE $${allParams.length}`;
+    }
+
+    const order = buildOrder(fields, req.query.sortBy, req.query.sortDir, r.order);
+    const paged = req.query.page !== undefined || req.query.limit !== undefined;
+
+    // WHERE 1=1 so the criteria fragments can all begin with AND.
+    const sql = `SELECT ${r.select} FROM ${r.from} WHERE 1=1${where} ORDER BY ${order}`;
+
+    if (!paged) {
+      const result = await pool.query(sql, allParams);
+      return res.json({ success: true, data: result.rows, total: result.rows.length, applied });
+    }
+
+    const { page, limit, offset } = buildPaging(req.query);
+    const [countRes, result] = await Promise.all([
+      pool.query(`SELECT COUNT(*)::int AS n FROM ${r.from} WHERE 1=1${where}`, allParams),
+      pool.query(`${sql} LIMIT $${allParams.length + 1} OFFSET $${allParams.length + 2}`,
+        [...allParams, limit, offset]),
+    ]);
+    res.json({
+      success: true, data: result.rows,
+      total: countRes.rows[0]?.n || 0, page, limit, applied,
+    });
   } catch (err) {
     serverError(res, err);
   }
+});
+
+/* The filter panel and the column picker need to know what a module offers
+ * without hard-coding it in the frontend, which is how the two drift apart. */
+router.get('/:resource/fields', (req, res) => {
+  const fields = LIST_FIELDS[req.params.resource];
+  if (!fields) return res.status(404).json({ success: false, message: 'Unknown resource' });
+  res.json({
+    success: true,
+    data: Object.entries(fields).map(([key, f]) => ({ key, label: f.label, type: f.type })),
+  });
 });
 
 // Who is on a row. The reference makes the associated-users count a link, and
@@ -286,6 +372,13 @@ router.post('/:resource', authorize(...WRITE_ROLES), async (req, res) => {
   try { values = r.clean(req.body || {}); }
   catch (err) { return res.status(400).json({ success: false, message: err.message }); }
 
+  // Only the two tables that gained the columns; setting them on companies or
+  // locations would be a column-does-not-exist error at runtime.
+  if (AUTHORED.has(req.params.resource)) {
+    values.created_by = req.user._id;
+    values.updated_by = req.user._id;
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -314,6 +407,8 @@ router.put('/:resource/:id', authorize(...WRITE_ROLES), async (req, res) => {
   let values;
   try { values = r.clean(req.body || {}); }
   catch (err) { return res.status(400).json({ success: false, message: err.message }); }
+
+  if (AUTHORED.has(req.params.resource)) values.updated_by = req.user._id;
 
   const client = await pool.connect();
   try {

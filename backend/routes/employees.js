@@ -8,6 +8,71 @@ const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { sendOnboardingEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
+const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
+
+/* What the Employees list tab may filter and sort on. The SQL always uses
+ * `column` from here, never anything from the request, because neither a
+ * column name nor a sort direction can be a bound parameter. */
+const EMPLOYEE_FIELDS = {
+  employeeId:    { column: 'e.employee_id',   label: 'Employee ID',        type: 'text' },
+  firstName:     { column: 'e.first_name',    label: 'First Name',         type: 'text' },
+  lastName:      { column: 'e.last_name',     label: 'Last Name',          type: 'text' },
+  nickName:      { column: 'e.nick_name',     label: 'Nick name',          type: 'text' },
+  email:         { column: 'e.email',         label: 'Email address',      type: 'text' },
+  department:    { column: 'e.department',    label: 'Department',         type: 'text' },
+  designation:   { column: 'e.designation',   label: 'Designation',        type: 'text' },
+  role:          { column: 'e.role',          label: 'Role',               type: 'text' },
+  employmentType:{ column: 'e.employment_type', label: 'Employment Type',  type: 'text' },
+  status:        { column: 'e.status',        label: 'Employee Status',    type: 'text' },
+  sourceOfHire:  { column: 'e.source_of_hire', label: 'Source of Hire',    type: 'text' },
+  joiningDate:   { column: 'e.date_of_joining', label: 'Date of Joining',  type: 'date' },
+  totalExperience:{ column: 'e.total_experience', label: 'Total Experience', type: 'text' },
+  reportingManager: { column: "TRIM(CONCAT(m.first_name, ' ', m.last_name))", label: 'Reporting Manager', type: 'text' },
+  dateOfBirth:   { column: 'e.date_of_birth', label: 'Date of Birth',      type: 'date' },
+  gender:        { column: 'e.gender',        label: 'Gender',             type: 'text' },
+  maritalStatus: { column: 'e.marital_status', label: 'Marital Status',    type: 'text' },
+  aboutMe:       { column: 'e.about_me',      label: 'About Me',           type: 'text' },
+  expertise:     { column: 'e.expertise',     label: 'Ask me about/Expertise', type: 'text' },
+  workPhone:     { column: 'e.work_phone',    label: 'Work Phone Number',  type: 'text' },
+  extension:     { column: 'e.extension',     label: 'Extension',          type: 'text' },
+  workLocation:  { column: 'e.work_location', label: 'Location',           type: 'text' },
+  personalEmail: { column: 'e.personal_email', label: 'Personal Email Address', type: 'text' },
+  phone:         { column: 'e.phone',         label: 'Personal Mobile Number', type: 'text' },
+  exitDate:      { column: 'e.exit_date',     label: 'Date of Exit',       type: 'date' },
+  addedTime:     { column: 'e.created_at',    label: 'Added Time',         type: 'datetime' },
+  modifiedTime:  { column: 'e.updated_at',    label: 'Modified Time',      type: 'datetime' },
+  presentAddress:{ column: 'e.current_address', label: 'Present Address',  type: 'text' },
+  permanentAddress: { column: 'e.permanent_address', label: 'Permanent Address', type: 'text' },
+};
+
+/* The All Data dropdown. Anything narrower than the caller's own visibility is
+ * fine; nothing here may WIDEN it, which is why each branch only ever adds a
+ * predicate on top of the reporting-line clause the route already applies. */
+function scopeClause(scope, user, idx) {
+  switch (scope) {
+    case 'my':
+      return { clause: ` AND e.id = $${idx}`, params: [user._id] };
+    case 'direct':
+      return { clause: ` AND e.reporting_manager_id = $${idx}`, params: [user._id] };
+    case 'reportees':
+      // Everyone below them in the tree, at any depth.
+      return { clause: ` AND e.id IN (
+        WITH RECURSIVE tree AS (
+          SELECT id FROM employees WHERE reporting_manager_id = $${idx}
+          UNION ALL
+          SELECT c.id FROM employees c JOIN tree t ON c.reporting_manager_id = t.id
+        ) SELECT id FROM tree)`, params: [user._id] };
+    case 'reportees_and_me':
+      return { clause: ` AND (e.id = $${idx} OR e.id IN (
+        WITH RECURSIVE tree AS (
+          SELECT id FROM employees WHERE reporting_manager_id = $${idx}
+          UNION ALL
+          SELECT c.id FROM employees c JOIN tree t ON c.reporting_manager_id = t.id
+        ) SELECT id FROM tree))`, params: [user._id] };
+    default:
+      return { clause: '', params: [] };
+  }
+}
 
 /* Columns whose VALUES must never reach the audit trail. The fact that one
  * changed is worth recording; what it changed to is not, because the audit
@@ -123,6 +188,16 @@ router.get('/', async (req, res) => {
       paramIndex++;
     }
 
+    /* Employee Information's filter panel. Additive to everything above: the
+     * reporting-line restriction has already been applied, so criteria can
+     * only ever narrow further. */
+    const crit = buildCriteria(EMPLOYEE_FIELDS, req.query.criteria, paramIndex);
+    if (crit.clause) { query += crit.clause; params.push(...crit.params); paramIndex = crit.nextIdx; }
+
+    // The All Data dropdown. Same rule: narrows, never widens.
+    const sc = scopeClause(req.query.scope, req.user, paramIndex);
+    if (sc.clause) { query += sc.clause; params.push(...sc.params); paramIndex += sc.params.length; }
+
     // Bug #2 fix: capture filter params BEFORE adding limit/offset
     const filterParams = [...params];
 
@@ -136,6 +211,19 @@ router.get('/', async (req, res) => {
        e.casual_leave AS "casualLeave", e.sick_leave AS "sickLeave", e.earned_leave AS "earnedLeave",
        e.photo_url AS "photoUrl", e.exit_date AS "exitDate", e.total_experience AS "totalExperience", e.expertise,
        e.is_blacklisted AS "isBlacklisted", e.notice_period_end_date AS "noticePeriodEndDate", e.rehire_eligibility AS "rehireEligibility",
+       e.nick_name AS "nickName", e.work_location AS "workLocation", e.employment_type AS "employmentType",
+       e.source_of_hire AS "sourceOfHire", e.date_of_joining AS "dateOfJoining", e.date_of_birth AS "dateOfBirth",
+       e.gender, e.marital_status AS "maritalStatus", e.about_me AS "aboutMe",
+       e.work_phone AS "workPhone", e.extension, e.personal_email AS "personalEmail",
+       e.current_address AS "presentAddress", e.permanent_address AS "permanentAddress",
+       e.created_at AS "addedTime", e.updated_at AS "modifiedTime",
+       e.secondary_manager_id AS "secondaryManagerId",
+       /* Identity numbers never leave as values in a list. The column says
+        * whether one is on file so the UI can show the dots and an eye, and
+        * revealing a single person's is a separate, audited request. */
+       (e.aadhaar_number IS NOT NULL AND e.aadhaar_number <> '') AS "hasAadhaar",
+       (e.pan_number     IS NOT NULL AND e.pan_number     <> '') AS "hasPan",
+       (e.uan_number     IS NOT NULL AND e.uan_number     <> '') AS "hasUan",
        (a.check_in IS NOT NULL AND a.check_out IS NULL) as "isCheckedIn",
        CASE
          WHEN a.check_in IS NULL  THEN 'yetToCheckIn'
@@ -149,14 +237,20 @@ router.get('/', async (req, res) => {
        LEFT JOIN employees m ON e.reporting_manager_id = m.id
        LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
        ${query}
-       ORDER BY e.created_at DESC
+       ORDER BY ${buildOrder(EMPLOYEE_FIELDS, req.query.sortBy, req.query.sortDir, 'e.created_at')}
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       params
     );
 
-    // Bug #2 fix: use filterParams (without limit/offset) for the count query
+    /* The count must join exactly what the WHERE can reference. It used to be
+     * `FROM employees e` alone, which was fine while every filter was on `e`;
+     * the moment the filter panel could sort or filter on the reporting
+     * manager's name that became "missing FROM-clause entry for table m" and
+     * took the whole list down, not just the count. */
     const countResult = await pool.query(
-      `SELECT COUNT(*) FROM employees e ${query.replace(/LIMIT.*/s, '')}`,
+      `SELECT COUNT(*) FROM employees e
+         LEFT JOIN employees m ON e.reporting_manager_id = m.id
+         ${query.replace(/LIMIT.*/s, '')}`,
       filterParams
     );
     const total = parseInt(countResult.rows[0].count, 10);

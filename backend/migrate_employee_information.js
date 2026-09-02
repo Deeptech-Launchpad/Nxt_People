@@ -152,6 +152,16 @@ async function migrate() {
     await ensure(client, 'tasks', 'start_date',  'DATE');
     await ensure(client, 'tasks', 'reminder_at', 'TIMESTAMPTZ');
 
+    /* Departments and Designations list Added By / Modified By. Both tables
+     * already carry created_at / updated_at but never recorded WHO, so those
+     * columns could only ever have rendered blank. Nullable on purpose: every
+     * existing row genuinely has no known author and inventing one would be
+     * worse than an empty cell. */
+    for (const t of ['departments', 'designations']) {
+      await ensure(client, t, 'created_by', 'UUID REFERENCES employees(id)');
+      await ensure(client, t, 'updated_by', 'UUID REFERENCES employees(id)');
+    }
+
     await client.query('COMMIT');
 
     console.log('\n  Employee Information schema ready');
