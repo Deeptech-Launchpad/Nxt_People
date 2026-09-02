@@ -163,6 +163,12 @@ app.use(mutatingLimiter);
 app.use('/api/auth',             authLimiter, require('./routes/auth'));
 app.use('/api/mfa',              require('./routes/mfa'));
 app.use('/api/employees',        require('./routes/employees'));
+// Operations -> Employee Information. Groups here are distribution lists, not
+// applicability_groups (which decides which policy applies to whom).
+app.use('/api/employee-groups',  require('./routes/employee-groups'));
+app.use('/api/delegations',      require('./routes/delegations'));
+app.use('/api/saved-views',      require('./routes/saved-views'));
+app.use('/api/employee-insights', require('./routes/employee-insights'));
 app.use('/api/attendance',       require('./routes/attendance'));
 // Editing a reportee's entry. Its own file because the checks it needs — the
 // setting, the reporting line, the audit trail — do not belong in the punch
