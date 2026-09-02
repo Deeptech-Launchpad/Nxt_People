@@ -64,7 +64,52 @@ import LeaveRequestConfig from './LeaveRequestConfig';
 import HolidayConfig from './HolidayConfig';
 import LeaveAdditionalOptions from './LeaveAdditionalOptions';
 
+// Settings -> Employee Information.
+import EmpBasicDetails from './empinfo/BasicDetails';
+import EmpStatuses from './empinfo/EmployeeStatuses';
+import EmpIdRules from './empinfo/EmployeeIdRules';
+import EmpStreams from './empinfo/Streams';
+import { KnowledgeBase as EmpKnowledgeBase, Faqs as EmpFaqs } from './empinfo/Resources';
+import { Forms as EmpForms, CustomButton as EmpCustomButton, WebForms as EmpWebForms } from './empinfo/ExtendService';
+import EmpApprovals from './empinfo/Approvals';
+import {
+  FieldPermissions as EmpFieldPermissions,
+  ImportExportPermissions as EmpImportExportPermissions,
+  TabularSectionPermissions as EmpTabularPermissions,
+} from './empinfo/AccessControl';
+
 const SECTION_SCREENS = {
+  /* Employee Information. Approvals, Workflows, Email Alerts, Field Updates,
+   * Templates and Logs are the SAME screens the other services use, given a
+   * different scope — a second copy of an automation editor would drift from
+   * the first within a release. */
+  'employee-information.configuration.basic-details': EmpBasicDetails,
+  'employee-information.configuration.employee-id': EmpIdRules,
+  'employee-information.configuration.employee-status': EmpStatuses,
+  'employee-information.configuration.streams': EmpStreams,
+  'employee-information.configuration.knowledge-base': EmpKnowledgeBase,
+  'employee-information.configuration.faq': EmpFaqs,
+  'employee-information.configuration.forms': EmpForms,
+  'employee-information.configuration.custom-button': EmpCustomButton,
+  'employee-information.configuration.web-forms': EmpWebForms,
+
+  /* Not ApprovalRules. That engine approves REQUESTS — leave, regularization,
+   * on duty. The reference's Employee Information approvals govern changes to
+   * the RECORD itself: somebody edits their profile and it waits for consent.
+   * We have no such flow, and pointing this at the request engine would show
+   * an empty list that reads as broken rather than as absent. */
+  'employee-information.approvals.approvals': EmpApprovals,
+
+  'employee-information.automation.workflows': AccountWorkflows,
+  'employee-information.automation.email-alerts': WorkflowEmailAlerts,
+  'employee-information.automation.field-updates': WorkflowFieldUpdates,
+  'employee-information.automation.email-templates': WorkflowEmailTemplates,
+  'employee-information.automation.workflow-logs': WorkflowLogs,
+
+  'employee-information.permissions.field-permissions': EmpFieldPermissions,
+  'employee-information.permissions.import-export-permissions': EmpImportExportPermissions,
+  'employee-information.permissions.tabular-permissions': EmpTabularPermissions,
+
   'accounts.configuration.organization-details': OrganizationDetails,
   'accounts.configuration.organization-policy': OrganizationPolicy,
   'accounts.users.users': Users,

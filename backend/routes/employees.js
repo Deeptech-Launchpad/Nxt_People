@@ -9,6 +9,7 @@ const { isFullAccess } = require('../utils/roles');
 const { sendOnboardingEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
+const { hiddenFieldsFor } = require('./employee-info-permissions');
 
 /* What the Employees list tab may filter and sort on. The SQL always uses
  * `column` from here, never anything from the request, because neither a
@@ -260,7 +261,23 @@ router.get('/', async (req, res) => {
     const total = parseInt(countResult.rows[0].count, 10);
 
     const canSeeSalary = ['admin', 'director', 'hr_admin'].includes(req.user.role);
-    const visible = canSeeSalary ? employeesResult.rows : employeesResult.rows.map(({ monthlyCTC, basicSalary, ...rest }) => rest);
+    let visible = canSeeSalary ? employeesResult.rows : employeesResult.rows.map(({ monthlyCTC, basicSalary, ...rest }) => rest);
+
+    /* Settings -> Employee Information -> Access Control -> Field Permissions.
+     * It can only take fields away: an empty configuration leaves the response
+     * exactly as it was, and full access is exempt because locking an
+     * administrator out of the record they administer makes the product
+     * unusable by its own owner. */
+    if (!canSeeSalary) {
+      const hidden = await hiddenFieldsFor(req.user.role, 'employee');
+      if (hidden.size) {
+        visible = visible.map(row => {
+          const out = { ...row };
+          for (const k of hidden) delete out[k];
+          return out;
+        });
+      }
+    }
 
     // A person always sees their own record whole; the preference governs what
     // OTHER people see, and hiding a field from its owner would leave them

@@ -25,11 +25,24 @@ const { protect, authorize } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
 const { logAudit } = require('../utils/audit');
 const { buildCriteria } = require('../utils/listQuery');
+const { canImportExport } = require('./employee-info-permissions');
 const logger = require('../logger');
 
 router.use(protect);
 const WRITE_ROLES = ['admin', 'director', 'hr_admin'];
 router.use(authorize(...WRITE_ROLES));
+
+/* Import and Export can additionally be granted per role and per form in
+ * Access Control. Full access is unaffected; this only ever widens to a
+ * narrower role, and the route guard above still stands in front of it. */
+const gate = (kind) => async (req, res, next) => {
+  const form = req.params.module || 'employee';
+  try {
+    if (await canImportExport(req.user, form, kind)) return next();
+    res.status(403).json({ success: false,
+      message: `Your role is not allowed to ${kind} ${form}.` });
+  } catch { next(); }   // an unreadable table must not block an administrator
+};
 
 const sheetUpload = multer({
   storage: multer.memoryStorage(),
@@ -182,7 +195,7 @@ function parseDate(v) {
 
 const DATE_FIELDS = new Set(['joiningDate', 'dateOfBirth']);
 
-router.post('/import/:module', (req, res, next) => {
+router.post('/import/:module', gate('import'), (req, res, next) => {
   sheetUpload.single('file')(req, res, (err) => {
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE') {
@@ -374,7 +387,7 @@ const sendSheet = (res, rows, sheetName, filename) => {
 /* The export honours the filters that are on screen. An export that quietly
  * ignores them hands somebody a file that disagrees with the table they were
  * looking at, and they have no way to tell. */
-router.get('/export/:module', async (req, res) => {
+router.get('/export/:module', gate('export'), async (req, res) => {
   const spec = EXPORTS[req.params.module];
   if (!spec) return res.status(404).json({ success: false, message: 'Unknown module' });
   try {
@@ -394,7 +407,7 @@ router.get('/export/:module', async (req, res) => {
 /* History Export: the audit trail for a module, flattened one row per changed
  * FIELD rather than per entry — a spreadsheet with a JSON blob in a cell is
  * not something anybody can filter. */
-router.get('/history-export/:module', async (req, res) => {
+router.get('/history-export/:module', gate('export'), async (req, res) => {
   const spec = EXPORTS[req.params.module];
   if (!spec) return res.status(404).json({ success: false, message: 'Unknown module' });
   try {

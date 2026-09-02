@@ -106,6 +106,56 @@ export const SERVICES = [
     },
   },
   {
+    /* Settings for the Operations module of the same name. The reference names
+     * the tabs Policy / Extend Service / Approvals / Automation / Access
+     * Control; ours are the same five with the shell's own keys, relabelled so
+     * somebody moving across reads what they expect. */
+    key: 'employee-information',
+    label: 'Employee Information',
+    icon: 'Users',
+    description: 'Statuses, ID rules, streams, resources and field access',
+    roles: ['admin', 'director', 'hr_admin'],
+    tabLabels: { configuration: 'Policy', permissions: 'Access Control' },
+    tabs: {
+      configuration: [
+        { key: 'basic-details', label: 'Basic Details' },
+        { key: 'employee-id', label: 'Employee ID' },
+        { key: 'employee-status', label: 'Employee Status' },
+        { key: 'streams', label: 'Streams' },
+        {
+          key: 'resources', label: 'Resources',
+          children: [
+            { key: 'knowledge-base', label: 'Knowledge Base' },
+            { key: 'faq', label: 'FAQ' },
+          ],
+        },
+        {
+          key: 'extend-service', label: 'Extend Service',
+          children: [
+            { key: 'forms', label: 'Forms' },
+            { key: 'custom-button', label: 'Custom Button' },
+            { key: 'web-forms', label: 'Web forms' },
+          ],
+        },
+      ],
+      approvals: [
+        { key: 'approvals', label: 'Approvals' },
+      ],
+      automation: [
+        { key: 'workflows', label: 'Workflows' },
+        { key: 'email-alerts', label: 'Email Alerts' },
+        { key: 'field-updates', label: 'Field Updates' },
+        { key: 'email-templates', label: 'Email Templates' },
+        { key: 'workflow-logs', label: 'Workflow Logs' },
+      ],
+      permissions: [
+        { key: 'field-permissions', label: 'Field Permissions' },
+        { key: 'import-export-permissions', label: 'Import and Export Permissions' },
+        { key: 'tabular-permissions', label: 'Tabular Section Permissions' },
+      ],
+    },
+  },
+  {
     key: 'attendance',
     label: 'Attendance',
     icon: 'CalendarCheck',

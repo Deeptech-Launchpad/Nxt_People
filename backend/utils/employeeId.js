@@ -64,7 +64,48 @@ const GENERATORS = {
 const DEFAULT_COMPANY = 'AltiusNxt';
 const COMPANIES = Object.keys(GENERATORS);
 
-async function nextIdForCompany(pool, company) {
+/* Settings -> Employee Information -> Policy -> Employee ID can replace the
+ * built-in generators with a configured rule: prefix segments, a zero-padded
+ * counter, suffix segments. The hard-coded generators remain the fallback, so
+ * an organisation that never opens that screen keeps exactly what it had.
+ *
+ * The counter is claimed with UPDATE ... RETURNING inside the same statement
+ * that reads it — two people adding an employee at once must not be handed
+ * the same ID. */
+async function nextIdFromRule(pool, ctx = {}) {
+  const cfg = await pool.query(`SELECT employee_info_config AS c FROM settings LIMIT 1`).catch(() => ({ rows: [] }));
+  if (!cfg.rows[0]?.c?.idGeneration?.enabled) return null;
+
+  const r = await pool.query(
+    `SELECT * FROM employee_id_rules WHERE is_active ORDER BY is_default DESC, name LIMIT 1`)
+    .catch(() => ({ rows: [] }));
+  const rule = r.rows[0];
+  if (!rule) return null;
+
+  const { renderRule } = require('../routes/employee-info-settings');
+  // The combination the counter belongs to. With reuse off there is one
+  // counter for the whole rule, so the key is empty.
+  const combination = rule.reuse_per_combination
+    ? renderRule({ ...rule, placeholder_digits: 1 }, '', ctx).replace(/\d+$/, '')
+    : '';
+
+  const claimed = await pool.query(
+    `INSERT INTO employee_id_counters (rule_id, combination, next_number)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (rule_id, combination)
+     DO UPDATE SET next_number = employee_id_counters.next_number + 1, updated_at = NOW()
+     RETURNING next_number`,
+    [rule.id, combination, Math.max(0, rule.starting_number || 1)]);
+
+  const id = renderRule(rule, claimed.rows[0].next_number, ctx);
+  await pool.query(`UPDATE employee_id_rules SET last_generated_id = $1 WHERE id = $2`, [id, rule.id])
+    .catch(() => {});
+  return id;
+}
+
+async function nextIdForCompany(pool, company, ctx = {}) {
+  const fromRule = await nextIdFromRule(pool, ctx).catch(() => null);
+  if (fromRule) return fromRule;
   const gen = GENERATORS[(company || '').trim()] || GENERATORS[DEFAULT_COMPANY];
   return gen(pool);
 }
@@ -73,4 +114,5 @@ module.exports = {
   COMPANIES,
   DEFAULT_COMPANY,
   nextIdForCompany,
+  nextIdFromRule,
 };
