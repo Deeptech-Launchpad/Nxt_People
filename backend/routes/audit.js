@@ -9,7 +9,7 @@ router.use(protect, authorize('admin', 'director', 'hr_admin'));
 // GET /api/audit — paginated audit log with filters
 router.get('/', async (req, res) => {
   try {
-    const { actor, action, resource, from, to, page = 1, limit = 50 } = req.query;
+    const { actor, action, resource, resourceId, from, to, page = 1, limit = 50 } = req.query;
     let where = 'WHERE 1=1';
     const params = [];
     let i = 1;
@@ -17,6 +17,10 @@ router.get('/', async (req, res) => {
     if (actor)    { where += ` AND al.actor_id = $${i++}`;                  params.push(actor); }
     if (action)   { where += ` AND al.action ILIKE $${i++}`;                params.push(`%${action}%`); }
     if (resource) { where += ` AND al.resource = $${i++}`;                  params.push(resource); }
+    /* One record's history, which is what Employee Information's Audit History
+     * tab asks for. Without this the filter was ignored and that tab would have
+     * shown EVERY employee's changes on one person's profile. */
+    if (resourceId) { where += ` AND al.resource_id = $${i++}`;              params.push(String(resourceId)); }
     if (from)     { where += ` AND al.created_at >= $${i++}::timestamptz`;  params.push(from); }
     if (to)       { where += ` AND al.created_at <= $${i++}::timestamptz`;  params.push(to); }
 

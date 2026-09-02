@@ -18,6 +18,7 @@
 export const ATTENDANCE_BASE = '/more-services/operations/attendance';
 export const MARKING_BASE = '/more-services/operations/attendance-marking';
 export const LEAVE_TRACKER_BASE = '/more-services/operations/leave-tracker';
+export const EMPLOYEE_INFO_BASE = '/more-services/operations/employee-information';
 
 /* Attendance Marking is a tab in this strip but a route of its own, because
  * it is a whole page with its own sub-tabs rather than a panel — so it
@@ -41,10 +42,21 @@ export const LEAVE_TRACKER_TABS = [
   { id: 'workdays', label: 'Exceptional Working days' },
 ];
 
+export const EMPLOYEE_INFO_TABS = [
+  { id: 'employees', label: 'Employees' },
+  { id: 'user', label: 'User-specific Operations' },
+  { id: 'insights', label: 'Insights' },
+  { id: 'departments', label: 'Departments' },
+  { id: 'designations', label: 'Designations' },
+  { id: 'groups', label: 'Groups' },
+  { id: 'delegation', label: 'Delegation' },
+];
+
 const WORKSPACES = [
   { base: MARKING_BASE, title: 'Attendance', tabs: ATTENDANCE_TABS, fixedTab: 'marking' },
   { base: ATTENDANCE_BASE, title: 'Attendance', tabs: ATTENDANCE_TABS, defaultTab: 'user' },
   { base: LEAVE_TRACKER_BASE, title: 'Leave Tracker', tabs: LEAVE_TRACKER_TABS, defaultTab: 'user' },
+  { base: EMPLOYEE_INFO_BASE, title: 'Employee Information', tabs: EMPLOYEE_INFO_TABS, defaultTab: 'employees' },
 ];
 
 /**

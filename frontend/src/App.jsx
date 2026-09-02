@@ -132,6 +132,7 @@ const HRLetters    = lazy(() => import('./pages/moreservices/HRLetters'));
 const Operations       = lazy(() => import('./pages/moreservices/Operations'));
 const OperationsAttendance = lazy(() => import('./pages/moreservices/OperationsAttendance'));
 const OperationsLeaveTracker = lazy(() => import('./pages/moreservices/OperationsLeaveTracker'));
+const OperationsEmployeeInformation = lazy(() => import('./pages/moreservices/employeeinfo/OperationsEmployeeInformation'));
 const ManualAttendance = lazy(() => import('./pages/moreservices/ManualAttendance'));
 const LeaveTrackerAdmin = lazy(() => import('./pages/moreservices/LeaveTrackerAdmin'));
 const PermissionUsage = lazy(() => import('./pages/moreservices/PermissionUsage'));
@@ -245,6 +246,10 @@ const AppRoutes = () => {
           {/* Operations workspace + admin Leave Tracker — Super Admin / HR only. */}
           <Route path="more-services/operations"               element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Operations/></ProtectedRoute>}/>
           <Route path="more-services/operations/leave-tracker" element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><OperationsLeaveTracker/></ProtectedRoute>}/>
+          {/* Employee Information carries salary-adjacent and identity fields,
+              so it is full access only — not the wider manager set the other
+              Operations workspaces allow. */}
+          <Route path="more-services/operations/employee-information" element={<ProtectedRoute roles={['admin','director','hr_admin']}><OperationsEmployeeInformation/></ProtectedRoute>}/>
           {/* Approving and rejecting is a different job from administering the
               calendar, and it was reachable from Operations before the Leave
               Tracker took that tile. It gets its own. */}
