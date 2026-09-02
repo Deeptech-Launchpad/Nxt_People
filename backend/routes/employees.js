@@ -8,6 +8,18 @@ const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { sendOnboardingEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
+
+/* Columns whose VALUES must never reach the audit trail. The fact that one
+ * changed is worth recording; what it changed to is not, because the audit
+ * page is readable by every admin and these are identity documents and
+ * credentials. Column names, not camelCase body keys — the diff runs against
+ * the table. */
+const REDACTED_AUDIT_COLUMNS = new Set([
+  'pan_number', 'aadhaar_number', 'uan_number', 'passport_number',
+  'driving_license', 'voter_id', 'bank_account', 'bank_ifsc',
+  'password', 'reset_password_token', 'mfa_secret', 'mfa_backup_codes',
+  'calendar_token',
+]);
 const logger = require('../logger');
 
 router.use(protect);
@@ -470,6 +482,14 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
 
     if (updates.length === 0) return res.json({ success: true, message: 'Nothing to update' });
 
+    /* Read the row as it stands so the audit entry can record old -> new.
+     * It previously logged req.body, i.e. the new values only, which meant the
+     * trail could say what a field became but never what it had been — and an
+     * "Employee Status: Active" line tells you nothing on its own. The whole
+     * Audit History timeline depends on this pair. */
+    const beforeRes = await pool.query('SELECT * FROM employees WHERE id = $1', [req.params.id]);
+    const before = beforeRes.rows[0] || {};
+
     updates.push(`updated_at = NOW()`);
 
     params.push(req.params.id);
@@ -482,15 +502,43 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
 
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
 
-    const safeChanges = { ...req.body };
-    delete safeChanges.panNumber; delete safeChanges.aadhaarNumber;
-    delete safeChanges.bankAccount; delete safeChanges.bankIfsc; delete safeChanges.uanNumber;
-    await logAudit(req, {
-      action: 'UPDATE',
-      resource: 'Employee',
-      resourceId: req.params.id,
-      changes: safeChanges
-    });
+    /* {field, from, to} is the shape AuditLog.jsx already renders, so employee
+     * edits now appear there as a real before/after rather than a blob. */
+    const after = (await pool.query('SELECT * FROM employees WHERE id = $1', [req.params.id])).rows[0] || {};
+    const written = updates
+      .map(u => String(u).split('=')[0].trim())
+      .filter(c => c && c !== 'updated_at');
+
+    const auditFields = [];
+    for (const col of written) {
+      // Identity and credential columns are recorded as having changed, never
+      // with their values — an audit trail that leaks a PAN is worse than one
+      // that is vague, and it is readable by anyone who can open the page.
+      if (REDACTED_AUDIT_COLUMNS.has(col)) {
+        auditFields.push({ field: col, from: '(hidden)', to: '(hidden)' });
+        continue;
+      }
+      const from = before[col] ?? null;
+      const to   = after[col] ?? null;
+      // Dates come back as Date objects and numerics as strings, so compare
+      // rendered values or every save looks like it changed everything.
+      const same = (from instanceof Date && to instanceof Date)
+        ? from.getTime() === to.getTime()
+        : String(from ?? '') === String(to ?? '');
+      if (!same) auditFields.push({ field: col, from, to });
+    }
+
+    if (auditFields.length) {
+      await logAudit(req, {
+        action: 'UPDATE',
+        resource: 'Employee',
+        resourceId: req.params.id,
+        changes: {
+          summary: `${auditFields.length} field(s) changed`,
+          fields: auditFields,
+        },
+      });
+    }
 
     // The column names that were actually written, so a "specific field is
     // updated" workflow can tell whether its field was one of them. Derived
