@@ -6,6 +6,7 @@ import {
   Phone, Hash, MapPin, Armchair, ChevronDown,
 } from 'lucide-react';
 import api from '../../../utils/api';
+import EmployeeEditModal from './EmployeeEditModal';
 
 /* Operations -> Employee Information -> User-specific Operations.
  *
@@ -155,6 +156,7 @@ export default function EmpUserSpecific() {
   const [person, setPerson] = useState(null);
   const [tab, setTab] = useState('profile');
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     if (!q.trim()) { setResults([]); return; }
@@ -249,8 +251,9 @@ export default function EmpUserSpecific() {
           </span>
           <span className="text-[14px] text-slate-400">{person.employeeId}</span>
         </div>
-        <button
-          onClick={() => toast('Editing opens the full employee record in Employees → row menu → Edit', { icon: 'ℹ️' })}
+        {/* Opens the same editor the Employees tab uses, in place. It used to
+            be a toast telling you to go somewhere else, which is not an edit. */}
+        <button onClick={() => setEditing(true)}
           className="flex items-center gap-2 border border-brand-300 text-brand-600 px-4 h-10 rounded-lg text-[15px] font-medium hover:bg-brand-50">
           <Pencil size={15} /> Edit Profile
         </button>
@@ -265,6 +268,18 @@ export default function EmpUserSpecific() {
           </button>
         ))}
       </div>
+
+      {editing && (
+        <EmployeeEditModal
+          employeeId={selectedId}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            // Re-read so the panel shows what was just saved.
+            api.get(`/employees/${selectedId}`).then(r => setPerson(r.data.data)).catch(() => {});
+          }}
+        />
+      )}
 
       {tab === 'profile' ? (
         <div className="space-y-4">

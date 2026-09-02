@@ -13,6 +13,8 @@ import PhotoUploadDialog from './PhotoUploadDialog';
 import ImportDialog from '../../../components/listview/ImportDialog';
 import RevealDialog from '../../../components/listview/RevealDialog';
 import downloadFile from '../../../components/listview/downloadFile';
+import EmployeeRecordModal from './EmployeeRecordModal';
+import EmployeeEditModal from './EmployeeEditModal';
 import { EMPLOYEE_INFO_BASE } from '../operationsWorkspaces';
 
 /* Operations -> Employee Information -> Employees.
@@ -77,7 +79,10 @@ export default function EmpEmployees() {
    * above the table say the filter is on, and clearing them shows leavers. */
   const lv = useListView({
     endpoint: '/employees', module: 'employees',
-    defaultSort: { by: '', dir: 'desc' },
+    /* The reference lists newest employee ID first, so the people added most
+     * recently are at the top. Ours fell back to created_at, which put a
+     * migrated row with the ID "1" in the middle of the first page. */
+    defaultSort: { by: 'employeeId', dir: 'desc' },
     initialCriteria: [
       { field: 'status', operator: 'is', value: 'active' },
       { field: 'exitDate', operator: 'is_empty' },
@@ -92,6 +97,8 @@ export default function EmpEmployees() {
   const [photos, setPhotos] = useState(false);
   const [revealing, setRevealing] = useState(false);
   const [revealCol, setRevealCol] = useState(null);   // which masked column asked
+  const [viewing, setViewing] = useState(null);       // employee id, full record
+  const [editing, setEditing] = useState(null);       // employee id, edit form
   /* Revealed identity numbers live only in this component's state for as long
    * as the page is open. They are never written back into the row data, so a
    * refetch re-masks them rather than leaving them on screen indefinitely. */
@@ -296,13 +303,31 @@ export default function EmpEmployees() {
                   : toast.error('Nothing on this page to reveal')) },
         ]}
         rowMenu={(r) => [
-          { label: 'Edit', icon: <Pencil size={15} />,
-            onClick: () => navigate(`${EMPLOYEE_INFO_BASE}?tab=user&employeeId=${r._id}`) },
+          { label: 'View', icon: <Eye size={15} />, onClick: () => setViewing(r._id) },
+          { label: 'Edit', icon: <Pencil size={15} />, onClick: () => setEditing(r._id) },
           { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => setToDelete(r) },
           { label: 'Add New Task', icon: <ListTodo size={15} />, onClick: () => setTaskFor(r) },
         ]}
-        onRowClick={(r) => navigate(`${EMPLOYEE_INFO_BASE}?tab=user&employeeId=${r._id}`)}
+        /* Opens the record over the list. It used to navigate to User-specific
+         * Operations, which threw away where you were just to read a row. */
+        onRowClick={(r) => setViewing(r._id)}
       />
+
+      {viewing && (
+        <EmployeeRecordModal
+          employeeId={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={(id) => { setViewing(null); setEditing(id); }}
+          onChanged={() => lv.reload()}
+        />
+      )}
+      {editing && (
+        <EmployeeEditModal
+          employeeId={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); lv.reload(); }}
+        />
+      )}
 
       {wizard && <AddUserWizard onClose={() => setWizard(false)} onCreated={() => { setWizard(false); lv.reload(); }} />}
       {importing && (

@@ -41,6 +41,9 @@ const EMPLOYEE_FIELDS = {
   exitDate:      { column: 'e.exit_date',     label: 'Date of Exit',       type: 'date' },
   addedTime:     { column: 'e.created_at',    label: 'Added Time',         type: 'datetime' },
   modifiedTime:  { column: 'e.updated_at',    label: 'Modified Time',      type: 'datetime' },
+  seatingLocation:{ column: 'e.seating_location', label: 'Seating Location', type: 'text' },
+  tags:          { column: 'e.tags',          label: 'Tags',               type: 'text' },
+  onboardingStatus: { column: 'e.onboarding_status', label: 'Onboarding Status', type: 'text' },
   presentAddress:{ column: 'e.current_address', label: 'Present Address',  type: 'text' },
   permanentAddress: { column: 'e.permanent_address', label: 'Permanent Address', type: 'text' },
 };
@@ -212,6 +215,7 @@ router.get('/', async (req, res) => {
        e.photo_url AS "photoUrl", e.exit_date AS "exitDate", e.total_experience AS "totalExperience", e.expertise,
        e.is_blacklisted AS "isBlacklisted", e.notice_period_end_date AS "noticePeriodEndDate", e.rehire_eligibility AS "rehireEligibility",
        e.nick_name AS "nickName", e.work_location AS "workLocation", e.employment_type AS "employmentType",
+       e.seating_location AS "seatingLocation", e.tags, e.onboarding_status AS "onboardingStatus",
        e.source_of_hire AS "sourceOfHire", e.date_of_joining AS "dateOfJoining", e.date_of_birth AS "dateOfBirth",
        e.gender, e.marital_status AS "maritalStatus", e.about_me AS "aboutMe",
        e.work_phone AS "workPhone", e.extension, e.personal_email AS "personalEmail",
@@ -330,6 +334,28 @@ router.get('/:id', async (req, res) => {
               e.exit_date              AS "exitDate",
               e.total_experience       AS "totalExperience",
               e.attendance_tracked     AS "attendanceTracked",
+              e.about_me               AS "aboutMe",
+              e.seating_location       AS "seatingLocation",
+              e.onboarding_status      AS "onboardingStatus",
+              e.current_address        AS "currentAddress",
+              e.source_of_hire         AS "sourceOfHire",
+              e.date_of_joining        AS "dateOfJoining",
+              e.secondary_manager_id   AS "secondaryManagerId",
+              e.created_at             AS "createdAt",
+              e.updated_at             AS "updatedAt",
+              /* Identity numbers come back for the record view, which is full
+               * access only — but the has-flags are sent too so a viewer can
+               * render the dots without reading the value. */
+              (e.aadhaar_number IS NOT NULL AND e.aadhaar_number <> '') AS "hasAadhaar",
+              (e.pan_number     IS NOT NULL AND e.pan_number     <> '') AS "hasPan",
+              (e.uan_number     IS NOT NULL AND e.uan_number     <> '') AS "hasUan",
+              CASE WHEN sm.id IS NOT NULL THEN json_build_object(
+                'id', sm.id, 'firstName', sm.first_name, 'lastName', sm.last_name,
+                'employeeId', sm.employee_id) END AS "secondaryManager",
+              CASE WHEN cb.id IS NOT NULL THEN json_build_object(
+                'id', cb.id, 'firstName', cb.first_name, 'lastName', cb.last_name) END AS "createdBy",
+              CASE WHEN ub.id IS NOT NULL THEN json_build_object(
+                'id', ub.id, 'firstName', ub.first_name, 'lastName', ub.last_name) END AS "updatedBy",
               json_build_object('name', s.name, 'startTime', s.start_time, 'endTime', s.end_time) AS shift,
               json_build_object('firstName', m.first_name, 'lastName', m.last_name, 'email', m.email, 'id', m.id, 'employeeId', m.employee_id, 'designation', m.designation) AS manager,
               json_build_object('firstName', aa.first_name, 'lastName', aa.last_name, 'email', aa.email, 'id', aa.id, 'employeeId', aa.employee_id, 'designation', aa.designation) AS "approvingAuthority"
@@ -337,6 +363,9 @@ router.get('/:id', async (req, res) => {
          LEFT JOIN shifts s ON e.shift_id = s.id
          LEFT JOIN employees m ON e.reporting_manager_id = m.id
          LEFT JOIN employees aa ON e.approving_authority_id = aa.id
+         LEFT JOIN employees sm ON e.secondary_manager_id = sm.id
+         LEFT JOIN employees cb ON e.created_by = cb.id
+         LEFT JOIN employees ub ON e.updated_by = ub.id
         WHERE e.id = $1`,
       [req.params.id]
     );
@@ -387,6 +416,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), async (req, res) =>
     let { firstName, lastName, email, password, phone, role, department, designation, company, division, joiningDate, monthlyCTC, basicSalary, casualLeave, sickLeave, earnedLeave, reportingManagerId, approvingAuthorityId, employeeId: providedId } = req.body;
     let hashedPassword = null;
     if (password) hashedPassword = await bcrypt.hash(password, 12);
+    const createdBy = req.user._id;   // System Fields: Added By
 
     // Use admin-supplied ID when provided; otherwise auto-generate the next
     // per-company sequence (e.g. ANXT2600150 for AltiusNxt, dtlp-015 for DTLP).
@@ -478,6 +508,10 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
       workLocation, employmentType, status,
       // Zoho-synced extras
       exitDate, totalExperience, expertise,
+      /* Fields the employee record shows but the update route never accepted,
+       * so editing them silently did nothing. aboutMe in particular was not
+       * read or written anywhere despite being populated by the migration. */
+      aboutMe, seatingLocation, tags, onboardingStatus, secondaryManagerId, extension,
       // Employment status workflow (post-meeting feature)
       noticePeriodEndDate, statusReason, rehireEligibility, isBlacklisted, statusAppliedAt,
       // Whether attendance applies to this person at all — independent of
@@ -542,8 +576,6 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     if (dateOfBirth !== undefined)              { updates.push(`date_of_birth = $${i++}`);             params.push(dateOfBirth || null); }
     if (gender !== undefined)                   { updates.push(`gender = $${i++}`);                    params.push(gender || null); }
     if (maritalStatus !== undefined)            { updates.push(`marital_status = $${i++}`);            params.push(maritalStatus || null); }
-    if (bloodGroup !== undefined)               { updates.push(`blood_group = $${i++}`);               params.push(bloodGroup || null); }
-    if (nationality !== undefined)              { updates.push(`nationality = $${i++}`);               params.push(nationality || null); }
     if (personalEmail !== undefined)            { updates.push(`personal_email = $${i++}`);            params.push(personalEmail ? personalEmail.toLowerCase() : null); }
     if (workPhone !== undefined)                { updates.push(`work_phone = $${i++}`);                params.push(workPhone || null); }
     if (address !== undefined)                  { updates.push(`address = $${i++}`);                   params.push(address || null); }
@@ -563,6 +595,16 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     if (exitDate !== undefined)                 { updates.push(`exit_date = $${i++}`);                 params.push(exitDate || null); }
     if (totalExperience !== undefined)          { updates.push(`total_experience = $${i++}`);          params.push(totalExperience || null); }
     if (expertise !== undefined)                { updates.push(`expertise = $${i++}`);                 params.push(expertise || null); }
+    if (aboutMe !== undefined)                  { updates.push(`about_me = $${i++}`);                  params.push(aboutMe || null); }
+    if (seatingLocation !== undefined)          { updates.push(`seating_location = $${i++}`);          params.push(seatingLocation || null); }
+    if (tags !== undefined)                     { updates.push(`tags = $${i++}`);                      params.push(tags || null); }
+    if (onboardingStatus !== undefined)         { updates.push(`onboarding_status = $${i++}`);         params.push(onboardingStatus || null); }
+    if (secondaryManagerId !== undefined)       { updates.push(`secondary_manager_id = $${i++}`);      params.push(secondaryManagerId || null); }
+    if (extension !== undefined)                { updates.push(`extension = $${i++}`);                 params.push(extension || null); }
+    if (bloodGroup !== undefined)               { updates.push(`blood_group = $${i++}`);               params.push(bloodGroup || null); }
+    if (nationality !== undefined)              { updates.push(`nationality = $${i++}`);               params.push(nationality || null); }
+    // Who last touched the record, for the System Fields block.
+    updates.push(`updated_by = $${i++}`);        params.push(req.user._id);
     // Employment status workflow fields
     if (noticePeriodEndDate !== undefined)      { updates.push(`notice_period_end_date = $${i++}`);    params.push(noticePeriodEndDate || null); }
     if (statusReason !== undefined)             { updates.push(`status_reason = $${i++}`);             params.push(statusReason || null); }

@@ -158,6 +158,17 @@ async function migrate() {
       CREATE INDEX IF NOT EXISTS tasks_due_reminders_idx
         ON tasks (reminder_at) WHERE reminder_at IS NOT NULL AND reminder_sent_at IS NULL`);
 
+    /* Fields the reference's employee record carries that ours had nowhere to
+     * put. Seating location and tags are plain text; onboarding status mirrors
+     * what the preboarding flow reports. created_by / updated_by back the
+     * System Fields block — the employee record showed Added By and Modified
+     * By as blank because nothing ever recorded who. */
+    await ensure(client, 'employees', 'seating_location',  'TEXT');
+    await ensure(client, 'employees', 'tags',              'TEXT');
+    await ensure(client, 'employees', 'onboarding_status', 'TEXT');
+    await ensure(client, 'employees', 'created_by',        'UUID REFERENCES employees(id)');
+    await ensure(client, 'employees', 'updated_by',        'UUID REFERENCES employees(id)');
+
     /* Departments and Designations list Added By / Modified By. Both tables
      * already carry created_at / updated_at but never recorded WHO, so those
      * columns could only ever have rendered blank. Nullable on purpose: every
