@@ -53,8 +53,18 @@ export default function OperationsEmployeeInformation() {
   const ws = operationsWorkspaceFor(location.pathname, location.search);
   const tab = ws?.activeId || 'employees';
 
+  /* The page is exactly the viewport minus the navy bar (48px) and the fixed
+   * bottom bar (30px). A height rather than a min-height, because the list
+   * tabs size their table off it — with `p-5` alone the table fell back to a
+   * guessed max-height and left a band of dead space above the footer.
+   *
+   * Tabs that scroll their own content (Insights, the profile) get the scroll;
+   * the list tabs pass the height down to the table instead. */
+  const scrolls = tab === 'insights' || tab === 'user' || tab === 'groups' || tab === 'delegation';
+
   return (
-    <div className="p-5">
+    <div className="h-[calc(100vh-78px)] flex flex-col min-h-0 p-5">
+      <div className={`flex-1 min-h-0 flex flex-col ${scrolls ? 'overflow-y-auto' : ''}`}>
       {tab === 'employees' && <EmpEmployees />}
       {tab === 'user' && <EmpUserSpecific />}
       {tab === 'insights' && <EmpInsights />}
@@ -70,6 +80,7 @@ export default function OperationsEmployeeInformation() {
       )}
       {tab === 'groups' && <EmpGroups />}
       {tab === 'delegation' && <EmpDelegation />}
+      </div>
     </div>
   );
 }

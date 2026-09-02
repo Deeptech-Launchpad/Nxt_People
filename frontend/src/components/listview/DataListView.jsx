@@ -190,9 +190,15 @@ export default function DataListView({
   };
 
   return (
-    <div className={expanded ? 'fixed inset-0 z-40 bg-slate-50 p-5 overflow-auto' : ''}>
+    /* A flex column that fills its parent, so the table takes whatever is left
+     * after the toolbar and chips and the footer sits on the bottom edge. This
+     * replaces a guessed max-height, which was short by however much the
+     * toolbar happened not to use. */
+    <div className={expanded
+      ? 'fixed inset-0 z-50 bg-slate-50 p-5 flex flex-col min-h-0'
+      : 'flex-1 min-h-0 flex flex-col'}>
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3 flex-shrink-0">
         <div className="flex items-center gap-3 min-w-0">{toolbarLeft}</div>
         <div className="flex items-center gap-2.5">
           {toolbarRight}
@@ -229,8 +235,8 @@ export default function DataListView({
           to scroll the whole page down to reach the bar that scrolls the table
           sideways — the reference keeps it in view at all times. The header row
           sticks for the same reason. */}
-      <div className="border border-slate-200 rounded-xl bg-white overflow-auto"
-        style={{ maxHeight: expanded ? 'calc(100vh - 190px)' : 'calc(100vh - 300px)' }}>
+      <div className="border border-slate-200 rounded-xl bg-white overflow-auto flex-1 min-h-0"
+        style={{ minHeight: 200 }}>
         <table className="text-[15px] border-collapse table-fixed">
           <thead className="bg-slate-50 text-slate-500 text-[13.5px]">
             <tr>
@@ -301,7 +307,7 @@ export default function DataListView({
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 mt-3 text-[14px] text-slate-500">
+      <div className="flex flex-wrap items-center justify-between gap-3 mt-3 flex-shrink-0 text-[14px] text-slate-500">
         <span>Total Record Count : <span className="text-brand-600 font-medium">{total}</span></span>
         <div className="flex items-center gap-3">
           <select value={limit} onChange={e => onLimit(Number(e.target.value))} title="Rows per page"
