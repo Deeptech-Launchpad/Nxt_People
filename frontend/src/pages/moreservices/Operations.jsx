@@ -1,5 +1,6 @@
 ﻿import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import {
   CalendarCheck, Clock, Timer, CalendarDays, Trophy, FolderOpen, Users, Plane,
   Wallet, CheckSquare, Smile, Mail, UserPlus, Settings, Activity, CheckCircle, Database, Hourglass, DoorOpen, AppWindow,
@@ -22,6 +23,16 @@ const ROUTES = {
   'permission-usage': '/more-services/operations/permission-usage',
   'conference':       '/more-services/operations/conference',
   'nxt-apps':         '/my-apps',
+  'emp-info':         '/more-services/operations/employee-information',
+};
+
+/* Tiles whose route is narrower than this page is. Employee Information holds
+ * identity numbers and salary-adjacent fields, so its route admits full access
+ * only — without this the tile would look open to a manager and then bounce
+ * them off the route guard, which reads as the app being broken rather than
+ * as a permission. */
+const ROLE_GATED = {
+  'emp-info': ['admin', 'director', 'hr_admin'],
 };
 
 const SERVICES = [
@@ -50,6 +61,12 @@ const SERVICES = [
 
 export default function Operations() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const mayOpen = (key) => {
+    const allowed = ROLE_GATED[key];
+    return !allowed || allowed.includes(user?.role);
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 min-h-[calc(100vh-12rem)]">
@@ -60,13 +77,14 @@ export default function Operations() {
       <div className="p-6">
         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
           {SERVICES.map(({ key, label, icon: Icon, color }) => {
-            const functional = !!ROUTES[key];
+            const functional = !!ROUTES[key] && mayOpen(key);
             return (
               <button
                 key={key}
                 type="button"
                 onClick={functional ? () => navigate(ROUTES[key]) : undefined}
-                title={functional ? `Open ${label}` : 'View only'}
+                title={functional ? `Open ${label}`
+                  : ROUTES[key] ? 'Your role does not have access to this' : 'View only'}
                 disabled={!functional}
                 className={`group flex flex-col items-center justify-center gap-3 rounded-2xl border p-5 transition-all ${
                   functional
