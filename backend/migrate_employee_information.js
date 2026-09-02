@@ -151,6 +151,12 @@ async function migrate() {
      * reminder; the table had neither. */
     await ensure(client, 'tasks', 'start_date',  'DATE');
     await ensure(client, 'tasks', 'reminder_at', 'TIMESTAMPTZ');
+    /* Stamped in the same UPDATE that claims a due reminder, so a restart or a
+     * second worker cannot deliver the same one twice. */
+    await ensure(client, 'tasks', 'reminder_sent_at', 'TIMESTAMPTZ');
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS tasks_due_reminders_idx
+        ON tasks (reminder_at) WHERE reminder_at IS NOT NULL AND reminder_sent_at IS NULL`);
 
     /* Departments and Designations list Added By / Modified By. Both tables
      * already carry created_at / updated_at but never recorded WHO, so those

@@ -39,6 +39,33 @@ function CreateViewModal({ module, fields, existing, onClose, onSaved }) {
   const [pickedRight, setPickedRight] = useState([]);
   const [criteria, setCriteria] = useState(existing?.criteria || []);
   const [saving, setSaving] = useState(false);
+  const [share, setShare] = useState({
+    employees: existing?.shareWith?.employees || [],
+    departments: existing?.shareWith?.departments || [],
+    roles: existing?.shareWith?.roles || [],
+  });
+  const [people, setPeople] = useState([]);
+  const [peopleQ, setPeopleQ] = useState('');
+  const [departments, setDepartments] = useState([]);
+
+  // Only loaded once sharing is actually chosen. Fetching the department list
+  // every time this dialog opens is a request nobody asked for.
+  useEffect(() => {
+    if (visibility !== 'shared' || departments.length) return;
+    api.get('/org-setup/departments')
+      .then(r => setDepartments(r.data.data || []))
+      .catch(() => {});
+  }, [visibility]);
+
+  useEffect(() => {
+    if (visibility !== 'shared' || !peopleQ.trim()) { setPeople([]); return; }
+    const t = setTimeout(() => {
+      api.get(`/employees?limit=8&search=${encodeURIComponent(peopleQ.trim())}`)
+        .then(r => setPeople(r.data.data || []))
+        .catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [peopleQ, visibility]);
 
   const labelOf = k => fields.find(f => f.key === k)?.label || k;
 
@@ -58,14 +85,21 @@ function CreateViewModal({ module, fields, existing, onClose, onSaved }) {
   const save = async () => {
     if (!name.trim()) return toast.error('Give the view a name');
     if (!chosen.length) return toast.error('Choose at least one column');
+    if (visibility === 'shared' &&
+        !share.employees.length && !share.departments.length && !share.roles.length) {
+      // The server refuses this too; catching it here avoids losing the form
+      // to a round trip that was never going to succeed.
+      return toast.error('Choose at least one person, department or role to share with');
+    }
     setSaving(true);
     try {
       const body = {
         module, name: name.trim(), visibility, isDefault, columns: chosen,
         criteria: criteria.filter(c => c.field && c.operator),
-        // Sharing to named people/departments needs pickers we have not built;
-        // 'everyone' and 'private' cover both cases the reference offers here.
-        shareWith: {},
+        shareWith: visibility === 'shared'
+          ? { employees: share.employees.map(x => x._id ?? x),
+              departments: share.departments, roles: share.roles, locations: [] }
+          : {},
       };
       if (existing) await api.put(`/saved-views/${existing._id}`, body);
       else await api.post('/saved-views', body);
@@ -124,8 +158,7 @@ function CreateViewModal({ module, fields, existing, onClose, onSaved }) {
               {[
                 { v: 'private', label: 'Only to me' },
                 { v: 'everyone', label: 'Allow all employees to access this custom view' },
-                { v: 'shared', label: 'Share this view to specific users, departments, roles or locations',
-                  disabled: 'Not built yet — needs the people and department pickers' },
+                { v: 'shared', label: 'Share this view to specific users, departments or roles' },
               ].map(o => (
                 <label key={o.v} className={`flex items-start gap-2.5 ${o.disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                   title={o.disabled || undefined}>
@@ -138,6 +171,83 @@ function CreateViewModal({ module, fields, existing, onClose, onSaved }) {
               ))}
             </div>
           </div>
+
+          {visibility === 'shared' && (
+            <div className="border border-slate-200 rounded-xl p-4 space-y-4 bg-slate-50/50">
+              <div>
+                <label className="block text-[13.5px] font-medium text-slate-600 mb-1.5">People</label>
+                {share.employees.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {share.employees.map(p => (
+                      <span key={p._id ?? p}
+                        className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[13.5px] text-slate-700">
+                        {p.firstName ? `${p.firstName} ${p.lastName || ''}`.trim() : p}
+                        <button onClick={() => setShare(v => ({
+                            ...v, employees: v.employees.filter(x => (x._id ?? x) !== (p._id ?? p)) }))}
+                          className="text-slate-400 hover:text-rose-600"><X size={12} /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="relative">
+                  <input className={input} value={peopleQ} placeholder="Search employee"
+                    onChange={e => setPeopleQ(e.target.value)} />
+                  {people.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 max-h-48 overflow-y-auto">
+                      {people.map(p => (
+                        <button key={p._id}
+                          onClick={() => {
+                            setShare(v => v.employees.some(x => (x._id ?? x) === p._id)
+                              ? v : { ...v, employees: [...v.employees, p] });
+                            setPeopleQ(''); setPeople([]);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-[13.5px] text-slate-700 hover:bg-slate-50">
+                          {p.employeeId} {p.firstName} {p.lastName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[13.5px] font-medium text-slate-600 mb-1.5">Departments</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {departments.map(d => {
+                    const on = share.departments.includes(d.name);
+                    return (
+                      <button key={d.id} onClick={() => setShare(v => ({
+                          ...v, departments: on ? v.departments.filter(x => x !== d.name) : [...v.departments, d.name] }))}
+                        className={`px-2.5 py-1 rounded-lg text-[13.5px] border transition-colors
+                          ${on ? 'bg-brand-50 border-brand-300 text-brand-700'
+                               : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                        {d.name}
+                      </button>
+                    );
+                  })}
+                  {departments.length === 0 && <span className="text-[13.5px] text-slate-400">Loading...</span>}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[13.5px] font-medium text-slate-600 mb-1.5">Roles</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['admin', 'director', 'hr_admin', 'manager', 'team_incharge', 'team_member'].map(r => {
+                    const on = share.roles.includes(r);
+                    return (
+                      <button key={r} onClick={() => setShare(v => ({
+                          ...v, roles: on ? v.roles.filter(x => x !== r) : [...v.roles, r] }))}
+                        className={`px-2.5 py-1 rounded-lg text-[13.5px] border capitalize transition-colors
+                          ${on ? 'bg-brand-50 border-brand-300 text-brand-700'
+                               : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                        {r.replace(/_/g, ' ')}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <p className="text-[14px] font-medium text-slate-600 mb-2">Select Columns</p>

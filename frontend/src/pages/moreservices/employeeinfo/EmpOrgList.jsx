@@ -6,6 +6,8 @@ import DataListView from '../../../components/listview/DataListView';
 import ViewPicker from '../../../components/listview/ViewPicker';
 import ScopeSelect from './ScopeSelect';
 import useListView from './useListView';
+import ImportDialog from '../../../components/listview/ImportDialog';
+import downloadFile from '../../../components/listview/downloadFile';
 
 /* Departments and Designations.
  *
@@ -33,6 +35,7 @@ export default function EmpOrgList({ resource, title, singular, extraColumns = [
   const [form, setForm] = useState(null);       // null | {} for new | row for edit
   const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   const columns = useMemo(() => [
     { key: 'name', label: `${singular} Name` },
@@ -106,9 +109,14 @@ export default function EmpOrgList({ resource, title, singular, extraColumns = [
           </>
         }
         toolbarMenu={[
-          { label: 'Import', icon: <Upload size={15} />, disabled: 'Not built yet' },
-          { label: 'Export', icon: <Download size={15} />, disabled: 'Not built yet' },
-          { label: 'History Export', icon: <Download size={15} />, disabled: 'Not built yet' },
+          { label: 'Import', icon: <Upload size={15} />, onClick: () => setImporting(true) },
+          { label: 'Export', icon: <Download size={15} />, onClick: () => downloadFile(
+              `/employee-io/export/${resource}${lv.criteria.length
+                ? `?criteria=${encodeURIComponent(JSON.stringify(lv.criteria))}` : ''}`,
+              `${resource}-${new Date().toISOString().slice(0, 10)}.xlsx`) },
+          { label: 'History Export', icon: <Download size={15} />, onClick: () => downloadFile(
+              `/employee-io/history-export/${resource}`,
+              `${resource}-history-${new Date().toISOString().slice(0, 10)}.xlsx`) },
         ]}
         rowMenu={(r) => [
           { label: 'Edit', icon: <Pencil size={15} />, onClick: () => setForm({ ...r }) },
@@ -116,6 +124,12 @@ export default function EmpOrgList({ resource, title, singular, extraColumns = [
         ]}
         emptyText={`No ${title.toLowerCase()} yet.`}
       />
+
+      {importing && (
+        <ImportDialog module={resource} title={title}
+          onClose={() => setImporting(false)}
+          onDone={() => { setImporting(false); lv.reload(); }} />
+      )}
 
       {form && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

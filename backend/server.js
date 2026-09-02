@@ -10,6 +10,7 @@ require('dotenv').config();
 const app     = require('./app');   // ← single source of truth for all routes
 const pool    = require('./db');
 const logger  = require('./logger');
+const { deliverDueTaskReminders } = require('./utils/taskReminders');
 const chatWs  = require('./ws-chat');
 const permissions = require('./utils/permissions');
 const { sweepDateWorkflows } = require('./utils/workflowEngine');
@@ -266,6 +267,14 @@ const REMINDERS = [
     send: sendCheckOutReminderEmail,
   },
 ];
+
+/* Task reminders, delivered in-app rather than by email. Nothing in Employee
+ * Information mails anybody without being asked, and live has no allowlist
+ * standing between a send and a real inbox. See utils/taskReminders.js. */
+cron.schedule('* * * * *', async () => {
+  try { await deliverDueTaskReminders(); }
+  catch (err) { logger.error({ err: err.message }, 'task reminder sweep failed'); }
+}, { timezone: CRON_TZ });
 
 // Guards against a restart inside the same minute firing an alert twice.
 const remindersSentAt = new Map();

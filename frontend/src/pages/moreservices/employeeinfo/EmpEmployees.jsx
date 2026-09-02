@@ -9,6 +9,10 @@ import useListView from './useListView';
 import ScopeSelect from './ScopeSelect';
 import AddUserWizard from './AddUserWizard';
 import AddTaskModal from './AddTaskModal';
+import PhotoUploadDialog from './PhotoUploadDialog';
+import ImportDialog from '../../../components/listview/ImportDialog';
+import RevealDialog from '../../../components/listview/RevealDialog';
+import downloadFile from '../../../components/listview/downloadFile';
 import { EMPLOYEE_INFO_BASE } from '../operationsWorkspaces';
 
 /* Operations -> Employee Information -> Employees.
@@ -18,9 +22,10 @@ import { EMPLOYEE_INFO_BASE } from '../operationsWorkspaces';
  * position — otherwise a wide table loses which row you are reading.
  *
  * Aadhaar / PAN / UAN render as dots. The list endpoint returns only whether
- * one is on file, never the value, so "Show masked data" cannot reveal them
- * from data already in the browser — it is a per-person, audited request, and
- * until that is built the menu item says so rather than doing nothing.
+ * one is on file, never the value, so "Show masked data" cannot unhide
+ * something the browser already had — it asks the server, which writes an
+ * audit row naming who looked. Revealed values are held in component state
+ * only, so any refetch re-masks them.
  */
 const fmtDate = (d) => {
   if (!d) return '';
@@ -35,9 +40,12 @@ const fmtDateTime = (d) => {
   });
 };
 const dash = (v) => (v === null || v === undefined || v === '' ? <span className="text-slate-300">—</span> : v);
-const masked = (has) => has
-  ? <span className="text-slate-400 tracking-widest">•••••••••</span>
-  : <span className="text-slate-300">—</span>;
+const masked = (has, value) => {
+  if (value) return <span className="text-slate-800 font-mono text-[14px]">{value}</span>;
+  return has
+    ? <span className="text-slate-400 tracking-widest">•••••••••</span>
+    : <span className="text-slate-300">—</span>;
+};
 
 export default function EmpEmployees() {
   const navigate = useNavigate();
@@ -47,6 +55,13 @@ export default function EmpEmployees() {
   const [toDelete, setToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [meta, setMeta] = useState({ departments: [], locations: [] });
+  const [importing, setImporting] = useState(false);
+  const [photos, setPhotos] = useState(false);
+  const [revealing, setRevealing] = useState(false);
+  /* Revealed identity numbers live only in this component's state for as long
+   * as the page is open. They are never written back into the row data, so a
+   * refetch re-masks them rather than leaving them on screen indefinitely. */
+  const [revealed, setRevealed] = useState({});
 
   useEffect(() => {
     api.get('/employees/metadata')
@@ -100,10 +115,13 @@ export default function EmpEmployees() {
     { key: 'modifiedTime', label: 'Modified Time', render: r => dash(fmtDateTime(r.modifiedTime)) },
     { key: 'presentAddress', label: 'Present Address', render: r => dash(r.presentAddress) },
     { key: 'permanentAddress', label: 'Permanent Address', render: r => dash(r.permanentAddress) },
-    { key: 'aadhaar', label: 'Aadhaar', sortable: false, render: r => masked(r.hasAadhaar) },
-    { key: 'pan', label: 'PAN', sortable: false, render: r => masked(r.hasPan) },
-    { key: 'uan', label: 'UAN', sortable: false, render: r => masked(r.hasUan) },
-  ], []);
+    { key: 'aadhaar', label: 'Aadhaar', sortable: false,
+      render: r => masked(r.hasAadhaar, revealed[r._id]?.aadhaarNumber) },
+    { key: 'pan', label: 'PAN', sortable: false,
+      render: r => masked(r.hasPan, revealed[r._id]?.panNumber) },
+    { key: 'uan', label: 'UAN', sortable: false,
+      render: r => masked(r.hasUan, revealed[r._id]?.uanNumber) },
+  ], [revealed]);
 
   // The filter offers only what the server will actually honour; anything else
   // would be accepted and quietly ignored.
@@ -185,13 +203,23 @@ export default function EmpEmployees() {
           </>
         }
         toolbarMenu={[
-          { label: 'Import', icon: <Upload size={15} />, disabled: 'Not built yet' },
-          { label: 'Export', icon: <Download size={15} />,
-            onClick: () => toast('Export uses the filters you have applied', { icon: '⬇️' }) },
-          { label: 'History Export', icon: <Download size={15} />, disabled: 'Not built yet' },
-          { label: 'Profile Photo Upload', icon: <Image size={15} />, disabled: 'Not built yet' },
-          { label: 'Show masked data', icon: <EyeOff size={15} />,
-            disabled: 'Not built yet — identity numbers are never sent to the browser in a list' },
+          { label: 'Import', icon: <Upload size={15} />, onClick: () => setImporting(true) },
+          // The export carries the criteria that are on screen, so the file
+          // agrees with the table somebody was looking at when they asked.
+          { label: 'Export', icon: <Download size={15} />, onClick: () => downloadFile(
+              `/employee-io/export/employees${lv.criteria.length
+                ? `?criteria=${encodeURIComponent(JSON.stringify(lv.criteria))}` : ''}`,
+              `employees-${new Date().toISOString().slice(0, 10)}.xlsx`) },
+          { label: 'History Export', icon: <Download size={15} />, onClick: () => downloadFile(
+              '/employee-io/history-export/employees',
+              `employees-history-${new Date().toISOString().slice(0, 10)}.xlsx`) },
+          { label: 'Profile Photo Upload', icon: <Image size={15} />, onClick: () => setPhotos(true) },
+          Object.keys(revealed).length
+            ? { label: 'Hide masked data', icon: <EyeOff size={15} />, onClick: () => setRevealed({}) }
+            : { label: 'Show masked data', icon: <Eye size={15} />,
+                onClick: () => (lv.rows.length
+                  ? setRevealing(true)
+                  : toast.error('Nothing on this page to reveal')) },
         ]}
         rowMenu={(r) => [
           { label: 'Edit', icon: <Pencil size={15} />,
@@ -203,6 +231,19 @@ export default function EmpEmployees() {
       />
 
       {wizard && <AddUserWizard onClose={() => setWizard(false)} onCreated={() => { setWizard(false); lv.reload(); }} />}
+      {importing && (
+        <ImportDialog module="employees" title="Employees"
+          onClose={() => setImporting(false)}
+          onDone={() => { setImporting(false); lv.reload(); }} />
+      )}
+      {photos && (
+        <PhotoUploadDialog onClose={() => setPhotos(false)} onDone={() => lv.reload()} />
+      )}
+      {revealing && (
+        <RevealDialog employeeIds={lv.rows.map(r => r._id)}
+          onClose={() => setRevealing(false)}
+          onRevealed={(rows) => setRevealed(Object.fromEntries(rows.map(x => [x._id, x])))} />
+      )}
       {taskFor && <AddTaskModal employee={taskFor} onClose={() => setTaskFor(null)} />}
 
       {toDelete && (

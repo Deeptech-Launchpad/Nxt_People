@@ -169,6 +169,7 @@ app.use('/api/employee-groups',  require('./routes/employee-groups'));
 app.use('/api/delegations',      require('./routes/delegations'));
 app.use('/api/saved-views',      require('./routes/saved-views'));
 app.use('/api/employee-insights', require('./routes/employee-insights'));
+app.use('/api/employee-io',      require('./routes/employee-io'));
 app.use('/api/attendance',       require('./routes/attendance'));
 // Editing a reportee's entry. Its own file because the checks it needs — the
 // setting, the reporting line, the audit trail — do not belong in the punch
