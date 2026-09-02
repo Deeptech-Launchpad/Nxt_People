@@ -16,6 +16,10 @@ import {
 import CoverImageDialog, { coverStyle, useCanChangeCover, loadCovers } from '../components/CoverImagePicker';
 
 import api from '../utils/api';
+import RegularizeModal from '../components/requests/RegularizeModal';
+import OnDutyModal from '../components/requests/OnDutyModal';
+import ApplyLeaveModal from '../components/requests/ApplyLeaveModal';
+import { formatTimeRange, useLocaleFormat } from '../utils/datetime';
 import toast from 'react-hot-toast';
 import PhotoCropperModal from '../components/PhotoCropperModal';
 import { PAYROLL_ENABLED, TIME_TRACKER_ENABLED } from '../config/features';
@@ -320,19 +324,22 @@ const FeedCard = ({ icon, children }) => (
  *    first paint via useLayoutEffect, then anchors itself above OR
  *    below the button based on actual viewport space — no more
  *    height guesses, no more bottom-row overflow. */
-const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
-  const navigate = useNavigate();
+const RequestMenu = ({ buttonRect, onClose, canRegularize = false, onPick }) => {
   const menuRef  = useRef(null);
   // Start fully off-screen on first paint so the user doesn't see a
   // flash at the wrong position; useLayoutEffect re-positions before
   // the browser paints.
   const [pos, setPos] = useState({ left: -9999, top: -9999, ready: false });
 
+  /* These open a form OVER the row you pressed, carrying its date. They used
+   * to navigate: you landed on a list page, pressed "New Request", and typed
+   * back the date you had just clicked. "Apply OnDuty" was worse — it pointed
+   * at the regularization page, so it filed the wrong kind of request. */
   const options = [
-    canRegularize && { label: 'Regularize Attendance', path: '/attendance/regularization', icon: '✏️' },
-    { label: 'Apply OnDuty',           path: '/attendance/regularization', icon: '📍' },
-    { label: 'Apply Leave',            path: '/leave-tracker/requests',    icon: '📅' },
-    { label: 'Apply Compensatory Off', path: '/leave-tracker/comp-off',    icon: '🔁' },
+    canRegularize && { label: 'Regularize Attendance', kind: 'regularize', icon: '✏️' },
+    { label: 'Apply OnDuty',           kind: 'onduty',  icon: '📍' },
+    { label: 'Apply Leave',            kind: 'leave',   icon: '📅' },
+    { label: 'Apply Compensatory Off', kind: 'compoff', icon: '🔁' },
   ].filter(Boolean);
 
   React.useLayoutEffect(() => {
@@ -379,7 +386,7 @@ const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
         {options.map((opt, idx) => (
           <button
             key={idx}
-            onClick={() => { navigate(opt.path); onClose(); }}
+            onClick={() => { onPick(opt.kind); onClose(); }}
             className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50/50 transition-colors text-left group"
           >
             <span className="text-base bg-slate-50 group-hover:bg-blue-100/50 w-7 h-7 flex items-center justify-center rounded-lg border border-slate-100 group-hover:border-blue-200 transition-colors">{opt.icon}</span>
@@ -434,6 +441,7 @@ export default function Dashboard() {
   /* ─ Dropdown state ─ */
   const [showPayrollMore, setShowPayrollMore] = useState(false);
   const [showRequestMenu, setShowRequestMenu] = useState(null);
+  const [requestModal, setRequestModal] = useState(null);
   const payrollMoreRef = useRef();
 
   /* ─ Close dropdowns on outside click ─
@@ -828,8 +836,13 @@ export default function Dashboard() {
   /* ─ shift info from user.shift */
   const shift = user?.shift;
   const shiftName = shift?.name || 'No shift assigned';
+  /* Was the raw database strings — "09:30 - 18:00" — sitting beside punch
+   * times that were already formatted as "01:11 PM". Two conventions on one
+   * line. formatTimeRange follows the organisation's 12/24-hour setting, which
+   * existed in Settings and was read by nothing. */
+  const { timeFormat: orgTimeFormat } = useLocaleFormat();
   const shiftTime = (shift?.start_time && shift?.end_time)
-    ? `${shift.start_time} - ${shift.end_time}`
+    ? formatTimeRange(shift.start_time, shift.end_time, orgTimeFormat)
     : '';
 
   /* ─ week range display (Attendance tab — offset-aware) */
@@ -1792,6 +1805,9 @@ export default function Dashboard() {
                                       left: rect.left, right: rect.right,
                                     },
                                     canRegularize,
+                                    // The day this row is for. Without it the
+                                    // form opened on today whatever you clicked.
+                                    date: row.dateStr,
                                   });
                                 }}
                                 // On touch devices `group-hover` never fires, so the trigger
@@ -2083,8 +2099,27 @@ export default function Dashboard() {
          <RequestMenu
            buttonRect={showRequestMenu.buttonRect}
            canRegularize={!!showRequestMenu.canRegularize}
+           onPick={(kind) => setRequestModal({ kind, date: showRequestMenu.date })}
            onClose={() => setShowRequestMenu(null)}
          />
+       )}
+
+       {/* The four request forms, opened in place from a day row. */}
+       {requestModal?.kind === 'regularize' && (
+         <RegularizeModal date={requestModal.date}
+           onClose={() => setRequestModal(null)}
+           onDone={() => { setRequestModal(null); fetchWeeklyAttendance(); }} />
+       )}
+       {requestModal?.kind === 'onduty' && (
+         <OnDutyModal date={requestModal.date}
+           onClose={() => setRequestModal(null)}
+           onDone={() => { setRequestModal(null); fetchWeeklyAttendance(); }} />
+       )}
+       {(requestModal?.kind === 'leave' || requestModal?.kind === 'compoff') && (
+         <ApplyLeaveModal date={requestModal.date}
+           mode={requestModal.kind === 'compoff' ? 'compoff' : 'leave'}
+           onClose={() => setRequestModal(null)}
+           onDone={() => { setRequestModal(null); fetchWeeklyAttendance(); }} />
        )}
 
        {/* Department Members Modal */}

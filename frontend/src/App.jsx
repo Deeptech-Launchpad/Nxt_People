@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LocaleProvider } from './utils/datetime';
 import { AttendanceProvider } from './context/AttendanceContext';
 import { WeekendRulesProvider } from './context/WeekendRulesContext';
 import { FunctionAccessProvider } from './context/FunctionAccessContext';
@@ -371,6 +372,9 @@ export default function App() {
   return (
     <MobileBlocker>
       <AuthProvider>
+        {/* Reads the organisation's 12/24-hour and date format once, so every
+            screen writes a time the same way instead of each choosing. */}
+        <LocaleProvider>
         <FunctionAccessProvider>
           <WeekendRulesProvider>
             <AttendanceProvider>
@@ -391,6 +395,7 @@ export default function App() {
             </AttendanceProvider>
           </WeekendRulesProvider>
         </FunctionAccessProvider>
+        </LocaleProvider>
       </AuthProvider>
     </MobileBlocker>
   );

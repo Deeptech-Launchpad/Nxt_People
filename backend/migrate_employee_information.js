@@ -158,6 +158,13 @@ async function migrate() {
       CREATE INDEX IF NOT EXISTS tasks_due_reminders_idx
         ON tasks (reminder_at) WHERE reminder_at IS NOT NULL AND reminder_sent_at IS NULL`);
 
+    /* Settings -> Attendance -> Regularization already offers a `document`
+     * field, and attendance_regularizations had nowhere to put one — so
+     * switching it on silently did nothing. on_duty_requests already stores
+     * both columns; this matches its shape rather than inventing a third. */
+    await ensure(client, 'attendance_regularizations', 'attachment_path', 'TEXT');
+    await ensure(client, 'attendance_regularizations', 'attachment_name', 'TEXT');
+
     /* Fields the reference's employee record carries that ours had nowhere to
      * put. Seating location and tags are plain text; onboarding status mirrors
      * what the preboarding flow reports. created_by / updated_by back the

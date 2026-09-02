@@ -14,6 +14,39 @@ const { sendLeaveApprovalEmail } = require('../utils/mailer');
 const attendanceConfig = require('../utils/attendanceConfig');
 const logger = require('../logger');
 const { serverError } = require('../utils/serverError');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+
+/* Attachments go in the same uploads directory on-duty uses, so there is one
+ * folder to persist rather than a second nobody backs up. Settings already
+ * offered a `document` field on regularization; the table had nowhere to put
+ * one, so switching it on did nothing. */
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+const ALLOWED_ATTACHMENTS = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.xlsx', '.xls'];
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `regularization-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, ALLOWED_ATTACHMENTS.includes(path.extname(file.originalname).toLowerCase())),
+});
+
+// multer rejects an oversized or wrong-typed file by erroring out of the
+// middleware, which without this lands as an unexplained 500.
+const uploadAttachment = (req, res, next) => upload.single('attachment')(req, res, err => {
+  if (!err) return next();
+  const message = err.code === 'LIMIT_FILE_SIZE'
+    ? 'The attachment must be 5 MB or smaller'
+    : 'That attachment could not be accepted';
+  res.status(400).json({ success: false, message });
+});
 router.use(protect);
 
 // Regularization can be switched off in Attendance → Configuration → Methods.
@@ -103,7 +136,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
 });
 
 // POST submit request
-router.post('/', requireRegularizationEnabled, [
+router.post('/', requireRegularizationEnabled, uploadAttachment, [
   body('date').isISO8601().withMessage('Date must be YYYY-MM-DD'),
   body('reason').optional({ nullable: true }).isString().trim().isLength({ max: 500 }),
   body('checkIn').optional({ nullable: true }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('checkIn must be HH:MM'),
@@ -175,10 +208,24 @@ router.post('/', requireRegularizationEnabled, [
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      /* The document field can be switched off in Settings. A file arriving
+       * while it is off is discarded rather than stored, so turning the field
+       * off really does stop collecting documents. */
+      const docField = (cfg.fields && cfg.fields.document) || {};
+      const keepFile = !!req.file && docField.show !== false;
+      if (req.file && !keepFile) fs.unlink(req.file.path, () => {});
+      const attachmentPath = keepFile ? `/uploads/${req.file.filename}` : null;
+      const attachmentName = keepFile ? req.file.originalname.slice(0, 255) : null;
+
       const result = await client.query(
-        `INSERT INTO attendance_regularizations (employee_id, date, check_in, check_out, reason)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id as "_id", date, check_in as "checkIn", check_out as "checkOut", reason, status, created_at as "createdAt"`,
-        [req.user._id, date, checkIn || null, checkOut || null, reasonText || null]
+        `INSERT INTO attendance_regularizations
+           (employee_id, date, check_in, check_out, reason, attachment_path, attachment_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id as "_id", date, check_in as "checkIn", check_out as "checkOut", reason, status,
+                   attachment_path as "attachmentPath", attachment_name as "attachmentName",
+                   created_at as "createdAt"`,
+        [req.user._id, date, checkIn || null, checkOut || null, reasonText || null,
+         attachmentPath, attachmentName]
       );
       reg = result.rows[0];
       levels = await createLevels(client, 'regularization', reg._id, req.user._id, {
