@@ -10,14 +10,14 @@ import api from '../../../utils/api';
  * nothing happened" bugs come from — one of them forgets to send a parameter
  * and the screen looks like it answered.
  */
-export default function useListView({ endpoint, module, defaultSort }) {
+export default function useListView({ endpoint, module, defaultSort, initialCriteria = [] }) {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [sort, setSort] = useState(defaultSort || { by: '', dir: 'desc' });
-  const [criteria, setCriteria] = useState([]);
+  const [criteria, setCriteria] = useState(initialCriteria);
   const [system, setSystem] = useState({});
   const [scope, setScope] = useState('all');
   const [fields, setFields] = useState([]);

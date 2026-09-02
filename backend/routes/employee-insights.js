@@ -83,43 +83,74 @@ async function distribution(column, limit = 10) {
 /* Age and experience are banded rather than raw, matching the reference's
  * buckets. Both are derived from a date, so somebody with no date of birth on
  * file lands in 'Not set' rather than being silently counted as a newborn. */
+/* Bands must come back in BAND order, not alphabetical.
+ * `ORDER BY label` puts '<1' after '4-5' and 'Under 21' after '45-48', which
+ * drew an x-axis reading 1, 2, 3, 4-5, <1 — a chart that is wrong rather than
+ * merely ugly, because a reader takes the left-to-right order as meaning
+ * something. Every band therefore carries an explicit rank. */
 async function ageBands() {
   const r = await pool.query(
-    `SELECT CASE
-              WHEN e.date_of_birth IS NULL THEN 'Not set'
-              WHEN age_years < 21 THEN 'Under 21'
-              WHEN age_years <= 23 THEN '21-23'
-              WHEN age_years <= 26 THEN '24-26'
-              WHEN age_years <= 29 THEN '27-29'
-              WHEN age_years <= 32 THEN '30-32'
-              WHEN age_years <= 36 THEN '33-36'
-              WHEN age_years <= 40 THEN '37-40'
-              WHEN age_years <= 44 THEN '41-44'
-              WHEN age_years <= 48 THEN '45-48'
-              ELSE '49+'
-            END AS label, COUNT(*)::int AS count
-       FROM (SELECT e.*, EXTRACT(YEAR FROM AGE(e.date_of_birth))::int AS age_years
-               FROM employees e WHERE ${REAL} AND e.status = 'active') e
-      GROUP BY 1 ORDER BY 1`);
+    `SELECT label, count FROM (
+       SELECT CASE
+                WHEN age_years IS NULL THEN 'Not set'
+                WHEN age_years < 21 THEN 'Under 21'
+                WHEN age_years <= 23 THEN '21-23'
+                WHEN age_years <= 26 THEN '24-26'
+                WHEN age_years <= 29 THEN '27-29'
+                WHEN age_years <= 32 THEN '30-32'
+                WHEN age_years <= 36 THEN '33-36'
+                WHEN age_years <= 40 THEN '37-40'
+                WHEN age_years <= 44 THEN '41-44'
+                WHEN age_years <= 48 THEN '45-48'
+                ELSE '49+'
+              END AS label,
+              MIN(CASE
+                WHEN age_years IS NULL THEN 99
+                WHEN age_years < 21 THEN 0
+                WHEN age_years <= 23 THEN 1
+                WHEN age_years <= 26 THEN 2
+                WHEN age_years <= 29 THEN 3
+                WHEN age_years <= 32 THEN 4
+                WHEN age_years <= 36 THEN 5
+                WHEN age_years <= 40 THEN 6
+                WHEN age_years <= 44 THEN 7
+                WHEN age_years <= 48 THEN 8
+                ELSE 9 END) AS rank,
+              COUNT(*)::int AS count
+         FROM (SELECT EXTRACT(YEAR FROM AGE(e.date_of_birth))::int AS age_years
+                 FROM employees e WHERE ${REAL} AND e.status = 'active') t
+        GROUP BY 1
+     ) b ORDER BY rank`);
   const total = r.rows.reduce((n, x) => n + x.count, 0);
   return r.rows.map(x => ({ ...x, percent: total ? Math.round((x.count / total) * 1000) / 10 : 0 }));
 }
 
 async function experienceBands() {
   const r = await pool.query(
-    `SELECT CASE
-              WHEN yrs IS NULL THEN 'Not set'
-              WHEN yrs < 1 THEN '<1'
-              WHEN yrs < 2 THEN '1'
-              WHEN yrs < 3 THEN '2'
-              WHEN yrs < 4 THEN '3'
-              WHEN yrs <= 5 THEN '4-5'
-              ELSE '5+'
-            END AS label, COUNT(*)::int AS count
-       FROM (SELECT EXTRACT(YEAR FROM AGE(COALESCE(e.exit_date, CURRENT_DATE),
-                                          COALESCE(e.date_of_joining, e.joining_date)))::int AS yrs
-               FROM employees e WHERE ${REAL} AND e.status = 'active') t
-      GROUP BY 1 ORDER BY 1`);
+    `SELECT label, count FROM (
+       SELECT CASE
+                WHEN yrs IS NULL THEN 'Not set'
+                WHEN yrs < 1 THEN '<1'
+                WHEN yrs < 2 THEN '1'
+                WHEN yrs < 3 THEN '2'
+                WHEN yrs < 4 THEN '3'
+                WHEN yrs <= 5 THEN '4-5'
+                ELSE '5+'
+              END AS label,
+              MIN(CASE
+                WHEN yrs IS NULL THEN 99
+                WHEN yrs < 1 THEN 0
+                WHEN yrs < 2 THEN 1
+                WHEN yrs < 3 THEN 2
+                WHEN yrs < 4 THEN 3
+                WHEN yrs <= 5 THEN 4
+                ELSE 5 END) AS rank,
+              COUNT(*)::int AS count
+         FROM (SELECT EXTRACT(YEAR FROM AGE(COALESCE(e.exit_date, CURRENT_DATE),
+                                            COALESCE(e.date_of_joining, e.joining_date)))::int AS yrs
+                 FROM employees e WHERE ${REAL} AND e.status = 'active') t
+        GROUP BY 1
+     ) b ORDER BY rank`);
   const total = r.rows.reduce((n, x) => n + x.count, 0);
   return r.rows.map(x => ({ ...x, percent: total ? Math.round((x.count / total) * 1000) / 10 : 0 }));
 }

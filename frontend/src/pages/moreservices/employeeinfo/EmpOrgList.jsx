@@ -36,6 +36,7 @@ export default function EmpOrgList({ resource, title, singular, extraColumns = [
   const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [picked, setPicked] = useState([]);
 
   const columns = useMemo(() => [
     { key: 'name', label: `${singular} Name` },
@@ -94,6 +95,23 @@ export default function EmpOrgList({ resource, title, singular, extraColumns = [
         sort={lv.sort} onSort={lv.onSort}
         criteria={lv.criteria} onCriteria={lv.onCriteria}
         hidden={lv.hidden} onHidden={lv.onHidden}
+        selectable selected={picked} onSelected={setPicked}
+        // Only rows with nobody on them can go: the server refuses the rest
+        // and a tick that always fails is worse than one that is not offered.
+        selectableRow={r => !r.userCount}
+        bulkActions={[
+          { label: `Delete ${picked.length}`, danger: true, onClick: async () => {
+              const rows = lv.rows.filter(r => picked.includes(r.id));
+              let ok = 0; const failed = [];
+              for (const r of rows) {
+                try { await api.delete(`/org-setup/${resource}/${r.id}`); ok++; }
+                catch (err) { failed.push(err.response?.data?.message || r.name); }
+              }
+              setPicked([]); lv.reload();
+              if (ok) toast.success(`${ok} deleted`);
+              if (failed.length) toast.error(`${failed.length} could not be deleted - ${failed[0]}`, { duration: 6000 });
+            } },
+        ]}
         toolbarLeft={
           <ViewPicker module={resource} fields={fields} active={lv.view}
             defaultLabel={`${singular} View`}

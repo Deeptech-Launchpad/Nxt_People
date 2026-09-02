@@ -47,7 +47,9 @@ function KpiCard({ title, monthLabel, current, previous, growth, year }) {
 
         <div className="text-slate-500">{year - 1}</div>
         <div className="text-center text-slate-700 tabular-nums">{previous}</div>
-        <div className="text-center text-slate-400">—</div>
+        {/* The prior year has no year before it in this response, so there is
+            no growth to state. A dash says that; a 0% would be a claim. */}
+        <div className="text-center text-slate-300">—</div>
 
         <div className="text-slate-500">{year}</div>
         <div className="text-center text-slate-800 font-semibold tabular-nums">{current}</div>
@@ -57,12 +59,42 @@ function KpiCard({ title, monthLabel, current, previous, growth, year }) {
   );
 }
 
-function Donut({ data, height = 260 }) {
+/* The reference labels each slice with its count and share, on a leader line.
+ * A donut with only a legend makes you hover every slice to read a number that
+ * was already known — which is why the values looked "away from the diagram".
+ * Small slices are left unlabelled rather than overlapping into illegibility;
+ * they stay in the legend and the tooltip. */
+const renderSliceLabel = ({ cx, cy, midAngle, outerRadius, percent, payload }) => {
+  if (percent < 0.04) return null;
+  const RAD = Math.PI / 180;
+  const r1 = outerRadius + 12;
+  const r2 = outerRadius + 26;
+  const sin = Math.sin(-midAngle * RAD);
+  const cos = Math.cos(-midAngle * RAD);
+  const sx = cx + outerRadius * cos, sy = cy + outerRadius * sin;
+  const mx = cx + r1 * cos, my = cy + r1 * sin;
+  const ex = cx + r2 * cos, ey = cy + r2 * sin;
+  const right = cos >= 0;
+  return (
+    <g>
+      <polyline points={`${sx},${sy} ${mx},${my} ${ex},${ey}`} stroke="#cbd5e1" fill="none" />
+      <text x={ex + (right ? 4 : -4)} y={ey} textAnchor={right ? 'start' : 'end'}
+        dominantBaseline="central" fontSize={11.5} fill="#475569">
+        {`${payload.count} (${payload.percent}%)`}
+      </text>
+    </g>
+  );
+};
+
+function Donut({ data, height = 300 }) {
   if (!data.length) return <p className="text-slate-400 text-[14px] text-center py-10">No data yet.</p>;
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <PieChart>
-        <Pie data={data} dataKey="count" nameKey="label" innerRadius="55%" outerRadius="80%" paddingAngle={2}>
+      {/* Margin leaves room for the leader lines; without it they are clipped
+          by the container and the numbers vanish at the edges. */}
+      <PieChart margin={{ top: 8, right: 56, bottom: 8, left: 56 }}>
+        <Pie data={data} dataKey="count" nameKey="label" innerRadius="48%" outerRadius="70%"
+          paddingAngle={2} labelLine={false} label={renderSliceLabel} isAnimationActive={false}>
           {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
         </Pie>
         <Tooltip formatter={(v, n, p) => [`${v} (${p.payload.percent}%)`, p.payload.label]} />

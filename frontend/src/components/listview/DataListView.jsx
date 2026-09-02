@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, MoreHorizontal,
-  Columns, Maximize2, Minimize2, Search, X,
+  Columns, Maximize2, Minimize2, Search, X, ChevronsUpDown,
 } from 'lucide-react';
 import CriteriaFilter, { CriteriaChips } from './CriteriaFilter';
 
@@ -122,7 +123,7 @@ export default function DataListView({
   systemFilters = null,
   hidden = [], onHidden,             // column picker
   frozenCount = 0,
-  selectable = false, selected = [], onSelected, selectableRow = () => true,
+  selectable = false, selected = [], onSelected, selectableRow = () => true, bulkActions = [],
   rowMenu = null,                    // (row) => [{label, icon, onClick, danger, disabled}]
   toolbarLeft = null, toolbarRight = null, toolbarMenu = [],
   emptyText = 'No records found',
@@ -163,9 +164,14 @@ export default function DataListView({
         style={isFrozen ? { left: offsets[i] ?? 0 } : undefined}>
         {c.sortable === false ? c.label : (
           <button onClick={() => onSort(c.key)}
-            className={`flex items-center gap-1 hover:text-slate-700 ${active ? 'text-slate-700' : ''}`}>
+            className={`flex items-center gap-1 group/sort hover:text-slate-700 ${active ? 'text-slate-700' : ''}`}>
             {c.label}
-            {active && (sort.dir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />)}
+            {/* A dim double-chevron on every sortable column, the way the
+                reference does it: without one there is nothing to say a header
+                can be clicked at all until after you have clicked it. */}
+            {active
+              ? (sort.dir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />)
+              : <ChevronsUpDown size={12} className="text-slate-300 group-hover/sort:text-slate-400" />}
           </button>
         )}
       </th>
@@ -195,8 +201,14 @@ export default function DataListView({
       />
 
       {selectable && selected.length > 0 && (
-        <div className="flex items-center gap-3 bg-brand-50 border border-brand-200 rounded-lg px-3.5 py-2 mb-3 w-fit">
+        <div className="flex flex-wrap items-center gap-3 bg-brand-50 border border-brand-200 rounded-lg px-3.5 py-2 mb-3 w-fit">
           <span className="text-[15px] text-brand-700 font-medium">{selected.length} selected</span>
+          {bulkActions.filter(Boolean).map(a => (
+            <button key={a.label} onClick={a.onClick}
+              className={`text-[15px] font-medium ${a.danger ? 'text-rose-600 hover:text-rose-700' : 'text-brand-700 hover:text-brand-800'}`}>
+              {a.label}
+            </button>
+          ))}
           <button onClick={() => onSelected([])} className="text-slate-400 hover:text-slate-600"><X size={15} /></button>
         </div>
       )}
@@ -289,32 +301,67 @@ export default function DataListView({
 
 /* The row menu lives at the START of the row in the reference, revealed on
  * hover, which is why it sits in the same sticky cell as the column picker. */
+/* The row menu is rendered into document.body, not beside its button.
+ *
+ * The table scrolls horizontally, so it sits in an `overflow-auto` container.
+ * An absolutely positioned child of that container is CLIPPED by it — which is
+ * why the menu appeared to open underneath the following rows and lost its
+ * last item. No amount of z-index fixes that; the element has to leave the
+ * scroll container entirely, so it is portalled out and positioned with fixed
+ * coordinates taken from the button.
+ */
 function RowDots({ items }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  const [up, setUp] = useState(false);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const MENU_W = 180;
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const height = 44 * (items || []).filter(Boolean).length + 8;
+    const below = window.innerHeight - r.bottom;
+    setPos({
+      top: below < height ? Math.max(8, r.top - height) : r.bottom + 4,
+      // Keep it on screen when the button is near the right edge.
+      left: Math.min(r.left, window.innerWidth - MENU_W - 8),
+    });
+  };
+
   useEffect(() => {
     if (!open) return;
-    const close = e => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const close = e => {
+      if (btnRef.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    // A fixed menu does not travel with the row, so any scroll must dismiss it
+    // rather than leave it floating beside the wrong record.
+    const dismiss = () => setOpen(false);
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    window.addEventListener('scroll', dismiss, true);
+    window.addEventListener('resize', dismiss);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      window.removeEventListener('scroll', dismiss, true);
+      window.removeEventListener('resize', dismiss);
+    };
   }, [open]);
+
   const usable = (items || []).filter(Boolean);
   if (!usable.length) return null;
+
   return (
-    <div ref={ref} className="relative" onClick={e => e.stopPropagation()}>
-      <button
-        onClick={() => {
-          const r = ref.current?.getBoundingClientRect();
-          setUp(!!r && window.innerHeight - r.bottom < 200);
-          setOpen(o => !o);
-        }}
+    <div className="relative" onClick={e => e.stopPropagation()}>
+      <button ref={btnRef}
+        onClick={() => { place(); setOpen(o => !o); }}
         className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600">
         <MoreHorizontal size={16} />
       </button>
-      {open && (
-        <div className={`absolute left-0 ${up ? 'bottom-full mb-1' : 'top-full mt-1'}
-          min-w-[170px] bg-white rounded-xl shadow-2xl border border-slate-200 py-1 z-50`}>
+      {open && pos && createPortal(
+        <div ref={menuRef} style={{ position: 'fixed', top: pos.top, left: pos.left, minWidth: MENU_W }}
+          className="bg-white rounded-xl shadow-2xl border border-slate-200 py-1 z-[60]"
+          onClick={e => e.stopPropagation()}>
           {usable.map(it => (
             <button key={it.label} disabled={!!it.disabled} title={it.disabled || undefined}
               onClick={() => { if (it.disabled) return; setOpen(false); it.onClick(); }}
@@ -324,8 +371,7 @@ function RowDots({ items }) {
               {it.icon}{it.label}
             </button>
           ))}
-        </div>
-      )}
+        </div>, document.body)}
     </div>
   );
 }

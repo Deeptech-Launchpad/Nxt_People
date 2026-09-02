@@ -49,7 +49,16 @@ const masked = (has, value) => {
 
 export default function EmpEmployees() {
   const navigate = useNavigate();
-  const lv = useListView({ endpoint: '/employees', module: 'employees', defaultSort: { by: '', dir: 'desc' } });
+  /* Opens on CURRENT employees, which is what the reference's default
+   * "Employee View" shows and why its count reads 58 where an unfiltered list
+   * of every row ever created reads 153. It is a real, removable criterion
+   * rather than a hidden WHERE, so the chip above the table says it is on and
+   * clearing it shows everyone including leavers. */
+  const lv = useListView({
+    endpoint: '/employees', module: 'employees',
+    defaultSort: { by: '', dir: 'desc' },
+    initialCriteria: [{ field: 'status', operator: 'is', value: 'active' }],
+  });
   const [wizard, setWizard] = useState(false);
   const [taskFor, setTaskFor] = useState(null);
   const [toDelete, setToDelete] = useState(null);
@@ -62,6 +71,9 @@ export default function EmpEmployees() {
    * as the page is open. They are never written back into the row data, so a
    * refetch re-masks them rather than leaving them on screen indefinitely. */
   const [revealed, setRevealed] = useState({});
+  const [picked, setPicked] = useState([]);
+  const [bulkDelete, setBulkDelete] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     api.get('/employees/metadata')
@@ -157,6 +169,22 @@ export default function EmpEmployees() {
     { key: 'permanentAddress', label: 'Permanent Address', type: 'text' },
   ], []);
 
+  /* Bulk archive. Deliberately N calls to the SAME endpoint the single delete
+   * uses: the soft-delete and its guards are already proved there, and a
+   * second implementation is what drifts. Failures are counted, not swallowed. */
+  const removeMany = async () => {
+    setBulkBusy(true);
+    const targets = lv.rows.filter(r => picked.includes(r._id));
+    let ok = 0; const failed = [];
+    for (const r of targets) {
+      try { await api.delete(`/employees/${r._id}`); ok++; }
+      catch (err) { failed.push(`${r.employeeId}: ${err.response?.data?.message || 'failed'}`); }
+    }
+    setBulkBusy(false); setBulkDelete(false); setPicked([]); lv.reload();
+    if (ok) toast.success(`${ok} employee(s) archived`);
+    if (failed.length) toast.error(`${failed.length} could not be archived - ${failed[0]}`, { duration: 6000 });
+  };
+
   const remove = async () => {
     setDeleting(true);
     try {
@@ -178,6 +206,10 @@ export default function EmpEmployees() {
         criteria={lv.criteria} onCriteria={lv.onCriteria}
         hidden={lv.hidden} onHidden={lv.onHidden}
         frozenCount={3}
+        selectable selected={picked} onSelected={setPicked}
+        bulkActions={[
+          { label: `Archive ${picked.length}`, danger: true, onClick: () => setBulkDelete(true) },
+        ]}
         systemFilters={{
           value: lv.system,
           fields: [
@@ -245,6 +277,38 @@ export default function EmpEmployees() {
           onRevealed={(rows) => setRevealed(Object.fromEntries(rows.map(x => [x._id, x])))} />
       )}
       {taskFor && <AddTaskModal employee={taskFor} onClose={() => setTaskFor(null)} />}
+
+      {bulkDelete && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
+            <h3 className="font-display font-semibold text-slate-800 text-xl">
+              Archive {picked.length} employee(s)?
+            </h3>
+            <p className="text-[14px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 mt-3">
+              They are archived, not erased - attendance, leave and payslip history stays intact and
+              they can no longer sign in. This cannot be undone from here.
+            </p>
+            <div className="max-h-40 overflow-y-auto mt-3 border border-slate-100 rounded-xl divide-y divide-slate-50">
+              {lv.rows.filter(r => picked.includes(r._id)).map(r => (
+                <div key={r._id} className="px-3 py-2 text-[14px] text-slate-600 flex justify-between gap-3">
+                  <span className="truncate">{r.firstName} {r.lastName}</span>
+                  <span className="text-slate-400 flex-shrink-0">{r.employeeId}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setBulkDelete(false)} disabled={bulkBusy}
+                className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-[15px] font-medium hover:bg-slate-50 disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={removeMany} disabled={bulkBusy}
+                className="flex-1 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white py-2.5 rounded-xl text-[15px] font-medium">
+                {bulkBusy ? 'Archiving...' : `Archive ${picked.length}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toDelete && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
