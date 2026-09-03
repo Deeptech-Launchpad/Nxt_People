@@ -124,6 +124,30 @@ const mins = (hhmm) => {
     return;
   }
 
+  /* Check the audit table BEFORE touching anything.
+   *
+   * The first --apply run failed with "current transaction is aborted": the
+   * insert below named audit_logs(user_id, ...) when the table is
+   * audit_log(actor_id, ...). Postgres poisons the whole transaction the
+   * moment any statement fails, so the .catch(() => {}) that was wrapped
+   * around it swallowed the real error and every later statement died with a
+   * message about the transaction rather than about the mistake. Nothing was
+   * written, which is the one thing that went right.
+   *
+   * Two lessons, both applied: never swallow a failed statement inside a
+   * transaction, and check the shape you depend on before you start writing. */
+  const audit = await pool.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='audit_log'`);
+  const auditCols = new Set(audit.rows.map(r => r.column_name));
+  const canAudit = ['action', 'resource', 'resource_id', 'changes'].every(c => auditCols.has(c));
+  if (!canAudit) {
+    console.error('\n  Refusing to run: audit_log does not have the columns this writes to.');
+    console.error('  A repair that cannot be recorded is not one worth making.\n');
+    await pool.end();
+    return;
+  }
+
   const client = await pool.connect();
   let done = 0;
   try {
@@ -137,14 +161,16 @@ const mins = (hhmm) => {
                 updated_at = NOW()
           WHERE id = $1`,
         [p.r.id, `${p.newIn}:00`, `${p.newOut}:00`, Number(p.hours.toFixed(8))]);
+      /* No catch. If this fails the repair rolls back with it — a corrected
+       * day nobody can trace is worse than an uncorrected one. */
       await client.query(
-        `INSERT INTO audit_logs (user_id, action, resource, resource_id, changes, created_at)
+        `INSERT INTO audit_log (actor_id, action, resource, resource_id, changes, created_at)
          VALUES (NULL, 'UPDATE', 'Attendance repair', $1, $2::jsonb, NOW())`,
         [p.r.id, JSON.stringify({
           summary: `Check-out read as PM: ${p.r['in']}->${p.r.out} became ${p.newIn}->${p.newOut}, `
             + `hours ${hm(p.r.hours)} -> ${hm(p.hours)}`,
           date: p.r.date, employee: p.r.code, source: 'approved regularization',
-        })]).catch(() => {});
+        })]);
       done++;
     }
     await client.query('COMMIT');
