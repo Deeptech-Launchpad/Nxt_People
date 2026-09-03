@@ -2288,7 +2288,14 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
 
     const totalUsers = employees.length;
     if (statusFilter.length) {
-      employees = employees.filter(r => statusFilter.includes(r.statusKey) || statusFilter.includes(r.presenceKey));
+      /* One filter serving three questions. `status` already carried both the
+       * day's classification and the presence bucket, so where-people-work
+       * joins it rather than growing a fourth parameter the caller has to
+       * know about — the keys do not collide. */
+      employees = employees.filter(r => statusFilter.includes(r.statusKey)
+        || statusFilter.includes(r.presenceKey)
+        || (r.workMode && statusFilter.includes(r.workMode))
+        || (statusFilter.includes('notClassified') && r.firstIn && !r.workMode));
     }
     employees = employees.filter(r => totalHoursMatches(req.query, r.totalHours));
 

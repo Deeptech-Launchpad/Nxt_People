@@ -54,15 +54,20 @@ const PRESENCE = [
  * Unknown is drawn, never hidden. A punch the geofence could not place is not
  * evidence of anything, and folding it into either side would put a number on
  * screen that nobody could defend. */
+/* Punches that predate classification are NOT a slice.
+ *
+ * They were, for one afternoon, and they dominated the chart: 44 grey against
+ * 1 real answer, for a reason that resolves itself at the next check-in. A
+ * chart mostly made of "this does not apply yet" is not worth reading.
+ *
+ * They are still counted — as a line under the legend, and only while there
+ * are any — because dropping them silently would leave "Office 2" on a day
+ * 45 people came in, and somebody would eventually read that as the whole
+ * story. */
 const WORK_MODE = [
   { key: 'office', label: 'Office', color: '#2ecfa0' },
-  { key: 'wfh', label: 'Working from home', color: '#f0a13c' },
-  /* Two different failures, and they do not have the same answer. "Not
-     placed" was attempted and could not be resolved — worth acting on.
-     "Before tracking" was never attempted, because the punch predates
-     classification being switched on — it resolves itself tomorrow. */
+  { key: 'wfh', label: 'WFH', color: '#f0a13c' },
   { key: 'unknown', label: 'Not placed', color: '#c9c9c9' },
-  { key: 'notClassified', label: 'Before tracking', color: '#e6e6e6' },
 ];
 
 const EXPORT_COLUMNS = [
@@ -70,6 +75,14 @@ const EXPORT_COLUMNS = [
   { key: 'firstIn', header: 'First In', value: r => fmtTime(r.firstIn) }, { key: 'lastOut', header: 'Last Out', value: r => fmtTime(r.lastOut) },
   { key: 'totalHours', header: 'Total Hours', value: r => fmtHrs(r.totalHours) },
   { key: 'status', header: 'Status' }, { key: 'shiftName', header: 'Shift' },
+  /* Spelt out rather than exported as the raw key: a spreadsheet is read
+     without the screen beside it, and "unknown" in a column called Working
+     From tells nobody what happened. */
+  { key: 'workMode', header: 'Working From',
+    value: r => (!r.firstIn ? '' : r.workMode === 'office' ? 'Office'
+      : r.workMode === 'wfh' ? 'WFH'
+      : r.workMode ? 'Not placed (no usable location)'
+      : 'Not tracked (before location tracking)') },
   /* Housekeeping and anyone else HR marks for cannot punch, so a blank First
      In on their row reads as a missed check-in rather than as a check-in that
      was never going to happen. They are kept out of the on-screen "Yet to
@@ -131,6 +144,47 @@ export default function AttendanceDailyStatus() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, [date, status, hours, ...f.deps]);
 
+  /* Keep today's figures current without a reload.
+   *
+   * This is a live board — somebody watching it wants to see a check-in land,
+   * and having to press refresh to find out whether it worked makes the page
+   * useless for the one job it has. Only for TODAY: a past date cannot change,
+   * so polling it would be pure noise.
+   *
+   * Quietly, without the spinner. A table that blanks itself every thirty
+   * seconds is worse than a stale one. And paused while the tab is hidden,
+   * because a forgotten tab polling all night helps nobody. */
+  useEffect(() => {
+    if (date !== todayCA()) return undefined;
+
+    const quietReload = () => {
+      if (document.visibilityState !== 'visible') return;
+      const params = new URLSearchParams({
+        date, ...f.params(),
+        ...(hours.mode !== 'all' && hours.amount ? { totalHours: hours.mode, totalHoursValue: hours.amount } : {}),
+      });
+      appendDimensionFilters(params, f.dimFilters);
+      status.forEach(s => params.append('status', s));
+      api.get(`/reports/attendance/daily-status?${params}`)
+        .then(r => setData(r.data))
+        .catch(() => { /* a dropped poll is not worth a toast */ });
+    };
+
+    const id = setInterval(quietReload, 30000);
+    /* Coming back to the tab is the moment somebody most wants it current,
+     * and waiting up to thirty seconds for that is exactly the delay this is
+     * meant to remove. */
+    const onVisible = () => { if (document.visibilityState === 'visible') quietReload(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, status, hours, ...f.deps]);
+
   const reset = () => { setDate(todayCA()); setStatus([]); setHours({ mode: 'all', amount: '' }); f.reset(); };
 
   // Every status stays in the chart data even at zero, because the reference
@@ -143,6 +197,7 @@ export default function AttendanceDailyStatus() {
 
   const modePie = WORK_MODE.map(p => ({ ...p, count: data?.workMode?.[p.key] || 0 }));
   const modeTotal = modePie.reduce((n, p) => n + Number(p.count), 0);
+  const notClassified = data?.workMode?.notClassified || 0;
   /* With classification switched off nothing is placed, and a chart reading
      "Working from home: 0" would state something the system does not know. */
   const modeOn = !!data?.workMode?.classifyEnabled;
@@ -324,6 +379,7 @@ export default function AttendanceDailyStatus() {
                           data={modePie} dataKey="count" nameKey="label" cx="50%" cy="50%"
                           innerRadius={48} outerRadius={74} isAnimationActive={false}
                           activeShape={ActiveSlice}
+                          onClick={(_, i) => drill(modePie[i]?.key)} className="cursor-pointer"
                         >
                           {modePie.map(p => <Cell key={p.key} fill={p.color} stroke={p.count > 0 ? '#fff' : 'none'} />)}
                         </Pie>
@@ -337,22 +393,19 @@ export default function AttendanceDailyStatus() {
                 </div>
                 <div className="w-full sm:w-44 flex-shrink-0 space-y-1.5">
                   {modePie.map(p => (
-                    <LegendRow key={p.key} color={p.color} label={p.label} count={p.count} />
+                    <LegendRow key={p.key} color={p.color} label={p.label} count={p.count}
+                      onClick={() => drill(p.key)} />
                   ))}
-                  {/* Each grey slice explains itself, and only when it has a
-                      number. Blaming the browser for a punch that predates the
-                      feature sends somebody hunting a problem that is not
-                      there. */}
+                  {notClassified > 0 && (
+                    <p className="text-[12px] text-slate-400 pt-1.5 leading-snug">
+                      {notClassified} earlier check-in{notClassified === 1 ? '' : 's'} not counted here
+                      — recorded before location tracking was switched on.
+                    </p>
+                  )}
                   {modePie[2].count > 0 && (
                     <p className="text-[12px] text-slate-400 pt-1.5 leading-snug">
                       <strong className="font-medium">Not placed</strong> — the check-in had no usable
                       location. Usually a desktop browser, which has no GPS.
-                    </p>
-                  )}
-                  {modePie[3].count > 0 && (
-                    <p className="text-[12px] text-slate-400 pt-1.5 leading-snug">
-                      <strong className="font-medium">Before tracking</strong> — checked in before
-                      location tracking was switched on. These resolve from the next check-in.
                     </p>
                   )}
                 </div>
@@ -370,12 +423,16 @@ export default function AttendanceDailyStatus() {
                 <th className="text-left px-4 py-2.5">Last Out</th>
                 <th className="text-left px-4 py-2.5">Total Hours</th>
                 <th className="text-left px-4 py-2.5">Status</th>
+                {/* Clicking Office on the chart lands here, so the list has to
+                    show what was clicked — otherwise the drill-down is a
+                    filtered list with no visible reason for its contents. */}
+                {modeOn && <th className="text-left px-4 py-2.5">Working from</th>}
                 <th className="text-left px-4 py-2.5">Shift(s)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {data.employees.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-10 text-slate-400">No employees match these filters</td></tr>
+                <tr><td colSpan={modeOn ? 7 : 6} className="text-center py-10 text-slate-400">No employees match these filters</td></tr>
               ) : data.employees.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
@@ -388,6 +445,18 @@ export default function AttendanceDailyStatus() {
                   <td className="px-4 py-2.5 max-w-xs truncate text-slate-700" title={row.status || ''}>
                     {row.status || (row.attendanceMarkedByAdmin ? <span className="text-slate-400 italic">Marked by HR</span> : '—')}
                   </td>
+                  {modeOn && (
+                    <td className="px-4 py-2.5">
+                      {!row.firstIn ? <span className="text-slate-300">—</span>
+                        : row.workMode === 'office'
+                          ? <span className="text-[13px] font-medium text-emerald-700">Office</span>
+                        : row.workMode === 'wfh'
+                          ? <span className="text-[13px] font-medium text-amber-700">WFH</span>
+                        : row.workMode
+                          ? <span className="text-[13px] text-slate-400" title="The check-in had no usable location">Not placed</span>
+                          : <span className="text-[13px] text-slate-300" title="Recorded before location tracking was switched on">Not tracked</span>}
+                    </td>
+                  )}
                   <td className="px-4 py-2.5 text-slate-500">{row.shiftName || '—'}</td>
                 </tr>
               ))}
