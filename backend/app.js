@@ -159,6 +159,30 @@ const mutatingLimiter = rateLimit({
 });
 app.use(mutatingLimiter);
 
+/* ── API responses are never stored by the browser ────────────────────────
+ * Nothing here sent a cache header, so the browser was free to decide for
+ * itself — and on the session-restore path ("Restore pages?" after a
+ * shutdown) Chrome reuses what it has WITHOUT revalidating. An employee who
+ * checked in yesterday and forgot to check out came back to a clock still
+ * running from yesterday's punch, because /attendance/today replayed from
+ * cache. A hard refresh cleared it, which is not something to ask people to
+ * do.
+ *
+ * nginx.conf already carried the comment "API — never cached"; it was true
+ * of nginx's own proxy cache and never of the browser. It is true of both
+ * now — the header is set here so it holds however the app is served, and
+ * repeated in nginx as a belt.
+ *
+ * Scoped to /api only. Photos, covers and logos are served from /uploads and
+ * SHOULD stay cacheable; making avatars re-download on every screen would
+ * trade one bug for a slower product. */
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.set('Pragma', 'no-cache');       // HTTP/1.0 proxies and old Android WebViews
+  res.set('Expires', '0');
+  next();
+});
+
 // ── Routes ─────────────────────────────────────────────────────────────────────
 app.use('/api/auth',             authLimiter, require('./routes/auth'));
 app.use('/api/mfa',              require('./routes/mfa'));

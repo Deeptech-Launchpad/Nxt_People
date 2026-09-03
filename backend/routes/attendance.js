@@ -46,8 +46,16 @@ router.get('/today', async (req, res) => {
       const wh = parseFloat(row.workingHours);
       row.workingHours = isFinite(wh) ? wh : 0;
       row.sessions = sessionsRes.rows;
+      /* The day this payload is about. It was absent, which meant a client
+       * holding a stale body could not tell — an open row from yesterday
+       * looks exactly like an open row from this morning, and the timer
+       * ticked from yesterday's punch. With the date here the client can
+       * refuse to run a clock for a day that is not today. */
+      row.date = today;
     }
-    res.json({ success: true, data: row });
+    /* Sent even when there is no row, so a client that gets nothing back
+     * still knows which day the server answered for. */
+    res.json({ success: true, data: row, date: today });
   } catch (err) {
     serverError(res, err);
   }

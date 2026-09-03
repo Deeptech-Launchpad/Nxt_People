@@ -34,7 +34,7 @@ export default function CheckInOut() {
   // we check in/out from this page. Was previously calling the API
   // directly and only updating local state, which left Dashboard's
   // useAttendance() hook stale.
-  const { record, loading, actionLoading, isCheckedIn, isCheckedOut, checkIn, checkOut, elapsed } = useAttendance();
+  const { record, loading, actionLoading, isCheckedIn, isCheckedOut, checkIn, checkOut, elapsed, forgotCheckout } = useAttendance();
   const [time, setTime] = useState(new Date());
   const [gpsWarning, setGpsWarning] = useState(null);
   const { position, gpsError, gpsLoading, refresh: refreshGps } = useGeolocation();
@@ -195,9 +195,19 @@ export default function CheckInOut() {
             )}
 
             {/* Live elapsed timer */}
-            {isCheckedIn && (
+            {isCheckedIn && !forgotCheckout && (
               <p className="text-center text-sm text-slate-400 mt-3">
                 Clocked in at {new Date(record?.sessions?.[0]?.checkIn || record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} · {Math.floor(elapsed / 3600)}h {Math.floor((elapsed % 3600) / 60)}m worked today
+              </p>
+            )}
+
+            {/* The session stopped being credible hours ago. The clock is
+                frozen rather than running on, so say why — a stuck timer with
+                no explanation is what sent people looking for a refresh. */}
+            {isCheckedIn && forgotCheckout && (
+              <p className="text-center text-sm text-amber-600 mt-3">
+                Still open from {new Date(record?.sessions?.[0]?.checkIn || record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} — it looks like the check-out was missed.
+                Check out now to close the day, or raise a regularization to correct the time.
               </p>
             )}
 
