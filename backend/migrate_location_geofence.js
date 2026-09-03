@@ -133,10 +133,26 @@ async function migrate() {
     console.log(`  employees marked remote     ${c.remote}`);
     console.log(`  default radius              ${c.radius} m`);
     console.log(`  classification enabled      ${c.enabled}`);
-    if (carried) console.log(`\n  Carried the old single office point onto "${carried}".`);
-    console.log('\n  Classification is OFF and no location has coordinates yet, so');
-    console.log('  nothing about check-in changes until an administrator sets a point');
-    console.log('  under Organization Setup -> Locations and switches it on.\n');
+    /* The closing note has to match what was actually found. It used to say
+     * "no location has coordinates yet" unconditionally, and then printed
+     * that directly under a line reporting one that had — which is the kind
+     * of contradiction that teaches people to stop reading output. */
+    if (carried) {
+      console.log(`\n  Carried the old single office point onto "${carried}".`);
+      console.log('  VERIFY IT BEFORE SWITCHING CLASSIFICATION ON. That point came from a');
+      console.log('  setting nothing was reading, so nobody has ever checked it is right.');
+      console.log('  Open the location, press "Test from where I am" while standing at the');
+      console.log('  office, and re-capture it if the distance looks wrong.');
+    }
+    console.log(`\n  Classification is ${c.enabled === 'true' ? 'ON' : 'OFF'}.`);
+    if (c.enabled !== 'true') {
+      console.log('  Nothing about check-in changes until an administrator switches it on');
+      console.log('  under Settings -> Attendance -> Geo Restriction.');
+    }
+    if (Number(c.placed) === 0) {
+      console.log('  No location has coordinates yet, so there is nothing to switch on.');
+    }
+    console.log('');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('  Location geofence migration failed:', err.message);
