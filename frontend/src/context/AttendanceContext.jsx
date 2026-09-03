@@ -234,7 +234,12 @@ export const AttendanceProvider = ({ children }) => {
         if (permissionStatus === 'browser_denied') return;
         return gpsPromise.then(coords => {
           if (!coords) return;
-          api.patch('/attendance/location', { type, latitude: coords.latitude, longitude: coords.longitude }).catch(() => {});
+          /* accuracy travels with the fix: the server refuses to place a punch
+           * whose uncertainty is wider than the fence it is measured against,
+           * and it cannot judge that without being told. */
+          api.patch('/attendance/location', {
+            type, latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,
+          }).then(() => refresh()).catch(() => {});
           logLocation(type, coords, permissionStatus);
         });
       })

@@ -104,7 +104,7 @@ function SearchSelect({ value, options, placeholder, onChange, onAdd }) {
   );
 }
 
-function Field({ f, value, rows, excludeId, onChange, onQuickAdd }) {
+function Field({ f, value, rows, excludeId, record, onChange, onQuickAdd }) {
   // A record cannot be its own parent, so it is not offered. This is separate
   // from the server's ancestry guard: that catches a cycle two levels deep,
   // this stops the one-level case ever being on screen.
@@ -112,6 +112,17 @@ function Field({ f, value, rows, excludeId, onChange, onQuickAdd }) {
     () => (f.options ? (f.options(rows) || []).filter(o => !(f.selfExcluding && o.value === excludeId)) : []),
     [f, rows, excludeId]
   );
+
+  /* A field the caller draws itself. Locations needs one: a geofence is a
+   * point, a radius and a way to stand outside and test it — four inputs that
+   * only make sense together, and none of them a labelled text box. */
+  if (f.type === 'custom') {
+    return (
+      <div className={f.wide ? 'md:col-span-2' : ''}>
+        {f.render({ record, set: onChange })}
+      </div>
+    );
+  }
 
   return (
     <div className={f.wide ? 'md:col-span-2' : ''}>
@@ -247,7 +258,8 @@ export default function RecordList({
   const renderFields = twoUp => (
     <div className={`grid gap-x-6 gap-y-5 ${twoUp ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
       {fields.map(f => (
-        <Field key={f.key} f={f} value={editing[f.key]} rows={rows} excludeId={editing.id} onChange={set} onQuickAdd={quickAdd} />
+        <Field key={f.key} f={f} value={editing[f.key]} rows={rows} excludeId={editing.id}
+          record={editing} onChange={set} onQuickAdd={quickAdd} />
       ))}
     </div>
   );

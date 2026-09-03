@@ -218,6 +218,7 @@ router.get('/', async (req, res) => {
        e.is_blacklisted AS "isBlacklisted", e.notice_period_end_date AS "noticePeriodEndDate", e.rehire_eligibility AS "rehireEligibility",
        e.nick_name AS "nickName", e.work_location AS "workLocation", e.employment_type AS "employmentType",
        e.seating_location AS "seatingLocation", e.tags, e.onboarding_status AS "onboardingStatus",
+       e.is_remote AS "isRemote",
        e.source_of_hire AS "sourceOfHire", e.date_of_joining AS "dateOfJoining", e.date_of_birth AS "dateOfBirth",
        e.gender, e.marital_status AS "maritalStatus", e.about_me AS "aboutMe",
        e.work_phone AS "workPhone", e.extension, e.personal_email AS "personalEmail",
@@ -354,6 +355,7 @@ router.get('/:id', async (req, res) => {
               e.attendance_tracked     AS "attendanceTracked",
               e.about_me               AS "aboutMe",
               e.seating_location       AS "seatingLocation",
+              e.is_remote              AS "isRemote",
               e.onboarding_status      AS "onboardingStatus",
               e.current_address        AS "currentAddress",
               e.source_of_hire         AS "sourceOfHire",
@@ -529,7 +531,7 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
       /* Fields the employee record shows but the update route never accepted,
        * so editing them silently did nothing. aboutMe in particular was not
        * read or written anywhere despite being populated by the migration. */
-      aboutMe, seatingLocation, tags, onboardingStatus, secondaryManagerId, extension,
+      aboutMe, seatingLocation, tags, onboardingStatus, secondaryManagerId, extension, isRemote,
       // Employment status workflow (post-meeting feature)
       noticePeriodEndDate, statusReason, rehireEligibility, isBlacklisted, statusAppliedAt,
       // Whether attendance applies to this person at all — independent of
@@ -615,6 +617,10 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     if (expertise !== undefined)                { updates.push(`expertise = $${i++}`);                 params.push(expertise || null); }
     if (aboutMe !== undefined)                  { updates.push(`about_me = $${i++}`);                  params.push(aboutMe || null); }
     if (seatingLocation !== undefined)          { updates.push(`seating_location = $${i++}`);          params.push(seatingLocation || null); }
+    /* Not expected at an office. Their check-ins are recorded as working from
+     * home whatever the geofence says — an arrangement is not decided by
+     * where somebody happened to stand this morning. */
+    if (isRemote !== undefined)                 { updates.push(`is_remote = $${i++}`);                 params.push(!!isRemote); }
     if (tags !== undefined)                     { updates.push(`tags = $${i++}`);                      params.push(tags || null); }
     if (onboardingStatus !== undefined)         { updates.push(`onboarding_status = $${i++}`);         params.push(onboardingStatus || null); }
     if (secondaryManagerId !== undefined)       { updates.push(`secondary_manager_id = $${i++}`);      params.push(secondaryManagerId || null); }

@@ -267,6 +267,7 @@ export default function EmployeeEditModal({ employeeId, onClose, onSaved }) {
           aboutMe: e.aboutMe || '', expertise: e.expertise || '',
           workPhone: e.workPhone || '', extension: e.extension || '', phone: e.phone || '',
           seatingLocation: e.seatingLocation || '', tags: e.tags || '',
+          isRemote: !!e.isRemote,
           address: e.currentAddress || e.address || '', permanentAddress: e.permanentAddress || '',
           exitDate: (e.exitDate || '').toString().slice(0, 10),
           onboardingStatus: e.onboardingStatus || '',
@@ -466,6 +467,24 @@ export default function EmployeeEditModal({ employeeId, onClose, onSaved }) {
                 <div>
                   <label className={label}>Seating Location</label>
                   <input className={input} value={form.seatingLocation} onChange={e => set('seatingLocation', e.target.value)} />
+                </div>
+                {/* Not expected at an office at all. Kept beside the location
+                    fields because that is the question it answers, and marked
+                    plainly because it changes how every one of their days is
+                    recorded. */}
+                <div className="md:col-span-2">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" checked={!!form.isRemote}
+                      onChange={e => set('isRemote', e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-slate-300 accent-brand-600" />
+                    <span className="text-[14.5px] text-slate-700">
+                      Works remotely
+                      <span className="block text-[13px] text-slate-500 mt-0.5">
+                        Their check-ins are recorded as working from home regardless of where they are,
+                        so visiting the office does not change their arrangement.
+                      </span>
+                    </span>
+                  </label>
                 </div>
                 <div>
                   <label className={label}>Tags</label>

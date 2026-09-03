@@ -9,6 +9,7 @@ const { sendCheckOutReminderEmail } = require('../utils/mailer');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { classifyDay } = require('../utils/attendanceRule');
 const { loadWeekendResolver } = require('../utils/workingDays');
+const { classifyPunch, classifyMany, config: geofenceConfig } = require('../utils/geofence');
 const attendanceAlerts = require('../utils/attendanceAlerts');
 const { serverError } = require('../utils/serverError');
 
@@ -28,10 +29,17 @@ router.get('/today', async (req, res) => {
     const today = todayStr();
     const [result, sessionsRes] = await Promise.all([
       pool.query(
+        /* The mode the SERVER resolved. The check-in screen used to work this
+         * out for itself by reverse-geocoding the browser's position to a
+         * place name and string-matching it against a configured keyword —
+         * which was NULL, so it read "Not configured" for everybody. Reading
+         * the recorded answer means the label and the record agree. */
         `SELECT id as "_id", check_in as "checkIn", check_out as "checkOut",
          session_started_at as "sessionStartedAt",
          working_hours as "workingHours", status, late_minutes as "lateMinutes",
-         check_in_location as "checkInLocation", check_out_location as "checkOutLocation"
+         check_in_location as "checkInLocation", check_out_location as "checkOutLocation",
+         work_mode as "workMode", location_distance_meters as "locationDistance",
+         (SELECT name FROM work_locations w WHERE w.id = attendance.work_location_resolved_id) AS "workLocationName"
          FROM attendance WHERE employee_id = $1 AND date = $2::date`,
         [req.user._id, today]
       ),
@@ -109,7 +117,11 @@ router.post('/checkin', async (req, res) => {
       pool.query(
         `SELECT COALESCE(rs.id, s.id) AS id,
                 COALESCE(rs.start_time, s.start_time) AS start_time,
-                rs.id AS "rosteredId"
+                rs.id AS "rosteredId",
+                -- Whether this person is expected at an office at all. Read
+                -- here rather than in a query of its own: the row is already
+                -- being fetched.
+                e.is_remote AS "isRemote"
            FROM employees e
            LEFT JOIN shifts s ON s.id = e.shift_id
            LEFT JOIN shift_roster r ON r.employee_id = e.id AND r.date = $2::date
@@ -140,30 +152,48 @@ router.post('/checkin', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Already checked in today' });
     }
 
-    // GPS validation
-    const { location } = req.body;
+    /* ── Where this punch happened ────────────────────────────────────────
+     *
+     * This used to measure against settings.office_latitude — ONE point for
+     * the whole instance, NULL on live, so the branch never ran and nobody
+     * was ever classified. The fence now belongs to the location, because an
+     * organisation with two offices cannot have one office_latitude.
+     *
+     * The answer is computed here and stored on the row, never taken from
+     * the client: a mode the browser could assert is a mode anybody could
+     * assert. utils/geofence.js holds the rule so the admin screen's "test
+     * from where I am" gives the same answer this does.
+     *
+     * Outside the fence is working-from-home, not an error. Blocking the
+     * punch would strand anybody whose GPS is poor, and the whole point of
+     * classifying is that both answers are legitimate. */
+    const { location, accuracy } = req.body;
     let gpsWarning = null;
-    let withinRange = true;
+    let placement = { mode: null };
 
-    if (settings.office_latitude && settings.office_longitude && latitude && longitude) {
-      const R = 6371000;
-      const lat1Rad = latitude * Math.PI / 180;
-      const lat2Rad = settings.office_latitude * Math.PI / 180;
-      const dLat = (settings.office_latitude - latitude) * Math.PI / 180;
-      const dLon = (settings.office_longitude - longitude) * Math.PI / 180;
-      const a = Math.sin(dLat/2)**2 + Math.cos(lat1Rad)*Math.cos(lat2Rad)*Math.sin(dLon/2)**2;
-      const distance = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-      const radius = settings.gps_radius_meters || 200;
-      withinRange = distance <= radius;
-      if (!withinRange) {
-        gpsWarning = `You are ${distance}m from office (allowed: ${radius}m)`;
-        // Hard-block ONLY when the org has explicitly opted into geofence
-        // enforcement. Default is soft-warn so WFH / field / late-commute
-        // employees can still check in (HR sees the distance via the
-        // stored lat/lng + the gpsWarning surfaced in the response).
-        if (settings.enforce_geofence) {
-          return res.status(403).json({ success: false, message: gpsWarning, code: 'OUT_OF_RANGE' });
-        }
+    try {
+      placement = await classifyPunch({
+        latitude, longitude, accuracy,
+        employee: { isRemote: shiftRes.rows[0]?.isRemote === true },
+      });
+    } catch (err) {
+      /* Classification must never cost somebody their punch. */
+      logger.warn({ err: err.message }, '[attendance] work mode not resolved');
+      placement = { mode: null, reason: 'classification failed' };
+    }
+
+    if (placement.mode === 'wfh' && placement.distance !== undefined) {
+      gpsWarning = placement.reason;
+      /* Blocking is off by default and has to be asked for. Even then a
+       * punch that could not be placed is never blocked — refusing somebody
+       * because their phone could not see the sky is punishing the wrong
+       * thing. */
+      const geoCfg = await geofenceConfig();
+      if (geoCfg.blockOutsideFence && !placement.unknown) {
+        return res.status(403).json({
+          success: false, code: 'OUT_OF_RANGE',
+          message: `${placement.reason}. Your organisation requires check-in from an office location.`,
+        });
       }
     }
 
@@ -196,7 +226,13 @@ router.post('/checkin', async (req, res) => {
       }
     }
 
-    const locLabel = location || (latitude ? `GPS (${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)})` : 'Office');
+    /* The label follows the classification when there is one: writing
+     * "Office" onto a punch three kilometres away was the old default and it
+     * contradicted the very column beside it. */
+    const locLabel = location
+      || placement.locationName
+      || (placement.mode === 'wfh' ? 'Work From Home' : null)
+      || (latitude ? `GPS (${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)})` : 'Office');
 
     // ── Race-safe UPSERT ──────────────────────────────────────────────────
     // Two concurrent check-in requests (rapid double-tap, two devices)
@@ -215,8 +251,9 @@ router.post('/checkin', async (req, res) => {
     const upRes = await pool.query(
       `INSERT INTO attendance
          (employee_id, date, check_in, session_started_at, status, late_minutes,
-          check_in_location, check_in_latitude, check_in_longitude, shift_id)
-       VALUES ($1, $2::date, $3, $3, $4, $5, $6, $7, $8, $9)
+          check_in_location, check_in_latitude, check_in_longitude, shift_id,
+          work_mode, work_location_resolved_id, location_distance_meters, location_accuracy_meters)
+       VALUES ($1, $2::date, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        ON CONFLICT (employee_id, date) DO UPDATE
          -- check_in stays the day's arrival, which is what lateness is
          -- measured from. session_started_at moves to NOW, because the stretch
@@ -231,13 +268,21 @@ router.post('/checkin', async (req, res) => {
              check_in_latitude  = EXCLUDED.check_in_latitude,
              check_in_longitude = EXCLUDED.check_in_longitude,
              shift_id           = EXCLUDED.shift_id,
+             /* A second stretch is placed by where it started, so the day's
+              * mode follows the punch that reopened it. */
+             work_mode                 = COALESCE(EXCLUDED.work_mode, attendance.work_mode),
+             work_location_resolved_id = COALESCE(EXCLUDED.work_location_resolved_id, attendance.work_location_resolved_id),
+             location_distance_meters  = EXCLUDED.location_distance_meters,
+             location_accuracy_meters  = EXCLUDED.location_accuracy_meters,
              updated_at         = NOW()
          WHERE attendance.check_out IS NOT NULL
        RETURNING id as "_id", check_in as "checkIn", check_out as "checkOut",
                  session_started_at as "sessionStartedAt",
                  working_hours as "workingHours", status, late_minutes as "lateMinutes"`,
       [req.user._id, today, now, status, lateMinutes, locLabel,
-       latitude || null, longitude || null, shift?.id || null]
+       latitude || null, longitude || null, shift?.id || null,
+       placement.mode || null, placement.locationId || null,
+       placement.distance ?? null, placement.accuracy ?? null]
     );
     if (upRes.rows.length === 0) {
       // Conflict + WHERE rejected = someone else just checked in for this
@@ -512,17 +557,50 @@ router.post('/checkout', async (req, res) => {
 // the location once GPS resolves (~2-5s later) so the UI never waits for GPS.
 router.patch('/location', async (req, res) => {
   try {
-    const { type, latitude, longitude } = req.body;
+    const { type, latitude, longitude, accuracy } = req.body;
     if (!latitude || !longitude || !['checkin', 'checkout'].includes(type)) {
       return res.status(400).json({ success: false });
     }
     const today = todayStr();
-    const locLabel = `GPS (${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)})`;
+    let locLabel = `GPS (${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)})`;
     if (type === 'checkin') {
+      /* WHERE THE CLASSIFICATION ACTUALLY LANDS, most of the time.
+       *
+       * The punch is recorded before location is asked for, on purpose: a
+       * consent prompt nobody answers must never swallow somebody's
+       * check-in. That means the row is written with no coordinates and
+       * cannot be placed yet. The fix arrives here a second or two later,
+       * and this is the first moment the question can be answered at all.
+       *
+       * So the mode is resolved again here and written over whatever the
+       * punch could manage — which for anyone who grants location is the
+       * difference between every day reading "unknown" and every day
+       * reading the truth. */
+      let placement = { mode: null };
+      try {
+        const who = await pool.query(`SELECT is_remote AS "isRemote" FROM employees WHERE id=$1`, [req.user._id]);
+        placement = await classifyPunch({
+          latitude, longitude, accuracy,
+          employee: { isRemote: who.rows[0]?.isRemote === true },
+        });
+      } catch (err) {
+        logger.warn({ err: err.message }, '[attendance] work mode not resolved on location patch');
+      }
+      if (placement.locationName) locLabel = placement.locationName;
+      else if (placement.mode === 'wfh') locLabel = 'Work From Home';
+
       await pool.query(
-        `UPDATE attendance SET check_in_location=$1, check_in_latitude=$2, check_in_longitude=$3, updated_at=NOW()
-         WHERE employee_id=$4 AND date=$5::date`,
-        [locLabel, latitude, longitude, req.user._id, today]
+        `UPDATE attendance
+            SET check_in_location=$1, check_in_latitude=$2, check_in_longitude=$3,
+                work_mode = COALESCE($6, work_mode),
+                work_location_resolved_id = $7,
+                location_distance_meters = COALESCE($8, location_distance_meters),
+                location_accuracy_meters = COALESCE($9, location_accuracy_meters),
+                updated_at=NOW()
+          WHERE employee_id=$4 AND date=$5::date`,
+        [locLabel, latitude, longitude, req.user._id, today,
+         placement.mode || null, placement.locationId || null,
+         placement.distance ?? null, placement.accuracy ?? null]
       );
     } else {
       await pool.query(
@@ -1136,7 +1214,21 @@ router.get('/location', async (req, res) => {
       officeAreaName = areaRes.rows[0]?.office_area_name || null;
     } catch (_) { /* column not yet migrated — work mode shows "—" until migration runs */ }
 
-    res.json({ success: true, data: dataRes.rows, total, page, limit, scope: full ? 'all' : 'self', officeAreaName });
+    /* The same verdict the punch itself got, computed by the same rule. The
+     * screen used to reverse-geocode each fix in the browser and string-match
+     * the place name against a configured keyword — so this table and the
+     * attendance record could disagree about the same moment. */
+    const modes = await classifyMany(dataRes.rows.map(r => ({
+      latitude: r.latitude, longitude: r.longitude, accuracy: r.accuracy,
+    }))).catch(() => dataRes.rows.map(() => ({ mode: null })));
+    const rows = dataRes.rows.map((r, i) => ({
+      ...r,
+      workMode: modes[i]?.mode || null,
+      workLocationName: modes[i]?.locationName || null,
+      workModeDistance: modes[i]?.distance ?? null,
+    }));
+
+    res.json({ success: true, data: rows, total, page, limit, scope: full ? 'all' : 'self', officeAreaName });
   } catch (err) {
     logger.error({ err: err.message }, '[attendance] location history failed');
     res.status(500).json({ success: false, message: 'Failed to load location history' });

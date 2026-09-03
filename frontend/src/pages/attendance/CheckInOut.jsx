@@ -39,13 +39,20 @@ export default function CheckInOut() {
   const [gpsWarning, setGpsWarning] = useState(null);
   const { position, gpsError, gpsLoading, refresh: refreshGps } = useGeolocation();
 
-  // Work Mode — same approach as AttendanceLocation.jsx: reverse-geocode the
-  // live GPS fix and match it against the configured office-area keyword.
-  const [officeAreaName, setOfficeAreaName] = useState('');
-  const [place, setPlace] = useState(undefined); // undefined=resolving, null=unresolved, string=resolved
-  useEffect(() => {
-    api.get('/attendance/location?limit=1').then(r => setOfficeAreaName(r.data.officeAreaName || '')).catch(() => {});
-  }, []);
+  /* Work Mode, as the SERVER recorded it.
+   *
+   * This used to reverse-geocode the browser's position to a place name and
+   * string-match it against a configured keyword. The keyword was never set,
+   * so it read "Not configured" for everybody — and even configured, a label
+   * derived in the browser could disagree with the mode stored on the row.
+   * The record is the answer; this states it. */
+  const workMode = record?.workMode || null;
+  const workModeDetail = record?.workLocationName
+    || (record?.locationDistance != null ? `${record.locationDistance} m from the nearest office` : null);
+
+  /* The place name is still resolved for the location line, which is a human
+   * courtesy and not a decision about anybody's day. */
+  const [place, setPlace] = useState(undefined);
   useEffect(() => {
     if (!position) return;
     setPlace(undefined);
@@ -53,10 +60,6 @@ export default function CheckInOut() {
     reverseGeocode(position.latitude, position.longitude).then(name => { if (!cancelled) setPlace(name ?? null); });
     return () => { cancelled = true; };
   }, [position]);
-  const keywords = officeAreaName ? officeAreaName.split(',').map(k => k.trim().toLowerCase()).filter(Boolean) : [];
-  const workMode = (place && keywords.length)
-    ? (keywords.some(k => place.toLowerCase().includes(k)) ? 'office' : 'wfh')
-    : null;
 
   useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
 
@@ -107,12 +110,14 @@ export default function CheckInOut() {
           }`}>
             {workMode === 'office' ? <Building2 size={11} /> : workMode === 'wfh' ? <Home size={11} /> : <MapPin size={11} />}
             Work Mode: {
-              workMode === 'office' ? 'Office' :
-              workMode === 'wfh'    ? 'Work From Home' :
-              gpsError              ? 'Unavailable' :
-              gpsLoading || place === undefined ? 'Detecting…' :
-              !keywords.length      ? 'Not configured' : 'Unknown'
+              workMode === 'office'  ? 'Office' :
+              workMode === 'wfh'     ? 'Work From Home' :
+              workMode === 'unknown' ? 'Not recorded' :
+              !record?.checkIn       ? 'Set on check-in' : 'Not classified'
             }
+            {workModeDetail && workMode && workMode !== 'unknown' && (
+              <span className="opacity-70">· {workModeDetail}</span>
+            )}
           </div>
         </div>
       </div>

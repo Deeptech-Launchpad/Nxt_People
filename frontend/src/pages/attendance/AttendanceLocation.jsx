@@ -208,13 +208,13 @@ export default function AttendanceLocation() {
               ) : rows.map(l => {
                 const ck = coordKey(l.latitude, l.longitude);
                 const place = ck ? places[ck] : undefined;   // undefined=resolving, null=unresolved
-                // Work Mode: match resolved address against any of the comma-separated
-                // office keywords (e.g. "NSR Road, Saibaba Colony"). Case-insensitive.
-                const keywords = officeAreaName ? officeAreaName.split(',').map(k => k.trim().toLowerCase()).filter(Boolean) : [];
-                const placeLower = place ? place.toLowerCase() : '';
-                const wmKey = (place && keywords.length)
-                  ? (keywords.some(k => placeLower.includes(k)) ? 'office' : 'wfh')
-                  : null;
+                /* The verdict the server reached, by the same rule the punch
+                   itself was judged by. This used to match a reverse-geocoded
+                   place name against a configured keyword in the browser — so
+                   this table and the attendance record could disagree about
+                   the same moment, and with the keyword unset it said nothing
+                   at all. */
+                const wmKey = l.workMode || null;
                 const wm = wmKey ? WORK_MODE_PILL[wmKey] : null;
                 return (
                   <tr key={l._id} className="hover:bg-slate-50/70 transition-colors">

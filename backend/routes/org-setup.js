@@ -20,6 +20,8 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
+const geofence = require('../utils/geofence');
+const { logAudit } = require('../utils/audit');
 const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
 
 // Departments and Designations record who added and last changed a row; the
@@ -72,6 +74,40 @@ const uuidOrNull = (v, label) => {
   return s;
 };
 
+/* Coordinates and the fence around them.
+ *
+ * Kept out of the resource definition so the rules read as rules: a point is
+ * both halves or neither, a latitude is a latitude, and a fence somebody can
+ * cross in three steps or that covers the next town are both typos. */
+const geoFields = (b) => {
+  const has = (v) => v !== undefined && v !== null && String(v).trim() !== '';
+  const lat = has(b.latitude) ? Number(b.latitude) : null;
+  const lng = has(b.longitude) ? Number(b.longitude) : null;
+
+  if ((lat === null) !== (lng === null)) {
+    throw new Error('A location needs both a latitude and a longitude, or neither');
+  }
+  if (lat !== null) {
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) throw new Error('Latitude must be between -90 and 90');
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) throw new Error('Longitude must be between -180 and 180');
+  }
+
+  let radius = null;
+  if (has(b.radiusMeters)) {
+    radius = Math.round(Number(b.radiusMeters));
+    if (!Number.isFinite(radius) || radius < 20 || radius > 5000) {
+      throw new Error('The radius must be between 20 and 5000 metres');
+    }
+  }
+
+  return {
+    latitude: lat,
+    longitude: lng,
+    radius_meters: radius,
+    geofence_enabled: b.geofenceEnabled !== false,
+  };
+};
+
 const RESOURCES = {
   locations: {
     table: 'work_locations',
@@ -86,11 +122,15 @@ const RESOURCES = {
       l.address_line1 AS "addressLine1", l.address_line2 AS "addressLine2",
       l.city, l.state, l.country, l.postal_code AS "postalCode",
       l.timezone, l.is_active AS "isActive",
+      l.latitude::float8 AS "latitude", l.longitude::float8 AS "longitude",
+      l.radius_meters AS "radiusMeters", l.geofence_enabled AS "geofenceEnabled",
+      l.coordinates_set_at AS "coordinatesSetAt",
+      TRIM(CONCAT(gb.first_name, ' ', gb.last_name)) AS "coordinatesSetBy",
       (SELECT COUNT(*)::int FROM employees e
         WHERE e.work_location_id = l.id AND e.deleted_at IS NULL AND e.status = 'active') AS "userCount",
       (SELECT COUNT(*)::int FROM employees e
         WHERE e.work_location_id = l.id AND e.deleted_at IS NULL) AS "totalCount"`,
-    from: 'work_locations l',
+    from: 'work_locations l LEFT JOIN employees gb ON gb.id = l.coordinates_set_by',
     order: 'l.name',
     clean: b => ({
       name: str(b.name, 'Location name', { required: true }),
@@ -106,6 +146,12 @@ const RESOURCES = {
       // zone, so a per-location zone would be a promise we cannot keep.
       timezone: 'Asia/Kolkata',
       is_active: b.isActive !== false,
+      /* The geofence. Both coordinates or neither — a half-set point would
+       * put the office on the equator, and the column CHECK refuses it
+       * anyway; catching it here says so in words instead of a constraint
+       * name. A null radius means "use the organisation default", so
+       * changing that default moves every location that never overrode it. */
+      ...geoFields(b),
     }),
   },
 
@@ -364,6 +410,111 @@ router.get('/:resource/:id/employees', async (req, res) => {
 
 const WRITE_ROLES = ['admin', 'director', 'hr_admin'];
 
+/* Declared BEFORE the generic /:resource routes below. Express matches in
+ * order, and `PUT /:resource/:id` happily reads "geofence/config" as a
+ * resource called geofence with the id config — which answered "Unknown
+ * resource" until these moved up here. */
+/* ── The geofence: testing a pin, and the org-wide defaults ──────────────── */
+
+/* "Test from where I am". Stand at the office, press it, and read the
+ * distance to every location. This is what catches a pin dropped on the
+ * wrong side of the road BEFORE it starts deciding how people's days are
+ * recorded — which is the only moment the mistake is cheap.
+ *
+ * Deliberately a POST that stores nothing: it is a question, not a punch. */
+router.post('/geofence/test', authorize(...WRITE_ROLES), async (req, res) => {
+  try {
+    const lat = Number(req.body?.latitude);
+    const lng = Number(req.body?.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ success: false, message: 'Send the latitude and longitude to test from' });
+    }
+    const acc = Number.isFinite(Number(req.body?.accuracy)) ? Math.round(Number(req.body.accuracy)) : null;
+    const cfg = await geofence.config();
+    const ranked = await geofence.rankLocations({ latitude: lat, longitude: lng });
+
+    const inside = ranked.find(r => r.inside) || null;
+    /* The same accuracy rule the real classification uses, so the test cannot
+     * report a confident answer the punch itself would refuse to give. */
+    const tooVague = cfg.requireAccuracy && acc !== null && ranked.length && acc > ranked[0].radius;
+
+    res.json({
+      success: true,
+      data: {
+        locations: ranked,
+        accuracy: acc,
+        verdict: !ranked.length ? 'no-locations'
+          : tooVague ? 'too-vague'
+          : inside ? 'inside' : 'outside',
+        inside,
+        nearest: ranked[0] || null,
+        message: !ranked.length
+          ? 'No location has coordinates yet, so there is nothing to test against.'
+          : tooVague
+            ? `This fix is accurate to ${acc} m, which is wider than the ${ranked[0].radius} m fence — a punch this vague would be recorded as unknown.`
+            : inside
+              ? `You are ${inside.distance} m from ${inside.name}, inside its ${inside.radius} m fence. A punch here counts as office.`
+              : `You are ${ranked[0].distance} m from the nearest location (${ranked[0].name}), outside its ${ranked[0].radius} m fence. A punch here counts as working from home.`,
+      },
+    });
+  } catch (err) { serverError(res, err); }
+});
+
+router.get('/geofence/config', async (req, res) => {
+  try { res.json({ success: true, data: await geofence.config() }); }
+  catch (err) { serverError(res, err); }
+});
+
+router.put('/geofence/config', authorize(...WRITE_ROLES), async (req, res) => {
+  try {
+    const cur = await geofence.config();
+    const b = req.body || {};
+    const next = { ...cur };
+
+    if (b.classifyEnabled !== undefined) next.classifyEnabled = !!b.classifyEnabled;
+    if (b.requireAccuracy !== undefined) next.requireAccuracy = !!b.requireAccuracy;
+    if (b.blockOutsideFence !== undefined) next.blockOutsideFence = !!b.blockOutsideFence;
+
+    if (b.defaultRadiusMeters !== undefined) {
+      const r = Math.round(Number(b.defaultRadiusMeters));
+      if (!Number.isFinite(r) || r < 20 || r > 5000) {
+        return res.status(400).json({ success: false, message: 'The default radius must be between 20 and 5000 metres' });
+      }
+      next.defaultRadiusMeters = r;
+    }
+    if (b.unknownCountsAs !== undefined) {
+      if (!['unknown', 'office', 'wfh'].includes(b.unknownCountsAs)) {
+        return res.status(400).json({ success: false, message: 'A punch we cannot place must count as unknown, office or wfh' });
+      }
+      next.unknownCountsAs = b.unknownCountsAs;
+    }
+
+    /* Refusing to switch on a fence that would classify everybody the same
+     * way. Turning it on with no point set would mark every single punch
+     * unknown — an org-wide change that looks like a broken feature rather
+     * than a configuration mistake. */
+    if (next.classifyEnabled && !cur.classifyEnabled) {
+      const placed = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM work_locations
+          WHERE is_active AND geofence_enabled AND latitude IS NOT NULL`);
+      if (!placed.rows[0].n) {
+        return res.status(400).json({
+          success: false,
+          message: 'Set the coordinates on at least one location before switching classification on — otherwise every punch would be recorded as unknown.',
+        });
+      }
+    }
+
+    await pool.query(`UPDATE settings SET geofence_config = $1::jsonb`, [JSON.stringify(next)]);
+    await logAudit(req, {
+      action: 'UPDATE', resource: 'Geofence configuration',
+      changes: { summary: `classification ${next.classifyEnabled ? 'on' : 'off'}, default radius ${next.defaultRadiusMeters} m` },
+    });
+    res.json({ success: true, data: next });
+  } catch (err) { serverError(res, err); }
+});
+
+
 router.post('/:resource', authorize(...WRITE_ROLES), async (req, res) => {
   const r = resourceOf(req);
   if (!r) return res.status(404).json({ success: false, message: 'Unknown resource' });
@@ -377,6 +528,14 @@ router.post('/:resource', authorize(...WRITE_ROLES), async (req, res) => {
   if (AUTHORED.has(req.params.resource)) {
     values.created_by = req.user._id;
     values.updated_by = req.user._id;
+  }
+
+  /* Who placed the pin and when. A geofence decides how somebody's day is
+   * recorded, so the point it turns on is worth being able to trace back to
+   * a person and a moment. */
+  if (req.params.resource === 'locations' && values.latitude !== null && values.latitude !== undefined) {
+    values.coordinates_set_at = new Date();
+    values.coordinates_set_by = req.user._id;
   }
 
   const client = await pool.connect();
@@ -409,6 +568,25 @@ router.put('/:resource/:id', authorize(...WRITE_ROLES), async (req, res) => {
   catch (err) { return res.status(400).json({ success: false, message: err.message }); }
 
   if (AUTHORED.has(req.params.resource)) values.updated_by = req.user._id;
+
+  /* Re-stamp only when the point actually MOVES. Re-saving a location to
+   * change its description should not rewrite who set the coordinates — that
+   * would quietly hand authorship of a geofence to whoever last edited an
+   * address. */
+  if (req.params.resource === 'locations') {
+    const before = await pool.query(
+      `SELECT latitude::float8 AS lat, longitude::float8 AS lng FROM work_locations WHERE id=$1`,
+      [req.params.id]);
+    const b = before.rows[0] || {};
+    const moved = Number(b.lat) !== Number(values.latitude) || Number(b.lng) !== Number(values.longitude);
+    if (moved && values.latitude !== null && values.latitude !== undefined) {
+      values.coordinates_set_at = new Date();
+      values.coordinates_set_by = req.user._id;
+    } else if (moved) {
+      values.coordinates_set_at = null;
+      values.coordinates_set_by = null;
+    }
+  }
 
   const client = await pool.connect();
   try {
