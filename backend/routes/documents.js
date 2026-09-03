@@ -209,7 +209,14 @@ router.post('/:employeeId', upload.single('file'), async (req, res) => {
     }).catch(() => {});
 
     res.status(201).json({ success: true, data: r.rows[0] });
-  } catch (err) { serverError(res, err); }
+  } catch (err) {
+    /* A message the person can act on, where there is one. serverError hides
+     * everything behind "an internal server error occurred", which for a
+     * directory-permission problem sends whoever hit it looking at their own
+     * file instead of at the server. */
+    if (err.userFacing) return res.status(500).json({ success: false, message: err.message });
+    serverError(res, err);
+  }
 });
 
 // DELETE — HR or a manager for their reports, or whoever uploaded it.

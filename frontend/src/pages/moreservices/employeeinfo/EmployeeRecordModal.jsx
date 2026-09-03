@@ -86,6 +86,9 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
   const [loading, setLoading] = useState(true);
   const [identity, setIdentity] = useState(null);   // revealed values, if asked for
   const [revealing, setRevealing] = useState(false);
+  const [editField, setEditField] = useState(null);   // which identity number
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -116,16 +119,48 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
   }, [employeeId]);
 
   const reveal = async () => {
-    if (identity) { setIdentity(null); return; }
+    if (identity) { setIdentity(null); return false; }
     setRevealing(true);
     try {
       const r = await api.post('/employee-io/reveal', {
         employeeIds: [employeeId], reason: 'viewed on the employee record',
       });
       setIdentity(r.data.data?.[0] || {});
+      return true;
     } catch (err) {
       toast.error(err.response?.data?.message || 'Could not reveal those numbers');
+      return false;
     } finally { setRevealing(false); }
+  };
+
+  const IDENTITY_LABEL = { uanNumber: 'UAN', panNumber: 'PAN', aadhaarNumber: 'Aadhaar' };
+
+  /* Editing reveals first: correcting a number you cannot see is how a digit
+   * gets changed by accident. The reveal is the audited one, so an edit
+   * leaves the same trail a look does. */
+  const startEdit = async (field) => {
+    let known = identity;
+    if (!known) {
+      const ok = await reveal();
+      if (!ok) return;
+      known = null;   // set by reveal; the field below falls back to blank
+    }
+    setDraft((known || {})[field] || '');
+    setEditField(field);
+  };
+
+  const saveIdentity = async () => {
+    const value = String(draft || '').trim();
+    setSaving(true);
+    try {
+      await api.put(`/employees/${employeeId}`, { [editField]: value || null });
+      setIdentity(v => ({ ...(v || {}), [editField]: value }));
+      toast.success('Saved');
+      setEditField(null);
+      onChanged?.();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not save that');
+    } finally { setSaving(false); }
   };
 
   const masked = (has, value) => {
@@ -135,13 +170,30 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
                : <span className="text-slate-300">—</span>;
   };
 
-  const eye = (
-    <button onClick={reveal} disabled={revealing}
-      title={identity ? 'Hide' : 'Show (recorded in the audit trail)'}
-      className="ml-1 w-6 h-6 inline-flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-      {revealing ? <Loader2 size={13} className="animate-spin" />
-        : identity ? <EyeOff size={13} /> : <Eye size={13} />}
-    </button>
+  /* Every identity row gets its own controls.
+   *
+   * Only UAN had an eye, so PAN and Aadhaar were dotted out with no way to
+   * reach the reveal that already existed. One press still reveals all three,
+   * because one audited call fetches all three — three separate calls would
+   * put three entries in the audit trail for one decision.
+   *
+   * The pencil edits that one number in place. These were deliberately left
+   * out of the edit form so opening it could not put somebody's Aadhaar on
+   * screen; editing here keeps that true, because the value is only fetched
+   * when the eye is pressed and that is recorded. */
+  const controls = (field) => (
+    <span className="inline-flex items-center gap-0.5 ml-1">
+      <button onClick={reveal} disabled={revealing}
+        title={identity ? 'Hide' : 'Show (recorded in the audit trail)'}
+        className="w-6 h-6 inline-flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+        {revealing ? <Loader2 size={13} className="animate-spin" />
+          : identity ? <EyeOff size={13} /> : <Eye size={13} />}
+      </button>
+      <button onClick={() => startEdit(field)} title="Edit"
+        className="w-6 h-6 inline-flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+        <Pencil size={12} />
+      </button>
+    </span>
   );
 
   return (
@@ -218,9 +270,12 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
               </Section>
 
               <Section title="Identity Information">
-                <Row label="UAN" value={masked(emp.hasUan ?? !!emp.uanNumber, identity?.uanNumber)} action={eye} />
-                <Row label="PAN" value={masked(emp.hasPan ?? !!emp.panNumber, identity?.panNumber)} />
-                <Row label="Aadhaar" value={masked(emp.hasAadhaar ?? !!emp.aadhaarNumber, identity?.aadhaarNumber)} />
+                <Row label="UAN" value={masked(emp.hasUan ?? !!emp.uanNumber, identity?.uanNumber)}
+                  action={controls('uanNumber')} />
+                <Row label="PAN" value={masked(emp.hasPan ?? !!emp.panNumber, identity?.panNumber)}
+                  action={controls('panNumber')} />
+                <Row label="Aadhaar" value={masked(emp.hasAadhaar ?? !!emp.aadhaarNumber, identity?.aadhaarNumber)}
+                  action={controls('aadhaarNumber')} />
               </Section>
 
               <Section title="Contact Details">
@@ -330,6 +385,33 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
           </button>
         </div>
       </div>
+
+      {editField && (
+        <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4"
+          onClick={() => setEditField(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="text-[16px] font-semibold text-slate-800 mb-1">
+              Edit {IDENTITY_LABEL[editField] || 'number'}
+            </h3>
+            <p className="text-[13px] text-slate-500 mb-4">
+              The change is recorded in the audit trail with its old and new value.
+            </p>
+            <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveIdentity(); if (e.key === 'Escape') setEditField(null); }}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] font-mono focus:outline-none focus:border-brand-400" />
+            <div className="flex gap-2 mt-4">
+              <button onClick={saveIdentity} disabled={saving}
+                className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-[14px]">
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={() => setEditField(null)}
+                className="border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[14px] hover:bg-slate-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

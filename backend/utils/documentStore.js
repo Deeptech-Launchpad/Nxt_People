@@ -138,7 +138,25 @@ function folderNameFor(employee) {
 function ensureFolder(employee, existing = null) {
   const name = existing || folderNameFor(employee);
   const dir = path.join(EMPLOYEE_ROOT, name);
-  fs.mkdirSync(dir, { recursive: true });
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    /* A permission or disk problem here is a SERVER problem, and "an internal
+     * server error occurred" sends whoever hit it looking at their own file.
+     * The uploads volume is the usual culprit: it is created once and keeps
+     * whatever ownership it had then, so a volume made while /app/uploads was
+     * root-owned lets the node user write into folders that already exist and
+     * refuses to let it create new ones. */
+    const e = new Error(
+      err.code === 'EACCES' || err.code === 'EPERM'
+        ? `The uploads directory is not writable by the application (${err.code}). `
+          + 'On the server: docker compose exec -u root backend chown -R node:node /app/uploads'
+        : err.code === 'ENOSPC'
+          ? 'The server has run out of disk space, so the file could not be saved.'
+          : `The uploads directory could not be prepared (${err.code || err.message}).`);
+    e.userFacing = true;
+    throw e;
+  }
   return { name, dir };
 }
 
@@ -197,7 +215,19 @@ function storeDocument({ employee, folder, buffer, originalName, label }) {
     originalName, label, dir,
   });
   const { data, encrypted } = encryptBuffer(buffer);
-  fs.writeFileSync(path.join(dir, storedName), data);
+  try {
+    fs.writeFileSync(path.join(dir, storedName), data);
+  } catch (err) {
+    const e = new Error(
+      err.code === 'EACCES' || err.code === 'EPERM'
+        ? `That folder is not writable by the application (${err.code}). `
+          + 'On the server: docker compose exec -u root backend chown -R node:node /app/uploads'
+        : err.code === 'ENOSPC'
+          ? 'The server has run out of disk space, so the file could not be saved.'
+          : `The file could not be written (${err.code || err.message}).`);
+    e.userFacing = true;
+    throw e;
+  }
   return {
     folder: folderName,
     storedName,
