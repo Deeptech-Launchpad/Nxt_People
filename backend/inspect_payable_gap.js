@@ -123,9 +123,12 @@ const line = (n = 78) => console.log('  ' + '-'.repeat(n));
     `     ${r.date}  ${String(r.code).padEnd(14)} stored ${hm(r.stored)}` +
     `  sessions ${hm(r.sessionHours)} (${r.sessions || 0})  span ${hm(r.span)}`));
 
-  /* The genuine fault the first run surfaced: an out earlier than the in, so
-   * the day computes negative and is stored as nothing. */
-  console.log('\n  2b. Days whose check-out is at or before their check-in');
+  /* Two faults wearing the same shape, and conflating them nearly caused a
+   * bad repair: a first pass at this asked for check_out <= check_in and
+   * proposed adding twelve hours to all 102 matches. A hundred of them had
+   * check_out EQUAL to check_in, and would have been given a fabricated
+   * 12:00 day. They are counted separately now. */
+  console.log('\n  2b. Days whose check-out is genuinely EARLIER than their check-in');
   line();
   const inverted = await pool.query(
     `SELECT e.employee_id AS code, to_char(a.date, 'YYYY-MM-DD') AS date,
@@ -134,7 +137,7 @@ const line = (n = 78) => console.log('  ' + '-'.repeat(n));
             to_char(a.check_out AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS "out"
        FROM attendance a JOIN employees e ON e.id = a.employee_id
       WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
-        AND a.check_out <= a.check_in
+        AND a.check_out < a.check_in
         ${EMP ? 'AND e.employee_id = $1' : ''}
       ORDER BY a.date DESC LIMIT 40`,
     EMP ? [EMP] : []);
@@ -142,8 +145,38 @@ const line = (n = 78) => console.log('  ' + '-'.repeat(n));
   else {
     inverted.rows.forEach(r => console.log(
       `     ${r.date}  ${String(r.code).padEnd(14)} in ${r['in']} out ${r.out}  stored ${hm(r.stored)}  ${r.status}`));
-    console.log(`\n     ${inverted.rows.length} day(s). Unless the shift runs through midnight these are`);
-    console.log('     a 6 PM typed as 06:00. Each pays nothing while reading as a worked day.');
+    console.log(`\n     ${inverted.rows.length} day(s) — a 6 PM typed as 06:00, unless the shift runs`);
+    console.log('     through midnight. repair_inverted_days.js reads the approved request');
+    console.log('     for the intended times rather than guessing at them.');
+  }
+
+  /* The hundred. One punch in both columns. */
+  console.log('\n  2c. Days where the check-out is IDENTICAL to the check-in');
+  line();
+  const same = await pool.query(
+    `WITH sess AS (
+       SELECT employee_id, date, COUNT(*)::int AS n,
+              MAX(check_out) AS "lastOut", SUM(COALESCE(session_hours,0)) AS hours
+         FROM attendance_sessions GROUP BY 1,2)
+     SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE s."lastOut" IS NOT NULL AND s."lastOut" > a.check_in)::int AS recoverable,
+            MIN(to_char(a.date,'YYYY-MM-DD')) AS first,
+            MAX(to_char(a.date,'YYYY-MM-DD')) AS last,
+            COUNT(DISTINCT a.employee_id)::int AS people
+       FROM attendance a
+       LEFT JOIN sess s ON s.employee_id = a.employee_id AND s.date = a.date
+      WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
+        AND a.check_out = a.check_in`);
+  const s = same.rows[0];
+  if (!s || !s.total) console.log('     none');
+  else {
+    console.log(`     ${s.total} day(s) across ${s.people} people, ${s.first} to ${s.last}.`);
+    console.log('     A single punch written into both columns — the migration\'s doing, by the');
+    console.log('     span of dates. Each pays nothing.');
+    console.log(`\n     Of those, ${s.recoverable} have a session row carrying a LATER check-out,`);
+    console.log('     which is the only honest source for repairing them. The rest have no');
+    console.log('     second punch anywhere and cannot be reconstructed — only regularized');
+    console.log('     by the person who was there.');
   }
 
   /* 3 — open days: checked in, never checked out. */
