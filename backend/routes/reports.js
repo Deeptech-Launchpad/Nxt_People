@@ -14,6 +14,7 @@ const { DEFAULT_TZ } = require('../utils/timezone');
 const attendanceConfig = require('../utils/attendanceConfig');
 const { roundHours, lateNightMinutes } = require('../utils/hoursPolicy');
 const { serverError } = require('../utils/serverError');
+const { config: geofenceConfig } = require('../utils/geofence');
 router.use(protect);
 
 // Sentinel for the "Not Specified" filter option. Deliberately not a value any
@@ -1935,7 +1936,8 @@ async function loadAttendanceContext(req, start, end, opts = {}) {
     ),
     pool.query(
       `SELECT employee_id, date::text AS date, check_in AS "checkIn", check_out AS "checkOut",
-              working_hours AS "workingHours", status, late_minutes AS "lateMinutes"
+              working_hours AS "workingHours", status, late_minutes AS "lateMinutes",
+              work_mode AS "workMode", work_location_resolved_id AS "workLocationId"
          FROM attendance WHERE date >= $1::date AND date <= $2::date`,
       [start, end]
     ),
@@ -2178,6 +2180,17 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
 
     const counts = { present: 0, onDuty: 0, paidLeave: 0, absent: 0, unpaidLeave: 0, holiday: 0, weekend: 0 };
     const presence = { in: 0, out: 0, yetToCheckIn: 0, notTracked: 0 };
+    /* Where the people who ARE working are working from.
+     *
+     * Counted over everybody with a punch today, checked out or not: the
+     * question "how many are working from home" is about the day, not about
+     * who happens to be mid-session at the moment the page loads.
+     *
+     * `unknown` is its own count and is never folded into either side. A punch
+     * the geofence could not place is not evidence of working from home, and
+     * a dashboard that quietly rounded it into one column would be inventing
+     * a number somebody might act on. */
+    const workMode = { office: 0, wfh: 0, unknown: 0 };
     let employees = [];
 
     /* Staff whose attendance is marked for them — Operations -> Attendance
@@ -2231,6 +2244,13 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
       // pending a punch on a holiday or weekend.
       if (presenceKey !== 'yetToCheckIn' || kind === 'present' || kind === 'absent' || kind === 'pending') presence[presenceKey]++;
 
+      /* Only somebody who actually punched can be placed. A person on leave is
+       * not "working from home", and counting them there would double-count
+       * them against the leave slice beside it. */
+      if (att?.checkIn && !managed) {
+        workMode[att.workMode === 'office' ? 'office' : att.workMode === 'wfh' ? 'wfh' : 'unknown']++;
+      }
+
       // Hours are N/A, not zero, on a day nobody was expected to work and
       // nothing was punched — a full day of leave, a holiday or a weekend.
       const hoursApply = !!att || kind === 'present' || kind === 'absent' || kind === 'pending';
@@ -2245,6 +2265,9 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
         // falls back to the bucket label otherwise.
         status: dayLeaves.length ? leaveStatusText(dayLeaves) : (ATT_STATUS_LABEL[kind] || null),
         presenceKey, shiftName: emp.shiftName || null,
+        /* On the row too, so the list and the export can say where each
+         * person worked rather than only how many did. */
+        workMode: att?.checkIn ? (att.workMode || 'unknown') : null,
         // Named on the row so the export can say why this person has no punch,
         // rather than leaving a blank that reads as a missing check-in.
         attendanceMarkedByAdmin: managed,
@@ -2258,7 +2281,16 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
     employees = employees.filter(r => totalHoursMatches(req.query, r.totalHours));
 
     const byStatus = Object.entries(counts).map(([key, count]) => ({ key, label: ATT_STATUS_LABEL[key], count }));
-    res.json({ success: true, date, totalUsers, byStatus, presence, employees });
+
+    /* Whether these numbers mean anything yet. With classification off every
+     * punch is unclassified, and a chart reading "Working from home: 0" would
+     * state something the system does not know. The flag lets the screen say
+     * so instead of drawing a confident zero. */
+    const geoCfg = await geofenceConfig().catch(() => ({ classifyEnabled: false }));
+    res.json({
+      success: true, date, totalUsers, byStatus, presence, employees,
+      workMode: { ...workMode, classifyEnabled: !!geoCfg.classifyEnabled },
+    });
   } catch (err) { serverError(res, err); }
 });
 

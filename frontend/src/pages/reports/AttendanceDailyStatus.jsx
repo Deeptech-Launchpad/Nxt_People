@@ -43,6 +43,23 @@ const PRESENCE = [
   { key: 'yetToCheckIn', label: 'Yet to check-in', color: '#f5c451' },
 ];
 
+/* Where the people who are working today are working FROM.
+ *
+ * A second donut rather than more slices on the first: the presence donut
+ * answers "who is at their desk right now", and working from home is not a
+ * different answer to that question — it is a different question. Splitting
+ * "In" into office and home would also have quietly changed what the existing
+ * slice means for anybody reading the chart out of habit.
+ *
+ * Unknown is drawn, never hidden. A punch the geofence could not place is not
+ * evidence of anything, and folding it into either side would put a number on
+ * screen that nobody could defend. */
+const WORK_MODE = [
+  { key: 'office', label: 'Office', color: '#2ecfa0' },
+  { key: 'wfh', label: 'Working from home', color: '#f0a13c' },
+  { key: 'unknown', label: 'Not placed', color: '#c9c9c9' },
+];
+
 const EXPORT_COLUMNS = [
   { key: 'firstName', header: 'First Name' }, { key: 'lastName', header: 'Last Name' }, { key: 'employeeCode', header: 'Employee ID' },
   { key: 'firstIn', header: 'First In', value: r => fmtTime(r.firstIn) }, { key: 'lastOut', header: 'Last Out', value: r => fmtTime(r.lastOut) },
@@ -118,6 +135,12 @@ export default function AttendanceDailyStatus() {
   const statusTotal = statusPie.reduce((n, s) => n + Number(s.count), 0);
   const presencePie = PRESENCE.map(p => ({ ...p, count: data?.presence?.[p.key] || 0 }));
   const presenceTotal = presencePie.reduce((n, p) => n + Number(p.count), 0);
+
+  const modePie = WORK_MODE.map(p => ({ ...p, count: data?.workMode?.[p.key] || 0 }));
+  const modeTotal = modePie.reduce((n, p) => n + Number(p.count), 0);
+  /* With classification switched off nothing is placed, and a chart reading
+     "Working from home: 0" would state something the system does not know. */
+  const modeOn = !!data?.workMode?.classifyEnabled;
 
   // Every slice and every legend row is a way into the list behind it — the
   // chart says how many, the list says who. Clicking applies that status as
@@ -267,6 +290,61 @@ export default function AttendanceDailyStatus() {
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Full width on its own row: the grid above is two thirds / one
+              third and there is no fourth column to sit in. A wide strip also
+              suits the shape of the answer — three numbers, read across. */}
+          <div className="lg:col-span-3 border border-slate-100 rounded-xl p-4">
+            <p className="text-[14px] text-slate-700 mb-2">Where People Are Working</p>
+            {!modeOn ? (
+              <div className="text-center py-14 px-6">
+                <p className="text-[13.5px] text-slate-500">
+                  Office and working-from-home are not being recorded yet.
+                </p>
+                <p className="text-[13px] text-slate-400 mt-1.5">
+                  Set the coordinates on a location, then switch classification on under
+                  Settings → Attendance → Geo Restriction.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="w-full sm:max-w-md min-w-0">
+                  {modeTotal === 0 ? (
+                    <div className="text-center py-16 text-slate-400 text-[13px]">Nobody has punched today</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={230}>
+                      <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                        <Pie
+                          data={modePie} dataKey="count" nameKey="label" cx="50%" cy="50%"
+                          innerRadius={48} outerRadius={74} isAnimationActive={false}
+                          activeShape={ActiveSlice}
+                        >
+                          {modePie.map(p => <Cell key={p.key} fill={p.color} stroke={p.count > 0 ? '#fff' : 'none'} />)}
+                        </Pie>
+                        <Tooltip
+                          cursor={false}
+                          formatter={(value, name) => [`${value} · ${((value / (modeTotal || 1)) * 100).toFixed(1)}%`, name]}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+                <div className="w-full sm:w-44 flex-shrink-0 space-y-1.5">
+                  {modePie.map(p => (
+                    <LegendRow key={p.key} color={p.color} label={p.label} count={p.count} />
+                  ))}
+                  {modePie[2].count > 0 && (
+                    /* Said once, where the number is, rather than left as a grey
+                       slice somebody has to ask about. */
+                    <p className="text-[12px] text-slate-400 pt-1.5 leading-snug">
+                      Not placed means the check-in had no usable location — usually a desktop
+                      browser, which has no GPS.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : (
