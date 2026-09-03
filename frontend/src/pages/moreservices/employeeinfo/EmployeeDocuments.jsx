@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FileText, Upload, Eye, Download, Trash2, Loader2, AlertTriangle, Lock } from 'lucide-react';
 import api from '../../../utils/api';
-import { previewEmployeeDocument, downloadEmployeeDocument } from '../../../utils/employeeDocument';
+import { downloadEmployeeDocument } from '../../../utils/employeeDocument';
+import DocumentPreview from '../../../components/DocumentPreview';
 
 /* An employee's papers, where the rest of their record is.
  *
@@ -42,6 +43,7 @@ export default function EmployeeDocuments({ employeeId, canEdit = true }) {
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(null);   // { name, type, file }
+  const [previewing, setPreviewing] = useState(null);
   const fileRef = useRef(null);
 
   const load = useCallback(() => {
@@ -193,7 +195,7 @@ export default function EmployeeDocuments({ employeeId, canEdit = true }) {
                 </span>
               ) : (
                 <div className="flex items-center gap-0.5 flex-shrink-0">
-                  <Btn onClick={() => previewEmployeeDocument(employeeId, doc._id, doc.name)} title="Preview" icon={Eye} />
+                  <Btn onClick={() => setPreviewing(doc)} title="Preview" icon={Eye} />
                   <Btn onClick={() => downloadEmployeeDocument(employeeId, doc._id, doc.name)} title="Download" icon={Download} />
                   {canEdit && <Btn onClick={() => remove(doc)} title="Delete" icon={Trash2} tone="rose" />}
                 </div>
@@ -201,6 +203,10 @@ export default function EmployeeDocuments({ employeeId, canEdit = true }) {
             </div>
           ))}
         </div>
+      )}
+
+      {previewing && (
+        <DocumentPreview employeeId={employeeId} doc={previewing} onClose={() => setPreviewing(null)} />
       )}
     </div>
   );
