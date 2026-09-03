@@ -198,6 +198,7 @@ app.use('/api/employee-io',      require('./routes/employee-io'));
 app.use('/api/employee-info-settings',    require('./routes/employee-info-settings'));
 app.use('/api/employee-info-permissions', require('./routes/employee-info-permissions'));
 app.use('/api/employee-records',          require('./routes/employee-records'));
+app.use('/api/employee-activity',         require('./routes/employee-activity'));
 app.use('/api/record-approvals',          require('./routes/record-approvals'));
 app.use('/api/attendance',       require('./routes/attendance'));
 // Editing a reportee's entry. Its own file because the checks it needs — the

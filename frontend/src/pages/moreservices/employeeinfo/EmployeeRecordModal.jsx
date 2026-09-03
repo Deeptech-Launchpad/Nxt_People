@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { X, Pencil, Eye, EyeOff, Loader2 } from 'lucide-react';
 import api from '../../../utils/api';
 import EmployeeDocuments from './EmployeeDocuments';
+import EmployeeActivity from './EmployeeActivity';
 
 /* The full employee record, over the list.
  *
@@ -361,6 +362,11 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
               )}
 
               <EmployeeDocuments employeeId={employeeId} canEdit={false} />
+
+              {/* Last, because it is the section somebody scrolls TO rather
+                  than past — the record above answers what is true now, this
+                  answers how it got that way. */}
+              <EmployeeActivity employeeId={employeeId} />
 
               {/* Related Forms — Asset, Benefit, Exit Details, Travel — are
                   separate modules rather than sections of this record, so they
