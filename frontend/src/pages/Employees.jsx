@@ -1170,14 +1170,23 @@ export default function Employees() {
                                   <div className="text-sm text-slate-400 truncate">{doc.originalName}</div>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-                                <button onClick={() => openDoc(false)} title="Preview" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
-                                  <Eye size={16} />
-                                </button>
-                                <button onClick={() => openDoc(true)} title="Download" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
-                                  <Download size={16} />
-                                </button>
-                              </div>
+                              {/* A row whose file is gone says so rather than
+                                  offering two buttons that cannot work. */}
+                              {doc.fileMissing ? (
+                                <span className="text-[12.5px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1 ml-2 flex-shrink-0"
+                                  title="The record is here but the file is no longer on the server. Ask the employee to upload it again.">
+                                  File missing
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                                  <button onClick={() => openDoc(false)} title="Preview" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
+                                    <Eye size={16} />
+                                  </button>
+                                  <button onClick={() => openDoc(true)} title="Download" className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-100 rounded transition-colors">
+                                    <Download size={16} />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           );
                         })}

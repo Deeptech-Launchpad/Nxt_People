@@ -549,6 +549,10 @@ router.get('/:id/full', async (req, res) => {
       filePath: d.file_url || d.file_path || null,
       fileSize: d.file_size ?? d.size ?? null,
       uploadDate: d.created_at || d.upload_date || d.uploaded_at || null,
+      /* The record can outlive the bytes — seven of these on live point at
+       * files that are no longer on the server. Carried through so the screen
+       * can say so instead of offering a download that answers 404. */
+      fileMissing: d.file_missing === true,
     }));
 
     res.json({ success: true, data: candidate });
