@@ -117,6 +117,7 @@ async function migrate() {
   const rows = (await pool.query(
     `SELECT d.id, d.employee_id AS "employeeId", d.name, d.type,
             d.file_url AS "fileUrl", d.folder, d.stored_name AS "storedName",
+            d.created_at AS "createdAt",
             e.employee_id AS "employeeCode", e.first_name AS "firstName", e.last_name AS "lastName",
             e.document_folder AS "employeeFolder"
        FROM employee_documents d
@@ -157,9 +158,19 @@ async function migrate() {
     };
     const folderName = r.employeeFolder || store.folderNameFor(employee);
 
+    /* The day the document ARRIVED, not the day it was moved.
+     *
+     * storedNameFor defaults to now, which for a migration writes today into
+     * the name of a file somebody uploaded last week. The convention is the
+     * upload date and the row knows it, so a restored certificate reads
+     * 2026-08-28 like every other file from that submission rather than
+     * claiming to be from the day it was rescued. */
+    const uploadedOn = r.createdAt ? new Date(r.createdAt) : new Date();
+
     if (!APPLY) {
       const target = store.storedNameFor({
-        employeeId: r.employeeCode, originalName: r.fileUrl, label: r.name, dir: null,
+        employeeId: r.employeeCode, originalName: r.fileUrl, label: r.name,
+        dir: null, when: uploadedOn,
       });
       console.log(`  MOVE    ${folderName}/`);
       console.log(`          ${path.basename(source)}  ->  ${target}`);
@@ -170,7 +181,7 @@ async function migrate() {
     const buffer = fs.readFileSync(source);
     const written = store.storeDocument({
       employee, folder: folderName, buffer,
-      originalName: r.fileUrl, label: r.name,
+      originalName: r.fileUrl, label: r.name, when: uploadedOn,
     });
 
     /* Verified before the original is let go. A move that loses a

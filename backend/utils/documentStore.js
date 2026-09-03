@@ -208,11 +208,14 @@ function decryptBuffer(stored) {
 
 /* Write one document into its owner's folder, encrypted if a key is set.
  * Returns everything the row needs to find it again. */
-function storeDocument({ employee, folder, buffer, originalName, label }) {
+function storeDocument({ employee, folder, buffer, originalName, label, when }) {
   const { name: folderName, dir } = ensureFolder(employee, folder);
   const storedName = storedNameFor({
     employeeId: employee?.employeeId || employee?.employee_id,
     originalName, label, dir,
+    /* A restore passes the day the document arrived. An ordinary upload
+     * passes nothing and gets today, which is the same thing. */
+    ...(when ? { when } : {}),
   });
   const { data, encrypted } = encryptBuffer(buffer);
   try {
