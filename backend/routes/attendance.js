@@ -39,6 +39,8 @@ router.get('/today', async (req, res) => {
          working_hours as "workingHours", status, late_minutes as "lateMinutes",
          check_in_location as "checkInLocation", check_out_location as "checkOutLocation",
          work_mode as "workMode", location_distance_meters as "locationDistance",
+         location_accuracy_meters as "locationAccuracy",
+         check_in_latitude IS NOT NULL AS "hasCoords",
          (SELECT name FROM work_locations w WHERE w.id = attendance.work_location_resolved_id) AS "workLocationName"
          FROM attendance WHERE employee_id = $1 AND date = $2::date`,
         [req.user._id, today]

@@ -122,6 +122,23 @@ export default function CheckInOut() {
         </div>
       </div>
 
+      {/* Why a punch could not be placed, to the person it happened to.
+          They see "Not recorded" otherwise and have no idea whether that is
+          their doing, their phone's, or a fault. Each cause has a different
+          thing to try. */}
+      {workMode === 'unknown' && (
+        <div className="bg-slate-50 border border-slate-200 text-slate-600 rounded-2xl px-4 py-3 flex items-start gap-3 text-sm">
+          <MapPin size={16} className="flex-shrink-0 mt-0.5 text-slate-400" />
+          <span>
+            {!record?.hasCoords
+              ? 'Your check-in was recorded, but your location was not shared — so it could not be marked as office or work from home. Allow location for this site and check in from your phone next time.'
+              : record?.locationAccuracy
+                ? `Your check-in was recorded, but your device could only place you to within ${record.locationAccuracy} m, which is too vague to tell office from home. A phone with GPS gives a much tighter fix than a desktop.`
+                : 'Your check-in was recorded, but it could not be placed as office or work from home.'}
+          </span>
+        </div>
+      )}
+
       {/* GPS status banner — surfaces denial/timeout instead of failing silently */}
       {gpsError && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl px-4 py-3 flex items-center gap-3 text-sm">

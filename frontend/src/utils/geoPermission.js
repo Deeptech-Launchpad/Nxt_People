@@ -77,7 +77,24 @@ export async function startLocationCapture() {
   };
 }
 
-/** Capture one GPS fix. Resolves to coords or null (never rejects). */
+/** Capture one GPS fix. Resolves to coords or null (never rejects).
+ *
+ * enableHighAccuracy was FALSE here, which tells the browser not to bother
+ * with GPS and to answer from wifi or the network instead. That was the right
+ * trade when the fix was only being logged: cheaper, faster, and nothing
+ * depended on it.
+ *
+ * It is the wrong trade now. The fix decides whether a check-in is recorded as
+ * office or working from home, and a network fix routinely lands hundreds of
+ * metres out — wider than the fence it is being measured against, so the
+ * classification refuses to guess and the day comes back unplaced. The admin
+ * screen's capture button was already asking for high accuracy, which is why
+ * it read 93 m where a check-in from the same desk could not be placed at all.
+ *
+ * The longer timeout is the cost: a GPS lock takes seconds where a network fix
+ * is instant. That is affordable precisely because this runs AFTER the punch is
+ * recorded — nobody is waiting on it, and a fix that arrives five seconds late
+ * still corrects the day. */
 export function capturePosition() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
@@ -88,7 +105,7 @@ export function capturePosition() {
         accuracy: pos.coords.accuracy,
       }),
       () => resolve(null),
-      { enableHighAccuracy: false, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
   });
 }
