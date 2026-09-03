@@ -1,6 +1,8 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Upload, Trash2, Download, File, FileImage, AlertTriangle, X, FolderOpen } from 'lucide-react';
+import { FileText, Upload, Trash2, Download, Eye, File, FileImage, AlertTriangle, X, FolderOpen } from 'lucide-react';
 import api from '../utils/api';
+import { downloadEmployeeDocument } from '../utils/employeeDocument';
+import DocumentPreview from '../components/DocumentPreview';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { isApprover } from '../utils/roles';
@@ -39,6 +41,7 @@ export default function Documents({ employeeId: propEmpId }) {
   const empId = propEmpId || user?._id;
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [previewing, setPreviewing] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [form, setForm] = useState({ name: '', type: 'other', file: null });
@@ -138,17 +141,34 @@ export default function Documents({ employeeId: propEmpId }) {
                         <p className="text-sm text-slate-400 mt-0.5">{formatSize(doc.fileSize)} · {new Date(doc.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                         <p className="text-[12px] text-slate-400 mt-0.5">by {doc.uploadedBy?.firstName}</p>
                       </div>
+                      {/* A row whose bytes are gone offers nothing to press. */}
+                      {doc.fileMissing ? (
+                        <span title="The record is here but the file is no longer on the server."
+                          className="text-[11.5px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 flex-shrink-0">
+                          Missing
+                        </span>
+                      ) : (
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <a href={doc.fileUrl} target="_blank" rel="noreferrer"
+                        {/* Was a plain <a href={doc.fileUrl}>, which cannot carry
+                            an Authorization header — so once documents stopped
+                            being served by a static handler, every download from
+                            this page answered 401 or 404. Both buttons go through
+                            the endpoint that checks entitlement and decrypts. */}
+                        <button onClick={() => setPreviewing(doc)} title="Preview"
+                          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors">
+                          <Eye size={13} />
+                        </button>
+                        <button onClick={() => downloadEmployeeDocument(empId, doc._id, doc.name)} title="Download"
                           className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors">
                           <Download size={13} />
-                        </a>
+                        </button>
                         {canUpload && (
                           <button onClick={() => handleDelete(doc._id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors">
                             <Trash2 size={13} />
                           </button>
                         )}
                       </div>
+                      )}
                     </div>
                   );
                 })}
@@ -157,6 +177,10 @@ export default function Documents({ employeeId: propEmpId }) {
             );
           })}
         </div>
+      )}
+
+      {previewing && (
+        <DocumentPreview employeeId={empId} doc={previewing} onClose={() => setPreviewing(null)} />
       )}
 
       {modal && (
