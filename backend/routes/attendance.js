@@ -574,7 +574,14 @@ router.get('/my', async (req, res) => {
     // never renders for legitimately-late rows.
     const [attRes, shiftRes, sRes] = await Promise.all([
       pool.query(
-        `SELECT id as "_id", date, check_in as "checkIn", check_out as "checkOut",
+        /* date is rendered, so it leaves here as a plain YYYY-MM-DD string.
+         * As a DATE column pg hands back a JS Date, which JSON turns into
+         * "2026-09-01T00:00:00.000Z" — and every caller that built a date
+         * from it got Invalid Date. Fixed at the source rather than by making
+         * each screen slice the string. */
+        `SELECT id as "_id", to_char(date, 'YYYY-MM-DD') as date,
+                check_in as "checkIn", check_out as "checkOut",
+                session_started_at as "sessionStartedAt",
                 working_hours as "workingHours", status,
                 late_minutes as "lateMinutes",
                 check_in_location as "checkInLocation",
@@ -621,7 +628,9 @@ router.get('/my', async (req, res) => {
     let rows = attRes.rows;
     if (tz !== DEFAULT_TZ) {
       const r2 = await pool.query(
-        `SELECT id as "_id", date, check_in as "checkIn", check_out as "checkOut",
+        `SELECT id as "_id", to_char(date, 'YYYY-MM-DD') as date,
+                check_in as "checkIn", check_out as "checkOut",
+                session_started_at as "sessionStartedAt",
                 working_hours as "workingHours", status,
                 late_minutes as "lateMinutes",
                 check_in_location as "checkInLocation",
@@ -673,7 +682,45 @@ router.get('/my', async (req, res) => {
       };
     });
 
-    res.json({ success: true, data: mapped });
+    /* The month's SHAPE, not only its punches.
+     *
+     * This returned rows from the attendance table and nothing else, so a
+     * screen drawing it showed three lines for a seven-day week: a weekend
+     * looked identical to a day somebody simply did not come in, and an
+     * absence was invisible because absence is the absence of a row. The
+     * reference draws every day of the period and labels the ones nobody was
+     * expected to work.
+     *
+     * Sent alongside `data` rather than merged into it: the punches are still
+     * exactly what they were, so every existing caller is unaffected. */
+    let calendar = [];
+    try {
+      const [weekend, holRes] = await Promise.all([
+        loadWeekendResolver(),
+        pool.query(
+          `SELECT to_char(date, 'YYYY-MM-DD') AS date, name, type
+             FROM holidays WHERE date >= $1::date AND date <= $2::date`,
+          [start, end]),
+      ]);
+      const holidays = new Map(holRes.rows.map(h => [h.date, h]));
+      const last = new Date(y, m + 1, 0).getDate();
+      for (let d = 1; d <= last; d++) {
+        const ymd = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const hol = holidays.get(ymd);
+        calendar.push({
+          date: ymd,
+          kind: hol ? 'holiday' : (weekend.isWeekend(new Date(y, m, d)) ? 'weekend' : 'working'),
+          holidayName: hol ? hol.name : null,
+        });
+      }
+    } catch (err) {
+      /* Additive. A month still lists its punches if the calendar cannot be
+       * resolved — an empty array reads as "not known", and the screen falls
+       * back to showing the days it does have. */
+      logger.warn({ err: err.message }, '[attendance] month calendar unavailable');
+    }
+
+    res.json({ success: true, data: mapped, calendar });
   } catch (err) {
     serverError(res, err);
   }

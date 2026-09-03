@@ -87,13 +87,23 @@ router.get('/my', async (req, res) => {
     // everybody else always gets their own regardless of what they pass.
     const empId = isFullAccess(req.user.role) && req.query.employeeId ? req.query.employeeId : req.user._id;
     const result = await pool.query(
-      `SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
+      /* Carries the same before-and-after the approval queue shows.
+       *
+       * This listed only the requested times, so the one thing a reader wants
+       * — what the correction actually changes — was the one thing missing:
+       * "09:30 to 19:00" says nothing without the 00:00 it replaces. The
+       * attendance row supplies the old side; null is the ordinary case for a
+       * day somebody never checked in at all. */
+      `SELECT r.id as "_id", to_char(r.date, 'YYYY-MM-DD') as date,
+       r.check_in as "checkIn", r.check_out as "checkOut",
        r.reason, r.status, r.rejection_reason as "rejectionReason", r.created_at as "createdAt",
+       a.working_hours as "oldHours", a.status as "oldStatus",
        json_build_object('firstName', m.first_name, 'lastName', m.last_name) as "approvedBy",
        ${REG_LEVELS_JSON} as "approvalLevels"
        FROM attendance_regularizations r
        LEFT JOIN employees m ON r.approved_by = m.id
-       WHERE r.employee_id = $1 ORDER BY r.created_at DESC`,
+       LEFT JOIN attendance a ON a.employee_id = r.employee_id AND a.date = r.date
+       WHERE r.employee_id = $1 ORDER BY r.date DESC, r.created_at DESC`,
       [empId]
     );
     res.json({ success: true, data: result.rows });
@@ -146,6 +156,34 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
   if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
   try {
     const { date, checkIn, checkOut, reason } = req.body;
+
+    /* WHOSE request this is.
+     *
+     * Operations → User-specific Operations lets HR raise a correction for
+     * somebody who cannot raise it themselves — the biometric that never
+     * registered, the person on leave when the window closed. The reference
+     * puts a Request button on exactly that screen.
+     *
+     * The subject is the employee the request is ABOUT, and everything that
+     * follows keys off it: the row, the per-period allowance, and above all
+     * the approval chain, which must be built from the subject's hierarchy
+     * and not the admin's. An admin raising a request that routes to the
+     * admin's own manager would be an approval no one intended.
+     *
+     * Only full access may name somebody else. Everyone else raises their
+     * own regardless of what they send. */
+    const subjectId = isFullAccess(req.user.role) && req.body.employeeId
+      ? String(req.body.employeeId)
+      : req.user._id;
+    const onBehalf = String(subjectId) !== String(req.user._id);
+    if (onBehalf) {
+      const who = await pool.query(
+        `SELECT id FROM employees WHERE id=$1 AND deleted_at IS NULL`, [subjectId]);
+      if (!who.rows.length) {
+        return res.status(404).json({ success: false, message: 'That employee no longer exists' });
+      }
+    }
+
     const cfg = await attendanceConfig.section('regularization');
     const restrictions = cfg.restrictions || {};
 
@@ -193,7 +231,7 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
         `SELECT COUNT(*)::int AS n FROM attendance_regularizations
           WHERE employee_id = $1 AND status IN ('pending','approved')
             AND date >= ${start} AND date < (${start} + ('1 ' || $3)::interval)`,
-        [req.user._id, date, perPeriod.period || 'month']
+        [subjectId, date, perPeriod.period || 'month']
       );
       if (used.rows[0].n >= Number(perPeriod.count || 0)) {
         return res.status(400).json({
@@ -224,11 +262,12 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
          RETURNING id as "_id", date, check_in as "checkIn", check_out as "checkOut", reason, status,
                    attachment_path as "attachmentPath", attachment_name as "attachmentName",
                    created_at as "createdAt"`,
-        [req.user._id, date, checkIn || null, checkOut || null, reasonText || null,
+        [subjectId, date, checkIn || null, checkOut || null, reasonText || null,
          attachmentPath, attachmentName]
       );
       reg = result.rows[0];
-      levels = await createLevels(client, 'regularization', reg._id, req.user._id, {
+      /* The SUBJECT's chain, not the raiser's. */
+      levels = await createLevels(client, 'regularization', reg._id, subjectId, {
         date,
         reason: reasonText,
         // How stale the entry is, which is the condition an org most often
@@ -246,7 +285,14 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
     // ── Notify all levels ──
 
     try {
-      const empName = `${req.user.firstName} ${req.user.lastName}`;
+      /* The request is about the subject, so it is their name an approver
+       * needs to read — not the name of the administrator who typed it. */
+      let empName = `${req.user.firstName} ${req.user.lastName}`;
+      if (onBehalf) {
+        const s = await pool.query(
+          `SELECT first_name AS "firstName", last_name AS "lastName" FROM employees WHERE id=$1`, [subjectId]);
+        if (s.rows.length) empName = `${s.rows[0].firstName} ${s.rows[0].lastName || ''}`.trim();
+      }
       const dateLabel = new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
       const approverIds = levels.map(l => l.approverId).filter(Boolean);
       let hierarchyApprovers = [];

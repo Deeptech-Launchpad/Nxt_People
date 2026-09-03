@@ -190,6 +190,23 @@ router.post('/', requireOnDutyEnabled, uploadAttachment, [
   const discardUpload = () => { if (req.file) fs.unlink(req.file.path, () => {}); };
   try {
     const { startDate, endDate, reason } = req.body;
+
+    /* Whose request this is — see the same block in routes/regularizations.js.
+     * HR raises on-duty for somebody from User-specific Operations; the chain
+     * that approves it has to be the subject's, never the raiser's. */
+    const subjectId = isFullAccess(req.user.role) && req.body.employeeId
+      ? String(req.body.employeeId)
+      : req.user._id;
+    const onBehalf = String(subjectId) !== String(req.user._id);
+    if (onBehalf) {
+      const who = await pool.query(
+        `SELECT id FROM employees WHERE id=$1 AND deleted_at IS NULL`, [subjectId]);
+      if (!who.rows.length) {
+        discardUpload();
+        return res.status(404).json({ success: false, message: 'That employee no longer exists' });
+      }
+    }
+
     const cfg = await attendanceConfig.section('onduty');
     const { keys: allowedTypes, label: typeLabels } = await typeOptions();
 
@@ -267,11 +284,14 @@ router.post('/', requireOnDutyEnabled, uploadAttachment, [
       `SELECT 1 FROM on_duty_requests
         WHERE employee_id = $1 AND status IN ('pending','approved')
           AND start_date <= $3::date AND end_date >= $2::date LIMIT 1`,
-      [req.user._id, startDate, endDate]
+      [subjectId, startDate, endDate]
     );
     if (clash.rows.length) {
       discardUpload();
-      return res.status(400).json({ success: false, message: 'You already have an on-duty request covering those dates' });
+      return res.status(400).json({ success: false,
+        message: onBehalf
+          ? 'That employee already has an on-duty request covering those dates'
+          : 'You already have an on-duty request covering those dates' });
     }
 
     let od, levels = [];
@@ -284,10 +304,11 @@ router.post('/', requireOnDutyEnabled, uploadAttachment, [
          RETURNING id as "_id", start_date::text as "startDate", end_date::text as "endDate",
                    unit, start_time as "startTime", end_time as "endTime", hours,
                    request_type as "requestType", reason, status, created_at as "createdAt"`,
-        [req.user._id, startDate, endDate, unit, startTime, endTime, hours, requestType, reason || null, attachmentPath, attachmentName]
+        [subjectId, startDate, endDate, unit, startTime, endTime, hours, requestType, reason || null, attachmentPath, attachmentName]
       );
       od = result.rows[0];
-      levels = await createLevels(client, 'on_duty', od._id, req.user._id, {
+      /* The SUBJECT's chain, not the raiser's. */
+      levels = await createLevels(client, 'on_duty', od._id, subjectId, {
         startDate, endDate, requestType, days: daySpan(startDate, endDate),
       });
       await client.query('COMMIT');
@@ -301,7 +322,14 @@ router.post('/', requireOnDutyEnabled, uploadAttachment, [
     // Notifications are best-effort: a mail server having a bad day must not
     // lose a request that is already committed.
     try {
-      const empName = `${req.user.firstName} ${req.user.lastName}`;
+      /* The subject's name: the request is about them, not about whoever
+       * typed it. */
+      let empName = `${req.user.firstName} ${req.user.lastName}`;
+      if (onBehalf) {
+        const s = await pool.query(
+          `SELECT first_name AS "firstName", last_name AS "lastName" FROM employees WHERE id=$1`, [subjectId]);
+        if (s.rows.length) empName = `${s.rows[0].firstName} ${s.rows[0].lastName || ''}`.trim();
+      }
       const label = startDate === endDate ? startDate : `${startDate} to ${endDate}`;
       const approverIds = levels.map(l => l.approverId).filter(Boolean);
       const approvers = approverIds.length

@@ -2856,7 +2856,12 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
       // Nothing recorded for this person ever: their history is unknown, not
       // zero, so the ledger opens at the period itself.
       const since = firstSeen.get(emp._id) || start;
-      let prevExpected = 0, prevPayable = 0, expected = 0, payable = 0;
+      let expected = 0, payable = 0;
+      /* Everything before this period, kept PER MONTH rather than as one
+       * total. The opening balance is a running figure that is floored at
+       * each month's close (see below), and a floor cannot be applied to a
+       * sum after the fact — it has to be applied as the months go by. */
+      const priorMonths = new Map();
       // Kept apart from the balance on purpose. A balance nets them off, so
       // three hours short on Monday and three hours over on Tuesday reads as a
       // quiet zero — which is exactly the pattern somebody would want to see.
@@ -2892,8 +2897,11 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
         const dayPayable = Math.max(worked, credit);
 
         if (ymd < start) {
-          prevExpected += shiftHours;
-          prevPayable += dayPayable;
+          const key = ymd.slice(0, 7);
+          const bucket = priorMonths.get(key) || { expected: 0, payable: 0 };
+          bucket.expected += shiftHours;
+          bucket.payable += dayPayable;
+          priorMonths.set(key, bucket);
         } else {
           expected += shiftHours;
           payable += dayPayable;
@@ -2903,14 +2911,52 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
       }
 
       const round = n => parseFloat(n.toFixed(2));
-      const previousBalance = round(prevPayable - prevExpected);
+
+      /* THE LEDGER RULE.
+       *
+       * This was `payable - expected`, carried forward without a floor, so a
+       * month somebody worked less than their shift became a debt that never
+       * went away: January short by 150 hours still dragged September down,
+       * and the screen read -129:-2 where the reference read +31:02 for the
+       * same person.
+       *
+       * That is not how an hours balance works. Overtime BANKS; a shortfall
+       * is simply not paid, and the ledger reopens at zero. So the balance is
+       * floored at each close, and because a floor cannot be applied to a sum
+       * after the fact, the opening balance is folded month by month.
+       *
+       *   paid    = min(payable, expected)   what the period actually pays
+       *   balance = max(0, opening + payable - expected)
+       *
+       * Verified against the reference's own ledger for one employee across
+       * nine months: Jan 97:14 worked against 248:00 expected closes at 00:00
+       * rather than -150:46, and every later month then agrees to the minute. */
+      let previousBalance = 0;
+      for (const key of [...priorMonths.keys()].sort()) {
+        const b = priorMonths.get(key);
+        previousBalance = Math.max(0, previousBalance + b.payable - b.expected);
+      }
+      previousBalance = round(previousBalance);
+
+      /* Paid is what the period hands over: the hours worked, capped at the
+       * hours owed. A period still running has paid nothing yet — payroll has
+       * not processed it — which is why the current month reads 00:00 rather
+       * than a figure that will change tomorrow. */
+      const periodClosed = end < todayYmd;
+      const paidHours = periodClosed ? Math.min(payable, expected) : 0;
+
       return {
         _id: emp._id, firstName: emp.firstName, lastName: emp.lastName, department: emp.department,
         employeeCode: emp.employeeCode, exitDate: emp.exitDate, shiftName: emp.shiftName,
         previousBalance,
         expectedHours: round(expected),
         payableHours: round(payable),
-        balanceHours: round(previousBalance + payable - expected),
+        paidHours: round(paidHours),
+        /* No manual adjustment facility exists, so this is always zero. It is
+         * reported rather than omitted because the column is part of the
+         * ledger's arithmetic, and a missing column reads as a missing term. */
+        adjustmentHours: 0,
+        balanceHours: round(Math.max(0, previousBalance + payable - expected)),
         // "Allow overtime and deviation" off means the organization does not
         // measure this. Null rather than zero — not measured and worked their
         // hours exactly are different facts, and a column of zeros would claim

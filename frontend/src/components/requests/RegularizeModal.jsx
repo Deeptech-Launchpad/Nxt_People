@@ -54,7 +54,11 @@ function datesFor(period, anchor, customFrom, customTo) {
   return out;
 }
 
-export default function RegularizeModal({ date, onClose, onDone }) {
+/* employeeId raises the request FOR somebody else — HR acting from
+ * User-specific Operations. Absent, this is the ordinary self-service
+ * path and the server uses the caller, so nothing changes for an
+ * employee raising their own. */
+export default function RegularizeModal({ date, employeeId, onClose, onDone }) {
   const fmt = useFormat();
   const [config, setConfig] = useState(null);
   const [period, setPeriod] = useState('day');
@@ -117,6 +121,7 @@ export default function RegularizeModal({ date, onClose, onDone }) {
           if (r.checkOut) fd.append('checkOut', r.checkOut);
           fd.append('reason', [r.reason, r.description].filter(Boolean).join(' — '));
           fd.append('attachment', file);
+          if (employeeId) fd.append('employeeId', employeeId);
           await api.post('/regularizations', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
           await api.post('/regularizations', {
@@ -124,6 +129,7 @@ export default function RegularizeModal({ date, onClose, onDone }) {
             checkIn: r.checkIn || undefined,
             checkOut: r.checkOut || undefined,
             reason: [r.reason, r.description].filter(Boolean).join(' — '),
+            ...(employeeId ? { employeeId } : {}),
           });
         }
         ok++;

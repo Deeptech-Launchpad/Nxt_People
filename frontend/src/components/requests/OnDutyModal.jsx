@@ -20,7 +20,8 @@ const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); r
 const TYPES = ['Client visit', 'Work from home'];
 const DURATIONS = ['Full Day', 'Half Day', 'Quarter Day'];
 
-export default function OnDutyModal({ date, onClose, onDone }) {
+/* employeeId raises the request FOR somebody else — see RegularizeModal. */
+export default function OnDutyModal({ date, employeeId, onClose, onDone }) {
   const fmt = useFormat();
   const [config, setConfig] = useState(null);
   const [from, setFrom] = useState(date || iso(new Date()));
@@ -68,6 +69,7 @@ export default function OnDutyModal({ date, onClose, onDone }) {
         requestType: type,
         reason: description.trim(),
         ...(unit === 'hours' ? { startTime, endTime } : {}),
+        ...(employeeId ? { employeeId } : {}),
       };
       if (file && showDocument) {
         const fd = new FormData();

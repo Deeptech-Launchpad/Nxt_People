@@ -27,12 +27,17 @@ import OpsOnDutyQueue from './attendance/OpsOnDutyQueue';
  *  app — to act on a queue that belongs to Attendance was the wrong trade.
  * ────────────────────────────────────────────────────────────────────────── */
 export default function OperationsAttendance() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const tab = params.get('tab') || 'user';
+
+  /* User-specific Operations offers Import in its overflow menu. It switches
+   * to the module's own Check-in/out Import & Export tab rather than growing
+   * a second importer that would drift from it. */
+  const goTo = (t) => setParams(t === 'import' ? { tab: 'import-export' } : { tab: t });
 
   return (
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
-      {tab === 'user' && <OpsUserSpecific />}
+      {tab === 'user' && <OpsUserSpecific onGoTo={goTo} />}
       {tab === 'regularization' && <OpsRegularizationQueue />}
       {tab === 'onduty' && <OpsOnDutyQueue />}
       {tab === 'biometric' && <OpsBiometricMapping />}

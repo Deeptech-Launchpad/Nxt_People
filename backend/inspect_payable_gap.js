@@ -1,0 +1,147 @@
+/* READ ONLY. Writes nothing, changes nothing.
+ *
+ * Why this exists: on the Expected vs Worked screen our payable hours differed
+ * from the reference's for the same person and the same month — August by
+ * exactly 8:00 (one shift day), July by 2:00. Expected hours agreed to the
+ * minute, so the disagreement is in what we count as WORKED, not in what we
+ * think is owed. That is a question about the rows, not about the arithmetic,
+ * and it cannot be answered from a screenshot.
+ *
+ * Three things it looks for, in the order they are worth suspecting:
+ *
+ *   1. An APPROVED regularization whose day does not match it. Approving one
+ *      is supposed to write the corrected times back to the attendance row.
+ *      Where it did not, the day still counts whatever it counted before —
+ *      which for a "Forgot to check-out" is usually nothing.
+ *   2. A day whose stored working_hours disagrees with its own punches.
+ *   3. Days open but never closed, which contribute nothing to payable.
+ *
+ * Usage (inside the container, so it reads the live database):
+ *     docker compose -f docker-compose.prod.yml exec -T backend \
+ *       node < inspect_payable_gap.js
+ *
+ * Narrow it with EMP and MONTHS if you want one person:
+ *     EMP=ANXT2600149 MONTHS=2026-07,2026-08 docker compose ... node < inspect_payable_gap.js
+ */
+require('dotenv').config();
+process.env.LOG_LEVEL = 'silent';
+const pool = require('./db');
+
+const EMP = process.env.EMP || null;
+const MONTHS = (process.env.MONTHS || '').split(',').filter(Boolean);
+
+const hm = (h) => {
+  if (h === null || h === undefined) return '  --  ';
+  const neg = Number(h) < 0;
+  const t = Math.round(Math.abs(Number(h)) * 60);
+  return `${neg ? '-' : ' '}${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
+const line = (n = 78) => console.log('  ' + '-'.repeat(n));
+
+(async () => {
+  const who = EMP
+    ? await pool.query(
+        `SELECT id, employee_id AS code, first_name AS "firstName", last_name AS "lastName"
+           FROM employees WHERE employee_id = $1 AND deleted_at IS NULL`, [EMP])
+    : await pool.query(
+        `SELECT id, employee_id AS code, first_name AS "firstName", last_name AS "lastName"
+           FROM employees WHERE deleted_at IS NULL AND status='active' ORDER BY employee_id`);
+
+  if (!who.rows.length) { console.log('\n  No such employee.\n'); await pool.end(); return; }
+
+  const monthClause = MONTHS.length
+    ? `AND to_char(a.date, 'YYYY-MM') = ANY($2::text[])`
+    : `AND a.date >= (CURRENT_DATE - INTERVAL '6 months')`;
+  const monthArgs = MONTHS.length ? [MONTHS] : [];
+
+  console.log('\n  PAYABLE HOURS — where our figure could differ from the reference');
+  console.log('  read only; nothing below changes any row\n');
+
+  /* 1 — approved regularizations the attendance row does not reflect. */
+  console.log('  1. Approved regularizations whose day was NOT updated');
+  line();
+  const stale = await pool.query(
+    `SELECT e.employee_id AS code, e.first_name AS "firstName",
+            to_char(r.date, 'YYYY-MM-DD') AS date,
+            r.check_in AS "wantIn", r.check_out AS "wantOut", r.reason,
+            a.working_hours AS "hours", a.status,
+            to_char(a.check_in AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS "gotIn",
+            to_char(a.check_out AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS "gotOut"
+       FROM attendance_regularizations r
+       JOIN employees e ON e.id = r.employee_id
+       LEFT JOIN attendance a ON a.employee_id = r.employee_id AND a.date = r.date
+      WHERE r.status = 'approved'
+        ${EMP ? 'AND e.employee_id = $1' : ''}
+        AND (a.id IS NULL OR COALESCE(a.working_hours, 0) = 0)
+        AND r.date >= (CURRENT_DATE - INTERVAL '12 months')
+      ORDER BY r.date DESC LIMIT 60`,
+    EMP ? [EMP] : []);
+
+  if (!stale.rows.length) {
+    console.log('     none — every approved correction is reflected in its day');
+  } else {
+    console.log('     these days were approved as worked but still count zero:');
+    stale.rows.forEach(r => console.log(
+      `     ${r.date}  ${String(r.code).padEnd(14)} asked ${r.wantIn || '--'}-${r.wantOut || '--'}` +
+      `  row says ${r.gotIn || '--'}-${r.gotOut || '--'} (${hm(r.hours)})  ${r.reason || ''}`));
+    console.log(`\n     ${stale.rows.length} day(s). Each is roughly one shift of payable hours missing.`);
+  }
+
+  /* 2 — stored hours that disagree with the day's own punches. */
+  /* A uniform gap across many people on one date is almost always a
+   * configured break deduction, not damage. Only a scattered, per-person gap
+   * is worth chasing. Said here so a whole column of identical 30-minute
+   * differences is not mistaken for a fault. */
+  console.log('\n  2. Days whose stored hours disagree with their punches (> 5 min out)');
+  console.log('     NOTE: a uniform gap on one date across many people is normally the');
+  console.log('     configured break deduction. Look for scattered, per-person differences.');
+  line();
+  const drift = await pool.query(
+    `SELECT e.employee_id AS code, to_char(a.date, 'YYYY-MM-DD') AS date,
+            a.working_hours AS stored,
+            EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600 AS implied
+       FROM attendance a JOIN employees e ON e.id = a.employee_id
+      WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
+        ${EMP ? 'AND e.employee_id = $1' : ''}
+        ${monthClause.replace('$2', EMP ? '$2' : '$1')}
+        AND ABS(COALESCE(a.working_hours,0) - EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600) > 0.084
+      ORDER BY a.date DESC LIMIT 40`,
+    EMP ? [EMP, ...monthArgs] : monthArgs);
+
+  if (!drift.rows.length) console.log('     none');
+  else drift.rows.forEach(r => console.log(
+    `     ${r.date}  ${String(r.code).padEnd(14)} stored ${hm(r.stored)}  punches imply ${hm(r.implied)}`));
+
+  /* 3 — open days: checked in, never checked out. */
+  console.log('\n  3. Days checked in but never checked out (they pay nothing)');
+  line();
+  const open = await pool.query(
+    `SELECT e.employee_id AS code, e.first_name AS "firstName",
+            COUNT(*)::int AS days, MIN(to_char(a.date,'YYYY-MM-DD')) AS first, MAX(to_char(a.date,'YYYY-MM-DD')) AS last
+       FROM attendance a JOIN employees e ON e.id = a.employee_id
+      WHERE a.check_in IS NOT NULL AND a.check_out IS NULL
+        AND a.date < CURRENT_DATE
+        ${EMP ? 'AND e.employee_id = $1' : ''}
+      GROUP BY 1,2 ORDER BY days DESC LIMIT 20`,
+    EMP ? [EMP] : []);
+  if (!open.rows.length) console.log('     none');
+  else open.rows.forEach(r => console.log(
+    `     ${String(r.code).padEnd(14)} ${String(r.days).padStart(4)} day(s)   ${r.first} .. ${r.last}   ${r.firstName}`));
+
+  /* 4 — on-duty rows per month, to check what actually migrated. */
+  console.log('\n  4. On-duty requests per month (the screen showed 1 where the reference showed 6)');
+  line();
+  const od = await pool.query(
+    `SELECT to_char(o.start_date, 'YYYY-MM') AS month, o.status, COUNT(*)::int AS n
+       FROM on_duty_requests o JOIN employees e ON e.id = o.employee_id
+      WHERE o.start_date >= (CURRENT_DATE - INTERVAL '12 months')
+        ${EMP ? 'AND e.employee_id = $1' : ''}
+      GROUP BY 1,2 ORDER BY 1 DESC, 2`,
+    EMP ? [EMP] : []);
+  if (!od.rows.length) console.log('     none in the last 12 months');
+  else od.rows.forEach(r => console.log(`     ${r.month}  ${String(r.status).padEnd(12)} ${String(r.n).padStart(4)}`));
+
+  console.log('\n  Nothing was changed. If section 1 has rows, that is the payable gap:');
+  console.log('  the approval was recorded but the day it was meant to correct was not.\n');
+  await pool.end();
+})().catch(async e => { console.error(e.message); await pool.end().catch(() => {}); });
