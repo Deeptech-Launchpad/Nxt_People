@@ -170,6 +170,16 @@ router.post('/submit/:token', (req, res, next) => {
   // different physical connections under pool churn — silently breaking
   // atomicity. Single-client guarantees all statements share one txn.
   const client = await pool.connect();
+  /* Every file this request writes, declared OUT HERE so the catch can reach
+   * it — a const inside the try is invisible to the catch, which would have
+   * turned a failed submission into a ReferenceError on the way out.
+   *
+   * The bytes land on disk before the transaction commits, so a failure
+   * anywhere after the first file leaves orphans nobody references and
+   * nothing removes. Onboarding writes seven or eight at once, so one bad
+   * submission strands the lot — somebody's Aadhaar and PAN sitting in a
+   * folder with no row pointing at them. */
+  const writtenFiles = [];
   try {
     const { token } = req.params;
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -350,6 +360,7 @@ router.post('/submit/:token', (req, res, next) => {
         originalName: file.originalname, label,
       });
       ownerFolder = written.folder;
+      writtenFiles.push({ folder: written.folder, storedName: written.storedName });
       const fileUrl = `/uploads/${written.relativePath}`;
       /* Only the columns this table actually has.
        *
@@ -392,6 +403,11 @@ router.post('/submit/:token', (req, res, next) => {
     res.json({ success: true, message: 'Submitted successfully. HR will review and contact you.' });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    /* The rows are gone; the files have to go too. Anything else leaves a
+     * candidate's identity documents on disk with nothing referencing them. */
+    for (const f of writtenFiles) {
+      try { documentStore.deleteDocument(f); } catch { /* best effort */ }
+    }
     /* A candidate who has just filled in a long form deserves better than a
      * blank refusal, and so does whoever has to work out why. This route said
      * "An internal server error occurred" and logged nothing, so the one thing

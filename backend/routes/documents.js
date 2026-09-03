@@ -186,16 +186,34 @@ router.post('/:employeeId', upload.single('file'), async (req, res) => {
       originalName: req.file.originalname, label: name,
     });
 
-    const r = await pool.query(
-      `INSERT INTO employee_documents
-         (employee_id, name, type, file_url, file_size, uploaded_by,
-          folder, stored_name, is_encrypted, checksum, original_name)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       RETURNING id as "_id", name, type, file_size as "fileSize", created_at as "createdAt",
-                 folder, stored_name as "storedName", is_encrypted as "isEncrypted"`,
-      [req.params.employeeId, name || req.file.originalname, type,
-       `/uploads/${written.relativePath}`, written.size, req.user._id,
-       written.folder, written.storedName, written.encrypted, written.checksum, req.file.originalname]);
+    /* The file is on disk before the row exists, and if the row fails the
+     * file has to go with it.
+     *
+     * Three copies of one resume were left in a folder while the screen
+     * showed a single document, because two earlier attempts wrote their
+     * bytes and then died on a missing column. Nothing referenced them and
+     * nothing would ever have removed them — an upload that half-succeeds
+     * quietly accumulates rubbish, and identity documents are the last thing
+     * that should be lying around unreferenced.
+     *
+     * Written first because the checksum and size come from writing it; the
+     * cleanup is what makes that ordering safe. */
+    let r;
+    try {
+      r = await pool.query(
+        `INSERT INTO employee_documents
+           (employee_id, name, type, file_url, file_size, uploaded_by,
+            folder, stored_name, is_encrypted, checksum, original_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         RETURNING id as "_id", name, type, file_size as "fileSize", created_at as "createdAt",
+                   folder, stored_name as "storedName", is_encrypted as "isEncrypted"`,
+        [req.params.employeeId, name || req.file.originalname, type,
+         `/uploads/${written.relativePath}`, written.size, req.user._id,
+         written.folder, written.storedName, written.encrypted, written.checksum, req.file.originalname]);
+    } catch (err) {
+      store.deleteDocument({ folder: written.folder, storedName: written.storedName });
+      throw err;
+    }
 
     /* Recorded on the employee the first time, so the folder is found by ID
      * from then on and correcting their name cannot orphan the papers. */
