@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { X, Plus, Pencil, Trash2 } from 'lucide-react';
 import api from '../../../utils/api';
+import EmployeeDocuments from './EmployeeDocuments';
 
 /* Edit Employee, over the list.
  *
@@ -541,6 +542,12 @@ export default function EmployeeEditModal({ employeeId, onClose, onSaved }) {
                 Submit — they are separate records with their own permissions. Cancel below leaves
                 them as they are.
               </p>
+
+              {/* Where HR adds an offer letter, a contract, a warning letter —
+                  the papers the company holds ABOUT somebody, which until now
+                  had nowhere to go: the only route into the system was the
+                  employee uploading their own during onboarding. */}
+              <EmployeeDocuments employeeId={employeeId} canEdit />
 
               {/* Identity numbers are deliberately absent. Editing them belongs
                   behind the audited reveal, not in a form that would show every

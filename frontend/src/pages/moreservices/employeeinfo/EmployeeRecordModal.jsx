@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { X, Pencil, Eye, EyeOff, Loader2 } from 'lucide-react';
 import api from '../../../utils/api';
+import EmployeeDocuments from './EmployeeDocuments';
 
 /* The full employee record, over the list.
  *
@@ -303,6 +304,8 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
                   empty="No rows found."
                 />
               )}
+
+              <EmployeeDocuments employeeId={employeeId} canEdit={false} />
 
               {/* Related Forms — Asset, Benefit, Exit Details, Travel — are
                   separate modules rather than sections of this record, so they

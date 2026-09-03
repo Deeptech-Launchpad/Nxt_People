@@ -23,6 +23,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // Multer setup for uploads
+const documentStore = require('../utils/documentStore');
 const uploadDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -32,22 +33,20 @@ if (!fs.existsSync(uploadDir)) {
 // almost always images or PDFs; anything else hits the fileFilter rejection.
 const ALLOWED_DOC_EXTS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp']);
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir)
-  },
-  filename: function (req, file, cb) {
-    // crypto.randomBytes(16) → 32 hex chars. Replaces Date.now()+Math.random()
-    // which collided whenever two concurrent uploads landed in the same
-    // millisecond AND Math.random() picked the same int (rare but a
-    // documented production incident class). Also lock the saved extension
-    // to ALLOWED_DOC_EXTS so a double-extension trick can never write
-    // anything else to disk.
-    const rawExt = path.extname(file.originalname).toLowerCase();
-    const ext = ALLOWED_DOC_EXTS.has(rawExt) ? rawExt : '.bin';
-    cb(null, crypto.randomBytes(16).toString('hex') + ext);
-  }
-});
+/* Held in memory, not written straight to disk.
+ *
+ * This wrote crypto.randomBytes(16) + ext into one flat directory, which is
+ * why live carries b49e1a6b88f34dddff87bca8260f8a8e.png where it should read
+ * ANXT2600164_2026-09-03_Passport-Photo.png. The name is not decided here any
+ * more: utils/documentStore names the file after the employee and the day it
+ * arrived, puts it in their folder, and encrypts it if a key is set — none of
+ * which can be done before the employee record exists, which is later in this
+ * same request.
+ *
+ * The extension whitelist that used to live in the filename callback moves to
+ * the fileFilter below, so a double-extension trick still cannot write
+ * anything unexpected. */
+const storage = multer.memoryStorage();
 // 5 MB per file, plus an explicit field whitelist so a malicious client
 // can't post 10,000 files under unknown field names. Field names map to
 // the FIELD_TO_TYPE table below; keep the two in sync.
@@ -71,9 +70,10 @@ const upload = multer({
     files:     30,                 // hard upper bound across all fields
   },
   fileFilter: (req, file, cb) => {
-    // First-line defence — reject before write. The filename() callback
-    // forces a safe extension as belt-and-braces, but this lets us return
-    // a clear error to the client instead of silently saving a .bin.
+    /* The only defence now, and sufficient: nothing is written to disk until
+     * documentStore names it, and that sanitises the name and keeps only a
+     * short alphanumeric extension. This rejects early so the candidate gets
+     * a clear message rather than a silent .bin. */
     const ext = path.extname(file.originalname).toLowerCase();
     if (!ALLOWED_DOC_EXTS.has(ext)) {
       return cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', `Unsupported file type: ${ext || 'unknown'}`));
@@ -330,9 +330,27 @@ router.post('/submit/:token', (req, res, next) => {
     // upload.fields() puts files in req.files keyed by fieldname.
     // Flatten back to a list and insert each.
     const filesFlat = Object.values(req.files || {}).flat();
+
+    /* The folder is found by employee id and only decorated with the name, so
+     * a later correction to their spelling cannot orphan their papers. */
+    const owner = (await client.query(
+      `SELECT employee_id AS "employeeId", first_name AS "firstName", last_name AS "lastName",
+              document_folder AS "folder"
+         FROM employees WHERE id = $1`, [employeeId])).rows[0] || {};
+    let ownerFolder = owner.folder || null;
+
     for (const file of filesFlat) {
-      const fileUrl = `/uploads/${file.filename}`;
       const docType = FIELD_TO_TYPE[file.fieldname] || 'other';
+      const label = FIELD_TO_LABEL[file.fieldname] || file.originalname;
+
+      /* Named, filed and encrypted here rather than by multer, which had no
+       * idea whose file it was holding. */
+      const written = documentStore.storeDocument({
+        employee: owner, folder: ownerFolder, buffer: file.buffer,
+        originalName: file.originalname, label,
+      });
+      ownerFolder = written.folder;
+      const fileUrl = `/uploads/${written.relativePath}`;
       /* Only the columns this table actually has.
        *
        * This wrote document_type, file_path, original_name, mime_type and size
@@ -343,15 +361,27 @@ router.post('/submit/:token', (req, res, next) => {
        * six below; this is the same shape. */
       await client.query(`
         INSERT INTO employee_documents (
-          employee_id, name, type, file_url, file_size, uploaded_by
-        ) VALUES ($1, $2, $3, $4, $5, $1)
+          employee_id, name, type, file_url, file_size, uploaded_by,
+          folder, stored_name, is_encrypted, checksum, original_name
+        ) VALUES ($1, $2, $3, $4, $5, $1, $6, $7, $8, $9, $10)
       `, [
         employeeId,
-        FIELD_TO_LABEL[file.fieldname] || file.originalname,
+        label,
         docType,
         fileUrl,
-        file.size,
+        written.size,
+        written.folder,
+        written.storedName,
+        written.encrypted,
+        written.checksum,
+        file.originalname,
       ]);
+    }
+
+    if (ownerFolder) {
+      await client.query(
+        `UPDATE employees SET document_folder = $1 WHERE id = $2 AND document_folder IS NULL`,
+        [ownerFolder, employeeId]);
     }
 
     // Mark token as used
