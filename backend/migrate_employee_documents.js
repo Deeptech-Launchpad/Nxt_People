@@ -34,6 +34,19 @@ async function migrate() {
 
     /* Where the file is now, and whether it is scrambled. file_url stays as
      * it was so nothing that still reads it breaks mid-deploy. */
+    /* What the person actually called the file before it was sanitised.
+     *
+     * This one was ASSUMED to exist rather than added, because it exists on my
+     * local database — and live is older and does not have it. The upload
+     * answered 500 with `column "original_name" ... does not exist`, and the
+     * onboarding form would have done the same to a candidate midway through
+     * submitting their papers.
+     *
+     * The lesson is in the migration now rather than in a comment: every
+     * column the routes write is created here, whether or not some database
+     * somewhere already had it. Checking one environment's schema and
+     * assuming the others match is how this happened. */
+    await client.query(`ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS original_name VARCHAR(255)`);
     await client.query(`ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS folder VARCHAR(200)`);
     await client.query(`ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS stored_name VARCHAR(255)`);
     await client.query(`ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN NOT NULL DEFAULT FALSE`);
@@ -60,7 +73,29 @@ async function migrate() {
   }
   client.release();
 
+  /* Prove the table can take what the routes write, before anybody uploads.
+   *
+   * A missing column surfaces as a 500 at the worst possible moment — for a
+   * candidate this is the onboarding form, halfway through submitting their
+   * certificates. Checking it here means the answer arrives during a deploy,
+   * to somebody who can act on it, rather than to a stranger filling in a
+   * form. */
+  const NEEDED = ['employee_id', 'name', 'type', 'file_url', 'file_size', 'uploaded_by',
+    'folder', 'stored_name', 'is_encrypted', 'checksum', 'original_name', 'file_missing'];
+  const present = new Set((await pool.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='employee_documents'`)).rows.map(r => r.column_name));
+  const absent = NEEDED.filter(c => !present.has(c));
+  if (absent.length) {
+    console.error(`\n  employee_documents is missing: ${absent.join(', ')}`);
+    console.error('  Uploads will fail with a 500 until this migration adds them.\n');
+    await pool.end();
+    process.exitCode = 1;
+    return;
+  }
+
   console.log(`\n  EMPLOYEE DOCUMENTS  ${APPLY ? '*** APPLYING ***' : '(dry run — nothing will be moved)'}`);
+  console.log(`  employee_documents: every column the upload writes is present`);
   const strength = store.encryptionStrength();
   console.log(`  encryption key: ${strength.detail}`);
   if (strength.kind === 'none') {
