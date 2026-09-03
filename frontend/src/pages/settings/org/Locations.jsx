@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import toast from 'react-hot-toast';
 import { Crosshair, MapPin, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import RecordList from './RecordList';
@@ -16,6 +16,11 @@ import api from '../../../utils/api';
 // The time zone column the reference shows is fixed at Asia/Kolkata here and
 // not editable: attendance, payroll and cron scheduling all assume it, so a
 // per-location zone would be a setting the rest of the system ignores.
+/* Leaflet and its stylesheet are ~155 kB, and only somebody editing a
+ * location ever needs them. Loaded on demand so the settings bundle everybody
+ * else downloads does not carry a map they will never open. */
+const LocationMapPicker = lazy(() => import('../../../components/LocationMapPicker'));
+
 const COLUMNS = [
   { key: 'name', label: 'Location name' },
   { key: 'mailAlias', label: 'Email' },
@@ -128,6 +133,30 @@ function Geofence({ record, set }) {
         </div>
       </div>
 
+      {/* The map, above the numbers, because it is the thing that catches a
+          wrong pin. This office was typed as 11.0308 when the building is at
+          11.0257 — 564 m out, indistinguishable in a text box, and it marked
+          everybody at the office as working from home. On a map it would have
+          been obvious in a second. */}
+      <div className="mt-3">
+        <Suspense fallback={
+          <div className="h-[320px] rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center">
+            <span className="text-[13px] text-slate-400">Loading the map…</span>
+          </div>
+        }>
+          <LocationMapPicker
+            latitude={record.latitude}
+            longitude={record.longitude}
+            radiusMeters={record.radiusMeters}
+            onPick={(la, ln) => { set('latitude', la); set('longitude', ln); }}
+          />
+        </Suspense>
+        <p className="text-[12px] text-slate-500 mt-1.5">
+          Drag the pin to your entrance, or click the map. The shaded circle is the fence
+          — anybody checking in inside it is recorded as office.
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
         <div>
           <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Latitude</label>
@@ -144,7 +173,7 @@ function Geofence({ record, set }) {
           <input className={num} value={record.radiusMeters ?? ''} placeholder="300 (default)"
             onChange={e => set('radiusMeters', e.target.value)} />
           <p className="text-[12px] text-slate-500 mt-1">
-            Leave blank to follow the organisation default.
+            Leave blank to follow the organisation default. The circle above redraws as you type.
           </p>
         </div>
       </div>
