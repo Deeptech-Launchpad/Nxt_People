@@ -57,7 +57,12 @@ const PRESENCE = [
 const WORK_MODE = [
   { key: 'office', label: 'Office', color: '#2ecfa0' },
   { key: 'wfh', label: 'Working from home', color: '#f0a13c' },
+  /* Two different failures, and they do not have the same answer. "Not
+     placed" was attempted and could not be resolved — worth acting on.
+     "Before tracking" was never attempted, because the punch predates
+     classification being switched on — it resolves itself tomorrow. */
   { key: 'unknown', label: 'Not placed', color: '#c9c9c9' },
+  { key: 'notClassified', label: 'Before tracking', color: '#e6e6e6' },
 ];
 
 const EXPORT_COLUMNS = [
@@ -334,12 +339,20 @@ export default function AttendanceDailyStatus() {
                   {modePie.map(p => (
                     <LegendRow key={p.key} color={p.color} label={p.label} count={p.count} />
                   ))}
+                  {/* Each grey slice explains itself, and only when it has a
+                      number. Blaming the browser for a punch that predates the
+                      feature sends somebody hunting a problem that is not
+                      there. */}
                   {modePie[2].count > 0 && (
-                    /* Said once, where the number is, rather than left as a grey
-                       slice somebody has to ask about. */
                     <p className="text-[12px] text-slate-400 pt-1.5 leading-snug">
-                      Not placed means the check-in had no usable location — usually a desktop
-                      browser, which has no GPS.
+                      <strong className="font-medium">Not placed</strong> — the check-in had no usable
+                      location. Usually a desktop browser, which has no GPS.
+                    </p>
+                  )}
+                  {modePie[3].count > 0 && (
+                    <p className="text-[12px] text-slate-400 pt-1.5 leading-snug">
+                      <strong className="font-medium">Before tracking</strong> — checked in before
+                      location tracking was switched on. These resolve from the next check-in.
                     </p>
                   )}
                 </div>

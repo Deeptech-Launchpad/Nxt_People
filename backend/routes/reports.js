@@ -2189,8 +2189,16 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
      * `unknown` is its own count and is never folded into either side. A punch
      * the geofence could not place is not evidence of working from home, and
      * a dashboard that quietly rounded it into one column would be inventing
-     * a number somebody might act on. */
-    const workMode = { office: 0, wfh: 0, unknown: 0 };
+     * a number somebody might act on.
+     *
+     * And `notClassified` is kept apart from `unknown`, because they are not
+     * the same failure and do not have the same answer. A row with NO mode was
+     * punched before classification was switched on — nothing was ever
+     * attempted, and tomorrow it resolves itself. A row marked 'unknown' WAS
+     * attempted and could not be placed, which is the one worth acting on.
+     * Folding them together told the whole company its desktops had no GPS on
+     * the afternoon the feature was turned on. */
+    const workMode = { office: 0, wfh: 0, unknown: 0, notClassified: 0 };
     let employees = [];
 
     /* Staff whose attendance is marked for them — Operations -> Attendance
@@ -2248,7 +2256,11 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
        * not "working from home", and counting them there would double-count
        * them against the leave slice beside it. */
       if (att?.checkIn && !managed) {
-        workMode[att.workMode === 'office' ? 'office' : att.workMode === 'wfh' ? 'wfh' : 'unknown']++;
+        const m = att.workMode;
+        workMode[m === 'office' ? 'office'
+          : m === 'wfh' ? 'wfh'
+          : m ? 'unknown'          // attempted and failed — 'unknown', or whatever
+          : 'notClassified']++;    // the org configured it to count as
       }
 
       // Hours are N/A, not zero, on a day nobody was expected to work and
