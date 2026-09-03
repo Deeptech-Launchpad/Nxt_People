@@ -88,29 +88,63 @@ const line = (n = 78) => console.log('  ' + '-'.repeat(n));
   }
 
   /* 2 — stored hours that disagree with the day's own punches. */
-  /* A uniform gap across many people on one date is almost always a
-   * configured break deduction, not damage. Only a scattered, per-person gap
-   * is worth chasing. Said here so a whole column of identical 30-minute
-   * differences is not mistaken for a fault. */
-  console.log('\n  2. Days whose stored hours disagree with their punches (> 5 min out)');
-  console.log('     NOTE: a uniform gap on one date across many people is normally the');
-  console.log('     configured break deduction. Look for scattered, per-person differences.');
+  /* This compared working_hours against last-out minus first-in, which is
+   * simply the wrong comparison: working_hours is the SUM OF SESSIONS, so
+   * anybody who checks out for lunch and back in legitimately banks less than
+   * the span of their day. The first run of this script flagged forty such
+   * days as suspect; every one of them was a person taking a break.
+   *
+   * Compared against the sessions now, which is what the number actually is.
+   * A day with no sessions falls back to the span. */
+  console.log('\n  2. Days whose stored hours disagree with their own sessions (> 5 min out)');
+  console.log('     (measured against summed sessions, not first-in-to-last-out —');
+  console.log('      a day with a lunch break banks less than its span, correctly)');
   line();
   const drift = await pool.query(
-    `SELECT e.employee_id AS code, to_char(a.date, 'YYYY-MM-DD') AS date,
-            a.working_hours AS stored,
-            EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600 AS implied
-       FROM attendance a JOIN employees e ON e.id = a.employee_id
+    `WITH sess AS (
+       SELECT employee_id, date, SUM(COALESCE(session_hours, 0)) AS hours, COUNT(*)::int AS n
+         FROM attendance_sessions GROUP BY 1, 2)
+     SELECT e.employee_id AS code, to_char(a.date, 'YYYY-MM-DD') AS date,
+            a.working_hours AS stored, s.hours AS "sessionHours", s.n AS sessions,
+            EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600 AS span
+       FROM attendance a
+       JOIN employees e ON e.id = a.employee_id
+       LEFT JOIN sess s ON s.employee_id = a.employee_id AND s.date = a.date
       WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
         ${EMP ? 'AND e.employee_id = $1' : ''}
         ${monthClause.replace('$2', EMP ? '$2' : '$1')}
-        AND ABS(COALESCE(a.working_hours,0) - EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600) > 0.084
+        AND ABS(COALESCE(a.working_hours, 0)
+                - COALESCE(s.hours, EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600)) > 0.084
       ORDER BY a.date DESC LIMIT 40`,
     EMP ? [EMP, ...monthArgs] : monthArgs);
 
   if (!drift.rows.length) console.log('     none');
   else drift.rows.forEach(r => console.log(
-    `     ${r.date}  ${String(r.code).padEnd(14)} stored ${hm(r.stored)}  punches imply ${hm(r.implied)}`));
+    `     ${r.date}  ${String(r.code).padEnd(14)} stored ${hm(r.stored)}` +
+    `  sessions ${hm(r.sessionHours)} (${r.sessions || 0})  span ${hm(r.span)}`));
+
+  /* The genuine fault the first run surfaced: an out earlier than the in, so
+   * the day computes negative and is stored as nothing. */
+  console.log('\n  2b. Days whose check-out is at or before their check-in');
+  line();
+  const inverted = await pool.query(
+    `SELECT e.employee_id AS code, to_char(a.date, 'YYYY-MM-DD') AS date,
+            a.working_hours AS stored, a.status,
+            to_char(a.check_in AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS "in",
+            to_char(a.check_out AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS "out"
+       FROM attendance a JOIN employees e ON e.id = a.employee_id
+      WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
+        AND a.check_out <= a.check_in
+        ${EMP ? 'AND e.employee_id = $1' : ''}
+      ORDER BY a.date DESC LIMIT 40`,
+    EMP ? [EMP] : []);
+  if (!inverted.rows.length) console.log('     none');
+  else {
+    inverted.rows.forEach(r => console.log(
+      `     ${r.date}  ${String(r.code).padEnd(14)} in ${r['in']} out ${r.out}  stored ${hm(r.stored)}  ${r.status}`));
+    console.log(`\n     ${inverted.rows.length} day(s). Unless the shift runs through midnight these are`);
+    console.log('     a 6 PM typed as 06:00. Each pays nothing while reading as a worked day.');
+  }
 
   /* 3 — open days: checked in, never checked out. */
   console.log('\n  3. Days checked in but never checked out (they pay nothing)');

@@ -211,6 +211,35 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
       });
     }
 
+    /* A check-out that is not after the check-in.
+     *
+     * Live carries two approved requests like this — 09:30 to 06:00, and
+     * 10:21 to 03:30. Somebody meant 6 PM and typed 6. Nothing refused it,
+     * the approval computed no hours (see the diffMs > 0 branch further
+     * down), and the day was stamped present with 00:00 worked. A day
+     * approved AS WORKED that pays nothing is the worst of both: the
+     * employee is told it was fixed and the hours never arrive.
+     *
+     * A night shift crossing midnight is the one case where an earlier
+     * clock time is right, so the shift decides. Everything else is a typo
+     * and is refused where it is made, with the correction spelled out. */
+    if (checkIn && checkOut && checkOut <= checkIn) {
+      const s = await pool.query(
+        `SELECT sh.start_time AS start, sh.end_time AS "end"
+           FROM employees e LEFT JOIN shifts sh ON sh.id = e.shift_id
+          WHERE e.id = $1`, [subjectId]);
+      const shift = s.rows[0] || {};
+      const overnight = shift.start && shift.end && String(shift.end) < String(shift.start);
+      if (!overnight) {
+        const [h, m] = checkOut.split(':').map(Number);
+        const suggestion = h < 12 ? ` Did you mean ${String(h + 12).padStart(2, '0')}:${String(m).padStart(2, '0')}?` : '';
+        return res.status(400).json({
+          success: false,
+          message: `Check-out (${checkOut}) must be later than check-in (${checkIn}).${suggestion}`,
+        });
+      }
+    }
+
     const reasonText = String(reason || '').trim();
     if (cfg.reasonMandatory && !reasonText) {
       return res.status(400).json({ success: false, message: 'A reason is required for a regularization request' });
@@ -489,7 +518,32 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
 
           if (reg.check_out) {
             const coTime = new Date(`${regDate}T${reg.check_out}`);
-            const diffMs = coTime - ciTime;
+            let diffMs = coTime - ciTime;
+
+            /* An out earlier than the in means one of two things: the shift
+             * runs through midnight, or somebody typed 06:00 for 6 PM. New
+             * requests are refused at submission now; these rows already
+             * exist, so approving one has to decide rather than silently
+             * leave the day at zero — which is what it used to do. */
+            if (diffMs <= 0) {
+              const sh = await client.query(
+                `SELECT sh.start_time AS start, sh.end_time AS "end"
+                   FROM employees e LEFT JOIN shifts sh ON sh.id = e.shift_id
+                  WHERE e.id = $1`, [reg.employee_id]);
+              const shift = sh.rows[0] || {};
+              if (shift.start && shift.end && String(shift.end) < String(shift.start)) {
+                diffMs += 24 * 3600 * 1000;          // a night shift: the out is tomorrow
+              } else {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                  success: false,
+                  message: `This request has a check-out (${String(reg.check_out).slice(0, 5)}) at or before its `
+                    + `check-in (${String(effectiveCheckIn).slice(0, 5)}), so it would record a day worked with no `
+                    + `hours. Reject it and ask for one with the correct times.`,
+                });
+              }
+            }
+
             if (diffMs > 0) {
               workingHours = parseFloat((diffMs / 3600000).toFixed(8));
               // The same engine check-out uses. A regularized day and a punched
