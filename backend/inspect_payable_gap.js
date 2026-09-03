@@ -96,9 +96,20 @@ const line = (n = 78) => console.log('  ' + '-'.repeat(n));
    *
    * Compared against the sessions now, which is what the number actually is.
    * A day with no sessions falls back to the span. */
+  /* Only days that HAVE recorded sessions can be judged this way.
+   *
+   * The first version compared against first-in-to-last-out, which flagged
+   * everybody who takes a lunch break. The second compared against sessions
+   * but fell back to the span where there were none — which flagged the same
+   * people again, because migrated Zoho days carry no session rows at all and
+   * Zoho's own worked-hours figure already excludes breaks. Stored being less
+   * than the span is the NORMAL case there, not a fault.
+   *
+   * A day with no sessions has no second source to check it against, so it is
+   * left alone rather than reported as suspect. */
   console.log('\n  2. Days whose stored hours disagree with their own sessions (> 5 min out)');
-  console.log('     (measured against summed sessions, not first-in-to-last-out —');
-  console.log('      a day with a lunch break banks less than its span, correctly)');
+  console.log('     (only days that actually have session rows — a migrated day has none,');
+  console.log('      and its span is not evidence of anything)');
   line();
   const drift = await pool.query(
     `WITH sess AS (
@@ -109,19 +120,48 @@ const line = (n = 78) => console.log('  ' + '-'.repeat(n));
             EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600 AS span
        FROM attendance a
        JOIN employees e ON e.id = a.employee_id
-       LEFT JOIN sess s ON s.employee_id = a.employee_id AND s.date = a.date
+       JOIN sess s ON s.employee_id = a.employee_id AND s.date = a.date
       WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
+        AND s.hours > 0
         ${EMP ? 'AND e.employee_id = $1' : ''}
         ${monthClause.replace('$2', EMP ? '$2' : '$1')}
-        AND ABS(COALESCE(a.working_hours, 0)
-                - COALESCE(s.hours, EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600)) > 0.084
+        AND ABS(COALESCE(a.working_hours, 0) - s.hours) > 0.084
       ORDER BY a.date DESC LIMIT 40`,
     EMP ? [EMP, ...monthArgs] : monthArgs);
 
   if (!drift.rows.length) console.log('     none');
   else drift.rows.forEach(r => console.log(
     `     ${r.date}  ${String(r.code).padEnd(14)} stored ${hm(r.stored)}` +
-    `  sessions ${hm(r.sessionHours)} (${r.sessions || 0})  span ${hm(r.span)}`));
+    `  sessions ${hm(r.sessionHours)} (${r.sessions})  span ${hm(r.span)}`));
+
+  /* A day counted twice. Found on live: 17:14 stored where the sessions and
+   * the span both say 08:38. Roughly double is not drift, it is the day added
+   * to itself. */
+  console.log('\n  2d. Days where the stored hours are roughly DOUBLE the day itself');
+  line();
+  const doubled = await pool.query(
+    `WITH sess AS (
+       SELECT employee_id, date, SUM(COALESCE(session_hours, 0)) AS hours
+         FROM attendance_sessions GROUP BY 1, 2)
+     SELECT e.employee_id AS code, to_char(a.date, 'YYYY-MM-DD') AS date,
+            a.working_hours AS stored, s.hours AS "sessionHours",
+            EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600 AS span
+       FROM attendance a
+       JOIN employees e ON e.id = a.employee_id
+       LEFT JOIN sess s ON s.employee_id = a.employee_id AND s.date = a.date
+      WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
+        AND EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600 > 1
+        AND a.working_hours > 1.85 * (EXTRACT(EPOCH FROM (a.check_out - a.check_in))/3600)
+        ${EMP ? 'AND e.employee_id = $1' : ''}
+      ORDER BY a.date DESC LIMIT 30`,
+    EMP ? [EMP] : []);
+  if (!doubled.rows.length) console.log('     none');
+  else {
+    doubled.rows.forEach(r => console.log(
+      `     ${r.date}  ${String(r.code).padEnd(14)} stored ${hm(r.stored)}` +
+      `  sessions ${hm(r.sessionHours)}  span ${hm(r.span)}`));
+    console.log(`\n     ${doubled.rows.length} day(s) paying about twice what was worked.`);
+  }
 
   /* Two faults wearing the same shape, and conflating them nearly caused a
    * bad repair: a first pass at this asked for check_out <= check_in and
