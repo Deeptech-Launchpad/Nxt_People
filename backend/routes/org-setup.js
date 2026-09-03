@@ -431,7 +431,30 @@ router.post('/geofence/test', authorize(...WRITE_ROLES), async (req, res) => {
     }
     const acc = Number.isFinite(Number(req.body?.accuracy)) ? Math.round(Number(req.body.accuracy)) : null;
     const cfg = await geofence.config();
-    const ranked = await geofence.rankLocations({ latitude: lat, longitude: lng });
+    let ranked = await geofence.rankLocations({ latitude: lat, longitude: lng });
+
+    /* Testing a pin that has not been saved yet.
+     *
+     * Without this the test measured against the STORED coordinates while the
+     * form showed something else — so an admin who had just captured a new
+     * point, or typed a wider radius, was told about the old one. The first
+     * person to use it read "the 200 m fence" with 500 on screen in front of
+     * them. A test that answers a different question than the one being asked
+     * is worse than no test.
+     *
+     * The candidate is measured alongside the saved ones and marked, so a
+     * pin can be proved before it is committed. */
+    const cand = req.body?.against;
+    if (cand && Number.isFinite(Number(cand.latitude)) && Number.isFinite(Number(cand.longitude))) {
+      const radius = Number(cand.radiusMeters) || cfg.defaultRadiusMeters;
+      const distance = geofence.distanceMeters(lat, lng, Number(cand.latitude), Number(cand.longitude));
+      ranked = [{
+        id: cand.id || null,
+        name: (cand.name || 'this location') + ' (unsaved)',
+        radius, distance, inside: distance <= radius, candidate: true,
+      }, ...ranked.filter(r => !cand.id || r.id !== cand.id)]
+        .sort((a, b) => a.distance - b.distance);
+    }
 
     const inside = ranked.find(r => r.inside) || null;
     /* The same accuracy rule the real classification uses, so the test cannot

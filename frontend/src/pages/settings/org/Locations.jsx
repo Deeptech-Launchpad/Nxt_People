@@ -76,12 +76,26 @@ function Geofence({ record, set }) {
 
   /* Stand where you want a punch to count and press this. It answers with the
    * distance and the verdict the real check-in would give — which is the only
-   * cheap moment to find a pin on the wrong side of the road. */
+   * cheap moment to find a pin on the wrong side of the road.
+   *
+   * It measures the values ON SCREEN, not the saved ones. Testing the stored
+   * pin while the form shows a new one answers a question nobody asked: the
+   * first use of this reported "the 200 m fence" with 500 typed in front of
+   * the person reading it. */
   const test = async () => {
     setBusy(true); setResult(null);
     try {
       const p = await fix();
-      const r = await api.post('/org-setup/geofence/test', p);
+      const r = await api.post('/org-setup/geofence/test', {
+        ...p,
+        against: hasPoint ? {
+          id: record.id || null,
+          name: record.name || 'this location',
+          latitude: record.latitude,
+          longitude: record.longitude,
+          radiusMeters: record.radiusMeters || null,
+        } : undefined,
+      });
       setResult({ ...r.data.data, accuracy: p.accuracy });
     } catch (err) {
       toast.error(err.response?.data?.message || err.message);
@@ -154,9 +168,20 @@ function Geofence({ record, set }) {
             {result.accuracy !== null && (
               <p className="text-[12.5px] opacity-80 mt-0.5">Your fix is accurate to about {result.accuracy} m.</p>
             )}
-            {/* Testing against a pin you have typed but not saved would be a
-                lie — the server can only measure against what it holds. */}
-            <p className="text-[12px] opacity-70 mt-1">Measured against the saved coordinates, not unsaved edits.</p>
+            <p className="text-[12px] opacity-70 mt-1">
+              Measured against the coordinates and radius shown above, saved or not.
+            </p>
+            {result.accuracy !== null && result.verdict === 'too-vague' && (
+              /* The likeliest cause, said plainly. A desktop browser has no
+                 GPS: it places you from wifi or your IP address, which in
+                 practice can be kilometres out. Nobody should conclude their
+                 pin is wrong from that. */
+              <p className="text-[12.5px] mt-1.5">
+                This is usually the browser, not the pin — a desktop has no GPS and places you by
+                wifi or IP address. Try again on a phone with location on, or widen the radius past
+                the accuracy shown.
+              </p>
+            )}
           </div>
         </div>
       )}
