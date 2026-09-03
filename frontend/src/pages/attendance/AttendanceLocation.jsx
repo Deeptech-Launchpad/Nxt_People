@@ -69,7 +69,6 @@ export default function AttendanceLocation() {
   const [places, setPlaces] = useState({});
   // Office area keyword from settings (e.g. "Saibaba Colony"). Work Mode is
   // determined by checking whether the resolved address contains this string.
-  const [officeAreaName, setOfficeAreaName] = useState('');
 
   // Employee filter (HR / Super Admin only).
   useEffect(() => {
@@ -90,7 +89,6 @@ export default function AttendanceLocation() {
       .then(r => {
         setRows(r.data.data || []);
         setTotal(r.data.total || 0);
-        setOfficeAreaName(r.data.officeAreaName || '');
       })
       .catch(() => { setRows([]); setTotal(0); })
       .finally(() => setLoading(false));
@@ -244,13 +242,16 @@ export default function AttendanceLocation() {
                           {wm.icon} {wm.label}
                         </span>
                       ) : !ck ? (
-                        <span className="text-[14px] text-slate-400">—</span>
-                      ) : place === undefined ? (
-                        <span className="text-[14px] text-slate-400 italic">Locating…</span>
-                      ) : !keywords.length ? (
-                        <span className="text-[14px] text-slate-400" title="No office area configured in Settings">Not configured</span>
+                        <span className="text-[14px] text-slate-400" title="This punch carried no coordinates">—</span>
                       ) : (
-                        <span className="text-[14px] text-slate-400" title="Couldn't resolve this location">Unknown</span>
+                        /* The server classified and could not place it: either
+                           geofencing is off, no location has coordinates, or
+                           the fix was vaguer than the fence. The Geo
+                           Restriction screen is where all three are answered. */
+                        <span className="text-[14px] text-slate-400"
+                          title="Not classified — check Settings → Attendance → Geo Restriction">
+                          Not classified
+                        </span>
                       )}
                     </td>
                   </tr>
