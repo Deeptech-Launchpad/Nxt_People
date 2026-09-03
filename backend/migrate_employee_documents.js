@@ -61,10 +61,21 @@ async function migrate() {
   client.release();
 
   console.log(`\n  EMPLOYEE DOCUMENTS  ${APPLY ? '*** APPLYING ***' : '(dry run — nothing will be moved)'}`);
-  console.log(`  encryption key configured: ${store.encryptionAvailable()}`);
-  if (!store.encryptionAvailable()) {
+  const strength = store.encryptionStrength();
+  console.log(`  encryption key: ${strength.detail}`);
+  if (strength.kind === 'none') {
     console.log('  Files will be stored unencrypted and marked as such. Set');
-    console.log('  DOCUMENT_ENCRYPTION_KEY in the root .env to encrypt them.');
+    console.log('  DOCUMENT_ENCRYPTION_KEY in backend/.env to encrypt them.');
+  } else if (!strength.ok) {
+    console.log('');
+    console.log('  *** THIS KEY IS TOO SHORT TO PROTECT ANYTHING ***');
+    console.log('  It produces a working cipher, so everything reports as encrypted,');
+    console.log('  but anybody who copies the disk can guess it. Replace it NOW while');
+    console.log('  nothing is encrypted yet — changing it later means re-encrypting');
+    console.log('  every document, and any file encrypted with the old key is lost.');
+    console.log('');
+    console.log('      openssl rand -hex 32');
+    console.log('');
   }
   console.log('  ' + '-'.repeat(88));
 

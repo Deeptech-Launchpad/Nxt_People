@@ -112,6 +112,24 @@ const PORT = process.env.PORT || 5000;
 // continue to work exactly as before via the Express request listener.
 const server = http.createServer(app);
 chatWs.attach(server);
+/* A document encryption key that is too short to matter.
+ *
+ * scryptSync stretches any string into a valid 32-byte key, so a
+ * four-character passphrase encrypts perfectly and every screen reports the
+ * documents as protected. Said at boot because that is the one place nobody
+ * has to go looking, and while it is still cheap: once files are encrypted,
+ * changing the key means re-encrypting all of them. */
+try {
+  const { encryptionStrength } = require('./utils/documentStore');
+  const s = encryptionStrength();
+  if (s.kind === 'weak') {
+    logger.warn({ key: s.detail },
+      'DOCUMENT_ENCRYPTION_KEY is too short to protect anything — replace it with `openssl rand -hex 32` before documents are uploaded');
+  } else if (s.kind === 'none') {
+    logger.info('DOCUMENT_ENCRYPTION_KEY is not set — employee documents are stored unencrypted');
+  }
+} catch { /* never let a warning stop the server starting */ }
+
 server.listen(PORT, () => logger.info({ port: PORT }, 'Server listening (HTTP + WebSocket)'));
 
 

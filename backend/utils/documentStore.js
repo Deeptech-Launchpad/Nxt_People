@@ -71,6 +71,31 @@ function encryptionKey() {
 }
 const encryptionAvailable = () => encryptionKey() !== false;
 
+/* How good the key actually is.
+ *
+ * scryptSync will stretch ANY string into a valid 32-byte key, so a
+ * four-character passphrase produces a working cipher and a screen that
+ * reports "encryption key configured: true". It is configured; it is not
+ * protecting anything. Someone who takes the disk tries every short string
+ * in minutes.
+ *
+ * Reported rather than refused, because refusing at the point of upload would
+ * cost somebody their certificate over a configuration mistake they cannot
+ * fix. Said loudly at boot and in the migration instead, while it is still
+ * cheap to change — once files are encrypted, changing the key means
+ * re-encrypting all of them. */
+function encryptionStrength() {
+  const raw = String(process.env.DOCUMENT_ENCRYPTION_KEY || '').trim();
+  if (!raw) return { ok: false, kind: 'none', detail: 'no key set' };
+  if (/^[0-9a-f]{64}$/i.test(raw)) return { ok: true, kind: 'hex-256', detail: '256-bit hex key' };
+  if (/^[A-Za-z0-9+/=]{44}$/.test(raw)) return { ok: true, kind: 'base64-256', detail: '256-bit base64 key' };
+  if (raw.length >= 32) return { ok: true, kind: 'passphrase', detail: `${raw.length}-character passphrase (stretched)` };
+  return {
+    ok: false, kind: 'weak',
+    detail: `only ${raw.length} character${raw.length === 1 ? '' : 's'} — guessable in minutes`,
+  };
+}
+
 /* A filename that cannot escape its folder or surprise a filesystem.
  *
  * Originals arrive with spaces, unicode, emoji, 200 characters, and
@@ -210,6 +235,6 @@ function deleteDocument({ folder, storedName }) {
 module.exports = {
   ROOT, EMPLOYEE_ROOT,
   safeName, folderNameFor, ensureFolder, storedNameFor,
-  encryptBuffer, decryptBuffer, encryptionAvailable,
+  encryptBuffer, decryptBuffer, encryptionAvailable, encryptionStrength,
   storeDocument, readDocument, deleteDocument,
 };
