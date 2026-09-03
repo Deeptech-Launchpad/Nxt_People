@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Plus, Search, Edit2, Trash2, X, ChevronLeft, ChevronRight, ChevronDown, Mail, Send, Eye, FileText, Download, RefreshCw, CheckCircle2 } from 'lucide-react';
 import api from '../utils/api';
+import { previewEmployeeDocument, downloadEmployeeDocument } from '../utils/employeeDocument';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { isFullAccess, roleLabel } from '../utils/roles';
@@ -1147,21 +1148,17 @@ export default function Employees() {
                       </h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {viewEmpData.documents.map((doc, i) => {
-                          const _tok = localStorage.getItem('nxt_token');
-                          const openDoc = (download) => {
-                            fetch(doc.filePath, { headers: { Authorization: `Bearer ${_tok}` } })
-                              .then(r => r.blob())
-                              .then(blob => {
-                                const blobUrl = URL.createObjectURL(blob);
-                                if (download) {
-                                  const a = document.createElement('a'); a.href = blobUrl; a.download = doc.originalName;
-                                  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                                } else {
-                                  window.open(blobUrl, '_blank');
-                                }
-                                setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
-                              });
-                          };
+                          /* Was: fetch(doc.filePath).then(r => r.blob()) with no
+                             check that the response was a file. A 404 answered
+                             with JSON, the JSON became the blob, and the admin
+                             got "10th Certificate.json" saved to their machine
+                             with nothing on screen to say it had failed.
+                             utils/employeeDocument routes through the endpoint
+                             that checks entitlement, records the view, and
+                             reports a failure as a failure. */
+                          const openDoc = (download) => (download
+                            ? downloadEmployeeDocument(viewEmpData._id || viewEmpData.id, doc.id, doc.originalName)
+                            : previewEmployeeDocument(viewEmpData._id || viewEmpData.id, doc.id, doc.originalName));
                           return (
                             <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-brand-300 hover:bg-brand-50 transition-colors group">
                               <div className="flex items-center gap-3 overflow-hidden">
