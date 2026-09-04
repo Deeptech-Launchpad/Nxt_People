@@ -36,7 +36,23 @@ export default function EmployeeStatusFilter({ value, onChange }) {
   const [search, setSearch] = useState('');
   const ref = useRef(null);
 
-  useEffect(() => { setChecked(fromBackendValue(value)); }, [value]);
+  // The backend only has three states — 'active' cannot say whether that
+  // meant just Active Users, just Active Non-Users, or both. Re-syncing
+  // from `value` on every change is what caused the glitch: unchecking
+  // Ex-Employees turned 'all' into 'active', which this effect then
+  // expanded back into ITS OWN guess at what "active" means — both boxes
+  // checked — silently re-checking Active Non-Users as a side effect of a
+  // click that never touched it. Tracking what we last emitted ourselves
+  // lets the effect tell "the user's own click echoed back" (skip; the
+  // checkboxes are already right) apart from "something external changed
+  // this" (a page Reset) — the only case that should actually override
+  // what is checked here.
+  const lastEmitted = useRef(value);
+  useEffect(() => {
+    if (value === lastEmitted.current) return;
+    lastEmitted.current = value;
+    setChecked(fromBackendValue(value));
+  }, [value]);
 
   useEffect(() => {
     const onClick = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -48,7 +64,9 @@ export default function EmployeeStatusFilter({ value, onChange }) {
     setChecked(prev => {
       const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
       if (next.length === 0) return prev; // don't allow empty
-      onChange(toBackendValue(next));
+      const backendValue = toBackendValue(next);
+      lastEmitted.current = backendValue;
+      onChange(backendValue);
       return next;
     });
   };
@@ -56,6 +74,7 @@ export default function EmployeeStatusFilter({ value, onChange }) {
   const clear = e => {
     e.stopPropagation();
     setChecked([...DEFAULT_CHECKED]);
+    lastEmitted.current = 'all';
     onChange('all');
   };
 
