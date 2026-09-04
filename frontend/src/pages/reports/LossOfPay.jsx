@@ -211,7 +211,15 @@ export default function LossOfPay() {
               <tr>
                 <th className="text-left px-4 py-2.5">Employee</th>
                 <th className="text-right px-4 py-2.5">Previous Pay Period Balance</th>
-                <th className="text-right px-4 py-2.5 leading-tight"><div>Booked</div><div className="font-normal text-slate-400">Absent + Unpaid</div></th>
+                {/* Was one column labelled "Absent + Unpaid" that actually only ever
+                    showed the unpaid figure — absentDays existed in the data (and
+                    in the export) but never reached this screen. Unpaid leave and
+                    unmarked absence are different facts with different consequences
+                    (only the first is deducted automatically), so they get their
+                    own columns here too, matching the export instead of disagreeing
+                    with it. */}
+                <th className="text-right px-4 py-2.5">Taken</th>
+                <th className="text-right px-4 py-2.5">Unmarked absence</th>
                 <th className="text-right px-4 py-2.5 leading-tight"><div>Total</div><div className="font-normal text-slate-400">Previous + Taken</div></th>
                 <th className="text-right px-4 py-2.5">Waived Off</th>
                 <th className="text-right px-4 py-2.5">Carry Over</th>
@@ -225,6 +233,7 @@ export default function LossOfPay() {
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.previousPeriodBalance}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.booked}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{row.absentDays}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.total}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.waivedOff}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.carryOver}</td>
