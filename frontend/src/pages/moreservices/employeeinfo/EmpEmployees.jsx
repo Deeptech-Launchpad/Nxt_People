@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, ListTodo, Download, Upload, Eye, EyeOff, Image } from 'lucide-react';
+import { Plus, Pencil, Trash2, ListTodo, Download, Upload, Eye, EyeOff, Image, History, X } from 'lucide-react';
 import api from '../../../utils/api';
 import DataListView from '../../../components/listview/DataListView';
 import ViewPicker from '../../../components/listview/ViewPicker';
@@ -15,6 +15,7 @@ import RevealDialog from '../../../components/listview/RevealDialog';
 import downloadFile from '../../../components/listview/downloadFile';
 import EmployeeRecordModal from './EmployeeRecordModal';
 import EmployeeEditModal from './EmployeeEditModal';
+import EmployeeActivity from './EmployeeActivity';
 import { EMPLOYEE_INFO_BASE } from '../operationsWorkspaces';
 
 /* Operations -> Employee Information -> Employees.
@@ -99,6 +100,7 @@ export default function EmpEmployees() {
   const [revealCol, setRevealCol] = useState(null);   // which masked column asked
   const [viewing, setViewing] = useState(null);       // employee id, full record
   const [editing, setEditing] = useState(null);       // employee id, edit form
+  const [activityFor, setActivityFor] = useState(null); // row, activity only
   /* Revealed identity numbers live only in this component's state for as long
    * as the page is open. They are never written back into the row data, so a
    * refetch re-masks them rather than leaving them on screen indefinitely. */
@@ -304,6 +306,10 @@ export default function EmpEmployees() {
         ]}
         rowMenu={(r) => [
           { label: 'View', icon: <Eye size={15} />, onClick: () => setViewing(r._id) },
+          /* Its own entry because it was the bottom of a long record, and
+           * "when did they send that document" is a question people ask far
+           * more often than they read a whole profile. */
+          { label: 'Activity', icon: <History size={15} />, onClick: () => setActivityFor(r) },
           { label: 'Edit', icon: <Pencil size={15} />, onClick: () => setEditing(r._id) },
           { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => setToDelete(r) },
           { label: 'Add New Task', icon: <ListTodo size={15} />, onClick: () => setTaskFor(r) },
@@ -343,6 +349,27 @@ export default function EmpEmployees() {
           onClose={() => setRevealing(false)}
           onRevealed={(rows) => setRevealed(Object.fromEntries(rows.map(x => [x._id, x])))} />
       )}
+      {activityFor && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-y-auto"
+          onClick={() => setActivityFor(null)}>
+          <div className="bg-slate-50 rounded-2xl w-full max-w-2xl shadow-2xl my-4 flex flex-col max-h-[94vh]"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 bg-white rounded-t-2xl border-b border-slate-100">
+              <span className="text-[17px] font-semibold text-slate-800 truncate">
+                {`${activityFor.employeeId} - ${activityFor.firstName} ${activityFor.lastName || ''}`.trim()}
+              </span>
+              <button onClick={() => setActivityFor(null)}
+                className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 flex-shrink-0">
+                <X size={19} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <EmployeeActivity employeeId={activityFor._id} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {taskFor && <AddTaskModal employee={taskFor} onClose={() => setTaskFor(null)} />}
 
       {bulkDelete && (
