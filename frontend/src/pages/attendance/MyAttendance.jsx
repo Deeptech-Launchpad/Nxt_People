@@ -296,6 +296,7 @@ export default function MyAttendance() {
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState(null);
   const [holidays, setHolidays] = useState([]);
+  const [loadedRange, setLoadedRange] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showReport, setShowReport] = useState(false);
   const [reportTab, setReportTab] = useState('days');
@@ -328,8 +329,16 @@ export default function MyAttendance() {
    *  Weekly view → 7 days, Monthly view → ~30 days. Previously the summary
    *  always queried the whole month even for a weekly view, which is why
    *  the footer showed "Weekend 10 Days" while only 1 weekend day was on
-   *  screen. The /my endpoint still pulls a whole month so paging between
-   *  weeks within the same month doesn't refetch.
+   *  screen.
+   *
+   *  /my takes a month, and the month used to come from weekStart alone — so
+   *  the week of 30 Aug to 5 Sept asked for August and nothing else, and the
+   *  five September days arrived with no record. Both views then filled the
+   *  gap with an assertion: the list said Absent, the timeline said 00:00.
+   *  Three days somebody had worked read as three days they had not, while
+   *  the footer beneath said "Present 3 Days" because IT queried the real
+   *  range. Dashboard.jsx already loaded every month its week touched; this
+   *  page never got the same treatment.
    */
   useEffect(() => {
     setLoading(true);
@@ -345,14 +354,31 @@ export default function MyAttendance() {
       rangeEnd   = isoDate(weekEndDate);
     }
 
+    /* Every month the visible range touches, de-duplicated so a week inside
+     * one month is still a single request. */
+    const months = new Map();
+    [new Date(rangeStart + 'T00:00:00'), new Date(rangeEnd + 'T00:00:00')].forEach(d => {
+      months.set(`${d.getFullYear()}-${d.getMonth()}`, { y: d.getFullYear(), m: d.getMonth() });
+    });
+    /* And every year, for the same reason: a week spanning New Year needs
+     * both years' holidays or 1 January loses its label. */
+    const years = [...new Set([...months.values()].map(v => v.y))];
+
     Promise.all([
-      api.get(`/attendance/my?month=${m}&year=${y}`),
+      Promise.all([...months.values()].map(({ y: yy, m: mm }) =>
+        api.get(`/attendance/my?month=${mm}&year=${yy}`).then(r => r.data.data || []).catch(() => []))),
       api.get(`/attendance/summary?startDate=${rangeStart}&endDate=${rangeEnd}`),
-      api.get(`/holidays?year=${y}`),
-    ]).then(([r1, r2, r3]) => {
-      setRecords(r1.data.data || []);
+      Promise.all(years.map(yy =>
+        api.get(`/holidays?year=${yy}`).then(r => r.data.data || []).catch(() => []))),
+    ]).then(([attArrs, r2, holArrs]) => {
+      setRecords(attArrs.flat());
       setSummary(r2.data.data || {});
-      setHolidays(r3.data.data || []);
+      setHolidays(holArrs.flat());
+      /* What was actually asked for. A day outside this is one we have no
+       * information about, which is not the same as a day nobody worked —
+       * and telling them apart is what stops a fetch gap wearing the costume
+       * of an absence. */
+      setLoadedRange({ start: rangeStart, end: rangeEnd });
     }).catch(() => {}).finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekStart.getMonth(), weekStart.getFullYear(), weekStart.getDate(), filterPeriod]);
@@ -363,6 +389,14 @@ export default function MyAttendance() {
     const d = parseLocalDate(r.date);
     if (d) recordMap[isoDate(d)] = r;
   });
+
+  /* Did we actually ask about this day?
+   *
+   * Absence of a record meant "absent" everywhere on this page, so a day the
+   * fetch never covered was indistinguishable from a day somebody did not
+   * come in — which is how three worked days read as three absences. A day
+   * outside the loaded range now says nothing rather than the wrong thing. */
+  const isLoaded = (ds) => !loadedRange || (ds >= loadedRange.start && ds <= loadedRange.end);
 
   /* ── navigation ── */
   const prevWeek = () => {
@@ -673,7 +707,8 @@ export default function MyAttendance() {
                            const s = elapsed % 60;
                            displayHours = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
                          } else {
-                           displayHours = record?.workingHours ? hoursStr : '00:00';
+                           displayHours = record?.workingHours ? hoursStr
+                             : (!record && !isLoaded(ds)) ? '—' : '00:00';
                          }
                          return (
                            <>
@@ -784,7 +819,7 @@ export default function MyAttendance() {
                     <td className="px-5 py-3">
                       {isWeekend
                         ? <StatusPill status="weekend" />
-                        : isFuture
+                        : isFuture || (!r && !isLoaded(ds))
                           ? <span className="text-slate-400 text-[13px]">—</span>
                           : <StatusPill status={r?.status || 'absent'} />
                       }
