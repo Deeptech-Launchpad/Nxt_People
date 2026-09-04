@@ -1428,10 +1428,7 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
 
     const r = await pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId",
-              -- NULL means no allocation exists, which is not the same statement as an
-              -- allocation of zero. COALESCE erased that difference; the report
-              -- renders the first as N/A and the second as 0.
-              e.casual_leave AS "casualAllocated",
+              e.joining_date::text AS "joiningDate",
               COALESCE(casual.days, 0) AS "casualBooked",
               COALESCE(absent.cnt, 0) AS "absentBooked",
               COALESCE(lwp.days, 0) AS "lwpBooked",
@@ -1447,20 +1444,66 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
         ORDER BY e.employee_id`,
       [start, end, ...filters.params]
     );
+
+    /* Casual's Balance column used to be e.casual_leave (a legacy column
+     * nothing has written to since debitOnApproval stopped double-counting
+     * against it) minus bookings inside just this report's date window —
+     * so early in a month almost everyone showed "Booked 0" against a frozen
+     * 12, no matter what they had actually taken across the year. A balance
+     * is a running total, not a windowed one, and this is the third
+     * independent place that used to compute it instead of asking the one
+     * function everything else already agrees with.
+     *
+     * Same precedence as availableFor(), batched: a leave_balances row (an
+     * import or an admin override) wins when one exists; otherwise the
+     * policy grant to date, less approved-and-pending leave this year. */
+    const reportYear = new Date(end).getFullYear();
+    const [lbRes, takenRes, policies, joiningRule] = await Promise.all([
+      pool.query(
+        `SELECT lb.employee_id, lb.available, lb.booked
+           FROM leave_balances lb JOIN leave_types lt ON lb.leave_type_id = lt.id
+          WHERE lt.code = 'casual' AND lb.year = $1`,
+        [reportYear]),
+      pool.query(
+        `SELECT employee_id, COALESCE(SUM(total_days), 0) AS taken FROM leaves
+          WHERE leave_type = 'casual' AND status IN ('approved','pending')
+            AND EXTRACT(YEAR FROM start_date) = $1
+          GROUP BY employee_id`,
+        [reportYear]),
+      getLeavePolicies(),
+      getJoiningRule(),
+    ]);
+    const overrideMap = new Map(lbRes.rows.map(x => [x.employee_id, x]));
+    const takenMap = new Map(takenRes.rows.map(x => [x.employee_id, parseFloat(x.taken) || 0]));
+    const casualPolicy = policies.get('casual');
+
     const data = r.rows.map(row => {
-      // An employee with no allocation row carries null, not zero, all the way
-      // through to the table — the report prints N/A there, which says "this
-      // does not apply" rather than "this is zero".
-      const noAllocation = row.casualAllocated === null || row.casualAllocated === undefined;
-      const casualAllocated = noAllocation ? null : parseFloat(row.casualAllocated) || 0;
       const casualBooked = parseFloat(row.casualBooked) || 0;
       const absentBooked = parseFloat(row.absentBooked) || 0;
       const lwpBooked = parseFloat(row.lwpBooked) || 0;
+
+      const override = overrideMap.get(row._id);
+      let casualAllocated, casualBalance;
+      if (override) {
+        // available IS the current balance, already net of everything taken.
+        // booked is best-effort here (0 for most imported rows, since Zoho's
+        // per-type booked breakdown could not be reconstructed from a balance
+        // snapshot) so "allocated" is a reconstruction, not a fresh figure.
+        casualBalance = round2(parseFloat(override.available) || 0);
+        casualAllocated = round2((parseFloat(override.available) || 0) + (parseFloat(override.booked) || 0));
+      } else {
+        const granted = grantedToDate(casualPolicy, {
+          year: reportYear, joiningDate: row.joiningDate, joiningRule,
+        });
+        casualAllocated = granted === null ? null : round2(granted);
+        casualBalance = granted === null ? null : Math.max(0, round2(granted - (takenMap.get(row._id) || 0)));
+      }
+
       return {
         ...row,
         casualAllocated,
-        casualBooked: noAllocation ? null : casualBooked,
-        casualBalance: noAllocation ? null : Math.max(0, casualAllocated - casualBooked),
+        casualBooked: casualAllocated === null ? null : casualBooked,
+        casualBalance,
         absentBooked, lwpBooked,
         unpaidTotalBooked: absentBooked + lwpBooked,
         compOffBooked: parseFloat(row.compOffBooked) || 0,
@@ -1496,24 +1539,66 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
     const filters = standardEmployeeFilters(req, 'e', 3, { trackedOnly: true });
     const r = await pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId",
-              ${leaveType === 'casual' ? 'COALESCE(e.casual_leave,0)' : 'NULL'} AS granted,
+              e.joining_date::text AS "joiningDate",
               COALESCE(SUM(l.total_days) FILTER (WHERE l.status='approved'), 0) AS booked,
               COALESCE(SUM(l.hours) FILTER (WHERE l.status='approved'), 0) AS "bookedHours"
          FROM employees e
          LEFT JOIN leaves l ON l.employee_id = e.id AND l.leave_type = $1 AND EXTRACT(YEAR FROM l.start_date) = $2
         WHERE 1=1${filters.clause}
-        GROUP BY e.id, e.first_name, e.last_name, e.department, e.employee_id, e.exit_date, e.casual_leave
+        GROUP BY e.id, e.first_name, e.last_name, e.department, e.employee_id, e.exit_date, e.joining_date
         ORDER BY e.employee_id`,
       [leaveType, year, ...filters.params]
     );
+
+    /* Casual's Granted/Closing columns read e.casual_leave — a legacy column
+     * frozen since debitOnApproval stopped writing to it. It looked right only
+     * because it still reads 12 for anyone nothing has touched; the moment a
+     * real override exists (an import, an admin correction) this disagreed
+     * with the balance card and the booked-balance report both, three
+     * independent answers to "how much casual leave does this person have".
+     *
+     * A leave_balances override, when one exists, already reflects everything
+     * taken — it is the closing balance, not a fresh grant to subtract this
+     * period's booking from. Only employees with no override get the granted
+     * minus taken arithmetic this report always did. */
+    let overrideMap = new Map();
+    let policies = null, joiningRule = null;
+    if (leaveType === 'casual') {
+      const [lbRes, pol, jr] = await Promise.all([
+        pool.query(
+          `SELECT lb.employee_id, lb.available, lb.booked
+             FROM leave_balances lb JOIN leave_types lt ON lb.leave_type_id = lt.id
+            WHERE lt.code = 'casual' AND lb.year = $1`,
+          [year]),
+        getLeavePolicies(), getJoiningRule(),
+      ]);
+      overrideMap = new Map(lbRes.rows.map(x => [x.employee_id, x]));
+      policies = pol; joiningRule = jr;
+    }
+
     const data = r.rows.map(row => {
-      const granted = row.granted !== null ? parseFloat(row.granted) : null;
       const booked = parseFloat(row.booked) || 0;
+      let granted = null, closingBalance = null;
+
+      if (leaveType === 'casual') {
+        const override = overrideMap.get(row._id);
+        if (override) {
+          closingBalance = round2(parseFloat(override.available) || 0);
+          granted = round2((parseFloat(override.available) || 0) + (parseFloat(override.booked) || 0));
+        } else {
+          const g = grantedToDate(policies.get('casual'), {
+            year, joiningDate: row.joiningDate, joiningRule,
+          });
+          granted = g === null ? null : round2(g);
+          closingBalance = g === null ? null : Math.max(0, round2(g - booked));
+        }
+      }
+
       return {
         ...row, granted, booked,
         bookedHours: parseFloat(row.bookedHours) || 0,
         openingBalance: 0,
-        closingBalance: granted !== null ? Math.max(0, granted - booked) : null,
+        closingBalance,
         lapsed: 0,
       };
     });

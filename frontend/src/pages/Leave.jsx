@@ -172,7 +172,19 @@ export default function Leave() {
                           <p className="text-base text-slate-500 mt-1">
                             {startDate?.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
                             {l.startDate !== l.endDate && ` — ${endDate?.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}`}
-                            <span className="text-slate-400 ml-1.5">({l.totalDays} day{l.totalDays !== 1 ? 's' : ''})</span>
+                            {/* Permission has no day count — it is a stretch of
+                                hours within one day, and totalDays is always 0
+                                for it. "(0 days)" told an employee looking at
+                                their own approved request that they had asked
+                                for nothing; the time they actually asked for
+                                was sitting unused on the same row. */}
+                            {l.leaveType === 'permission' ? (
+                              <span className="text-slate-400 ml-1.5">
+                                ({(l.startTime || '').slice(0, 5) || '—'} – {(l.endTime || '').slice(0, 5) || '—'})
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 ml-1.5">({l.totalDays} day{l.totalDays !== 1 ? 's' : ''})</span>
+                            )}
                           </p>
                           <p className="text-base text-slate-400 mt-0.5">{l.reason}</p>
                           {l.rejectionReason && (
