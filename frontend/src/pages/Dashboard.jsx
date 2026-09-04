@@ -474,6 +474,7 @@ export default function Dashboard() {
 
   /* Attendance */
    const [weeklyAttendance, setWeeklyAttendance] = useState([]);
+   const [weeklyLeaves, setWeeklyLeaves] = useState([]);
    // Attendance tab — independent week navigation (0 = current, -1 = prev, +1 = next)
    // so browsing weeks here never disturbs the current-week Work Schedule widget.
    const [attWeekOffset, setAttWeekOffset] = useState(0);
@@ -777,6 +778,14 @@ export default function Dashboard() {
      Promise.all([...months.values()].map(({ y, m }) =>
        api.get(`/attendance/my?month=${m}&year=${y}`).then(r => r.data.data || []).catch(() => [])
      )).then(arrs => setWeeklyAttendance(arrs.flat()));
+
+     // Same gap fetchAttWeek had: this strip only ever asked attendance, so
+     // an approved day off with correctly no punch read the same as one
+     // actually missed. A week spans two years only at its very edges.
+     const years = [...new Set([...months.values()].map(v => v.y))];
+     Promise.all(years.map(y =>
+       api.get(`/leaves/my?year=${y}&status=approved&limit=500`).then(r => r.data.data || []).catch(() => [])
+     )).then(arrs => setWeeklyLeaves(arrs.flat()));
    };
 
    // Fetch attendance covering the Attendance-tab's displayed week. A week can
@@ -1304,6 +1313,19 @@ export default function Dashboard() {
                               const d = String(rDate.getDate()).padStart(2, '0');
                               return `${y}-${m}-${d}` === day.dateStr;
                             });
+                            // Approved leave covering this day — only checked when there is
+                            // no attendance record, so a day the person also worked keeps
+                            // showing what they actually did. Permission excluded, same as
+                            // everywhere else: hours within a worked day, not a day off.
+                            // l.startDate is a DATE column serialized to a full timestamp,
+                            // not a bare "YYYY-MM-DD" — sliced the same defensive way the
+                            // other two widgets already do.
+                            const leave = !record && weeklyLeaves.find(l => {
+                              if (l.leaveType === 'permission') return false;
+                              const s = (l.startDate || '').slice(0, 10);
+                              const e = (l.endDate || '').slice(0, 10);
+                              return day.dateStr >= s && day.dateStr <= e;
+                            });
                             const todayStr = new Date().toISOString().split('T')[0];
                             const isToday   = day.dateStr === todayStr;
                             const isFuture  = day.dateStr > todayStr;
@@ -1321,6 +1343,9 @@ export default function Dashboard() {
                               label = day.holidayName ? `${day.holidayName}(Holiday)` : 'Holiday'; labelColor = 'text-teal-500';
                             } else if (isWeekend) {
                               label = 'Weekend'; labelColor = 'text-orange-500';
+                            } else if (leave) {
+                              label = LEAVE_TYPE_LABELS[leave.leaveType] || leave.leaveType;
+                              labelColor = 'text-amber-600';
                             } else if (isPast || (isToday && isCheckedOut)) {
                               const wh = Number(record?.workingHours) || 0;
                               if (!record || (wh < 4 && record?.status !== 'half-day')) {
