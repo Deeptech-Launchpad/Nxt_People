@@ -1482,28 +1482,24 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
       const absentBooked = parseFloat(row.absentBooked) || 0;
       const lwpBooked = parseFloat(row.lwpBooked) || 0;
 
+      /* Allocated is ALWAYS the clean policy grant — never reconstructed
+       * from a balance that carries years of history in it. That
+       * reconstruction is what put 12.75 in a "Granted" column next to a
+       * real Booked of 3 on Leave Type Wise Summary; not displayed here
+       * today, but kept to the same meaning so the two reports never drift
+       * back into disagreeing about what "Allocated"/"Granted" means. */
+      const granted = grantedToDate(casualPolicy, {
+        year: reportYear, joiningDate: row.joiningDate, joiningRule,
+      });
+      const casualAllocated = granted === null ? null : round2(granted);
+
       const override = overrideMap.get(row._id);
-      let casualAllocated, casualBalance;
+      let casualBalance;
       if (override) {
-        // available IS the current balance, already net of everything taken.
-        //
-        // "Allocated" was reconstructed from override.booked, the same
-        // frozen field the whole investigation into this started over — 0
-        // or stale for most imported rows, since Zoho's per-type breakdown
-        // could not be reconstructed from a balance snapshot. That put a
-        // number here that did not reconcile against the real booked figure
-        // on the same row: Veeravasudevan showed Granted 12.75 next to a
-        // real Booked of 3, and 12.75 - 3 is not 11.75. Reconciled against
-        // the real, whole-year taken figure instead, so Allocated minus
-        // Booked equals Balance on every row — which is the one thing a
-        // balance report has to do to be trusted.
+        // available IS the current balance, already net of everything taken
+        // across every year on file — authoritative, unchanged.
         casualBalance = round2(parseFloat(override.available) || 0);
-        casualAllocated = round2((parseFloat(override.available) || 0) + (takenMap.get(row._id) || 0));
       } else {
-        const granted = grantedToDate(casualPolicy, {
-          year: reportYear, joiningDate: row.joiningDate, joiningRule,
-        });
-        casualAllocated = granted === null ? null : round2(granted);
         casualBalance = granted === null ? null : Math.max(0, round2(granted - (takenMap.get(row._id) || 0)));
       }
 
@@ -1536,10 +1532,11 @@ router.get('/leave/types-available', authorize('admin', 'director', 'hr_admin', 
   } catch (err) { serverError(res, err); }
 });
 
-// Per-employee ledger for ONE leave type + year. openingBalance and lapsed
-// are always 0 — this system has no carry-forward or lapse-policy tracking,
-// so rather than fabricate numbers, those columns honestly show 0 instead
-// of a guess.
+// Per-employee ledger for ONE leave type + year. lapsed is always 0 — this
+// system has no lapse-policy tracking, so rather than fabricate a number that
+// column honestly shows 0. openingBalance is 0 for anyone computed fresh from
+// policy (nothing carries forward there); for a casual leave_balances
+// override it is back-calculated — see the comment below.
 router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const leaveType = ['casual', 'comp_off', 'unpaid', 'permission'].includes(req.query.leaveType) ? req.query.leaveType : 'casual';
@@ -1586,36 +1583,44 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
 
     const data = r.rows.map(row => {
       const booked = parseFloat(row.booked) || 0;
-      let granted = null, closingBalance = null;
+      let granted = null, closingBalance = null, openingBalance = 0;
 
       if (leaveType === 'casual') {
+        /* Granted is ALWAYS the clean policy figure — 12 for a full year,
+         * less for a partial one — never reconstructed from a balance that
+         * has years of carry-forward or manual adjustment folded into it.
+         * Reconstructing it that way is what put 12.75 in this column next
+         * to a real Booked of 3: the .75 was history, not a grant, and
+         * showing it as "Granted" answered a question nobody asked while
+         * hiding the one they did — where did the balance actually come
+         * from. Traced for one person against Zoho's real leave ledger
+         * (every year, not just this one): a flat 12/year less what she had
+         * actually taken predicted 8.5, the stored balance was 12.75, and
+         * nothing in this year's leave explains the remaining 4.25 — it is
+         * carried-forward balance or a manual credit, not a grant. */
+        const g = grantedToDate(policies.get('casual'), {
+          year, joiningDate: row.joiningDate, joiningRule,
+        });
+        granted = g === null ? null : round2(g);
+
         const override = overrideMap.get(row._id);
         if (override) {
-          /* Granted was reconstructed from override.booked — 0 or stale for
-           * most imported rows, since Zoho's per-type breakdown could not
-           * survive a balance snapshot. That put a number in this column
-           * that did not reconcile against the real Booked shown right next
-           * to it: 12.75 Granted beside a real 3 Booked, on a row whose
-           * Closing Balance was 11.75 — 12.75 - 3 is 9.75, not what was
-           * printed. `booked` here is that same real, whole-year figure
-           * already in this row, so reconciling against it makes Granted -
-           * Booked = Closing hold on screen, which is the one thing a
-           * balance report has to do to be believed. */
+          // available IS the current balance, already net of everything
+          // taken across every year on file — authoritative, unchanged.
           closingBalance = round2(parseFloat(override.available) || 0);
-          granted = round2((parseFloat(override.available) || 0) + booked);
+          // What must have carried in from before this year for a clean
+          // Granted, this year's real Booked, and the authoritative Closing
+          // to all agree: Opening + Granted - Booked = Closing.
+          openingBalance = granted === null ? 0 : round2(closingBalance - granted + booked);
         } else {
-          const g = grantedToDate(policies.get('casual'), {
-            year, joiningDate: row.joiningDate, joiningRule,
-          });
-          granted = g === null ? null : round2(g);
-          closingBalance = g === null ? null : Math.max(0, round2(g - booked));
+          closingBalance = granted === null ? null : Math.max(0, round2(granted - booked));
         }
       }
 
       return {
         ...row, granted, booked,
         bookedHours: parseFloat(row.bookedHours) || 0,
-        openingBalance: 0,
+        openingBalance,
         closingBalance,
         lapsed: 0,
       };
