@@ -16,6 +16,7 @@ import FilterToggleButton from './FilterToggleButton';
 import PayPeriodChip from './PayPeriodChip';
 import { EmployeeCell } from './TableReportPage';
 
+import usePersistedOpen from './usePersistedOpen';
 const EXPORT_COLUMNS = [
   { key: 'leaveType', header: 'Leave Type', value: r => LEAVE_LABEL[r.leaveType] || r.leaveType },
   { key: 'allocated', header: 'Allocated' },
@@ -45,7 +46,7 @@ export default function LeaveEncashmentDetails() {
   const [employee, setEmployee] = useState([]);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
   const [payPeriod, setPayPeriod] = useState(null);
   const [regenOpen, setRegenOpen] = useState(false);

@@ -14,6 +14,7 @@ import PeriodPresetChip from './PeriodPresetChip';
 import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
 
+import usePersistedOpen from './usePersistedOpen';
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
 const y = new Date().getFullYear();
 
@@ -42,7 +43,7 @@ export default function LeaveTypeSummary() {
   const [employee, setEmployee] = useState([]);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
 
   useEffect(() => {

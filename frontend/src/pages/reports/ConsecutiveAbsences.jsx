@@ -12,6 +12,7 @@ import useReportFilters from '../../hooks/useReportFilters';
 import useFitToViewport from '../../hooks/useFitToViewport';
 import { EmployeeCell } from './TableReportPage';
 
+import usePersistedOpen from './usePersistedOpen';
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
@@ -51,7 +52,7 @@ export default function ConsecutiveAbsences() {
   const [minDays, setMinDays] = useState(3);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   // Two runs per employee across 150 people is a long table; it scrolls inside
   // itself so the page doesn't grow nine thousand pixels.

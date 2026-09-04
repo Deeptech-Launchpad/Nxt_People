@@ -10,6 +10,7 @@ import EmploymentTypeFilter from './EmploymentTypeFilter';
 import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
 
+import usePersistedOpen from './usePersistedOpen';
 // Zoho groups these under a MONTH(S) heading, with the year-scale presets
 // ungrouped above it.
 const PERIOD_OPTIONS = [
@@ -32,7 +33,7 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   // Zoho shows this filter row on load rather than behind the funnel.
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [draft, setDraft] = useState({});
   const [applied, setApplied] = useState({});
 

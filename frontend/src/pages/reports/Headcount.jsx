@@ -9,6 +9,7 @@ import PeriodFilter from './PeriodFilter';
 import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
 
+import usePersistedOpen from './usePersistedOpen';
 const PERIOD_OPTIONS = [
   ...[5, 10, 15].map(y => ({ key: String(y), label: `Last ${y} Years`, value: y, group: 'Year' })),
 ];
@@ -18,7 +19,7 @@ export default function Headcount() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   // Zoho shows this filter row on load rather than behind the funnel.
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   // Chips edit `draft`; Submit promotes it to `applied`, which is what runs.
   const [draft, setDraft] = useState({});
   const [applied, setApplied] = useState({});

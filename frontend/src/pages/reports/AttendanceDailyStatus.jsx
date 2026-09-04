@@ -15,6 +15,7 @@ import useReportFilters from '../../hooks/useReportFilters';
 import { EmployeeCell } from './TableReportPage';
 import { ActiveSlice, makeSliceLabel } from './chartLabels';
 
+import usePersistedOpen from './usePersistedOpen';
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const shiftDay = (dateStr, delta) => {
   const d = new Date(dateStr);
@@ -124,7 +125,7 @@ export default function AttendanceDailyStatus() {
   const [hours, setHours] = useState({ mode: 'all', amount: '' });
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
 
   const load = () => {

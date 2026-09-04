@@ -13,6 +13,7 @@ import useFitToViewport from '../../hooks/useFitToViewport';
 import { codeStyle, weekendColumns, WEEKEND_HATCH, sumDays, round2 } from './attendanceCodes';
 import { LegendBar, StatusPanel } from './AttendanceLegend';
 
+import usePersistedOpen from './usePersistedOpen';
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
@@ -111,7 +112,7 @@ export default function MusterRoll() {
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisMonth').value);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [unit, setUnit] = useState('day');

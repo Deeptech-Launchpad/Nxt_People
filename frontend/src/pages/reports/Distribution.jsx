@@ -12,6 +12,7 @@ import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
 import SliceDrilldown from './SliceDrilldown';
 
+import usePersistedOpen from './usePersistedOpen';
 const TYPES = [['designation', 'Designation'], ['department', 'Department'], ['location', 'Location']];
 
 // The "Type" selector sits in the breadcrumb trail in Zoho, reading
@@ -62,7 +63,7 @@ export default function Distribution() {
   const [totalActive, setTotalActive] = useState(0);
   const [without, setWithout] = useState(0);
   // Zoho shows this filter row on load rather than behind the funnel.
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [drill, setDrill] = useState(null);
 
   useEffect(() => {

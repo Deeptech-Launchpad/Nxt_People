@@ -13,6 +13,7 @@ import useReportFilters from '../../hooks/useReportFilters';
 import useFitToViewport from '../../hooks/useFitToViewport';
 import { EmployeeCell } from './TableReportPage';
 
+import usePersistedOpen from './usePersistedOpen';
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
@@ -97,7 +98,7 @@ export default function AttendancePayrollData() {
   const [simple, setSimple] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   // Sixteen columns wide and 150 rows deep: the grid scrolls inside itself so
   // its horizontal scrollbar stays on screen instead of stranding at the foot

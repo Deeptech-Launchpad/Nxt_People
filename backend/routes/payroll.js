@@ -383,28 +383,47 @@ async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, qu
   // Sequential, not Promise.all — queryRunner may be a single client inside
   // a transaction (runMonthlyPayroll), which can't run concurrent queries.
   const leaveRes = await queryRunner.query(
-    `SELECT leave_type, start_date, end_date, is_half_day
+    `SELECT start_date, end_date, is_half_day, total_days
        FROM leaves
-      WHERE employee_id = $1 AND status = 'approved'
+      WHERE employee_id = $1 AND status = 'approved' AND leave_type = 'unpaid'
         AND start_date <= $3::date AND end_date >= $2::date`,
     [employeeId, start, end]
   );
 
-  const leaves = leaveRes.rows.map(r => ({
-    type: r.leave_type,
-    start: new Date(r.start_date),
-    end: new Date(r.end_date),
-    isHalfDay: r.is_half_day,
-  }));
+  /* total_days is the number this employee actually applied for and Payroll
+   * already agreed to — half-day and all. Walking the leave day by day and
+   * adding a flat 1 (or 0.5 for the WHOLE leave, from a single boolean that
+   * can only describe one day) used to throw that away: a half-day sitting
+   * inside a multi-day span had nowhere to be represented, so every working
+   * day the leave touched was charged as a full day. A 3-calendar-day leave
+   * really worth 1.5 days (one working day off, one half) came out as 2 —
+   * not what Payroll, Zoho, or the employee's own application said.
+   *
+   * So a leave gets its stored total directly, UNCHANGED, whenever the whole
+   * thing sits inside both boundaries: inside [start, end], and entirely in
+   * the past (today or later is never judged, same rule as before). Only a
+   * leave that is actually clipped by one of those — spans past the query
+   * window, or runs into today or the future — falls back to the day-by-day
+   * count, because the stored total describes the WHOLE leave and there is
+   * no honest way to slice a half-day out of a total that was never split
+   * per day to begin with. */
+  const rangeStart = new Date(start);
+  const rangeEnd = new Date(end);
 
   let lop = 0;
-  for (const day of pastWorkingDates) {
-    const coveringLeave = leaves.find(l => day >= l.start && day <= l.end);
-    if (coveringLeave && coveringLeave.type === 'unpaid') {
-      lop += coveringLeave.isHalfDay ? 0.5 : 1;
+  for (const r of leaveRes.rows) {
+    const lStart = new Date(r.start_date);
+    const lEnd = new Date(r.end_date);
+    const clipped = lStart < rangeStart || lEnd > rangeEnd || lEnd >= today;
+
+    if (!clipped) {
+      lop += parseFloat(r.total_days) || 0;
+      continue;
     }
-    // Any other situation (absent, no record, paid leave, pending leave,
-    // WFH, etc.) is NOT LOP — only explicit approved unpaid leave counts.
+    for (const day of pastWorkingDates) {
+      if (day < lStart || day > lEnd) continue;
+      lop += r.is_half_day ? 0.5 : 1;
+    }
   }
   return lop;
 }

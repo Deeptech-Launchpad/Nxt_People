@@ -13,6 +13,7 @@ import useReportFilters from '../../hooks/useReportFilters';
 import useFitToViewport from '../../hooks/useFitToViewport';
 import { EmployeeCell } from './TableReportPage';
 
+import usePersistedOpen from './usePersistedOpen';
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
@@ -154,7 +155,7 @@ export default function EarlyLateCheckInOut() {
   const [loading, setLoading] = useState(true);
   const gridRef = useRef(null);
   const [rows, setRows] = useState([]);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   const gridHeight = useFitToViewport(gridRef, null, [filtersOpen, rows]);
 

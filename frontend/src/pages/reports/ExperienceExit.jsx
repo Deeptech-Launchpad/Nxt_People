@@ -12,6 +12,7 @@ import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
 import DateChip from './DateChip';
 
+import usePersistedOpen from './usePersistedOpen';
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
@@ -35,7 +36,7 @@ export default function ExperienceExit() {
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisYear').value);
   const [employmentType, setEmploymentType] = useState('');
   // Zoho shows this filter row on load rather than behind the funnel.
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [draft, setDraft] = useState({});
   const [applied, setApplied] = useState({});
 

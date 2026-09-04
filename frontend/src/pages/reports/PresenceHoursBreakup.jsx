@@ -9,6 +9,7 @@ import PeriodFilter from './PeriodFilter';
 import HoursComparatorFilter from './HoursComparatorFilter';
 import LeaveExportModal from './LeaveExportModal';
 
+import usePersistedOpen from './usePersistedOpen';
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
@@ -149,7 +150,7 @@ export default function PresenceHoursBreakup() {
   const [hours, setHours] = useState({ mode: 'all', amount: '' });
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
 

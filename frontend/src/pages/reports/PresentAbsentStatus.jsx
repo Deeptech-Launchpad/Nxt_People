@@ -11,6 +11,7 @@ import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import { codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
 import { LegendBar, StatusPanel } from './AttendanceLegend';
+import usePersistedOpen from './usePersistedOpen';
 import useFitToViewport from '../../hooks/useFitToViewport';
 
 const now = new Date();
@@ -87,7 +88,7 @@ export default function PresentAbsentStatus() {
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisMonth').value);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [unit, setUnit] = useState('day');

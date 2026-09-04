@@ -11,6 +11,7 @@ import DirectReportsToggle from './DirectReportsToggle';
 import PeriodPresetChip from './PeriodPresetChip';
 import FilterToggleButton from './FilterToggleButton';
 import LeaveExportModal from './LeaveExportModal';
+import usePersistedOpen from './usePersistedOpen';
 import { downloadIcs } from '../../utils/reportIcs';
 
 // Codes render as plain text over a coloured underline rather than a filled
@@ -89,7 +90,7 @@ export default function ResourceAvailability() {
   // Closed on load, behind the funnel. An earlier comment here claimed the
   // reference opens this row by default; it does not — the report opens to the
   // grid and the funnel reveals the filters.
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [sortAsc, setSortAsc] = useState(true);
   const [showExEmployees, setShowExEmployees] = useState(true);

@@ -14,6 +14,7 @@ import DirectReportsToggle from './DirectReportsToggle';
 import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
 
+import usePersistedOpen from './usePersistedOpen';
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const shiftDay = (dateStr, delta) => {
   const d = new Date(dateStr);
@@ -41,7 +42,7 @@ export default function DailyLeaveStatus() {
   const [leaveType, setLeaveType] = useState('');
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
 
