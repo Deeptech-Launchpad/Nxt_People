@@ -198,36 +198,104 @@ router.get('/', async (req, res) => {
 // runtime assertion inside set() — defence-in-depth so a future PR that
 // accidentally passes a caller-supplied column name throws here instead of
 // reaching the SQL builder. Keep in sync with the set(...) calls below.
-const PROFILE_UPDATABLE_COLS = new Set([
-  'phone', 'address',
-  'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
-]);
+/* What a person may change about themselves.
+ *
+ * The old list was five fields, which made the edit form a short list of
+ * inputs bearing no relation to the record above it — you looked at forty
+ * facts and could touch five, with no way to tell which five until you
+ * opened the form and saw what was in it.
+ *
+ * The line drawn here is: facts about the PERSON are theirs, facts about the
+ * EMPLOYMENT are the organisation's. Somebody moving house, marrying, or
+ * choosing what their colleagues call them should not need a ticket. A
+ * designation, a joining date, a bank account or a PAN is either a statutory
+ * record or a thing with a pay consequence, and self-service is the wrong
+ * door for all of them.
+ *
+ * Date of birth stays with HR for the same reason: it is proof-backed, it
+ * feeds statutory reporting, and it is not something that legitimately
+ * changes. Name too — a legal name change is a documented event, not a text
+ * box. Nickname exists precisely so the text box is somewhere harmless.
+ *
+ * Keyed by the API name so the allowlist and the mapping cannot drift apart;
+ * they used to be two lists that had to agree. */
+const SELF_EDITABLE = {
+  nickName:                  { col: 'nick_name', max: 60 },
+  phone:                     { col: 'phone', max: 30 },
+  personalEmail:             { col: 'personal_email', max: 160, email: true },
+
+  gender:                    { col: 'gender', max: 30 },
+  maritalStatus:             { col: 'marital_status', max: 30 },
+  bloodGroup:                { col: 'blood_group', max: 10 },
+  nationality:               { col: 'nationality', max: 60 },
+  aboutMe:                   { col: 'about_me', max: 2000 },
+
+  address:                   { col: 'address', max: 500 },
+  addressLine1:              { col: 'address_line1', max: 255 },
+  addressLine2:              { col: 'address_line2', max: 255 },
+  addressCity:               { col: 'address_city', max: 120 },
+  addressState:              { col: 'address_state', max: 120 },
+  addressPincode:            { col: 'address_pincode', max: 20 },
+  addressCountry:            { col: 'address_country', max: 120 },
+
+  permanentAddress:          { col: 'permanent_address', max: 500 },
+  permanentAddressLine1:     { col: 'permanent_address_line1', max: 255 },
+  permanentAddressLine2:     { col: 'permanent_address_line2', max: 255 },
+  permanentAddressCity:      { col: 'permanent_address_city', max: 120 },
+  permanentAddressState:     { col: 'permanent_address_state', max: 120 },
+  permanentAddressPincode:   { col: 'permanent_address_pincode', max: 20 },
+  permanentAddressCountry:   { col: 'permanent_address_country', max: 120 },
+
+  emergencyContactName:      { col: 'emergency_contact_name', max: 120 },
+  emergencyContactPhone:     { col: 'emergency_contact_phone', max: 30 },
+  emergencyContactRelation:  { col: 'emergency_contact_relation', max: 60 },
+  emergencyContactDob:       { col: 'emergency_contact_dob', date: true },
+};
+
+const PROFILE_UPDATABLE_COLS = new Set(Object.values(SELF_EDITABLE).map(f => f.col));
+
+/* An empty box means "clear this", not "" — and on a DATE column the empty
+ * string is not a value at all, it is a 22007 error that would have taken the
+ * whole save down with it the first time somebody cleared a date they had
+ * filled in by mistake. */
+function cleanField(key, spec, raw) {
+  if (raw === null || raw === undefined) return null;
+  const s = String(raw).trim();
+  if (s === '') return null;
+
+  if (spec.date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error(`${key} must be a date`);
+    const d = new Date(s + 'T00:00:00');
+    if (Number.isNaN(d.getTime())) throw new Error(`${key} is not a real date`);
+    return s;
+  }
+  if (spec.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) {
+    throw new Error('That personal email address does not look right');
+  }
+  if (spec.max && s.length > spec.max) {
+    throw new Error(`That value is too long (${spec.max} characters at most)`);
+  }
+  return s;
+}
 
 router.put('/', async (req, res) => {
   try {
-    const {
-      phone, address,
-      emergencyContactName, emergencyContactPhone, emergencyContactRelation,
-    } = req.body;
-
+    const body = req.body || {};
     const updates = [];
     const params = [];
     let i = 1;
-    const set = (col, val) => {
-      if (!PROFILE_UPDATABLE_COLS.has(col)) {
-        // This is a programmer error, not a user error — log + throw so it
-        // surfaces in tests instead of silently building bad SQL.
-        throw new Error(`[profile] column not in allowlist: ${col}`);
-      }
-      updates.push(`${col} = $${i++}`);
-      params.push(val);
-    };
 
-    if (phone !== undefined)                    set('phone', phone);
-    if (address !== undefined)                  set('address', address);
-    if (emergencyContactName !== undefined)     set('emergency_contact_name', emergencyContactName);
-    if (emergencyContactPhone !== undefined)    set('emergency_contact_phone', emergencyContactPhone);
-    if (emergencyContactRelation !== undefined) set('emergency_contact_relation', emergencyContactRelation);
+    for (const [key, spec] of Object.entries(SELF_EDITABLE)) {
+      if (body[key] === undefined) continue;          // not sent = not touched
+      /* Belt and braces. The column comes from this file's own table, never
+       * from the request, but a future edit that lets a key through without
+       * a matching entry would otherwise build SQL from user input. */
+      if (!PROFILE_UPDATABLE_COLS.has(spec.col)) {
+        throw new Error(`[profile] column not in allowlist: ${spec.col}`);
+      }
+      updates.push(`${spec.col} = $${i++}`);
+      params.push(cleanField(key, spec, body[key]));
+    }
 
     if (updates.length === 0) return res.json({ success: true, message: 'Nothing to update' });
     updates.push(`updated_at = NOW()`);
@@ -236,6 +304,13 @@ router.put('/', async (req, res) => {
     await pool.query(`UPDATE employees SET ${updates.join(', ')} WHERE id = $${i}`, params);
     res.json({ success: true, message: 'Profile updated' });
   } catch (err) {
+    /* A validation message is for the person who typed it; anything else is
+     * ours to debug. Telling them apart by the message is crude, but the
+     * alternative is a 500 that says "internal error" when they simply
+     * mistyped an email address. */
+    if (/must be a date|not a real date|does not look right|too long/.test(err.message || '')) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
     serverError(res, err);
   }
 });

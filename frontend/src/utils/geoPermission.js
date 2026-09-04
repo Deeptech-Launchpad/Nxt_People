@@ -94,8 +94,19 @@ export async function startLocationCapture() {
  * The longer timeout is the cost: a GPS lock takes seconds where a network fix
  * is instant. That is affordable precisely because this runs AFTER the punch is
  * recorded — nobody is waiting on it, and a fix that arrives five seconds late
- * still corrects the day. */
-export function capturePosition() {
+ * still corrects the day.
+ *
+ * enableHighAccuracy also has a failure mode of its own: on 04/09/2026, 11
+ * check-ins got no fix at all — not vague, NOTHING — while 33 people in the
+ * same building granted permission the same day. A desktop with no GPS chip
+ * asked to try harder for one has nowhere to try harder TO, and rather than
+ * falling back the browser can time out or report POSITION_UNAVAILABLE. The
+ * accurate fix a phone can give is still asked for first, but a failure now
+ * gets one retry at low accuracy — the network/wifi fix that was always good
+ * enough to log, and which office-network IP detection can now place exactly
+ * without needing accuracy at all. Something logged and possibly unplaced
+ * beats nothing logged and definitely unplaced. */
+function oneFix(enableHighAccuracy, timeout, maximumAge) {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
@@ -105,9 +116,15 @@ export function capturePosition() {
         accuracy: pos.coords.accuracy,
       }),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+      { enableHighAccuracy, timeout, maximumAge }
     );
   });
+}
+
+export async function capturePosition() {
+  const precise = await oneFix(true, 12000, 0);
+  if (precise) return precise;
+  return oneFix(false, 8000, 300000);
 }
 
 /**

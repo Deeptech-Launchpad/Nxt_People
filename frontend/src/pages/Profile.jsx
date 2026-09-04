@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Pencil, X, Eye, EyeOff, Save, Key, Camera, Trash2 } from 'lucide-react';
+import { Pencil, X, Eye, EyeOff, Key, Camera, Trash2, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -35,6 +35,48 @@ const Section = ({ title, children }) => (
   </section>
 );
 
+/** The right-hand side of an EditableRow, in edit mode: a text box, a
+ *  textarea, a select, or a date picker, depending on what the field is. */
+const FieldInput = ({ type = 'text', value, onChange, options, placeholder, rows }) => {
+  const cls = "w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-[14px] "
+    + "focus:outline-none focus:border-blue-400 bg-white";
+  if (type === 'textarea') {
+    return (
+      <textarea value={value || ''} onChange={e => onChange(e.target.value)} rows={rows || 2}
+        placeholder={placeholder} className={`${cls} resize-none`} />
+    );
+  }
+  if (type === 'select') {
+    return (
+      <select value={value || ''} onChange={e => onChange(e.target.value)} className={cls}>
+        <option value="">Select...</option>
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    );
+  }
+  return (
+    <input type={type === 'date' ? 'date' : 'text'} value={value || ''}
+      onChange={e => onChange(e.target.value)} placeholder={placeholder} className={cls} />
+  );
+};
+
+/** A row that becomes an input while editing, and is plain text otherwise —
+ *  the same field, the same position, so nothing jumps when edit mode toggles.
+ *  Everything HR manages stays a `Row`, which never grows an input; that is
+ *  what makes it read-only rather than a rule enforced by a note in a modal
+ *  subtitle. */
+const EditableRow = ({ label, editing, value, onChange, type, options, placeholder, display }) => (
+  <div className="grid grid-cols-[160px_1fr] gap-4 items-start py-3 border-b border-slate-100 last:border-b-0">
+    <span className="text-[15px] text-slate-500">{label}</span>
+    <span className="text-[15px] text-slate-800 font-medium break-words">
+      {editing
+        ? <FieldInput type={type} value={value} onChange={onChange} options={options} placeholder={placeholder} />
+        : (display !== undefined ? display
+          : (value == null || value === '' ? <span className="text-slate-300">-</span> : value))}
+    </span>
+  </div>
+);
+
 /** Masked value with click-to-reveal — used for PAN, bank account, IFSC. */
 const Masked = ({ value }) => {
   const [shown, setShown] = useState(false);
@@ -61,26 +103,36 @@ export default function Profile() {
   const { setUser } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [editModal, setEditModal] = useState(false);
+  /* Editing used to be a modal over the record — a short, disconnected form
+   * bearing no visible relation to the forty-odd facts on the page behind it.
+   * You could not tell, looking at the record, which five things the modal
+   * would let you touch. Edit mode now happens IN the sections: the fields
+   * you may change turn into inputs where they already sit, and the fields
+   * HR manages stay exactly as printed, in place, because a `Row` never
+   * becomes an input regardless of this flag — that is what makes them
+   * actually read-only rather than merely unmentioned in a modal's subtitle. */
+  const [editing, setEditing] = useState(false);
   const [pwModal, setPwModal] = useState(false);
   const [form, setForm] = useState({});
-  // Snapshot of `form` taken when the Edit modal opens — we compare on
-  // close to warn the user if they're about to lose unsaved edits.
+  // Snapshot of `form` taken when editing starts — compared against on
+  // Cancel, both to ask before discarding and to actually discard: the
+  // inputs are controlled by `form`, so leaving stale edits in state would
+  // have them reappear next time editing opens even after Cancel.
   const [formSnapshot, setFormSnapshot] = useState({});
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [saving, setSaving] = useState(false);
 
-  // Helper: open the modal and capture the snapshot in one step so we
-  // can never desync.
-  const openEditModal = () => {
+  const openEdit = () => {
     setFormSnapshot(form);
-    setEditModal(true);
+    setEditing(true);
   };
-  const requestCloseEdit = () => {
+  const cancelEdit = () => {
     const dirty = JSON.stringify(form) !== JSON.stringify(formSnapshot);
     if (dirty && !window.confirm('You have unsaved changes. Discard them?')) return;
-    setEditModal(false);
+    setForm(formSnapshot);
+    setEditing(false);
   };
+  const set = (key, value) => setForm(f => ({ ...f, [key]: value }));
 
   const fileInputRef = useRef(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -179,14 +231,39 @@ export default function Profile() {
       .then((r) => {
         const d = r.data.data || {};
         setProfile(d);
-        // Only the fields employees are allowed to self-edit.
-        // Name, DOB, PAN, bank details, role, dept — HR-managed.
+        /* Every field a person may change about themselves, seeded from what
+         * the server just returned. Matches backend/routes/profile.js's
+         * SELF_EDITABLE list exactly — personal facts (contact details,
+         * addresses, how they describe themselves) are theirs; anything with
+         * a statutory or payroll consequence (name, DOB, PAN, bank details,
+         * role, department, designation) is HR's and stays off this list. */
         setForm({
+          nickName: d.nickName || '',
           phone: d.phone || '',
+          personalEmail: d.personalEmail || '',
+          gender: d.gender || '',
+          maritalStatus: d.maritalStatus || '',
+          bloodGroup: d.bloodGroup || '',
+          nationality: d.nationality || '',
+          aboutMe: d.aboutMe || '',
           address: d.address || '',
+          addressLine1: d.addressLine1 || '',
+          addressLine2: d.addressLine2 || '',
+          addressCity: d.addressCity || '',
+          addressState: d.addressState || '',
+          addressPincode: d.addressPincode || '',
+          addressCountry: d.addressCountry || '',
+          permanentAddress: d.permanentAddress || '',
+          permanentAddressLine1: d.permanentAddressLine1 || '',
+          permanentAddressLine2: d.permanentAddressLine2 || '',
+          permanentAddressCity: d.permanentAddressCity || '',
+          permanentAddressState: d.permanentAddressState || '',
+          permanentAddressPincode: d.permanentAddressPincode || '',
+          permanentAddressCountry: d.permanentAddressCountry || '',
           emergencyContactName: d.emergencyContactName || '',
           emergencyContactPhone: d.emergencyContactPhone || '',
           emergencyContactRelation: d.emergencyContactRelation || '',
+          emergencyContactDob: d.emergencyContactDob ? String(d.emergencyContactDob).slice(0, 10) : '',
         });
       })
       .catch((err) => {
@@ -199,12 +276,12 @@ export default function Profile() {
   useEffect(load, []);
 
   const handleSave = async (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
     setSaving(true);
     try {
       await api.put('/profile', form);
       toast.success('Profile updated');
-      setEditModal(false);
+      setEditing(false);
       load();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update');
@@ -288,23 +365,53 @@ export default function Profile() {
               {profile.employeeId} <span className="text-slate-400 font-normal">-</span> {fullName}
             </h1>
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={openEditModal}
-              className="w-8 h-8 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors"
-              title="Edit profile"
-            >
-              <Pencil size={15} />
-            </button>
-            <button
-              onClick={() => navigate('/')}
-              className="w-8 h-8 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors"
-              title="Close"
-            >
-              <X size={16} />
-            </button>
+          <div className="flex items-center gap-2">
+            {editing ? (
+              <>
+                <button
+                  onClick={cancelEdit}
+                  disabled={saving}
+                  className="text-[13.5px] font-semibold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 text-[13.5px] font-semibold text-white bg-brand-600 hover:bg-brand-500 px-3.5 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                >
+                  <Check size={14} /> {saving ? 'Saving...' : 'Save'}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={openEdit}
+                  className="w-8 h-8 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors"
+                  title="Edit profile"
+                >
+                  <Pencil size={15} />
+                </button>
+                <button
+                  onClick={() => navigate('/')}
+                  className="w-8 h-8 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors"
+                  title="Close"
+                >
+                  <X size={16} />
+                </button>
+              </>
+            )}
           </div>
         </div>
+        {editing && (
+          <div className="bg-blue-50 border-t border-blue-100 px-6 py-2">
+            <p className="max-w-6xl mx-auto text-[13px] text-blue-800">
+              Your contact details, addresses and how you describe yourself are yours to update.
+              Work details, identity numbers and bank information are managed by HR — contact
+              admin to change those.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Hidden file input — opened by the header avatar or the section button */}
@@ -420,9 +527,12 @@ export default function Profile() {
           <Row label="Employee ID">{profile.employeeId}</Row>
           <Row label="Email Address">{profile.email}</Row>
           <Row label="First Name">{profile.firstName}</Row>
-          <Row label="Phone">{profile.phone}</Row>
+          <EditableRow label="Phone" editing={editing} value={form.phone}
+            onChange={v => set('phone', v)} placeholder="+91 98765 43210" display={profile.phone} />
           <Row label="Last Name">{profile.lastName}</Row>
-          <Row label="Nickname">{profile.nickName}</Row>
+          <EditableRow label="Nickname" editing={editing} value={form.nickName}
+            onChange={v => set('nickName', v)} placeholder="What people call you"
+            display={profile.nickName} />
           <Row label="Status">
             {profile.status ? (
               <span className={`inline-block px-2 py-0.5 rounded text-[13px] font-semibold ${
@@ -462,38 +572,64 @@ export default function Profile() {
         </Section>
 
         <Section title="Contact Information">
-          <Row label="Personal Email">{profile.personalEmail}</Row>
+          <EditableRow label="Personal Email" editing={editing} value={form.personalEmail}
+            onChange={v => set('personalEmail', v)} placeholder="you@example.com"
+            display={profile.personalEmail} />
           <Row label="Work Phone">{profile.workPhone}</Row>
           <Row label="Extension">{profile.extension}</Row>
         </Section>
 
         <Section title="Personal Details">
           <Row label="Date of Birth">{profile.dateOfBirth ? fmtDate(profile.dateOfBirth) : null}</Row>
-          <Row label="Gender">{profile.gender}</Row>
-          <Row label="Marital Status">{profile.maritalStatus}</Row>
-          <Row label="Blood Group">{profile.bloodGroup}</Row>
-          <Row label="Nationality">{profile.nationality}</Row>
-          <Row label="About Me">{profile.aboutMe}</Row>
+          <EditableRow label="Gender" editing={editing} type="select" value={form.gender}
+            onChange={v => set('gender', v)} options={['Male', 'Female', 'Other']}
+            display={profile.gender} />
+          <EditableRow label="Marital Status" editing={editing} type="select" value={form.maritalStatus}
+            onChange={v => set('maritalStatus', v)}
+            options={['Single', 'Married', 'Divorced', 'Widowed']} display={profile.maritalStatus} />
+          <EditableRow label="Blood Group" editing={editing} type="select" value={form.bloodGroup}
+            onChange={v => set('bloodGroup', v)}
+            options={['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']} display={profile.bloodGroup} />
+          <EditableRow label="Nationality" editing={editing} value={form.nationality}
+            onChange={v => set('nationality', v)} placeholder="Indian" display={profile.nationality} />
+          <EditableRow label="About Me" editing={editing} type="textarea" value={form.aboutMe}
+            onChange={v => set('aboutMe', v)} placeholder="A line or two about yourself"
+            display={profile.aboutMe} />
         </Section>
 
         <Section title="Current Address">
-          <Row label="Address">{profile.address}</Row>
-          <Row label="Address Line 1">{profile.addressLine1}</Row>
-          <Row label="Address Line 2">{profile.addressLine2}</Row>
-          <Row label="City">{profile.addressCity}</Row>
-          <Row label="State">{profile.addressState}</Row>
-          <Row label="Pincode">{profile.addressPincode}</Row>
-          <Row label="Country">{profile.addressCountry}</Row>
+          <EditableRow label="Address" editing={editing} type="textarea" value={form.address}
+            onChange={v => set('address', v)} placeholder="Where you currently live"
+            display={profile.address} />
+          <EditableRow label="Address Line 1" editing={editing} value={form.addressLine1}
+            onChange={v => set('addressLine1', v)} display={profile.addressLine1} />
+          <EditableRow label="Address Line 2" editing={editing} value={form.addressLine2}
+            onChange={v => set('addressLine2', v)} display={profile.addressLine2} />
+          <EditableRow label="City" editing={editing} value={form.addressCity}
+            onChange={v => set('addressCity', v)} display={profile.addressCity} />
+          <EditableRow label="State" editing={editing} value={form.addressState}
+            onChange={v => set('addressState', v)} display={profile.addressState} />
+          <EditableRow label="Pincode" editing={editing} value={form.addressPincode}
+            onChange={v => set('addressPincode', v)} display={profile.addressPincode} />
+          <EditableRow label="Country" editing={editing} value={form.addressCountry}
+            onChange={v => set('addressCountry', v)} display={profile.addressCountry} />
         </Section>
 
         <Section title="Permanent Address">
-          <Row label="Address">{profile.permanentAddress}</Row>
-          <Row label="Address Line 1">{profile.permanentAddressLine1}</Row>
-          <Row label="Address Line 2">{profile.permanentAddressLine2}</Row>
-          <Row label="City">{profile.permanentAddressCity}</Row>
-          <Row label="State">{profile.permanentAddressState}</Row>
-          <Row label="Pincode">{profile.permanentAddressPincode}</Row>
-          <Row label="Country">{profile.permanentAddressCountry}</Row>
+          <EditableRow label="Address" editing={editing} type="textarea" value={form.permanentAddress}
+            onChange={v => set('permanentAddress', v)} display={profile.permanentAddress} />
+          <EditableRow label="Address Line 1" editing={editing} value={form.permanentAddressLine1}
+            onChange={v => set('permanentAddressLine1', v)} display={profile.permanentAddressLine1} />
+          <EditableRow label="Address Line 2" editing={editing} value={form.permanentAddressLine2}
+            onChange={v => set('permanentAddressLine2', v)} display={profile.permanentAddressLine2} />
+          <EditableRow label="City" editing={editing} value={form.permanentAddressCity}
+            onChange={v => set('permanentAddressCity', v)} display={profile.permanentAddressCity} />
+          <EditableRow label="State" editing={editing} value={form.permanentAddressState}
+            onChange={v => set('permanentAddressState', v)} display={profile.permanentAddressState} />
+          <EditableRow label="Pincode" editing={editing} value={form.permanentAddressPincode}
+            onChange={v => set('permanentAddressPincode', v)} display={profile.permanentAddressPincode} />
+          <EditableRow label="Country" editing={editing} value={form.permanentAddressCountry}
+            onChange={v => set('permanentAddressCountry', v)} display={profile.permanentAddressCountry} />
         </Section>
 
         <Section title="Identity Information">
@@ -506,10 +642,19 @@ export default function Profile() {
         </Section>
 
         <Section title="Emergency Contact">
-          <Row label="Contact Name">{profile.emergencyContactName}</Row>
-          <Row label="Contact Phone">{profile.emergencyContactPhone}</Row>
-          <Row label="Relationship">{profile.emergencyContactRelation}</Row>
-          <Row label="Date of Birth">{profile.emergencyContactDob ? fmtDate(profile.emergencyContactDob) : null}</Row>
+          <EditableRow label="Contact Name" editing={editing} value={form.emergencyContactName}
+            onChange={v => set('emergencyContactName', v)} placeholder="Name"
+            display={profile.emergencyContactName} />
+          <EditableRow label="Contact Phone" editing={editing} value={form.emergencyContactPhone}
+            onChange={v => set('emergencyContactPhone', v)} placeholder="+91 ..."
+            display={profile.emergencyContactPhone} />
+          <EditableRow label="Relationship" editing={editing} type="select"
+            value={form.emergencyContactRelation} onChange={v => set('emergencyContactRelation', v)}
+            options={['Spouse', 'Parent', 'Sibling', 'Child', 'Friend', 'Other']}
+            display={profile.emergencyContactRelation} />
+          <EditableRow label="Date of Birth" editing={editing} type="date" value={form.emergencyContactDob}
+            onChange={v => set('emergencyContactDob', v)}
+            display={profile.emergencyContactDob ? fmtDate(profile.emergencyContactDob) : null} />
         </Section>
 
         {/* Education — synced from Zoho's "Education Details" tabular section.
@@ -587,109 +732,6 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* ── Edit Profile Modal — only fields the employee is allowed to self-edit ── */}
-      {editModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100 flex-shrink-0">
-              <div>
-                <h3 className="font-semibold text-slate-800 text-xl">Edit Profile</h3>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  Work info, role, and email are managed by HR — contact admin to change those.
-                </p>
-              </div>
-              <button
-                onClick={requestCloseEdit}
-                className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleSave} className="p-6 space-y-5 overflow-y-auto flex-1">
-
-              {/* Alternative Phone */}
-              <div>
-                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Alternative Phone Number</p>
-                <input
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400"
-                  placeholder="+91 98765 43210"
-                />
-                <p className="text-[13px] text-slate-400 mt-1.5">A reachable personal number — work phone is set by HR.</p>
-              </div>
-
-              {/* Current Address */}
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Current Address</p>
-                <textarea
-                  value={form.address}
-                  onChange={(e) => setForm({ ...form, address: e.target.value })}
-                  rows={2}
-                  placeholder="Where you currently live..."
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400 resize-none"
-                />
-              </div>
-
-              {/* Emergency Contact */}
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Emergency Contact</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Contact Name</label>
-                    <input
-                      value={form.emergencyContactName}
-                      onChange={(e) => setForm({ ...form, emergencyContactName: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400"
-                      placeholder="Name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Phone</label>
-                    <input
-                      value={form.emergencyContactPhone}
-                      onChange={(e) => setForm({ ...form, emergencyContactPhone: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400"
-                      placeholder="+91 ..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Relationship</label>
-                    <select
-                      value={form.emergencyContactRelation}
-                      onChange={(e) => setForm({ ...form, emergencyContactRelation: e.target.value })}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-blue-400"
-                    >
-                      <option value="">Select...</option>
-                      {['Spouse', 'Parent', 'Sibling', 'Child', 'Friend', 'Other'].map((r) => (
-                        <option key={r}>{r}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={requestCloseEdit}
-                  className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  <Save size={14} />
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ── Change Password Modal (unchanged behaviour) ─────────────────────── */}
       {pwModal && (
