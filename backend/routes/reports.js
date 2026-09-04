@@ -1486,11 +1486,19 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
       let casualAllocated, casualBalance;
       if (override) {
         // available IS the current balance, already net of everything taken.
-        // booked is best-effort here (0 for most imported rows, since Zoho's
-        // per-type booked breakdown could not be reconstructed from a balance
-        // snapshot) so "allocated" is a reconstruction, not a fresh figure.
+        //
+        // "Allocated" was reconstructed from override.booked, the same
+        // frozen field the whole investigation into this started over — 0
+        // or stale for most imported rows, since Zoho's per-type breakdown
+        // could not be reconstructed from a balance snapshot. That put a
+        // number here that did not reconcile against the real booked figure
+        // on the same row: Veeravasudevan showed Granted 12.75 next to a
+        // real Booked of 3, and 12.75 - 3 is not 11.75. Reconciled against
+        // the real, whole-year taken figure instead, so Allocated minus
+        // Booked equals Balance on every row — which is the one thing a
+        // balance report has to do to be trusted.
         casualBalance = round2(parseFloat(override.available) || 0);
-        casualAllocated = round2((parseFloat(override.available) || 0) + (parseFloat(override.booked) || 0));
+        casualAllocated = round2((parseFloat(override.available) || 0) + (takenMap.get(row._id) || 0));
       } else {
         const granted = grantedToDate(casualPolicy, {
           year: reportYear, joiningDate: row.joiningDate, joiningRule,
@@ -1583,8 +1591,18 @@ router.get('/leave/type-summary', authorize('admin', 'director', 'hr_admin', 'ma
       if (leaveType === 'casual') {
         const override = overrideMap.get(row._id);
         if (override) {
+          /* Granted was reconstructed from override.booked — 0 or stale for
+           * most imported rows, since Zoho's per-type breakdown could not
+           * survive a balance snapshot. That put a number in this column
+           * that did not reconcile against the real Booked shown right next
+           * to it: 12.75 Granted beside a real 3 Booked, on a row whose
+           * Closing Balance was 11.75 — 12.75 - 3 is 9.75, not what was
+           * printed. `booked` here is that same real, whole-year figure
+           * already in this row, so reconciling against it makes Granted -
+           * Booked = Closing hold on screen, which is the one thing a
+           * balance report has to do to be believed. */
           closingBalance = round2(parseFloat(override.available) || 0);
-          granted = round2((parseFloat(override.available) || 0) + (parseFloat(override.booked) || 0));
+          granted = round2((parseFloat(override.available) || 0) + booked);
         } else {
           const g = grantedToDate(policies.get('casual'), {
             year, joiningDate: row.joiningDate, joiningRule,
