@@ -711,7 +711,13 @@ async function backup(client, batch, table, empId, where, params) {
 
     const code = (p.attendanceError?.match(/\((\d{3})\)/) || [])[1];
     console.log(`    Zoho leave         ${p.leaveInRange.length} record(s) in range`);
-    console.log(`    Zoho attendance    ${p.attendanceReachable ? 'reachable' : `NOT REACHABLE${code ? ` (${code})` : ''}`}\n`);
+    // Whether Zoho answered (p.reached) is a different fact from whether we
+    // are USING that answer (p.attendanceReachable, which also folds in
+    // --skip-attendance) — conflating them printed "NOT REACHABLE" for a
+    // deliberate skip, which reads as a connection problem that never
+    // happened.
+    const reachedLabel = p.reached ? 'reachable' : `NOT REACHABLE${code ? ` (${code})` : ''}`;
+    console.log(`    Zoho attendance    ${reachedLabel}${SKIP_ATTENDANCE ? ' — skipped by --skip-attendance' : ''}\n`);
 
     console.log(`    here: attendance   ${p.hereAtt.n} row(s)`
       + `${p.hereAtt.n ? `, ${p.hereAtt.first} to ${p.hereAtt.last}` : ''}`);
