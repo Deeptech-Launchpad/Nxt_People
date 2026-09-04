@@ -30,8 +30,33 @@ function fromBackendValue(val) {
   return [...DEFAULT_CHECKED];
 }
 
+/* Remembers the exact boxes checked, per report page — not the 3-state
+ * backend value, which cannot tell "just Active Users" apart from "Active
+ * Users and Active Non-Users" and would reconstruct the wrong combination on
+ * every remount. Keyed by the page path so a selection made here does not
+ * leak into a different report's filter. */
+const storageKey = () => {
+  try { return `nxt_emp_status_filter:${window.location.pathname}`; } catch { return null; }
+};
+function loadPersisted() {
+  try {
+    const key = storageKey();
+    if (!key) return null;
+    const arr = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!Array.isArray(arr)) return null;
+    const valid = arr.filter(k => OPTIONS.some(o => o.key === k));
+    return valid.length ? valid : null;
+  } catch { return null; }
+}
+function persist(checked) {
+  try {
+    const key = storageKey();
+    if (key) localStorage.setItem(key, JSON.stringify(checked));
+  } catch { /* best-effort only — a blocked or full localStorage must not break the filter */ }
+}
+
 export default function EmployeeStatusFilter({ value, onChange }) {
-  const [checked, setChecked] = useState(() => fromBackendValue(value));
+  const [checked, setChecked] = useState(() => loadPersisted() || fromBackendValue(value));
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const ref = useRef(null);
@@ -48,6 +73,21 @@ export default function EmployeeStatusFilter({ value, onChange }) {
   // this" (a page Reset) — the only case that should actually override
   // what is checked here.
   const lastEmitted = useRef(value);
+
+  // On mount, a persisted selection wins over the page's own default filter
+  // state — but the page still has to be TOLD, once, or the checkboxes would
+  // show one thing while the table quietly answers a different question.
+  useEffect(() => {
+    const persisted = loadPersisted();
+    if (!persisted) return;
+    const backendValue = toBackendValue(persisted);
+    if (backendValue !== value) {
+      lastEmitted.current = backendValue;
+      onChange(backendValue);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (value === lastEmitted.current) return;
     lastEmitted.current = value;
@@ -67,6 +107,7 @@ export default function EmployeeStatusFilter({ value, onChange }) {
       const backendValue = toBackendValue(next);
       lastEmitted.current = backendValue;
       onChange(backendValue);
+      persist(next);
       return next;
     });
   };
@@ -76,6 +117,7 @@ export default function EmployeeStatusFilter({ value, onChange }) {
     setChecked([...DEFAULT_CHECKED]);
     lastEmitted.current = 'all';
     onChange('all');
+    persist([...DEFAULT_CHECKED]);
   };
 
   // Full labels, truncated by the chip. Shortening each to its first word
