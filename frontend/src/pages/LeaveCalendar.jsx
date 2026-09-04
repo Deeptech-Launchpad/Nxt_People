@@ -11,6 +11,29 @@ function getFirstDayOfMonth(year, month) {
   return new Date(year, month, 1).getDay();
 }
 
+/* Same wording Leave.jsx uses for the reference's own leave-type names.
+ * Permission is deliberately absent from this map — it is not a day off,
+ * it is hours within a day the person otherwise worked, and is handled as
+ * its own event type below rather than folded in here. */
+const LEAVE_TYPE_LABELS = {
+  casual: 'Casual Leave',
+  comp_off: 'Compensatory Off',
+  unpaid: 'Leave Without Pay',
+};
+
+/* "09:30:00" -> "09:30 AM". Permission's start/end come back as plain TIME
+ * strings, not timestamps, so there is no date to route through a real
+ * Date-timezone conversion — and none is needed, since a TIME column has no
+ * timezone of its own to begin with. */
+function fmtClock(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+  if (!m) return '';
+  let h = Number(m[1]);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m[2]} ${ampm}`;
+}
+
 export default function LeaveCalendar() {
   const [date, setDate] = useState(new Date());
   const [events, setEvents] = useState({});
@@ -33,13 +56,20 @@ export default function LeaveCalendar() {
 
   useEffect(() => {
     setLoading(true);
-    const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-    const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${daysInMonth}`;
 
     Promise.all([
       api.get(`/attendance/my?month=${month}&year=${year}`).catch(() => ({ data: { data: [] } })),
       api.get(`/holidays?year=${year}`).catch(() => ({ data: { data: [] } })),
-      api.get(`/leaves?startDate=${startDate}&endDate=${endDate}&status=approved&limit=500`).catch(() => ({ data: { data: [] } }))
+      /* This is a personal calendar — /leaves is the admin/manager list-all
+       * endpoint, which a regular employee cannot even call (403, silently
+       * swallowed by the catch below into an empty array) and which, for
+       * someone who CAN call it, returns every employee's leave, not just
+       * theirs. /leaves/my is what MyAttendance.jsx and every other
+       * self-service page already uses, and it is the one that is actually
+       * scoped to the person looking at the page. It takes `year`, not a
+       * date range — the per-day loop below already restricts to the
+       * visible month regardless. */
+      api.get(`/leaves/my?year=${year}&status=approved&limit=500`).catch(() => ({ data: { data: [] } }))
     ]).then(([attRes, holRes, leaveRes]) => {
       const attData = attRes.data?.data || [];
       const holData = holRes.data?.data || [];
@@ -57,6 +87,23 @@ export default function LeaveCalendar() {
 
       // 2. Process Leaves
       leaveData.forEach(l => {
+        /* Permission is hours within a day the person otherwise worked, not
+         * a day off — Casual Leave and Permission on the same calendar cell
+         * would read as the same kind of thing when they are not. It gets
+         * its own event, carrying the actual time window, and it does NOT
+         * take the day away from a 'present' entry the way a real leave
+         * does — both are meant to sit on the cell together. */
+        if (l.leaveType === 'permission') {
+          const ds = (l.startDate || '').slice(0, 10);
+          if (!ds || new Date(ds + 'T00:00:00').getMonth() !== month) return;
+          if (!newEvents[ds]) newEvents[ds] = [];
+          const range = l.startTime && l.endTime
+            ? `${fmtClock(l.startTime)} – ${fmtClock(l.endTime)}`
+            : (l.hours ? `${l.hours}h` : '');
+          newEvents[ds].push({ type: 'permission', text: `Permission${range ? ` (${range})` : ''}` });
+          return;
+        }
+
         const start = new Date(l.startDate + 'T00:00:00');
         const end = new Date(l.endDate + 'T00:00:00');
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
@@ -69,7 +116,7 @@ export default function LeaveCalendar() {
           if (!newEvents[ds]) newEvents[ds] = [];
           newEvents[ds].push({
             type: 'leave',
-            text: `${l.employee?.firstName || 'User'} - ${l.leaveType || 'Leave'}`
+            text: LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType || 'Leave'
           });
         }
       });
@@ -85,8 +132,10 @@ export default function LeaveCalendar() {
         if (!newEvents[ad]) newEvents[ad] = [];
         
         if (a.status === 'absent' && a.checkOut) {
-          // If a leave or holiday already exists for this date, don't show absent
-          if (!newEvents[ad].some(e => e.type === 'leave' || e.type === 'holiday')) {
+          // A leave, a holiday, or a permission taken alongside otherwise
+          // being present all mean the day is accounted for — none of them
+          // should be able to sit next to an Absent pill on the same cell.
+          if (!newEvents[ad].some(e => ['leave', 'holiday', 'permission'].includes(e.type))) {
             newEvents[ad].push({ type: 'absent', text: 'Absent' });
           }
         } else if (
@@ -125,7 +174,7 @@ export default function LeaveCalendar() {
           : (day.getDay() === 0 || day.getDay() === 6);
         if (isWeekend) continue;
         const existing = newEvents[ds] || [];
-        if (existing.some(e => ['holiday','leave','present','absent'].includes(e.type))) continue;
+        if (existing.some(e => ['holiday','leave','present','absent','permission'].includes(e.type))) continue;
         if (!newEvents[ds]) newEvents[ds] = [];
         newEvents[ds].push({ type: 'absent', text: 'Absent' });
       }
@@ -216,7 +265,12 @@ export default function LeaveCalendar() {
                         </div>
                       )}
                       {ev.type === 'leave' && (
-                        <div className="bg-[#eef2ff] border border-[#c7d2fe] text-[#4338ca] text-[12px] font-semibold px-2 py-1 rounded truncate">
+                        <div className="bg-[#fff7ed] border border-[#fed7aa] text-[#c2410c] text-[12px] font-semibold px-2 py-1 rounded truncate">
+                          {ev.text}
+                        </div>
+                      )}
+                      {ev.type === 'permission' && (
+                        <div className="bg-[#fff7ed] border border-[#fed7aa] text-[#c2410c] text-[12px] font-semibold px-2 py-1 rounded truncate">
                           {ev.text}
                         </div>
                       )}
