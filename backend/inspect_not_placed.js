@@ -99,8 +99,13 @@ const day = process.argv[2] || new Date().toLocaleDateString('en-CA');
   if (unplaced.length) {
     console.log(`\nUnplaced, one line each (${unplaced.length}):`);
     for (const r of unplaced) {
+      /* The distance matters as much as the accuracy. A vague fix that lands
+       * 80 m from the office is a correct answer we are refusing to trust; a
+       * vague fix that lands 3 km away is one we are right to refuse. The two
+       * call for opposite fixes, and the accuracy alone cannot separate them. */
       const why = !r.hasCoords ? 'no coordinates on the row'
         : r.acc !== null ? `fix accurate to ${Math.round(r.acc)} m`
+          + (r.dist !== null ? `, landing ${Math.round(r.dist)} m from the office` : '')
         : 'coordinates present, mode still null';
       console.log(`  ${r.empId.padEnd(14)} ${r.name.trim().padEnd(26)} ${why}`);
     }
