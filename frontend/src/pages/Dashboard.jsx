@@ -24,6 +24,16 @@ import toast from 'react-hot-toast';
 import PhotoCropperModal from '../components/PhotoCropperModal';
 import { PAYROLL_ENABLED, TIME_TRACKER_ENABLED } from '../config/features';
 
+/* Same wording LeaveCalendar.jsx and Leave.jsx already use for a leave
+ * type's name. Permission is deliberately absent — it is hours within a
+ * day someone otherwise worked, not a day off, so it never explains why a
+ * day has no punch the way an actual leave does. */
+const LEAVE_TYPE_LABELS = {
+  casual: 'Casual Leave',
+  comp_off: 'Compensatory Off',
+  unpaid: 'Leave Without Pay',
+};
+
 /* ─ Greeting helper ─ */
 function getGreeting() {
   const h = new Date().getHours();
@@ -468,6 +478,7 @@ export default function Dashboard() {
    // so browsing weeks here never disturbs the current-week Work Schedule widget.
    const [attWeekOffset, setAttWeekOffset] = useState(0);
    const [attWeekData, setAttWeekData] = useState([]);
+   const [attWeekLeaves, setAttWeekLeaves] = useState([]);
    const [actionLoading, setActionLoading] = useState(false);
 
   /* Dashboard data */
@@ -780,6 +791,16 @@ export default function Dashboard() {
      Promise.all([...months.values()].map(({ y, m }) =>
        api.get(`/attendance/my?month=${m}&year=${y}`).then(r => r.data.data || []).catch(() => [])
      )).then(arrs => setAttWeekData(arrs.flat()));
+
+     /* This card had no idea leave existed — it only ever asked attendance,
+      * so an approved Casual Leave with (correctly) no punch fell straight
+      * through to the same "Absent" a genuinely missed day gets. A week can
+      * span two years at most at its very edges (Dec 31 / Jan 1), same
+      * reasoning as the months above. */
+     const years = [...new Set([...months.values()].map(v => v.y))];
+     Promise.all(years.map(y =>
+       api.get(`/leaves/my?year=${y}&status=approved&limit=500`).then(r => r.data.data || []).catch(() => [])
+     )).then(arrs => setAttWeekLeaves(arrs.flat()));
    };
 
    // Load the displayed week's records whenever the user navigates Prev/Next.
@@ -1637,6 +1658,20 @@ export default function Dashboard() {
                         const day = String(d.getDate()).padStart(2, '0');
                         return `${y}-${m}-${day}` === row.dateStr;
                       });
+                      // Approved leave covering this day, if any — checked
+                      // ONLY to explain a day with no punch. A day the
+                      // person also worked (att exists) keeps showing what
+                      // they actually did; Permission is excluded for the
+                      // same reason it is everywhere else, it is not a day
+                      // off. l.startDate is a DATE column serialized to a
+                      // full timestamp, not a bare "YYYY-MM-DD" — sliced
+                      // the same defensive way LeaveCalendar.jsx now does.
+                      const leave = !att && attWeekLeaves.find(l => {
+                        if (l.leaveType === 'permission') return false;
+                        const s = (l.startDate || '').slice(0, 10);
+                        const e = (l.endDate || '').slice(0, 10);
+                        return row.dateStr >= s && row.dateStr <= e;
+                      });
                       const isWeekend = row.isWeekend;
                       const todayCA   = new Date().toLocaleDateString('en-CA');
                       const isToday   = row.dateStr === todayCA;
@@ -1758,6 +1793,16 @@ export default function Dashboard() {
                                     {statusLabel && (
                                       <p className={`text-[14px] font-semibold mt-1 ${statusColor}`}>{statusLabel}</p>
                                     )}
+                                  </>
+                                );
+                              }
+                              if (leave) {
+                                return (
+                                  <>
+                                    <p className="text-slate-400">No check-in - No check-out</p>
+                                    <p className="text-[14px] font-semibold text-amber-600 mt-1">
+                                      {LEAVE_TYPE_LABELS[leave.leaveType] || leave.leaveType}
+                                    </p>
                                   </>
                                 );
                               }

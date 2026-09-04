@@ -16,6 +16,17 @@ const STATUS_STYLE = {
   cancelled: 'bg-slate-100 text-slate-500'
 };
 const LEAVE_TYPES = ['casual', 'comp_off', 'unpaid', 'permission'];
+
+// "09:30:00" -> "9:30 AM" — the reference's own clock format, read more
+// easily at a glance than the raw 24-hour "09:30" this used to show.
+function fmtClock(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+  if (!m) return '';
+  let h = Number(m[1]);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m[2]} ${ampm}`;
+}
 const LEAVE_TYPE_LABELS = {
   casual: 'Casual Leave',
   comp_off: 'Compensatory Off',
@@ -190,7 +201,7 @@ export default function Leave() {
                             {l.leaveType === 'permission' ? (
                               <span className="text-slate-400 ml-1.5">
                                 {l.startTime && l.endTime
-                                  ? `(${l.startTime.slice(0, 5)} – ${l.endTime.slice(0, 5)})`
+                                  ? `(${fmtClock(l.startTime)} to ${fmtClock(l.endTime)})`
                                   : l.hours ? `(${l.hours}h)` : ''}
                               </span>
                             ) : (

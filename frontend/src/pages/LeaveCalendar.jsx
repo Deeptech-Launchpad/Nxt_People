@@ -104,8 +104,20 @@ export default function LeaveCalendar() {
           return;
         }
 
-        const start = new Date(l.startDate + 'T00:00:00');
-        const end = new Date(l.endDate + 'T00:00:00');
+        /* l.startDate is a DATE column serialized straight to JSON — a full
+         * "2026-08-27T00:00:00.000Z" timestamp, not the bare "2026-08-27"
+         * this used to assume. Appending "T00:00:00" to that produced
+         * "...000ZT00:00:00", which `new Date()` cannot parse — Invalid
+         * Date, silently. `Invalid Date <= Invalid Date` is false, so the
+         * loop below never ran even once: every approved Casual Leave,
+         * Leave Without Pay, and Compensatory Off request has been
+         * rendering as a plain empty cell (and, once the fallback in
+         * section 4 ran, as Absent) since this page was first built —
+         * pre-dating the /leaves -> /leaves/my fix, which corrected WHERE
+         * the data came from but not this. Slicing to the date portion
+         * first is safe whichever shape the API hands back. */
+        const start = new Date((l.startDate || '').slice(0, 10) + 'T00:00:00');
+        const end = new Date((l.endDate || '').slice(0, 10) + 'T00:00:00');
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
           if (d.getMonth() !== month || d.getFullYear() !== year) continue;
           const isWknd = typeof isWeekendByRule === 'function'

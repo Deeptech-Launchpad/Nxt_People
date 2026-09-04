@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import CancelPartDialog from '../../components/CancelPartDialog';
-import { ChevronLeft, ChevronRight, Calendar, Clock, Plus, X, Info, ChevronDown, AlertTriangle, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Clock, Plus, X, ChevronDown, AlertTriangle, Eye } from 'lucide-react';
 import api from '../../utils/api';
 import { confirmCancel, cancellationRules } from '../../utils/cancelLeave';
 import BackButton from '../../components/BackButton';
@@ -531,11 +531,8 @@ export default function LeaveSummary() {
                       </div>
                       <div className="flex items-center justify-between pt-1.5 border-t border-gray-100">
                         <span className="text-[14px] text-gray-500">Availed in this month</span>
-                        <span className="flex items-center gap-1 text-[14px] font-semibold text-gray-700">
+                        <span className="text-[14px] font-semibold text-gray-700">
                           {fmt(card.booked)}
-                          <button className="text-gray-300 hover:text-gray-500 transition-colors">
-                            <Info size={11} />
-                          </button>
                         </span>
                       </div>
                     </>
@@ -555,11 +552,8 @@ export default function LeaveSummary() {
                       {card.available !== null && (
                         <div className="flex items-center justify-between">
                           <span className="text-[14px] text-gray-500">Availed</span>
-                          <span className="flex items-center gap-1 text-[14px] font-semibold text-gray-700">
+                          <span className="text-[14px] font-semibold text-gray-700">
                             {fmt(card.booked)}
-                            <button className="text-gray-300 hover:text-gray-500 transition-colors">
-                              <Info size={11} />
-                            </button>
                           </span>
                         </div>
                       )}
