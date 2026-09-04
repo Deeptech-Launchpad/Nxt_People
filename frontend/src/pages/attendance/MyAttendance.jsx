@@ -63,14 +63,18 @@ function timeToMinutes(t) {
 const StatusPill = ({ status }) => {
   const MAP = {
     present:   { label: 'Present',   cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-    late:      { label: 'Late',       cls: 'bg-amber-100 text-amber-700 border-amber-200'       },
     absent:    { label: 'Absent',     cls: 'bg-red-100 text-red-600 border-red-200'             },
     'half-day':{ label: 'Half Day',   cls: 'bg-blue-100 text-blue-600 border-blue-200'          },
     leave:     { label: 'On Leave',   cls: 'bg-purple-100 text-purple-600 border-purple-200'    },
     holiday:   { label: 'Holiday',    cls: 'bg-cyan-100 text-cyan-600 border-cyan-200'          },
     weekend:   { label: 'Weekend',    cls: 'bg-slate-100 text-slate-500 border-slate-200'       },
   };
-  const s = MAP[status] || { label: status || '—', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
+  /* Late is a property of the arrival, not a verdict on the day: somebody who
+     came in at 09:46 was present. The minutes are already spelled out under
+     the date, so a "Late" pill here answered a question nobody asked and
+     crowded out the one they did — present, absent, or half. */
+  const key = status === 'late' ? 'present' : status;
+  const s = MAP[key] || { label: key || '—', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
   return (
     <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full border ${s.cls}`}>
       {s.label}
@@ -178,7 +182,10 @@ function TimelineBar({ record, isToday, isCheckedIn }) {
     );
   }
 
-  const color = record?.status === 'late' ? '#f59e0b' : '#22c55e';
+  /* One colour for a worked day. The amber meant "late", but next to the
+     amber weekend rails it read as a different KIND of day — and the lateness
+     is already stated in words beside the check-in time. */
+  const color = '#22c55e';
 
   if (hasMultiSession) {
     return (
@@ -399,23 +406,38 @@ export default function MyAttendance() {
   const isLoaded = (ds) => !loadedRange || (ds >= loadedRange.start && ds <= loadedRange.end);
 
   /* ── navigation ── */
-  const prevWeek = () => {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() - 7);
-    setWeekStart(weekOf(d));
-  };
-  const nextWeek = () => {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() + 7);
-    // Don't allow paging into a week that hasn't started yet.
-    const today = new Date();
-    if (d > today) return;
+  /* The calendar shows a month, so in that view the arrows step a month.
+   * Stepping a week at a time meant four or five clicks to reach the previous
+   * month, and every click but the last appeared to do nothing at all — the
+   * grid only redraws when the week lands in a different month.
+   *
+   * The 15th is the anchor deliberately: weekOf() walks back at most six days,
+   * so a week starting from mid-month can never fall out of the month we
+   * meant to show, which is what the whole page reads its month from. */
+  const byMonth = view === 'calendar';
+  const step = (n) => {
+    const d = byMonth
+      ? new Date(weekStart.getFullYear(), weekStart.getMonth() + n, 15)
+      : new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + n * 7);
     setWeekStart(weekOf(d));
   };
   const goToday = () => setWeekStart(weekOf(new Date()));
 
+  /* Nothing to see ahead of today, in either unit. */
+  const now = new Date();
+  const atLatest = byMonth
+    ? (weekStart.getFullYear() * 12 + weekStart.getMonth()) >= (now.getFullYear() * 12 + now.getMonth())
+    : weekEndDate >= new Date(new Date().setHours(23, 59, 59, 999));
+
   const fmtRange = (s, e) =>
     `${s.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })} - ${e.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })}`;
+
+  /* Say what is actually on screen: a month in calendar view, a week otherwise.
+     A month grid under a seven-day range was two different answers to the
+     same question. */
+  const headerLabel = byMonth
+    ? weekStart.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    : fmtRange(weekStart, weekEndDate);
 
   const todayStr = isoDate(new Date());
 
@@ -479,22 +501,22 @@ export default function MyAttendance() {
        *  Forward navigation is blocked once the week being viewed already
        *  contains today — employees only need to look at past attendance. */}
       <div className="bg-white border-b border-slate-200 px-5 py-2.5 flex items-center gap-3">
-        <button onClick={prevWeek} className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500 transition-colors">
+        <button onClick={() => step(-1)} title={byMonth ? 'Previous month' : 'Previous week'} className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500 transition-colors">
           <ChevronLeft size={16} />
         </button>
         <button onClick={goToday} className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500 transition-colors">
           <Calendar size={14} />
         </button>
         <button
-          onClick={nextWeek}
-          disabled={weekEndDate >= new Date(new Date().setHours(23,59,59,999))}
+          onClick={() => step(1)}
+          disabled={atLatest}
           className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          title={weekEndDate >= new Date(new Date().setHours(23,59,59,999)) ? 'No future attendance to view' : 'Next week'}
+          title={atLatest ? 'No future attendance to view' : byMonth ? 'Next month' : 'Next week'}
         >
           <ChevronRight size={16} />
         </button>
         <span className="text-[15px] font-semibold text-slate-700 ml-1">
-          {fmtRange(weekStart, weekEndDate)}
+          {headerLabel}
         </span>
 
         <div className="ml-auto flex items-center gap-2">
@@ -853,16 +875,8 @@ export default function MyAttendance() {
 
         return (
           <div className="mx-4 my-4 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+            <div className="px-5 py-3 border-b border-slate-100">
               <h3 className="text-[16px] font-bold text-slate-800">{monthName}</h3>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setWeekStart(weekOf(new Date(y, m - 1, 15)))} className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500">
-                  <ChevronLeft size={15} />
-                </button>
-                <button onClick={() => setWeekStart(weekOf(new Date(y, m + 1, 15)))} className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-500">
-                  <ChevronRight size={15} />
-                </button>
-              </div>
             </div>
             {/* Weekday header */}
             <div className="grid grid-cols-7 border-b border-slate-100">
