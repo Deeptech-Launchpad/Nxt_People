@@ -175,7 +175,7 @@ router.post('/checkin', async (req, res) => {
 
     try {
       placement = await classifyPunch({
-        latitude, longitude, accuracy,
+        latitude, longitude, accuracy, ip: req.ip,
         employee: { isRemote: shiftRes.rows[0]?.isRemote === true },
       });
     } catch (err) {
@@ -254,8 +254,9 @@ router.post('/checkin', async (req, res) => {
       `INSERT INTO attendance
          (employee_id, date, check_in, session_started_at, status, late_minutes,
           check_in_location, check_in_latitude, check_in_longitude, shift_id,
-          work_mode, work_location_resolved_id, location_distance_meters, location_accuracy_meters)
-       VALUES ($1, $2::date, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          work_mode, work_location_resolved_id, location_distance_meters, location_accuracy_meters,
+          work_mode_source, check_in_ip)
+       VALUES ($1, $2::date, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        ON CONFLICT (employee_id, date) DO UPDATE
          -- check_in stays the day's arrival, which is what lateness is
          -- measured from. session_started_at moves to NOW, because the stretch
@@ -274,6 +275,8 @@ router.post('/checkin', async (req, res) => {
               * mode follows the punch that reopened it. */
              work_mode                 = COALESCE(EXCLUDED.work_mode, attendance.work_mode),
              work_location_resolved_id = COALESCE(EXCLUDED.work_location_resolved_id, attendance.work_location_resolved_id),
+             work_mode_source          = COALESCE(EXCLUDED.work_mode_source, attendance.work_mode_source),
+             check_in_ip               = COALESCE(EXCLUDED.check_in_ip, attendance.check_in_ip),
              location_distance_meters  = EXCLUDED.location_distance_meters,
              location_accuracy_meters  = EXCLUDED.location_accuracy_meters,
              updated_at         = NOW()
@@ -283,8 +286,15 @@ router.post('/checkin', async (req, res) => {
                  working_hours as "workingHours", status, late_minutes as "lateMinutes"`,
       [req.user._id, today, now, status, lateMinutes, locLabel,
        latitude || null, longitude || null, shift?.id || null,
-       placement.mode || null, placement.locationId || null,
-       placement.distance ?? null, placement.accuracy ?? null]
+       /* An unplaced punch writes NO mode rather than the word "unknown".
+        * COALESCE treats 'unknown' as an answer, so a later, better signal
+        * would have been unable to replace it — and on this path the better
+        * signal is the norm: the punch is recorded before location is even
+        * asked for. Absence is what lets the truth arrive late. */
+       placement.unknown ? null : (placement.mode || null),
+       placement.locationId || null,
+       placement.distance ?? null, placement.accuracy ?? null,
+       placement.source || null, req.ip || null]
     );
     if (upRes.rows.length === 0) {
       // Conflict + WHERE rejected = someone else just checked in for this
@@ -582,7 +592,7 @@ router.patch('/location', async (req, res) => {
       try {
         const who = await pool.query(`SELECT is_remote AS "isRemote" FROM employees WHERE id=$1`, [req.user._id]);
         placement = await classifyPunch({
-          latitude, longitude, accuracy,
+          latitude, longitude, accuracy, ip: req.ip,
           employee: { isRemote: who.rows[0]?.isRemote === true },
         });
       } catch (err) {
@@ -595,14 +605,21 @@ router.patch('/location', async (req, res) => {
         `UPDATE attendance
             SET check_in_location=$1, check_in_latitude=$2, check_in_longitude=$3,
                 work_mode = COALESCE($6, work_mode),
-                work_location_resolved_id = $7,
+                work_mode_source = COALESCE($10, work_mode_source),
+                work_location_resolved_id = COALESCE($7, work_location_resolved_id),
                 location_distance_meters = COALESCE($8, location_distance_meters),
                 location_accuracy_meters = COALESCE($9, location_accuracy_meters),
                 updated_at=NOW()
           WHERE employee_id=$4 AND date=$5::date`,
         [locLabel, latitude, longitude, req.user._id, today,
-         placement.mode || null, placement.locationId || null,
-         placement.distance ?? null, placement.accuracy ?? null]
+         /* Same rule as the punch: an inconclusive answer must not land on
+          * top of a conclusive one. The check-in may already have been placed
+          * by the office network, and a vague GPS fix arriving two seconds
+          * later is not a reason to forget that. */
+         placement.unknown ? null : (placement.mode || null),
+         placement.locationId || null,
+         placement.distance ?? null, placement.accuracy ?? null,
+         placement.source || null]
       );
     } else {
       await pool.query(

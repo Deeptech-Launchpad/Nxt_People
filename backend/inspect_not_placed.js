@@ -53,7 +53,7 @@ const day = process.argv[2] || new Date().toLocaleDateString('en-CA');
    * coordinates the server was never in a position to answer. */
   const att = await pool.query(
     `SELECT e.employee_id AS "empId", e.first_name || ' ' || COALESCE(e.last_name,'') AS name,
-            a.check_in, a.work_mode AS mode,
+            a.check_in, a.work_mode AS mode, a.work_mode_source AS src, a.check_in_ip AS ip,
             a.check_in_latitude IS NOT NULL AS "hasCoords",
             a.location_accuracy_meters AS acc,
             a.location_distance_meters AS dist,
@@ -73,11 +73,21 @@ const day = process.argv[2] || new Date().toLocaleDateString('en-CA');
   }
 
   console.log(`\nCheck-ins today: ${att.rows.length}`);
+  /* WHICH signal answered. Once office networks are configured this is how
+   * you tell a working IP rule from a lucky run of good GPS fixes. */
+  const bySrc = {};
+  for (const r of att.rows) {
+    if (r.mode === 'office' || r.mode === 'wfh') bySrc[r.src || 'unrecorded'] = (bySrc[r.src || 'unrecorded'] || 0) + 1;
+  }
   console.log(`  Office                       ${buckets.office.length}`);
   console.log(`  WFH                          ${buckets.wfh.length}`);
   console.log(`  Not placed / no coordinates  ${buckets.noCoords.length}   <-- the browser never sent a fix`);
   console.log(`  Not placed / fix too vague   ${buckets.vague.length}   <-- accuracy wider than the fence`);
   console.log(`  Not placed / other           ${buckets.patchedButNull.length}`);
+  if (Object.keys(bySrc).length) {
+    console.log('\n  Placed by:');
+    for (const [k, v] of Object.entries(bySrc)) console.log(`    ${k.padEnd(14)} ${v}`);
+  }
 
   /* Did a fix ever reach us for these people, by any route? The location log
    * is written alongside the patch, so its absence means the browser produced

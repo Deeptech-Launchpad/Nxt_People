@@ -1,6 +1,6 @@
 import React, { useState, lazy, Suspense } from 'react';
 import toast from 'react-hot-toast';
-import { Crosshair, MapPin, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Crosshair, MapPin, Loader2, CheckCircle2, AlertTriangle, Network } from 'lucide-react';
 import RecordList from './RecordList';
 import api from '../../../utils/api';
 
@@ -31,14 +31,22 @@ const COLUMNS = [
   /* Whether this place can place a punch is the thing an admin most wants to
      see at a glance, so it is a column rather than something you open a
      record to discover. */
-  { key: 'geofence', label: 'Geofence', render: r => (
-      r.latitude === null || r.latitude === undefined
-        ? <span className="text-amber-600 text-[13px]">Not set</span>
-        : <span className="text-[13px] text-slate-600">
-            {Number(r.latitude).toFixed(5)}, {Number(r.longitude).toFixed(5)}
-            <span className="text-slate-400"> · {r.radiusMeters || 'default'} m</span>
-          </span>
-    ) },
+  { key: 'geofence', label: 'Geofence', render: r => {
+      const nets = r.ipRanges?.length || 0;
+      const netLabel = nets ? `${nets} network${nets > 1 ? 's' : ''}` : null;
+      if (r.latitude === null || r.latitude === undefined) {
+        return netLabel
+          ? <span className="text-[13px] text-slate-600">{netLabel}</span>
+          : <span className="text-amber-600 text-[13px]">Not set</span>;
+      }
+      return (
+        <span className="text-[13px] text-slate-600">
+          {Number(r.latitude).toFixed(5)}, {Number(r.longitude).toFixed(5)}
+          <span className="text-slate-400"> · {r.radiusMeters || 'default'} m</span>
+          {netLabel && <span className="text-slate-400"> · {netLabel}</span>}
+        </span>
+      );
+    } },
   { key: 'timezone', label: 'Time zone' },
 ];
 
@@ -225,6 +233,93 @@ function Geofence({ record, set }) {
   );
 }
 
+/* The addresses this office owns.
+ *
+ * GPS cannot place a desk machine. It has no receiver, so the browser answers
+ * from the network databases, and on 04/09/2026 those put this building 995 m
+ * from where it stands — the same figure, to the metre, for all sixteen people
+ * who got it, because it is one answer about a Wi-Fi network rather than
+ * sixteen answers about sixteen desks. Against a 400 m fence it cannot say
+ * which side of the wall anybody is on, and twenty-seven of forty-three
+ * check-ins that day went unrecorded because of it.
+ *
+ * A punch arriving from the office's own network carries no such doubt. */
+function OfficeNetworks({ record, set }) {
+  const [busy, setBusy] = useState(false);
+  const [me, setMe] = useState(null);
+
+  const text = Array.isArray(record.ipRanges)
+    ? record.ipRanges.join('\n')
+    : (record.ipRanges ?? '');
+
+  const whoami = async () => {
+    setBusy(true);
+    try {
+      const r = await api.get('/org-setup/geofence/whoami');
+      const d = r.data.data;
+      setMe(d);
+      if (!d.suggestion) return;
+      /* Appended, never replacing: an office can have several egress
+         addresses, and a button that silently discarded the other four would
+         be a trap rather than a convenience. */
+      const lines = text.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+      if (lines.includes(d.suggestion)) {
+        toast.success('That address is already listed');
+        return;
+      }
+      set('ipRanges', [...lines, d.suggestion].join('\n'));
+      toast.success(`Added ${d.suggestion}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not read your address');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="border border-slate-200 rounded-xl p-4 bg-white">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h4 className="text-[15px] font-semibold text-slate-800">Office networks</h4>
+          <p className="text-[13px] text-slate-500 mt-0.5">
+            A check-in arriving from one of these addresses is recorded as office, with no GPS
+            needed. This is what places desktops, which have no GPS receiver at all.
+          </p>
+        </div>
+        <button type="button" onClick={whoami} disabled={busy}
+          className="flex items-center gap-1.5 text-[13px] font-medium border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Network size={14} />}
+          Add the address I'm on now
+        </button>
+      </div>
+
+      <textarea
+        rows={3}
+        value={text}
+        onChange={e => set('ipRanges', e.target.value)}
+        placeholder={'203.0.113.7\n203.0.113.0/24'}
+        className="w-full mt-3 border border-slate-200 rounded-lg px-3 py-2 text-[14px] font-mono focus:outline-none focus:border-blue-400"
+      />
+      <p className="text-[12px] text-slate-500 mt-1">
+        One per line. A single address, or a network in CIDR form. Leave empty to place this
+        location by GPS alone.
+      </p>
+
+      {me && (
+        <div className="mt-3 rounded-lg px-3.5 py-2.5 border text-[13.5px] bg-slate-50 border-slate-200 text-slate-700">
+          <p>You are connected from <strong className="font-mono">{me.ip}</strong> ({me.version}).</p>
+          {me.matched
+            ? <p className="text-emerald-700 mt-0.5">Already covered by {me.matched.locationName}.</p>
+            : <p className="text-slate-500 mt-0.5">Not covered by any location yet.</p>}
+          <p className="text-[12px] opacity-70 mt-1">
+            This is the address your office presents to the internet. If it changes — many
+            connections are not static — check-ins fall back to GPS and go unplaced, so add the
+            range rather than the single address if your provider moves you around.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const FIELDS = [
   { key: 'name', label: 'Location name', required: true, placeholder: 'e.g. Saibaba Colony, Coimbatore' },
   { key: 'mailAlias', label: 'Email' },
@@ -240,6 +335,7 @@ const FIELDS = [
     hint: 'Fixed. Attendance, payroll and the schedulers all assume this zone.',
   },
   { key: 'geofence', type: 'custom', wide: true, render: Geofence },
+  { key: 'ipRanges', type: 'custom', wide: true, render: OfficeNetworks },
 ];
 
 export default function Locations() {

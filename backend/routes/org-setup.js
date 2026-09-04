@@ -21,6 +21,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
 const geofence = require('../utils/geofence');
+const { cleanRules, parseIP, normalize: normalizeIP } = require('../utils/ipMatch');
 const { logAudit } = require('../utils/audit');
 const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
 
@@ -124,6 +125,7 @@ const RESOURCES = {
       l.timezone, l.is_active AS "isActive",
       l.latitude::float8 AS "latitude", l.longitude::float8 AS "longitude",
       l.radius_meters AS "radiusMeters", l.geofence_enabled AS "geofenceEnabled",
+      l.ip_ranges AS "ipRanges",
       l.coordinates_set_at AS "coordinatesSetAt",
       TRIM(CONCAT(gb.first_name, ' ', gb.last_name)) AS "coordinatesSetBy",
       (SELECT COUNT(*)::int FROM employees e
@@ -152,6 +154,13 @@ const RESOURCES = {
        * name. A null radius means "use the organisation default", so
        * changing that default moves every location that never overrode it. */
       ...geoFields(b),
+      /* The addresses this office owns. GPS cannot place a desk machine — it
+       * has no receiver, so the browser answers from the network databases,
+       * which put this building 995 m from where it is. A punch arriving from
+       * the office's own network needs no such guess. Validated here so a
+       * typo is refused at the screen rather than silently matching nobody
+       * for a month. */
+      ip_ranges: cleanRules(b.ipRanges, 'IP address'),
     }),
   },
 
@@ -422,6 +431,35 @@ const WRITE_ROLES = ['admin', 'director', 'hr_admin'];
  * recorded — which is the only moment the mistake is cheap.
  *
  * Deliberately a POST that stores nothing: it is a question, not a punch. */
+/* "What address am I calling from?"
+ *
+ * Nobody knows their office's public IP, and the ways to find out involve
+ * trusting a third-party website with the question. The server already knows
+ * — it is the address our own request arrived from — so it can simply say.
+ *
+ * Also reports whether that address is already covered, which is the only
+ * way to confirm a rule works without waiting for tomorrow's check-ins. The
+ * suggestion is a /32 (or /128): one address, nothing implied about its
+ * neighbours. Widening it to a range is a decision for whoever knows the
+ * network, not a default we should guess at. */
+router.get('/geofence/whoami', authorize(...WRITE_ROLES), async (req, res) => {
+  try {
+    const ip = req.ip || null;
+    const parsed = ip ? parseIP(ip) : null;
+    const match = await geofence.networkVerdict(ip);
+    res.json({
+      success: true,
+      data: {
+        ip,
+        version: parsed ? (parsed.version === 4 ? 'IPv4' : 'IPv6') : null,
+        suggestion: parsed ? `${normalizeIP(ip)}/${parsed.version === 4 ? 32 : 128}` : null,
+        matched: match ? { locationId: match.locationId, locationName: match.locationName,
+                           reason: match.reason } : null,
+      },
+    });
+  } catch (err) { serverError(res, err); }
+});
+
 router.post('/geofence/test', authorize(...WRITE_ROLES), async (req, res) => {
   try {
     const lat = Number(req.body?.latitude);
