@@ -177,10 +177,21 @@ export default function Leave() {
                                 for it. "(0 days)" told an employee looking at
                                 their own approved request that they had asked
                                 for nothing; the time they actually asked for
-                                was sitting unused on the same row. */}
+                                was sitting unused on the same row.
+
+                                A request restaged from Zoho has no clock time
+                                to show even now — Zoho's own leave API never
+                                returns one, only a date and a duration, so
+                                start/endTime are genuinely null on those rows,
+                                not merely unfetched. Falling back to the hours
+                                figure (which IS real, from the same import)
+                                keeps the row honest instead of printing a pair
+                                of dashes that reads as broken. */}
                             {l.leaveType === 'permission' ? (
                               <span className="text-slate-400 ml-1.5">
-                                ({(l.startTime || '').slice(0, 5) || '—'} – {(l.endTime || '').slice(0, 5) || '—'})
+                                {l.startTime && l.endTime
+                                  ? `(${l.startTime.slice(0, 5)} – ${l.endTime.slice(0, 5)})`
+                                  : l.hours ? `(${l.hours}h)` : ''}
                               </span>
                             ) : (
                               <span className="text-slate-400 ml-1.5">({l.totalDays} day{l.totalDays !== 1 ? 's' : ''})</span>
