@@ -1994,8 +1994,10 @@ function shiftMinutes(t) {
 // On Duty is work done elsewhere — a client visit, or a day worked from home —
 // so it outranks a plain absence but never a holiday, a weekend or approved
 // leave: those say the day was not worked at all.
-function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, isFuture, employee }) {
-  if (isFuture) return { code: '-', kind: 'future' };
+function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, isFuture, isToday, employee }) {
+  // Holiday, weekend, and approved leave are all known ahead of time, so a
+  // future date still shows them — only Present/Absent is a verdict about
+  // what actually happened, which cannot be known before the day is over.
   const holType = holidayTypeFor(holMap, `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`, employee);
   if (holidayClosesOffice(holType)) return { code: 'H', kind: 'holiday' };
   if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, date))) return { code: 'W', kind: 'weekend' };
@@ -2017,6 +2019,8 @@ function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, 
       fraction: leave.isHalfDay ? 0.5 : 1,
     };
   }
+  if (isFuture) return { code: '-', kind: 'future' };
+  if (isToday) return { code: '-', kind: 'today' };
   if (attStatus === 'present' || attStatus === 'late') return { code: 'P', kind: 'present' };
   if (attStatus === 'half-day') return { code: 'HD', kind: 'present', fraction: 0.5 };
   return { code: 'A', kind: 'absent' };
@@ -2853,6 +2857,7 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
             leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
             onDuty: ctx.onDutyOn(emp._id, d),
             isFuture: ymd > todayYmd,
+            isToday: ymd === todayYmd,
           });
 
           const worked = workedHoursOf(att, cfg);
