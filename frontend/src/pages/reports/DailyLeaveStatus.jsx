@@ -6,7 +6,7 @@ import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import { CHART_COLORS, makeSliceLabel, ActiveSlice } from './chartLabels';
-import EmployeeStatusFilter from './EmployeeStatusFilter';
+import EmployeeStatusFilter, { persistedEmployeeStatus } from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
 import LeaveTypeFilter from './LeaveTypeFilter';
 import LeaveExportModal from './LeaveExportModal';
@@ -38,7 +38,7 @@ export default function DailyLeaveStatus() {
   const [loading, setLoading] = useState(true);
   const [byType, setByType] = useState([]);
   const [employees, setEmployees] = useState([]);
-  const [employeeStatus, setEmployeeStatus] = useState('all');
+  const [employeeStatus, setEmployeeStatus] = useState(() => persistedEmployeeStatus() || 'all');
   const [leaveType, setLeaveType] = useState('');
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});

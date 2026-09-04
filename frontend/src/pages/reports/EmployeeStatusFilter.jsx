@@ -55,6 +55,16 @@ function persist(checked) {
   } catch { /* best-effort only — a blocked or full localStorage must not break the filter */ }
 }
 
+// So a page's own filter state can start out already correct instead of
+// starting at 'all' and being corrected a tick later — that correction was
+// racing the page's own first fetch, and whichever of the two responses
+// (the wrong one or the corrected one) happened to resolve last is the one
+// that stuck, which is why the exited employee only reappeared sometimes.
+export function persistedEmployeeStatus() {
+  const persisted = loadPersisted();
+  return persisted ? toBackendValue(persisted) : null;
+}
+
 export default function EmployeeStatusFilter({ value, onChange }) {
   const [checked, setChecked] = useState(() => loadPersisted() || fromBackendValue(value));
   const [open, setOpen] = useState(false);

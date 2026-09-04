@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { persistedEmployeeStatus } from '../pages/reports/EmployeeStatusFilter';
 
 // Owns the four narrowing filters every Leave Tracker / Attendance report
 // shares (single employee, employee status, direct-reportees, org-hierarchy
@@ -7,7 +8,11 @@ import { useState } from 'react';
 // query keys the backend's standardEmployeeFilters() reads.
 export default function useReportFilters() {
   const [employee, setEmployee] = useState(null);
-  const [employeeStatus, setEmployeeStatus] = useState('all');
+  // Starts from whatever was last persisted for this page rather than 'all',
+  // so the very first fetch already carries the right filter — starting at
+  // 'all' and correcting it a tick later raced this hook's own fetch effect,
+  // and the loser of that race is whichever response happened to resolve last.
+  const [employeeStatus, setEmployeeStatus] = useState(() => persistedEmployeeStatus() || 'all');
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
 

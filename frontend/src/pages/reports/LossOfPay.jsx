@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import LeaveExportModal from './LeaveExportModal';
 import RegenerateDialog from './RegenerateDialog';
-import EmployeeStatusFilter from './EmployeeStatusFilter';
+import EmployeeStatusFilter, { persistedEmployeeStatus } from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
 import EmployeeFilter from './EmployeeFilter';
 import DirectReportsToggle from './DirectReportsToggle';
@@ -51,7 +51,7 @@ export default function LossOfPay() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
-  const [employeeStatus, setEmployeeStatus] = useState('all');
+  const [employeeStatus, setEmployeeStatus] = useState(() => persistedEmployeeStatus() || 'all');
   const [employee, setEmployee] = useState([]);
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});

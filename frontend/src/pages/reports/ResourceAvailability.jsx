@@ -4,7 +4,7 @@ import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
-import EmployeeStatusFilter from './EmployeeStatusFilter';
+import EmployeeStatusFilter, { persistedEmployeeStatus } from './EmployeeStatusFilter';
 import FilterRow from './FilterRow';
 import LeaveTypeFilter from './LeaveTypeFilter';
 import DirectReportsToggle from './DirectReportsToggle';
@@ -83,7 +83,7 @@ export default function ResourceAvailability() {
   const [endDate, setEndDate] = useState(monthEndCA());
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
-  const [employeeStatus, setEmployeeStatus] = useState('all');
+  const [employeeStatus, setEmployeeStatus] = useState(() => persistedEmployeeStatus() || 'all');
   const [leaveType, setLeaveType] = useState('');
   const [directReportsOnly, setDirectReportsOnly] = useState(false);
   const [dimFilters, setDimFilters] = useState({});
