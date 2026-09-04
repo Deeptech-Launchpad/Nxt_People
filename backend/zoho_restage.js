@@ -20,8 +20,17 @@
  *
  *    Named employees only, never "everybody". Dry run by default.
  *
+ *    --skip-attendance never replaces attendance, whatever Zoho answers with.
+ *    A day already punched through this system carries geofence
+ *    classification, work-mode, session history and a resolved IP that
+ *    Zoho's report has no column for — restaging it is a downgrade, not a
+ *    fill. Leave, by contrast, is only ever written here by an approval; a
+ *    gap really is a gap. Use this when the point is catching up on leave
+ *    Zoho has and this system does not, not replaying attendance history.
+ *
  *    docker compose exec backend node zoho_restage.js CODE1,CODE2 2026-01-01 2026-08-31
  *    docker compose exec backend node zoho_restage.js CODE1,CODE2 2026-01-01 2026-08-31 --apply
+ *    docker compose exec backend node zoho_restage.js CODE1,CODE2 2026-09-01 2026-09-03 --skip-attendance --apply
  * ────────────────────────────────────────────────────────────────────────── */
 require('dotenv').config();
 process.env.EMAIL_DISABLED = 'true';
@@ -39,6 +48,14 @@ const CODES = String(process.argv[2] || '').split(/[,\s]+/).filter(Boolean);
 const START = process.argv[3];
 const END = process.argv[4];
 const APPLY = process.argv.includes('--apply');
+// Leave has never been touched by anyone but Zoho for a person restaged this
+// way — replacing 0 rows with real ones is pure gain. Attendance is not: a
+// day already punched through THIS system carries geofence classification,
+// work-mode, session history and a resolved IP that Zoho's report has no
+// column for at all, and the insert below writes none of it. Restaging
+// attendance over a day already recorded natively downgrades it, silently.
+// This flag lets leave be brought in without that trade.
+const SKIP_ATTENDANCE = process.argv.includes('--skip-attendance');
 
 const pad = (s, n) => String(s).padEnd(n);
 const zohoDMY = iso => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`;
@@ -520,6 +537,10 @@ async function backup(client, batch, table, empId, where, params) {
   console.log('\n══════════════════════════════════════════════════════════');
   console.log(`  Restage onto Zoho history — ${APPLY ? 'APPLYING' : 'DRY RUN, nothing will be written'}`);
   console.log(`  ${CODES.join(', ')}   ${START} to ${END}`);
+  if (SKIP_ATTENDANCE) {
+    console.log('  --skip-attendance: attendance will not be touched for anybody,');
+    console.log('  whatever Zoho answers with. Leave only.');
+  }
   console.log('══════════════════════════════════════════════════════════\n');
 
   const backupTable = (await pool.query(`SELECT to_regclass('import_backups') AS t`)).rows[0].t;
@@ -591,8 +612,9 @@ async function backup(client, batch, table, empId, where, params) {
     const reached = attendance !== null
       && !(attendance && typeof attendance === 'object' && !Array.isArray(attendance)
            && ('errors' in attendance || 'error' in attendance));
-    // Reaching it is not the same as being able to replace it.
-    const attendanceReachable = reached && ATTENDANCE_IMPORT_READY;
+    // Reaching it is not the same as being able to replace it — and
+    // --skip-attendance means never replacing it regardless.
+    const attendanceReachable = reached && ATTENDANCE_IMPORT_READY && !SKIP_ATTENDANCE;
 
     /* A read that FAILED is not a person with no leave.
      *
