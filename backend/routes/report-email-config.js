@@ -17,10 +17,11 @@ const { logAudit } = require('../utils/audit');
 const { serverError } = require('../utils/serverError');
 const {
   getConfig, saveConfig, DEFAULT_CONFIG, CHOOSABLE_KEYS, CADENCE_OPTIONS,
-  recipientsFor, buildForKey,
+  recipientsFor, buildForKey, rangeForKey,
 } = require('../utils/reportEmailSender');
 const { todayYmd } = require('../utils/reportEmailSchedule');
 const contentBuilders = require('../utils/reportEmailContent');
+const { ROW_SOURCES } = require('../utils/reportEmailExport');
 const { APPROVERS, isFullAccess } = require('../utils/roles');
 
 router.use(protect);
@@ -148,6 +149,16 @@ router.get('/:key/preview', async (req, res) => {
       }
     } else {
       built = await buildForKey(key, cfg, today);
+      // Row count for the Excel attachment this would actually carry — not
+      // the file itself, just enough to show "an attachment with N rows
+      // will be included" without doing the (heavier) work of writing it.
+      if (ROW_SOURCES[key]) {
+        try {
+          const range = await rangeForKey(key, cfg, today);
+          const rows = await ROW_SOURCES[key](range);
+          built.attachmentRowCount = rows.length;
+        } catch (_) { /* preview still shows the email body without this */ }
+      }
     }
     res.json({ success: true, data: built });
   } catch (err) { serverError(res, err); }

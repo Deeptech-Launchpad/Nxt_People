@@ -139,27 +139,51 @@ function cadenceForKey(key, cfg) {
   return null; // regularizationReminder — built per-recipient, not by a range
 }
 
+/** The exact date range a report's cadence resolves to right now — the same
+ *  range both the email body and its Excel attachment are built from, so
+ *  the two can never disagree about what period they cover. */
+async function rangeForKey(key, cfg, dateYmd) {
+  const cadence = cadenceForKey(key, cfg);
+  return cadence === 'monthlyCutoff'
+    ? schedule.monthToCutoffRange(dateYmd)
+    : await schedule.rangeForCadence(cadence, dateYmd);
+}
+
 /** Builds one report's {subject, text, html} for a given "today" — the same
  *  content a real send would produce, without sending it. Not valid for
  *  regularizationReminder, which has no single, report-wide content: it is
  *  built per-recipient (see regularizationReminderEmail) and is previewed
  *  separately by the caller. */
 async function buildForKey(key, cfg, dateYmd) {
-  const reportCfg = cfg[key];
-  const cadence = cadenceForKey(key, cfg);
-  const range = cadence === 'monthlyCutoff'
-    ? schedule.monthToCutoffRange(dateYmd)
-    : await schedule.rangeForCadence(cadence, dateYmd);
-  return BUILDERS[key](range, customFor(reportCfg));
+  const range = await rangeForKey(key, cfg, dateYmd);
+  return BUILDERS[key](range, customFor(cfg[key]));
 }
 
-async function sendIfConfigured(key, cfg, builder) {
+async function sendIfConfigured(key, cfg, builder, range) {
   const reportCfg = cfg[key];
   if (!reportCfg?.enabled) return { key, sent: false, reason: 'disabled' };
   const to = await recipientsFor(reportCfg);
   if (!to.length) return { key, sent: false, reason: 'no recipients configured' };
   const { subject, text, html } = await builder();
-  await sendMail({ to, subject, text, html });
+  let attachments;
+  if (range) {
+    try {
+      const { buildExport } = require('./reportEmailExport');
+      const exported = await buildExport(key, range);
+      if (exported) {
+        attachments = [{
+          filename: exported.filename, content: exported.buffer,
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }];
+      }
+    } catch (err) {
+      // The summary email is still worth sending even if the attachment
+      // build fails — a missing attachment is a smaller problem than a
+      // missing report.
+      logger.error({ err: err.message, key }, '[reportEmails] export attachment failed, sending without it');
+    }
+  }
+  await sendMail({ to, subject, text, html, ...(attachments ? { attachments } : {}) });
   return { key, sent: true, to: to.length };
 }
 
@@ -183,7 +207,7 @@ async function sweepReportEmails(opts = {}) {
       const due = await schedule.isDueForCadence(meta.cadence, today, { includeNonWorkingDays: reportCfg.includeNonWorkingDays });
       if (!due) continue;
       const range = await schedule.rangeForCadence(meta.cadence, today);
-      summary.push(await sendIfConfigured(key, cfg, () => BUILDERS[key](range, customFor(reportCfg))));
+      summary.push(await sendIfConfigured(key, cfg, () => BUILDERS[key](range, customFor(reportCfg)), range));
     } catch (err) {
       logger.error({ err: err.message, key }, '[reportEmails] fixed-cadence report failed');
       summary.push({ key, sent: false, reason: err.message });
@@ -196,7 +220,7 @@ async function sweepReportEmails(opts = {}) {
     if (await schedule.isMonthlyCutoffDue(today)) {
       const range = schedule.monthToCutoffRange(today);
       for (const key of CUTOFF_REPORTS) {
-        summary.push(await sendIfConfigured(key, cfg, () => BUILDERS[key](range, customFor(cfg[key]))));
+        summary.push(await sendIfConfigured(key, cfg, () => BUILDERS[key](range, customFor(cfg[key])), range));
       }
 
       if (cfg.regularizationReminder.enabled) {
@@ -235,7 +259,7 @@ async function sweepReportEmails(opts = {}) {
       const due = await schedule.isDueForCadence(cadence, today, { includeNonWorkingDays: reportCfg.includeNonWorkingDays });
       if (!due) continue;
       const range = await schedule.rangeForCadence(cadence, today);
-      summary.push(await sendIfConfigured(key, cfg, () => BUILDERS[key](range, customFor(reportCfg))));
+      summary.push(await sendIfConfigured(key, cfg, () => BUILDERS[key](range, customFor(reportCfg)), range));
     } catch (err) {
       logger.error({ err: err.message, key }, '[reportEmails] widened-catalog report failed');
       summary.push({ key, sent: false, reason: err.message });
@@ -248,5 +272,5 @@ async function sweepReportEmails(opts = {}) {
 module.exports = {
   sweepReportEmails, getConfig, saveConfig, recipientsFor, DEFAULT_CONFIG,
   FIXED_META, CUTOFF_REPORTS, CHOOSABLE_KEYS, CADENCE_OPTIONS,
-  cadenceForKey, buildForKey,
+  cadenceForKey, buildForKey, rangeForKey,
 };

@@ -400,14 +400,22 @@ export default function ScheduledReportEmails() {
                   Preview — what this would look like if sent today
                 </p>
                 {contentPopup.loading ? <Spinner /> : contentPopup.preview ? (
-                  <div className="border border-slate-200 rounded-lg overflow-hidden">
-                    <iframe
-                      title="Email preview"
-                      sandbox=""
-                      srcDoc={contentPopup.preview.html}
-                      className="w-full h-80 bg-white"
-                    />
-                  </div>
+                  <>
+                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                      <iframe
+                        title="Email preview"
+                        sandbox=""
+                        srcDoc={contentPopup.preview.html}
+                        className="w-full h-80 bg-white"
+                      />
+                    </div>
+                    {typeof contentPopup.preview.attachmentRowCount === 'number' && (
+                      <p className="text-[12.5px] text-slate-500 mt-2">
+                        📎 An Excel file with {contentPopup.preview.attachmentRowCount} row(s) is attached to this email —
+                        the same data, in full, as the report's own columns.
+                      </p>
+                    )}
+                  </>
                 ) : (
                   <p className="text-[13.5px] text-slate-500">Preview unavailable.</p>
                 )}
