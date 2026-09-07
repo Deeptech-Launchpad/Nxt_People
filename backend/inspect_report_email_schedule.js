@@ -2,7 +2,9 @@
 /* Would today be a send day for any scheduled report, and what date range
  * would it cover? Answers WITHOUT sending anything and regardless of
  * whether any report is switched on in Settings — pure schedule logic,
- * checked against the real holiday/weekend calendar.
+ * checked against the real holiday/weekend calendar and each report's own
+ * saved settings (includeNonWorkingDays, and — for the widened catalog —
+ * its chosen cadence).
  *
  * READ ONLY. Nothing here writes or sends mail.
  *
@@ -19,8 +21,7 @@ nodemailer.createTransport = () => ({
 
 const pool = require('./db');
 const schedule = require('./utils/reportEmailSchedule');
-const { addDays } = require('./utils/regularizationWindow');
-const { getConfig } = require('./utils/reportEmailSender');
+const { getConfig, recipientsFor, FIXED_META, CUTOFF_REPORTS, CHOOSABLE_KEYS } = require('./utils/reportEmailSender');
 
 const DATE = process.argv[2] || schedule.todayYmd();
 
@@ -30,35 +31,42 @@ const DATE = process.argv[2] || schedule.todayYmd();
   const isWorking = await schedule.isWorkingDay(DATE);
   console.log(`${DATE} is a ${isWorking ? 'WORKING' : 'NON-WORKING (weekend/holiday)'} day.\n`);
 
-  const daily = await schedule.isDailyDue(DATE);
-  console.log(`Daily Attendance due today: ${daily}`
-    + (daily ? ` — would cover ${addDays(DATE, -1)}` : ''));
-
-  const weekly = await schedule.isWeeklyDue(DATE);
-  const week = schedule.weekJustClosedRange(DATE);
-  console.log(`Weekly cadence due today (Weekly Attendance, Onboarding Data, Muster Roll): ${weekly}`
-    + (weekly ? ` — would cover ${week.start} to ${week.end}` : ` (week just closed would be ${week.start} to ${week.end})`));
-  if (weekly) {
-    const hols = await schedule.holidaysInRange(week.start, week.end);
-    console.log(hols.length
-      ? `  Holiday(s) in that week: ${hols.map(h => `${h.name} (${h.date})`).join(', ')}`
-      : '  No holidays in that week.');
-  }
-
-  const monthlyCutoff = await schedule.monthlyCutoffDate(DATE);
-  const monthly = await schedule.isMonthlyCutoffDue(DATE);
-  const range = schedule.monthToCutoffRange(DATE);
-  console.log(`Monthly cutoff for this month resolves to: ${monthlyCutoff}`);
-  console.log(`Monthly cadence due today (Monthly Attendance, Payroll Feed, LOP Data, Regularization Reminder): ${monthly}`
-    + (monthly ? ` — would cover ${range.start} to ${range.end}` : ''));
-
-  console.log('\n── Current config (nothing sends unless a report shows enabled=true below) ──\n');
   const cfg = await getConfig();
-  for (const [key, val] of Object.entries(cfg)) {
-    console.log(`  ${key.padEnd(22)} enabled=${val.enabled}`
-      + (val.recipients ? `  recipients=${val.recipients.length}` : '')
-      + (val.roles ? `  roles=${(val.roles || []).join(',') || '-'}` : ''));
+
+  console.log('── Daily / weekly-cadence reports (own includeNonWorkingDays override) ──\n');
+  for (const [key, meta] of Object.entries(FIXED_META)) {
+    const reportCfg = cfg[key];
+    const due = await schedule.isDueForCadence(meta.cadence, DATE, { includeNonWorkingDays: reportCfg.includeNonWorkingDays });
+    const range = await schedule.rangeForCadence(meta.cadence, DATE);
+    const to = reportCfg.enabled ? await recipientsFor(reportCfg) : [];
+    console.log(`  ${key.padEnd(18)} enabled=${String(reportCfg.enabled).padEnd(5)} includeNonWorkingDays=${String(!!reportCfg.includeNonWorkingDays).padEnd(5)}`
+      + ` due=${due}${due ? `  range=${range.start}..${range.end}` : ''}${reportCfg.enabled ? `  recipients=${to.length}` : ''}`);
   }
 
+  console.log('\n── Monthly payroll-cutoff group (fixed timing, no override) ──\n');
+  const monthlyCutoff = await schedule.monthlyCutoffDate(DATE);
+  const cutoffDue = await schedule.isMonthlyCutoffDue(DATE);
+  const cutoffRange = schedule.monthToCutoffRange(DATE);
+  console.log(`  Cutoff for this month resolves to: ${monthlyCutoff}`);
+  console.log(`  Due today: ${cutoffDue}${cutoffDue ? `  range=${cutoffRange.start}..${cutoffRange.end}` : ''}`);
+  for (const key of CUTOFF_REPORTS) {
+    const reportCfg = cfg[key];
+    const to = reportCfg.enabled ? await recipientsFor(reportCfg) : [];
+    console.log(`    ${key.padEnd(18)} enabled=${String(reportCfg.enabled).padEnd(5)}${reportCfg.enabled ? `  recipients=${to.length}` : ''}`);
+  }
+  console.log(`    regularizationReminder enabled=${cfg.regularizationReminder.enabled} (recipients are structural — each pending approver)`);
+
+  console.log('\n── Widened catalog (admin-chosen cadence) ──\n');
+  for (const key of CHOOSABLE_KEYS) {
+    const reportCfg = cfg[key];
+    const cadence = ['daily', 'weekly', 'monthly'].includes(reportCfg.cadence) ? reportCfg.cadence : 'weekly';
+    const due = await schedule.isDueForCadence(cadence, DATE, { includeNonWorkingDays: reportCfg.includeNonWorkingDays });
+    const range = await schedule.rangeForCadence(cadence, DATE);
+    const to = reportCfg.enabled ? await recipientsFor(reportCfg) : [];
+    console.log(`  ${key.padEnd(18)} enabled=${String(reportCfg.enabled).padEnd(5)} cadence=${cadence.padEnd(8)} includeNonWorkingDays=${String(!!reportCfg.includeNonWorkingDays).padEnd(5)}`
+      + ` due=${due}${due ? `  range=${range.start}..${range.end}` : ''}${reportCfg.enabled ? `  recipients=${to.length}` : ''}`);
+  }
+
+  console.log('\nNothing above sends anything — this script never calls sendMail.\n');
   await pool.end();
 })().catch(async e => { console.error(e); try { await pool.end(); } catch {} process.exit(1); });

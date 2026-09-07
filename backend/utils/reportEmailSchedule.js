@@ -43,21 +43,65 @@ function mondayOfWeek(dateYmd) {
   return addDays(dateYmd, -backToMonday);
 }
 
-/** Is today the day the Daily Attendance report goes out? */
-async function isDailyDue(dateYmd) {
-  return isWorkingDay(dateYmd);
+/** Is today the day the Daily Attendance report goes out?
+ *  includeNonWorkingDays: some companies want a daily report even on a
+ *  weekend or holiday — an explicit, per-report override, off by default. */
+async function isDailyDue(dateYmd, { includeNonWorkingDays = false } = {}) {
+  return includeNonWorkingDays || isWorkingDay(dateYmd);
 }
 
 /** Is today the day the weekly-cadence reports (Weekly Attendance, Onboarding,
- *  Muster Roll) go out? */
-async function isWeeklyDue(dateYmd) {
+ *  Muster Roll) go out? With the override, always Monday, holiday or not —
+ *  without it, walked forward past a holiday Monday same as before. */
+async function isWeeklyDue(dateYmd, { includeNonWorkingDays = false } = {}) {
   const monday = mondayOfWeek(dateYmd);
+  if (includeNonWorkingDays) return dateYmd === monday;
   let d = monday;
   for (let i = 0; i < 7; i++) {           // guards against an all-holiday week
     if (await isWorkingDay(d)) return d === dateYmd;
     d = addDays(d, 1);
   }
   return false;
+}
+
+/** Generic monthly cadence for reports with NO payroll-cutoff relationship
+ *  (Headcount, Attrition Trend, etc.) — first working day of the month
+ *  (or the literal 1st, with the override), reporting the FULL prior
+ *  calendar month. Deliberately separate from monthlyCutoffDate(), which is
+ *  a business rule about payroll timing, not a generic "once a month". */
+async function genericMonthlyDueDate(dateYmd, { includeNonWorkingDays = false } = {}) {
+  const d = parseYmd(dateYmd);
+  const first = ymd(new Date(d.getFullYear(), d.getMonth(), 1));
+  if (includeNonWorkingDays) return first;
+  let day = first;
+  for (let i = 0; i < 10; i++) {
+    if (await isWorkingDay(day)) return day;
+    day = addDays(day, 1);
+  }
+  return first;
+}
+function priorMonthRange(dateYmd) {
+  const d = parseYmd(dateYmd);
+  const start = ymd(new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  const end = ymd(new Date(d.getFullYear(), d.getMonth(), 0)); // last day of prior month
+  return { start, end };
+}
+
+/** One entry point for any report's cadence, fixed or admin-chosen:
+ *  'daily' | 'weekly' | 'monthly'. Used by the widened catalog (Headcount,
+ *  Addition Trend, Attrition Trend, Experience & Exit), whose cadence is a
+ *  per-report setting rather than baked into the report's identity. */
+async function isDueForCadence(cadence, dateYmd, opts = {}) {
+  if (cadence === 'daily') return isDailyDue(dateYmd, opts);
+  if (cadence === 'weekly') return isWeeklyDue(dateYmd, opts);
+  if (cadence === 'monthly') return dateYmd === (await genericMonthlyDueDate(dateYmd, opts));
+  return false;
+}
+async function rangeForCadence(cadence, dateYmd) {
+  if (cadence === 'daily') return { start: addDays(dateYmd, -1), end: addDays(dateYmd, -1) };
+  if (cadence === 'weekly') return weekJustClosedRange(dateYmd);
+  if (cadence === 'monthly') return priorMonthRange(dateYmd);
+  return { start: dateYmd, end: dateYmd };
 }
 
 /** Monday-to-Sunday range of the week that closed just before this one. */
@@ -108,4 +152,5 @@ module.exports = {
   isDailyDue, isWeeklyDue, isMonthlyCutoffDue,
   mondayOfWeek, weekJustClosedRange, monthlyCutoffDate, monthToCutoffRange,
   holidaysInRange, isWorkingDay, todayYmd, TZ,
+  isDueForCadence, rangeForCadence, genericMonthlyDueDate, priorMonthRange,
 };
