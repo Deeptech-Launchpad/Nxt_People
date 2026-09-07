@@ -237,16 +237,27 @@ async function holidaysAndRulesFor(startDate, endDate) {
     }
 
     // ── 4. LOP: local vs Zoho-equivalent ─────────────────────────────────
-    try {
-      const lop = await lopDaysForRange(emp.id, new Date(START), new Date(END), holMap, rules, pool);
-      const absent = await absentDaysForRange(emp.id, new Date(START), new Date(END), holMap, rules, pool);
-      const hereLop = round2(lop + absent);
-      const zohoLop = round2((zohoUnpaidByCode.get(emp.code) || 0) + zohoAbsentDays);
-      if (Math.abs(hereLop - zohoLop) > TOLERANCE) {
-        issues.lop = `here=${hereLop}d (lop=${round2(lop)}+absent=${round2(absent)})  zoho-equivalent=${zohoLop}d (unpaid=${zohoUnpaidByCode.get(emp.code) || 0}+absentstatus=${round2(zohoAbsentDays)})`;
+    // lopDaysForRange/absentDaysForRange trust the caller to only ask about
+    // days the employee actually existed here -- the real payroll code
+    // (computeDraftPayslip in routes/payroll.js) clamps to joining/exit
+    // before ever calling them. Skipping that clamp here counted every
+    // working day before somebody's joining date as an absence, which is
+    // how a person who joined in July read as 156 days of LOP over a
+    // Jan-to-September range.
+    const rangeStart = emp.joined && emp.joined > START ? emp.joined : START;
+    const rangeEnd = emp.exited && emp.exited < END ? emp.exited : END;
+    if (rangeStart <= rangeEnd) {
+      try {
+        const lop = await lopDaysForRange(emp.id, new Date(rangeStart), new Date(rangeEnd), holMap, rules, pool);
+        const absent = await absentDaysForRange(emp.id, new Date(rangeStart), new Date(rangeEnd), holMap, rules, pool);
+        const hereLop = round2(lop + absent);
+        const zohoLop = round2((zohoUnpaidByCode.get(emp.code) || 0) + zohoAbsentDays);
+        if (Math.abs(hereLop - zohoLop) > TOLERANCE) {
+          issues.lop = `here=${hereLop}d (lop=${round2(lop)}+absent=${round2(absent)})  zoho-equivalent=${zohoLop}d (unpaid=${zohoUnpaidByCode.get(emp.code) || 0}+absentstatus=${round2(zohoAbsentDays)})`;
+        }
+      } catch (err) {
+        issues.lop = `could not compute: ${String(err.message).slice(0, 90)}`;
       }
-    } catch (err) {
-      issues.lop = `could not compute: ${String(err.message).slice(0, 90)}`;
     }
 
     if (issues.attendance.length || issues.leave.length || issues.regularization.length || issues.lop) {
