@@ -17,7 +17,10 @@ require('dotenv').config();
 const pool = require('./db');
 
 (async () => {
-  const r = await pool.query(`SELECT employee_id FROM employees WHERE employee_id IS NOT NULL ORDER BY employee_id`);
+  // Only real ANXT-prefixed codes -- a stray non-conforming employee_id (seen
+  // live: a bare "1") would otherwise be handed to zoho_restage.js as if it
+  // were a real employee to restage.
+  const r = await pool.query(`SELECT employee_id FROM employees WHERE employee_id ~ '^ANXT' ORDER BY employee_id`);
   process.stdout.write(r.rows.map(x => x.employee_id).join(','));
   process.stdout.write('\n');
   await pool.end();
