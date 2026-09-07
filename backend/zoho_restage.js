@@ -28,9 +28,20 @@
  *    gap really is a gap. Use this when the point is catching up on leave
  *    Zoho has and this system does not, not replaying attendance history.
  *
+ *    --fill-gaps-only is the middle ground: attendance is never deleted, and
+ *    a day that already has a row here — whatever it looks like — is left
+ *    completely alone. Only a day where Zoho shows a real punch and this
+ *    system has NO row at all gets inserted. Leave is still replaced as
+ *    normal (a leave gap is always a real gap, so there is nothing to
+ *    protect there). Use this when the point is "Zoho says Present, we say
+ *    Absent because nothing was ever recorded" and nothing else should move.
+ *    Mutually exclusive with --skip-attendance — one says fill the gaps, the
+ *    other says touch nothing, and they cannot both be true.
+ *
  *    docker compose exec backend node zoho_restage.js CODE1,CODE2 2026-01-01 2026-08-31
  *    docker compose exec backend node zoho_restage.js CODE1,CODE2 2026-01-01 2026-08-31 --apply
  *    docker compose exec backend node zoho_restage.js CODE1,CODE2 2026-09-01 2026-09-03 --skip-attendance --apply
+ *    docker compose exec backend node zoho_restage.js CODE1,CODE2 2026-09-01 2026-09-03 --fill-gaps-only --apply
  * ────────────────────────────────────────────────────────────────────────── */
 require('dotenv').config();
 process.env.EMAIL_DISABLED = 'true';
@@ -56,6 +67,15 @@ const APPLY = process.argv.includes('--apply');
 // attendance over a day already recorded natively downgrades it, silently.
 // This flag lets leave be brought in without that trade.
 const SKIP_ATTENDANCE = process.argv.includes('--skip-attendance');
+// Never delete attendance; only insert a day that has NO row here at all.
+// A day that already has one — right, wrong, or thin — is left untouched.
+const FILL_GAPS_ONLY = process.argv.includes('--fill-gaps-only');
+if (FILL_GAPS_ONLY && SKIP_ATTENDANCE) {
+  console.log('\n  --fill-gaps-only and --skip-attendance contradict each other:');
+  console.log('  one says fill the gaps in attendance, the other says touch none');
+  console.log('  of it. Pick one.\n');
+  process.exit(1);
+}
 
 const pad = (s, n) => String(s).padEnd(n);
 const zohoDMY = iso => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`;
@@ -646,6 +666,13 @@ async function backup(client, batch, table, empId, where, params) {
       `SELECT COUNT(*)::int n, MIN(date)::text AS first, MAX(date)::text AS last
          FROM attendance WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date`,
       [emp.id, START, END])).rows[0];
+    // Only fetched in --fill-gaps-only mode -- this is the set of dates that
+    // must NOT be touched, whatever Zoho says about them.
+    const hereAttDates = FILL_GAPS_ONLY
+      ? new Set((await pool.query(
+          `SELECT date::text AS d FROM attendance WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date`,
+          [emp.id, START, END])).rows.map(r => r.d))
+      : null;
     const hereLeave = (await pool.query(
       `SELECT COUNT(*)::int n FROM leaves
         WHERE employee_id = $1 AND start_date BETWEEN $2::date AND $3::date`,
@@ -691,7 +718,10 @@ async function backup(client, batch, table, empId, where, params) {
     const onRolls = d =>
       !(emp.joined && d.date < emp.joined) && !(emp.exited && d.date > emp.exited);
     const offRolls = allDays.filter(d => !onRolls(d) && (d.hasPunch || isAbsence(d)));
-    const days = allDays.filter(d => onRolls(d) && (d.hasPunch || isAbsence(d)));
+    // --fill-gaps-only additionally drops any day that already has a row here
+    // -- that row, whatever it says, is not this script's to replace.
+    const days = allDays.filter(d => onRolls(d) && (d.hasPunch || isAbsence(d))
+      && (!FILL_GAPS_ONLY || !hereAttDates.has(d.date)));
     const skipped = allDays.filter(d => onRolls(d) && !(d.hasPunch || isAbsence(d)));
 
     for (const d of days) {
@@ -721,9 +751,9 @@ async function backup(client, batch, table, empId, where, params) {
 
     console.log(`    here: attendance   ${p.hereAtt.n} row(s)`
       + `${p.hereAtt.n ? `, ${p.hereAtt.first} to ${p.hereAtt.last}` : ''}`);
-    console.log(`                       ${p.attendanceReachable
-      ? '→ backed up, then replaced'
-      : '→ LEFT ALONE'}`);
+    console.log(`                       ${!p.attendanceReachable ? '→ LEFT ALONE'
+      : FILL_GAPS_ONLY ? `→ ${p.hereAtt.n} existing day(s) left untouched, ${p.days.length} missing day(s) inserted`
+      : '→ backed up, then replaced'}`);
     console.log(`    here: leave        ${p.hereLeave} record(s)  → backed up, then replaced\n`);
 
     if (!APPLY && p.leaveInRange.length) {
@@ -942,14 +972,24 @@ async function backup(client, batch, table, empId, where, params) {
          VALUES ($1, '_manifest', $2, $3::jsonb)`,
         [batch, p.emp.id, JSON.stringify({
           code: p.emp.code, name: p.emp.name, start: START, end: END,
-          tables: p.attendanceReachable ? ['leaves', 'attendance'] : ['leaves'],
+          // restore_import_backup.js's restore deletes the WHOLE manifest date
+          // range for a table before putting the backup back. --fill-gaps-only
+          // never backs up attendance (nothing was deleted), so listing it here
+          // would make a future restore wipe out the untouched good rows this
+          // mode exists to protect, for zero rows to put back. Leaving it off
+          // the manifest means restore only ever touches leaves for this batch
+          // -- the gap-filled attendance rows are not undoable through this
+          // tool, but nothing good is destroyed trying.
+          tables: (p.attendanceReachable && !FILL_GAPS_ONLY) ? ['leaves', 'attendance'] : ['leaves'],
         })]);
 
       const bl = await backup(client, batch, 'leaves', p.emp.id,
         't.employee_id = $1 AND t.start_date BETWEEN $2::date AND $3::date',
         [p.emp.id, START, END]);
+      // --fill-gaps-only never deletes attendance, so there is nothing to back
+      // up for it -- the rows being written are new, not replacements.
       let ba = 0;
-      if (p.attendanceReachable) {
+      if (p.attendanceReachable && !FILL_GAPS_ONLY) {
         ba = await backup(client, batch, 'attendance', p.emp.id,
           't.employee_id = $1 AND t.date BETWEEN $2::date AND $3::date',
           [p.emp.id, START, END]);
@@ -958,7 +998,7 @@ async function backup(client, batch, table, empId, where, params) {
       await client.query(
         `DELETE FROM leaves WHERE employee_id = $1 AND start_date BETWEEN $2::date AND $3::date`,
         [p.emp.id, START, END]);
-      if (p.attendanceReachable) {
+      if (p.attendanceReachable && !FILL_GAPS_ONLY) {
         await client.query(
           `DELETE FROM attendance WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date`,
           [p.emp.id, START, END]);
