@@ -30,11 +30,21 @@ const DATE = process.argv[2] || new Date().toLocaleDateString('en-CA');
             a.work_mode AS "workMode", a.work_mode_source AS "workModeSource",
             a.check_in_ip AS "checkInIp",
             a.check_in_latitude AS lat, a.check_in_longitude AS lng,
+            a.location_distance_meters AS dist, a.location_accuracy_meters AS acc,
             a.check_in_location AS "checkInLocation"
        FROM attendance a JOIN employees e ON e.id = a.employee_id
       WHERE a.date = $1::date AND a.check_in IS NOT NULL
       ORDER BY a.work_mode NULLS FIRST, e.employee_id`,
     [DATE]);
+
+  const fences = (await pool.query(
+    `SELECT name, latitude, longitude, radius_meters AS radius, is_active AS active, geofence_enabled AS enabled
+       FROM work_locations`)).rows;
+  console.log('Configured office locations (work_locations):');
+  for (const f of fences) {
+    console.log(`  ${f.name}: lat/lng=${f.latitude}/${f.longitude}  radius=${f.radius}m  active=${f.active}  geofenceEnabled=${f.enabled}`);
+  }
+  console.log('');
 
   const notClassified = all.rows.filter(r => !r.workMode);
   const office = all.rows.filter(r => r.workMode === 'office');
@@ -54,7 +64,7 @@ const DATE = process.argv[2] || new Date().toLocaleDateString('en-CA');
 
   console.log('── "notClassified" — work_mode is NULL, nothing was ever attempted ──\n');
   for (const r of notClassified) {
-    console.log(`  ${r.code.padEnd(14)} ${r.name.padEnd(26)} in=${r.checkIn}  out=${r.checkOut || '-'}  source=${r.workModeSource || 'NULL'}  ip=${r.checkInIp || 'NULL'}  lat/lng=${r.lat ?? 'NULL'}/${r.lng ?? 'NULL'}  location="${r.checkInLocation || ''}"`);
+    console.log(`  ${r.code.padEnd(14)} ${r.name.padEnd(26)} in=${r.checkIn}  out=${r.checkOut || '-'}  source=${r.workModeSource || 'NULL'}  ip=${r.checkInIp || 'NULL'}  lat/lng=${r.lat ?? 'NULL'}/${r.lng ?? 'NULL'}  distance=${r.dist ?? 'NULL'}m  accuracy=${r.acc ?? 'NULL'}m  location="${r.checkInLocation || ''}"`);
   }
   if (!notClassified.length) console.log('  none — every checked-in row today has a work_mode.');
 
