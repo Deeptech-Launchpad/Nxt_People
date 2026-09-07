@@ -39,7 +39,7 @@ const rateLimit  = require('express-rate-limit');
 const logger = require('./logger');
 
 const app = express();
-/* Two proxies sit in front of us, not one: the VPS system nginx terminates TLS
+/* Two internal proxies sit in front of us: the VPS system nginx terminates TLS
  * for nxtpeople.altiusnxt.tech and forwards to 127.0.0.1:3006, which is the
  * frontend container's nginx, which forwards to this app. Each appends to
  * X-Forwarded-For, so the header arriving here reads `realClientIP, 127.0.0.1`.
@@ -54,8 +54,29 @@ const app = express();
  * count silently resolves to the wrong entry the day a proxy is added or
  * removed, whereas loopback + RFC1918 describes exactly where our proxies live.
  * It is also spoof-proof — a client that forges X-Forwarded-For with a public
- * address just makes the walk stop there, on its own real address. */
-app.set('trust proxy', ['loopback', 'uniquelocal']);
+ * address just makes the walk stop there, on its own real address.
+ *
+ * A THIRD hop sits in front of both of these and was missing from this list:
+ * Cloudflare, which proxies the site's public traffic. Its edge IP is also
+ * public, so the walk stopped there instead of continuing to the real
+ * visitor — every employee behind Cloudflare showed up as one of a few dozen
+ * Cloudflare addresses, the exact same failure as the 127.0.0.1 one above,
+ * one hop further out. That silently broke three things at once: the rate
+ * limiter (shared across whichever Cloudflare edge node answered, not per
+ * employee), the audit log (recorded Cloudflare's address, not the
+ * employee's), and attendance's office-network detection (a real office IP
+ * can never match one of Cloudflare's). Cloudflare's ranges are published and
+ * static enough to hardcode — see https://www.cloudflare.com/ips/ if they
+ * ever need updating. */
+const CLOUDFLARE_IPS = [
+  '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+  '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+  '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+  '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+  '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32',
+  '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
+];
+app.set('trust proxy', ['loopback', 'uniquelocal', ...CLOUDFLARE_IPS]);
 
 // Sentry's request handler must be the FIRST middleware on the app — only when enabled.
 if (sentryEnabled && Sentry.Handlers?.requestHandler) {
