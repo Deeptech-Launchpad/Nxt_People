@@ -17,6 +17,7 @@ const { sweepDateWorkflows } = require('./utils/workflowEngine');
 const { sweepApprovalFollowups } = require('./utils/approvalFollowups');
 const { sweepAttendanceAlerts } = require('./utils/attendanceAlerts');
 const { sweepRegularizationReminders } = require('./utils/regularizationReminders');
+const { sweepReportEmails } = require('./utils/reportEmailSender');
 const { sweepShiftRotations } = require('./utils/shiftRotation');
 const { runYearEndRollover } = require('./utils/leaveYearEnd');
 // The email-alerts cron below has called automationConfig.* since it was
@@ -735,3 +736,30 @@ cron.schedule('* * * * *', async () => {
     logger.error({ err: err.message }, 'Regularization reminder sweep failed');
   }
 }, { timezone: CRON_TZ });
+
+// Scheduled report emails — Daily/Weekly/Monthly Attendance, Onboarding Data,
+// Muster Roll, Payroll Feed, LOP Data, and the regularization-pending
+// reminder to Team Incharge/Manager/HR Admin/Admin. Runs once a day; each
+// cadence check inside sweepReportEmails() decides on its own whether today
+// is actually its day (daily on a working day, weekly on the first working
+// day of the week, monthly on the 26th/27th/28th cutoff).
+//
+// Every report defaults to disabled in settings.report_email_config — this
+// cron firing does not, by itself, send anything until an admin switches a
+// report on in Settings -> Attendance -> Automation -> Scheduled Reports.
+cron.schedule('0 8 * * *', async () => {
+  const startedAt = Date.now();
+  try {
+    const summary = await sweepReportEmails();
+    const sent = summary.filter(s => s.sent);
+    if (sent.length) {
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('report_emails', 'Scheduled report emails', 'Attendance Scheduler', 'success', $1, $2)`,
+        [sent.map(s => s.key).join(', '), Date.now() - startedAt]
+      ).catch(() => {});
+    }
+  } catch (err) {
+    logger.error({ err: err.message }, 'Scheduled report email sweep failed');
+  }
+}, cronOpts);

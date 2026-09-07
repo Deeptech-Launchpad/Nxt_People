@@ -180,6 +180,7 @@ export const SERVICES = [
         { key: 'absent-scheduler', label: 'Absent Scheduler' },
         { key: 'email-alerts', label: 'Email Alerts' },
         { key: 'email-templates', label: 'Email Templates' },
+        { key: 'scheduled-reports', label: 'Scheduled Reports' },
       ],
       permissions: [
         { key: 'geo-restriction', label: 'Geo Restriction' },

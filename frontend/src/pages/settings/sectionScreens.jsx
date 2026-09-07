@@ -44,6 +44,7 @@ import ApprovalRules from './attendance/ApprovalRules';
 import EmailTemplates from './attendance/EmailTemplates';
 import EmailAlerts from './attendance/EmailAlerts';
 import AbsentScheduler from './attendance/AbsentScheduler';
+import ScheduledReportEmails from './attendance/ScheduledReportEmails';
 
 import ShiftsGeneral from './shifts/ShiftsGeneral';
 // Manage Shifts is the existing Shifts screen, not a copy: there is one set of
@@ -159,6 +160,7 @@ const SECTION_SCREENS = {
   'attendance.automation.absent-scheduler': AbsentScheduler,
   'attendance.automation.email-alerts': EmailAlerts,
   'attendance.automation.email-templates': EmailTemplates,
+  'attendance.automation.scheduled-reports': ScheduledReportEmails,
 
   'shifts.configuration.general': ShiftsGeneral,
   'shifts.configuration.manage-shifts': ManageShifts,
