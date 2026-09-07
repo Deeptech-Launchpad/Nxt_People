@@ -42,6 +42,7 @@ export default function ScheduledReportEmails() {
 
   const [recipientsPopup, setRecipientsPopup] = useState(null); // { key, loading, data }
   const [contentPopup, setContentPopup] = useState(null);       // { key, loading, preview, subject, body }
+  const [detailsPopup, setDetailsPopup] = useState(null);       // { key, loading, recipients, preview }
 
   const load = useCallback(() => {
     api.get('/report-email-config')
@@ -113,6 +114,16 @@ export default function ScheduledReportEmails() {
       .catch(err => { toast.error(err.response?.data?.message || 'Could not load a preview'); setContentPopup(null); });
   };
 
+  const openDetails = (key) => {
+    setDetailsPopup({ key, loading: true, recipients: null, preview: null });
+    Promise.all([
+      api.get(`/report-email-config/${key}/recipients`).then(r => r.data.data).catch(() => null),
+      api.get(`/report-email-config/${key}/preview`).then(r => r.data.data).catch(() => null),
+    ]).then(([recipients, preview]) => {
+      setDetailsPopup(v => (v && v.key === key ? { ...v, loading: false, recipients, preview } : v));
+    });
+  };
+
   const saveContent = () => {
     if (!contentPopup) return;
     setBusy(true);
@@ -142,9 +153,20 @@ export default function ScheduledReportEmails() {
     return parts.join(' + ') || 'Nobody yet';
   };
 
-  const label = (key) => (REPORTS.concat(EXTRA_REPORTS)).find(r => r.key === key)?.label;
+  const label = (key) => key === 'regularizationReminder'
+    ? 'Regularization Pending Reminder'
+    : (REPORTS.concat(EXTRA_REPORTS)).find(r => r.key === key)?.label;
   const hasNonWorkingToggle = (key) => key !== 'monthlyAttendance' && key !== 'payrollFeed' && key !== 'lopData';
   const isChoosableCadence = (key) => EXTRA_REPORTS.some(r => r.key === key);
+  const cadenceLabelFor = (key) => {
+    if (key === 'regularizationReminder') return 'Same day as Monthly';
+    const extra = EXTRA_REPORTS.find(r => r.key === key);
+    if (extra) return CADENCE_LABEL[cfg[key]?.cadence] || 'Weekly';
+    return REPORTS.find(r => r.key === key)?.fixedCadence || '';
+  };
+  const coversFor = (key) => key === 'regularizationReminder'
+    ? "Each recipient's own pending approvals"
+    : (REPORTS.concat(EXTRA_REPORTS)).find(r => r.key === key)?.covers || '';
 
   // Fixed widths so a long value in one row (the reminder's role list, an
   // employee's full name) truncates instead of resizing every other row's
@@ -161,22 +183,27 @@ export default function ScheduledReportEmails() {
     </colgroup>
   );
 
+  // Every existing per-cell control keeps doing exactly what it already did;
+  // it just also stops the click from bubbling up to the new row-level
+  // "show everything" popup so the two don't fight over one click.
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+
   const renderRow = (r, isExtra) => (
-    <tr key={r.key} className="border-t border-slate-100">
+    <tr key={r.key} onClick={() => openDetails(r.key)} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50">
       <td className="px-4 py-3 text-slate-800 font-medium truncate" title={r.label}>{r.label}</td>
       <td className="px-4 py-3 text-slate-600 truncate">{isExtra ? (CADENCE_LABEL[cfg[r.key].cadence] || 'Weekly') : r.fixedCadence}</td>
       <td className="px-4 py-3 text-slate-500 text-[13px] truncate" title={r.covers}>{r.covers}</td>
       <td className="px-4 py-3 truncate">
-        <button onClick={() => openRecipients(r.key)} className="text-slate-600 hover:text-blue-600 hover:underline text-left truncate max-w-full" title={describeCount(cfg[r.key])}>
+        <button onClick={stop(() => openRecipients(r.key))} className="text-slate-600 hover:text-blue-600 hover:underline text-left truncate max-w-full" title={describeCount(cfg[r.key])}>
           {describeCount(cfg[r.key])}
         </button>
       </td>
       <td className="px-4 py-3">
-        <button onClick={() => openContent(r.key)} className="text-blue-600 hover:text-blue-500 text-[13.5px]">View</button>
+        <button onClick={stop(() => openContent(r.key))} className="text-blue-600 hover:text-blue-500 text-[13.5px]">View</button>
       </td>
-      <td className="px-4 py-3"><Toggle checked={cfg[r.key].enabled} onChange={() => toggleReport(r.key)} label="" /></td>
+      <td className="px-4 py-3" onClick={e => e.stopPropagation()}><Toggle checked={cfg[r.key].enabled} onChange={() => toggleReport(r.key)} label="" /></td>
       <td className="px-4 py-3 text-right">
-        <button onClick={() => openEdit(r.key)} className="text-[13.5px] text-blue-600 hover:text-blue-500">Edit</button>
+        <button onClick={stop(() => openEdit(r.key))} className="text-[13.5px] text-blue-600 hover:text-blue-500">Edit</button>
       </td>
     </tr>
   );
@@ -210,22 +237,22 @@ export default function ScheduledReportEmails() {
             {tableHead}
             <tbody>
               {REPORTS.map(r => renderRow(r, false))}
-              <tr className="border-t border-slate-200 bg-slate-50/50">
+              <tr onClick={() => openDetails('regularizationReminder')} className="border-t border-slate-200 bg-slate-50/50 cursor-pointer hover:bg-slate-100">
                 <td className="px-4 py-3 text-slate-800 font-medium truncate" title="Regularization Pending Reminder">Regularization Pending Reminder</td>
                 <td className="px-4 py-3 text-slate-600 truncate">Same day as Monthly</td>
                 <td className="px-4 py-3 text-slate-500 text-[13px] truncate" title="Each recipient's own pending approvals">Each recipient's own pending approvals</td>
                 <td className="px-4 py-3 truncate">
-                  <button onClick={() => openRecipients('regularizationReminder')} className="text-slate-600 hover:text-blue-600 hover:underline text-left truncate max-w-full"
+                  <button onClick={stop(() => openRecipients('regularizationReminder'))} className="text-slate-600 hover:text-blue-600 hover:underline text-left truncate max-w-full"
                     title="Team Incharge, Manager, HR Admin, Admin — whoever has something pending">
                     By role (4) — click to view
                   </button>
                 </td>
                 <td className="px-4 py-3">
-                  <button onClick={() => openContent('regularizationReminder')} className="text-blue-600 hover:text-blue-500 text-[13.5px]">View</button>
+                  <button onClick={stop(() => openContent('regularizationReminder'))} className="text-blue-600 hover:text-blue-500 text-[13.5px]">View</button>
                 </td>
-                <td className="px-4 py-3"><Toggle checked={cfg.regularizationReminder.enabled} onChange={toggleReminder} label="" /></td>
+                <td className="px-4 py-3" onClick={e => e.stopPropagation()}><Toggle checked={cfg.regularizationReminder.enabled} onChange={toggleReminder} label="" /></td>
                 <td className="px-4 py-3 text-right">
-                  <button onClick={() => openEdit('regularizationReminder')} className="text-[13.5px] text-blue-600 hover:text-blue-500">Edit</button>
+                  <button onClick={stop(() => openEdit('regularizationReminder'))} className="text-[13.5px] text-blue-600 hover:text-blue-500">Edit</button>
                 </td>
               </tr>
             </tbody>
@@ -475,6 +502,87 @@ export default function ScheduledReportEmails() {
               </button>
               <button onClick={() => setContentPopup(null)}
                 className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-5 py-2 rounded text-[14px] font-medium">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Report Overview: everything about one row, in one place ── */}
+      {detailsPopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 px-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <p className="text-[16px] font-semibold text-slate-800">{label(detailsPopup.key)}</p>
+              <button onClick={() => setDetailsPopup(null)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+            </div>
+
+            <div className="px-6 py-5 space-y-5 overflow-y-auto">
+              {detailsPopup.loading ? <Spinner /> : (
+                <>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                    <div>
+                      <p className="text-[12px] font-medium text-slate-500 uppercase tracking-wide mb-1">Report</p>
+                      <p className="text-[14px] text-slate-800">{label(detailsPopup.key)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[12px] font-medium text-slate-500 uppercase tracking-wide mb-1">Cadence</p>
+                      <p className="text-[14px] text-slate-800">{cadenceLabelFor(detailsPopup.key)}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-[12px] font-medium text-slate-500 uppercase tracking-wide mb-1">Content covers</p>
+                      <p className="text-[14px] text-slate-800">{coversFor(detailsPopup.key)}</p>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-200 pt-4">
+                    <p className="text-[12px] font-medium text-slate-500 uppercase tracking-wide mb-2">Recipients</p>
+                    {detailsPopup.recipients?.structural && <Note>{detailsPopup.recipients.note}</Note>}
+                    {(detailsPopup.recipients?.emails || []).length === 0 ? (
+                      <p className="text-[13.5px] text-slate-500">Nobody configured yet.</p>
+                    ) : (
+                      <ul className="space-y-1.5 mt-1">
+                        {detailsPopup.recipients.emails.map(e => (
+                          <li key={e} className="text-[13.5px] text-slate-700 bg-slate-50 rounded px-3 py-1.5">{e}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="border-t border-slate-200 pt-4">
+                    <p className="text-[12px] font-medium text-slate-500 uppercase tracking-wide mb-2">Email Content</p>
+                    {detailsPopup.preview ? (
+                      <>
+                        <p className="text-[13.5px] text-slate-800 font-medium mb-2">{detailsPopup.preview.subject}</p>
+                        <div className="border border-slate-200 rounded-lg overflow-hidden">
+                          <iframe title="Email preview" sandbox="" srcDoc={detailsPopup.preview.html} className="w-full h-64 bg-white" />
+                        </div>
+                        {typeof detailsPopup.preview.attachmentRowCount === 'number' && (
+                          <p className="text-[12.5px] text-slate-500 mt-2">
+                            📎 An Excel file with {detailsPopup.preview.attachmentRowCount} row(s) is attached to this email.
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-[13.5px] text-slate-500">Preview unavailable.</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center gap-3">
+              <button onClick={() => { const k = detailsPopup.key; setDetailsPopup(null); openEdit(k); }}
+                className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded text-[13.5px] font-medium">
+                Edit Recipients & Schedule
+              </button>
+              <button onClick={() => { const k = detailsPopup.key; setDetailsPopup(null); openContent(k); }}
+                className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded text-[13.5px] font-medium">
+                Edit Email Content
+              </button>
+              <button onClick={() => setDetailsPopup(null)}
+                className="ml-auto border border-slate-300 text-slate-700 hover:bg-slate-50 px-5 py-2 rounded text-[14px] font-medium">
                 Close
               </button>
             </div>
