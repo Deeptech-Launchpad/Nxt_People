@@ -125,13 +125,28 @@ export default function ScheduledReportEmails() {
   const hasNonWorkingToggle = (key) => key !== 'monthlyAttendance' && key !== 'payrollFeed' && key !== 'lopData';
   const isChoosableCadence = (key) => EXTRA_REPORTS.some(r => r.key === key);
 
+  // Fixed widths so a long value in one row (the reminder's role list, an
+  // employee's full name) truncates instead of resizing every other row's
+  // columns out of alignment with it.
+  const colgroup = (
+    <colgroup>
+      <col className="w-[16%]" />
+      <col className="w-[13%]" />
+      <col className="w-[19%]" />
+      <col className="w-[19%]" />
+      <col className="w-[11%]" />
+      <col className="w-[10%]" />
+      <col className="w-[12%]" />
+    </colgroup>
+  );
+
   const renderRow = (r, isExtra) => (
     <tr key={r.key} className="border-t border-slate-100">
-      <td className="px-4 py-3 text-slate-800 font-medium">{r.label}</td>
-      <td className="px-4 py-3 text-slate-600">{isExtra ? (CADENCE_LABEL[cfg[r.key].cadence] || 'Weekly') : r.fixedCadence}</td>
-      <td className="px-4 py-3 text-slate-500 text-[13px]">{r.covers}</td>
-      <td className="px-4 py-3">
-        <button onClick={() => openRecipients(r.key)} className="text-slate-600 hover:text-blue-600 hover:underline text-left">
+      <td className="px-4 py-3 text-slate-800 font-medium truncate" title={r.label}>{r.label}</td>
+      <td className="px-4 py-3 text-slate-600 truncate">{isExtra ? (CADENCE_LABEL[cfg[r.key].cadence] || 'Weekly') : r.fixedCadence}</td>
+      <td className="px-4 py-3 text-slate-500 text-[13px] truncate" title={r.covers}>{r.covers}</td>
+      <td className="px-4 py-3 truncate">
+        <button onClick={() => openRecipients(r.key)} className="text-slate-600 hover:text-blue-600 hover:underline text-left truncate max-w-full" title={describeCount(cfg[r.key])}>
           {describeCount(cfg[r.key])}
         </button>
       </td>
@@ -148,13 +163,13 @@ export default function ScheduledReportEmails() {
   const tableHead = (
     <thead className="bg-slate-50">
       <tr>
-        <th className="text-left font-medium text-slate-600 px-4 py-2.5">Report</th>
-        <th className="text-left font-medium text-slate-600 px-4 py-2.5">Cadence</th>
-        <th className="text-left font-medium text-slate-600 px-4 py-2.5">Content covers</th>
-        <th className="text-left font-medium text-slate-600 px-4 py-2.5">Recipients</th>
-        <th className="text-left font-medium text-slate-600 px-4 py-2.5">Email Content</th>
-        <th className="text-left font-medium text-slate-600 px-4 py-2.5">Enabled</th>
-        <th className="w-16" />
+        <th className="text-left font-medium text-slate-600 px-4 py-2.5 truncate">Report</th>
+        <th className="text-left font-medium text-slate-600 px-4 py-2.5 truncate">Cadence</th>
+        <th className="text-left font-medium text-slate-600 px-4 py-2.5 truncate">Content covers</th>
+        <th className="text-left font-medium text-slate-600 px-4 py-2.5 truncate">Recipients</th>
+        <th className="text-left font-medium text-slate-600 px-4 py-2.5 truncate">Email Content</th>
+        <th className="text-left font-medium text-slate-600 px-4 py-2.5 truncate">Enabled</th>
+        <th className="px-4 py-2.5" />
       </tr>
     </thead>
   );
@@ -169,17 +184,19 @@ export default function ScheduledReportEmails() {
         </Note>
 
         <div className="mt-5 overflow-x-auto">
-          <table className="w-full text-[14px]">
+          <table className="w-full text-[14px] table-fixed">
+            {colgroup}
             {tableHead}
             <tbody>
               {REPORTS.map(r => renderRow(r, false))}
               <tr className="border-t border-slate-200 bg-slate-50/50">
-                <td className="px-4 py-3 text-slate-800 font-medium">Regularization Pending Reminder</td>
-                <td className="px-4 py-3 text-slate-600">Same day as Monthly</td>
-                <td className="px-4 py-3 text-slate-500 text-[13px]">Each recipient's own pending approvals</td>
-                <td className="px-4 py-3">
-                  <button onClick={() => openRecipients('regularizationReminder')} className="text-slate-600 hover:text-blue-600 hover:underline text-left text-[13px]">
-                    Team Incharge, Manager, HR Admin, Admin — whoever has something pending
+                <td className="px-4 py-3 text-slate-800 font-medium truncate" title="Regularization Pending Reminder">Regularization Pending Reminder</td>
+                <td className="px-4 py-3 text-slate-600 truncate">Same day as Monthly</td>
+                <td className="px-4 py-3 text-slate-500 text-[13px] truncate" title="Each recipient's own pending approvals">Each recipient's own pending approvals</td>
+                <td className="px-4 py-3 truncate">
+                  <button onClick={() => openRecipients('regularizationReminder')} className="text-slate-600 hover:text-blue-600 hover:underline text-left truncate max-w-full"
+                    title="Team Incharge, Manager, HR Admin, Admin — whoever has something pending">
+                    By role (4) — click to view
                   </button>
                 </td>
                 <td className="px-4 py-3">
@@ -197,7 +214,8 @@ export default function ScheduledReportEmails() {
 
       <Card title="More Reports" description="Existing reports elsewhere in NxtPeople, scheduled on a cadence you choose">
         <div className="overflow-x-auto">
-          <table className="w-full text-[14px]">
+          <table className="w-full text-[14px] table-fixed">
+            {colgroup}
             {tableHead}
             <tbody>
               {EXTRA_REPORTS.map(r => renderRow(r, true))}
