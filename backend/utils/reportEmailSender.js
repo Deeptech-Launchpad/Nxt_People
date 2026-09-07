@@ -125,6 +125,34 @@ async function recipientsFor(reportCfg) {
 
 const customFor = (reportCfg) => ({ subject: reportCfg.customSubject, body: reportCfg.customBody });
 
+/** Which cadence actually governs a report right now — fixed for the
+ *  original seven, admin-chosen for the widened catalog. Used by the
+ *  Scheduled Reports screen's preview, so a preview always uses the exact
+ *  same range the real send would. */
+function cadenceForKey(key, cfg) {
+  if (FIXED_META[key]) return FIXED_META[key].cadence;
+  if (CUTOFF_REPORTS.includes(key)) return 'monthlyCutoff';
+  if (CHOOSABLE_KEYS.includes(key)) {
+    const c = cfg[key].cadence;
+    return CADENCE_OPTIONS.includes(c) ? c : 'weekly';
+  }
+  return null; // regularizationReminder — built per-recipient, not by a range
+}
+
+/** Builds one report's {subject, text, html} for a given "today" — the same
+ *  content a real send would produce, without sending it. Not valid for
+ *  regularizationReminder, which has no single, report-wide content: it is
+ *  built per-recipient (see regularizationReminderEmail) and is previewed
+ *  separately by the caller. */
+async function buildForKey(key, cfg, dateYmd) {
+  const reportCfg = cfg[key];
+  const cadence = cadenceForKey(key, cfg);
+  const range = cadence === 'monthlyCutoff'
+    ? schedule.monthToCutoffRange(dateYmd)
+    : await schedule.rangeForCadence(cadence, dateYmd);
+  return BUILDERS[key](range, customFor(reportCfg));
+}
+
 async function sendIfConfigured(key, cfg, builder) {
   const reportCfg = cfg[key];
   if (!reportCfg?.enabled) return { key, sent: false, reason: 'disabled' };
@@ -220,4 +248,5 @@ async function sweepReportEmails(opts = {}) {
 module.exports = {
   sweepReportEmails, getConfig, saveConfig, recipientsFor, DEFAULT_CONFIG,
   FIXED_META, CUTOFF_REPORTS, CHOOSABLE_KEYS, CADENCE_OPTIONS,
+  cadenceForKey, buildForKey,
 };
