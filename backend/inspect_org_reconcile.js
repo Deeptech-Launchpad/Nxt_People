@@ -36,7 +36,7 @@ nodemailer.createTransport = () => ({
 
 const pool = require('./db');
 const { zohoApi } = require('./utils/zoho');
-const { lopDaysForRange, absentDaysForRange, loadHolidaysAndRules } = require('./routes/payroll');
+const { lopDaysForRange, absentDaysForRange, loadHolidaysAndRules, listWorkingDays } = require('./routes/payroll');
 
 const START = process.argv[2];
 const END = process.argv[3];
@@ -47,6 +47,12 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(START || '') || !/^\d{4}-\d{2}-\d{2}$/.test(END 
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const TOLERANCE = 0.05;
+/* Leave totals should agree to the rounding, so 0.05 is right for them. LOP
+ * cannot: this system decides a day is present/late/half-day/absent, while
+ * Zoho grades the same day on a sliding scale. Even counting whole days on
+ * working days only, a day one side calls half and the other calls present
+ * legitimately differs by half a day. Anything past that is worth a look. */
+const LOP_TOLERANCE = 0.5;
 const notDash = v => (v === '-' || v === '' || v === null || v === undefined) ? null : v;
 const zohoDMY = iso => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`;
 const fromZohoDate = (s) => {
@@ -181,6 +187,15 @@ async function holidaysAndRulesFor(startDate, endDate) {
 
     const issues = { attendance: [], leave: [], regularization: [], lop: null };
 
+    /* The window this person could actually be judged on. lopDaysForRange and
+     * absentDaysForRange trust the caller to ask only about days the employee
+     * existed here — the real payroll code (computeDraftPayslip) clamps the
+     * same way before calling them. Without this, a person who joined in July
+     * read as 156 days of LOP over a January-to-September range. */
+    const rangeStart = emp.joined && emp.joined > START ? emp.joined : START;
+    const rangeEnd = emp.exited && emp.exited < END ? emp.exited : END;
+    const onRollsInRange = rangeStart <= rangeEnd;
+
     // ── 1. Attendance: Zoho punch, no local row ──────────────────────────
     let zohoAtt;
     try { zohoAtt = await zohoAttendanceWindow(emp.code, START, END); }
@@ -191,6 +206,28 @@ async function holidaysAndRulesFor(startDate, endDate) {
         WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date`,
       [emp.id, START, END])).rows;
     const hereDates = new Set(hereAttRows.map(r => r.date));
+
+    /* Zoho's absence, counted only where this system could possibly agree.
+     *
+     * Two corrections, both learned the hard way from this comparison
+     * reporting 47 of 57 people as disagreeing when they did not:
+     *
+     * WORKING DAYS ONLY. Zoho marks a day Absent without knowing this
+     * organization's holiday calendar. absentDaysForRange only ever counts
+     * days the calendar here calls working days, so counting a Zoho absence
+     * on a company holiday put every single employee 1-3 days apart for the
+     * same handful of holidays.
+     *
+     * WHOLE DAYS ONLY. Zoho accumulates FRACTIONAL absence — "0.88 day
+     * Absent" for somebody who left early — and this system has no such
+     * concept: a short day is still classified present, contributing zero.
+     * Summing Zoho's fractions against a count of whole absent days compares
+     * two different models and can never reconcile, so the fractions are
+     * dropped and only whole-day absences are compared. */
+    const zohoWorkingDates = onRollsInRange
+      ? new Set(listWorkingDays(new Date(rangeStart), new Date(rangeEnd), holMap, rules, null)
+          .map(d => d.toLocaleDateString('en-CA')))
+      : new Set();
 
     let zohoAbsentDays = 0;
     if (zohoAtt && typeof zohoAtt === 'object' && !('error' in zohoAtt) && !('errors' in zohoAtt)) {
@@ -203,7 +240,8 @@ async function holidaysAndRulesFor(startDate, endDate) {
         if (hasPunch && !hereDates.has(iso)) {
           issues.attendance.push(`${iso}  Zoho: ${notDash(rec.FirstIn) || '-'} -> ${notDash(rec.LastOut) || '-'}  status="${status}"  (no row here)`);
         }
-        zohoAbsentDays += absentFraction(status);
+        if (!zohoWorkingDates.has(iso)) continue;
+        if (absentFraction(status) >= 1) zohoAbsentDays += 1;
       }
     }
 
@@ -249,22 +287,13 @@ async function holidaysAndRulesFor(startDate, endDate) {
     }
 
     // ── 4. LOP: local vs Zoho-equivalent ─────────────────────────────────
-    // lopDaysForRange/absentDaysForRange trust the caller to only ask about
-    // days the employee actually existed here -- the real payroll code
-    // (computeDraftPayslip in routes/payroll.js) clamps to joining/exit
-    // before ever calling them. Skipping that clamp here counted every
-    // working day before somebody's joining date as an absence, which is
-    // how a person who joined in July read as 156 days of LOP over a
-    // Jan-to-September range.
-    const rangeStart = emp.joined && emp.joined > START ? emp.joined : START;
-    const rangeEnd = emp.exited && emp.exited < END ? emp.exited : END;
-    if (rangeStart <= rangeEnd) {
+    if (onRollsInRange) {
       try {
         const lop = await lopDaysForRange(emp.id, new Date(rangeStart), new Date(rangeEnd), holMap, rules, pool);
         const absent = await absentDaysForRange(emp.id, new Date(rangeStart), new Date(rangeEnd), holMap, rules, pool);
         const hereLop = round2(lop + absent);
         const zohoLop = round2((zohoUnpaidByCode.get(emp.code) || 0) + zohoAbsentDays);
-        if (Math.abs(hereLop - zohoLop) > TOLERANCE) {
+        if (Math.abs(hereLop - zohoLop) > LOP_TOLERANCE) {
           issues.lop = `here=${hereLop}d (lop=${round2(lop)}+absent=${round2(absent)})  zoho-equivalent=${zohoLop}d (unpaid=${zohoUnpaidByCode.get(emp.code) || 0}+absentstatus=${round2(zohoAbsentDays)})`;
         }
       } catch (err) {
