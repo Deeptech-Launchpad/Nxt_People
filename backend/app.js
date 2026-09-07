@@ -78,6 +78,26 @@ const CLOUDFLARE_IPS = [
 ];
 app.set('trust proxy', ['loopback', 'uniquelocal', ...CLOUDFLARE_IPS]);
 
+/* Trusting Cloudflare's ranges above still resolved req.ip to a Cloudflare
+ * address in production — proof the VPS system nginx in front of us is not
+ * appending to whatever X-Forwarded-For Cloudflare set, but replacing it with
+ * its own single value, so the real visitor IP never reaches this app in that
+ * header at all. No trust-proxy configuration on our side can recover a value
+ * that was already discarded one hop upstream.
+ *
+ * Cloudflare also sets CF-Connecting-IP independently of X-Forwarded-For —
+ * to the real visitor, always, regardless of what any downstream proxy does
+ * with the other header — so this reads that instead wherever it is present,
+ * before anything downstream (the rate limiters, the audit log, attendance's
+ * geofence IP check) ever looks at req.ip. Absent the header — local dev, a
+ * direct request, anything not actually behind Cloudflare — req.ip resolves
+ * exactly as the trust-proxy setting above already decides. */
+app.use((req, res, next) => {
+  const cfIp = req.headers['cf-connecting-ip'];
+  if (cfIp) Object.defineProperty(req, 'ip', { value: cfIp, configurable: true, enumerable: true });
+  next();
+});
+
 // Sentry's request handler must be the FIRST middleware on the app — only when enabled.
 if (sentryEnabled && Sentry.Handlers?.requestHandler) {
   app.use(Sentry.Handlers.requestHandler());
