@@ -23,6 +23,10 @@ export function LocaleProvider({ children }) {
   const [locale, setLocale] = useState(DEFAULTS);
 
   useEffect(() => {
+    // Mounted for the whole app, /login included — calling this while logged
+    // out 401s, and that 401 triggers api.js's hard redirect to /login, which
+    // reloads the whole app and fires this same call again. Infinite loop.
+    if (!localStorage.getItem('nxt_token')) return;
     api.get('/org-details/policy')
       .then(r => {
         const l = r.data?.data?.locale || {};

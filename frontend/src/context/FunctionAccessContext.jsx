@@ -39,7 +39,13 @@ export const FunctionAccessProvider = ({ children }) => {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    // Mounted for the whole app, /login included — calling this while logged
+    // out 401s, and that 401 triggers api.js's hard redirect to /login, which
+    // reloads the whole app and fires this same call again. Infinite loop.
+    if (!localStorage.getItem('nxt_token')) { setLoading(false); return; }
+    reload();
+  }, [reload]);
 
   const can = useCallback(
     key => (functions ? !!functions[key]?.allowed : true),

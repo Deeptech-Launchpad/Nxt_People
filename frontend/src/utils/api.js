@@ -37,6 +37,14 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
 
+    // Already on the login page — redirecting there again is a full reload of
+    // an already-unauthenticated app, which just re-triggers whatever fired
+    // this 401 in the first place. A provider mounted for the whole app that
+    // forgets to check for a token first turns that into an infinite loop.
+    if (window.location.pathname === '/login') {
+      return Promise.reject(err);
+    }
+
     if (err.response?.status === 401 && !original._retry) {
       if (isRefreshing) {
         // Queue this request until the refresh finishes
