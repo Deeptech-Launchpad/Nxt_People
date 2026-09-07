@@ -146,7 +146,7 @@ async function rangeForKey(key, cfg, dateYmd) {
   const cadence = cadenceForKey(key, cfg);
   return cadence === 'monthlyCutoff'
     ? schedule.monthToCutoffRange(dateYmd)
-    : await schedule.rangeForCadence(cadence, dateYmd);
+    : await schedule.rangeForCadence(cadence, dateYmd, { includeNonWorkingDays: cfg[key]?.includeNonWorkingDays });
 }
 
 /** Builds one report's {subject, text, html} for a given "today" — the same
@@ -206,7 +206,7 @@ async function sweepReportEmails(opts = {}) {
       const reportCfg = cfg[key];
       const due = await schedule.isDueForCadence(meta.cadence, today, { includeNonWorkingDays: reportCfg.includeNonWorkingDays });
       if (!due) continue;
-      const range = await schedule.rangeForCadence(meta.cadence, today);
+      const range = await schedule.rangeForCadence(meta.cadence, today, { includeNonWorkingDays: reportCfg.includeNonWorkingDays });
       summary.push(await sendIfConfigured(key, cfg, () => BUILDERS[key](range, customFor(reportCfg)), range));
     } catch (err) {
       logger.error({ err: err.message, key }, '[reportEmails] fixed-cadence report failed');
@@ -258,7 +258,7 @@ async function sweepReportEmails(opts = {}) {
       const cadence = CADENCE_OPTIONS.includes(reportCfg.cadence) ? reportCfg.cadence : 'weekly';
       const due = await schedule.isDueForCadence(cadence, today, { includeNonWorkingDays: reportCfg.includeNonWorkingDays });
       if (!due) continue;
-      const range = await schedule.rangeForCadence(cadence, today);
+      const range = await schedule.rangeForCadence(cadence, today, { includeNonWorkingDays: reportCfg.includeNonWorkingDays });
       summary.push(await sendIfConfigured(key, cfg, () => BUILDERS[key](range, customFor(reportCfg)), range));
     } catch (err) {
       logger.error({ err: err.message, key }, '[reportEmails] widened-catalog report failed');

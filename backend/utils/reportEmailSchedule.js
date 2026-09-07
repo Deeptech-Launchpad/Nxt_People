@@ -10,7 +10,11 @@
  *
  *   daily    due on any working day. Skipped entirely on a weekend or
  *            holiday — there is nothing to report about a day nobody was
- *            expected in. Content is YESTERDAY.
+ *            expected in. Content is the most recent working day before
+ *            today — not literally calendar-yesterday, which on a Monday is
+ *            Sunday (nobody expected in, everyone reads as "absent") and
+ *            which, by the time it IS a working day again, has already
+ *            moved past Friday without ever reporting on it.
  *
  *   weekly   due on the first working day on/after the Monday that starts
  *            THIS week — Monday normally, walked forward a day at a time
@@ -87,6 +91,24 @@ function priorMonthRange(dateYmd) {
   return { start, end };
 }
 
+/** The most recent working day strictly before `dateYmd` — what "yesterday"
+ *  actually means for a report whose whole point is a working day's
+ *  attendance. Plain calendar-yesterday reported Sunday's attendance every
+ *  Monday (everyone "absent" because nobody was expected in), and would have
+ *  reported Friday's attendance NEVER — by Monday, calendar-yesterday has
+ *  already moved past it to Sunday. Walking back to the last real working
+ *  day fixes both: Monday's report covers Friday, and every working day is
+ *  reported on exactly once, on the next working day after it. */
+async function lastWorkingDayBefore(dateYmd, { includeNonWorkingDays = false } = {}) {
+  if (includeNonWorkingDays) return addDays(dateYmd, -1);
+  let d = addDays(dateYmd, -1);
+  for (let i = 0; i < 10; i++) {
+    if (await isWorkingDay(d)) return d;
+    d = addDays(d, -1);
+  }
+  return addDays(dateYmd, -1); // guards against a misconfigured all-holiday calendar
+}
+
 /** One entry point for any report's cadence, fixed or admin-chosen:
  *  'daily' | 'weekly' | 'monthly'. Used by the widened catalog (Headcount,
  *  Addition Trend, Attrition Trend, Experience & Exit), whose cadence is a
@@ -97,8 +119,11 @@ async function isDueForCadence(cadence, dateYmd, opts = {}) {
   if (cadence === 'monthly') return dateYmd === (await genericMonthlyDueDate(dateYmd, opts));
   return false;
 }
-async function rangeForCadence(cadence, dateYmd) {
-  if (cadence === 'daily') return { start: addDays(dateYmd, -1), end: addDays(dateYmd, -1) };
+async function rangeForCadence(cadence, dateYmd, opts = {}) {
+  if (cadence === 'daily') {
+    const day = await lastWorkingDayBefore(dateYmd, opts);
+    return { start: day, end: day };
+  }
   if (cadence === 'weekly') return weekJustClosedRange(dateYmd);
   if (cadence === 'monthly') return priorMonthRange(dateYmd);
   return { start: dateYmd, end: dateYmd };
@@ -153,4 +178,5 @@ module.exports = {
   mondayOfWeek, weekJustClosedRange, monthlyCutoffDate, monthToCutoffRange,
   holidaysInRange, isWorkingDay, todayYmd, TZ,
   isDueForCadence, rangeForCadence, genericMonthlyDueDate, priorMonthRange,
+  lastWorkingDayBefore,
 };

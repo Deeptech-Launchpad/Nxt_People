@@ -146,6 +146,8 @@ router.get('/:key/preview', async (req, res) => {
           subject: (custom.subject || '').trim() || 'Regularization Requests Pending Your Approval',
           text: 'Nothing is pending for you right now, so there is nothing to preview — this report only ever mails a recipient who actually has something waiting.',
           html: '<p style="font-family:sans-serif;font-size:14px;color:#334155;">Nothing is pending for you right now, so there is nothing to preview — this report only ever mails a recipient who actually has something waiting.</p>',
+          defaultSubject: 'Regularization Requests Pending Your Approval',
+          defaultBody: 'These are due for approval or rejection today.',
         };
       }
     } else {

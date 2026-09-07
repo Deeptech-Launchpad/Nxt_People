@@ -61,7 +61,10 @@ function wrap({ title, periodLabel, introLine, rows = [], table = '', linkPath, 
   const text = `${title}\n${periodLabel}\n\n${effectiveIntro ? effectiveIntro + '\n\n' : ''}`
     + rows.map(([l, v]) => `${l}: ${v}`).join('\n')
     + (linkPath ? `\n\nOpen in NxtPeople: ${APP_URL}${linkPath}` : '');
-  return { subject, text, html };
+  // The built-in wording BEFORE any custom override — so the Scheduled
+  // Reports screen can show an admin the real, current subject/message to
+  // edit, rather than an empty box that only hints at what the default is.
+  return { subject, text, html, defaultSubject: title, defaultBody: introLine || '' };
 }
 
 function detailTable(headers, rows) {

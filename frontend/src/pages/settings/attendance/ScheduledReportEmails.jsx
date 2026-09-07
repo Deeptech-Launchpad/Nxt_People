@@ -98,7 +98,18 @@ export default function ScheduledReportEmails() {
   const openContent = (key) => {
     setContentPopup({ key, loading: true, preview: null, subject: cfg[key].customSubject || '', body: cfg[key].customBody || '', testEmail: '', testBusy: false });
     api.get(`/report-email-config/${key}/preview`)
-      .then(r => setContentPopup(v => (v && v.key === key ? { ...v, loading: false, preview: r.data.data } : v)))
+      .then(r => setContentPopup(v => {
+        if (!v || v.key !== key) return v;
+        const preview = r.data.data;
+        // Nothing saved yet — show the real, current wording so editing means
+        // "change this text", not "write it from nothing into a box that only
+        // hints at what the default looks like".
+        return {
+          ...v, loading: false, preview,
+          subject: v.subject || preview.defaultSubject || '',
+          body: v.body || preview.defaultBody || '',
+        };
+      }))
       .catch(err => { toast.error(err.response?.data?.message || 'Could not load a preview'); setContentPopup(null); });
   };
 
@@ -383,21 +394,22 @@ export default function ScheduledReportEmails() {
 
             <div className="px-6 py-5 space-y-5 overflow-y-auto">
               <div>
-                <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Custom subject</label>
+                <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Subject</label>
                 <input
                   value={contentPopup.subject}
                   onChange={e => setContentPopup(v => ({ ...v, subject: e.target.value }))}
-                  placeholder={`Default: "${contentPopup.preview?.subject || label(contentPopup.key)}"`}
+                  placeholder={contentPopup.loading ? 'Loading the current subject…' : label(contentPopup.key)}
                   className="w-full border border-slate-300 rounded-md px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
                 />
+                <p className="text-[12.5px] text-slate-500 mt-1.5">This is the actual current subject — edit it directly.</p>
               </div>
               <div>
-                <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Custom message</label>
+                <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Message</label>
                 <textarea
                   rows={4}
                   value={contentPopup.body}
                   onChange={e => setContentPopup(v => ({ ...v, body: e.target.value }))}
-                  placeholder="Leave blank to use the built-in wording shown in the preview below."
+                  placeholder={contentPopup.loading ? 'Loading the current message…' : ''}
                   className="w-full border border-slate-300 rounded-md px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
                 />
                 <p className="text-[12.5px] text-slate-500 mt-1.5">
