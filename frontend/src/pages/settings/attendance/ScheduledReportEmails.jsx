@@ -96,7 +96,7 @@ export default function ScheduledReportEmails() {
   };
 
   const openContent = (key) => {
-    setContentPopup({ key, loading: true, preview: null, subject: cfg[key].customSubject || '', body: cfg[key].customBody || '' });
+    setContentPopup({ key, loading: true, preview: null, subject: cfg[key].customSubject || '', body: cfg[key].customBody || '', testEmail: '', testBusy: false });
     api.get(`/report-email-config/${key}/preview`)
       .then(r => setContentPopup(v => (v && v.key === key ? { ...v, loading: false, preview: r.data.data } : v)))
       .catch(err => { toast.error(err.response?.data?.message || 'Could not load a preview'); setContentPopup(null); });
@@ -109,6 +109,16 @@ export default function ScheduledReportEmails() {
       .then(() => { toast.success('Saved'); openContent(contentPopup.key); }) // reload the preview with the new wording
       .catch(err => toast.error(err.response?.data?.message || 'Could not save'))
       .finally(() => setBusy(false));
+  };
+
+  const sendTest = () => {
+    if (!contentPopup || !contentPopup.testEmail.trim()) return;
+    const { key, testEmail } = contentPopup;
+    setContentPopup(v => ({ ...v, testBusy: true }));
+    api.post(`/report-email-config/${key}/test`, { to: testEmail.trim() })
+      .then(r => toast.success(r.data.message || `Test sent to ${testEmail.trim()}`))
+      .catch(err => toast.error(err.response?.data?.message || 'Could not send the test'))
+      .finally(() => setContentPopup(v => (v ? { ...v, testBusy: false } : v)));
   };
 
   if (!cfg) return <Spinner />;
@@ -419,6 +429,30 @@ export default function ScheduledReportEmails() {
                 ) : (
                   <p className="text-[13.5px] text-slate-500">Preview unavailable.</p>
                 )}
+              </div>
+
+              <div className="border-t border-slate-200 pt-4">
+                <p className="text-[13px] font-medium text-slate-700 mb-1.5">Send a test email now</p>
+                <p className="text-[12.5px] text-slate-500 mb-2">
+                  Sends this exact email — subject marked [TEST], same preview, same attachment — to one address right
+                  now. Doesn't wait for the schedule and doesn't need this report switched on.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={contentPopup.testEmail}
+                    onChange={e => setContentPopup(v => ({ ...v, testEmail: e.target.value }))}
+                    placeholder="you@company.com"
+                    className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                  />
+                  <button
+                    onClick={sendTest}
+                    disabled={contentPopup.testBusy || !contentPopup.testEmail.trim()}
+                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-white px-4 py-2 rounded text-[13.5px] font-medium whitespace-nowrap"
+                  >
+                    {contentPopup.testBusy ? 'Sending…' : 'Send Test'}
+                  </button>
+                </div>
               </div>
             </div>
 

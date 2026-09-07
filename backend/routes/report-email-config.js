@@ -15,6 +15,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
 const { serverError } = require('../utils/serverError');
+const logger = require('../logger');
 const {
   getConfig, saveConfig, DEFAULT_CONFIG, CHOOSABLE_KEYS, CADENCE_OPTIONS,
   recipientsFor, buildForKey, rangeForKey,
@@ -161,6 +162,65 @@ router.get('/:key/preview', async (req, res) => {
       }
     }
     res.json({ success: true, data: built });
+  } catch (err) { serverError(res, err); }
+});
+
+// Send one real email, right now, to exactly the address given — bypasses
+// enabled/disabled and the schedule entirely, so testing never has to wait
+// for the next cron run or mean turning the report on for real. Subject is
+// prefixed [TEST] so it can never be mistaken for the genuine scheduled
+// mail in an inbox. Still goes through mailer.js's sendMail(), so
+// EMAIL_DISABLED / EMAIL_ALLOWLIST on this environment still apply exactly
+// as they do for every other email this app sends.
+router.post('/:key/test', authorize(...WRITE), async (req, res) => {
+  try {
+    const { key } = req.params;
+    if (!KNOWN_KEYS.includes(key)) return res.status(404).json({ success: false, message: 'Unknown report' });
+    const to = String(req.body?.to || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      return res.status(400).json({ success: false, message: 'Enter a valid email address to send the test to' });
+    }
+    const cfg = await getConfig();
+    const today = todayYmd();
+    const { sendMail } = require('../utils/mailer');
+
+    let built, attachments;
+    if (key === 'regularizationReminder') {
+      const custom = { subject: cfg.regularizationReminder.customSubject, body: cfg.regularizationReminder.customBody };
+      built = await contentBuilders.regularizationReminderEmail(req.user._id, isFullAccess(req.user.role), custom)
+        || {
+          subject: (custom.subject || '').trim() || 'Regularization Requests Pending Your Approval',
+          text: 'Nothing is pending for you right now, so there is nothing real to send as a test.',
+          html: '<p style="font-family:sans-serif;font-size:14px;color:#334155;">Nothing is pending for you right now, so there is nothing real to send as a test.</p>',
+        };
+    } else {
+      built = await buildForKey(key, cfg, today);
+      if (ROW_SOURCES[key]) {
+        try {
+          const range = await rangeForKey(key, cfg, today);
+          const { buildExport } = require('../utils/reportEmailExport');
+          const exported = await buildExport(key, range);
+          if (exported) {
+            attachments = [{
+              filename: exported.filename, content: exported.buffer,
+              contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            }];
+          }
+        } catch (err) {
+          logger.error({ err: err.message, key }, '[reportEmails] test-send attachment failed, sending without it');
+        }
+      }
+    }
+
+    await sendMail({
+      to, subject: `[TEST] ${built.subject}`, text: built.text, html: built.html,
+      ...(attachments ? { attachments } : {}),
+    });
+    await logAudit(req, {
+      action: 'SEND_TEST', resource: 'Scheduled report emails', resourceId: key,
+      changes: { summary: `Test email sent to ${to}` },
+    });
+    res.json({ success: true, message: `Test email sent to ${to}` });
   } catch (err) { serverError(res, err); }
 });
 
