@@ -57,12 +57,24 @@ const hasRealTimestamp = (s) => {
   const v = notDash(s);
   return !!v && /^\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}\s*(AM|PM)?$/i.test(String(v).trim());
 };
-const isAbsence = (status, hasPunch) => !hasPunch && /\babsent\b/i.test(status);
-const absentFraction = (status, hasPunch) => {
-  if (!isAbsence(status, hasPunch)) return 0;
-  const m = /(\d+(?:\.\d+)?)\s*day\s*Absent/i.exec(status);
-  if (m) return parseFloat(m[1]);
-  return /half/i.test(status) ? 0.5 : 1;
+/* How much of a day Zoho itself calls absence.
+ *
+ * Zoho writes the day's verdict at the END of the status, after whatever was
+ * granted on it — "Absent", "0.5 day Absent", "Casual Leave(Second Half),
+ * 0.5 day Absent" — the same shape zoho_restage.js's agrees() already parses.
+ *
+ * This deliberately does NOT require the absence of a punch. Zoho marks a day
+ * Absent even when it holds a check-in, if that check-in never became a
+ * complete day ("29/08/2026 09:56 AM -> -  status=Absent"), and this system
+ * counts that same day as absence too, because a day is only attended when
+ * both punches are there. Requiring !hasPunch here scored Zoho at zero for
+ * every one of those days and reported a disagreement where the two systems
+ * were in fact saying the same thing. */
+const absentFraction = (status) => {
+  const tail = String(status ?? '').split(',').pop().trim();
+  const m = /^(?:([\d.]+)\s*day\s+)?absent$/i.exec(tail);
+  if (!m) return 0;
+  return m[1] ? parseFloat(m[1]) : 1;
 };
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -191,7 +203,7 @@ async function holidaysAndRulesFor(startDate, endDate) {
         if (hasPunch && !hereDates.has(iso)) {
           issues.attendance.push(`${iso}  Zoho: ${notDash(rec.FirstIn) || '-'} -> ${notDash(rec.LastOut) || '-'}  status="${status}"  (no row here)`);
         }
-        zohoAbsentDays += absentFraction(status, hasPunch);
+        zohoAbsentDays += absentFraction(status);
       }
     }
 
