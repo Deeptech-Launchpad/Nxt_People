@@ -53,6 +53,9 @@ const TOLERANCE = 0.05;
  * working days only, a day one side calls half and the other calls present
  * legitimately differs by half a day. Anything past that is worth a look. */
 const LOP_TOLERANCE = 0.5;
+// Matches how absentDaysForRange draws the line: local midnight, today itself
+// not yet judged.
+const todayIso = new Date().toLocaleDateString('en-CA');
 const notDash = v => (v === '-' || v === '' || v === null || v === undefined) ? null : v;
 const zohoDMY = iso => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`;
 const fromZohoDate = (s) => {
@@ -224,9 +227,15 @@ async function holidaysAndRulesFor(startDate, endDate) {
      * Summing Zoho's fractions against a count of whole absent days compares
      * two different models and can never reconcile, so the fractions are
      * dropped and only whole-day absences are compared. */
+    /* Today is excluded, because absentDaysForRange excludes it: a day still
+     * being lived is not judged here until it is over. Zoho has no such rule
+     * and calls it Absent from midnight, which added exactly one day to the
+     * Zoho side for everybody who had not finished today's punch yet — the
+     * off-by-one that ran down most of this report. */
     const zohoWorkingDates = onRollsInRange
       ? new Set(listWorkingDays(new Date(rangeStart), new Date(rangeEnd), holMap, rules, null)
-          .map(d => d.toLocaleDateString('en-CA')))
+          .map(d => d.toLocaleDateString('en-CA'))
+          .filter(iso => iso < todayIso))
       : new Set();
 
     let zohoAbsentDays = 0;
