@@ -42,6 +42,9 @@ const YEAR = parseInt(process.argv[2], 10) || new Date().getFullYear();
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const TOLERANCE = 0.05;
 const pad = (s, n) => String(s ?? '').padEnd(n);
+// availableFor() returns null for these two, so leave_balances is never
+// consulted for them and a booked figure of 0 carries no consequence.
+const NOT_ENFORCED_BY_BALANCE = new Set(['permission', 'unpaid']);
 
 const LEAVE_TYPES = {
   'permission': 'permission', 'casual leave': 'casual', 'casual': 'casual',
@@ -162,14 +165,24 @@ async function zohoLeaveSweep() {
   console.log('\n══════════════════════════════════════════════════════════');
   console.log('  2. BOOKED figure vs leave actually taken (both from here)');
   console.log('══════════════════════════════════════════════════════════\n');
-  console.log('  Where booked is LOWER than taken, the stored balance stopped');
-  console.log('  counting that person\'s leave — they can book days they have');
-  console.log('  already used.\n');
+  /* This section used to warn that a low `booked` let people re-book leave
+   * they had already used. That was checked afterwards and is NOT true for
+   * the two types it actually fires on: availableFor() in utils/leaveBalance.js
+   * returns null for BOTH permission and unpaid by design — permission is
+   * hours against a monthly cap enforced elsewhere, and unpaid has no ceiling
+   * at all — so neither reads leave_balances and `booked` is not the
+   * enforcement path for them. The warning stays only for the types that DO
+   * read that table. */
+  console.log('  For casual, sick, earned and comp-off, booked lower than taken means');
+  console.log('  the stored balance stopped counting that person\'s leave.\n');
+  console.log('  For PERMISSION and UNPAID it means nothing: availableFor() returns');
+  console.log('  null for both by design, so leave_balances is not consulted and');
+  console.log('  booked=0 on those rows is expected, not a fault.\n');
   for (const g of bookedGaps) {
     const u = g.type === 'permission' ? 'h' : 'd';
     console.log(`  ${pad(g.code, 14)}${pad(names.get(g.code) || '', 26)}${pad(g.type, 11)}`
       + `booked=${g.booked}${u}  actually taken=${g.taken}${u}  available shows ${g.available}${u}`
-      + `${g.booked < g.taken ? '   <-- under-counted' : ''}`);
+      + `${g.booked < g.taken && !NOT_ENFORCED_BY_BALANCE.has(g.type) ? '   <-- under-counted' : ''}`);
   }
   if (!bookedGaps.length) console.log('  none — every stored booked figure matches the leave on file.');
 
