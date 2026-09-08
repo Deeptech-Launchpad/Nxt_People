@@ -131,7 +131,8 @@ async function zohoAttendanceWindow(code, start, end) {
   const policy = resolvePolicy(cfg);
   console.log(`  policy: mode=${policy.mode} punchIsEnough=${policy.punchIsEnough} tolerance=${policy.toleranceMinutes}min\n`);
 
-  const candidates = []; // { emp, date, current, proposed, verdict }
+  const candidates = [];  // { emp, date, current, proposed, verdict }
+  const implausible = []; // Zoho closed the day with the NEXT day's punch
 
   for (const token of CODES) {
     const emp = (await pool.query(
@@ -183,6 +184,24 @@ async function zohoAttendanceWindow(code, start, end) {
         else leavePortion = Math.max(leavePortion, l.is_half_day ? 0.5 : 1);
       }
 
+      /* An implausibly long day is Zoho's missing-checkout artifact, not a day
+       * somebody worked.
+       *
+       * When a person forgets to check out, Zoho fills LastOut with their NEXT
+       * check-in — so the day comes back as "04:06 to 04:06 the following
+       * morning", exactly 24 hours. Seen live on Deepa Ganesan 2026-09-07, and
+       * on three rows an earlier batch wrote before this guard existed
+       * (23.92h, 23.97h, 23.97h). Importing it hands somebody a 24-hour
+       * payable day and inflates overtime off a punch that never happened.
+       *
+       * cappedHours does not catch these: it caps reported hours at the span,
+       * and here the span itself is the wrong number. */
+      if (checkOut && checkOut.slice(0, 10) !== row.date) {
+        implausible.push({ emp, date: row.date, checkIn, checkOut, hours: Number(hours.toFixed(2)),
+          zohoStatus: String(zRec.Status ?? '').trim() });
+        continue;
+      }
+
       const verdict = classifyDay({
         workedHours: hours, hasPunch: true, leavePortion, permissionHours,
         onDuty: false, lateMinutes, graceMinutes: Number(grace), cfg, shiftHours,
@@ -212,6 +231,21 @@ async function zohoAttendanceWindow(code, start, end) {
     console.log(`      (Zoho said "${c.zohoStatus}")\n`);
   }
   if (!candidates.length) console.log('  none — nothing to correct.\n');
+
+  if (implausible.length) {
+    console.log(`──────────────────────────────────────────────────────────`);
+    console.log(`  ${implausible.length} day(s) REFUSED — Zoho closed them with the next day's punch`);
+    console.log(`──────────────────────────────────────────────────────────\n`);
+    console.log('  Zoho fills LastOut with the following check-in when somebody');
+    console.log('  forgets to check out, so the day reads as ~24 hours. Importing');
+    console.log('  that would hand over a payable day nobody worked. These need a');
+    console.log('  regularization with the real checkout time instead.\n');
+    for (const r of implausible) {
+      console.log(`  ${pad(r.emp.code, 14)}${pad(r.emp.name.slice(0, 22), 24)}${r.date}`
+        + `   Zoho: ${r.checkIn} -> ${r.checkOut}  (${r.hours}h)  "${r.zohoStatus}"`);
+    }
+    console.log('');
+  }
 
   if (!APPLY) {
     console.log('══════════════════════════════════════════════════════════');
