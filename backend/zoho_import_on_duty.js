@@ -76,8 +76,9 @@ async function patiently(fn) {
        FROM employees WHERE employee_id ~ '^ANXT' AND status = 'active' ORDER BY employee_id`)).rows;
   console.log(`Checking ${emps.length} active employee(s), one Zoho call each...\n`);
 
-  const toImport = [];   // client visit days with nothing covering them
+  const toImport = [];   // whole-day client visits with nothing covering them
   const covered = [];    // client visit days already accounted for
+  const partials = [];   // part client visit, part absence — reported, never imported
   const others = [];     // comp off / combined leave days, reported only
   let checked = 0;
 
@@ -122,8 +123,24 @@ async function patiently(fn) {
         others.push({ emp, iso, status, hasLeave, kind: isCompOff ? 'Compensatory Off' : 'combined leave' });
         continue;
       }
-      const row = { emp, iso, status, hasLeave, hasOnDuty };
-      if (hasOnDuty.length || hasLeave.length) covered.push(row); else toImport.push(row);
+
+      /* Whole-day client visits only.
+       *
+       * Zoho grades a day on a sliding scale, and several of these are part
+       * client visit and part absence — "Client visit(First Half), 0.5 day
+       * Absent". on_duty_requests written as unit='days' excludes the WHOLE
+       * day from absence, so importing one of those would quietly cancel the
+       * half-day absence Zoho recorded and credit half a day nobody worked.
+       *
+       * The table does carry unit='hours' with a start and end time, but
+       * Zoho's fraction does not say WHICH hours, and inventing a window to
+       * fit a number is how a guess becomes a record. So a partial day is
+       * reported for somebody to decide on, never imported. */
+      const partial = /\d+(?:\.\d+)?\s*day\s+absent/i.test(status);
+      const row = { emp, iso, status, hasLeave, hasOnDuty, partial };
+      if (hasOnDuty.length || hasLeave.length) covered.push(row);
+      else if (partial) partials.push(row);
+      else toImport.push(row);
     }
   }
 
@@ -138,6 +155,17 @@ async function patiently(fn) {
     console.log(`  ${pad(r.emp.code, 14)}${pad(r.emp.name.slice(0, 24), 26)}${r.iso}   already covered by `
       + `${r.hasOnDuty.length ? 'an on-duty record' : `approved ${r.hasLeave.map(l => l.leave_type).join('/')} leave`} — skipped`);
   }
+
+  console.log(`\n──────────────────────────────────────────────────────────`);
+  console.log(`  Part client visit, part absence: ${partials.length} day(s) — NOT imported`);
+  console.log(`──────────────────────────────────────────────────────────\n`);
+  console.log('  A whole-day on-duty record would excuse the whole day and cancel');
+  console.log('  the absence Zoho recorded on it. Zoho does not say which hours');
+  console.log('  the visit covered, so these need a person to decide.\n');
+  for (const r of partials) {
+    console.log(`  ${pad(r.emp.code, 14)}${pad(r.emp.name.slice(0, 24), 26)}${r.iso}   Zoho: "${r.status}"`);
+  }
+  if (!partials.length) console.log('  none.');
 
   console.log(`\n──────────────────────────────────────────────────────────`);
   console.log(`  Reported only, never imported: ${others.length} day(s)`);
