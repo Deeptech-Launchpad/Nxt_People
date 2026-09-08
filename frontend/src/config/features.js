@@ -12,6 +12,17 @@
 // for testing without advertising it to everyone.
 export const PAYROLL_ENABLED = false;
 
+// The admin half of payroll IS live: running payroll, salary structures,
+// templates, increments, loans, adjustments, tax slabs and the compliance
+// screens. PAYROLL_ENABLED above stays false, so the employee-facing way in
+// remains hidden — no Payroll icon for a team member, no "Access my payroll"
+// button, no Payslips tab. Two flags rather than one because the module is
+// being switched on for the people who administer it before the people it
+// pays ever see it.
+//
+// Flip PAYROLL_ENABLED to true when employees should see their own payslips.
+export const PAYROLL_ADMIN_ENABLED = true;
+
 // Time Tracker and Performance are not in use for this org either. Same
 // treatment as payroll above: every way in is hidden — the sidebar icon, the
 // Time Logs tab on the home overview, the Topbar sections, and the SmartChat

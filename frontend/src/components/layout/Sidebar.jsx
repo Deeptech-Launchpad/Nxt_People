@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { isApprover, isFullAccess } from '../../utils/roles';
-import { PAYROLL_ENABLED, TIME_TRACKER_ENABLED, PERFORMANCE_ENABLED } from '../../config/features';
+import { PAYROLL_ADMIN_ENABLED, TIME_TRACKER_ENABLED, PERFORMANCE_ENABLED } from '../../config/features';
 import {
   Home, CalendarCheck, Clock, CalendarDays, Trophy,
   LayoutGrid, PieChart, Users, AppWindow, Briefcase, Wallet
@@ -14,6 +14,11 @@ import {
 // /my-apps itself carries no role restriction (App.jsx), unlike
 // /api-connections which is admin/director-only.
 const OPERATIONS_ROLES = ['admin', 'director', 'hr_admin'];
+
+// The same roles every /payroll admin route is gated to in App.jsx. Named
+// separately from OPERATIONS_ROLES so changing who administers payroll does
+// not silently change who sees Operations.
+const PAYROLL_ADMIN_ROLES = ['admin', 'director', 'hr_admin'];
 
 const NAV_ITEMS = [
   { to: '/',                         icon: Home,         label: 'Home',         end: true,
@@ -27,9 +32,11 @@ const NAV_ITEMS = [
     matches: p => p.startsWith('/time-tracker'), hidden: !TIME_TRACKER_ENABLED },
   { to: '/leave-tracker',    icon: CalendarDays, label: 'Leave\nTracker',
     matches: p => p.startsWith('/leave-tracker') || p === '/leave' || p.startsWith('/wfh') || p.startsWith('/comp-off') || p.startsWith('/leave-calendar') || p.startsWith('/leave-encashment') },
-  // Payroll is built but not live for this org — see config/features.
-  { to: '/payroll/my',       icon: Wallet,       label: 'Payroll',
-    matches: p => p.startsWith('/payroll'), hidden: !PAYROLL_ENABLED },
+  // Admin payroll only — see config/features. Points at the run screen, not
+  // /payroll/my: the employee-facing half is still switched off, and this
+  // icon is only shown to the roles that administer payroll.
+  { to: '/payroll/run',      icon: Wallet,       label: 'Payroll', roles: PAYROLL_ADMIN_ROLES,
+    matches: p => p.startsWith('/payroll'), hidden: !PAYROLL_ADMIN_ENABLED },
   // Was shown greyed out with a dead click. An icon that never does anything
   // reads as broken rather than planned, so it is hidden like payroll.
   { to: '/performance/goals',        icon: Trophy,       label: 'Performance',

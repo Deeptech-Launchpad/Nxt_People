@@ -299,6 +299,10 @@ const AppRoutes = () => {
           <Route path="reports/attendance/expected-vs-worked"    element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><ExpectedVsWorked/></ProtectedRoute>}/>
 
           <Route path="daily-attendance" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><DailyAttendance/></ProtectedRoute>}/>
+          {/* Reports and the command palette both link to a bare /payroll,
+              which never had a route — the same redirect leave-tracker uses.
+              Landing on the run screen, which is admin-gated below. */}
+          <Route path="payroll"                element={<Navigate to="/payroll/run" replace/>}/>
           <Route path="payroll/setup"          element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayrollSetup/></ProtectedRoute>}/>
           <Route path="payroll/run"            element={<ProtectedRoute roles={['admin','director','hr_admin']}><PayrollRun/></ProtectedRoute>}/>
           <Route path="payroll/my"             element={<MyPayroll/>}/>
