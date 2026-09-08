@@ -19,12 +19,37 @@ import { fmtINR, StatCard } from './_shared';
 // Mirrors utils/payroll-calc.js's formulas for a live client-side preview —
 // the server is still the source of truth at generation time; this is a
 // convenience so the admin isn't setting up a structure blind.
-function previewDeductions({ basic, gross, state, pfApplicable, esiApplicable, pfOverride, esiOverride, ptOverride, settings }) {
-  if (!settings) return { pf: 0, esi: 0, pt: 0, employerPf: 0, employerEsi: 0 };
+// ESIC rounds a contribution UP to the next rupee, which is why 12,788 x
+// 3.25% is charged as 416 and not 415.61. Mirrors roundUpRupee in
+// utils/payroll-calc.js.
+const roundUpRupee = (n) => Math.ceil((Number(n) || 0) - 1e-9);
+
+/* The wage ESI is charged on — NOT the gross. Some components are excluded
+ * (the statutory bonus, by default), which is why the employer share here is
+ * 3.25% of basic + HRA. The exclusion list is compliance settings. */
+function esiWageOf({ basic, hra, conveyance, otherComponents }, settings) {
+  const excludes = new Set((settings?.esiWageExcludes || []).map(n => String(n).trim().toLowerCase()));
+  const extra = (otherComponents || [])
+    .filter(c => !excludes.has(String(c?.name ?? '').trim().toLowerCase()))
+    .reduce((s, c) => s + (Number(c.value) || 0), 0);
+  return (Number(basic) || 0) + (Number(hra) || 0) + (Number(conveyance) || 0) + extra;
+}
+
+function previewDeductions({ basic, gross, esiWage, state, pfApplicable, esiApplicable,
+                             pfOverride, esiOverride, ptOverride, pfWageBasis,
+                             epsEnabled, epsAtActualWage, settings }) {
+  if (!settings) return { pf: 0, esi: 0, pt: 0, employerPf: 0, employerEsi: 0, employerAdmin: 0, employerEdli: 0, employerPfAll: 0 };
+
+  // 'actual' contributes on the real basic; 'restricted' caps it at the
+  // ceiling. Admin and EDLI are always billed on the restricted wage.
+  const restrictedWage = Math.min(basic, settings.pfWageCeiling);
+  const pfWage = pfWageBasis === 'actual' ? basic : restrictedWage;
+
   const pf = pfOverride !== '' && pfOverride != null ? Number(pfOverride)
-    : pfApplicable ? Math.round(Math.min(basic, settings.pfWageCeiling) * settings.pfRate * 100) / 100 : 0;
+    : pfApplicable ? Math.round(pfWage * settings.pfRate * 100) / 100 : 0;
   const esi = esiOverride !== '' && esiOverride != null ? Number(esiOverride)
-    : (esiApplicable && gross <= settings.esiThreshold) ? Math.round(gross * settings.esiEmployeeRate * 100) / 100 : 0;
+    : (esiApplicable && esiWage <= settings.esiThreshold) ? roundUpRupee(esiWage * settings.esiEmployeeRate) : 0;
+
   let pt = ptOverride !== '' && ptOverride != null ? Number(ptOverride) : 0;
   if ((ptOverride === '' || ptOverride == null) && Array.isArray(settings.ptSlabs)) {
     const stateSlabs = settings.ptSlabs.find(s => String(s.state || '').toLowerCase() === String(state || '').toLowerCase());
@@ -34,9 +59,23 @@ function previewDeductions({ basic, gross, state, pfApplicable, esiApplicable, p
       pt = match ? Number(match.amountPerMonth) : 0;
     }
   }
-  const employerPfTotal = pfApplicable ? Math.round(Math.min(basic, settings.pfWageCeiling) * settings.pfRate * 100) / 100 : 0;
-  const employerEsi = (esiApplicable && gross <= settings.esiThreshold) ? Math.round(gross * settings.esiEmployerRate * 100) / 100 : 0;
-  return { pf, esi, pt, employerPf: employerPfTotal, employerEsi };
+
+  const employerPf = pfApplicable ? Math.round(pfWage * settings.pfRate * 100) / 100 : 0;
+  const epsWage = epsAtActualWage ? pfWage : restrictedWage;
+  const employerEps = (pfApplicable && epsEnabled !== false)
+    ? Math.round(epsWage * settings.pfRate * 8.33 / 12 * 100) / 100 : 0;
+  const employerAdmin = pfApplicable ? Math.round(restrictedWage * (settings.epfAdminRate || 0) * 100) / 100 : 0;
+  const employerEdli = pfApplicable ? Math.round(restrictedWage * (settings.edliRate || 0) * 100) / 100 : 0;
+  const employerEsi = (esiApplicable && esiWage <= settings.esiThreshold)
+    ? roundUpRupee(esiWage * settings.esiEmployerRate) : 0;
+
+  return {
+    pf, esi, pt,
+    employerPf, employerEps, employerEpf: Math.round((employerPf - employerEps) * 100) / 100,
+    employerAdmin, employerEdli, employerEsi,
+    // Every employer rupee of EPF: the 12% plus admin plus EDLI.
+    employerPfAll: Math.round((employerPf + employerAdmin + employerEdli) * 100) / 100,
+  };
 }
 
 function StructureModal({ employee, onClose, onSaved }) {
@@ -50,6 +89,9 @@ function StructureModal({ employee, onClose, onSaved }) {
     basic: 0, hra: 0, conveyance: 0, otherComponents: [],
     pfApplicable: true, esiApplicable: false,
     pfOverride: '', esiOverride: '', ptOverride: '', notes: '',
+    // Defaults match what payroll did before these choices existed: PF on the
+    // restricted wage, EPS on, EPS pegged to the restricted wage.
+    pfWageBasis: 'restricted', epsEnabled: true, epsAtActualWage: false, benefits: [],
   });
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +119,9 @@ function StructureModal({ employee, onClose, onSaved }) {
           otherComponents: Array.isArray(cur.otherComponents) ? cur.otherComponents : [],
           pfApplicable: cur.pfApplicable !== false, esiApplicable: !!cur.esiApplicable,
           pfOverride: cur.pfOverride ?? '', esiOverride: cur.esiOverride ?? '', ptOverride: cur.ptOverride ?? '',
+          pfWageBasis: cur.pfWageBasis === 'actual' ? 'actual' : 'restricted',
+          epsEnabled: cur.epsEnabled !== false, epsAtActualWage: cur.epsAtActualWage === true,
+          benefits: Array.isArray(cur.benefits) ? cur.benefits : [],
           notes: cur.notes || '',
         };
         setForm(loadedForm);
@@ -115,20 +160,38 @@ function StructureModal({ employee, onClose, onSaved }) {
   const effective = mode === 'template' && templatePreview ? templatePreview : form;
   const otherTotal = (effective.otherComponents || []).reduce((s, c) => s + (Number(c.value) || 0), 0);
   const gross = Number(effective.basic || 0) + Number(effective.hra || 0) + Number(effective.conveyance || 0) + otherTotal;
+  const esiWage = esiWageOf({
+    basic: Number(effective.basic || 0), hra: Number(effective.hra || 0),
+    conveyance: Number(effective.conveyance || 0), otherComponents: effective.otherComponents,
+  }, settings);
+  const benefitsMonthly = (form.benefits || []).reduce((s, b) => s + (Number(b.monthly) || 0), 0);
   const ded = useMemo(() => previewDeductions({
-    basic: Number(effective.basic || 0), gross, state: employee.state,
+    basic: Number(effective.basic || 0), gross, esiWage, state: employee.state,
     pfApplicable: form.pfApplicable, esiApplicable: form.esiApplicable,
-    pfOverride: form.pfOverride, esiOverride: form.esiOverride, ptOverride: form.ptOverride, settings,
-  }), [effective, gross, form.pfApplicable, form.esiApplicable, form.pfOverride, form.esiOverride, form.ptOverride, settings, employee.state]);
+    pfOverride: form.pfOverride, esiOverride: form.esiOverride, ptOverride: form.ptOverride,
+    pfWageBasis: form.pfWageBasis, epsEnabled: form.epsEnabled, epsAtActualWage: form.epsAtActualWage,
+    settings,
+  }), [effective, gross, esiWage, form.pfApplicable, form.esiApplicable, form.pfOverride, form.esiOverride,
+       form.ptOverride, form.pfWageBasis, form.epsEnabled, form.epsAtActualWage, settings, employee.state]);
+
+  /* Cost to company is every rupee the employer spends, which this used to
+   * get wrong: it was gross + employer PF only, leaving out employer ESI and
+   * the EPF admin charge. Against Zoho that understated one employee's CTC by
+   * 5,688 a year, and CTC is what goes on an offer letter. */
+  const ctcMonthly = gross + ded.employerPfAll + ded.employerEsi + benefitsMonthly;
   const totals = {
     gross, ded: ded.pf + ded.esi + ded.pt, net: gross - (ded.pf + ded.esi + ded.pt),
-    ctc: mode === 'template' && ctcAnnual ? Number(ctcAnnual) : gross * 12 + ded.employerPf * 12,
+    ctc: mode === 'template' && ctcAnnual ? Number(ctcAnnual) : Math.round(ctcMonthly * 12 * 100) / 100,
+    ctcMonthly, benefitsMonthly, esiWage,
   };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setOther = (i, key, v) => setForm(f => ({ ...f, otherComponents: f.otherComponents.map((c, idx) => idx === i ? { ...c, [key]: v } : c) }));
   const addOther = () => setForm(f => ({ ...f, otherComponents: [...f.otherComponents, { name: '', value: 0 }] }));
   const removeOther = (i) => setForm(f => ({ ...f, otherComponents: f.otherComponents.filter((_, idx) => idx !== i) }));
+  const setBenefit = (i, key, v) => setForm(f => ({ ...f, benefits: f.benefits.map((b, idx) => idx === i ? { ...b, [key]: v } : b) }));
+  const addBenefit = (name) => setForm(f => ({ ...f, benefits: [...(f.benefits || []), { name: name || '', monthly: 0 }] }));
+  const removeBenefit = (i) => setForm(f => ({ ...f, benefits: f.benefits.filter((_, idx) => idx !== i) }));
 
   const onSave = async (e) => {
     e?.preventDefault();
@@ -146,12 +209,16 @@ function StructureModal({ employee, onClose, onSaved }) {
         ? { mode: 'template', templateId, ctcAnnual: Number(ctcAnnual), pfApplicable: form.pfApplicable, esiApplicable: form.esiApplicable,
             pfOverride: form.pfOverride === '' ? null : Number(form.pfOverride),
             esiOverride: form.esiOverride === '' ? null : Number(form.esiOverride),
-            ptOverride: form.ptOverride === '' ? null : Number(form.ptOverride), notes: form.notes }
+            ptOverride: form.ptOverride === '' ? null : Number(form.ptOverride),
+            pfWageBasis: form.pfWageBasis, epsEnabled: form.epsEnabled,
+            epsAtActualWage: form.epsAtActualWage, benefits: form.benefits, notes: form.notes }
         : { mode: 'custom', basic: form.basic, hra: form.hra, conveyance: form.conveyance, otherComponents: form.otherComponents,
             pfApplicable: form.pfApplicable, esiApplicable: form.esiApplicable,
             pfOverride: form.pfOverride === '' ? null : Number(form.pfOverride),
             esiOverride: form.esiOverride === '' ? null : Number(form.esiOverride),
-            ptOverride: form.ptOverride === '' ? null : Number(form.ptOverride), notes: form.notes };
+            ptOverride: form.ptOverride === '' ? null : Number(form.ptOverride),
+            pfWageBasis: form.pfWageBasis, epsEnabled: form.epsEnabled,
+            epsAtActualWage: form.epsAtActualWage, benefits: form.benefits, notes: form.notes };
       const r = await api.put(`/payroll/admin/employees/${employee._id}/structure`, body);
       toast.success('Salary structure saved');
       onSaved?.(r.data.data);
@@ -274,6 +341,76 @@ function StructureModal({ employee, onClose, onSaved }) {
                         <input type="checkbox" checked={form.esiApplicable} onChange={e => set('esiApplicable', e.target.checked)} className="rounded" /> ESI applicable
                       </label>
                     </div>
+
+                    {form.pfApplicable && (
+                      <>
+                        <p className="text-[13px] font-bold text-slate-600 uppercase tracking-wider mt-6 mb-3">PF Wage Basis</p>
+                        <select value={form.pfWageBasis} onChange={e => set('pfWageBasis', e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400">
+                          <option value="restricted">Restricted PF Wage (capped at {fmtINR(settings?.pfWageCeiling || 15000)})</option>
+                          <option value="actual">12% of Actual PF Wage (no cap)</option>
+                        </select>
+                        <div className="space-y-2 mt-3">
+                          <label className="flex items-center gap-2 text-[15px] text-slate-700 cursor-pointer select-none">
+                            <input type="checkbox" checked={form.epsEnabled} onChange={e => set('epsEnabled', e.target.checked)} className="rounded" />
+                            Contribute to Employee Pension Scheme
+                          </label>
+                          <label className="flex items-center gap-2 text-[15px] text-slate-700 cursor-pointer select-none">
+                            <input type="checkbox" checked={form.epsAtActualWage} disabled={!form.epsEnabled}
+                              onChange={e => set('epsAtActualWage', e.target.checked)} className="rounded disabled:opacity-40" />
+                            <span className={form.epsEnabled ? '' : 'opacity-40'}>Contribute EPS at actual PF wages</span>
+                          </label>
+                        </div>
+
+                        {/* What the employer pays on top of the employee's own
+                            deduction. Shown because it is the difference between
+                            gross and cost to company, and it used to be invisible. */}
+                        <div className="mt-3 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-[13px] text-slate-600 space-y-1">
+                          <div className="flex justify-between"><span>EPF employer (12%)</span><span className="font-medium text-slate-800">{fmtINR(ded.employerPf)}</span></div>
+                          <div className="flex justify-between pl-3 text-slate-500"><span>of which EPS</span><span>{fmtINR(ded.employerEps)}</span></div>
+                          {ded.employerAdmin > 0 && (
+                            <div className="flex justify-between"><span>EPF admin charges</span><span className="font-medium text-slate-800">{fmtINR(ded.employerAdmin)}</span></div>
+                          )}
+                          {ded.employerEdli > 0 && (
+                            <div className="flex justify-between"><span>EDLI</span><span className="font-medium text-slate-800">{fmtINR(ded.employerEdli)}</span></div>
+                          )}
+                          {form.esiApplicable && (
+                            <div className="flex justify-between">
+                              <span>ESI employer (on {fmtINR(totals.esiWage)})</span>
+                              <span className="font-medium text-slate-800">{fmtINR(ded.employerEsi)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    <div className="flex items-center justify-between mt-6 mb-3">
+                      <p className="text-[13px] font-bold text-slate-600 uppercase tracking-wider">Employer Benefits</p>
+                      <select value="" onChange={e => { if (e.target.value) addBenefit(e.target.value); }}
+                        className="text-[13px] border border-slate-200 rounded-lg px-2 py-1 text-slate-600 focus:outline-none focus:border-blue-400">
+                        <option value="">+ Add benefit</option>
+                        <option value="Mediclaim">Mediclaim</option>
+                        <option value="Gratuity">Gratuity</option>
+                        <option value="Accident Insurance">Accident Insurance</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    {(form.benefits || []).length === 0 && (
+                      <p className="text-[13px] text-slate-400">None. These are employer-borne costs — they add to CTC and are never deducted.</p>
+                    )}
+                    <div className="space-y-2">
+                      {(form.benefits || []).map((b, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <input value={b.name} onChange={e => setBenefit(i, 'name', e.target.value)} placeholder="Benefit name"
+                            className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400" />
+                          <input type="number" min="0" value={b.monthly} onChange={e => setBenefit(i, 'monthly', e.target.value)}
+                            className="w-28 border border-slate-200 rounded-lg px-3 py-2 text-[15px] text-right focus:outline-none focus:border-blue-400" />
+                          <button type="button" onClick={() => removeBenefit(i)} className="text-slate-400 hover:text-rose-600 p-1">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -285,12 +422,23 @@ function StructureModal({ employee, onClose, onSaved }) {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400 resize-none" />
               </div>
 
-              <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+              <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
                 <Totals label="Monthly Gross" value={totals.gross} color="text-slate-800" />
                 <Totals label="Deductions" value={totals.ded} color="text-red-600" />
                 <Totals label="Take-Home" value={totals.net} color={totals.net < 0 ? 'text-rose-700' : 'text-emerald-700'} />
+                <Totals label="Monthly CTC" value={totals.ctcMonthly} color="text-slate-800" />
                 <Totals label="Annual CTC" value={totals.ctc} color="text-blue-700" emphasis />
               </div>
+              {/* Spelling out the gap between gross and CTC, because the two
+                  differing used to look like a bug rather than the employer's
+                  own contributions. */}
+              <p className="text-[13px] text-slate-500 -mt-2">
+                CTC is gross plus employer contributions
+                {ded.employerPfAll > 0 && ` (EPF ${fmtINR(ded.employerPfAll)}`}
+                {ded.employerEsi > 0 && `${ded.employerPfAll > 0 ? ', ' : ' ('}ESI ${fmtINR(ded.employerEsi)}`}
+                {totals.benefitsMonthly > 0 && `, benefits ${fmtINR(totals.benefitsMonthly)}`}
+                {(ded.employerPfAll > 0 || ded.employerEsi > 0) && ')'} — none of which is deducted from pay.
+              </p>
 
               {showHistory && history.length > 0 && (
                 <div className="border-t border-slate-100 pt-4">

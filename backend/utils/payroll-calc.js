@@ -39,44 +39,132 @@ async function resolveSalaryStructure(client, employeeId, asOf) {
   return r.rows[0] || null;
 }
 
-/** Employee-side PF. `override` (salary_structures.pf_override) bypasses the
- *  formula entirely when set — the per-employee escape hatch. */
-function computePF(basic, settings, pfApplicable, override) {
-  if (override != null) return round2(override);
-  if (!pfApplicable) return 0;
-  const base = Math.min(Number(basic) || 0, Number(settings.pf_wage_ceiling) || 15000);
-  return round2(base * (Number(settings.pf_rate) || 0.12));
+/** The wage PF is charged on.
+ *
+ *  'restricted' caps it at the statutory ceiling (15,000) — the default, and
+ *  what this system did unconditionally before. 'actual' contributes on the
+ *  real basic however high it goes, which is Zoho's "12% of Actual PF Wage"
+ *  option. The choice lives on the salary structure because it is negotiated
+ *  per employee, not set org-wide.
+ */
+function pfWageFor(basic, settings, wageBasis) {
+  const b = Number(basic) || 0;
+  if (wageBasis === 'actual') return b;
+  return Math.min(b, Number(settings.pf_wage_ceiling) || 15000);
 }
 
-/** Employer-side PF, split into EPS (8.33 of the 12 statutory points) and EPF
- *  (the remainder). Simplification: real EPFO employer contribution isn't
- *  simply "same total rate as employee PF" (admin charges, EDLI differ) —
- *  accepted approximation, ported from the design prototype deliberately. */
-function computeEmployerPF(basic, settings, pfApplicable) {
-  if (!pfApplicable) return { total: 0, epf: 0, eps: 0 };
-  const base = Math.min(Number(basic) || 0, Number(settings.pf_wage_ceiling) || 15000);
-  const total = round2(base * (Number(settings.pf_rate) || 0.12));
-  const eps = round2(total * 8.33 / 12);
+/** Employee-side PF. `override` (salary_structures.pf_override) bypasses the
+ *  formula entirely when set — the per-employee escape hatch. */
+function computePF(basic, settings, pfApplicable, override, wageBasis) {
+  if (override != null) return round2(override);
+  if (!pfApplicable) return 0;
+  return round2(pfWageFor(basic, settings, wageBasis) * (Number(settings.pf_rate) || 0.12));
+}
+
+/** Everything the employer pays into EPF for one month.
+ *
+ *  This used to be the 12% alone, with a comment conceding that admin charges
+ *  and EDLI were left out as an "accepted approximation". They are not an
+ *  approximation in a CTC figure — against Zoho, the missing 0.5% admin
+ *  charge was 696 a year on a single employee, and CTC is the number that
+ *  ends up on an offer letter.
+ *
+ *  The 12% splits into EPS and EPF; admin charges and EDLI sit on top and are
+ *  employer cost, never a deduction. EPS is normally pegged to the restricted
+ *  wage even when EPF follows the actual one, which is exactly what Zoho's
+ *  "Contribute EPS at actual PF Wages" tick changes.
+ *
+ *  opts: { wageBasis, epsEnabled, epsAtActualWage }
+ */
+function computeEmployerPF(basic, settings, pfApplicable, opts = {}) {
+  if (!pfApplicable) return { total: 0, epf: 0, eps: 0, admin: 0, edli: 0, grandTotal: 0 };
+
+  const { wageBasis, epsEnabled = true, epsAtActualWage = false } = opts;
+  const wage = pfWageFor(basic, settings, wageBasis);
+  const rate = Number(settings.pf_rate) || 0.12;
+  const total = round2(wage * rate);
+
+  // EPS follows the restricted wage unless explicitly told otherwise — the
+  // whole point of the separate tick.
+  const epsWage = epsAtActualWage ? wage : pfWageFor(basic, settings, 'restricted');
+  const eps = epsEnabled ? round2(epsWage * rate * 8.33 / 12) : 0;
+  // Whatever the 12% does not spend on EPS goes to EPF, so the two always sum
+  // back to the contribution rather than drifting apart.
   const epf = round2(total - eps);
-  return { total, epf, eps };
+
+  // Admin and EDLI are charged on the restricted wage, the way EPFO bills
+  // them, regardless of which basis EPF itself follows.
+  const statutoryWage = pfWageFor(basic, settings, 'restricted');
+  const admin = round2(statutoryWage * (Number(settings.epf_admin_rate) || 0));
+  const edli = round2(statutoryWage * (Number(settings.edli_rate) || 0));
+
+  return { total, epf, eps, admin, edli, grandTotal: round2(total + admin + edli) };
+}
+
+/** The wage ESI is charged on.
+ *
+ *  Not simply the gross: Zoho leaves the statutory bonus out, which is why
+ *  its employer ESI on Balaji D is 3.25% of 12,800 (basic + HRA) rather than
+ *  of the 13,488 gross. The excluded names are configuration, so a payroll
+ *  admin can correct the list without a deploy.
+ *
+ *  components: [{ name, value }] — the named earnings beyond basic/HRA/conveyance.
+ */
+function esiWageFor({ basic = 0, hra = 0, conveyance = 0, components = [] }, settings) {
+  const excludes = new Set(
+    (Array.isArray(settings.esi_wage_excludes) ? settings.esi_wage_excludes : [])
+      .map(n => String(n).trim().toLowerCase()));
+  const extra = components
+    .filter(c => !excludes.has(String(c?.name ?? '').trim().toLowerCase()))
+    .reduce((s, c) => s + (Number(c?.value) || 0), 0);
+  return round2((Number(basic) || 0) + (Number(hra) || 0) + (Number(conveyance) || 0) + extra);
+}
+
+/** Employer-borne benefits — Mediclaim, Gratuity, Accident Insurance and the
+ *  like. Part of cost to company, never deducted from anybody. */
+function benefitsTotal(benefits) {
+  if (!Array.isArray(benefits)) return 0;
+  return round2(benefits.reduce((s, b) => s + (Number(b?.monthly) || 0), 0));
+}
+
+/** Cost to company for one month — every rupee the employer spends.
+ *
+ *  One function so the setup screen, the payslip and any report cannot each
+ *  arrive at a different CTC. The setup screen used to compute
+ *  `gross * 12 + employerPf * 12` inline, which silently left out employer
+ *  ESI and admin charges and understated everybody's CTC.
+ */
+function computeCTC({ gross, employerPf, employerEsi, benefits }) {
+  const pf = employerPf && typeof employerPf === 'object'
+    ? (Number(employerPf.grandTotal) || 0)
+    : (Number(employerPf) || 0);
+  const monthly = round2((Number(gross) || 0) + pf + (Number(employerEsi) || 0) + (Number(benefits) || 0));
+  return { monthly, annual: round2(monthly * 12) };
 }
 
 /** Employee-side ESI. Threshold, not a cap — once gross exceeds it, ESI is
  *  fully zero for the month (matches real ESI: you exit the scheme, the base
  *  isn't just capped). */
-function computeESIEmployee(gross, settings, esiApplicable, override) {
+/* ESIC rounds a contribution UP to the next rupee — not to nearest, and not
+ * down. Rounding to two decimals instead is what put us a rupee under Zoho on
+ * the employer share: 12,788 x 3.25% is 415.61, which ESIC and Zoho both
+ * charge as 416. A rupee an employee a month is small until it is a
+ * reconciliation against an ESIC challan that never quite balances. */
+const roundUpRupee = (n) => Math.ceil((Number(n) || 0) - 1e-9);
+
+function computeESIEmployee(wage, settings, esiApplicable, override) {
   if (override != null) return round2(override);
   if (!esiApplicable) return 0;
-  const g = Number(gross) || 0;
-  if (g > (Number(settings.esi_threshold) || 21000)) return 0;
-  return round2(g * (Number(settings.esi_employee_rate) || 0.0075));
+  const w = Number(wage) || 0;
+  if (w > (Number(settings.esi_threshold) || 21000)) return 0;
+  return roundUpRupee(w * (Number(settings.esi_employee_rate) || 0.0075));
 }
 
-function computeEmployerESI(gross, settings, esiApplicable) {
+function computeEmployerESI(wage, settings, esiApplicable) {
   if (!esiApplicable) return 0;
-  const g = Number(gross) || 0;
-  if (g > (Number(settings.esi_threshold) || 21000)) return 0;
-  return round2(g * (Number(settings.esi_employer_rate) || 0.0325));
+  const w = Number(wage) || 0;
+  if (w > (Number(settings.esi_threshold) || 21000)) return 0;
+  return roundUpRupee(w * (Number(settings.esi_employer_rate) || 0.0325));
 }
 
 /** Professional Tax — state-specific slabs, sorted ascending by `upTo` before
@@ -240,6 +328,10 @@ module.exports = {
   computeEmployerPF,
   computeESIEmployee,
   computeEmployerESI,
+  pfWageFor,
+  esiWageFor,
+  benefitsTotal,
+  computeCTC,
   computePT,
   computeMonthlyTDS,
   computeArrearsExtraTds,

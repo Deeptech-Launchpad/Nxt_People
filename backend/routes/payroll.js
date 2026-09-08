@@ -25,6 +25,7 @@ const {
   resolveComplianceSettings, resolveSalaryStructure,
   computePF, computeEmployerPF, computeESIEmployee, computeEmployerESI, computePT,
   computeMonthlyTDS, computeArrearsExtraTds, getUnpaidArrears,
+  esiWageFor, benefitsTotal, computeCTC,
 } = require('../utils/payroll-calc');
 
 router.use(protect);
@@ -63,6 +64,8 @@ const STRUCT_COLS = `
   other_components AS "otherComponents",
   pf_applicable AS "pfApplicable", esi_applicable AS "esiApplicable",
   pf_override AS "pfOverride", esi_override AS "esiOverride", pt_override AS "ptOverride",
+  pf_wage_basis AS "pfWageBasis", eps_enabled AS "epsEnabled",
+  eps_at_actual_wage AS "epsAtActualWage", benefits,
   notes, created_at AS "createdAt"
 `;
 
@@ -217,14 +220,18 @@ router.put('/admin/employees/:id/structure',
            (employee_id, effective_from, template_id, ctc_annual,
             basic, hra, conveyance, other_components,
             pf_applicable, esi_applicable, pf_override, esi_override, pt_override,
+            pf_wage_basis, eps_enabled, eps_at_actual_wage, benefits,
             notes, created_by)
-         VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15)
+         VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13,
+                 $14, $15, $16, $17::jsonb, $18, $19)
          ON CONFLICT (employee_id, effective_from) DO UPDATE SET
            template_id = EXCLUDED.template_id, ctc_annual = EXCLUDED.ctc_annual,
            basic = EXCLUDED.basic, hra = EXCLUDED.hra, conveyance = EXCLUDED.conveyance,
            other_components = EXCLUDED.other_components,
            pf_applicable = EXCLUDED.pf_applicable, esi_applicable = EXCLUDED.esi_applicable,
            pf_override = EXCLUDED.pf_override, esi_override = EXCLUDED.esi_override, pt_override = EXCLUDED.pt_override,
+           pf_wage_basis = EXCLUDED.pf_wage_basis, eps_enabled = EXCLUDED.eps_enabled,
+           eps_at_actual_wage = EXCLUDED.eps_at_actual_wage, benefits = EXCLUDED.benefits,
            notes = EXCLUDED.notes
          RETURNING ${STRUCT_COLS}`,
         [
@@ -234,6 +241,14 @@ router.put('/admin/employees/:id/structure',
           b.pfOverride != null ? num(b.pfOverride) : null,
           b.esiOverride != null ? num(b.esiOverride) : null,
           b.ptOverride != null ? num(b.ptOverride) : null,
+          // Anything other than an explicit 'actual' keeps the restricted
+          // ceiling, so a malformed value can never quietly raise PF cost.
+          b.pfWageBasis === 'actual' ? 'actual' : 'restricted',
+          b.epsEnabled !== false,
+          b.epsAtActualWage === true,
+          JSON.stringify(Array.isArray(b.benefits)
+            ? b.benefits.filter(x => x && x.name).map(x => ({ name: String(x.name).trim(), monthly: num(x.monthly) }))
+            : []),
           b.notes || null, req.user._id,
         ]
       );
@@ -618,11 +633,27 @@ async function computeDraftPayslip(client, emp, { month, year, workingDays, holM
   const gross = round2(baseGross + adj.bonus + adj.overtime + reim.total + arrears.total);
 
   const settings = await resolveComplianceSettings(client, monthEnd);
-  const pfE = computePF(basic, settings, structure.pf_applicable, structure.pf_override);
-  const esiE = computeESIEmployee(baseGross, settings, structure.esi_applicable, structure.esi_override);
+
+  /* ESI is charged on its own wage, not the gross. Zoho leaves the statutory
+   * bonus out — its employer ESI here is 3.25% of basic + HRA — and passing
+   * the whole gross overstated it for everybody. The excluded names come from
+   * compliance settings. Prorated components go in, so a half month of work
+   * pays ESI on half a month's wage. */
+  const esiWage = esiWageFor({ basic, hra, conveyance, components: otherComponents }, settings);
+
+  const pfOpts = {
+    wageBasis: structure.pf_wage_basis,
+    epsEnabled: structure.eps_enabled !== false,
+    epsAtActualWage: structure.eps_at_actual_wage === true,
+  };
+  const pfE = computePF(basic, settings, structure.pf_applicable, structure.pf_override, structure.pf_wage_basis);
+  const esiE = computeESIEmployee(esiWage, settings, structure.esi_applicable, structure.esi_override);
   const pt = computePT(baseGross, settings, emp.state, structure.pt_override);
-  const employerPf = computeEmployerPF(basic, settings, structure.pf_applicable);
-  const employerEsi = computeEmployerESI(baseGross, settings, structure.esi_applicable);
+  const employerPf = computeEmployerPF(basic, settings, structure.pf_applicable, pfOpts);
+  const employerEsi = computeEmployerESI(esiWage, settings, structure.esi_applicable);
+  // Employer-borne benefits are prorated the same way earnings are: a person
+  // who worked half the month costs half the month's Mediclaim.
+  const employerBenefits = round2(benefitsTotal(structure.benefits) * ratio);
   const tds = await computeMonthlyTDS(client, { employeeId: emp.id, monthlyGrossFull: grossFull, fy });
 
   const totalDed = round2(pfE + esiE + pt + tds + arrearsExtraTds + loans.total + adj.deduction);
@@ -633,6 +664,10 @@ async function computeDraftPayslip(client, emp, { month, year, workingDays, holM
     basic, hra, conveyance, otherComponents,
     workingDays: empWorkingDays, paidDays, lopDays, lopAmount,
     pfE, esiE, pt, tds, employerPf: employerPf.total, employerEpf: employerPf.epf, employerEps: employerPf.eps, employerEsi,
+    employerEpfAdmin: employerPf.admin, employerEdli: employerPf.edli, employerBenefits,
+    // What this employee actually costs for the month, every employer rupee
+    // included — the figure the setup screen used to get wrong.
+    ctcMonthly: computeCTC({ gross, employerPf, employerEsi, benefits: employerBenefits }).monthly,
     arrearsAmount: arrears.total, arrearsExtraTds, arrearsIncrementIds: arrears.incrementIds,
     gross, totalDed, net,
     reimbursement: reim.total, loanRecovery: loans.total,
@@ -688,8 +723,9 @@ async function runMonthlyPayroll({ month, year, force, actorId }) {
                arrears_amount=$17, arrears_extra_tds=$18,
                gross_earnings=$19, total_deductions=$20, net_pay=$21,
                reimbursement=$22, loan_recovery=$23, bonus=$24, overtime=$25, other_adjustment=$26,
-               generated_at=NOW(), generated_by=$27
-             WHERE id=$28`,
+               employer_epf_admin=$27, employer_edli=$28, employer_benefits=$29,
+               generated_at=NOW(), generated_by=$30
+             WHERE id=$31`,
             [draft.basic, draft.hra, draft.conveyance, JSON.stringify(draft.otherComponents),
              draft.workingDays, draft.paidDays, draft.lopDays, draft.lopAmount,
              draft.pfE, draft.esiE, draft.pt, draft.tds,
@@ -697,6 +733,7 @@ async function runMonthlyPayroll({ month, year, force, actorId }) {
              draft.arrearsAmount, draft.arrearsExtraTds,
              draft.gross, draft.totalDed, draft.net,
              draft.reimbursement, draft.loanRecovery, draft.bonus, draft.overtime, draft.otherAdjustment,
+             draft.employerEpfAdmin, draft.employerEdli, draft.employerBenefits,
              actorId, existing.rows[0].id]
           );
           results.updated++;
@@ -712,10 +749,11 @@ async function runMonthlyPayroll({ month, year, force, actorId }) {
                 arrears_amount, arrears_extra_tds,
                 gross_earnings, total_deductions, net_pay,
                 reimbursement, loan_recovery, bonus, overtime, other_adjustment,
+                employer_epf_admin, employer_edli, employer_benefits,
                 generated_by)
              VALUES ($1,$2,$3,$4, $5,$6,$7,$8::jsonb, $9,$10,$11,$12,
                      $13,$14,$15,$16, $17,$18,$19,$20, $21,$22,
-                     $23,$24,$25, $26,$27,$28,$29,$30, $31)`,
+                     $23,$24,$25, $26,$27,$28,$29,$30, $31,$32,$33, $34)`,
             [emp.id, month, year, slip,
              draft.basic, draft.hra, draft.conveyance, JSON.stringify(draft.otherComponents),
              draft.workingDays, draft.paidDays, draft.lopDays, draft.lopAmount,
@@ -724,6 +762,7 @@ async function runMonthlyPayroll({ month, year, force, actorId }) {
              draft.arrearsAmount, draft.arrearsExtraTds,
              draft.gross, draft.totalDed, draft.net,
              draft.reimbursement, draft.loanRecovery, draft.bonus, draft.overtime, draft.otherAdjustment,
+             draft.employerEpfAdmin, draft.employerEdli, draft.employerBenefits,
              actorId]
           );
           results.created++;
