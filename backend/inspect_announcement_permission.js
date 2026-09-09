@@ -52,33 +52,30 @@ const FULL_ACCESS = ['admin', 'director', 'hr_admin'];
     console.log(`\n  1. isFullAccess(user)            ${passesRole ? 'PASS' : 'FAIL'}`
       + `${passesRole ? '' : `  <- role '${emp.role}' is not admin/director/hr_admin`}`);
 
-    // Which role row do this person's permissions actually come from?
-    const roles = (await pool.query(
-      `SELECT id, name, code FROM roles WHERE LOWER(code) = LOWER($1) OR LOWER(name) = LOWER($1)`,
+    /* Exactly the query utils/functionAccess.js runs. Both conditions matter:
+     * the role row is matched on `key`, and it must be kind = 'general'. A
+     * permission saved against a SPECIFIC role is invisible to enforcement,
+     * however correct it looks on the settings screen. */
+    const rows = (await pool.query(
+      `SELECT rf.allowed, rf.options, r.id AS role_id, r.name, r.kind
+         FROM role_functions rf
+         JOIN roles r ON r.id = rf.role_id
+        WHERE r.key = $1 AND r.kind = 'general' AND rf.function_key = 'announcements'`,
       [emp.role])).rows;
 
-    if (!roles.length) {
-      console.log(`\n  2. role row for '${emp.role}'       NOT FOUND in roles table`);
-      console.log(`     Function permissions are stored per role_id, so with no row there is`);
-      console.log(`     nothing for can() to read and it falls back to the catalog default.`);
+    if (!rows.length) {
+      console.log(`\n  2. can('announcements')          NO ROW`);
+      console.log(`  3. options.manage                NO ROW`);
+      console.log(`\n     No general role with key '${emp.role}' has an announcements row, so`);
+      console.log(`     can() falls back to the catalogue default — allowed=true, manage=true.`);
+      console.log(`     On that basis the button SHOULD be showing.`);
     }
 
-    for (const role of roles) {
-      const rf = (await pool.query(
-        `SELECT allowed, options FROM role_functions WHERE role_id = $1 AND function_key = 'announcements'`,
-        [role.id])).rows[0];
-
-      console.log(`\n  role row      ${role.name} (code ${role.code}, id ${role.id})`);
-      if (!rf) {
-        console.log(`  2. can('announcements')          NO ROW in role_functions`);
-        console.log(`  3. options.manage                NO ROW`);
-        console.log(`\n     Nothing has been saved for this role. The tick on the settings`);
-        console.log(`     screen was written against a DIFFERENT role.`);
-      } else {
-        const manage = rf.options && rf.options.manage;
-        console.log(`  2. can('announcements')          ${rf.allowed ? 'PASS' : 'FAIL'}   (allowed = ${rf.allowed})`);
-        console.log(`  3. options.manage                ${manage ? 'PASS' : 'FAIL'}   (options = ${JSON.stringify(rf.options)})`);
-      }
+    for (const r of rows) {
+      const manage = r.options && r.options.manage;
+      console.log(`\n  role row      ${r.name} (key ${emp.role}, kind ${r.kind})`);
+      console.log(`  2. can('announcements')          ${r.allowed ? 'PASS' : 'FAIL'}   (allowed = ${r.allowed})`);
+      console.log(`  3. options.manage                ${manage ? 'PASS' : 'FAIL'}   (options = ${JSON.stringify(r.options)})`);
     }
   }
 
