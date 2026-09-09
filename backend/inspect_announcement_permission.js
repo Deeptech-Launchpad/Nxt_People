@@ -87,15 +87,24 @@ const FULL_ACCESS = ['admin', 'director', 'hr_admin'];
   console.log(`  Which roles currently have Announcements manage enabled`);
   console.log(`──────────────────────────────────────────────────────────\n`);
   const all = (await pool.query(
-    `SELECT r.name, r.code, rf.allowed, rf.options
+    `SELECT r.name, r.key, r.kind, rf.allowed, rf.options
        FROM role_functions rf JOIN roles r ON r.id = rf.role_id
       WHERE rf.function_key = 'announcements'
-      ORDER BY r.name`)).rows;
+      ORDER BY r.kind, r.name`)).rows;
   if (!all.length) console.log('  none — no role has an announcements row at all.');
   for (const r of all) {
     const manage = r.options && r.options.manage;
-    console.log(`  ${String(r.name).padEnd(22)} code=${String(r.code).padEnd(12)} allowed=${r.allowed}  manage=${!!manage}`);
+    console.log(`  ${String(r.name).padEnd(22)} key=${String(r.key).padEnd(14)} kind=${String(r.kind).padEnd(9)}`
+      + ` allowed=${r.allowed}  manage=${!!manage}`);
   }
+
+  // Every general role, so a key mismatch against employees.role is visible.
+  console.log(`
+  General roles that exist (employees.role must match one of these keys):
+`);
+  const generals = (await pool.query(
+    `SELECT key, name, rank FROM roles WHERE kind = 'general' ORDER BY rank`)).rows;
+  for (const g of generals) console.log(`  ${String(g.key).padEnd(16)} ${g.name}  (rank ${g.rank})`);
   console.log('');
 
   await pool.end();
