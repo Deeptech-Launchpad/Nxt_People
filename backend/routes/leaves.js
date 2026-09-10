@@ -8,7 +8,7 @@ const { createNotification } = require('./notifications');
 const { createLevels, getLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
 const { sendMail, sendLeaveApprovalEmail, sendLeaveStatusEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
-const { countWorkingDays } = require('../utils/workingDays');
+const { countWorkingDays, ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
 const { sandwichedDays } = require('../utils/sandwichLeave');
 const { getLeavePolicies, getJoiningRule, grantedToDate } = require('../utils/leavePolicy');
 const logger = require('../logger');
@@ -1419,6 +1419,85 @@ router.get('/types', async (req, res) => {
       { _id: 'compoff', name: 'Compensatory Off',      code: 'comp_off',  icon: '⭐', color: '#22c55e', annualEntitlement: 0  },
       { _id: 'perm',    name: 'Permission',             code: 'permission',icon: '🔑', color: '#8b5cf6', annualEntitlement: 0  },
     ]});
+  }
+});
+
+/* ── GET /leaves/day-breakdown ────────────────────────────────────────────
+ *
+ * Every date in a range, with whether it is a working day, and what the range
+ * therefore comes to.
+ *
+ * The Apply Leave form shows a row per day the way the reference does, and a
+ * table built in the browser would have to guess at weekends and holidays — it
+ * has neither the weekend rules nor the holiday calendar. A form that displays
+ * three rows and submits two days is worse than one that displays nothing, so
+ * the rows come from the same countWorkingDays the apply path itself uses. The
+ * table and the total cannot disagree, because they are the same answer.
+ *
+ * Read only.
+ */
+router.get('/day-breakdown', async (req, res) => {
+  try {
+    const startYmd = String(req.query.startDate || '').slice(0, 10);
+    const endYmd = String(req.query.endDate || startYmd).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startYmd) || !/^\d{4}-\d{2}-\d{2}$/.test(endYmd)) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate must be YYYY-MM-DD' });
+    }
+
+    const start = new Date(`${startYmd}T00:00:00`);
+    const end = new Date(`${endYmd}T00:00:00`);
+    if (end < start) {
+      return res.status(400).json({ success: false, message: 'End date cannot be before the start date' });
+    }
+    // A range long enough to be a mistake should say so rather than build a
+    // thousand rows nobody asked for.
+    if ((end - start) / 86400000 > 366) {
+      return res.status(400).json({ success: false, message: 'That range is longer than a year.' });
+    }
+
+    const [rulesRes, holRes] = await Promise.all([
+      pool.query(
+        `SELECT days_of_week, weeks_of_month, interval_weeks, start_date, end_type, end_date, end_count, is_active
+           FROM weekend_rules WHERE is_active = TRUE`
+      ).catch(() => ({ rows: [] })),
+      pool.query(
+        `SELECT date::text AS ymd, type, name FROM holidays WHERE date BETWEEN $1::date AND $2::date`,
+        [startYmd, endYmd]
+      ).catch(() => ({ rows: [] })),
+    ]);
+
+    const holidays = new Map(holRes.rows.map(h => [h.ymd, h]));
+    const days = [];
+    const cur = new Date(start);
+
+    while (cur <= end) {
+      const ymd = cur.toLocaleDateString('en-CA');
+      const hol = holidays.get(ymd);
+      const holType = hol?.type;
+
+      let kind;
+      if (holidayClosesOffice(holType)) kind = 'holiday';
+      else if (holType === 'working_day') kind = 'working';
+      else kind = rulesRes.rows.some(rule => ruleMatchesDate(rule, cur)) ? 'weekend' : 'working';
+
+      days.push({
+        date: ymd,
+        weekday: cur.toLocaleDateString('en-IN', { weekday: 'short' }),
+        kind,
+        // Named so the row can say "Republic Day" rather than just "Holiday".
+        label: kind === 'holiday' ? (hol?.name || 'Holiday') : null,
+        counts: kind === 'working',
+      });
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    /* Deliberately the shared helper rather than days.filter(...).length. The
+     * two would agree today and the point is that they cannot drift. */
+    const workingDays = await countWorkingDays(startYmd, endYmd);
+
+    res.json({ success: true, data: { days, workingDays } });
+  } catch (err) {
+    serverError(res, err);
   }
 });
 

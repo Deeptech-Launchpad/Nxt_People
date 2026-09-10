@@ -3,10 +3,10 @@ import toast from 'react-hot-toast';
 import { Plus, Check, X, Eye, Pencil, Trash2, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Download } from 'lucide-react';
 import FilterPanel from './FilterPanel';
 import api from '../../../utils/api';
-import useEmployeeList, { labelOf } from './useEmployeeList';
+import useEmployeeList from './useEmployeeList';
 import EmployeePicker from './EmployeePicker';
-import TimeInput from '../../../components/TimeInput';
 import EditRequestModal from '../../../components/EditRequestModal';
+import ApplyLeaveForm from './ApplyLeaveForm';
 import RowMenu from './RowMenu';
 
 /* ── Operations → Leave Tracker → Leave Requests ────────────────────────────
@@ -84,38 +84,6 @@ export default function OpsLeaveRequests() {
   const [picked, setPicked] = useState([]);       // ids ticked for a bulk action
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
-
-  /* One form, several shapes.
-   *
-   * This modal was written as though every leave type were a date range, so
-   * picking Permission gave you From and To and no times at all — and the API
-   * refuses a permission without them, which is why Add Request could never
-   * file one. The employee-side modal has always known this; the two were
-   * separate implementations and only one was taught.
-   */
-  const blank = {
-    employeeId: '', leaveType: '', startDate: '', endDate: '', reason: '',
-    isHalfDay: false, halfDayType: 'first_half',
-    startTime: '', endTime: '',
-  };
-  const [form, setForm] = useState(blank);
-  const [saving, setSaving] = useState(false);
-
-  const isPermission = form.leaveType === 'permission';
-
-  // Hours the chosen window comes to, shown live so the monthly cap is not a
-  // surprise delivered by the server after Submit.
-  const permHours = (() => {
-    if (!isPermission || !form.startTime || !form.endTime) return 0;
-    const mins = (t) => { const [h, m] = t.split(':').map(Number); return (h || 0) * 60 + (m || 0); };
-    return Math.max(0, (mins(form.endTime) - mins(form.startTime)) / 60);
-  })();
-
-  // Today, as a date input reads it — used to mark a back-dated entry rather
-  // than to block it, since filing for somebody who was already away is the
-  // whole point of this tab.
-  const todayStr = new Date().toLocaleDateString('en-CA');
-  const isBackdated = !!form.startDate && form.startDate < todayStr;
 
   useEffect(() => {
     api.get('/leave-types').then(r => setTypes(r.data.data || [])).catch(() => {});
@@ -205,47 +173,7 @@ export default function OpsLeaveRequests() {
   const pickedDays = pickedRows.reduce(
     (n, r) => n + (r.leaveType === 'unpaid' ? 0 : (parseFloat(r.totalDays) || 0)), 0);
 
-  const submit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      /* Send the shape the chosen type actually has. A permission is one date
-       * and a time window — sending it a range and a half-day flag describes
-       * something that does not exist. */
-      const payload = isPermission
-        ? {
-            employeeId: form.employeeId,
-            leaveType: form.leaveType,
-            startDate: form.startDate,
-            endDate: form.startDate,      // permission is single-day by definition
-            reason: form.reason,
-            startTime: form.startTime,
-            endTime: form.endTime,
-          }
-        : {
-            employeeId: form.employeeId,
-            leaveType: form.leaveType,
-            startDate: form.startDate,
-            // A single-day request still needs both ends; Zoho fills the second
-            // in for you rather than refusing.
-            endDate: form.endDate || form.startDate,
-            reason: form.reason,
-            isHalfDay: form.isHalfDay,
-            halfDayType: form.isHalfDay ? form.halfDayType : null,
-          };
-
-      await api.post('/leaves', payload);
-      const who = people.find(p => p._id === form.employeeId);
-      toast.success(who ? `Leave applied for ${who.firstName} ${who.lastName}` : 'Leave applied');
-      setModal(false); setForm(blank); setPage(1); load();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not apply that leave');
-    } finally { setSaving(false); }
-  };
-
   const pages = Math.max(1, Math.ceil(total / limit));
-  const field = 'w-full border border-slate-200 rounded-xl px-3 py-2.5 text-[15px] focus:outline-none focus:border-brand-400';
-  const label = 'block text-sm font-medium text-slate-600 mb-1.5';
 
   return (
     <div>
@@ -401,133 +329,13 @@ export default function OpsLeaveRequests() {
       </div>
 
       {modal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <form onSubmit={submit} className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto p-6 space-y-4">
-            <h3 className="font-display font-semibold text-slate-800 text-xl">
-              {isPermission ? 'Apply Permission' : 'Apply Leave'}
-            </h3>
-            <div>
-              <label className={label}>Employee *</label>
-              {/* A plain select over 150 people is a scroll and nothing else —
-                  a native select's keyboard search matches from the start of the
-                  option text, which here is the employee code, so a name could
-                  not be typed at all. */}
-              <EmployeePicker
-                people={people}
-                loading={peopleLoading}
-                value={form.employeeId}
-                onChange={id => setForm({ ...form, employeeId: id })}
-                required
-              />
-              <p className="text-[13px] text-amber-600 mt-1">
-                This spends their balance and goes to their own reporting line for approval.
-              </p>
-            </div>
-            <div>
-              <label className={label}>Leave type *</label>
-              <select value={form.leaveType} required className={field}
-                onChange={e => setForm({
-                  ...form,
-                  leaveType: e.target.value,
-                  /* Leaving the other shape's values behind is how a permission
-                   * ends up carrying a half-day flag, or a casual leave a stray
-                   * time window. */
-                  ...(e.target.value === 'permission'
-                    ? { endDate: form.startDate, isHalfDay: false, halfDayType: 'first_half' }
-                    : { startTime: '', endTime: '' }),
-                })}>
-                <option value="">Select a type</option>
-                {types.map(t => <option key={t.id || t.code} value={t.code}>{t.name}</option>)}
-              </select>
-            </div>
-            {isPermission ? (
-              /* Permission is hours off inside one working day, so it takes a
-                 single date and a time window — never a range, never a half. */
-              <>
-                <div>
-                  <label className={label}>Date *</label>
-                  <input type="date" value={form.startDate} required className={field}
-                    onChange={e => setForm({ ...form, startDate: e.target.value, endDate: e.target.value })} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={label}>Start time *</label>
-                    <TimeInput value={form.startTime} required className={field}
-                      onChange={v => setForm({ ...form, startTime: v })} />
-                  </div>
-                  <div>
-                    <label className={label}>End time *</label>
-                    {/* An unqualified "5" in an end field means the afternoon. */}
-                    <TimeInput value={form.endTime} required className={field} assumePm
-                      onChange={v => setForm({ ...form, endTime: v })} />
-                  </div>
-                </div>
-                {form.startTime && form.endTime && (
-                  permHours > 0
-                    ? <p className="text-[13px] font-medium text-purple-600">
-                        {permHours.toFixed(2)} hour{permHours === 1 ? '' : 's'} — counts against their monthly permission allowance.
-                      </p>
-                    : <p className="text-[13px] font-medium text-rose-600">
-                        End time must be after the start time.
-                      </p>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={label}>From *</label>
-                    <input type="date" value={form.startDate} required className={field}
-                      onChange={e => setForm({ ...form, startDate: e.target.value, endDate: form.endDate || e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={label}>To *</label>
-                    <input type="date" value={form.endDate} required min={form.startDate} className={field}
-                      onChange={e => setForm({ ...form, endDate: e.target.value })} />
-                  </div>
-                </div>
-                <label className="flex items-center gap-2.5 text-[15px] text-slate-600">
-                  <input type="checkbox" checked={form.isHalfDay} className="w-4 h-4 rounded border-slate-300"
-                    onChange={e => setForm({ ...form, isHalfDay: e.target.checked })} />
-                  Half day
-                </label>
-                {form.isHalfDay && (
-                  <div>
-                    <label className={label}>Which half</label>
-                    <select value={form.halfDayType} onChange={e => setForm({ ...form, halfDayType: e.target.value })} className={field}>
-                      <option value="first_half">First half</option>
-                      <option value="second_half">Second half</option>
-                    </select>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Said here rather than discovered on Submit: a past date is allowed
-                on this tab and nowhere else, and it is recorded as such. */}
-            {isBackdated && (
-              <p className="text-[13px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                This is a past date. Filing it here is allowed because the person could not
-                apply themselves, and it is written to the audit log under your name. It will
-                be refused if that month's payroll is already finalised.
-              </p>
-            )}
-            <div>
-              <label className={label}>Reason for leave *</label>
-              <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })}
-                required rows={2} minLength={3} maxLength={500}
-                className={`${field} resize-none`} placeholder="Why is this leave being taken?" />
-            </div>
-            <div className="flex gap-3 pt-1">
-              <button type="button" onClick={() => { setModal(false); setForm(blank); }}
-                className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-[15px] font-medium hover:bg-slate-50">Cancel</button>
-              <button type="submit" disabled={saving || (isPermission && permHours <= 0)}
-                className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-[15px] font-medium disabled:opacity-60">
-                {saving ? 'Applying…' : 'Submit'}
-              </button>
-            </div>
-          </form>
-        </div>
+        <ApplyLeaveForm
+          people={people}
+          peopleLoading={peopleLoading}
+          types={types}
+          onClose={() => setModal(false)}
+          onSaved={() => { setPage(1); load(); }}
+        />
       )}
 
       {editing && (
