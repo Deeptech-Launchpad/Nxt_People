@@ -395,8 +395,13 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
     const created = r.rows[0];
     // The chain belongs to the employee, not to whoever filed it — an HR-raised
     // request still goes to that person's own reporting line for approval.
-    try { await createLevels(client, 'comp_off', created._id, subject.id); }
-    catch (e) { /* soft-fail: a missing hierarchy still leaves an HR-approvable request */ }
+    /* This used to swallow the failure, on the reasoning that "a missing
+     * hierarchy still leaves an HR-approvable request". It does not: a request
+     * with no approval levels is invisible to every manager, shows an empty
+     * approval timeline, and can only be actioned by somebody with full access
+     * who happens to notice it. Failing here rolls the request back and tells
+     * the person why, which is the version that gets fixed. */
+    await createLevels(client, 'comp_off', created._id, subject.id);
     await client.query('COMMIT');
 
     res.status(201).json({ success: true, data: created });

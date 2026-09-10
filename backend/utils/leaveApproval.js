@@ -153,8 +153,19 @@ async function settleAutoDecision(db, requestType, requestId, decision) {
 async function createLevels(db, requestType, requestId, employeeId, context = {}) {
   const levels = await deriveLevels(db, employeeId, requestType, context);
 
-  // No levels can mean two very different things: an auto decision, or a chain
-  // that resolved to nobody. Only the first should settle the request.
+  /* No levels can mean two very different things: an auto decision, or a chain
+   * that resolved to nobody. Only the first should settle the request.
+   *
+   * That sentence was here before this function handled the second half of it.
+   * A chain resolving to nobody fell straight through, inserted nothing, and
+   * returned empty — so the caller committed a PENDING request with no approver
+   * on it. Nothing was waiting on anybody, no manager could ever see it, and the
+   * approval timeline had nothing to draw but a bare "Pending" pill.
+   *
+   * It is a configuration failure, not a request the employee got wrong, so it
+   * fails loudly and the caller rolls the whole apply back. A request nobody can
+   * approve is worse than a request that was refused: the refusal gets fixed.
+   */
   if (levels.length === 0) {
     const rule = await pickRule(db, requestType, context);
     if (rule && (rule.decision === 'auto_approve' || rule.decision === 'auto_reject')) {
@@ -164,6 +175,15 @@ async function createLevels(db, requestType, requestId, employeeId, context = {}
       // a request that is already settled.
       return levels;
     }
+
+    const err = new Error(
+      rule
+        ? `Approval rule "${rule.name}" resolved to no approver for this employee. `
+          + `Check the rule's levels and the employee's reporting line.`
+        : 'This employee has no reporting line, so there is nobody to approve the request.'
+    );
+    err.code = 'NO_APPROVAL_CHAIN';
+    throw err;
   }
 
   for (const { level, approverId } of levels) {

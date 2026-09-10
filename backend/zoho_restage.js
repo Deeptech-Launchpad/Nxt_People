@@ -54,6 +54,7 @@ nodemailer.createTransport = () => ({
 const pool = require('./db');
 const { zohoApi } = require('./utils/zoho');
 const { classifyDay, resolvePolicy, expectedFor } = require('./utils/attendanceRule');
+const { createLevels } = require('./utils/leaveApproval');
 
 const CODES = String(process.argv[2] || '').split(/[,\s]+/).filter(Boolean);
 const START = process.argv[3];
@@ -953,6 +954,9 @@ async function backup(client, batch, table, empId, where, params) {
    * rolls back alone and is named at the end; everybody else is already
    * committed and stays that way. */
   let totalCreated = 0, totalUnmapped = 0, totalDays = 0;
+// Pending leaves the import could not build an approval chain for. Reported at
+// the end rather than aborting the run — see the createLevels call below.
+const chainless = [];
   const succeeded = [], failures = [];
 
   console.log('──────────────────────────────────────────────────────────');
@@ -1012,10 +1016,11 @@ async function backup(client, batch, table, empId, where, params) {
         const s = shapeOfLeave(r, p.sessions.get(from));
         if (s.halfDay) halves++;
         const status = STATUSES[String(r.ApprovalStatus || '').trim().toLowerCase()] || 'pending';
-        await client.query(
+        const ins = await client.query(
           `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, total_days, hours,
                                is_half_day, half_day_type, reason, status, approved_at, created_at)
-           VALUES ($1,$2,$3::date,$4::date,$5,$6,$7,$8,$9,$10,$11,NOW())`,
+           VALUES ($1,$2,$3::date,$4::date,$5,$6,$7,$8,$9,$10,$11,NOW())
+           RETURNING id`,
           [p.emp.id, type || 'unpaid', from, to,
            s.isHours ? 0 : s.taken, s.isHours ? s.taken : null,
            s.halfDay, s.halfDay ? s.session : null,
@@ -1026,6 +1031,29 @@ async function backup(client, batch, table, empId, where, params) {
            // only the fallback for a record that carries no approval time.
            status === 'approved' ? (fromZohoDateTime(r.ApprovalTime) || from) : null]);
         created++;
+
+        /* A leave that arrives here still PENDING is work somebody has to do,
+         * and it needs the same approval chain an application through the app
+         * would have built. Without one it is invisible to every manager, shows
+         * an empty approval timeline, and can only be actioned by a full-access
+         * admin who happens to spot it — which is exactly what the first import
+         * left behind.
+         *
+         * Only pending rows. An approved or rejected leave was decided in Zoho;
+         * inventing a chain of our own approvers for it would be recording an
+         * approval that never happened here.
+         *
+         * Soft-failed on purpose, unlike the live apply path: a migration of
+         * thousands of rows must not abort because one person's reporting line
+         * is not set up yet. The row is reported instead, and the backfill
+         * script can pick it up once the tree is fixed. */
+        if (status === 'pending') {
+          try {
+            await createLevels(client, 'leave', ins.rows[0].id, p.emp.id, {});
+          } catch (e) {
+            chainless.push(`${p.emp.code} ${from} ${type || 'unpaid'} — ${e.message}`);
+          }
+        }
       }
 
       // Attendance last, because the day facts it was classified against come
@@ -1067,6 +1095,15 @@ async function backup(client, batch, table, empId, where, params) {
   console.log('══════════════════════════════════════════════════════════');
   console.log(`  ${succeeded.length} of ${plan.length} imported — ${totalCreated} leave record(s), ${totalDays} attendance day(s).`);
   if (totalUnmapped) console.log(`  ${totalUnmapped} had a leave type we do not have, imported as unpaid.`);
+  if (chainless.length) {
+    console.log(`
+  ${chainless.length} pending leave(s) were imported WITHOUT an approval chain,`);
+    console.log('  so no manager can see them. Fix the reporting line, then run');
+    console.log('  backfill_approval_chains.js to give them one:');
+    console.log('');
+    for (const c of chainless.slice(0, 20)) console.log(`    ${c}`);
+    if (chainless.length > 20) console.log(`    …and ${chainless.length - 20} more`);
+  }
   if (failures.length) {
     console.log(`
   ${failures.length} failed. They were rolled back individually; everybody`);

@@ -190,6 +190,30 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
  * not the same authority as booking leave in their name. */
 const LEAVE_UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
+/* Is that month's payroll already settled?
+ *
+ * A back-dated leave changes LOP, and LOP changes pay. Once a payslip for the
+ * month has been locked, adding leave to it would silently disagree with money
+ * that has already gone out — so the write is refused and the month named,
+ * rather than accepted and quietly wrong.
+ *
+ * Draft payslips are not a lock: a month being prepared is exactly when a
+ * correction still wants to land.
+ */
+async function payrollLockFor(date) {
+  const month = date.getMonth() + 1;
+  const year = date.getFullYear();
+  const r = await pool.query(
+    `SELECT 1 FROM payroll_payslips
+      WHERE pay_month = $1 AND pay_year = $2
+        AND (status <> 'draft' OR locked_at IS NOT NULL)
+      LIMIT 1`,
+    [month, year]
+  );
+  if (!r.rows.length) return null;
+  return date.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+}
+
 async function resolveLeaveSubject(user, employeeId) {
   if (!employeeId || String(employeeId) === String(user._id)) {
     return { id: user._id, onBehalf: false };
@@ -246,11 +270,34 @@ router.post('/', [
     if (start > end) {
       return res.status(400).json({ success: false, message: 'Start date cannot be after end date' });
     }
-    // No back-dated leave. HR can still record historical leaves directly via
-    // admin endpoints — but employees can't quietly apply for last year.
+    /* No back-dated leave — for the person applying for themselves.
+     *
+     * The comment here used to say "HR can still record historical leaves
+     * directly via admin endpoints", and no such endpoint existed. Operations →
+     * Leave Requests posts to THIS route, so HR could not record a past leave at
+     * all — which is the whole reason that tab has an employee selector on top.
+     * Somebody who was away last Tuesday and could not apply is exactly who it
+     * is for.
+     *
+     * So the block stands for self-service and lifts for an administrator filing
+     * on somebody else's behalf. Two limits keep that from becoming a way to
+     * rewrite history: it cannot reach into a month whose payroll is already
+     * finalised, and it is written to the audit log naming who filed it.
+     */
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    if (start < today) {
+    const backdated = start < today;
+    if (backdated && !subject.onBehalf) {
       return res.status(400).json({ success: false, message: 'Cannot apply for leave in the past' });
+    }
+    if (backdated) {
+      const locked = await payrollLockFor(start);
+      if (locked) {
+        return res.status(400).json({
+          success: false,
+          message: `Payroll for ${locked} is already finalised, so leave cannot be added to it. `
+                 + `Record it in the current month or reopen that payroll first.`,
+        });
+      }
     }
     // How far ahead leave may be booked — Leave Tracker > Configuration >
     // Leave Request. Stored since that screen was built, but until now nothing
@@ -483,6 +530,23 @@ router.post('/', [
       }
 
       await client.query('COMMIT');
+
+      /* A leave filed for somebody else, into a date that has already passed, is
+       * the one shape here that can change what a person is paid without them
+       * doing anything. It is named in the audit log for that reason. */
+      if (subject.onBehalf) {
+        await logAudit(req, {
+          action: 'APPLY_ON_BEHALF',
+          resource: 'Leave',
+          resourceId: leaveId,
+          changes: {
+            employee: subject.name || subjectId,
+            leaveType, startDate, endDate: endDateVal,
+            backdated,
+            ...(isPermission ? { startTime: permStartTime, endTime: permEndTime, hours: permHours } : {}),
+          },
+        });
+      }
 
       // ── Notify ALL approval levels immediately (parallel), + employee feed ──
       // Runs after COMMIT so slow email sends don't hold the DB connection.

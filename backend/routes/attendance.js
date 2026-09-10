@@ -265,7 +265,22 @@ router.post('/checkin', async (req, res) => {
          SET check_in           = LEAST(attendance.check_in, EXCLUDED.check_in),
              session_started_at = EXCLUDED.session_started_at,
              check_out          = NULL,
-             status             = attendance.status,
+             -- Reopening the day withdraws the verdict but keeps the arrival.
+             --
+             -- status carries two different things: how late somebody arrived,
+             -- which is settled the moment they first punch and must survive a
+             -- second one, and what the day came to, which is computed at
+             -- checkout from the hours worked. Preserving the whole column
+             -- preserved both -- so somebody who punched out after forty
+             -- minutes (short enough to be written 'absent') and then came back
+             -- for their real shift stayed 'absent' for as long as the session
+             -- stayed open. They were at their desk, and every status report
+             -- said otherwise.
+             --
+             -- The verdict is not knowable while the day is still open, so it
+             -- goes back to the arrival state and checkout settles it again from
+             -- the full hours. late_minutes is untouched.
+             status             = CASE WHEN attendance.late_minutes > 0 THEN 'late' ELSE 'present' END,
              late_minutes       = attendance.late_minutes,
              check_in_location  = EXCLUDED.check_in_location,
              check_in_latitude  = EXCLUDED.check_in_latitude,

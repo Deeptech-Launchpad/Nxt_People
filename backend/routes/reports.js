@@ -2343,11 +2343,28 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
         isFuture,
       });
 
-      // An absence is only settled once the day is over. On the current date
-      // someone with no punch and no leave has not failed to attend yet — they
-      // are still pending a check-in, so they stay out of the status pie and
-      // show only in the presence donut. Past dates settle normally.
-      const kind = cls.kind === 'absent' && isToday ? 'pending' : cls.kind;
+      /* An absence is only settled once the day is over. On the current date
+       * someone with no punch and no leave has not failed to attend yet — they
+       * are still pending a check-in, so they stay out of the status pie and
+       * show only in the presence donut. Past dates settle normally.
+       *
+       * The punch is what was missing from that test. Sweeping anybody marked
+       * absent into 'pending' dropped them out of the pie entirely while the
+       * donut beside it still counted their punch — which is how the two charts
+       * came to disagree by exactly one person, with nothing on screen to say
+       * which was right.
+       *
+       * On today, an 'absent' row means one of three different things:
+       *   no punch          nothing has happened yet — still pending
+       *   punched, still in  the day is in progress and has no verdict; they
+       *                      are here, whatever a previous closed session left
+       *                      in the status column
+       *   punched and out    settled — they worked too few hours, and that is
+       *                      a real absence even though the day is today
+       */
+      const kind = cls.kind === 'absent' && isToday
+        ? (!att?.checkIn ? 'pending' : (att?.checkOut ? 'absent' : 'present'))
+        : cls.kind;
       if (kind !== 'future' && kind !== 'pending') counts[kind] = (counts[kind] || 0) + 1;
 
       /* `notTracked` covers the whole donut for these people, not just the

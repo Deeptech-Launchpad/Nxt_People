@@ -35,8 +35,20 @@ router.get('/stats', async (req, res) => {
     const onLeave = parseInt(onLeaveRes.rows[0].count, 10);
     const absent = Math.max(0, totalEmployees - present - onLeave);
 
+    /* Pending requests still waiting on a decision.
+     *
+     * This counted rows in `leaves` and joined nothing, so a request belonging
+     * to a deleted employee was counted here and — correctly — not on Leave
+     * Approvals, leaving the two screens quietly disagreeing with no way to tell
+     * which was right. The join is what makes this the same population Approvals
+     * works from.
+     *
+     * Permission lives in the same table and is just as pending, so it is
+     * counted here too; that matches what Approvals totals. */
     const pendingLeavesRes = await pool.query(
-      "SELECT COUNT(*) FROM leaves WHERE status = 'pending'"
+      `SELECT COUNT(*) FROM leaves l
+         JOIN employees e ON e.id = l.employee_id
+        WHERE l.status = 'pending' AND e.deleted_at IS NULL`
     );
     const pendingLeaves = parseInt(pendingLeavesRes.rows[0].count, 10);
 
