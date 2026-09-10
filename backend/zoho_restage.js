@@ -480,14 +480,29 @@ const shapeOfDay = (iso, r) => {
    * cappedHours cannot catch it -- it caps reported hours at the span, and
    * here the span itself is the wrong number. */
   const overnightSpan = !!(checkOut && checkOut.slice(0, 10) !== iso);
+  /* Refuse the fabricated check-out, not the whole day.
+   *
+   * The first version of this guard dropped any day with an overnight span
+   * entirely. That threw away a real punch-in to avoid importing a fake
+   * punch-out: Sushma Premkumar genuinely arrived at 12:03 on 09-08 and Praba
+   * Karan at 08:44, and refusing the day left NxtPeople with no record that
+   * either of them turned up at all. "We do not know when they left" is not
+   * the same as "we do not know whether they came in".
+   *
+   * So the check-in stands, the check-out is discarded, and the hours are
+   * recomputed from what is left — which is nothing, so the day classifies
+   * absent and waits for a regularization. That is the true state of
+   * knowledge, and it is the state a person can correct. */
+  const usableOut = overnightSpan ? null : checkOut;
   return {
     date: iso,
     zohoStatus: String(r.Status ?? '').trim(),
     checkIn,
-    checkOut,
+    checkOut: usableOut,
+    zohoClaimedOut: overnightSpan ? checkOut : null,
     overnightSpan,
     hasPunch: !!checkIn,
-    hours: cappedHours(reportedHours, checkIn, checkOut) ?? 0,
+    hours: overnightSpan ? 0 : (cappedHours(reportedHours, checkIn, checkOut) ?? 0),
     reportedHours,
     shiftHours: hhmmToHours(r.WorkingHours),
     lateMinutes: latenessOf(r),
@@ -738,8 +753,8 @@ async function backup(client, batch, table, empId, where, params) {
     // -- that row, whatever it says, is not this script's to replace.
     const spanArtifacts = allDays.filter(d => d.overnightSpan
       && (!FILL_GAPS_ONLY || !hereAttDates.has(d.date)));
+    // Still reported, but now as "check-out discarded", not "day skipped".
     const days = allDays.filter(d => onRolls(d) && (d.hasPunch || isAbsence(d))
-      && !d.overnightSpan
       && (!FILL_GAPS_ONLY || !hereAttDates.has(d.date)));
     const skipped = allDays.filter(d => onRolls(d) && !(d.hasPunch || isAbsence(d)));
 
@@ -776,13 +791,15 @@ async function backup(client, batch, table, empId, where, params) {
       : '→ backed up, then replaced'}`);
     console.log(`    here: leave        ${p.hereLeave} record(s)  → backed up, then replaced\n`);
     if (p.attendanceReachable && p.spanArtifacts.length) {
-      console.log(`    ${p.spanArtifacts.length} day(s) NOT imported: Zoho's check-out is dated after the`);
-      console.log('                       day itself, which is its forgot-to-check-out artifact:');
+      console.log(`    ${p.spanArtifacts.length} day(s) keep their check-in but LOSE Zoho's check-out,`);
+      console.log('                       which is dated after the day itself — its');
+      console.log('                       forgot-to-check-out artifact, not a time anyone left:');
       for (const d of p.spanArtifacts) {
-        console.log(`                         ${d.date}  ${d.checkIn} to ${d.checkOut}`
-          + `  Zoho called it "${d.zohoStatus || '(blank)'}"`);
+        console.log(`                         ${d.date}  in ${d.checkIn}`
+          + `  Zoho claimed out ${d.zohoClaimedOut}  (it called the day "${d.zohoStatus || '(blank)'}")`);
       }
-      console.log('                       These need a regularization, not an import.');
+      console.log('                       Each lands as an absent day carrying its real check-in,');
+      console.log('                       for the employee to regularize with the time they left.');
     }
 
     if (!APPLY && p.leaveInRange.length) {
