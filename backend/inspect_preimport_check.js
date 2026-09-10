@@ -100,6 +100,19 @@ function fromZohoDate(v) {
  */
 async function zohoLeaveSweep(start, end) {
   const out = [];
+  /* Counted so a parse failure cannot pass for an empty Zoho.
+   *
+   * The first run of this script reported "Zoho holds 0 leave record(s)" and
+   * listed eleven requests as existing only here. Zoho held 6276 records and
+   * every one failed to parse, because the date format was wrong. The output
+   * was indistinguishable from a genuine zero, and acting on it would have
+   * meant protecting eleven requests that needed no protection — or reading
+   * "nothing would be added" as licence to import over a range Zoho was full
+   * of.
+   *
+   * "I could not read it" and "there is nothing there" are different answers,
+   * and a comparison must never quietly turn the first into the second. */
+  let seen = 0, unreadable = 0;
   for (let i = 1; i <= 40000; i += 200) {
     const json = await patiently(() => zohoApi(`forms/leave/getRecords?sIndex=${i}&limit=200`));
     const resp = json?.response;
@@ -113,9 +126,11 @@ async function zohoLeaveSweep(start, end) {
       if (!rec) continue;
       const m = /\b(ANXT\w+)\b/.exec(String(rec.Employee_ID || ''));
       if (!m) continue;
+      seen += 1;
       const from = fromZohoDate(rec.From);
       const to = fromZohoDate(rec.To) || from;
-      if (!from || to < start || from > end) continue;
+      if (!from) { unreadable += 1; continue; }
+      if (to < start || from > end) continue;
       out.push({
         code: m[1],
         type: LEAVE_TYPES[normaliseType(rec.Leavetype)] || null,
@@ -126,6 +141,18 @@ async function zohoLeaveSweep(start, end) {
       });
     }
     if (rows.length < 200) break;
+  }
+
+  if (seen > 0 && unreadable === seen) {
+    throw new Error(
+      `Read ${seen} Zoho leave record(s) and could not parse a date on ANY of them. `
+      + `That is a format change, not an empty Zoho — refusing to report a comparison `
+      + `against nothing. Check fromZohoDate against what Zoho is actually returning.`
+    );
+  }
+  if (unreadable > 0) {
+    console.log(`  WARNING: ${unreadable} of ${seen} Zoho record(s) had an unreadable date and `
+      + `were skipped. The comparison below is INCOMPLETE — do not import on it.`);
   }
   return out;
 }
