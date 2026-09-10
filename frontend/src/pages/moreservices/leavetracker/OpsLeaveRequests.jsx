@@ -4,6 +4,7 @@ import { Plus, Check, X, Eye, Pencil, Trash2, ChevronLeft, ChevronRight, Chevron
 import FilterPanel from './FilterPanel';
 import api from '../../../utils/api';
 import useEmployeeList, { labelOf } from './useEmployeeList';
+import EmployeePicker from './EmployeePicker';
 import RowMenu from './RowMenu';
 
 /* ── Operations → Leave Tracker → Leave Requests ────────────────────────────
@@ -63,7 +64,7 @@ function SortTh({ label, k, sort, onSort }) {
 }
 
 export default function OpsLeaveRequests() {
-  const { people } = useEmployeeList();
+  const { people, loading: peopleLoading } = useEmployeeList();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -397,10 +398,17 @@ export default function OpsLeaveRequests() {
             </h3>
             <div>
               <label className={label}>Employee *</label>
-              <select value={form.employeeId} onChange={e => setForm({ ...form, employeeId: e.target.value })} required className={field}>
-                <option value="">Select an employee</option>
-                {people.map(p => <option key={p._id} value={p._id}>{labelOf(p)}</option>)}
-              </select>
+              {/* A plain select over 150 people is a scroll and nothing else —
+                  a native select's keyboard search matches from the start of the
+                  option text, which here is the employee code, so a name could
+                  not be typed at all. */}
+              <EmployeePicker
+                people={people}
+                loading={peopleLoading}
+                value={form.employeeId}
+                onChange={id => setForm({ ...form, employeeId: id })}
+                required
+              />
               <p className="text-[13px] text-amber-600 mt-1">
                 This spends their balance and goes to their own reporting line for approval.
               </p>
