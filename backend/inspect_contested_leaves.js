@@ -48,15 +48,16 @@ const pad = (s, n) => String(s ?? '').padEnd(n);
     console.log(`  ${c.code}  ${c.date}`);
     console.log(`  ${c.why}\n`);
 
+    /* l.* rather than a column list. The first version of this named
+     * l.leave_type_id and l.days -- neither exists; leave_type is plain text
+     * on the row and the count is total_days. Guessing a schema in a script
+     * whose whole job is to be trusted about live data is the wrong trade, so
+     * this takes the row as it is and prints whichever of the interesting
+     * columns are actually present. */
     const rows = (await pool.query(
-      `SELECT l.id, l.status, l.start_date::text, l.end_date::text, l.days,
-              l.hours, l.start_time::text, l.end_time::text, l.reason,
-              l.created_at, l.updated_at,
-              lt.name AS type,
-              TRIM(CONCAT(e.first_name,' ',e.last_name)) AS name
+      `SELECT l.*, TRIM(CONCAT(e.first_name,' ',e.last_name)) AS employee_name
          FROM leaves l
          JOIN employees e ON e.id = l.employee_id
-         LEFT JOIN leave_types lt ON lt.id = l.leave_type_id
         WHERE e.employee_id = $1 AND l.start_date = $2::date`,
       [c.code, c.date])).rows;
 
@@ -66,12 +67,33 @@ const pad = (s, n) => String(s ?? '').padEnd(n);
     }
 
     for (const r of rows) {
-      console.log(`    ${r.name}  ${r.type || '?'}  ${r.status}`);
-      console.log(`    ${r.start_date} → ${r.end_date}   days ${r.days}   hours ${r.hours ?? '—'}`
-        + `   ${r.start_time || '—'}–${r.end_time || '—'}`);
-      console.log(`    reason: ${r.reason || '—'}`);
-      console.log(`    created ${r.created_at?.toISOString?.() || r.created_at}`);
-      console.log(`    updated ${r.updated_at?.toISOString?.() || r.updated_at}`);
+      const show = v => (v === null || v === undefined || v === '')
+        ? '—' : (v instanceof Date ? v.toISOString() : String(v));
+      console.log(`    ${r.employee_name}  ${show(r.leave_type)}  ${show(r.status)}`);
+      console.log(`    ${show(r.start_date)} → ${show(r.end_date)}`
+        + `   total_days ${show(r.total_days)}   hours ${show(r.hours)}`
+        + `   ${show(r.start_time)}–${show(r.end_time)}`);
+      console.log(`    reason: ${show(r.reason)}`);
+      console.log(`    created ${show(r.created_at)}`);
+
+      /* The columns that answer the Sivagami question outright. A cancellation
+       * carries who did it and when; an import does not fill these in. */
+      for (const k of ['cancelled_at', 'cancelled_by', 'cancellation_reason',
+                       'approved_at', 'approved_by', 'balance_source',
+                       'extended_at', 'extended_by', 'split_from']) {
+        if (k in r && r[k] !== null && r[k] !== undefined) {
+          console.log(`    ${k.padEnd(20)} ${show(r[k])}`);
+        }
+      }
+
+      for (const k of ['cancelled_by', 'approved_by', 'extended_by']) {
+        if (r[k]) {
+          const who = (await pool.query(
+            `SELECT employee_id AS code, TRIM(CONCAT(first_name,' ',last_name)) AS name,
+                    email, role FROM employees WHERE id = $1`, [r[k]])).rows[0];
+          if (who) console.log(`      ${k} is ${who.code} ${who.name} <${who.email}> (${who.role})`);
+        }
+      }
 
       /* created_at tells us whether a human filed it or the restage did.
        * The last import wrote twenty rows inside one second; a genuine
