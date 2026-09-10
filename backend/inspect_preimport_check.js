@@ -167,15 +167,36 @@ async function zohoLeaveSweep(start, end) {
       WHERE table_name = 'employees' AND column_name IN ('joining_date','date_of_joining')
       ORDER BY column_name LIMIT 1`)).rows[0]?.column_name || 'joining_date';
 
+  /* Scoped the way zoho_restage.js scopes: deleted_at IS NULL, and nothing
+   * said about status. This used to add status = 'active', which quietly made
+   * the whole check narrower than the thing it is checking.
+   *
+   * ANXT2300102 showed what that costs. The dry run said "here: leave 4
+   * record(s) -> 4 arrive" and section E listed all four of her Zoho records
+   * as new -- while A, B and F said nothing about her at all, which those
+   * three together are supposed to make impossible. She is not active, so she
+   * was never in localLeaves; her four existing rows were invisible, and the
+   * only sign that they were about to be deleted was a count that looked like
+   * nothing had moved. Section A exists to catch a delete with nothing to put
+   * back, and it cannot do that for a person it refuses to look at. */
   const emps = (await pool.query(
     `SELECT id, employee_id AS code, TRIM(first_name || ' ' || COALESCE(last_name,'')) AS name,
-            ${joinCol}::text AS joined, exit_date::text AS exited
+            status, ${joinCol}::text AS joined, exit_date::text AS exited
        FROM employees
-      WHERE employee_id ~ '^ANXT' AND status = 'active' AND deleted_at IS NULL
+      WHERE employee_id ~ '^ANXT' AND deleted_at IS NULL
       ORDER BY employee_id`)).rows
     .filter(e => !ONLY || ONLY.has(e.code));
 
-  console.log(`  ${emps.length} active employee(s) in scope. Sweeping Zoho leave…`);
+  const notActive = emps.filter(e => e.status !== 'active');
+  console.log(`  ${emps.length} employee(s) in scope`
+    + `${notActive.length ? `, of which ${notActive.length} not active` : ''}. Sweeping Zoho leave…`);
+  if (notActive.length) {
+    console.log('  Not active, but a restage naming their code still rewrites their leave:');
+    for (const e of notActive) {
+      console.log(`    ${pad(e.code, 14)}${pad(e.name.slice(0, 26), 28)}${pad(e.status, 12)}`
+        + `${e.exited ? `exited ${e.exited}` : 'no exit date'}`);
+    }
+  }
   const zohoAll = await zohoLeaveSweep(START, END);
   console.log(`  Zoho holds ${zohoAll.length} leave record(s) touching this range.\n`);
 
@@ -190,13 +211,14 @@ async function zohoLeaveSweep(start, end) {
             l.leave_type, l.start_date::text AS from_ymd, l.end_date::text AS to_ymd,
             l.status, l.total_days, l.hours, l.reason,
             l.created_at::text AS created,
+            e.status AS employee_status,
             l.cancelled_at, l.cancelled_by, l.cancellation_reason,
             (SELECT TRIM(x.first_name||' '||COALESCE(x.last_name,''))
                FROM employees x WHERE x.id = l.cancelled_by) AS cancelled_by_name,
             (SELECT COUNT(*) FROM approval_levels x
               WHERE x.request_type='leave' AND x.request_id = l.id)::int AS levels
        FROM leaves l JOIN employees e ON e.id = l.employee_id
-      WHERE e.employee_id ~ '^ANXT' AND e.status='active' AND e.deleted_at IS NULL
+      WHERE e.employee_id ~ '^ANXT' AND e.deleted_at IS NULL
         AND l.start_date BETWEEN $1::date AND $2::date
       ORDER BY e.employee_id, l.start_date`, [START, END])).rows
     .filter(r => !ONLY || ONLY.has(r.code));
@@ -256,6 +278,9 @@ async function zohoLeaveSweep(start, end) {
       console.log(`  ${pad(r.code, 14)}${pad(r.name.slice(0, 24), 26)}${pad(r.leave_type, 12)}`
         + `${pad(r.from_ymd, 12)}${pad(r.status, 10)}${pad(amount, 7)}`
         + `${r.levels > 0 ? `chain:${r.levels}` : 'no chain'}`);
+      if (r.employee_status && r.employee_status !== 'active') {
+        console.log(`  ${' '.repeat(14)}this employee is ${r.employee_status}, not active`);
+      }
       if (r.reason) console.log(`  ${' '.repeat(14)}“${String(r.reason).slice(0, 62)}”`);
     }
   }
@@ -342,7 +367,7 @@ async function zohoLeaveSweep(start, end) {
             COUNT(*) FILTER (WHERE check_in_ip IS NOT NULL)::int AS with_ip,
             COUNT(*) FILTER (WHERE work_location_resolved_id IS NOT NULL)::int AS geofenced
        FROM attendance a JOIN employees e ON e.id = a.employee_id
-      WHERE e.employee_id ~ '^ANXT' AND e.status='active' AND e.deleted_at IS NULL
+      WHERE e.employee_id ~ '^ANXT' AND e.deleted_at IS NULL
         AND a.date BETWEEN $1::date AND $2::date`, [START, END])).rows[0];
 
   console.log(`\n  attendance rows in range          ${att.total}`);
