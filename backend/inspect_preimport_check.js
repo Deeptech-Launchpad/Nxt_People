@@ -190,6 +190,9 @@ async function zohoLeaveSweep(start, end) {
             l.leave_type, l.start_date::text AS from_ymd, l.end_date::text AS to_ymd,
             l.status, l.total_days, l.hours, l.reason,
             l.created_at::text AS created,
+            l.cancelled_at, l.cancelled_by, l.cancellation_reason,
+            (SELECT TRIM(x.first_name||' '||COALESCE(x.last_name,''))
+               FROM employees x WHERE x.id = l.cancelled_by) AS cancelled_by_name,
             (SELECT COUNT(*) FROM approval_levels x
               WHERE x.request_type='leave' AND x.request_id = l.id)::int AS levels
        FROM leaves l JOIN employees e ON e.id = l.employee_id
@@ -275,6 +278,58 @@ async function zohoLeaveSweep(start, end) {
     }
     console.log('\n  A pending request here that Zoho shows approved is the good case — the');
     console.log('  import settles it. The reverse means somebody approved it only here.');
+  }
+
+  /* == F. Cancelled here, still live in Zoho ==============================
+   * Section A deliberately skips cancelled rows -- a cancelled leave holds no
+   * balance, so losing the row costs nothing. That is true of the row and
+   * false of the fact. The restage deletes every leave in the range and
+   * re-inserts Zoho's, so a leave cancelled HERE that Zoho still calls
+   * approved comes back approved: the cancellation is undone and the balance
+   * is debited for time the employee did not take.
+   *
+   * Nothing in A, B or E shows that happening. A excludes cancelled rows by
+   * design, B only speaks about rows that paired, and E only counts what
+   * arrives. ANXT2300102 is why this section exists -- four cancelled rows
+   * here, four approved records in Zoho, and the person-by-person dry run
+   * reads "4 record(s) -> 4 arrive", a number that looks like nothing moved. */
+  h1('F. Cancelled here <> would the import bring it back?');
+
+  const liveInZoho = (r) => (byCode.get(r.code) || []).filter(z =>
+    z.type === r.leave_type && z.from === r.from_ymd && z.to === r.to_ymd
+    && !/cancel|reject/i.test(z.status));
+
+  const cancelledHere = localLeaves.filter(r => r.status === 'cancelled');
+  if (!cancelledHere.length) {
+    console.log('\n  None. No cancelled leave sits in this range.');
+  } else {
+    console.log(`\n  ${cancelledHere.length} cancelled row(s). The restage deletes every one of them.`);
+    console.log('  What matters is whether Zoho still holds a live version to re-insert.\n');
+    for (const r of cancelledHere) {
+      const live = liveInZoho(r);
+      const byHuman = r.cancelled_by || r.cancelled_at || r.cancellation_reason;
+      const amount = r.leave_type === 'permission' ? `${r.hours}h` : `${r.total_days}d`;
+      console.log(`  ${pad(r.code, 14)}${pad(r.name.slice(0, 24), 26)}${pad(r.leave_type, 12)}`
+        + `${pad(r.from_ymd, 12)}${pad(amount, 7)}`
+        + (live.length ? `Zoho: ${live[0].status}  <-- COMES BACK` : 'Zoho: no live record, stays gone'));
+      console.log(`  ${' '.repeat(14)}${byHuman
+        ? `cancelled by ${r.cancelled_by_name || 'someone'}`
+          + `${r.cancelled_at ? ` on ${new Date(r.cancelled_at).toISOString().slice(0, 10)}` : ''}`
+          + `${r.cancellation_reason ? ` -- "${String(r.cancellation_reason).slice(0, 40)}"` : ''}`
+        : 'no actor recorded, so it arrived cancelled from Zoho rather than being cancelled here'}`);
+    }
+
+    const reinstated = cancelledHere.filter(r => liveInZoho(r).length);
+    const byPerson = reinstated.filter(r => r.cancelled_by || r.cancelled_at);
+    console.log(`\n  ${reinstated.length} of ${cancelledHere.length} would come back as live leave.`);
+    if (byPerson.length) {
+      console.log(`  ${byPerson.length} of those were cancelled by a named person HERE. Settle those in`);
+      console.log('  Zoho first, or keep their codes out of the restage -- re-approving them');
+      console.log('  debits a balance for time nobody took.');
+    } else if (reinstated.length) {
+      console.log('  None of them records who cancelled it, so they were imported cancelled');
+      console.log('  rather than cancelled here. Re-inserting them changes nothing.');
+    }
   }
 
   /* ══ C. Natively recorded attendance ════════════════════════════════════ */
