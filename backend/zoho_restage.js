@@ -906,10 +906,21 @@ async function backup(client, batch, table, empId, where, params) {
    * next run writes. */
   if (plan.every(p => !p.attendanceReachable)) {
     if (SKIP_ATTENDANCE) {
-      console.log('  --skip-attendance: attendance was not touched for anybody. Zoho was');
-      console.log('  reachable and the days above were computed only to show what a run');
-      console.log('  WITHOUT this flag would have written. Leave is replaced; every');
-      console.log('  attendance row here stays exactly as it is.\n');
+      /* Only claim Zoho answered if it actually did. Sathish's re-run printed
+       * "NOT REACHABLE" against his attendance and then this footer told him
+       * Zoho was reachable, because the flag was tested before the fact. The
+       * previous version of this message had the same shape of error in the
+       * other direction, and one wrong reassurance per rewrite is enough. */
+      const anyReached = plan.some(p => p.reached);
+      console.log('  --skip-attendance: attendance was not touched for anybody.');
+      if (anyReached) {
+        console.log('  Zoho answered for at least one person; the days above were computed only');
+        console.log('  to show what a run WITHOUT this flag would have written.');
+      } else {
+        console.log('  Zoho answered for nobody, so nothing above came from it. The flag made');
+        console.log('  that moot, but do not read this run as proof the token still works.');
+      }
+      console.log('  Leave is replaced; every attendance row here stays exactly as it is.\n');
     } else if (plan.every(p => !p.reached)) {
       console.log('  Attendance is out of scope for this token, so attendance is not');
       console.log('  being touched for anybody. Leave is replaced; attendance stays as');
