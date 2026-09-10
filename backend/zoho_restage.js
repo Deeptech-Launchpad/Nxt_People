@@ -870,11 +870,27 @@ async function backup(client, batch, table, empId, where, params) {
     }
   }
 
+  /* Say which of the two reasons it actually is. This printed "out of scope
+   * for this token" for every run where nothing was reachable -- including a
+   * deliberate --skip-attendance, where the token is fine and Zoho answered
+   * for everybody. That reads as a permissions problem that has not happened,
+   * and it invites the fix of widening the token, which would change what the
+   * next run writes. */
   if (plan.every(p => !p.attendanceReachable)) {
-    console.log('  Attendance is out of scope for this token, so attendance is not');
-    console.log('  being touched for anybody. Leave is replaced; attendance stays as');
-    console.log('  it is. Add ZohoPeople.attendance.READ and run this again to do the');
-    console.log('  other half.\n');
+    if (SKIP_ATTENDANCE) {
+      console.log('  --skip-attendance: attendance was not touched for anybody. Zoho was');
+      console.log('  reachable and the days above were computed only to show what a run');
+      console.log('  WITHOUT this flag would have written. Leave is replaced; every');
+      console.log('  attendance row here stays exactly as it is.\n');
+    } else if (plan.every(p => !p.reached)) {
+      console.log('  Attendance is out of scope for this token, so attendance is not');
+      console.log('  being touched for anybody. Leave is replaced; attendance stays as');
+      console.log('  it is. Add ZohoPeople.attendance.READ and run this again to do the');
+      console.log('  other half.\n');
+    } else {
+      console.log('  No attendance was written for anybody. Leave is replaced;');
+      console.log('  attendance stays as it is.\n');
+    }
   }
 
   /* A leave type we cannot name lands as unpaid, and unpaid is Loss of Pay.
