@@ -147,6 +147,12 @@ export default function LeaveRequestDialog({
 
   const card = useMemo(() => (balances || []).find(b => b.code === leaveType) || null, [balances, leaveType]);
 
+  /* Both times set, and the end is not after the start. Called out on its own
+   * rather than left as a dash in the Duration column, because "0.00 Hr(s)"
+   * does not tell anybody which of the two fields is wrong. */
+  const endBeforeStart = isPermission && editable && applyWith === 'range'
+    && !!startTime && !!endTime && permHours <= 0;
+
   const days = isPermission ? 0 : (isHalfDay ? 0.5 : (breakdown?.workingDays ?? 0));
   const booking = isPermission ? permHours : days;
   const unit = isPermission ? 'Hour(s)' : 'Day(s)';
@@ -319,6 +325,7 @@ export default function LeaveRequestDialog({
                                   className="w-[92px] border border-slate-200 rounded-lg pl-2 pr-6 py-1 text-[13px] focus:outline-none focus:border-brand-400" />
                                 {applyWith === 'range' ? (
                                   <TimeInput value={endTime} onChange={setEndTime} assumePm
+                                    invalid={endBeforeStart}
                                     className="w-[92px] border border-slate-200 rounded-lg pl-2 pr-6 py-1 text-[13px] focus:outline-none focus:border-brand-400" />
                                 ) : (
                                   <input type="number" min="0.25" step="0.25" value={totalHours}
@@ -396,6 +403,11 @@ export default function LeaveRequestDialog({
                       </div>
                     </div>
 
+                    {endBeforeStart && (
+                      <p className="text-[12px] text-rose-600 mt-1">
+                        The end time must be after the start time.
+                      </p>
+                    )}
                     {editable && !isPermission && !singleDay && (
                       <p className="text-[12px] text-slate-400 mt-1">
                         A half day applies to a single date. Pick one day to book half of it.

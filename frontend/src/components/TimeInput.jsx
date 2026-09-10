@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Clock } from 'lucide-react';
 import { useLocaleFormat, formatTime } from '../utils/datetime';
@@ -12,22 +12,25 @@ import { useLocaleFormat, formatTime } from '../utils/datetime';
  * own locale and there is no attribute, property or stylesheet that changes it.
  * The setting was not being ignored; it could not reach that control at all.
  *
- * So this is the control instead, and it is the browser's own picker in shape:
- * three columns — hour, minute, AM/PM — scrolled to what is currently set. An
- * earlier version offered a list of half-hour slots, which decided on the
- * user's behalf that nobody starts at 09:12. They do — one of the permissions
- * on file is 0.57 hours — and a picker that cannot express a real time is worse
- * than no picker.
+ * The panel is a wheel, not a list. Three columns — hour, minute, AM/PM — each
+ * scrolling under a fixed band in the middle, and whatever sits in that band IS
+ * the value. Scrolling changes it; there are no arrow buttons to press and no
+ * scrollbars to look at.
  *
- * The panel is rendered through a portal, positioned against the input rather
- * than nested inside it. Its first home was an absolutely positioned child,
- * which the day-row table clipped to a two-row sliver: that table needs
- * overflow-hidden for its rounded corners, and overflow-hidden clips a dropdown
- * however high its z-index. Nothing above it can crop a portal.
+ * Setting a time takes three choices, so the panel does NOT close when one is
+ * made. It closes when the person is done with it: outside click, Escape, or
+ * Enter.
  *
- * Typing is the faster path and is always available: "9", "930", "9:30",
- * "9:30 pm", "0930" and "21:30" all parse. The columns are for the times of day
- * people prefer to point at.
+ * Two earlier versions got this wrong and are worth naming. The first offered a
+ * dropdown of half-hour slots, which decided on the user's behalf that nobody
+ * starts at 09:12 — one permission on file is 0.57 hours. The second was an
+ * absolutely positioned child of the day-row table, which clipped it to a
+ * two-row sliver: that table needs overflow-hidden for its corners, and
+ * overflow-hidden crops a dropdown however high its z-index. It renders through
+ * a portal now, so nothing above it can crop it.
+ *
+ * Typing stays the fastest path: "9", "930", "9:30", "9:30 pm", "0930" and
+ * "21:30" all parse. Arrow keys step the wheel and wrap at both ends.
  *
  * It speaks canonical 24-hour "HH:MM" to its caller and to the API, so nothing
  * downstream has to know which format the org is on. A 24-hour org keeps the
@@ -40,7 +43,10 @@ const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);          // 1..12
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);            // 0..59
 const MERIDIEMS = ['AM', 'PM'];
 
-const PANEL_HEIGHT = 208;   // max-h-52, so the flip decision knows the size
+const ITEM_H = 30;          // one row
+const VISIBLE = 5;          // rows on screen; odd so one is centred
+const PAD_ROWS = (VISIBLE - 1) / 2;
+const PANEL_H = ITEM_H * VISIBLE;
 
 /** Anything a person might reasonably type -> "HH:MM", or null. */
 export function parseTimeInput(raw, { assumePm = null } = {}) {
@@ -86,17 +92,92 @@ function partsOf(value) {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(value || ''));
   if (!m) return null;
   const h24 = parseInt(m[1], 10);
-  return {
-    hour12: h24 % 12 || 12,
-    minute: parseInt(m[2], 10),
-    meridiem: h24 >= 12 ? 'PM' : 'AM',
-  };
+  return { hour12: h24 % 12 || 12, minute: parseInt(m[2], 10), meridiem: h24 >= 12 ? 'PM' : 'AM' };
 }
 
 function toValue({ hour12, minute, meridiem }) {
   let h = hour12 % 12;
   if (meridiem === 'PM') h += 12;
   return `${PAD(h)}:${PAD(minute)}`;
+}
+
+/* One wheel.
+ *
+ * Declared at module scope, not inside the component. Defining it inside meant
+ * a new component type on every render, so React unmounted and remounted all
+ * three columns every time a digit changed — which threw the scroll position
+ * away mid-gesture and made the wheel feel like it was fighting back.
+ */
+function Wheel({ items, value, onPick, render, label }) {
+  const ref = useRef(null);
+  const settling = useRef(null);
+  const index = Math.max(0, items.indexOf(value));
+
+  // Follow the value when it changes from outside — typing, or the field being
+  // opened — without fighting a scroll the user is in the middle of.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const target = index * ITEM_H;
+    if (Math.abs(el.scrollTop - target) > 1) el.scrollTop = target;
+  }, [index]);
+
+  /* Whatever ends up under the band is the value. Read after the scroll comes
+   * to rest rather than on every frame: committing mid-gesture would fire a
+   * dozen changes for one flick and make the parent re-render through all of
+   * them. */
+  const onScroll = () => {
+    const el = ref.current;
+    if (!el) return;
+    clearTimeout(settling.current);
+    settling.current = setTimeout(() => {
+      const i = Math.min(items.length - 1, Math.max(0, Math.round(el.scrollTop / ITEM_H)));
+      if (items[i] !== value) onPick(items[i]);
+    }, 90);
+  };
+
+  useEffect(() => () => clearTimeout(settling.current), []);
+
+  const step = (delta) => {
+    // Wraps at both ends: past 12 is 1, and PM steps back to AM.
+    const next = items[(index + delta + items.length) % items.length];
+    onPick(next);
+  };
+
+  return (
+    <div
+      ref={ref}
+      role="listbox"
+      aria-label={label}
+      tabIndex={0}
+      onScroll={onScroll}
+      onKeyDown={e => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); step(1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
+      }}
+      className="scrollbar-none w-[56px] overflow-y-auto outline-none snap-y snap-mandatory"
+      style={{ height: PANEL_H, scrollBehavior: 'smooth' }}
+    >
+      {/* Half a panel of blank above and below, so the first and last items can
+          reach the middle band. */}
+      <div style={{ height: ITEM_H * PAD_ROWS }} />
+      {items.map(item => (
+        <button
+          key={item}
+          type="button"
+          // mousedown, not click: the input's blur would close the panel before
+          // a click ever landed.
+          onMouseDown={e => { e.preventDefault(); onPick(item); }}
+          style={{ height: ITEM_H }}
+          className={`snap-center w-full text-center text-[13px] tabular-nums transition-colors
+            ${item === value ? 'font-semibold text-brand-700' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          {render(item)}
+        </button>
+      ))}
+      <div style={{ height: ITEM_H * PAD_ROWS }} />
+    </div>
+  );
 }
 
 export default function TimeInput({
@@ -110,6 +191,8 @@ export default function TimeInput({
   /* When the field is an END time, an unqualified "5" almost always means the
      afternoon. Set by the caller because only it knows the field's role. */
   assumePm = null,
+  /** Marks the field as wrong — the caller owns the message. */
+  invalid = false,
 }) {
   const { timeFormat } = useLocaleFormat();
   const is12 = String(timeFormat) !== '24';
@@ -119,18 +202,14 @@ export default function TimeInput({
   const [rect, setRect] = useState(null);
   const inputRef = useRef(null);
   const panelRef = useRef(null);
-  const colRefs = { hour: useRef(null), minute: useRef(null), meridiem: useRef(null) };
 
-  /* What the columns should highlight when nothing is set yet. A picker that
-   * opens on midnight makes every daytime choice a long scroll. */
+  /* What the wheels should show when nothing is set yet. A picker that opens on
+   * midnight makes every daytime choice a long scroll. */
   const parts = partsOf(value) || { hour12: 9, minute: 0, meridiem: assumePm ? 'PM' : 'AM' };
 
-  // While typing, the field shows what was typed; otherwise the stored value in
-  // the org's format. Committing on blur rather than on every keystroke means a
-  // half-typed "9:3" is never pushed to the caller as 9:03.
   const display = open ? draft : formatTime(value, timeFormat);
 
-  const commit = () => {
+  const commit = useCallback(() => {
     setOpen(false);
     const text = draft.trim();
     if (text === '') { if (value) onChange(''); return; }
@@ -138,23 +217,23 @@ export default function TimeInput({
     // Unparseable input reverts rather than clearing — losing a value somebody
     // already set because the last keystroke was a typo is the worse outcome.
     if (parsed) onChange(parsed);
-  };
+  }, [draft, value, onChange, assumePm]);
 
-  const place = () => {
+  const place = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    // Flip above when there is no room below — a panel that opens off-screen
-    // cannot be scrolled to, because it is fixed.
+    // Flip above when there is no room below — a fixed panel that opens
+    // off-screen cannot be scrolled to.
     const below = window.innerHeight - r.bottom;
     setRect({
       left: r.left,
-      top: below < PANEL_HEIGHT + 8 ? r.top - PANEL_HEIGHT - 4 : r.bottom + 4,
+      top: below < PANEL_H + 12 ? r.top - PANEL_H - 6 : r.bottom + 6,
       width: r.width,
     });
-  };
+  }, []);
 
-  useLayoutEffect(() => { if (open) place(); }, [open]);
+  useLayoutEffect(() => { if (open) place(); }, [open, place]);
 
   useEffect(() => {
     if (!open) return;
@@ -163,27 +242,18 @@ export default function TimeInput({
       if (panelRef.current?.contains(e.target)) return;
       commit();
     };
-    // Capture, so a scroll inside any ancestor repositions the panel rather
-    // than leaving it stranded where the field used to be.
-    const onScrollOrResize = () => place();
+    const reposition = () => place();
     document.addEventListener('mousedown', onDown);
-    window.addEventListener('scroll', onScrollOrResize, true);
-    window.addEventListener('resize', onScrollOrResize);
+    // Capture, so a scroll in any ancestor moves the panel with the field
+    // rather than leaving it where the field used to be.
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
     return () => {
       document.removeEventListener('mousedown', onDown);
-      window.removeEventListener('scroll', onScrollOrResize, true);
-      window.removeEventListener('resize', onScrollOrResize);
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
     };
-  });
-
-  // Each column opens on its current selection rather than at midnight.
-  useEffect(() => {
-    if (!open) return;
-    for (const key of ['hour', 'minute', 'meridiem']) {
-      colRefs[key].current?.querySelector('[data-selected="true"]')
-        ?.scrollIntoView({ block: 'center' });
-    }
-  }, [open]);
+  }, [open, commit, place]);
 
   const set = (patch) => {
     const next = toValue({ ...parts, ...patch });
@@ -205,28 +275,6 @@ export default function TimeInput({
     );
   }
 
-  const Column = ({ name, items, selected, render }) => (
-    <div ref={colRefs[name]} className="w-[52px] overflow-y-auto border-r border-slate-100 last:border-r-0">
-      {items.map(item => {
-        const isSel = item === selected;
-        return (
-          <button
-            key={item}
-            type="button"
-            data-selected={isSel}
-            // mousedown, not click: the input's blur would close the panel
-            // before a click ever landed.
-            onMouseDown={e => { e.preventDefault(); set(render.patch(item)); }}
-            className={`w-full py-1.5 text-center text-[13px] tabular-nums
-              ${isSel ? 'bg-brand-600 text-white font-semibold' : 'text-slate-600 hover:bg-slate-50'}`}
-          >
-            {render.label(item)}
-          </button>
-        );
-      })}
-    </div>
-  );
-
   return (
     <>
       <div className="relative">
@@ -246,7 +294,7 @@ export default function TimeInput({
             if (e.key === 'Enter') { e.preventDefault(); commit(); }
             else if (e.key === 'Escape') { e.preventDefault(); setDraft(formatTime(value, timeFormat)); setOpen(false); }
           }}
-          className={className}
+          className={`${className} ${invalid ? 'border-rose-300 focus:border-rose-400' : ''}`}
         />
         <Clock size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-300" />
       </div>
@@ -254,15 +302,29 @@ export default function TimeInput({
       {open && rect && createPortal(
         <div
           ref={panelRef}
-          style={{ position: 'fixed', left: rect.left, top: rect.top, minWidth: Math.max(rect.width, 160) }}
-          className="z-[100] flex h-52 rounded-lg border border-slate-200 bg-white shadow-xl"
+          style={{ position: 'fixed', left: rect.left, top: rect.top }}
+          className="z-[100] rounded-lg border border-slate-200 bg-white shadow-xl"
         >
-          <Column name="hour" items={HOURS} selected={parts.hour12}
-            render={{ label: PAD, patch: h => ({ hour12: h }) }} />
-          <Column name="minute" items={MINUTES} selected={parts.minute}
-            render={{ label: PAD, patch: m => ({ minute: m }) }} />
-          <Column name="meridiem" items={MERIDIEMS} selected={parts.meridiem}
-            render={{ label: x => x, patch: x => ({ meridiem: x }) }} />
+          <div className="relative flex">
+            {/* The band. Whatever sits inside it is the value. */}
+            <div
+              className="pointer-events-none absolute inset-x-0 border-y border-brand-200 bg-brand-50/60"
+              style={{ top: ITEM_H * PAD_ROWS, height: ITEM_H }}
+            />
+            <Wheel label="Hour" items={HOURS} value={parts.hour12}
+              render={PAD} onPick={h => set({ hour12: h })} />
+            <Wheel label="Minute" items={MINUTES} value={parts.minute}
+              render={PAD} onPick={m => set({ minute: m })} />
+            <Wheel label="AM or PM" items={MERIDIEMS} value={parts.meridiem}
+              render={x => x} onPick={x => set({ meridiem: x })} />
+          </div>
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); commit(); }}
+            className="w-full border-t border-slate-100 py-1.5 text-[12px] font-medium text-brand-600 hover:bg-slate-50"
+          >
+            Done
+          </button>
         </div>,
         document.body
       )}
