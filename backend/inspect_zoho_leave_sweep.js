@@ -53,15 +53,16 @@ async function patiently(fn, tries = 4) {
   throw last;
 }
 
+/* Zoho writes dates as dd/MM/yyyy — "07/09/2026".
+ *
+ * This is the parser zoho_restage.js and inspect_org_reconcile.js already use.
+ * I wrote a fresh one expecting dd-MMM-yyyy instead of copying the working one,
+ * and it returned null for all 6276 records — so the pre-import check compared
+ * NxtPeople against an empty Zoho and reported eleven requests as existing only
+ * here. Every one of them was in Zoho. */
 function fromZohoDate(v) {
-  const s = String(v ?? '').trim();
-  if (!s) return null;
-  const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})/.exec(s);
-  if (!m) return null;
-  const months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
-  const mm = months[m[2].toLowerCase()];
-  if (!mm) return null;
-  return `${m[3]}-${String(mm).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(String(v ?? '').trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
 }
 
 (async () => {
