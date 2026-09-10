@@ -13,9 +13,57 @@
  * race where Zoho rotates the access token before our cache expires.
  */
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const logger = require('../logger');
 
 let cached = { token: null, expiresAt: 0 };
+
+/* The in-memory cache above is per PROCESS, and that is the whole problem for
+ * the CLI tools.
+ *
+ * The server holds one process for days, so it exchanges the refresh token
+ * roughly once an hour and nobody notices. Every `docker compose exec backend
+ * node some_script.js` is a brand new process with an empty cache, so it burns
+ * a refresh on startup no matter how small the job. A morning of reconcile and
+ * restage runs is thirty-odd refreshes, and Zoho rate-limits the refresh
+ * endpoint separately from the API:
+ *
+ *   Zoho token refresh failed (400): "You have made too many requests
+ *   continuously. Please try again after some time."
+ *
+ * It arrives as a 400, so the 429/503/502 backoff in the inspect scripts never
+ * fires, and a read-only script that would have been free dies outright.
+ *
+ * So the token is also cached on disk, beside the process that fetched it, and
+ * shared by every later CLI run until it expires. Same TTL, same token, one
+ * refresh instead of thirty. Written 0600 -- it is a one-hour credential
+ * sitting in the same container as the refresh token that mints it, which is
+ * the stronger secret by far. */
+const TOKEN_CACHE = process.env.ZOHO_TOKEN_CACHE
+  || path.join(os.tmpdir(), 'nxtpeople-zoho-token.json');
+
+function readDiskToken() {
+  try {
+    const raw = fs.readFileSync(TOKEN_CACHE, 'utf8');
+    const j = JSON.parse(raw);
+    if (j && typeof j.token === 'string' && typeof j.expiresAt === 'number'
+        && j.expiresAt > Date.now()) {
+      return { token: j.token, expiresAt: j.expiresAt };
+    }
+  } catch { /* absent, unreadable or stale — mint a new one, that is not an error */ }
+  return null;
+}
+
+function writeDiskToken(entry) {
+  try {
+    fs.writeFileSync(TOKEN_CACHE, JSON.stringify(entry), { mode: 0o600 });
+  } catch (err) {
+    // A token we could not cache still works; only the next process pays.
+    logger.warn({ err: String(err.message) }, 'Could not persist Zoho access token');
+  }
+}
 
 function envOrThrow(name) {
   const v = process.env[name];
@@ -38,6 +86,15 @@ async function refreshAccessToken() {
   const r = await fetch(`${url}?${params.toString()}`, { method: 'POST' });
   if (!r.ok) {
     const text = await r.text();
+    // Zoho reports refresh-endpoint throttling as a 400, not a 429, so say
+    // what it is -- "failed (400)" reads like bad credentials and sends people
+    // looking for a revoked token that is fine.
+    if (/too many requests/i.test(text)) {
+      throw new Error(
+        `Zoho is throttling the token refresh endpoint (${r.status}). The credentials are `
+        + `fine; too many separate processes asked for a token. Wait, then retry -- the `
+        + `access token is cached at ${TOKEN_CACHE}, so later runs share one refresh.`);
+    }
     throw new Error(`Zoho token refresh failed (${r.status}): ${text}`);
   }
   const body = await r.json();
@@ -48,12 +105,15 @@ async function refreshAccessToken() {
   // Zoho's expires_in is in seconds. Cache for 55 min to leave headroom.
   const ttlMs = (body.expires_in ? body.expires_in - 300 : 55 * 60) * 1000;
   cached = { token: body.access_token, expiresAt: Date.now() + ttlMs };
+  writeDiskToken(cached);
   logger.info({ ttlMs }, 'Zoho access token refreshed');
   return cached.token;
 }
 
 async function getAccessToken() {
   if (cached.token && cached.expiresAt > Date.now()) return cached.token;
+  const onDisk = readDiskToken();
+  if (onDisk) { cached = onDisk; return cached.token; }
   return refreshAccessToken();
 }
 
@@ -73,8 +133,10 @@ async function zohoApi(endpoint) {
 
   let r = await fire();
   if (r.status === 401) {
-    // Stale token — drop the cache and try once more.
+    // Stale token — drop BOTH caches and try once more. Clearing only the
+    // in-memory one would read the same dead token straight back off disk.
     cached = { token: null, expiresAt: 0 };
+    try { fs.unlinkSync(TOKEN_CACHE); } catch { /* nothing cached, fine */ }
     r = await fire();
   }
   if (!r.ok) {
