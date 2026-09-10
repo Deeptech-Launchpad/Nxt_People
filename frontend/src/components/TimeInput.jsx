@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Clock } from 'lucide-react';
 import { useLocaleFormat, formatTime } from '../utils/datetime';
 
@@ -12,10 +13,17 @@ import { useLocaleFormat, formatTime } from '../utils/datetime';
  * The setting was not being ignored; it could not reach that control at all.
  *
  * So this is the control instead, and it is the browser's own picker in shape:
- * three columns — hour, minute, AM/PM — scrolled to what is currently set. The
- * first version offered a list of half-hour slots, which decided for the user
- * that nobody starts at 09:12. They do, and a picker that cannot express a real
- * time is worse than none.
+ * three columns — hour, minute, AM/PM — scrolled to what is currently set. An
+ * earlier version offered a list of half-hour slots, which decided on the
+ * user's behalf that nobody starts at 09:12. They do — one of the permissions
+ * on file is 0.57 hours — and a picker that cannot express a real time is worse
+ * than no picker.
+ *
+ * The panel is rendered through a portal, positioned against the input rather
+ * than nested inside it. Its first home was an absolutely positioned child,
+ * which the day-row table clipped to a two-row sliver: that table needs
+ * overflow-hidden for its rounded corners, and overflow-hidden clips a dropdown
+ * however high its z-index. Nothing above it can crop a portal.
  *
  * Typing is the faster path and is always available: "9", "930", "9:30",
  * "9:30 pm", "0930" and "21:30" all parse. The columns are for the times of day
@@ -31,6 +39,8 @@ const PAD = (n) => String(n).padStart(2, '0');
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);          // 1..12
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);            // 0..59
 const MERIDIEMS = ['AM', 'PM'];
+
+const PANEL_HEIGHT = 208;   // max-h-52, so the flip decision knows the size
 
 /** Anything a person might reasonably type -> "HH:MM", or null. */
 export function parseTimeInput(raw, { assumePm = null } = {}) {
@@ -106,7 +116,9 @@ export default function TimeInput({
 
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
-  const boxRef = useRef(null);
+  const [rect, setRect] = useState(null);
+  const inputRef = useRef(null);
+  const panelRef = useRef(null);
   const colRefs = { hour: useRef(null), minute: useRef(null), meridiem: useRef(null) };
 
   /* What the columns should highlight when nothing is set yet. A picker that
@@ -128,21 +140,48 @@ export default function TimeInput({
     if (parsed) onChange(parsed);
   };
 
+  const place = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    // Flip above when there is no room below — a panel that opens off-screen
+    // cannot be scrolled to, because it is fixed.
+    const below = window.innerHeight - r.bottom;
+    setRect({
+      left: r.left,
+      top: below < PANEL_HEIGHT + 8 ? r.top - PANEL_HEIGHT - 4 : r.bottom + 4,
+      width: r.width,
+    });
+  };
+
+  useLayoutEffect(() => { if (open) place(); }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const onDown = (e) => {
-      if (boxRef.current && !boxRef.current.contains(e.target)) commit();
+      if (inputRef.current?.contains(e.target)) return;
+      if (panelRef.current?.contains(e.target)) return;
+      commit();
     };
+    // Capture, so a scroll inside any ancestor repositions the panel rather
+    // than leaving it stranded where the field used to be.
+    const onScrollOrResize = () => place();
     document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
   });
 
   // Each column opens on its current selection rather than at midnight.
   useEffect(() => {
     if (!open) return;
     for (const key of ['hour', 'minute', 'meridiem']) {
-      const col = colRefs[key].current;
-      col?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'center' });
+      colRefs[key].current?.querySelector('[data-selected="true"]')
+        ?.scrollIntoView({ block: 'center' });
     }
   }, [open]);
 
@@ -166,11 +205,8 @@ export default function TimeInput({
     );
   }
 
-  const Column = ({ name, items, selected, render, onPick, width }) => (
-    <div
-      ref={colRefs[name]}
-      className={`${width} max-h-48 overflow-y-auto border-r border-slate-100 last:border-r-0`}
-    >
+  const Column = ({ name, items, selected, render }) => (
+    <div ref={colRefs[name]} className="w-[52px] overflow-y-auto border-r border-slate-100 last:border-r-0">
       {items.map(item => {
         const isSel = item === selected;
         return (
@@ -180,11 +216,11 @@ export default function TimeInput({
             data-selected={isSel}
             // mousedown, not click: the input's blur would close the panel
             // before a click ever landed.
-            onMouseDown={e => { e.preventDefault(); onPick(item); }}
-            className={`w-full px-3 py-1.5 text-center text-[14px] tabular-nums
+            onMouseDown={e => { e.preventDefault(); set(render.patch(item)); }}
+            className={`w-full py-1.5 text-center text-[13px] tabular-nums
               ${isSel ? 'bg-brand-600 text-white font-semibold' : 'text-slate-600 hover:bg-slate-50'}`}
           >
-            {render(item)}
+            {render.label(item)}
           </button>
         );
       })}
@@ -192,42 +228,44 @@ export default function TimeInput({
   );
 
   return (
-    <div ref={boxRef} className="relative">
-      <input
-        id={id}
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        value={display}
-        disabled={disabled}
-        required={required}
-        placeholder={placeholder || 'hh:mm AM'}
-        onFocus={() => { setDraft(formatTime(value, timeFormat)); setOpen(true); }}
-        onChange={e => { setDraft(e.target.value); if (!open) setOpen(true); }}
-        onKeyDown={e => {
-          if (e.key === 'Enter') { e.preventDefault(); commit(); }
-          else if (e.key === 'Escape') { e.preventDefault(); setDraft(formatTime(value, timeFormat)); setOpen(false); }
-        }}
-        className={className}
-      />
-      <Clock size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-300" />
+    <>
+      <div className="relative">
+        <input
+          ref={inputRef}
+          id={id}
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          value={display}
+          disabled={disabled}
+          required={required}
+          placeholder={placeholder || 'hh:mm AM'}
+          onFocus={() => { setDraft(formatTime(value, timeFormat)); setOpen(true); }}
+          onChange={e => { setDraft(e.target.value); if (!open) setOpen(true); }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') { e.preventDefault(); setDraft(formatTime(value, timeFormat)); setOpen(false); }
+          }}
+          className={className}
+        />
+        <Clock size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-300" />
+      </div>
 
-      {open && (
-        <div className="absolute z-30 mt-1 flex rounded-lg border border-slate-200 bg-white shadow-lg">
-          <Column
-            name="hour" width="w-14" items={HOURS} selected={parts.hour12}
-            render={h => PAD(h)} onPick={h => set({ hour12: h })}
-          />
-          <Column
-            name="minute" width="w-14" items={MINUTES} selected={parts.minute}
-            render={m => PAD(m)} onPick={m => set({ minute: m })}
-          />
-          <Column
-            name="meridiem" width="w-14" items={MERIDIEMS} selected={parts.meridiem}
-            render={x => x} onPick={x => set({ meridiem: x })}
-          />
-        </div>
+      {open && rect && createPortal(
+        <div
+          ref={panelRef}
+          style={{ position: 'fixed', left: rect.left, top: rect.top, minWidth: Math.max(rect.width, 160) }}
+          className="z-[100] flex h-52 rounded-lg border border-slate-200 bg-white shadow-xl"
+        >
+          <Column name="hour" items={HOURS} selected={parts.hour12}
+            render={{ label: PAD, patch: h => ({ hour12: h }) }} />
+          <Column name="minute" items={MINUTES} selected={parts.minute}
+            render={{ label: PAD, patch: m => ({ minute: m }) }} />
+          <Column name="meridiem" items={MERIDIEMS} selected={parts.meridiem}
+            render={{ label: x => x, patch: x => ({ meridiem: x }) }} />
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
