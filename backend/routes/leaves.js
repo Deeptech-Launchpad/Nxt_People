@@ -926,6 +926,263 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
 // since both are relationships to the employee rather than roles. canCancel()
 // resolves those relationships and refuses anybody holding neither, so an
 // unrelated employee gets a 403 exactly as before.
+/* ── PUT /leaves/:id — edit a request ─────────────────────────────────────
+ *
+ * The row menu carried an Edit that had been greyed out since it was built,
+ * with the reason written on it: "editing an approved leave has to move the
+ * balance both ways". That is the whole of this endpoint.
+ *
+ * Who may edit what:
+ *   pending    the person it belongs to, or an administrator. Nothing has been
+ *              spent yet; correcting your own request before anybody has looked
+ *              at it is not an administrative act.
+ *   approved   administrators only. This is the case the feature exists for —
+ *              two hours of permission were approved, the person came back
+ *              after one, and the record should say one.
+ *   otherwise  nobody. A rejected or cancelled request is history.
+ *
+ * The balance is moved by refunding what was debited and debiting what the
+ * request now says, rather than by computing a delta. debitOnApproval and
+ * refundApproved are deliberately adjacent in utils/leaveBalance because a
+ * debit and its refund drifting apart is the defect that file exists to
+ * prevent; a third path that adjusts by difference would be exactly that drift.
+ * It also gets the awkward cases right for free — a comp-off edit walks the
+ * FIFO ledger back and forward, and a computed balance is two no-ops because
+ * the row itself is the balance.
+ *
+ * What cannot change here: whose leave it is, and which type it is. Both are a
+ * different request rather than a correction to this one — a type change moves
+ * the debit to another store and another cap, and is honestly a cancel and a
+ * re-apply. Refusing plainly beats half-supporting it.
+ */
+router.put('/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const cur = (await client.query(`SELECT * FROM leaves WHERE id = $1 FOR UPDATE`, [req.params.id])).rows[0];
+    if (!cur) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Request not found' });
+    }
+
+    const full = isFullAccess(req.user.role);
+    const mine = String(cur.employee_id) === String(req.user._id);
+
+    if (cur.status === 'approved' && !full) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({
+        success: false,
+        message: 'This request has been approved. Only HR or an administrator can change it now.',
+      });
+    }
+    if (cur.status === 'pending' && !mine && !full) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, message: 'You can only edit your own requests.' });
+    }
+    if (cur.status !== 'pending' && cur.status !== 'approved') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: `This request is ${cur.status} and can no longer be edited.` });
+    }
+
+    if (req.body.employeeId && String(req.body.employeeId) !== String(cur.employee_id)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'A request cannot be moved to another employee. Cancel it and apply for the right person.',
+      });
+    }
+    if (req.body.leaveType && req.body.leaveType !== cur.leave_type) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'The leave type cannot be changed. Cancel this request and apply again with the type you want.',
+      });
+    }
+
+    const isPermission = cur.leave_type === 'permission';
+    const reason = req.body.reason === undefined
+      ? cur.reason
+      : String(req.body.reason).trim();
+    if (!reason || reason.length < 3) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'Reason must be 3–500 characters' });
+    }
+
+    const ymd = (d) => (d instanceof Date ? d.toLocaleDateString('en-CA') : String(d).slice(0, 10));
+    const startDate = ymd(req.body.startDate || cur.start_date);
+    const endDate = isPermission ? startDate : ymd(req.body.endDate || cur.end_date);
+
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'Invalid date format' });
+    }
+    if (start > end) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: 'Start date cannot be after end date' });
+    }
+
+    /* Both ends are checked: moving a day OUT of a paid month changes that
+     * month's pay just as surely as moving one in. */
+    for (const d of [new Date(cur.start_date), start]) {
+      const locked = await payrollLockFor(d);
+      if (locked) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: `Payroll for ${locked} is already finalised, so this request cannot be changed.`,
+        });
+      }
+    }
+
+    let newDays = parseFloat(cur.total_days) || 0;
+    let newHours = cur.hours === null || cur.hours === undefined ? null : parseFloat(cur.hours);
+    let startTime = cur.start_time;
+    let endTime = cur.end_time;
+    let isHalfDay = cur.is_half_day;
+    let halfDayType = cur.half_day_type;
+
+    if (isPermission) {
+      startTime = req.body.startTime || cur.start_time;
+      endTime = req.body.endTime || cur.end_time;
+      if (!startTime || !endTime) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: 'Permission requires a start time and an end time.' });
+      }
+      const toMin = (t) => { const [h, m] = String(t).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+      const diff = toMin(endTime) - toMin(startTime);
+      if (diff <= 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: 'Permission end time must be after the start time.' });
+      }
+      newHours = Math.round((diff / 60) * 100) / 100;
+      newDays = 0;
+
+      /* The monthly cap is a sum over the leaves table, so this row must be
+       * left out of it — otherwise reducing two hours to one is measured
+       * against a total that still contains the two. */
+      const policy = (await getLeavePolicies()).get('permission');
+      const cap = ['monthly', 'annual'].includes(policy.accrualMode) ? policy.accrualAmount : 0;
+      if (cap > 0) {
+        const used = parseFloat((await client.query(
+          `SELECT COALESCE(SUM(hours), 0) AS used FROM leaves
+            WHERE employee_id = $1 AND leave_type = 'permission'
+              AND status IN ('pending', 'approved') AND id <> $2
+              AND date_trunc('month', start_date) = date_trunc('month', $3::date)`,
+          [cur.employee_id, cur.id, startDate]
+        )).rows[0].used) || 0;
+        if (used + newHours > cap) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: `Monthly permission limit is ${cap} hours. `
+                   + `${(cap - used).toFixed(2)}h remain for that month once this request is set aside.`,
+          });
+        }
+      }
+    } else {
+      if (req.body.isHalfDay !== undefined) isHalfDay = !!req.body.isHalfDay;
+      if (isHalfDay) {
+        halfDayType = req.body.halfDayType || halfDayType || 'first_half';
+        // Half a day is one date by definition.
+        newDays = 0.5;
+      } else {
+        halfDayType = null;
+        newDays = await countWorkingDays(startDate, endDate);
+      }
+
+      // Its own row cannot be the overlap it is refused for.
+      const clash = await client.query(
+        `SELECT id, start_date, end_date FROM leaves
+          WHERE employee_id = $1 AND id <> $2
+            AND status IN ('pending', 'pending_approval', 'approved')
+            AND start_date <= $4::date AND end_date >= $3::date
+          LIMIT 1`,
+        [cur.employee_id, cur.id, startDate, endDate]
+      );
+      if (clash.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Those dates overlap another request for this employee.',
+        });
+      }
+    }
+
+    /* Move the balance only for an approved request. A pending one reserved
+     * against leave_balances.available when it was applied for and has not been
+     * debited anywhere else, so only that reservation moves. */
+    const oldDays = parseFloat(cur.total_days) || 0;
+    let balanceSource = cur.balance_source;
+
+    if (cur.status === 'approved' && newDays !== oldDays) {
+      await refundApproved(client, {
+        employeeId: cur.employee_id, leaveType: cur.leave_type,
+        days: oldDays, year: new Date(cur.start_date).getFullYear(), store: cur.balance_source,
+      });
+      balanceSource = await debitOnApproval(client, {
+        employeeId: cur.employee_id, leaveType: cur.leave_type,
+        days: newDays, year: start.getFullYear(),
+      });
+    } else if (cur.status === 'pending' && newDays !== oldDays && cur.leave_type !== 'unpaid') {
+      const lt = (await client.query(`SELECT id FROM leave_types WHERE code = $1`, [dbTypeCode(cur.leave_type)])).rows[0];
+      if (lt) {
+        // One statement rather than a refund and a re-reserve, because the two
+        // rows are the same row and the year has not changed.
+        await client.query(
+          `UPDATE leave_balances SET available = available + $1
+            WHERE employee_id = $2 AND leave_type_id = $3 AND year = $4`,
+          [oldDays - newDays, cur.employee_id, lt.id, start.getFullYear()]
+        );
+      }
+    }
+
+    const updated = (await client.query(
+      `UPDATE leaves
+          SET start_date = $2::date, end_date = $3::date, total_days = $4, hours = $5,
+              start_time = $6, end_time = $7, is_half_day = $8, half_day_type = $9,
+              reason = $10, balance_source = $11, updated_at = NOW()
+        WHERE id = $1
+        RETURNING *`,
+      [cur.id, startDate, endDate, newDays, newHours,
+       startTime, endTime, isHalfDay, halfDayType,
+       reason.slice(0, 500), balanceSource]
+    )).rows[0];
+
+    await client.query('COMMIT');
+
+    /* Named in the audit log whoever did it. Editing an approved request
+     * changes what somebody is paid without them applying for anything, and
+     * that should never be reconstructible only by inference. */
+    await logAudit(req, {
+      action: 'EDIT',
+      resource: 'Leave',
+      resourceId: cur.id,
+      changes: {
+        status: cur.status,
+        from: {
+          startDate: ymd(cur.start_date), endDate: ymd(cur.end_date),
+          days: oldDays, hours: cur.hours, startTime: cur.start_time, endTime: cur.end_time,
+          isHalfDay: cur.is_half_day, reason: cur.reason,
+        },
+        to: {
+          startDate, endDate, days: newDays, hours: newHours,
+          startTime, endTime, isHalfDay, reason: reason.slice(0, 500),
+        },
+      },
+    });
+
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    serverError(res, err);
+  } finally {
+    client.release();
+  }
+});
+
 router.put('/:id/cancel', async (req, res) => {
   const client = await pool.connect();
   try {

@@ -17,7 +17,7 @@
  *   kind                                    — 'leave' (default) | 'regularization'.
  */
 import React, { useState } from 'react';
-import { X, CheckCircle, CheckCheck, XCircle, Calendar, Clock, FileText, User, Hash, LogIn, LogOut, Eye, ArrowLeft, MessageSquare, Scissors } from 'lucide-react';
+import { X, CheckCircle, CheckCheck, XCircle, Calendar, Clock, FileText, User, Hash, LogIn, LogOut, Eye, ArrowLeft, MessageSquare, Scissors, Pencil } from 'lucide-react';
 import ApprovalTimeline from './ApprovalTimeline';
 
 const TYPE_LABEL = { casual: 'Casual Leave', comp_off: 'Compensatory Off', unpaid: 'Leave Without Pay', permission: 'Permission', sick: 'Sick Leave', earned: 'Earned Leave' };
@@ -89,7 +89,7 @@ function BalanceCard({ leave, balanceCards }) {
   );
 }
 
-export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct = false, onApprove, onApproveAll, onReject, onCancel, onCancelPart, defaultView = 'details' }) {
+export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct = false, onApprove, onApproveAll, onReject, onCancel, onCancelPart, onEdit, defaultView = 'details' }) {
   const [view, setView] = useState(defaultView);   // 'details' | 'timeline'
   const [comment, setComment] = useState('');
   const [acting, setActing] = useState(false);
@@ -124,6 +124,10 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
   // cancel this particular leave is the server's call; it answers 403 with a
   // reason, which surfaces as a toast.
   const showCancel = typeof onCancel === 'function' && ['pending', 'approved'].includes(status);
+  /* Editing is offered on the same states cancelling is, and for the same
+   * reason: a live request can still be corrected, a resolved one is history.
+   * Regularizations and WFH have their own shapes and are not edited here. */
+  const showEdit = typeof onEdit === 'function' && ['pending', 'approved'].includes(status) && !isReg && !isWfh;
   // Only offered on a range: cancelling "part" of a single day is just
   // cancelling it, and offering both would be two buttons for one outcome.
   const isRange = String(leave.startDate || '').slice(0, 10) !== String(leave.endDate || '').slice(0, 10);
@@ -153,6 +157,14 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
             >
               {view === 'timeline' ? <><ArrowLeft size={13} /> Details</> : <><Eye size={13} /> View</>}
             </button>
+            {showEdit && (
+              <button
+                onClick={() => onEdit(leave)}
+                className="flex items-center gap-1.5 bg-slate-50 text-slate-600 hover:bg-slate-100 px-3 py-1.5 rounded-lg text-[14px] font-semibold transition-colors"
+              >
+                <Pencil size={13} /> Edit
+              </button>
+            )}
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={18} /></button>
           </div>
         </div>

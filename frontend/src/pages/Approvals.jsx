@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../components/LeaveDetailModal';
+import EditRequestModal from '../components/EditRequestModal';
 import { useAuth } from '../context/AuthContext';
 import usePolling from '../hooks/usePolling';
 
@@ -68,6 +69,7 @@ export default function Approvals({ embedded = false }) {
   const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
   const [detailBalance, setDetailBalance] = useState(null); // balance cards for the detail modal
   const [detailWfh, setDetailWfh] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [actionLoading, setActionLoading] = useState('');
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -758,9 +760,20 @@ export default function Approvals({ embedded = false }) {
               ? (x, comment) => { if (confirm('Approve all remaining levels for this request? This skips any other pending approvers.')) { setDetailLeave(null); action(endpoint, x._id, 'approved', comment, true); } }
               : undefined}
             onReject={(x, comment) => { setDetailLeave(null); action(endpoint, x._id, 'rejected', comment); }}
+            /* Regularizations have their own shape and are not edited here;
+               the modal already withholds the button for them. */
+            onEdit={isReg ? undefined : (x) => { setDetailLeave(null); setEditing(x); }}
           />
         );
       })()}
+
+      {editing && (
+        <EditRequestModal
+          leave={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => load()}
+        />
+      )}
     </div>
   );
 }

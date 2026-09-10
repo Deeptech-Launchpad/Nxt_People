@@ -6,6 +6,7 @@ import api from '../../../utils/api';
 import useEmployeeList, { labelOf } from './useEmployeeList';
 import EmployeePicker from './EmployeePicker';
 import TimeInput from '../../../components/TimeInput';
+import EditRequestModal from '../../../components/EditRequestModal';
 import RowMenu from './RowMenu';
 
 /* ── Operations → Leave Tracker → Leave Requests ────────────────────────────
@@ -76,6 +77,7 @@ export default function OpsLeaveRequests() {
   const [acting, setActing] = useState('');
   const [modal, setModal] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [toDelete, setToDelete] = useState(null);
   const [delReason, setDelReason] = useState('');
   const [types, setTypes] = useState([]);
@@ -358,8 +360,15 @@ export default function OpsLeaveRequests() {
                       )}
                       <RowMenu items={[
                         { label: 'View', icon: <Eye size={15} />, onClick: () => setDetail(r) },
+                        /* Was greyed out with "editing an approved leave has to
+                           move the balance both ways" — which is now what the
+                           endpoint does. Only a live request can be edited; a
+                           rejected or cancelled one is history. */
                         { label: 'Edit', icon: <Pencil size={15} />,
-                          disabled: 'Not built yet — editing an approved leave has to move the balance both ways' },
+                          disabled: (r.status === 'pending' || r.status === 'approved')
+                            ? null
+                            : `A ${r.status} request can no longer be edited`,
+                          onClick: () => setEditing(r) },
                         (r.status === 'pending' || r.status === 'approved') && {
                           label: 'Delete', icon: <Trash2 size={15} />, danger: true,
                           onClick: () => { setDelReason(''); setToDelete(r); } },
@@ -519,6 +528,14 @@ export default function OpsLeaveRequests() {
             </div>
           </form>
         </div>
+      )}
+
+      {editing && (
+        <EditRequestModal
+          leave={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => load()}
+        />
       )}
 
       {detail && (
