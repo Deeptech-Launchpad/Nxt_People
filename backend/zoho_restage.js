@@ -466,11 +466,26 @@ const shapeOfDay = (iso, r) => {
   const checkIn = fromZohoStamp(notDash(r.FirstIn));
   const checkOut = fromZohoStamp(notDash(r.LastOut));
   const reportedHours = hhmmToHours(r.TotalHours) ?? 0;
+  /* A check-out dated after the day itself is Zoho's missing-checkout
+   * artifact, not a day somebody worked.
+   *
+   * When a person forgets to check out, Zoho fills LastOut with their NEXT
+   * check-in, so the day comes back as a ~22-24 hour span.
+   * zoho_complete_absent_days.js has refused these since fix_overnight_span_rows.js
+   * had to clean up three of them (23.92h, 23.97h, 23.97h). This script never
+   * learned the same lesson: a --fill-gaps-only dry run over 2026-08-01..09-10
+   * offered to write Sushma Premkumar 09-08 as 22.28 hours and Praba Karan
+   * 09-08 as 08:44 to 07:03 the next morning.
+   *
+   * cappedHours cannot catch it -- it caps reported hours at the span, and
+   * here the span itself is the wrong number. */
+  const overnightSpan = !!(checkOut && checkOut.slice(0, 10) !== iso);
   return {
     date: iso,
     zohoStatus: String(r.Status ?? '').trim(),
     checkIn,
     checkOut,
+    overnightSpan,
     hasPunch: !!checkIn,
     hours: cappedHours(reportedHours, checkIn, checkOut) ?? 0,
     reportedHours,
@@ -721,7 +736,10 @@ async function backup(client, batch, table, empId, where, params) {
     const offRolls = allDays.filter(d => !onRolls(d) && (d.hasPunch || isAbsence(d)));
     // --fill-gaps-only additionally drops any day that already has a row here
     // -- that row, whatever it says, is not this script's to replace.
+    const spanArtifacts = allDays.filter(d => d.overnightSpan
+      && (!FILL_GAPS_ONLY || !hereAttDates.has(d.date)));
     const days = allDays.filter(d => onRolls(d) && (d.hasPunch || isAbsence(d))
+      && !d.overnightSpan
       && (!FILL_GAPS_ONLY || !hereAttDates.has(d.date)));
     const skipped = allDays.filter(d => onRolls(d) && !(d.hasPunch || isAbsence(d)));
 
@@ -731,7 +749,8 @@ async function backup(client, batch, table, empId, where, params) {
     }
 
     plan.push({ emp, leaveInRange, reached, attendanceReachable, attendanceError,
-                hereAtt, hereLeave, days, skipped, allDays, offRolls, sessions });
+                hereAtt, hereLeave, days, skipped, allDays, offRolls, sessions,
+                spanArtifacts });
   }
 
   // ── Say plainly what would happen to each person ─────────────────────────
@@ -756,6 +775,15 @@ async function backup(client, batch, table, empId, where, params) {
       : FILL_GAPS_ONLY ? `→ ${p.hereAtt.n} existing day(s) left untouched, ${p.days.length} missing day(s) inserted`
       : '→ backed up, then replaced'}`);
     console.log(`    here: leave        ${p.hereLeave} record(s)  → backed up, then replaced\n`);
+    if (p.attendanceReachable && p.spanArtifacts.length) {
+      console.log(`    ${p.spanArtifacts.length} day(s) NOT imported: Zoho's check-out is dated after the`);
+      console.log('                       day itself, which is its forgot-to-check-out artifact:');
+      for (const d of p.spanArtifacts) {
+        console.log(`                         ${d.date}  ${d.checkIn} to ${d.checkOut}`
+          + `  Zoho called it "${d.zohoStatus || '(blank)'}"`);
+      }
+      console.log('                       These need a regularization, not an import.');
+    }
 
     if (!APPLY && p.leaveInRange.length) {
       console.log('    the leave that would arrive:\n');
