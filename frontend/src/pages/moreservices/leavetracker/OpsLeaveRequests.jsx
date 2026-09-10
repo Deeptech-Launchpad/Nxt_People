@@ -5,6 +5,7 @@ import FilterPanel from './FilterPanel';
 import api from '../../../utils/api';
 import useEmployeeList, { labelOf } from './useEmployeeList';
 import EmployeePicker from './EmployeePicker';
+import TimeInput from '../../../components/TimeInput';
 import RowMenu from './RowMenu';
 
 /* ── Operations → Leave Tracker → Leave Requests ────────────────────────────
@@ -442,13 +443,14 @@ export default function OpsLeaveRequests() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={label}>Start time *</label>
-                    <input type="time" value={form.startTime} required className={field}
-                      onChange={e => setForm({ ...form, startTime: e.target.value })} />
+                    <TimeInput value={form.startTime} required className={field}
+                      onChange={v => setForm({ ...form, startTime: v })} />
                   </div>
                   <div>
                     <label className={label}>End time *</label>
-                    <input type="time" value={form.endTime} required className={field}
-                      onChange={e => setForm({ ...form, endTime: e.target.value })} />
+                    {/* An unqualified "5" in an end field means the afternoon. */}
+                    <TimeInput value={form.endTime} required className={field} assumePm
+                      onChange={v => setForm({ ...form, endTime: v })} />
                   </div>
                 </div>
                 {form.startTime && form.endTime && (

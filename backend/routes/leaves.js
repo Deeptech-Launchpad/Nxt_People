@@ -270,25 +270,24 @@ router.post('/', [
     if (start > end) {
       return res.status(400).json({ success: false, message: 'Start date cannot be after end date' });
     }
-    /* No back-dated leave — for the person applying for themselves.
-     *
-     * The comment here used to say "HR can still record historical leaves
-     * directly via admin endpoints", and no such endpoint existed. Operations →
-     * Leave Requests posts to THIS route, so HR could not record a past leave at
-     * all — which is the whole reason that tab has an employee selector on top.
-     * Somebody who was away last Tuesday and could not apply is exactly who it
-     * is for.
-     *
-     * So the block stands for self-service and lifts for an administrator filing
-     * on somebody else's behalf. Two limits keep that from becoming a way to
-     * rewrite history: it cannot reach into a month whose payroll is already
-     * finalised, and it is written to the audit log naming who filed it.
-     */
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const backdated = start < today;
-    if (backdated && !subject.onBehalf) {
-      return res.status(400).json({ success: false, message: 'Cannot apply for leave in the past' });
-    }
+    /* Anybody may record their own past day.
+     *
+     * The block used to be absolute, then briefly lifted only for an
+     * administrator filing on somebody's behalf. Neither matched how the day
+     * actually goes: a person who took an hour off on Tuesday finds out on
+     * Thursday that it was never recorded, and they are the one who knows what
+     * happened. Making them ask HR to type it for them adds a queue and no
+     * accuracy.
+     *
+     * What stays gated is filing for SOMEBODY ELSE, which resolveLeaveSubject
+     * already restricts to admin, HR and directors — that is an administrative
+     * act on another person's balance and pay, and a different thing entirely
+     * from correcting your own record.
+     *
+     * The payroll lock below applies to everyone, because it is not a question
+     * of authority: a month that has been paid cannot quietly gain leave. */
     if (backdated) {
       const locked = await payrollLockFor(start);
       if (locked) {

@@ -2,6 +2,7 @@
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import TimeInput from './TimeInput';
 import { MapPin, Clock, LogIn, LogOut, ChevronDown, Calendar, Star, DollarSign, Activity, Rss, FileText, X } from 'lucide-react';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -97,8 +98,8 @@ function ApplyLeaveModal({ onClose, onSuccess, leaveTypes }) {
             <>
               <div><label className="text-[13px] text-slate-500">Date</label><input type="date" required value={form.startDate} onChange={e => set('startDate', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="text-[13px] text-slate-500">Start time</label><input type="time" required value={form.startTime} onChange={e => set('startTime', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
-                <div><label className="text-[13px] text-slate-500">End time</label><input type="time" required value={form.endTime} onChange={e => set('endTime', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
+                <div><label className="text-[13px] text-slate-500">Start time</label><TimeInput required value={form.startTime} onChange={v => set('startTime', v)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
+                <div><label className="text-[13px] text-slate-500">End time</label><TimeInput required assumePm value={form.endTime} onChange={v => set('endTime', v)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
               </div>
               {permHours > 0 && <p className={`text-[14px] font-medium ${permHours > 4 ? 'text-red-600' : 'text-purple-600'}`}>{permHours.toFixed(2)}h{permHours > 4 ? ' — exceeds the 4h limit' : ''}</p>}
             </>
