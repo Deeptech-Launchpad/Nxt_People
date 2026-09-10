@@ -5,8 +5,7 @@ import FilterPanel from './FilterPanel';
 import api from '../../../utils/api';
 import useEmployeeList from './useEmployeeList';
 import EmployeePicker from './EmployeePicker';
-import EditRequestModal from '../../../components/EditRequestModal';
-import ApplyLeaveForm from './ApplyLeaveForm';
+import LeaveRequestDialog from './LeaveRequestDialog';
 import RowMenu from './RowMenu';
 
 /* ── Operations → Leave Tracker → Leave Requests ────────────────────────────
@@ -328,8 +327,11 @@ export default function OpsLeaveRequests() {
         </div>
       </div>
 
+      {/* One dialog for all three: apply, edit and view are the same record
+          and used to be three different-looking screens. */}
       {modal && (
-        <ApplyLeaveForm
+        <LeaveRequestDialog
+          mode="apply"
           people={people}
           peopleLoading={peopleLoading}
           types={types}
@@ -338,49 +340,29 @@ export default function OpsLeaveRequests() {
         />
       )}
 
-      {editing && (
-        <EditRequestModal
-          leave={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => load()}
+      {detail && (
+        <LeaveRequestDialog
+          mode="view"
+          leave={detail}
+          people={people}
+          peopleLoading={peopleLoading}
+          types={types}
+          onClose={() => setDetail(null)}
+          onSaved={() => { setDetail(null); load(); }}
+          onCancelLeave={(l) => { setDetail(null); setToDelete(l); }}
         />
       )}
 
-      {detail && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setDetail(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <p className="font-display font-semibold text-slate-800 text-lg">
-                  {detail.employee?.firstName} {detail.employee?.lastName}
-                </p>
-                <p className="text-sm text-slate-400">{detail.employee?.employeeId} · {detail.employee?.department || '—'}</p>
-              </div>
-              <span className={`text-[13px] px-2.5 py-1 rounded-full font-medium capitalize ${STATUS_STYLE[detail.status] || 'bg-slate-100'}`}>
-                {detail.status}
-              </span>
-            </div>
-            <dl className="space-y-2.5 text-[15px]">
-              {[
-                ['Leave type', String(detail.leaveType || '').replace(/_/g, ' ')],
-                ['Period', `${fmt(detail.startDate)} – ${fmt(detail.endDate)}`],
-                ['Taken', takenLabel(detail)],
-                ['Requested on', fmt(detail.createdAt)],
-                ['Reason', detail.reason || '—'],
-                ...(detail.rejectionReason ? [['Rejection reason', detail.rejectionReason]] : []),
-              ].map(([k, v]) => (
-                <div key={k} className="flex gap-4">
-                  <dt className="w-36 flex-shrink-0 text-slate-400 text-sm uppercase tracking-wide">{k}</dt>
-                  <dd className="text-slate-700 capitalize">{v}</dd>
-                </div>
-              ))}
-            </dl>
-            <button onClick={() => setDetail(null)}
-              className="mt-5 w-full border border-slate-200 text-slate-600 py-2.5 rounded-xl text-[15px] font-medium hover:bg-slate-50">
-              Close
-            </button>
-          </div>
-        </div>
+      {editing && (
+        <LeaveRequestDialog
+          mode="edit"
+          leave={editing}
+          people={people}
+          peopleLoading={peopleLoading}
+          types={types}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
       )}
 
       {toDelete && (

@@ -68,7 +68,7 @@ router.get('/my', async (req, res) => {
          l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
          l.rejection_reason as "rejectionReason", l.is_half_day as "isHalfDay",
          l.half_day_type as "halfDayType", l.created_at as "createdAt",
-         l.start_time as "startTime", l.end_time as "endTime", l.hours,
+         l.start_time as "startTime", l.end_time as "endTime", l.hours, l.team_email as "teamEmail",
          CASE WHEN rm.id IS NOT NULL THEN json_build_object('id', rm.id, 'firstName', rm.first_name, 'lastName', rm.last_name) ELSE NULL END as "reportingManager",
          CASE WHEN aa.id IS NOT NULL THEN json_build_object('id', aa.id, 'firstName', aa.first_name, 'lastName', aa.last_name) ELSE NULL END as "approvingAuthority",
          l.approved_by as "approvedById",
@@ -154,7 +154,7 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
          l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
          l.rejection_reason as "rejectionReason", l.is_half_day as "isHalfDay",
          l.half_day_type as "halfDayType", l.created_at as "createdAt",
-         l.start_time as "startTime", l.end_time as "endTime", l.hours,
+         l.start_time as "startTime", l.end_time as "endTime", l.hours, l.team_email as "teamEmail",
          json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
            'department', e.department, 'employeeId', e.employee_id) as employee,
          CASE WHEN rm.id IS NOT NULL THEN json_build_object('id', rm.id, 'firstName', rm.first_name, 'lastName', rm.last_name) ELSE NULL END as "reportingManager",
@@ -243,6 +243,10 @@ router.post('/', [
   if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
   try {
     const { leaveType, startDate, endDate, reason, isHalfDay, halfDayType } = req.body;
+    /* An address kept with the request so a team list can be told somebody is
+     * away. Stored and shown; nothing sends to it yet — see
+     * migrate_leave_team_email.js. */
+    const teamEmail = String(req.body.teamEmail || '').trim().slice(0, 255) || null;
 
     /* Applying for somebody else, the way Zoho's Operations -> Leave Tracker ->
      * Leave Requests does it. My Data has no employee field; Operations puts one
@@ -504,8 +508,8 @@ router.post('/', [
       }
 
       ins = await client.query(
-        `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, total_days, reason, is_half_day, half_day_type, start_time, end_time, hours, sandwich_days, sandwich_dates)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date[])
+        `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, total_days, reason, is_half_day, half_day_type, start_time, end_time, hours, sandwich_days, sandwich_dates, team_email)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date[],$14)
          RETURNING id as "_id", leave_type as "leaveType", start_date as "startDate",
          end_date as "endDate", total_days as "totalDays", reason, status,
          is_half_day as "isHalfDay", half_day_type as "halfDayType", created_at as "createdAt",
@@ -513,7 +517,7 @@ router.post('/', [
          sandwich_days as "sandwichDays", sandwich_dates as "sandwichDates"`,
         [subjectId, leaveType, startDate, endDateVal, totalDays, reason, isHalfDay || false, halfDayType || null,
          permStartTime, permEndTime, isPermission ? permHours : null,
-         sandwich.days, sandwich.dates.length ? sandwich.dates : null]
+         sandwich.days, sandwich.dates.length ? sandwich.dates : null, teamEmail]
       );
 
       const leaveId = ins.rows[0]._id;
@@ -1009,6 +1013,10 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Reason must be 3–500 characters' });
     }
 
+    const teamEmail = req.body.teamEmail === undefined
+      ? cur.team_email
+      : (String(req.body.teamEmail || '').trim().slice(0, 255) || null);
+
     const ymd = (d) => (d instanceof Date ? d.toLocaleDateString('en-CA') : String(d).slice(0, 10));
     const startDate = ymd(req.body.startDate || cur.start_date);
     const endDate = isPermission ? startDate : ymd(req.body.endDate || cur.end_date);
@@ -1143,12 +1151,12 @@ router.put('/:id', async (req, res) => {
       `UPDATE leaves
           SET start_date = $2::date, end_date = $3::date, total_days = $4, hours = $5,
               start_time = $6, end_time = $7, is_half_day = $8, half_day_type = $9,
-              reason = $10, balance_source = $11, updated_at = NOW()
+              reason = $10, balance_source = $11, team_email = $12, updated_at = NOW()
         WHERE id = $1
         RETURNING *`,
       [cur.id, startDate, endDate, newDays, newHours,
        startTime, endTime, isHalfDay, halfDayType,
-       reason.slice(0, 500), balanceSource]
+       reason.slice(0, 500), balanceSource, teamEmail]
     )).rows[0];
 
     await client.query('COMMIT');
@@ -1817,7 +1825,7 @@ router.get('/pending-approvals', async (req, res) => {
       `SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate",
        l.end_date as "endDate", l.total_days as "totalDays", l.reason, l.status,
        l.rejection_reason as "rejectionReason", l.created_at as "createdAt",
-       l.start_time as "startTime", l.end_time as "endTime", l.hours,
+       l.start_time as "startTime", l.end_time as "endTime", l.hours, l.team_email as "teamEmail",
        json_build_object(
          '_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
          'employeeId', e.employee_id, 'department', e.department, 'designation', e.designation,

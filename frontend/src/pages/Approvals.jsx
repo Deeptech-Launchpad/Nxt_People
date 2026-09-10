@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../components/LeaveDetailModal';
-import EditRequestModal from '../components/EditRequestModal';
+import LeaveRequestDialog from './moreservices/leavetracker/LeaveRequestDialog';
 import { useAuth } from '../context/AuthContext';
 import usePolling from '../hooks/usePolling';
 
@@ -767,11 +767,15 @@ export default function Approvals({ embedded = false }) {
         );
       })()}
 
+      {/* The same dialog the Leave Tracker uses, so a request looks the same
+          wherever it is opened from. In edit mode the employee and the type are
+          read-only, so it needs neither list. */}
       {editing && (
-        <EditRequestModal
+        <LeaveRequestDialog
+          mode="edit"
           leave={editing}
           onClose={() => setEditing(null)}
-          onSaved={() => load()}
+          onSaved={() => { setEditing(null); load(); }}
         />
       )}
     </div>
