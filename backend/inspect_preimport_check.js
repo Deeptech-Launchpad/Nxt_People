@@ -200,9 +200,44 @@ async function zohoLeaveSweep(start, end) {
 
   /* Same person, same span, same type — Zoho's record for this leave. Matched
    * on the span rather than an exact date pair because a half day and a full
-   * day of the same leave differ in Daystaken, not in dates. */
-  const matchIn = (row) => (byCode.get(row.code) || []).find(z =>
-    z.type === row.leave_type && z.from === row.from_ymd && z.to === row.to_ymd);
+   * day of the same leave differ in Daystaken, not in dates.
+   *
+   * Paired one-to-one, and that is not fussiness. The first version used
+   * .find(), so when a person had two records on the same day the same Zoho
+   * record answered for both of them. ANXT220025 has exactly that: a 2h
+   * permission approved and an 8h one cancelled, same person, same type, same
+   * date, both imported in the same second. .find() matched the cancelled row
+   * against the approved Zoho record and reported a status conflict that does
+   * not exist -- which cost a round trip to disprove.
+   *
+   * The worse direction is silent. Two local rows and ONE Zoho record: both
+   * local rows match it, neither is reported in section A, and the restage
+   * deletes the unmatched one with nothing to put back. Section A exists to
+   * catch exactly that, so it has to count, not just look. */
+  const unpaired = new Map();
+  for (const [code, list] of byCode) unpaired.set(code, list.map(z => ({ z, used: false })));
+
+  const takeMatch = (row, requireSameStatus) => {
+    const slot = (unpaired.get(row.code) || []).find(e =>
+      !e.used && e.z.type === row.leave_type
+      && e.z.from === row.from_ymd && e.z.to === row.to_ymd
+      && (!requireSameStatus || e.z.status === row.status));
+    if (!slot) return null;
+    slot.used = true;
+    return slot.z;
+  };
+
+  /* Two passes. A row whose status already agrees claims its Zoho record
+   * first, so a cancelled duplicate cannot steal the approved one and invent
+   * a conflict out of the leftovers. */
+  const pairedWith = new Map();
+  for (const r of localLeaves) { const z = takeMatch(r, true);  if (z) pairedWith.set(r.id, z); }
+  for (const r of localLeaves) {
+    if (pairedWith.has(r.id)) continue;
+    const z = takeMatch(r, false);
+    if (z) pairedWith.set(r.id, z);
+  }
+  const matchIn = (row) => pairedWith.get(row.id) || null;
 
   /* ══ A. Only here ═══════════════════════════════════════════════════════ */
   h1('A. Leaves that exist ONLY in NxtPeople — these would be DELETED');
@@ -284,10 +319,18 @@ async function zohoLeaveSweep(start, end) {
   /* ══ E. What would arrive ═══════════════════════════════════════════════ */
   h1('E. What Zoho would ADD that is not here');
 
-  const localKey = new Set(localLeaves.map(r => `${r.code}|${r.leave_type}|${r.from_ymd}|${r.to_ymd}`));
-  const incoming = zohoAll.filter(z =>
-    (!ONLY || ONLY.has(z.code)) &&
-    z.type && !localKey.has(`${z.code}|${z.type}|${z.from}|${z.to}`));
+  /* Whatever the pairing above did not consume. A Set of local keys would
+   * hide a second Zoho record on a day we already hold one for -- the key is
+   * present, so the extra record reads as "already here" and never arrives. */
+  const incoming = [];
+  for (const [, list] of unpaired) {
+    for (const e of list) {
+      if (e.used || !e.z.type) continue;
+      if (ONLY && !ONLY.has(e.z.code)) continue;
+      incoming.push(e.z);
+    }
+  }
+  incoming.sort((a, b) => b.from.localeCompare(a.from));
 
   if (!incoming.length) {
     console.log('\n  Nothing. Every Zoho leave in this range already exists here.');

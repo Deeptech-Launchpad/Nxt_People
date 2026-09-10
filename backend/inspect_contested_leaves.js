@@ -97,10 +97,19 @@ const pad = (s, n) => String(s ?? '').padEnd(n);
 
       /* created_at tells us whether a human filed it or the restage did.
        * The last import wrote twenty rows inside one second; a genuine
-       * submission does not share its timestamp to the second with anyone. */
+       * submission does not share its timestamp to the second with anyone.
+       *
+       * Compared to the second, not on equality. Postgres keeps microseconds
+       * and node's Date truncates to milliseconds, so `created_at = $1` did
+       * not even match the row against itself -- every row printed "0 share
+       * that created_at ← filed individually", including the two that were
+       * demonstrably written by the same import. A check that returns the
+       * same confident answer for both cases is worse than no check. */
       const twins = (await pool.query(
-        `SELECT COUNT(*)::int n FROM leaves WHERE created_at = $1`, [r.created_at])).rows[0].n;
-      console.log(`    ${twins} leave row(s) in the whole table share that created_at`
+        `SELECT COUNT(*)::int n FROM leaves
+          WHERE date_trunc('second', created_at) = date_trunc('second', $1::timestamptz)`,
+        [r.created_at])).rows[0].n;
+      console.log(`    ${twins} leave row(s) in the whole table were created in that same second`
         + `${twins > 1 ? '  ← written by an import, not by a person' : '  ← filed individually'}`);
 
       const levels = (await pool.query(
