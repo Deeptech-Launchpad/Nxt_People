@@ -108,10 +108,21 @@ function toValue({ hour12, minute, meridiem }) {
  * three columns every time a digit changed — which threw the scroll position
  * away mid-gesture and made the wheel feel like it was fighting back.
  */
-function Wheel({ items, value, onPick, render, label }) {
+function Wheel({ items, value, onPick, render, label, active, onActivate, stepRef }) {
   const ref = useRef(null);
   const settling = useRef(null);
   const index = Math.max(0, items.indexOf(value));
+
+  /* The arrow keys are pressed while the TEXT INPUT holds focus — picking a
+   * value uses preventDefault so the field keeps it, which is what lets someone
+   * keep typing. So the input drives the wheels rather than each wheel
+   * listening for keys it will never receive. This is the handle it drives. */
+  if (stepRef) {
+    stepRef.current = (delta) => {
+      const next = items[(index + delta + items.length) % items.length];
+      onPick(next);
+    };
+  }
 
   // Follow the value when it changes from outside — typing, or the field being
   // opened — without fighting a scroll the user is in the middle of.
@@ -138,11 +149,8 @@ function Wheel({ items, value, onPick, render, label }) {
 
   useEffect(() => () => clearTimeout(settling.current), []);
 
-  const step = (delta) => {
-    // Wraps at both ends: past 12 is 1, and PM steps back to AM.
-    const next = items[(index + delta + items.length) % items.length];
-    onPick(next);
-  };
+  // Wraps at both ends: past 12 is 1, 59 is 00, and PM steps back to AM.
+  const step = (delta) => onPick(items[(index + delta + items.length) % items.length]);
 
   return (
     <div
@@ -155,7 +163,9 @@ function Wheel({ items, value, onPick, render, label }) {
         if (e.key === 'ArrowDown') { e.preventDefault(); step(1); }
         else if (e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
       }}
-      className="scrollbar-none w-[56px] overflow-y-auto outline-none snap-y snap-mandatory"
+      onMouseDown={onActivate}
+      className={`scrollbar-none w-[58px] overflow-y-auto outline-none snap-y snap-mandatory
+        ${active ? 'bg-brand-50/40' : ''}`}
       style={{ height: PANEL_H, scrollBehavior: 'smooth' }}
     >
       {/* Half a panel of blank above and below, so the first and last items can
@@ -169,8 +179,10 @@ function Wheel({ items, value, onPick, render, label }) {
           // a click ever landed.
           onMouseDown={e => { e.preventDefault(); onPick(item); }}
           style={{ height: ITEM_H }}
-          className={`snap-center w-full text-center text-[13px] tabular-nums transition-colors
-            ${item === value ? 'font-semibold text-brand-700' : 'text-slate-400 hover:text-slate-600'}`}
+          className={`snap-center w-full text-center tabular-nums transition-colors
+            ${item === value
+              ? 'text-[14px] font-bold text-brand-800'
+              : 'text-[13px] text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
         >
           {render(item)}
         </button>
@@ -202,6 +214,11 @@ export default function TimeInput({
   const [rect, setRect] = useState(null);
   const inputRef = useRef(null);
   const panelRef = useRef(null);
+  /* Which wheel the arrow keys drive. Clicking or scrolling a column makes it
+   * the one, and Left/Right walk between them — so a time can be set from the
+   * keyboard alone without ever leaving the field. */
+  const [activeCol, setActiveCol] = useState('hour');
+  const steppers = { hour: useRef(null), minute: useRef(null), meridiem: useRef(null) };
 
   /* What the wheels should show when nothing is set yet. A picker that opens on
    * midnight makes every daytime choice a long scroll. */
@@ -288,11 +305,22 @@ export default function TimeInput({
           disabled={disabled}
           required={required}
           placeholder={placeholder || 'hh:mm AM'}
-          onFocus={() => { setDraft(formatTime(value, timeFormat)); setOpen(true); }}
+          onFocus={() => { setDraft(formatTime(value, timeFormat)); setActiveCol('hour'); setOpen(true); }}
           onChange={e => { setDraft(e.target.value); if (!open) setOpen(true); }}
           onKeyDown={e => {
+            const cols = ['hour', 'minute', 'meridiem'];
             if (e.key === 'Enter') { e.preventDefault(); commit(); }
             else if (e.key === 'Escape') { e.preventDefault(); setDraft(formatTime(value, timeFormat)); setOpen(false); }
+            else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              if (!open) { setOpen(true); return; }
+              e.preventDefault();
+              steppers[activeCol].current?.(e.key === 'ArrowDown' ? 1 : -1);
+            } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+              if (!open) return;
+              e.preventDefault();
+              const i = cols.indexOf(activeCol);
+              setActiveCol(cols[(i + (e.key === 'ArrowRight' ? 1 : -1) + cols.length) % cols.length]);
+            }
           }}
           className={`${className} ${invalid ? 'border-rose-300 focus:border-rose-400' : ''}`}
         />
@@ -308,15 +336,21 @@ export default function TimeInput({
           <div className="relative flex">
             {/* The band. Whatever sits inside it is the value. */}
             <div
-              className="pointer-events-none absolute inset-x-0 border-y border-brand-200 bg-brand-50/60"
+              className="pointer-events-none absolute inset-x-0 z-10 border-y-2 border-brand-500 bg-brand-500/10"
               style={{ top: ITEM_H * PAD_ROWS, height: ITEM_H }}
             />
-            <Wheel label="Hour" items={HOURS} value={parts.hour12}
-              render={PAD} onPick={h => set({ hour12: h })} />
-            <Wheel label="Minute" items={MINUTES} value={parts.minute}
-              render={PAD} onPick={m => set({ minute: m })} />
-            <Wheel label="AM or PM" items={MERIDIEMS} value={parts.meridiem}
-              render={x => x} onPick={x => set({ meridiem: x })} />
+            <Wheel label="Hour" items={HOURS} value={parts.hour12} render={PAD}
+              onPick={h => set({ hour12: h })}
+              active={activeCol === 'hour'} onActivate={() => setActiveCol('hour')}
+              stepRef={steppers.hour} />
+            <Wheel label="Minute" items={MINUTES} value={parts.minute} render={PAD}
+              onPick={m => set({ minute: m })}
+              active={activeCol === 'minute'} onActivate={() => setActiveCol('minute')}
+              stepRef={steppers.minute} />
+            <Wheel label="AM or PM" items={MERIDIEMS} value={parts.meridiem} render={x => x}
+              onPick={x => set({ meridiem: x })}
+              active={activeCol === 'meridiem'} onActivate={() => setActiveCol('meridiem')}
+              stepRef={steppers.meridiem} />
           </div>
           <button
             type="button"
