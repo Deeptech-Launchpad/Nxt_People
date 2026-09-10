@@ -80,13 +80,32 @@ export default function LeaveRequestDialog({
   onClose,
   onSaved,
   onCancelLeave,
+  // Self-service callers (the Home page's own Apply Leave, not the Ops
+  // Leave Tracker's on-behalf "Add Request") have no business asking who the
+  // request is for — the answer is always the person filing it. Passing
+  // selfOnly swaps the Employee ID field to a fixed label instead of the
+  // on-behalf EmployeePicker; every existing caller omits it and is
+  // unaffected.
+  selfOnly = false,
+  selfEmployeeId = '',
+  selfLabel = 'You',
+  // Preselects the type in apply mode — e.g. the Home page opens this from a
+  // specific leave-type card and shouldn't hand back an empty dropdown.
+  initialLeaveType = '',
 }) {
   const { dateFormat, timeFormat } = useLocaleFormat();
   const [mode, setMode] = useState(initialMode);
   const editable = mode !== 'view';
 
-  const [employeeId, setEmployeeId] = useState(leave?.employee?._id || leave?.employeeId || '');
-  const [leaveType, setLeaveType] = useState(leave?.leaveType || '');
+  const [employeeId, setEmployeeId] = useState(
+    leave?.employee?._id || leave?.employeeId || (selfOnly ? selfEmployeeId : '') || '');
+  // selfEmployeeId can arrive one tick after mount (it comes from the
+  // caller's own auth/profile fetch), so this catches it if the state above
+  // initialised empty.
+  useEffect(() => {
+    if (selfOnly && selfEmployeeId && !employeeId) setEmployeeId(selfEmployeeId);
+  }, [selfOnly, selfEmployeeId, employeeId]);
+  const [leaveType, setLeaveType] = useState(leave?.leaveType || initialLeaveType || '');
   const [startDate, setStartDate] = useState(ymd(leave?.startDate));
   const [endDate, setEndDate] = useState(ymd(leave?.endDate || leave?.startDate));
   const [applyWith, setApplyWith] = useState('range');
@@ -240,7 +259,9 @@ export default function LeaveRequestDialog({
               </div>
 
               <Field label="Employee ID" required={editable}>
-                {editable && mode === 'apply' ? (
+                {selfOnly ? (
+                  <Read>{selfLabel}</Read>
+                ) : editable && mode === 'apply' ? (
                   <EmployeePicker people={people} loading={peopleLoading}
                     value={employeeId} onChange={setEmployeeId} required />
                 ) : (

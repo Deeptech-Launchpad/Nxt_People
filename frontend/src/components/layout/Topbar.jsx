@@ -61,6 +61,14 @@ const NAV = {
         { to: '/team/department', label: 'Department' },
         { to: '/team/projects',   label: 'Projects'   },
         { to: '/team/peers',      label: 'Peers'      },
+        // Missing entirely until now — the route (/team/approvals) has
+        // existed all along, and the guided tour even tells people to
+        // "click Home → Team → Approvals", but there was no link here for
+        // it to click. A Team Incharge (or manager) had no way to reach
+        // their approval queue except by typing the URL or going through
+        // Operations → Leave Approvals, an unrelated menu.
+        { to: '/team/approvals',  label: 'Approvals',
+          roles: ['admin', 'director', 'hr_admin', 'manager', 'team_incharge'] },
       ],
       organization: [
         { to: '/organization', label: 'Overview'          },

@@ -19,6 +19,7 @@ import api from '../utils/api';
 import RegularizeModal from '../components/requests/RegularizeModal';
 import OnDutyModal from '../components/requests/OnDutyModal';
 import ApplyLeaveModal from '../components/requests/ApplyLeaveModal';
+import LeaveRequestDialog from './moreservices/leavetracker/LeaveRequestDialog';
 import { formatTimeRange, useLocaleFormat } from '../utils/datetime';
 import toast from 'react-hot-toast';
 import PhotoCropperModal from '../components/PhotoCropperModal';
@@ -495,9 +496,14 @@ export default function Dashboard() {
    const [profileData, setProfileData] = useState(null);
    const [profileLoading, setProfileLoading] = useState(false);
 
-   /* ─ Leave state */
-   const [leaveModal, setLeaveModal] = useState(false);
-   const [leaveForm, setLeaveForm] = useState({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '', startTime: '', endTime: '', isHalfDay: false, halfDayType: 'first_half' });
+   /* ─ Leave state — which type's "Apply" card was clicked, or null when
+        closed. The form itself now lives in LeaveRequestDialog, the same one
+        Operations → Leave Tracker uses, instead of a second hand-built copy:
+        the old one showed a Full Day/Half Day "Duration" dropdown for
+        Permission (an hourly type with no such concept) because its
+        condition only checked fromDate === toDate, which Permission always
+        satisfies since it sets both fields to the same date. */
+   const [applyLeaveType, setApplyLeaveType] = useState(null);
    const [leaveCards, setLeaveCards] = useState([]);   // all active leave types + balances
 
    /* ─ Time Log state */
@@ -1635,7 +1641,7 @@ export default function Dashboard() {
                             // requested comp-off date) — send the user there instead of
                             // the generic leave modal.
                             if (l.code === 'comp_off') { navigate('/leave-tracker/comp-off'); return; }
-                            setLeaveForm({...leaveForm, type: l.code}); setLeaveModal(true);
+                            setApplyLeaveType(l.code);
                           }}
                           className="mt-4 w-full bg-slate-50 hover:bg-slate-100 text-slate-600 text-[14px] font-bold py-1.5 rounded-lg border border-slate-200 transition-all"
                         >
@@ -2033,135 +2039,22 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {leaveModal && (
-        <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-[#f8f9fc] rounded-md w-full max-w-[800px] shadow-xl flex flex-col max-h-[90vh]">
-            <div className="bg-white flex items-center justify-between p-4 border-b border-slate-200">
-              <h3 className="font-semibold text-slate-800 text-[17px]">Apply Leave</h3>
-              <button onClick={() => setLeaveModal(false)} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 hover:bg-slate-200 text-slate-500"><X size={14}/></button>
-            </div>
-            <div className="p-6 overflow-y-auto flex-1">
-              <div className="bg-white border border-slate-200 shadow-sm p-0 rounded-sm">
-                <div className="p-4 border-b border-slate-100">
-                  <h4 className="text-[15px] font-bold text-slate-800">Leave</h4>
-                </div>
-                <div className="p-6 space-y-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                    <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Leave type <span className="text-red-500">*</span></label>
-                    <select value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type: e.target.value})} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500">
-                      <option value="casual">Casual Leave</option>
-                      <option value="unpaid">Leave Without Pay</option>
-                      <option value="comp_off">Compensatory Off</option>
-                      <option value="permission">Permission</option>
-                    </select>
-                  </div>
-                  {leaveForm.type === 'permission' ? (
-                    <>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                        <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Date <span className="text-red-500">*</span></label>
-                        <input type="date" value={leaveForm.fromDate} onChange={e => setLeaveForm({...leaveForm, fromDate: e.target.value, toDate: e.target.value})} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500" />
-                      </div>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                        <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Time <span className="text-red-500">*</span></label>
-                        <div className="flex-1 flex items-center gap-3">
-                          <input type="time" value={leaveForm.startTime} onChange={e => setLeaveForm({...leaveForm, startTime: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500" />
-                          <input type="time" value={leaveForm.endTime} onChange={e => setLeaveForm({...leaveForm, endTime: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500" />
-                        </div>
-                      </div>
-                      <p className="text-[13px] text-purple-600 sm:ml-[9.5rem]">Permission is hourly — up to 4 hours per month.</p>
-                    </>
-                  ) : (
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                      <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Date <span className="text-red-500">*</span></label>
-                      <div className="flex-1 flex items-center gap-3">
-                        <input type="date" value={leaveForm.fromDate} onChange={e => setLeaveForm({...leaveForm, fromDate: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500" />
-                        <input type="date" value={leaveForm.toDate} onChange={e => setLeaveForm({...leaveForm, toDate: e.target.value})} className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500" />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Half a day, and which half.
-                      This form had no half-day option at all, so somebody
-                      needing a morning off from here had to take a whole day.
-                      Which half is not decoration: the muster roll renders the
-                      other half from it, and a leave stored without one lands
-                      as a first half whether or not that is true. Only offered
-                      for a single day — half of a range is not a thing either
-                      system supports. */}
-                  {leaveForm.fromDate && leaveForm.fromDate === leaveForm.toDate && (
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
-                      <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0">Duration</label>
-                      <div className="flex-1 flex items-center gap-3">
-                        <select
-                          value={leaveForm.isHalfDay ? 'half' : 'full'}
-                          onChange={e => setLeaveForm({ ...leaveForm, isHalfDay: e.target.value === 'half' })}
-                          className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500">
-                          <option value="full">Full Day</option>
-                          <option value="half">Half Day</option>
-                        </select>
-                        <select
-                          value={leaveForm.halfDayType}
-                          disabled={!leaveForm.isHalfDay}
-                          onChange={e => setLeaveForm({ ...leaveForm, halfDayType: e.target.value })}
-                          className="w-1/2 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400">
-                          <option value="first_half">1st Half</option>
-                          <option value="second_half">2nd Half</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
-                  {leaveForm.isHalfDay && (
-                    <p className="text-[13px] text-blue-600 sm:ml-[9.5rem]">
-                      Half a day will be deducted from your balance, not a whole one.
-                    </p>
-                  )}
-
-                  <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-6">
-                    <label className="text-[14px] font-medium text-slate-600 sm:w-32 flex-shrink-0 pt-2">Reason for leave</label>
-                    <textarea value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})} rows={3} className="flex-1 bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded text-[15px] focus:outline-none focus:border-blue-500 resize-none" />
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white border-t border-slate-200 p-4 flex gap-3">
-              <button onClick={async () => {
-                const isPerm = leaveForm.type === 'permission';
-                if (isPerm) {
-                  if (!leaveForm.fromDate) return toast.error('Please select a date');
-                  if (!leaveForm.startTime || !leaveForm.endTime) return toast.error('Please select start and end time');
-                } else if (!leaveForm.fromDate || !leaveForm.toDate) {
-                  return toast.error('Please select dates');
-                }
-                try {
-                  await api.post('/leaves', isPerm ? {
-                    leaveType: 'permission',
-                    startDate: leaveForm.fromDate,
-                    endDate: leaveForm.fromDate,
-                    reason: leaveForm.reason,
-                    startTime: leaveForm.startTime,
-                    endTime: leaveForm.endTime,
-                  } : {
-                    leaveType: leaveForm.type,
-                    startDate: leaveForm.fromDate,
-                    endDate: leaveForm.toDate,
-                    reason: leaveForm.reason,
-                    // Only ever on a single day, so a range cannot arrive
-                    // claiming to be half of something.
-                    isHalfDay: leaveForm.isHalfDay && leaveForm.fromDate === leaveForm.toDate,
-                    halfDayType: leaveForm.isHalfDay ? leaveForm.halfDayType : null,
-                  });
-                  toast.success(isPerm ? 'Permission submitted to reporting person' : 'Leave request submitted to reporting person');
-                  setLeaveModal(false);
-                  setLeaveForm({ type: 'casual', fromDate: '', toDate: '', teamEmail: '', reason: '', startTime: '', endTime: '', isHalfDay: false, halfDayType: 'first_half' });
-                } catch (err) {
-                  toast.error(err.response?.data?.message || 'Error applying leave');
-                }
-              }} className="bg-[#1a73e8] hover:bg-blue-600 text-white px-5 py-2 text-[15px] font-bold rounded shadow-sm transition-colors">Submit</button>
-              <button onClick={() => setLeaveModal(false)} className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 px-5 py-2 text-[15px] font-bold rounded shadow-sm transition-colors">Cancel</button>
-            </div>
-</div>
-         </div>
-       )}
+      {applyLeaveType && (
+        <LeaveRequestDialog
+          mode="apply"
+          initialLeaveType={applyLeaveType}
+          types={leaveCards}
+          selfOnly
+          selfEmployeeId={user?._id}
+          selfLabel={`${user?.firstName || ''} ${user?.lastName || ''} ${user?.employeeId || ''}`.trim()}
+          onClose={() => setApplyLeaveType(null)}
+          onSaved={() => {
+            // The card just applied against should show its new balance
+            // without a full page reload.
+            api.get('/leaves/balance').then(r => setLeaveCards(r.data.data || [])).catch(() => {});
+          }}
+        />
+      )}
        {/* Add Request menu — opened from the Attendance Weekly Log rows.
            RequestMenu owns its own positioning logic now; we just hand it
            the button's bounding rect. */}

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye, Briefcase } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
@@ -59,6 +59,18 @@ export default function Approvals({ embedded = false }) {
     const valid = ['leaves','permissions','approvedLeaves','rejectedLeaves','timesheets','regularizations','wfh','compoff','onduty'];
     return valid.includes(t) ? t : 'leaves';
   });
+  // Whether the URL itself named a tab. When it did not, the page falls back
+  // to 'leaves' regardless of where the pending items actually are — the
+  // "Total Pending" card at the top and the tab shown underneath it come
+  // from the same payload, but nothing ever pointed the tab at whichever
+  // category the total is counting. A Team Incharge whose one pending item
+  // was, say, a Permission or a Comp-Off saw "Total Pending: 1" above an
+  // empty Leaves tab and read it as a bug in the count — the count was
+  // right, it was just sitting one click away with no visual cue that it
+  // was somewhere else. Fixed below, once, on the first load only: never
+  // fight a tab the person has since clicked into on purpose.
+  const hadExplicitTab = useRef(!!new URLSearchParams(window.location.search).get('tab'));
+  const autoSwitched = useRef(false);
   // Last-seen count per tab — persisted to localStorage so the badge
   // stays cleared across refreshes (was previously a stale per-session
   // Set that always re-populated on reload). If new items arrive later
@@ -100,18 +112,40 @@ export default function Approvals({ embedded = false }) {
         const rejected = (d.approvedLeaves || []).filter(l => l.status === 'rejected');
         const permissions = allLeaves.filter(l => l.leaveType === 'permission');
         const leaves = allLeaves.filter(l => l.leaveType !== 'permission');
+        const timesheets = d.timesheets || [];
+        const regularizations = d.regularizations || [];
+        const wfhRequests = d.wfhRequests || [];
+        const compOffs = d.compOffs || [];
+        const onDuty = d.onDuty || [];
         setData({
           leaves,
           permissions,
-          timesheets: d.timesheets || [],
-          regularizations: d.regularizations || [],
-          wfhRequests: d.wfhRequests || [],
-          compOffs: d.compOffs || [],
-          onDuty: d.onDuty || [],
+          timesheets,
+          regularizations,
+          wfhRequests,
+          compOffs,
+          onDuty,
           approvedLeaves: approved,
           rejectedLeaves: rejected,
           total: d.total || 0,
         });
+
+        if (!silent && !hadExplicitTab.current && !autoSwitched.current) {
+          autoSwitched.current = true;
+          // Action-needed tabs only, in the order their cards appear — never
+          // the Approved/Rejected history tabs, which are not what "Total
+          // Pending" is counting.
+          const byTab = [
+            ['leaves', leaves], ['permissions', permissions], ['timesheets', timesheets],
+            ['regularizations', regularizations], ['wfh', wfhRequests],
+            ['compoff', compOffs], ['onduty', onDuty],
+          ];
+          const currentIsEmpty = !(byTab.find(([id]) => id === tab)?.[1]?.length);
+          if (currentIsEmpty) {
+            const firstNonEmpty = byTab.find(([, arr]) => arr.length > 0);
+            if (firstNonEmpty) setTab(firstNonEmpty[0]);
+          }
+        }
       })
       .catch(err => { if (!silent) toast.error(err.response?.data?.message || 'Failed to load approvals'); })
       .finally(() => { if (!silent) setLoading(false); });
