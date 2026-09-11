@@ -476,6 +476,10 @@ export default function Dashboard() {
   /* Attendance */
    const [weeklyAttendance, setWeeklyAttendance] = useState([]);
    const [weeklyLeaves, setWeeklyLeaves] = useState([]);
+   // Date ranges of the caller's OWN still-pending leave/permission,
+   // regularization and on-duty requests touching the visible week — see
+   // fetchWeeklyAttendance for why these hold up a status label.
+   const [weeklyPendingRanges, setWeeklyPendingRanges] = useState([]);
    // Attendance tab — independent week navigation (0 = current, -1 = prev, +1 = next)
    // so browsing weeks here never disturbs the current-week Work Schedule widget.
    const [attWeekOffset, setAttWeekOffset] = useState(0);
@@ -792,7 +796,43 @@ export default function Dashboard() {
      Promise.all(years.map(y =>
        api.get(`/leaves/my?year=${y}&status=approved&limit=500`).then(r => r.data.data || []).catch(() => [])
      )).then(arrs => setWeeklyLeaves(arrs.flat()));
+
+     /* A day this system has already scored (Present / Half-day / Absent) can
+      * still have a leave, permission, regularization or on-duty request of
+      * the CALLER'S OWN sitting undecided against it — and once decided, that
+      * score can change (see LeaveRequestDialog's day-breakdown / classifyDay
+      * in attendanceRule.js: an approved permission lowers what a day owed,
+      * an approved leave replaces the score outright, an approved
+      * regularization edits the punches themselves). Nothing here recomputes
+      * the stored status when the request resolves, so showing a verdict
+      * before it does is a promise this page cannot keep — reference product
+      * leaves the day unlabelled instead, hours only, until it is decided.
+      *
+      * Comp-Off and WFH are left out on purpose: neither one changes what
+      * classifyDay makes of a specific day the way these three do. */
+     Promise.all(years.map(y =>
+       api.get(`/leaves/my?year=${y}&status=pending&limit=500`).then(r => r.data.data || []).catch(() => [])
+     )).then(leaveArrs => {
+       const pendingLeaves = leaveArrs.flat()
+         .map(l => ({ start: (l.startDate || '').slice(0, 10), end: (l.endDate || l.startDate || '').slice(0, 10) }));
+
+       Promise.all([
+         api.get('/regularizations/my').then(r => (r.data.data || [])
+           .filter(x => x.status === 'pending')
+           .map(x => ({ start: x.date, end: x.date }))
+         ).catch(() => []),
+         api.get('/on-duty/my?status=pending').then(r => (r.data.data || [])
+           .map(x => ({ start: x.startDate, end: x.endDate || x.startDate }))
+         ).catch(() => []),
+       ]).then(([pendingRegs, pendingOnDuty]) => {
+         setWeeklyPendingRanges([...pendingLeaves, ...pendingRegs, ...pendingOnDuty]);
+       });
+     });
    };
+
+   // Does ANY of the caller's own pending requests touch this date?
+   const isDatePending = (dateStr) =>
+     weeklyPendingRanges.some(r => dateStr >= r.start && dateStr <= r.end);
 
    // Fetch attendance covering the Attendance-tab's displayed week. A week can
    // straddle a month boundary, so we load every month the week touches (same
@@ -1352,6 +1392,13 @@ export default function Dashboard() {
                             } else if (leave) {
                               label = LEAVE_TYPE_LABELS[leave.leaveType] || leave.leaveType;
                               labelColor = 'text-amber-600';
+                            } else if (isDatePending(day.dateStr)) {
+                              /* A pending leave/permission/regularization/on-duty request of the
+                               * caller's own touches this date, and nothing recomputes the stored
+                               * verdict when it resolves — so whatever we'd say now (even "Absent")
+                               * is a promise this page cannot keep. Reference product leaves the
+                               * day unlabelled — hours only — until the request is decided; label
+                               * stays null and the hours still render below. */
                             } else if (isPast || (isToday && isCheckedOut)) {
                               const wh = Number(record?.workingHours) || 0;
                               if (!record || (wh < 4 && record?.status !== 'half-day')) {
