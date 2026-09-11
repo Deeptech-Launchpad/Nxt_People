@@ -252,7 +252,8 @@ const HOOK_LEN     = 20;
 const COL_GAP      = 20;
 
 function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onToggle, onHoverChange,
-                          parentIndex = 0, parentPitch = CARD_PITCH, parentHalf = CARD_HALF, mini = false }) {
+                          parentIndex = 0, parentPitch = CARD_PITCH, parentHalf = CARD_HALF, mini = false,
+                          parentScrollDelta = 0 }) {
   // Pitch/half for THIS column's stack (mini cards are shorter & gap-tighter).
   const pitch = mini ? MINI_PITCH : CARD_PITCH;
   const half  = mini ? MINI_HALF  : CARD_HALF;
@@ -260,10 +261,16 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
   // Y of each child's centerline (children always start at top of column).
   const firstChildY = half;
   const lastChildY  = (children.length - 1) * pitch + half;
-  // Y of the parent's centerline in the previous column — uses the PARENT
-  // column's pitch, not this column's, so the hook lands on the right row
-  // even when the parent is a mini card.
-  const parentY     = parentIndex * parentPitch + parentHalf;
+  /* Y of the parent's centerline in the previous column — uses the PARENT
+     column's pitch, not this column's, so the hook lands on the right row
+     even when the parent is a mini card.
+
+     parentScrollDelta is (this column's scrollTop − the parent column's).
+     Every column scrolls on its own now, and this whole connector is drawn
+     in THIS column's scrolling content, so without that term the hook stays
+     glued to our own scroll position and slides off the card it points at
+     the moment either column moves. */
+  const parentY     = parentIndex * parentPitch + parentHalf + parentScrollDelta;
   // Vertical line range — must cover BOTH the parent and every child so
   // the geometry visually closes.
   const lineTop     = Math.min(parentY, firstChildY);
@@ -342,6 +349,26 @@ export default function OrgChart() {
   // toggles the node at the corresponding depth. Recursive collapse falls
   // out because we just truncate selectedPath at the toggle depth.
   const [selectedPath, setSelectedPath] = useState([]);
+  /* Each column is its own scroll container, the way the reference does it:
+   * the wheel moves whichever column the pointer is over, so you can run down
+   * a long list of reports without the columns you are comparing it against
+   * sliding away. The scroll positions have to be in React state because the
+   * connector lines are drawn from them. */
+  const colRefs = useRef([]);
+  const [colScroll, setColScroll] = useState([]);
+  const handleColScroll = (depth) => (e) => {
+    const top = e.currentTarget.scrollTop;
+    // The hover card is anchored to a viewport rect captured when the pointer
+    // arrived, so scrolling the card out from under it would leave it floating
+    // over nothing.
+    setHovered(null);
+    setColScroll(prev => {
+      if (prev[depth] === top) return prev;
+      const next = [...prev];
+      next[depth] = top;
+      return next;
+    });
+  };
   // Currently hovered card — drives the floating details popup. null while
   // no card is hovered. Set by EmployeeCard on mouse-enter (after ~150ms).
   const [hovered, setHovered] = useState(null);  // { emp, anchorRect, totalCount, directCount }
@@ -488,6 +515,13 @@ export default function OrgChart() {
   // it and everything below; clicking a sibling at the same depth swaps
   // to that branch.
   const handleToggle = (depth, empId) => {
+    // Columns to the right are about to hold different people, so whatever
+    // they were scrolled to means nothing there — send them back to the top
+    // rather than opening a branch already scrolled halfway down.
+    for (let d = depth + 1; d < colRefs.current.length; d++) {
+      if (colRefs.current[d]) colRefs.current[d].scrollTop = 0;
+    }
+    setColScroll(prev => prev.slice(0, depth + 1));
     setSelectedPath(prev => {
       if (prev[depth] === empId) return prev.slice(0, depth);
       return [...prev.slice(0, depth), empId];
@@ -707,13 +741,15 @@ export default function OrgChart() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-6 bg-[#f8f9fc]">
+      {/* Only the horizontal axis scrolls out here; the vertical axis belongs
+          to each column so the wheel acts on the one under the pointer. */}
+      <div className="flex-1 overflow-x-auto overflow-y-hidden px-6 bg-[#f8f9fc]">
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="flex items-start min-w-max" style={{ gap: COL_GAP }}>
+          <div className="flex items-stretch min-w-max h-full" style={{ gap: COL_GAP }}>
             {columns.map((colEmps, depth) => {
               // Ancestor compression: keep the last TWO columns as full
               // cards (the active card's row + its children). Everything
@@ -731,7 +767,15 @@ export default function OrgChart() {
               const parentHalf  = prevIsMini ? MINI_HALF  : CARD_HALF;
 
               return (
-                <React.Fragment key={depth}>
+                /* py-6 lives on the scroller rather than the outer box so every
+                   column starts at the same Y — the connector maths below
+                   assumes the columns share a top edge. */
+                <div
+                  key={depth}
+                  ref={el => { colRefs.current[depth] = el; }}
+                  onScroll={handleColScroll(depth)}
+                  className="h-full overflow-y-auto py-6"
+                >
                   {isRoot ? (
                     // Root column: no connector (nothing on the left).
                     // Auto-size to card contents; just stack the cards.
@@ -771,12 +815,13 @@ export default function OrgChart() {
                         parentIndex={parentIndex}
                         parentPitch={parentPitch}
                         parentHalf={parentHalf}
+                        parentScrollDelta={(colScroll[depth] || 0) - (colScroll[depth - 1] || 0)}
                         onToggle={(empId) => handleToggle(depth, empId)}
                         onHoverChange={setHover}
                       />
                     )
                   )}
-                </React.Fragment>
+                </div>
               );
             })}
           </div>
