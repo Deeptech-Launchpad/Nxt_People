@@ -22,6 +22,7 @@ import ApplyLeaveModal from '../components/requests/ApplyLeaveModal';
 import LeaveRequestDialog from './moreservices/leavetracker/LeaveRequestDialog';
 import { formatTimeRange, useLocaleFormat } from '../utils/datetime';
 import { richTextToPlain } from '../utils/richText';
+import AnnouncementDetailModal from '../components/AnnouncementDetailModal';
 import toast from 'react-hot-toast';
 import PhotoCropperModal from '../components/PhotoCropperModal';
 import { PAYROLL_ENABLED, TIME_TRACKER_ENABLED } from '../config/features';
@@ -490,6 +491,7 @@ export default function Dashboard() {
 
   /* Dashboard data */
    const [announcements, setAnnouncements] = useState([]);
+   const [readingAnnouncement, setReadingAnnouncement] = useState(null);
    const [projects, setProjects] = useState([]);
    const [jobs, setJobs] = useState([]);
    const [holidays, setHolidays] = useState([]);
@@ -1335,7 +1337,10 @@ export default function Dashboard() {
                                   setAnnouncements(prev => prev.map(x => x._id === a._id ? { ...x, isRead: true } : x));
                                   api.post(`/announcements/${a._id}/read`).catch(() => {});
                                 }
-                                navigate('/announcements');
+                                // Read it here. This used to leave the Home page
+                                // for the full list to show a message the card
+                                // already had, and the list then clipped it too.
+                                setReadingAnnouncement(a);
                               }}
                               className={`text-left flex items-start gap-3 p-3 rounded-lg border transition-colors ${
                                 a.isRead
@@ -2335,6 +2340,13 @@ export default function Dashboard() {
          onSave={handleDashCropSave}
          onCancel={() => setCropSrc(null)}
        />
+
+       {readingAnnouncement && (
+         <AnnouncementDetailModal
+           announcement={readingAnnouncement}
+           onClose={() => setReadingAnnouncement(null)}
+         />
+       )}
      </div>
    );
 }

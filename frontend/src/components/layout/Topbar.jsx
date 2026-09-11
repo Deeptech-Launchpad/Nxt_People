@@ -34,7 +34,10 @@ function getSection(pathname) {
   // Change history records what the configuration screens did, so it belongs
   // to the same section they do rather than announcing itself as its own area.
   if (pathname.startsWith('/settings') || pathname.startsWith('/audit')) return 'settings';
-  if (pathname.startsWith('/attendance')) return 'attendance';
+  // Shift Change sits in the Attendance bar, so it has to resolve to that
+  // section too — otherwise clicking its tab swaps the whole navy bar to
+  // Home's and the user is somewhere else entirely.
+  if (pathname.startsWith('/attendance') || pathname.startsWith('/shift-change')) return 'attendance';
   if (pathname.startsWith('/time-tracker')) return 'timetracker';
   if (pathname.startsWith('/leave-tracker') || pathname === '/leave' ||
       pathname.startsWith('/wfh') || pathname.startsWith('/comp-off') ||
@@ -110,8 +113,31 @@ const NAV = {
   },
   attendance: {
     label: 'Attendance',
-    isLanding: true,
     landingPath: '/attendance',
+    primaryTabs: [
+      { key: 'my',             label: 'My Attendance',    to: '/attendance/my' },
+      { key: 'team',           label: 'Team',             to: '/attendance/team',
+        roles: ['admin', 'director', 'hr_admin', 'manager', 'team_incharge'] },
+      // Regularization and On Duty can each be switched off in Configuration →
+      // Methods, and the route refuses the request when they are. `method`
+      // carries that through so a switched-off feature loses its tab instead
+      // of offering a tab that lands on a 403.
+      { key: 'regularization', label: 'Regularization',   to: '/attendance/regularization', method: 'regularization' },
+      { key: 'onduty',         label: 'On Duty',          to: '/attendance/on-duty',        method: 'onDuty' },
+      { key: 'shiftchange',    label: 'Shift Change',     to: '/shift-change' },
+      { key: 'location',       label: 'Location History', to: '/attendance/location' },
+    ],
+    // '__landing__' on the tile page and on anything without a tab of its own
+    // (check-in, a single day's detail) so nothing is highlighted misleadingly.
+    getActiveTab: p => {
+      if (p.startsWith('/shift-change'))            return 'shiftchange';
+      if (p.startsWith('/attendance/my'))           return 'my';
+      if (p.startsWith('/attendance/team'))         return 'team';
+      if (p.startsWith('/attendance/regularization'))return 'regularization';
+      if (p.startsWith('/attendance/on-duty'))      return 'onduty';
+      if (p.startsWith('/attendance/location'))     return 'location';
+      return '__landing__';
+    },
   },
   // Settings draws its own left-hand content in the navy bar — the service
   // name and its tabs — so it declares neither primary tabs nor a sub-nav.
@@ -518,6 +544,19 @@ export default function Topbar() {
     return () => clearTimeout(searchDebounce.current);
   }, [searchQuery, showSearch]);
 
+  /* Which attendance methods are switched on, fetched once and only after the
+   * user first enters the Attendance section — this bar is mounted on every
+   * page, and the answer is irrelevant everywhere else. Defaults to on, so a
+   * failed load shows every tab rather than silently hiding features. */
+  const [methods, setMethods] = useState(null);
+  const inAttendance = getSection(location.pathname) === 'attendance';
+  useEffect(() => {
+    if (!inAttendance || methods) return;
+    api.get('/attendance-config/methods')
+      .then(r => setMethods(r.data?.data || {}))
+      .catch(() => setMethods({}));
+  }, [inAttendance, methods]);
+
   const pageMatches = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return [
@@ -617,7 +656,11 @@ export default function Topbar() {
    * still need this bar to get anywhere. */
   const opsWorkspace = operationsWorkspaceFor(location.pathname, location.search);
   const inOperationsWorkspace = !!opsWorkspace;
-  const primaryTabs  = inOperations ? [] : (config?.primaryTabs || []).filter(canSee);
+  // `method` tabs wait for the methods call rather than flashing in and then
+  // disappearing: until the answer is back they are treated as on, matching
+  // the default the landing tiles use.
+  const methodOn = (entry) => !entry.method || !methods || methods[entry.method] !== false;
+  const primaryTabs  = inOperations ? [] : (config?.primaryTabs || []).filter(canSee).filter(methodOn);
   const activeTab    = isHome ? homeTab : (config?.getActiveTab?.(location.pathname) || primaryTabs[0]?.key);
   const subNavItems  = (config?.subNav?.[activeTab] || []).filter(canSee);
 

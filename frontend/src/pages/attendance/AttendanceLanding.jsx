@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarCheck, Clock, MapPin, Briefcase, Settings, Repeat, Users } from 'lucide-react';
+import { CalendarCheck, Clock, MapPin, Briefcase, Repeat, Users } from 'lucide-react';
 import ModuleLanding from '../../components/ModuleLanding.jsx';
 import { useAuth } from '../../context/AuthContext';
-import { isFullAccess, isApprover } from '../../utils/roles';
+import { isApprover } from '../../utils/roles';
 import api from '../../utils/api';
 
 export default function AttendanceLanding() {
@@ -36,8 +36,9 @@ export default function AttendanceLanding() {
     // regularization and on duty rather than behind Settings.
     { key: 'shift-change', label: 'Shift Change', icon: Repeat, color: 'text-teal-600', to: '/shift-change' },
     { key: 'location', label: 'Location History', icon: MapPin, color: 'text-rose-600', to: '/attendance/location' },
-    isFullAccess(user?.role) &&
-      { key: 'configuration', label: 'Configuration', icon: Settings, color: 'text-slate-600', to: '/attendance/configuration' },
+    // Configuration is deliberately absent: /attendance/configuration is only
+    // a redirect to Settings → Attendance, which is where it is administered
+    // and where the tile was sending people anyway.
   ].filter(Boolean);
 
   return (
