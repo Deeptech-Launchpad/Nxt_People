@@ -6,6 +6,9 @@ const pool = require('../db');
 const bcrypt = require('bcryptjs');
 const logger = require('../logger');
 const { serverError } = require('../utils/serverError');
+const { lopDaysForRange } = require('./payroll');
+const { loadHolidaysAndRulesRange } = require('./reports');
+const { holidayTypeFor, ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
 
 // Per-API-key rate limit. Prevents a leaked key from being used to
 // hammer the bulk-upsert endpoint into a denial of service. Keyed on
@@ -104,7 +107,12 @@ router.get('/employees', async (req, res) => {
       query += ' AND company = $1';
       params.push(req.apiConnection.company);
     }
-    const result = await pool.query(`SELECT employee_id as "employeeId", first_name as "firstName", last_name as "lastName", email, phone, designation, division, company, department, joining_date as "joiningDate" FROM employees ${query}`, params);
+    // status/exit_date/pan_number/uan_number/bank_* were added to this table
+    // for other features long before this route, and simply never selected
+    // here — a connected payroll system had no way to tell an active
+    // employee from an exited one, or read the statutory/bank fields it
+    // needs, even though every column already existed.
+    const result = await pool.query(`SELECT employee_id as "employeeId", first_name as "firstName", last_name as "lastName", email, phone, designation, division, company, department, joining_date as "joiningDate", status, exit_date as "exitDate", pan_number as "pan", uan_number as "uan", bank_name as "bankName", bank_account as "bankAccountNumber", bank_ifsc as "bankIfsc" FROM employees ${query}`, params);
     auditExternal(req, 'READ', 'employees', { count: result.rows.length, filter: { company: req.apiConnection.company || null } });
     res.json({ success: true, source: req.apiConnection.name, count: result.rows.length, data: result.rows });
   } catch (err) { serverError(res, err); }
@@ -149,6 +157,94 @@ router.post('/employees', async (req, res) => {
       errorCount: results.errors.length,
     });
     res.json({ success: true, message: 'Sync complete', results });
+  } catch (err) { serverError(res, err); }
+});
+
+/**
+ * Attendance/LOP for the [startDate, endDate] window, one row per employee.
+ *
+ * Deliberately not raw punches or leave applications — this reuses
+ * lopDaysForRange(), the exact function Payroll Run and the internal
+ * leave/payroll-export report both compute LOP with (holiday/shift/weekend
+ * scoping, half-day leave, all of it), so a connected payroll system gets a
+ * figure provably identical to what this app would itself pay against,
+ * never a second calculation that can quietly drift from the first.
+ *
+ * `presentDays` is informational only — the caller decides on its own end
+ * how many days a month is worth (a fixed company figure, in at least one
+ * connected system's case); this only ever reports how much of that should
+ * NOT be paid.
+ */
+router.get('/attendance-summary', async (req, res) => {
+  try {
+    if (!hasScope(req.apiConnection, 'attendance', 'read')) {
+      return res.status(403).json({ success: false, message: 'This connection does not have read access to attendance data.' });
+    }
+    const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
+    const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
+    const startD = new Date(start), endD = new Date(end);
+    if (Number.isNaN(startD.getTime()) || Number.isNaN(endD.getTime()) || endD < startD) {
+      return res.status(400).json({ success: false, message: 'startDate/endDate must be valid dates with startDate <= endDate.' });
+    }
+
+    const { holMap, rules } = await loadHolidaysAndRulesRange(startD, endD);
+
+    // Same population GET /employees already exposes to this connection —
+    // notice-period included, scoped to the connection's own company.
+    let query = `WHERE registration_status = 'active' AND status IN ('active', 'notice_period')`;
+    let params = [];
+    if (req.apiConnection.company) {
+      query += ' AND company = $1';
+      params.push(req.apiConnection.company);
+    }
+    const empRes = await pool.query(
+      `SELECT id AS "_id", employee_id AS "employeeCode", joining_date AS "joiningDate", exit_date AS "exitDate"
+         FROM employees ${query}`,
+      params
+    );
+
+    const data = [];
+    for (const emp of empRes.rows) {
+      const effStart = emp.joiningDate && new Date(emp.joiningDate) > startD ? new Date(emp.joiningDate) : startD;
+      const effEnd = emp.exitDate && new Date(emp.exitDate) < endD ? new Date(emp.exitDate) : endD;
+      if (effEnd < effStart) continue; // not on rolls at any point in this window
+
+      const totalDays = Math.round((effEnd - effStart) / 86400000) + 1;
+      // eslint-disable-next-line no-await-in-loop
+      const lopDays = await lopDaysForRange(emp._id, effStart, effEnd, holMap, rules, pool);
+
+      let weekendCount = 0, holidayCount = 0;
+      for (const d = new Date(effStart); d <= effEnd; d.setDate(d.getDate() + 1)) {
+        const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+        const holType = holidayTypeFor(holMap, key, emp);
+        if (holidayClosesOffice(holType)) holidayCount++;
+        else if (holType !== 'working_day' && rules.some(rule => ruleMatchesDate(rule, d))) weekendCount++;
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const leaveRes = await pool.query(
+        `SELECT leave_type, COALESCE(SUM(total_days), 0) AS days
+           FROM leaves WHERE employee_id = $1 AND status = 'approved' AND leave_type IN ('casual','unpaid','comp_off')
+             AND start_date <= $3::date AND end_date >= $2::date
+           GROUP BY leave_type`,
+        [emp._id, effStart.toLocaleDateString('en-CA'), effEnd.toLocaleDateString('en-CA')]
+      );
+      const byType = Object.fromEntries(leaveRes.rows.map(r => [r.leave_type, parseFloat(r.days) || 0]));
+      const leavePaid = byType.casual || 0, leaveUnpaid = byType.unpaid || 0;
+
+      data.push({
+        externalId: emp._id,
+        employeeCode: emp.employeeCode,
+        lopDays,
+        leavePaid,
+        leaveUnpaid,
+        holidayCount,
+        presentDays: Math.max(0, totalDays - lopDays - leavePaid - holidayCount - weekendCount),
+      });
+    }
+
+    auditExternal(req, 'READ', 'attendance', { count: data.length, startDate: start, endDate: end, filter: { company: req.apiConnection.company || null } });
+    res.json({ success: true, source: req.apiConnection.name, count: data.length, startDate: start, endDate: end, data });
   } catch (err) { serverError(res, err); }
 });
 

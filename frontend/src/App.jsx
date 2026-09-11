@@ -19,7 +19,6 @@ const Dashboard       = lazy(() => import('./pages/Dashboard'));
 const AttendanceLanding = lazy(() => import('./pages/attendance/AttendanceLanding'));
 const CheckInOut      = lazy(() => import('./pages/attendance/CheckInOut'));
 const MyAttendance    = lazy(() => import('./pages/attendance/MyAttendance'));
-const TeamAttendance  = lazy(() => import('./pages/attendance/TeamAttendance'));
 const Regularization  = lazy(() => import('./pages/attendance/Regularization'));
 const OnDuty          = lazy(() => import('./pages/attendance/OnDuty'));
 const AttendanceLocation = lazy(() => import('./pages/attendance/AttendanceLocation'));
@@ -100,6 +99,11 @@ const DashboardWidgets = lazy(() => import('./pages/DashboardWidgets'));
 const TeamSpace    = lazy(() => import('./pages/TeamSpace'));
 const TeamProjects = lazy(() => import('./pages/TeamProjects'));
 const Peers        = lazy(() => import('./pages/Peers'));
+const TeamReportees      = lazy(() => import('./pages/team/Reportees'));
+const TeamList           = lazy(() => import('./pages/team/TeamList'));
+const TeamExEmployees    = lazy(() => import('./pages/team/ExEmployees'));
+const AttendanceTeam     = lazy(() => import('./pages/team/AttendanceTeam'));
+const LeaveTrackerTeam   = lazy(() => import('./pages/team/LeaveTrackerTeam'));
 
 /* ── New pages — Phase 4: Organization ─────────────────────────────── */
 const OrgOverview    = lazy(() => import('./pages/OrgOverview'));
@@ -184,6 +188,12 @@ const AppRoutes = () => {
           <Route path="team/peers"      element={<Peers/>}/>
           <Route path="team/approvals"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
           <Route path="approvals"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
+          {/* Manager-scoped reads. Gated to the same set as team/approvals —
+              every endpoint behind them narrows to the caller's reporting line
+              through reportsScope() as well. */}
+          <Route path="team/reportees"    element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><TeamReportees/></ProtectedRoute>}/>
+          <Route path="team/list"         element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><TeamList/></ProtectedRoute>}/>
+          <Route path="team/ex-employees" element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><TeamExEmployees/></ProtectedRoute>}/>
 
           {/* ── Home / Organization ──────────────────────────────────── */}
           <Route path="organization" element={<OrgOverview/>}/>
@@ -204,7 +214,11 @@ const AppRoutes = () => {
           <Route path="attendance/regularization" element={<Regularization/>}/>
           <Route path="attendance/on-duty" element={<OnDuty/>}/>
           <Route path="attendance/location"       element={<AttendanceLocation/>}/>
-          <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><TeamAttendance/></ProtectedRoute>}/>
+          {/* Attendance → Team. The bare path used to render TeamAttendance on
+              its own and was linked from nowhere; it now opens the workspace on
+              its Team Members tab, so the old URL lands where it always did. */}
+          <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><AttendanceTeam/></ProtectedRoute>}/>
+          <Route path="attendance/team/:tab"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><AttendanceTeam/></ProtectedRoute>}/>
           {/* Attendance configuration lives under Settings now; the old path
               still resolves so links and bookmarks keep working. */}
           <Route path="attendance/configuration/*" element={<Navigate to="/settings/service/attendance" replace />}/>
@@ -222,12 +236,14 @@ const AppRoutes = () => {
           <Route path="leave-tracker/balance"    element={<LeaveBalance/>}/>
           <Route path="leave-tracker/requests"   element={<LeaveRequests/>}/>
           <Route path="leave-tracker/comp-off"   element={<CompOff/>}/>
-          {/* /leave-tracker/team renders the same Approvals page as
-              /approvals, but keeping the URL under /leave-tracker/* keeps
-              the sidebar highlight on Leave Tracker instead of jumping
-              the user back to Home (which was the pre-fix behaviour).
-              Role-gated identically — only admins/managers can view it. */}
-          <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><Approvals/></ProtectedRoute>}/>
+          {/* /leave-tracker/team was the Approvals page under a Leave Tracker
+              URL — the right URL for the wrong screen, and linked from nowhere.
+              It is the Team workspace now (Reportees | On Leave | Leave
+              Requests | Compensatory Request), which is what the reference puts
+              here; the approval queue stays at /team/approvals. Role-gated
+              identically — only admins/managers can view it. */}
+          <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><LeaveTrackerTeam/></ProtectedRoute>}/>
+          <Route path="leave-tracker/team/:tab"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><LeaveTrackerTeam/></ProtectedRoute>}/>
           <Route path="leave-tracker/all"        element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerAdmin/></ProtectedRoute>}/>
           <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
           {/* The weekend pattern is part of a work calendar now, so the

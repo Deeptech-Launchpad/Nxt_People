@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
+﻿import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal, Settings as SettingsIcon, ArrowLeft } from 'lucide-react';
 import { serviceByKey, tabsOf, BASE as SETTINGS_BASE } from '../../pages/settings/serviceCatalog';
@@ -7,7 +7,24 @@ import WorkspaceTabs from './WorkspaceTabs';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
 import { roleLabel, isFullAccess } from '../../utils/roles';
+import { PhotoAvatar } from '../ui';
 import api from '../../utils/api';
+
+/* Today's presence, as the employees list already reports it. Someone on
+ * approved leave still reads as 'yetToCheckIn' here — the list endpoint
+ * derives presence from the attendance row alone — so this deliberately does
+ * not claim to show leave. */
+const PRESENCE = {
+  in:           { label: 'In',  className: 'text-emerald-600 dark:text-emerald-400' },
+  out:          { label: 'Out', className: 'text-slate-400 dark:text-slate-500' },
+  yetToCheckIn: null,
+};
+
+const PresenceTag = ({ presence }) => {
+  const p = PRESENCE[presence];
+  if (!p) return null;
+  return <span className={`text-[11px] font-semibold flex-shrink-0 ${p.className}`}>{p.label}</span>;
+};
 
 /* ── Section detection ─────────────────────────────────────────────── */
 function getSection(pathname) {
@@ -58,9 +75,18 @@ const NAV = {
       ],
       team: [
         { to: '/team-space',      label: 'Team Space' },
+        // Reportees / Team List / Ex-Employees are approver-only: they are the
+        // reporting line looked at three ways, and reportsScope() has nothing
+        // to scope by for someone with no reports.
+        { to: '/team/reportees',  label: 'Reportees',
+          roles: ['admin', 'director', 'hr_admin', 'manager', 'team_incharge'] },
         { to: '/team/department', label: 'Department' },
+        { to: '/team/list',       label: 'Team List',
+          roles: ['admin', 'director', 'hr_admin', 'manager', 'team_incharge'] },
         { to: '/team/projects',   label: 'Projects'   },
         { to: '/team/peers',      label: 'Peers'      },
+        { to: '/team/ex-employees', label: 'Ex-Employees',
+          roles: ['admin', 'director', 'hr_admin', 'manager', 'team_incharge'] },
         // Missing entirely until now — the route (/team/approvals) has
         // existed all along, and the guided tour even tells people to
         // "click Home → Team → Approvals", but there was no link here for
@@ -103,12 +129,18 @@ const NAV = {
     label: 'Leave Tracker',
     primaryTabs: [
       { key: 'mydata',   label: 'My Data',  to: '/leave-tracker/summary'  },
+      // The Leave Tracker had no Team tab at all, so a manager could see their
+      // own balance but never their reports' — the one thing the reference
+      // puts here.
+      { key: 'team',     label: 'Team',     to: '/leave-tracker/team',
+        roles: ['admin', 'director', 'hr_admin', 'manager', 'team_incharge'] },
       { key: 'holidays', label: 'Holidays', to: '/leave-tracker/holidays' },
     ],
     // '__landing__' signals "we're on the root /leave-tracker page" — no tab highlighted,
     // and subNav['__landing__'] is undefined so the white sub-nav bar stays hidden.
     getActiveTab: p => {
       if (p === '/leave-tracker')                                              return '__landing__';
+      if (p.startsWith('/leave-tracker/team'))                                 return 'team';
       if (p.startsWith('/leave-tracker/holidays') || p.startsWith('/leave-tracker/weekends')) return 'holidays';
       return 'mydata';
     },
@@ -119,6 +151,8 @@ const NAV = {
         { to: '/leave-tracker/comp-off', label: 'Comp-Off'       },
         { to: '/wfh',                    label: 'WFH Requests'   },
       ],
+      // The workspace draws its own tab strip, the same way Operations does,
+      // so the white sub-nav bar stays out of its way.
       holidays: [
         { to: '/leave-tracker/holidays', label: 'Holidays'                                   },
         { to: '/leave-tracker/weekends', label: 'Weekend Rules', roles: ['admin','director','hr_admin'] },
@@ -445,10 +479,56 @@ export default function Topbar() {
   const [showQuickActions, setShowQuickActions]   = useState(false);
   const [showSearch, setShowSearch]               = useState(false);
   const [searchQuery, setSearchQuery]             = useState('');
+  const [people, setPeople]                       = useState([]);
+  const [searchLoading, setSearchLoading]         = useState(false);
   const notifRef       = useRef();
   const userMenuRef    = useRef();
   const quickActionsRef= useRef();
   const searchRef      = useRef();
+  const searchDebounce = useRef();
+
+  const closeSearch = useCallback(() => {
+    setSearchQuery('');
+    setPeople([]);
+    setSearchLoading(false);
+  }, []);
+
+  const openEmployee = useCallback((id) => {
+    setShowSearch(false);
+    closeSearch();
+    navigate(`/employees/${id}`);
+  }, [closeSearch, navigate]);
+
+  // The magnifying glass promised "Search employees, pages..." but only ever
+  // filtered a five-item array of page links — the employee half was never
+  // wired to anything. /employees already returns photo, code, designation and
+  // today's presence in one call, so the row can be built without a second
+  // request.
+  useEffect(() => {
+    clearTimeout(searchDebounce.current);
+    const q = searchQuery.trim();
+    if (!showSearch || q.length < 2) { setPeople([]); setSearchLoading(false); return; }
+    setSearchLoading(true);
+    searchDebounce.current = setTimeout(() => {
+      api.get(`/employees?search=${encodeURIComponent(q)}&status=active&limit=6`)
+        .then(r => setPeople(r.data.data || []))
+        .catch(() => setPeople([]))
+        .finally(() => setSearchLoading(false));
+    }, 250);
+    return () => clearTimeout(searchDebounce.current);
+  }, [searchQuery, showSearch]);
+
+  const pageMatches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return [
+      { label: 'Employees', to: '/employees', roles: ['admin', 'director', 'hr_admin'] },
+      { label: 'Attendance', to: '/attendance/my' },
+      { label: 'Leave Tracker', to: '/leave-tracker/summary' },
+      { label: 'Reports', to: '/reports', roles: ['admin', 'director', 'hr_admin', 'manager'] },
+      { label: 'Announcements', to: '/announcements' },
+    ].filter(i => !i.roles || i.roles.includes(user?.role))
+     .filter(i => !q || i.label.toLowerCase().includes(q));
+  }, [searchQuery, user?.role]);
 
   const loadNotifications = useCallback(() => {
     api.get('/notifications').then(r => {
@@ -487,11 +567,14 @@ export default function Topbar() {
       if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifs(false);
       if (userMenuRef.current && !userMenuRef.current.contains(e.target)) setShowUserMenu(false);
       if (quickActionsRef.current && !quickActionsRef.current.contains(e.target)) setShowQuickActions(false);
-      if (searchRef.current && !searchRef.current.contains(e.target)) setShowSearch(false);
+      // Clearing here too, not just on the toggle button — closing by clicking
+      // away used to leave the old query and its results mounted, so the next
+      // open showed a stale list.
+      if (searchRef.current && !searchRef.current.contains(e.target)) { setShowSearch(false); closeSearch(); }
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
-  }, []);
+  }, [closeSearch]);
 
   const markAllRead = async () => {
     await api.put('/notifications/read-all').catch(() => {});
@@ -665,13 +748,13 @@ export default function Topbar() {
           {/* Search */}
           <div className="relative" ref={searchRef}>
             <button
-              onClick={() => { setShowSearch(v => !v); setSearchQuery(''); }}
+              onClick={() => { setShowSearch(v => !v); closeSearch(); }}
               className="hover:bg-white/10 transition-colors p-1 rounded"
             >
               <Search size={17} />
             </button>
             {showSearch && (
-              <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-[#1f2937] rounded-xl shadow-2xl z-50 border border-slate-100 dark:border-[#374151] overflow-hidden">
+              <div className="absolute right-0 top-full mt-2 w-[380px] max-w-[calc(100vw-2rem)] bg-white dark:bg-[#1f2937] rounded-xl shadow-2xl z-50 border border-slate-100 dark:border-[#374151] overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 dark:border-[#374151]">
                   <Search size={15} className="text-slate-400 flex-shrink-0" />
                   <input
@@ -681,31 +764,64 @@ export default function Topbar() {
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     onKeyDown={e => {
-                      if (e.key === 'Enter' && searchQuery.trim()) {
-                        navigate(`/employees?search=${encodeURIComponent(searchQuery.trim())}`);
-                        setShowSearch(false);
-                      }
-                      if (e.key === 'Escape') setShowSearch(false);
+                      // Enter used to navigate to /employees?search=… — a page
+                      // that never read the query string, and one three of the
+                      // five roles are bounced out of. Open the first person we
+                      // actually found instead; their profile is open to
+                      // everyone who is logged in.
+                      if (e.key === 'Enter' && people[0]) openEmployee(people[0]._id);
+                      if (e.key === 'Escape') { setShowSearch(false); closeSearch(); }
                     }}
-                    className="flex-1 text-base text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-400 bg-transparent"
+                    className="flex-1 text-base text-slate-800 dark:text-slate-100 outline-none placeholder:text-slate-400 bg-transparent min-w-0"
                   />
-                  <button onClick={() => setShowSearch(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X size={14}/></button>
+                  {searchLoading && <span className="w-3.5 h-3.5 border-2 border-slate-300 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+                  <button onClick={() => { setShowSearch(false); closeSearch(); }} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex-shrink-0"><X size={14}/></button>
                 </div>
-                <div className="py-1">
-                  {[
-                    { label: 'Employees', to: '/employees', roles: ['admin', 'director', 'hr_admin'] },
-                    { label: 'Attendance', to: '/attendance/my' },
-                    { label: 'Leave Tracker', to: '/leave-tracker/summary' },
-                    { label: 'Reports', to: '/reports', roles: ['admin', 'director', 'hr_admin', 'manager'] },
-                    { label: 'Announcements', to: '/announcements' },
-                  ].filter(item => (!item.roles || item.roles.includes(user?.role)))
-                   .filter(item => !searchQuery || item.label.toLowerCase().includes(searchQuery.toLowerCase()))
-                   .map(({ label, to }) => (
-                    <button key={label} onClick={() => { navigate(to); setShowSearch(false); }}
-                      className="w-full text-left px-4 py-2 text-[15px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151] transition-colors flex items-center gap-2">
-                      <Search size={12} className="text-slate-300 dark:text-slate-500" />{label}
-                    </button>
-                  ))}
+
+                <div className="max-h-[420px] overflow-y-auto">
+                  {searchQuery.trim().length >= 2 && (
+                    <div className="py-1">
+                      <div className="px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Employees</div>
+                      {people.map(p => (
+                        <button
+                          key={p._id}
+                          onClick={() => openEmployee(p._id)}
+                          className="w-full text-left px-4 py-2 hover:bg-slate-50 dark:hover:bg-[#374151] transition-colors flex items-center gap-3"
+                        >
+                          <PhotoAvatar photoUrl={p.photoUrl} firstName={p.firstName} lastName={p.lastName}
+                                       className="w-9 h-9" textClassName="text-xs" />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-2">
+                              <span className="text-[14px] text-slate-800 dark:text-slate-100 truncate">
+                                {p.employeeId ? `${p.employeeId} - ` : ''}{p.firstName} {p.lastName}
+                              </span>
+                              <PresenceTag presence={p.presence} />
+                            </span>
+                            <span className="block text-[12px] text-slate-500 dark:text-slate-400 truncate">
+                              {[p.designation, p.department].filter(Boolean).join(' · ') || p.email}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                      {!searchLoading && !people.length && (
+                        <div className="px-4 py-3 text-[13px] text-slate-500 dark:text-slate-400">
+                          No employee matches “{searchQuery.trim()}”.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {pageMatches.length > 0 && (
+                    <div className="py-1 border-t border-slate-100 dark:border-[#374151]">
+                      <div className="px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Pages</div>
+                      {pageMatches.map(({ label, to }) => (
+                        <button key={label} onClick={() => { setShowSearch(false); closeSearch(); navigate(to); }}
+                          className="w-full text-left px-4 py-2 text-[15px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#374151] transition-colors flex items-center gap-2">
+                          <Search size={12} className="text-slate-300 dark:text-slate-500" />{label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

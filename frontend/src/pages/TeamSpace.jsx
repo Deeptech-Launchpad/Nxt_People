@@ -72,7 +72,7 @@ export default function TeamSpace() {
   }, [user?._id]);
 
   const deptName = data?.department || user?.department || '—';
-  const avail    = data?.teamAvailability || { in: 0, out: 0, yetToCheckIn: 0 };
+  const avail    = data?.teamAvailability || { in: 0, out: 0, onLeave: 0, yetToCheckIn: 0 };
 
   return (
     <div className="flex flex-col lg:flex-row gap-5 p-6 min-h-[calc(100vh-100px)]">
@@ -117,6 +117,10 @@ export default function TeamSpace() {
             <div className="space-y-1">
               <Row dot="bg-emerald-500" label="In"               value={avail.in}/>
               <Row dot="bg-slate-400"   label="Out"              value={avail.out}/>
+              {/* Leave sits above "Yet to check-in" because it is carved out
+                  of it — an approved day off was being counted as somebody
+                  who had not turned up yet. */}
+              <Row dot="bg-violet-500"  label="On leave"         value={avail.onLeave}/>
               <Row dot="bg-amber-500"   label="Yet to check-in"  value={avail.yetToCheckIn}/>
             </div>
           )}

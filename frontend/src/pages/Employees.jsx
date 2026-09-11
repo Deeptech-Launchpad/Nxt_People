@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Search, Edit2, Trash2, X, ChevronLeft, ChevronRight, ChevronDown, Mail, Send, Eye, FileText, Download, RefreshCw, CheckCircle2 } from 'lucide-react';
 import api from '../utils/api';
 import { previewEmployeeDocument, downloadEmployeeDocument } from '../utils/employeeDocument';
@@ -57,7 +58,18 @@ export default function Employees() {
   const [employees, setEmployees] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
+  // Seeded from ?search= because the topbar has always navigated here with the
+  // typed term in the URL, and this page never read it — you landed on an
+  // unfiltered list with an empty box and no sign the search had happened.
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get('search') || '');
+  // The list re-queried on every keystroke, and each query carries a COUNT(*)
+  // over a table scanned with ILIKE '%…%'.
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
   const [deptFilter, setDeptFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [desigFilter, setDesigFilter] = useState('');
@@ -155,7 +167,7 @@ export default function Employees() {
     setLoading(true);
     const params = new URLSearchParams({
       page, limit,
-      ...(search       && { search }),
+      ...(debouncedSearch && { search: debouncedSearch }),
       ...(deptFilter   && { department:  deptFilter }),
       ...(roleFilter   && { role:        roleFilter }),
       ...(desigFilter  && { designation: desigFilter }),
@@ -197,7 +209,7 @@ export default function Employees() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
-  useEffect(load, [page, limit, search, deptFilter, roleFilter, desigFilter, statusFilter]);
+  useEffect(load, [page, limit, debouncedSearch, deptFilter, roleFilter, desigFilter, statusFilter]);
 
   const openCreate = () => {
     setEditEmp(null);

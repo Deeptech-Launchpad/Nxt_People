@@ -7,6 +7,7 @@ import {
   CornerDownLeft, ChevronUp, ChevronDown, ArrowRight,
 } from 'lucide-react';
 import api from '../utils/api';
+import { PhotoAvatar } from './ui';
 import toast from 'react-hot-toast';
 import { PAYROLL_ADMIN_ENABLED } from '../config/features';
 
@@ -87,7 +88,7 @@ export default function SmartChat({ open, onClose }) {
     }
     setLoading(true);
     debounceRef.current = setTimeout(() => {
-      api.get(`/employees?search=${encodeURIComponent(query.trim())}&limit=6`)
+      api.get(`/employees?search=${encodeURIComponent(query.trim())}&status=active&limit=6`)
         .then(r => setEmployees(r.data.data || []))
         .catch(() => { toast.error('Employee search failed'); setEmployees([]); })
         .finally(() => setLoading(false));
@@ -112,9 +113,15 @@ export default function SmartChat({ open, onClose }) {
       type: 'team_member',
       label: `${e.firstName} ${e.lastName}`,
       subtitle: `${e.designation || ''}${e.department ? ' · ' + e.department : ''}`.trim() || e.email,
-      path: '/directory', // Directory is the only place that lists colleagues.
+      // Every person used to land on /directory — six different results, one
+      // destination, and the query dropped on the way. The profile route is
+      // open to every logged-in role.
+      path: `/employees/${e._id}`,
       icon: UserIcon,
       employeeId: e.employeeId,
+      photoUrl: e.photoUrl,
+      firstName: e.firstName,
+      lastName: e.lastName,
     }));
     return [
       ...matchedActions.map(a => ({ ...a, type: 'action' })),
@@ -214,11 +221,16 @@ export default function SmartChat({ open, onClose }) {
                       isActive ? 'bg-blue-50 text-[#1a73e8]' : 'text-slate-700 hover:bg-slate-50'
                     }`}
                   >
-                    <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
-                      isActive ? 'bg-[#1a73e8] text-white' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      <Icon size={14} />
-                    </div>
+                    {item.type === 'team_member' ? (
+                      <PhotoAvatar photoUrl={item.photoUrl} firstName={item.firstName} lastName={item.lastName}
+                                   className="w-7 h-7" textClassName="text-[10px]" />
+                    ) : (
+                      <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
+                        isActive ? 'bg-[#1a73e8] text-white' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        <Icon size={14} />
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="text-[15px] font-semibold truncate">{item.label}</p>
                       {item.subtitle && (

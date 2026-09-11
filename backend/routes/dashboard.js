@@ -6,6 +6,24 @@ const { allows, optionsFor } = require('../utils/functionAccess');
 const { serverError } = require('../utils/serverError');
 router.use(protect);
 
+/* Birthdays in the next 30 days, wrapping across the year end.
+ *
+ * Shared with /my-space below rather than copied: the Admin dashboard and My
+ * Space → Dashboard show the same faces, and two copies of this MM-DD wrap
+ * would be two places to get the December-to-January case wrong. */
+const UPCOMING_BIRTHDAYS_SQL = `
+  SELECT first_name as "firstName", last_name as "lastName", department, designation,
+         employee_id as "employeeId", date_of_birth as "dateOfBirth",
+         TO_CHAR(date_of_birth, 'MM-DD') as "mmdd"
+    FROM employees
+   WHERE date_of_birth IS NOT NULL AND status = 'active' AND deleted_at IS NULL
+     AND (
+       (TO_CHAR(date_of_birth,'MM-DD') >= TO_CHAR(CURRENT_DATE,'MM-DD') AND TO_CHAR(date_of_birth,'MM-DD') <= TO_CHAR(CURRENT_DATE + INTERVAL '30 days','MM-DD'))
+       OR (TO_CHAR(CURRENT_DATE,'MM-DD') > TO_CHAR(CURRENT_DATE + INTERVAL '30 days','MM-DD')
+           AND (TO_CHAR(date_of_birth,'MM-DD') >= TO_CHAR(CURRENT_DATE,'MM-DD') OR TO_CHAR(date_of_birth,'MM-DD') <= TO_CHAR(CURRENT_DATE + INTERVAL '30 days','MM-DD')))
+     )
+   ORDER BY TO_CHAR(date_of_birth,'MM-DD') LIMIT $1`;
+
 router.get('/stats', async (req, res) => {
   try {
     const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local date
@@ -97,17 +115,7 @@ router.get('/stats', async (req, res) => {
     );
 
     // Upcoming birthdays in next 30 days
-    const birthdaysRes = await pool.query(
-      `SELECT first_name as "firstName", last_name as "lastName", department, date_of_birth as "dateOfBirth",
-       TO_CHAR(date_of_birth, 'MM-DD') as "mmdd"
-       FROM employees WHERE date_of_birth IS NOT NULL AND status = 'active'
-       AND (
-         (TO_CHAR(date_of_birth,'MM-DD') >= TO_CHAR(CURRENT_DATE,'MM-DD') AND TO_CHAR(date_of_birth,'MM-DD') <= TO_CHAR(CURRENT_DATE + INTERVAL '30 days','MM-DD'))
-         OR (TO_CHAR(CURRENT_DATE,'MM-DD') > TO_CHAR(CURRENT_DATE + INTERVAL '30 days','MM-DD')
-             AND (TO_CHAR(date_of_birth,'MM-DD') >= TO_CHAR(CURRENT_DATE,'MM-DD') OR TO_CHAR(date_of_birth,'MM-DD') <= TO_CHAR(CURRENT_DATE + INTERVAL '30 days','MM-DD')))
-       )
-       ORDER BY TO_CHAR(date_of_birth,'MM-DD') LIMIT 5`
-    );
+    const birthdaysRes = await pool.query(UPCOMING_BIRTHDAYS_SQL, [5]);
 
     // Work anniversaries this month
     const anniversariesRes = await pool.query(
@@ -133,15 +141,21 @@ router.get('/stats', async (req, res) => {
       [today]
     );
 
-    // Latest announcements (top 5)
+    /* Latest announcements (top 5).
+     *
+     * `isPinned` was aliased off is_active, which is the conflation
+     * /api/announcements was explicitly fixed to stop making: is_active is
+     * whether the announcement is visible at all, is_pinned is whether it wears
+     * the badge. Every row here passes `WHERE a.is_active = true`, so the old
+     * alias reported every announcement as pinned. */
     const announcementsRes = await pool.query(
       `SELECT a.id as "_id", a.title, a.content as body, a.priority as type,
-       a.is_active as "isPinned", a.created_at as "createdAt",
+       a.is_pinned as "isPinned", a.created_at as "createdAt",
        json_build_object('firstName', e.first_name, 'lastName', e.last_name) as "postedBy"
        FROM announcements a
        JOIN employees e ON a.created_by = e.id
        WHERE a.is_active = true
-       ORDER BY a.created_at DESC LIMIT 5`
+       ORDER BY a.is_pinned DESC, a.created_at DESC LIMIT 5`
     );
 
     /* Function Based Permissions, applied by omission rather than refusal.
@@ -175,6 +189,150 @@ router.get('/stats', async (req, res) => {
         announcements: showAnnouncements ? announcementsRes.rows : []
       }
     });
+  } catch (err) {
+    serverError(res, err);
+  }
+});
+
+/* ── My Space → Dashboard ──────────────────────────────────────────────────
+ *
+ * The widget page used to load /dashboard/stats for a single field and
+ * /employees?limit=200 to re-derive birthdays and new hires in the browser —
+ * two hundred employee records, salaries and addresses included, so that three
+ * cards could show a name and a photo. Everything the page cannot get from an
+ * existing self-scoped endpoint comes from here instead.
+ *
+ * Announcements deliberately do NOT appear here: /api/announcements already
+ * serves them with the pinned/active distinction and the read state, and is the
+ * route the Announcements page itself uses.
+ */
+router.get('/my-space', async (req, res) => {
+  try {
+    const showBirthdays = await allows(req, 'birthday_buddy');
+
+    const [birthdaysRes, newHiresRes] = await Promise.all([
+      showBirthdays ? pool.query(UPCOMING_BIRTHDAYS_SQL, [8]) : Promise.resolve({ rows: [] }),
+      pool.query(
+        `SELECT id as "_id", first_name as "firstName", last_name as "lastName",
+                employee_id as "employeeId", designation, department,
+                joining_date as "joiningDate"
+           FROM employees
+          WHERE status = 'active' AND deleted_at IS NULL
+            AND joining_date IS NOT NULL
+            AND joining_date >= CURRENT_DATE - INTERVAL '30 days'
+            AND joining_date <= CURRENT_DATE
+          ORDER BY joining_date DESC LIMIT 8`
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      data: { birthdays: birthdaysRes.rows, newHires: newHiresRes.rows }
+    });
+  } catch (err) {
+    serverError(res, err);
+  }
+});
+
+/* LOP the caller has actually been docked for, read off their own payslips.
+ *
+ * Not recomputed with payroll's lopDaysForRange(): that would give the dashboard
+ * its own opinion of a pay-affecting number, free to disagree with the payslip
+ * the person was paid against. A payslip is the only figure that has actually
+ * been applied, so that is the one shown — which is also why a month with no
+ * payslip yet reports nothing here rather than zero.
+ *
+ * /payroll/my is the natural home for this but does not select lop_days, and
+ * /payroll/my/:id does — one call per slip. Hence one aggregate read here.
+ */
+router.get('/lop-summary', async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT pay_year AS "payYear", pay_month AS "payMonth",
+              COALESCE(lop_days, 0)::float   AS "lopDays",
+              COALESCE(lop_amount, 0)::float AS "lopAmount"
+         FROM payroll_payslips
+        WHERE employee_id = $1
+          AND status IN ('locked','paid')
+          AND superseded_by IS NULL
+        ORDER BY pay_year DESC, pay_month DESC
+        LIMIT 6`,
+      [req.user._id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        periods: r.rows,
+        totalDays: r.rows.reduce((s, x) => s + x.lopDays, 0),
+        totalAmount: r.rows.reduce((s, x) => s + x.lopAmount, 0),
+      }
+    });
+  } catch (err) {
+    serverError(res, err);
+  }
+});
+
+/* ── Widget layout ─────────────────────────────────────────────────────────
+ *
+ * The whitelist is the contract with the frontend registry: a key the browser
+ * invents is dropped rather than stored, so the column can never grow into a
+ * place to park arbitrary JSON. Keep it in step with WIDGETS in
+ * frontend/src/pages/dashboard/widgets.jsx.
+ */
+const WIDGET_KEYS = [
+  'newHires', 'favorites', 'birthday', 'quickLinks', 'announcements',
+  'leaveReport', 'holidays', 'myGoals', 'appraisals', 'pendingTasks',
+  'myFiles', 'engagement', 'lopSummary',
+];
+
+/** Known keys only, in the order given, no repeats. */
+function cleanKeys(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const k of value) {
+    if (typeof k !== 'string' || !WIDGET_KEYS.includes(k) || seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
+}
+
+router.get('/layout', async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT dashboard_layout AS "layout" FROM employees WHERE id = $1`,
+      [req.user._id]
+    );
+    const saved = r.rows[0]?.layout;
+    if (!saved) return res.json({ success: true, data: null });
+
+    // Sanitised on the way out too: a key retired since the layout was saved
+    // would otherwise be handed back to a frontend that no longer knows it.
+    res.json({
+      success: true,
+      data: { order: cleanKeys(saved.order), hidden: cleanKeys(saved.hidden) }
+    });
+  } catch (err) {
+    serverError(res, err);
+  }
+});
+
+router.put('/layout', async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const layout = { order: cleanKeys(body.order), hidden: cleanKeys(body.hidden) };
+
+    if (layout.order.length === 0) {
+      return res.status(400).json({ success: false, message: 'order must list at least one known widget' });
+    }
+
+    await pool.query(
+      `UPDATE employees SET dashboard_layout = $1 WHERE id = $2`,
+      [JSON.stringify(layout), req.user._id]
+    );
+    res.json({ success: true, data: layout });
   } catch (err) {
     serverError(res, err);
   }

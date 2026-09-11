@@ -22,9 +22,11 @@ const SELECT_FIELDS = `
   a.expires_at      AS "expiresAt",
   a.created_at      AS "createdAt",
   json_build_object(
+    'id',        e.id,
     'firstName', e.first_name,
     'lastName',  e.last_name,
-    'role',      e.role
+    'role',      e.role,
+    'photoUrl',  e.photo_url
   ) AS "postedBy"
 `;
 
@@ -92,6 +94,7 @@ router.get('/', requireFunction('announcements'), async (req, res) => {
        FROM announcements a
        JOIN employees e ON a.created_by = e.id
        WHERE a.is_active = true
+         AND (a.expires_at IS NULL OR a.expires_at >= CURRENT_DATE)
        ORDER BY a.is_pinned DESC, a.created_at DESC
        LIMIT 30`
     );
@@ -149,6 +152,12 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), canManage, async (r
 router.put('/:id', authorize('admin', 'director', 'hr_admin'), canManage, async (req, res) => {
   try {
     const { title, body, type, isActive, isPinned, pinnedUntil, expiresAt } = req.body;
+    /* A plain COALESCE cannot tell "leave this alone" from "clear it": both
+     * arrive as null. That made the two dates one-way — unpinning sent
+     * pinnedUntil: null and the old date stayed, so the nightly unpin cron
+     * could re-fire on an announcement nobody had pinned. Sending the key at
+     * all now means "set it to exactly this", including null. */
+    const sent = k => Object.prototype.hasOwnProperty.call(req.body, k);
     const result = await pool.query(
       `UPDATE announcements
          SET title        = COALESCE($1, title),
@@ -158,10 +167,10 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), canManage, async 
              type         = COALESCE($3, type),
              is_active    = COALESCE($4, is_active),
              is_pinned    = COALESCE($5, is_pinned),
-             pinned_until = COALESCE($6, pinned_until),
-             expires_at   = COALESCE($7, expires_at),
+             pinned_until = CASE WHEN $6::boolean THEN $7::timestamptz ELSE pinned_until END,
+             expires_at   = CASE WHEN $8::boolean THEN $9::date        ELSE expires_at   END,
              updated_at   = NOW()
-       WHERE id = $8
+       WHERE id = $10
        RETURNING id AS "_id", title, content AS body, priority AS type,
                  is_active AS "isActive", is_pinned AS "isPinned",
                  pinned_until AS "pinnedUntil", expires_at AS "expiresAt",
@@ -172,8 +181,8 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), canManage, async 
         type   || null,
         isActive ?? null,
         isPinned ?? null,
-        pinnedUntil ?? null,
-        expiresAt || null,
+        sent('pinnedUntil'), pinnedUntil || null,
+        sent('expiresAt'),   expiresAt   || null,
         req.params.id,
       ]
     );

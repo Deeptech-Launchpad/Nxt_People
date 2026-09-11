@@ -3152,3 +3152,7 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
 });
 
 module.exports = router;
+// Exposed so routes/external.js can build the attendance-summary endpoint on
+// the exact same holiday/weekend resolution leave/payroll-export uses,
+// rather than a second copy of the same range-merging logic.
+module.exports.loadHolidaysAndRulesRange = loadHolidaysAndRulesRange;

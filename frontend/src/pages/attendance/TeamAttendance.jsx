@@ -5,11 +5,16 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import usePolling from '../../hooks/usePolling';
+import { leaveChipText } from '../moreservices/shift/shiftGrid';
 
-export default function TeamAttendance() {
+/* `embedded` renders this as the Team Members tab of the Attendance → Team
+ * workspace, which already draws its own tab bar and page chrome. Same
+ * component either way — a second copy for the tab is the thing that drifts. */
+export default function TeamAttendance({ embedded = false }) {
   const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
+  const [leave, setLeave] = useState([]);
   const [isWeekend, setIsWeekend] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -17,11 +22,20 @@ export default function TeamAttendance() {
 
   const fetchTeamAttendance = (silent = false) => {
     if (!silent) setLoading(true);
-    api.get(`/attendance/team?date=${date}`)
-      .then(r => {
-        setEmployees(r.data.employees || []);
-        setAttendance(r.data.data || []);
-        setIsWeekend(!!r.data.isWeekend);
+    /* Two calls, because `attendance.status` cannot answer whether somebody is
+     * on leave: it is written at check-in/check-out and nothing rewrites it
+     * when a leave is approved afterwards. The leave overlay is derived from
+     * the approved leave rows for the day and merged by employee id, so it can
+     * only ever label a person this roster already shows. */
+    Promise.all([
+      api.get(`/attendance/team?date=${date}`),
+      api.get(`/team/on-leave?date=${date}`),
+    ])
+      .then(([att, lv]) => {
+        setEmployees(att.data.employees || []);
+        setAttendance(att.data.data || []);
+        setIsWeekend(!!att.data.isWeekend);
+        setLeave(lv.data.data || []);
       })
       .catch(err => { if (!silent) toast.error(err.response?.data?.message || 'Failed to load team attendance'); })
       .finally(() => { if (!silent) setLoading(false); });
@@ -38,10 +52,21 @@ export default function TeamAttendance() {
     if (a.employee?._id) attMap[a.employee._id] = a;
   });
 
-  /* ── Split into "In" / "Out" groups ── */
+  /* ── Build a map: employeeId → the day off covering this date ──
+   * Half a day and an hour's permission ride along labelled but do not make
+   * somebody absent — `fullDayOff` is the backend's single answer to that, so
+   * this screen and the Team Availability panel group the same way. */
+  const leaveMap = {};
+  leave.forEach(l => {
+    if (!l.fullDayOff) return;
+    if (!leaveMap[l.employeeId]) leaveMap[l.employeeId] = l;
+  });
+
+  /* ── Split into "In" / "Out" / "Leave" groups ── */
   const allPeople = employees.map(e => ({
     ...e,
     att: attMap[e._id] || null,
+    leave: leaveMap[e._id] || null,
   }));
 
   const filtered = allPeople.filter(p =>
@@ -50,9 +75,12 @@ export default function TeamAttendance() {
     (p.employeeId || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  /* A punch wins over a leave row — somebody who came in despite an approved
+   * leave is In, not on leave. Same precedence org.js resolves presence with. */
   const checkedIn  = filtered.filter(p => p.att?.checkIn && !p.att?.checkOut);
   const checkedOut = filtered.filter(p => p.att?.checkOut);
-  const notYet     = filtered.filter(p => !p.att?.checkIn);
+  const onLeave    = filtered.filter(p => !p.att?.checkIn && p.leave);
+  const notYet     = filtered.filter(p => !p.att?.checkIn && !p.leave);
 
   const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata' }) : null;
 
@@ -108,6 +136,20 @@ export default function TeamAttendance() {
               {att.checkOut && <> · Out: {fmtTime(att.checkOut)}</>}
             </p>
           )}
+          {/* Naming the leave is the point of the group: "on leave" alone
+              still leaves the manager asking which kind. leaveChipText is the
+              same label the shift schedule grid prints. */}
+          {!att?.checkIn && person.leave && (
+            <p className="text-[13px] font-medium text-violet-600 mt-0.5">
+              {leaveChipText({
+                leaveType: person.leave.leaveType,
+                isHalfDay: person.leave.isHalfDay,
+                halfDayType: person.leave.halfDayType,
+                startTime: person.leave.startTime,
+                endTime: person.leave.endTime,
+              })}
+            </p>
+          )}
         </div>
       </div>
     );
@@ -127,20 +169,23 @@ export default function TeamAttendance() {
   );
 
   return (
-    <div className="min-h-screen bg-[#f2f3f7] pb-10">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-4 shadow-sm sticky top-0 z-30">
-        <h2 className="text-[16px] font-bold text-slate-800 border-b-2 border-blue-500 pb-[10px] -mb-3">
-          Team Members
-        </h2>
-        <div className="ml-auto flex items-center gap-2">
-          <button className="w-8 h-8 flex items-center justify-center rounded-md border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors">
-            <Search size={15} />
-          </button>
+    <div className={embedded ? '' : 'min-h-screen bg-[#f2f3f7] pb-10'}>
+      {/* Header — suppressed when embedded, where the workspace's tab bar
+          already says which screen this is. */}
+      {!embedded && (
+        <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-4 shadow-sm sticky top-0 z-30">
+          <h2 className="text-[16px] font-bold text-slate-800 border-b-2 border-blue-500 pb-[10px] -mb-3">
+            Team Members
+          </h2>
+          <div className="ml-auto flex items-center gap-2">
+            <button className="w-8 h-8 flex items-center justify-center rounded-md border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors">
+              <Search size={15} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="px-6 pt-5">
+      <div className={embedded ? 'px-5 pt-5 pb-2' : 'px-6 pt-5'}>
         {/* Search + filters */}
         <div className="flex items-center gap-3 mb-5">
           <div className="relative flex-1 max-w-xs">
@@ -176,6 +221,9 @@ export default function TeamAttendance() {
             )}
             {checkedOut.length > 0 && (
               <GroupSection title="Checked Out" count={checkedOut.length} people={checkedOut} statusColor="bg-slate-400" />
+            )}
+            {onLeave.length > 0 && (
+              <GroupSection title="Leave" count={onLeave.length} people={onLeave} statusColor="bg-violet-500" />
             )}
             {notYet.length > 0 && (
               isWeekend

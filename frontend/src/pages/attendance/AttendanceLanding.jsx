@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarCheck, Clock, MapPin, Briefcase, Settings, Repeat } from 'lucide-react';
+import { CalendarCheck, Clock, MapPin, Briefcase, Settings, Repeat, Users } from 'lucide-react';
 import ModuleLanding from '../../components/ModuleLanding.jsx';
 import { useAuth } from '../../context/AuthContext';
-import { isFullAccess } from '../../utils/roles';
+import { isFullAccess, isApprover } from '../../utils/roles';
 import api from '../../utils/api';
 
 export default function AttendanceLanding() {
@@ -23,6 +23,11 @@ export default function AttendanceLanding() {
 
   const items = [
     { key: 'my-attendance', label: 'My Attendance', icon: CalendarCheck, color: 'text-blue-600', to: '/attendance/my' },
+    // /attendance/team has existed and been role-gated all along with nothing
+    // linking to it — the only way in was to type the URL. Gated to the same
+    // set the route itself admits, so the tile cannot land on a wall.
+    isApprover(user?.role) &&
+      { key: 'team', label: 'Team', icon: Users, color: 'text-indigo-600', to: '/attendance/team' },
     methods.regularization !== false &&
       { key: 'regularization', label: 'Regularization', icon: Clock, color: 'text-amber-600', to: '/attendance/regularization' },
     methods.onDuty !== false &&

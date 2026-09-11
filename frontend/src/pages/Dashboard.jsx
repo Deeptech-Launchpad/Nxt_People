@@ -21,6 +21,7 @@ import OnDutyModal from '../components/requests/OnDutyModal';
 import ApplyLeaveModal from '../components/requests/ApplyLeaveModal';
 import LeaveRequestDialog from './moreservices/leavetracker/LeaveRequestDialog';
 import { formatTimeRange, useLocaleFormat } from '../utils/datetime';
+import { richTextToPlain } from '../utils/richText';
 import toast from 'react-hot-toast';
 import PhotoCropperModal from '../components/PhotoCropperModal';
 import { PAYROLL_ENABLED, TIME_TRACKER_ENABLED } from '../config/features';
@@ -1357,7 +1358,7 @@ export default function Dashboard() {
                                     <span className="text-[12px] font-bold text-[#1a73e8] bg-blue-100 px-1.5 py-0.5 rounded">NEW</span>
                                   )}
                                 </div>
-                                <p className="text-[14px] text-slate-500 mt-0.5 line-clamp-1">{a.body}</p>
+                                <p className="text-[14px] text-slate-500 mt-0.5 line-clamp-1">{richTextToPlain(a.body)}</p>
                                 <p className="text-[13px] text-slate-400 mt-1">
                                   {a.postedBy?.firstName} {a.postedBy?.lastName} · {ago}
                                 </p>
