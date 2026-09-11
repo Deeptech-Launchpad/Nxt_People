@@ -31,6 +31,27 @@ const fmtDay = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', ye
   return Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-IN', opts);
 };
 
+/**
+ * What a request cost, in the unit it is actually measured in.
+ *
+ * Permission is hourly — `total_days` is 0 on every permission row by
+ * design, because the hours live in `hours` with a start and end time. The
+ * Approved and Rejected tabs printed total_days for everything, so an
+ * approved one-hour permission read "Permission Leave · 0 Days": the one
+ * number on the row was the one thing it could not be. The Permissions tab
+ * next door has always rendered these correctly; this is that same line,
+ * shared, so the two cannot drift again.
+ */
+const amountLabel = (l) => {
+  if (l.leaveType === 'permission') {
+    const hours = Number(l.hours) || 0;
+    const window = l.startTime && l.endTime ? ` (${fmt12(l.startTime)}–${fmt12(l.endTime)})` : '';
+    return `${hours}h${window}`;
+  }
+  const days = Number(l.totalDays) || 0;
+  return `${days} day${days === 1 ? '' : 's'}`;
+};
+
 // localStorage key for the "last-seen count per tab" persistence. Bump
 // the v1 suffix if we ever change the shape of the saved value.
 const SEEN_KEY = 'nxt_approvals_seen_v1';
@@ -480,8 +501,8 @@ export default function Approvals({ embedded = false }) {
                            <span className="text-sm text-slate-600">{l.employee?.employeeId}</span>
                            <span className="text-sm bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                          </div>
-                         <p className="text-base text-slate-700 mt-1 capitalize">
-                           {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
+                         <p className="text-base text-slate-700 mt-1">
+                           {LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l)}
                            {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
@@ -520,8 +541,8 @@ export default function Approvals({ embedded = false }) {
                            <span className="text-sm text-slate-600">{l.employee?.employeeId}</span>
                            <span className="text-sm bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                          </div>
-                         <p className="text-base text-slate-700 mt-1 capitalize">
-                           {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
+                         <p className="text-base text-slate-700 mt-1">
+                           {LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l)}
                            {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
