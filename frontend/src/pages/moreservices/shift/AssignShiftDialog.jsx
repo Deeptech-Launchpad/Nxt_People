@@ -24,7 +24,15 @@ import { to12 } from './shiftGrid';
  *  whole range because one name was out of the caller's reach.
  * ────────────────────────────────────────────────────────────────────────── */
 
-const input = 'w-full border border-slate-300 rounded-md px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500';
+const FIELD = 'border border-slate-300 rounded-md px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500';
+const input = `w-full ${FIELD}`;
+/* The criteria row's own select must NOT carry w-full as well as a fixed
+ * width — two width declarations on one element, and whichever the compiled
+ * stylesheet happened to emit last decided the layout. When w-full won, this
+ * select took the whole flex row and squeezed the picker beside it down to
+ * its icon; EmployeePicker's dropdown is `absolute w-full`, so the list
+ * inherited that width and wrapped one character per line. */
+const fieldSelect = `${FIELD} w-[140px] shrink-0 bg-white`;
 
 const CRITERIA_FIELDS = [
   { id: 'employee', label: 'Employee' },
@@ -126,15 +134,19 @@ export default function AssignShiftDialog({
             <div className="space-y-2">
               {rows.map((row, i) => (
                 <div key={i} className="flex items-start gap-2">
-                  <select className={`${input} w-[150px] bg-white`} value={row.field}
+                  <select className={fieldSelect} value={row.field}
                     onChange={e => setRow(i, { field: e.target.value, values: [] })}>
                     {CRITERIA_FIELDS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                   </select>
-                  <span className="text-[13px] text-slate-500 pt-2.5">is</span>
-                  <div className="flex-1">
+                  <span className="text-[13px] text-slate-500 pt-2.5 shrink-0">is</span>
+                  {/* min-w-0 because a flex item defaults to min-width:auto and
+                      will not shrink below its content — without it the picker
+                      pushes the row wider than the panel instead of fitting. */}
+                  <div className="flex-1 min-w-0">
                     {row.field === 'employee' ? (
                       <EmployeePicker people={people} loading={peopleLoading}
                         value={row.values[0] || ''}
+                        placeholder="Search name or code"
                         onChange={id => setRow(i, { values: id ? [id] : [] })} />
                     ) : (
                       <select className={`${input} bg-white`} value={row.values[0] || ''}
@@ -146,7 +158,7 @@ export default function AssignShiftDialog({
                   </div>
                   {rows.length > 1 && (
                     <button type="button" onClick={() => setRows(rs => rs.filter((_, n) => n !== i))}
-                      className="p-2 text-slate-400 hover:text-red-500"><Trash2 size={15} /></button>
+                      className="p-2 shrink-0 text-slate-400 hover:text-red-500"><Trash2 size={15} /></button>
                   )}
                 </div>
               ))}
