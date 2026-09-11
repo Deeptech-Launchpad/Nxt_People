@@ -5,6 +5,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
 const { isFullAccess } = require('../utils/roles');
 const { shiftConfig, mayEditMapping, mayViewMapping } = require('../utils/shiftConfig');
+const { resolveTargets } = require('../utils/employeeCriteria');
 router.use(protect);
 
 // Shifts → General → "Shift mapping permission" decides who may look at and
@@ -188,38 +189,11 @@ router.post('/assign-range', authorize('admin', 'director', 'hr_admin', 'manager
     const shift = (await client.query(`SELECT id, name FROM shifts WHERE id = $1`, [shiftId])).rows[0];
     if (!shift) return res.status(404).json({ success: false, message: 'That shift no longer exists' });
 
-    // Resolve who this applies to.
-    let targets = [];
-    if (Array.isArray(employeeIds) && employeeIds.length) {
-      targets = [...new Set(employeeIds.map(String))];
-    } else if (Array.isArray(criteria) && criteria.length) {
-      /* OR across criteria rows, exactly as the reference's builder reads —
-       * its rows are joined by an OR bubble, not an AND. A whitelist of
-       * columns rather than interpolating the field name: this is the one
-       * place a criteria builder turns user input into SQL. */
-      const COLUMN = {
-        employee: 'e.id', department: 'e.department', designation: 'e.designation',
-        location: 'e.work_location',
-      };
-      const ors = [];
-      const params = [];
-      for (const c of criteria) {
-        const col = COLUMN[c.field];
-        const values = (c.values || []).filter(Boolean);
-        if (!col || !values.length) continue;
-        params.push(values);
-        ors.push(col === 'e.id'
-          ? `e.id = ANY($${params.length}::uuid[])`
-          : `${col} = ANY($${params.length}::text[])`);
-      }
-      if (!ors.length) {
-        return res.status(400).json({ success: false, message: 'Choose who this shift applies to' });
-      }
-      const found = await client.query(
-        `SELECT id FROM employees
-          WHERE deleted_at IS NULL AND status = 'active' AND (${ors.join(' OR ')})`, params);
-      targets = found.rows.map(r => String(r.id));
-    }
+    // Who this applies to — shared with /shifts/:id/assign, which asks the
+    // same question for the standing shift.
+    const resolved = await resolveTargets(client, { employeeIds, criteria });
+    if (resolved.error) return res.status(400).json({ success: false, message: resolved.error });
+    const targets = resolved.ids;
 
     if (!targets.length) {
       return res.status(400).json({ success: false, message: 'That matched nobody — nothing was assigned' });

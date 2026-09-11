@@ -24,6 +24,7 @@ const logger = require('../logger');
 const { protect, authorize } = require('../middleware/auth');
 const { fire } = require('../utils/workflowEngine');
 const { shiftConfig, mayEditMapping } = require('../utils/shiftConfig');
+const { resolveTargets } = require('../utils/employeeCriteria');
 
 router.use(protect);
 
@@ -267,10 +268,16 @@ router.get('/:id/eligible', async (req, res) => {
 
 router.post('/:id/assign', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
-    const { employeeIds } = req.body;
-    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
-      throw bad('No employees specified');
-    }
+    /* `criteria` is accepted alongside `employeeIds` so the Assign shift form
+     * can offer "until I change it" against the same Applicable-to builder
+     * the dated path uses. Same resolver as /roster/assign-range — two
+     * resolvers for one builder is how "Department is Sales" comes to mean
+     * different people depending on which radio button was selected. */
+    const resolved = await resolveTargets(pool, req.body);
+    if (resolved.error) throw bad(resolved.error);
+    const targetIds = resolved.ids;
+    if (!targetIds.length) throw bad('That matched nobody — no shift was assigned');
+
     if (req.user.role === 'manager') {
       // Shifts > General > "Employee shift mapping can be edited by" decides
       // whether a manager may do this at all; the team check below then decides
@@ -281,20 +288,19 @@ router.post('/:id/assign', authorize('admin', 'director', 'hr_admin', 'manager')
         return res.status(403).json({ success: false,
           message: 'Changing shift mapping is not permitted for your role' });
       }
-      const uniqueIds = [...new Set(employeeIds)];
       const scope = await pool.query(
         'SELECT id FROM employees WHERE id = ANY($1) AND reporting_manager_id = $2',
-        [uniqueIds, req.user._id]
+        [targetIds, req.user._id]
       );
-      if (scope.rows.length !== uniqueIds.length) {
+      if (scope.rows.length !== targetIds.length) {
         return res.status(403).json({ success: false, message: 'You can only assign shifts to employees in your team' });
       }
     }
-    await pool.query('UPDATE employees SET shift_id = $1 WHERE id = ANY($2)', [req.params.id, employeeIds]);
+    await pool.query('UPDATE employees SET shift_id = $1 WHERE id = ANY($2)', [req.params.id, targetIds]);
     // Employees never change shift through the employees route, so this is the
     // only place the event can be raised. Fire-and-forget: a workflow must
     // never be able to fail the assignment that triggered it.
-    for (const employeeId of employeeIds) {
+    for (const employeeId of targetIds) {
       fire('employee', 'field_updated', { recordId: employeeId, actorId: req.user._id, changedFields: ['shift_id'] });
     }
     res.json({ success: true, message: 'Shift assigned' });

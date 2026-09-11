@@ -54,6 +54,16 @@ export default function AssignShiftDialog({
 }) {
   const [shifts, setShifts] = useState([]);
   const [shiftId, setShiftId] = useState('');
+  /* 'standing' is the common case and the one the form had no way to say:
+   * change somebody's shift until it is changed again. It writes
+   * employees.shift_id through /shifts/:id/assign — one row per person.
+   *
+   * 'range' writes one shift_roster row per person per day, which is the
+   * right shape for "night shift for the next fortnight" and the wrong shape
+   * for "from now on": expressing a permanent change that way means picking
+   * an arbitrary far-future end date and writing thousands of rows that all
+   * have to be unpicked to change it back. */
+  const [duration, setDuration] = useState('standing');
   const [fromDate, setFromDate] = useState(defaultFrom);
   const [toDate, setToDate] = useState(defaultTo || defaultFrom);
   const [reason, setReason] = useState('');
@@ -79,29 +89,41 @@ export default function AssignShiftDialog({
   const submit = async (e) => {
     e.preventDefault();
     if (!shiftId) return toast.error('Choose a shift');
-    if (!fromDate || !toDate) return toast.error('Choose the dates this applies to');
-    if (toDate < fromDate) return toast.error('The end date cannot be before the start date');
+    if (duration === 'range') {
+      if (!fromDate || !toDate) return toast.error('Choose the dates this applies to');
+      if (toDate < fromDate) return toast.error('The end date cannot be before the start date');
+    }
 
-    const body = { shiftId, fromDate, toDate, reason: reason.trim() };
+    // Who it applies to is the same question either way, so it is built once
+    // and handed to whichever endpoint the duration picked.
+    const who = {};
     if (mode === 'single') {
-      body.employeeIds = [employeeId];
+      who.employeeIds = [employeeId];
     } else {
       const criteria = rows
         .map(r => ({ field: r.field, values: r.values.filter(Boolean) }))
         .filter(r => r.values.length);
       if (!criteria.length) return toast.error('Choose who this shift applies to');
-      body.criteria = criteria;
+      who.criteria = criteria;
     }
 
     setSaving(true);
     try {
-      const r = await api.post('/roster/assign-range', body);
-      toast.success(r.data.message || 'Shift assigned');
-      /* Somebody the caller may not roster is reported, not swallowed. A bulk
-       * assign that silently covered 40 of 45 people would read as success. */
-      const skipped = r.data.skipped || [];
-      if (skipped.length) {
-        toast(`${skipped.length} employee(s) were skipped: ${skipped[0].reason}`, { icon: '⚠️' });
+      if (duration === 'standing') {
+        const r = await api.post(`/shifts/${shiftId}/assign`, who);
+        toast.success(r.data.message || 'Shift assigned');
+      } else {
+        const r = await api.post('/roster/assign-range', {
+          ...who, shiftId, fromDate, toDate, reason: reason.trim(),
+        });
+        toast.success(r.data.message || 'Shift assigned');
+        /* Somebody the caller may not roster is reported, not swallowed. A
+         * bulk assign that silently covered 40 of 45 people would read as
+         * success. */
+        const skipped = r.data.skipped || [];
+        if (skipped.length) {
+          toast(`${skipped.length} employee(s) were skipped: ${skipped[0].reason}`, { icon: '⚠️' });
+        }
       }
       onSaved?.();
       onClose();
@@ -195,25 +217,57 @@ export default function AssignShiftDialog({
 
         <div>
           <label className="block text-[13px] font-medium text-slate-600 mb-1.5">
-            Dates <span className="text-red-500">*</span>
+            For how long <span className="text-red-500">*</span>
           </label>
-          <div className="grid grid-cols-2 gap-3">
-            <input type="date" className={input} value={fromDate}
-              onChange={e => { setFromDate(e.target.value); if (toDate < e.target.value) setToDate(e.target.value); }} required />
-            <input type="date" className={input} value={toDate} min={fromDate}
-              onChange={e => setToDate(e.target.value)} required />
+          <div className="space-y-2">
+            <label className="flex items-start gap-2.5 border border-slate-200 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+              <input type="radio" name="duration" className="mt-1" checked={duration === 'standing'}
+                onChange={() => setDuration('standing')} />
+              <span>
+                <span className="block text-[14px] font-medium text-slate-800">Until I change it</span>
+                <span className="block text-[12px] text-slate-500">
+                  Becomes their shift from now on. This is what most changes are.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2.5 border border-slate-200 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+              <input type="radio" name="duration" className="mt-1" checked={duration === 'range'}
+                onChange={() => setDuration('range')} />
+              <span>
+                <span className="block text-[14px] font-medium text-slate-800">For a set period</span>
+                <span className="block text-[12px] text-slate-500">
+                  A day, a week, a month — they go back to their usual shift afterwards.
+                </span>
+              </span>
+            </label>
           </div>
-          <p className="text-[12px] text-slate-500 mt-1.5">
-            Every day in the range is assigned. Whether a day is worked at all stays with the
-            weekend rules and the holiday calendar.
-          </p>
         </div>
 
-        <div>
-          <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Reason</label>
-          <textarea className={`${input} h-20 resize-none`} value={reason}
-            onChange={e => setReason(e.target.value)} placeholder="Reason" />
-        </div>
+        {duration === 'range' && (
+          <>
+            <div>
+              <label className="block text-[13px] font-medium text-slate-600 mb-1.5">
+                Dates <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="date" className={input} value={fromDate}
+                  onChange={e => { setFromDate(e.target.value); if (toDate < e.target.value) setToDate(e.target.value); }} required />
+                <input type="date" className={input} value={toDate} min={fromDate}
+                  onChange={e => setToDate(e.target.value)} required />
+              </div>
+              <p className="text-[12px] text-slate-500 mt-1.5">
+                For a single day, put the same date in both. Every day in the range is assigned —
+                whether a day is worked at all stays with the weekend rules and the holiday calendar.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Reason</label>
+              <textarea className={`${input} h-20 resize-none`} value={reason}
+                onChange={e => setReason(e.target.value)} placeholder="Reason" />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-2 px-5 py-3.5 border-t border-slate-200 bg-slate-50">
