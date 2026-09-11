@@ -617,7 +617,42 @@ export default function Dashboard() {
     /* ─ Approvals state ─ */
     const [pendingApprovals, setPendingApprovals] = useState([]);
     const [loadingApprovals, setLoadingApprovals] = useState(false);
-    
+    const [actingApproval, setActingApproval] = useState('');
+
+    /**
+     * Approve or reject from the Home page, without the trip to Operations.
+     *
+     * The same PUT /:endpoint/:id/action the Approvals screen uses — not a
+     * shortcut around it. Everything that endpoint enforces (the approval
+     * hierarchy, the self-approval refusal, the balance movement) still
+     * applies, and a refusal comes back here as its own message rather than a
+     * generic failure.
+     *
+     * Removed from the list on success rather than refetched: this list is
+     * "what is waiting on me", and an approved request is not.
+     */
+    const actOnApproval = async (approval, action) => {
+      let rejectionReason;
+      if (action === 'rejected') {
+        // Optional server-side (rejection_reason is nullable), so an empty
+        // answer is allowed — but Cancel must mean cancel, and prompt()
+        // returns null for that and '' for an empty OK.
+        rejectionReason = window.prompt('Reason for rejecting (optional):', '');
+        if (rejectionReason === null) return;
+      }
+      setActingApproval(approval._id);
+      try {
+        await api.put(`/${approval._endpoint}/${approval._id}/action`, { action, rejectionReason });
+        toast.success(action === 'approved' ? 'Approved' : 'Rejected');
+        setPendingApprovals(list => list.filter(a => a._id !== approval._id));
+      } catch (err) {
+        toast.error(err.response?.data?.message || `Could not ${action === 'approved' ? 'approve' : 'reject'} that request`);
+      } finally {
+        setActingApproval('');
+      }
+    };
+
+
     /* ─ Manager / dept-members (from full profile or user token) */
     const manager = profileData?.manager || (user?.manager && typeof user.manager === 'object' ? user.manager : null);
 
@@ -749,11 +784,20 @@ export default function Dashboard() {
      api.get('/approvals/pending')
        .then(r => {
          const d = r.data.data || {};
+         /* Each list is acted on at its OWN endpoint — /leaves/:id/action is
+          * not /comp-off/:id/action — so the kind is tagged here, at the one
+          * place that knows which list a row came out of, rather than
+          * re-derived further down by guessing from the shape of the row.
+          * The row's shape was already being sniffed once to build its
+          * label; approving from here would have made that guess
+          * load-bearing for a write. */
+         const tag = (rows, endpoint, kind) =>
+           (rows || []).map(row => ({ ...row, _endpoint: endpoint, _kind: kind }));
          const allPending = [
-           ...(d.leaves || []),
-           ...(d.regularizations || []),
-           ...(d.wfhRequests || []),
-           ...(d.compOffs || []),
+           ...tag(d.leaves, 'leaves', 'leave'),
+           ...tag(d.regularizations, 'regularizations', 'regularization'),
+           ...tag(d.wfhRequests, 'wfh', 'wfh'),
+           ...tag(d.compOffs, 'comp-off', 'compoff'),
          ];
          setPendingApprovals(allPending);
        })
@@ -1633,9 +1677,9 @@ export default function Dashboard() {
                               {approval.employee?.firstName} {approval.employee?.lastName}
                             </p>
                             <p className="text-[14px] text-slate-500 capitalize">
-                              {approval.workedDate ? `Comp-Off · ${approval.daysEarned} day(s)` :
-                               (approval.checkIn !== undefined || approval.checkOut !== undefined) ? 'Attendance Regularization' :
-                               !approval.leaveType ? 'Work From Home' :
+                              {approval._kind === 'compoff' ? `Comp-Off · ${approval.daysEarned} day(s)` :
+                               approval._kind === 'regularization' ? 'Attendance Regularization' :
+                               approval._kind === 'wfh' ? 'Work From Home' :
                                approval.leaveType === 'permission' ? (() => { const m = Math.round(parseFloat(approval.hours || 0) * 60); return `Permission · ${m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`}`; })() :
                                `${approval.leaveType} Leave · ${approval.totalDays} Day(s)`}
                             </p>
@@ -1652,12 +1696,44 @@ export default function Dashboard() {
                             </p>
                           </div>
                         </div>
-                        <button 
-                          onClick={() => navigate(`/more-services/operations/leave-tracker?openId=${approval._id}`)}
-                          className="text-[14px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors whitespace-nowrap ml-4"
-                        >
-                          Review
-                        </button>
+                        <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                          {/* Same rule the Approvals screen applies: an approver
+                              may not act on their own request. The server
+                              refuses it either way, but a button that always
+                              403s is worse than no button. */}
+                          {approval.canAct !== false && approval.employee?._id !== user?._id && (
+                            <>
+                              <button
+                                onClick={() => actOnApproval(approval, 'approved')}
+                                disabled={actingApproval === approval._id}
+                                className="text-[14px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+                              >
+                                {actingApproval === approval._id ? '…' : 'Approve'}
+                              </button>
+                              <button
+                                onClick={() => actOnApproval(approval, 'rejected')}
+                                disabled={actingApproval === approval._id}
+                                className="text-[14px] font-bold text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+                          {/* Leave Approvals, not Leave Tracker. This pointed at
+                              the Leave Tracker workspace, whose default tab is
+                              User-specific Operations — so Review landed on an
+                              employee search box with the request nowhere in
+                              sight. Approvals.jsx already reads ?openId=, picks
+                              the tab the request is actually on and opens its
+                              detail; it was only ever being handed to the wrong
+                              screen. */}
+                          <button
+                            onClick={() => navigate(`/more-services/operations/leave-approvals?openId=${approval._id}`)}
+                            className="text-[14px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+                          >
+                            Review
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
