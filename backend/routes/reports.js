@@ -1954,15 +1954,23 @@ const hhmm = h => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round
 // "Casual Leave(Second Half)", "Permission(01:00 hours)", comma-joined when a
 // day carries more than one record. A permission is hours off inside a working
 // day, so it is qualified by its duration rather than by a half-day marker.
-function leaveStatusText(leaves) {
+//
+// A leave still waiting on an approver is named the same way but carries
+// "Pending" in the brackets — "Casual Leave(First Half, Pending)". Without it
+// an applied-for day and a granted one read identically in the column, which
+// is the difference that decides whether anybody still has to act.
+function leaveStatusText(leaves, { pending = false } = {}) {
   return leaves.map(l => {
     const name = ATT_LEAVE_NAME[l.leaveType] || l.leaveType;
+    const parts = [];
     if (l.leaveType === 'permission') {
       const hrs = parseFloat(l.hours);
-      return hrs > 0 ? `${name}(${hhmm(hrs)} hours)` : name;
+      if (hrs > 0) parts.push(`${hhmm(hrs)} hours`);
+    } else if (l.isHalfDay && HALF_DAY_LABEL[l.halfDayType]) {
+      parts.push(HALF_DAY_LABEL[l.halfDayType]);
     }
-    const half = l.isHalfDay ? HALF_DAY_LABEL[l.halfDayType] : null;
-    return half ? `${name}(${half})` : name;
+    if (pending) parts.push('Pending');
+    return parts.length ? `${name}(${parts.join(', ')})` : name;
   }).join(', ');
 }
 
@@ -2034,7 +2042,7 @@ function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, 
 // paid even though nothing is expected of them day to day.
 async function loadAttendanceContext(req, start, end, opts = {}) {
   const filters = standardEmployeeFilters(req, 'e', 1, opts);
-  const [empRes, attRes, leaveRes, odRes, cal] = await Promise.all([
+  const [empRes, attRes, leaveRes, pendingLeaveRes, odRes, cal] = await Promise.all([
     pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department,
               e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId", e.joining_date AS "joiningDate",
@@ -2058,6 +2066,21 @@ async function loadAttendanceContext(req, start, end, opts = {}) {
               start_date::text AS "startYmd", end_date::text AS "endYmd",
               is_half_day AS "isHalfDay", half_day_type AS "halfDayType", hours
          FROM leaves WHERE status='approved' AND start_date <= $2::date AND end_date >= $1::date
+        ORDER BY start_date, leave_type`,
+      [start, end]
+    ),
+    /* Leaves still waiting on an approver, kept in a SEPARATE set from the
+     * approved ones on purpose. They are allowed to name the day in the Status
+     * column and to say the person is not standing at a desk, but they must
+     * never reach classifyAttendanceDay — an unapproved application deciding
+     * the day's classification would move people into the Paid Leave bucket,
+     * and that bucket is what the day's hours and the leave counts are read
+     * from. Applying for a day off cannot be the thing that grants it. */
+    pool.query(
+      `SELECT employee_id, leave_type AS "leaveType", start_date, end_date,
+              start_date::text AS "startYmd", end_date::text AS "endYmd",
+              is_half_day AS "isHalfDay", half_day_type AS "halfDayType", hours
+         FROM leaves WHERE status='pending' AND start_date <= $2::date AND end_date >= $1::date
         ORDER BY start_date, leave_type`,
       [start, end]
     ),
@@ -2088,6 +2111,16 @@ async function loadAttendanceContext(req, start, end, opts = {}) {
   // permission and a half-day leave at once, and the Status column names both.
   const leavesOn = (empId, date) => (leavesByEmp.get(empId) || []).filter(l => covers(l, date.toLocaleDateString('en-CA')));
 
+  // The pending set, looked up the same way and kept apart from the approved
+  // one. Nothing that classifies a day may read this.
+  const pendingByEmp = new Map();
+  pendingLeaveRes.rows.forEach(l => {
+    if (!pendingByEmp.has(l.employee_id)) pendingByEmp.set(l.employee_id, []);
+    pendingByEmp.get(l.employee_id).push({ ...l, start: new Date(l.start_date), end: new Date(l.end_date) });
+  });
+  const pendingLeavesOn = (empId, date) =>
+    (pendingByEmp.get(empId) || []).filter(l => covers(l, date.toLocaleDateString('en-CA')));
+
   // Approved on-duty, matched the same way. Only whole-day requests decide the
   // day's status: an hours request is a few hours spent elsewhere inside a day
   // that was otherwise worked normally, and calling that whole day On Duty
@@ -2111,7 +2144,7 @@ async function loadAttendanceContext(req, start, end, opts = {}) {
     !(emp.joiningDate && new Date(emp.joiningDate) > date) &&
     !(emp.exitDate && new Date(emp.exitDate) < date);
 
-  return { employees: empRes.rows, attByKey, leaveOn, leavesOn, onDutyOn, days, today, onRolls, holMap: cal.holMap, rules: cal.rules };
+  return { employees: empRes.rows, attByKey, leaveOn, leavesOn, pendingLeavesOn, onDutyOn, days, today, onRolls, holMap: cal.holMap, rules: cal.rules };
 }
 
 // Local clock minutes for a timestamp — used to compare an actual punch
@@ -2332,6 +2365,9 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
       if (!ctx.onRolls(emp, day)) continue;
       const att = ctx.attByKey.get(`${emp._id}|${date}`);
       const dayLeaves = ctx.leavesOn(emp._id, day);
+      // Only consulted where an approved leave has not already answered — an
+      // approved record always names the day ahead of an application for it.
+      const pendingLeaves = dayLeaves.length ? [] : ctx.pendingLeavesOn(emp._id, day);
       const cls = classifyAttendanceDay({
         date: day, holMap: ctx.holMap, rules: ctx.rules,
         employee: emp,
@@ -2373,13 +2409,32 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
        * as showing them as late. The donut answers who is at their desk right
        * now, and it cannot answer that for somebody who never punches. */
       const managed = markedForThem.has(emp._id);
+      /* One presence answer, and the drill-down below now filters on this very
+       * value rather than working it out again.
+       *
+       * They used to disagree. The tally skipped anyone whose day was already
+       * explained — on leave, a holiday, a weekend — while the filter had no
+       * such guard, so "Yet to check-in: 4" opened a list of 7: the 4 it meant
+       * plus 3 people on approved leave it had deliberately not counted.
+       *
+       * A day off is not a missing punch. Somebody on leave — approved, or
+       * applied for and still waiting — is Out, which is where they are, and
+       * nobody is waiting on them to arrive. Holidays, weekends and on-duty
+       * days are explained too, but on those a person is neither in nor out,
+       * so they sit outside the donut entirely rather than inflating a slice. */
+      const notAWorkingDay = kind === 'holiday' || kind === 'weekend' || kind === 'onDuty';
+      // A permission is a couple of hours off inside a day that is otherwise
+      // worked, so it never makes somebody Out — they are still expected, and
+      // still owe a punch.
+      const dayOff = !notAWorkingDay
+        && [...dayLeaves, ...pendingLeaves].some(l => l.leaveType !== 'permission');
       const presenceKey = managed ? 'notTracked'
         : att?.checkIn && !att?.checkOut ? 'in'
         : att?.checkIn ? 'out'
-        : 'yetToCheckIn';
-      // Only working days can leave someone "yet to check in" — nobody is
-      // pending a punch on a holiday or weekend.
-      if (presenceKey !== 'yetToCheckIn' || kind === 'present' || kind === 'absent' || kind === 'pending') presence[presenceKey]++;
+        : dayOff ? 'out'
+        : (kind === 'present' || kind === 'absent' || kind === 'pending') ? 'yetToCheckIn'
+        : null;
+      if (presenceKey) presence[presenceKey]++;
 
       /* Only somebody who actually punched can be placed. A person on leave is
        * not "working from home", and counting them there would double-count
@@ -2404,7 +2459,9 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
         statusKey: kind,
         // The column names the actual leave records when there are any, and
         // falls back to the bucket label otherwise.
-        status: dayLeaves.length ? leaveStatusText(dayLeaves) : (ATT_STATUS_LABEL[kind] || null),
+        status: dayLeaves.length ? leaveStatusText(dayLeaves)
+          : pendingLeaves.length ? leaveStatusText(pendingLeaves, { pending: true })
+          : (ATT_STATUS_LABEL[kind] || null),
         presenceKey, shiftName: emp.shiftName || null,
         /* On the row too, so the list and the export can say where each
          * person worked rather than only how many did. */
