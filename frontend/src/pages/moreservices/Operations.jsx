@@ -18,6 +18,10 @@ const ROUTES = {
   // sixth link out — not marking directly, which is still reachable on its
   // own at /attendance-marking for anyone with that link already.
   attendance:         '/more-services/operations/attendance',
+  // The tile has existed since this grid was built and pointed at nothing,
+  // while Shifts, Shift Roster and Shift Change all worked — reachable only
+  // through Settings or a URL somebody already had.
+  shift:              '/more-services/operations/shift',
   'leave-tracker':    '/more-services/operations/leave-tracker',
   'leave-approvals':  '/more-services/operations/leave-approvals',
   'permission-usage': '/more-services/operations/permission-usage',

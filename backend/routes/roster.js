@@ -132,8 +132,146 @@ router.get('/', async (req, res) => {
        WHERE ${empWhere} ORDER BY e.first_name`,
       empParams
     );
-    res.json({ success: true, data: r.rows, employees: emps.rows });
+    /* The reference draws approved leave and permission INSIDE the schedule
+     * grid, in the same cell as the shift — "General Shift 9:30-6:00" with
+     * "Permission 5:00 PM - 6:00 PM" under it. That is the whole point of
+     * looking at a roster: not what someone was scheduled for in the
+     * abstract, but whether they will actually be there. Scoped identically
+     * to the roster rows above, so this cannot become a side door onto
+     * somebody else's leave. */
+    const leaveParams = [startDate, endDate];
+    let leaveWhere = `l.status = 'approved' AND l.start_date <= $2::date AND l.end_date >= $1::date
+                      AND e.deleted_at IS NULL`;
+    if (department) { leaveParams.push(department); leaveWhere += ` AND e.department = $${leaveParams.length}`; }
+    if (scope) { leaveParams.push(scope); leaveWhere += ` AND l.employee_id = ANY($${leaveParams.length}::uuid[])`; }
+
+    const leaves = await pool.query(
+      `SELECT l.id AS "_id", l.employee_id AS "employeeId", l.leave_type AS "leaveType",
+              l.start_date::text AS "startDate", l.end_date::text AS "endDate",
+              l.start_time::text AS "startTime", l.end_time::text AS "endTime",
+              l.is_half_day AS "isHalfDay", l.half_day_type AS "halfDayType"
+         FROM leaves l JOIN employees e ON e.id = l.employee_id
+        WHERE ${leaveWhere}
+        ORDER BY l.start_date`,
+      leaveParams
+    );
+
+    res.json({ success: true, data: r.rows, employees: emps.rows, leaves: leaves.rows });
   } catch (err) { serverError(res, err); }
+});
+
+/**
+ * Assign one shift across a DATE RANGE — the reference's "Assign shift" form,
+ * which takes a shift, a from/to pair and a reason, not a single day.
+ *
+ * Two ways to say who it applies to, matching the two places the form appears:
+ *   employeeIds  an explicit list (User-specific Operations, one person)
+ *   criteria     [{ field, values[] }] OR-ed together (Employee Shift Mapping)
+ *
+ * Every day in the range is written, weekends included. That is deliberate:
+ * shift_roster says which shift applies IF the day is worked, and whether it
+ * is worked at all is weekend_rules' and the holiday calendar's answer, not
+ * this table's. Filtering weekends out here would mean a Saturday callout had
+ * no shift to be measured against.
+ */
+router.post('/assign-range', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { employeeIds, criteria, shiftId, fromDate, toDate, reason } = req.body;
+    if (!shiftId || !fromDate || !toDate) {
+      return res.status(400).json({ success: false, message: 'shiftId, fromDate and toDate are required' });
+    }
+    if (String(toDate) < String(fromDate)) {
+      return res.status(400).json({ success: false, message: 'The end date cannot be before the start date' });
+    }
+
+    const shift = (await client.query(`SELECT id, name FROM shifts WHERE id = $1`, [shiftId])).rows[0];
+    if (!shift) return res.status(404).json({ success: false, message: 'That shift no longer exists' });
+
+    // Resolve who this applies to.
+    let targets = [];
+    if (Array.isArray(employeeIds) && employeeIds.length) {
+      targets = [...new Set(employeeIds.map(String))];
+    } else if (Array.isArray(criteria) && criteria.length) {
+      /* OR across criteria rows, exactly as the reference's builder reads —
+       * its rows are joined by an OR bubble, not an AND. A whitelist of
+       * columns rather than interpolating the field name: this is the one
+       * place a criteria builder turns user input into SQL. */
+      const COLUMN = {
+        employee: 'e.id', department: 'e.department', designation: 'e.designation',
+        location: 'e.work_location',
+      };
+      const ors = [];
+      const params = [];
+      for (const c of criteria) {
+        const col = COLUMN[c.field];
+        const values = (c.values || []).filter(Boolean);
+        if (!col || !values.length) continue;
+        params.push(values);
+        ors.push(col === 'e.id'
+          ? `e.id = ANY($${params.length}::uuid[])`
+          : `${col} = ANY($${params.length}::text[])`);
+      }
+      if (!ors.length) {
+        return res.status(400).json({ success: false, message: 'Choose who this shift applies to' });
+      }
+      const found = await client.query(
+        `SELECT id FROM employees
+          WHERE deleted_at IS NULL AND status = 'active' AND (${ors.join(' OR ')})`, params);
+      targets = found.rows.map(r => String(r.id));
+    }
+
+    if (!targets.length) {
+      return res.status(400).json({ success: false, message: 'That matched nobody — nothing was assigned' });
+    }
+
+    /* Permission is per person AND per date, so it is checked against the
+     * first and last day of the range rather than once for the range as a
+     * whole: a manager allowed to roster forward but not backward must not
+     * get the whole span because the end of it happens to be in the future. */
+    const refused = [];
+    const allowed = [];
+    for (const id of targets) {
+      const refusal = (await refuseEdit(req.user, id, fromDate))
+        || (await refuseEdit(req.user, id, toDate));
+      if (refusal) refused.push({ employeeId: id, reason: refusal });
+      else allowed.push(id);
+    }
+    if (!allowed.length) {
+      return res.status(403).json({ success: false,
+        message: refused[0]?.reason || 'You may not change the roster for these people' });
+    }
+
+    await client.query('BEGIN');
+    // generate_series rather than a loop in JS: one statement, and the range
+    // is expanded by the database that is going to store it.
+    const written = await client.query(
+      `INSERT INTO shift_roster (employee_id, shift_id, date, created_by, reason)
+       SELECT emp.id, $2::uuid, d::date, $5::uuid, $6
+         FROM unnest($1::uuid[]) AS emp(id),
+              generate_series($3::date, $4::date, INTERVAL '1 day') AS d
+       ON CONFLICT (employee_id, date)
+         DO UPDATE SET shift_id = EXCLUDED.shift_id,
+                       created_by = EXCLUDED.created_by,
+                       reason = EXCLUDED.reason`,
+      [allowed, shiftId, fromDate, toDate, req.user._id, (reason || '').trim() || null]
+    );
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      assigned: written.rowCount,
+      employees: allowed.length,
+      skipped: refused,
+      message: `${shift.name} assigned to ${allowed.length} employee(s) across ${written.rowCount} day(s)`
+        + (refused.length ? ` — ${refused.length} skipped` : ''),
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    serverError(res, err);
+  } finally {
+    client.release();
+  }
 });
 
 // POST assign shift (admin/manager)

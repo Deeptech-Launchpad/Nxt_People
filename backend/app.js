@@ -273,6 +273,7 @@ app.use('/api/cover-image',      require('./routes/cover-image'));
 app.use('/api/access',           require('./routes/access-control'));
 app.use('/api/workflows',        require('./routes/workflows'));
 app.use('/api/shift-patterns',   require('./routes/shift-patterns'));
+app.use('/api/shift-groups',     require('./routes/shift-groups'));
 app.use('/api/shift-rotation',   require('./routes/shift-rotation'));
 app.use('/api/shift-change',     require('./routes/shift-change'));
 app.use('/api/approval-rules',   require('./routes/approval-rules'));

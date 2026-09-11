@@ -132,6 +132,7 @@ const Compensation = lazy(() => import('./pages/moreservices/Compensation'));
 const HRLetters    = lazy(() => import('./pages/moreservices/HRLetters'));
 const Operations       = lazy(() => import('./pages/moreservices/Operations'));
 const OperationsAttendance = lazy(() => import('./pages/moreservices/OperationsAttendance'));
+const OperationsShift = lazy(() => import('./pages/moreservices/OperationsShift'));
 const OperationsLeaveTracker = lazy(() => import('./pages/moreservices/OperationsLeaveTracker'));
 const OperationsEmployeeInformation = lazy(() => import('./pages/moreservices/employeeinfo/OperationsEmployeeInformation'));
 const ManualAttendance = lazy(() => import('./pages/moreservices/ManualAttendance'));
@@ -258,6 +259,12 @@ const AppRoutes = () => {
           {/* Attendance for staff with no login. Full access only — marking is
               one person asserting another person's attendance. */}
           <Route path="more-services/operations/attendance" element={<ProtectedRoute roles={['admin','director','hr_admin']}><OperationsAttendance/></ProtectedRoute>}/>
+          {/* Manager is admitted here, unlike the Attendance hub: /roster and
+              /shifts/:id/assign have always scoped a manager to their own team
+              at the data layer, and the Shifts > General matrix decides whether
+              they may edit mapping at all. The route guard would be the third
+              gate and the only blunt one. */}
+          <Route path="more-services/operations/shift" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><OperationsShift/></ProtectedRoute>}/>
           <Route path="more-services/operations/attendance-marking" element={<ProtectedRoute roles={['admin','director','hr_admin']}><ManualAttendance/></ProtectedRoute>}/>
           <Route path="more-services/operations/permission-usage" element={<ProtectedRoute roles={['admin','director','hr_admin']}><PermissionUsage/></ProtectedRoute>}/>
           <Route path="more-services/operations/conference" element={<ProtectedRoute roles={['admin','director','hr_admin']}><Conference/></ProtectedRoute>}/>

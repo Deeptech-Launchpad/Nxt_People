@@ -19,6 +19,7 @@ export const ATTENDANCE_BASE = '/more-services/operations/attendance';
 export const MARKING_BASE = '/more-services/operations/attendance-marking';
 export const LEAVE_TRACKER_BASE = '/more-services/operations/leave-tracker';
 export const EMPLOYEE_INFO_BASE = '/more-services/operations/employee-information';
+export const SHIFT_BASE = '/more-services/operations/shift';
 
 /* Attendance Marking is a tab in this strip but a route of its own, because
  * it is a whole page with its own sub-tabs rather than a panel — so it
@@ -42,6 +43,16 @@ export const LEAVE_TRACKER_TABS = [
   { id: 'workdays', label: 'Exceptional Working days' },
 ];
 
+/* Manage Shifts is the existing /shifts screen rendered as a panel here, not a
+ * second editor for the same table — see Shifts.jsx's own note on why there is
+ * only ever one of those. */
+export const SHIFT_TABS = [
+  { id: 'user', label: 'User-specific Operations' },
+  { id: 'manage', label: 'Manage Shifts' },
+  { id: 'mapping', label: 'Employee Shift Mapping' },
+  { id: 'groups', label: 'Shift Group' },
+];
+
 export const EMPLOYEE_INFO_TABS = [
   { id: 'employees', label: 'Employees' },
   { id: 'user', label: 'User-specific Operations' },
@@ -57,6 +68,7 @@ const WORKSPACES = [
   { base: ATTENDANCE_BASE, title: 'Attendance', tabs: ATTENDANCE_TABS, defaultTab: 'user' },
   { base: LEAVE_TRACKER_BASE, title: 'Leave Tracker', tabs: LEAVE_TRACKER_TABS, defaultTab: 'user' },
   { base: EMPLOYEE_INFO_BASE, title: 'Employee Information', tabs: EMPLOYEE_INFO_TABS, defaultTab: 'employees' },
+  { base: SHIFT_BASE, title: 'Shift', tabs: SHIFT_TABS, defaultTab: 'user' },
 ];
 
 /**
