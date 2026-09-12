@@ -223,15 +223,29 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
 function CountBadge({ count, isExpanded, onToggle, mini = false }) {
   if (!count) return null;
   return (
-    <span
-      onClick={(e) => { e.stopPropagation(); onToggle(); }}
-      onMouseDown={(e) => e.stopPropagation()}
-      title={isExpanded ? 'Collapse this team' : 'Expand this team'}
-      className={`relative z-10 font-bold text-white bg-blue-600 hover:bg-blue-700 rounded cursor-pointer transition-colors flex-shrink-0 ${
-        mini ? 'ml-1 text-[12px] px-1.5 py-0.5' : 'ml-2 text-[13px] px-2 py-0.5'
-      }`}
-    >
-      {count}
+    <span className="flex items-center flex-shrink-0">
+      {/* The badge sits ON the connector, with line running into it as well as
+          out of it — the reference threads one continuous line from the card,
+          through the count, and on to the spine of the column it opens.
+          Rendered hard against the card (no margin) the badge read as part of
+          the card instead, and the connection appeared to start out of
+          nowhere a few pixels to its right. The line after it is the next
+          column's hook, which already crosses the gutter. */}
+      <span aria-hidden="true" style={{
+        width: BADGE_LEAD,
+        height: isExpanded ? 2 : 1,
+        background: isExpanded ? ACTIVE_COLOR : LINE_COLOR,
+      }} />
+      <span
+        onClick={(e) => { e.stopPropagation(); onToggle(); }}
+        onMouseDown={(e) => e.stopPropagation()}
+        title={isExpanded ? 'Collapse this team' : 'Expand this team'}
+        className={`relative z-10 font-bold text-white bg-blue-600 hover:bg-blue-700 rounded cursor-pointer transition-colors flex-shrink-0 ${
+          mini ? 'text-[12px] px-1.5 py-0.5' : 'text-[13px] px-2 py-0.5'
+        }`}
+      >
+        {count}
+      </span>
     </span>
   );
 }
@@ -268,6 +282,9 @@ const FULL_GAP     = 12;          // gap-3 between full cards
 // the spine on the children column's left edge.
 const HOOK_LEN     = 20;
 const COL_GAP      = 20;
+// Card → badge. The badge's other side is the next column's HOOK_LEN, so the
+// two together are the single line the reference draws through the count.
+const BADGE_LEAD   = 12;
 
 function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onToggle, onHoverChange,
                           stackRef, centers, parentCenter, matchIds, mini = false,
