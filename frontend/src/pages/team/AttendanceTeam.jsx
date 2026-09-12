@@ -6,6 +6,9 @@ import OpsOnDutyQueue from '../moreservices/attendance/OpsOnDutyQueue';
 import Reportees from './Reportees';
 import TeamShiftSchedule from './TeamShiftSchedule';
 import { TeamTabs, WorkspaceHeader } from './teamShared';
+import api from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
+import { isFullAccess } from '../../utils/roles';
 
 /* ── Attendance → Team ────────────────────────────────────────────────────
  *  /attendance/team was an orphan: role-gated, rendering a working Team
@@ -38,6 +41,23 @@ const TABS = [
 export default function AttendanceTeam() {
   const { tab } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  /* Team Members lists everyone this screen may SHOW, which is wider than the
+   * people whose attendance the caller may READ. So the ids that can be
+   * opened come from /team/reportees — the reporting line, already scoped
+   * server-side — and a card outside it stays inert instead of becoming a
+   * link to a 403. Full access may open anyone, which is `null`. */
+  const [openable, setOpenable] = React.useState(
+    isFullAccess(user) ? null : new Set());
+  React.useEffect(() => {
+    if (isFullAccess(user)) { setOpenable(null); return undefined; }
+    let live = true;
+    api.get('/team/reportees')
+      .then(r => { if (live) setOpenable(new Set((r.data.data || []).map(p => String(p.id)))); })
+      .catch(() => { if (live) setOpenable(new Set()); });
+    return () => { live = false; };
+  }, [user]);
   // The bare /attendance/team keeps doing what it did before this workspace
   // existed — it opens on Team Members.
   const active = TABS.some(t => t.key === tab) ? tab : 'members';
@@ -50,7 +70,9 @@ export default function AttendanceTeam() {
       <div className="bg-slate-50 min-h-[420px]">
         {active === 'reportees'      && <Reportees embedded
           onOpen={p => navigate(`/attendance/team/user/${p.id}`)} />}
-        {active === 'members'        && <TeamAttendance embedded />}
+        {active === 'members'        && <TeamAttendance embedded
+          onOpen={p => navigate(`/attendance/team/user/${p._id}`)}
+          openableIds={openable} />}
         {active === 'shift-schedule' && <TeamShiftSchedule embedded />}
         {active === 'regularization' && <div className="p-5"><OpsRegularizationQueue /></div>}
         {active === 'on-duty'        && <div className="p-5"><OpsOnDutyQueue /></div>}

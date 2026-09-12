@@ -2,6 +2,7 @@
 import { Search, Phone, ChevronDown } from 'lucide-react';
 import { EditEntryButton } from '../../components/EditAttendanceEntry';
 import api from '../../utils/api';
+import { PhotoAvatar } from '../../components/ui';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import usePolling from '../../hooks/usePolling';
@@ -10,7 +11,13 @@ import { leaveChipText } from '../moreservices/shift/shiftGrid';
 /* `embedded` renders this as the Team Members tab of the Attendance → Team
  * workspace, which already draws its own tab bar and page chrome. Same
  * component either way — a second copy for the tab is the thing that drifts. */
-export default function TeamAttendance({ embedded = false }) {
+/* `onOpen` + `openableIds` make a card open that person's attendance.
+ * openableIds null means "anybody" (a full-access caller); a Set means only
+ * those ids. The list here is wider than the reporting line -- it is everyone
+ * whose attendance this screen may SHOW -- and the endpoints behind the
+ * per-employee screen only answer for people the caller may READ. So a card
+ * outside that set stays inert rather than becoming a link to a 403. */
+export default function TeamAttendance({ embedded = false, onOpen = null, openableIds = null }) {
   const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
@@ -87,17 +94,22 @@ export default function TeamAttendance({ embedded = false }) {
   const MemberCard = ({ person }) => {
     const att = person.att;
     const isIn = att?.checkIn && !att?.checkOut;
+    const canOpen = !!onOpen && (!openableIds || openableIds.has(String(person._id)));
     return (
-      <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] hover:shadow-[0_2px_8px_rgba(0,0,0,0.1)] transition-all">
+      <div
+        {...(canOpen ? {
+          role: 'button',
+          tabIndex: 0,
+          onClick: () => onOpen(person),
+          onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(person); } },
+        } : {})}
+        className={`bg-white rounded-lg border border-slate-200 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] hover:shadow-[0_2px_8px_rgba(0,0,0,0.1)] transition-all ${
+          canOpen ? 'cursor-pointer hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200' : ''
+        }`}>
         <div className="flex items-start gap-3">
           {/* Avatar */}
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center flex-shrink-0 border border-slate-200 overflow-hidden">
-            <img
-              src={`https://ui-avatars.com/api/?name=${person.firstName}+${person.lastName}&background=e0e7ff&color=4f46e5&size=40`}
-              alt={person.firstName}
-              className="w-full h-full object-cover"
-            />
-          </div>
+          <PhotoAvatar photoUrl={person.photoUrl} firstName={person.firstName}
+                       lastName={person.lastName} className="w-10 h-10" textClassName="text-xs" />
 
           {/* Info */}
           <div className="flex-1 min-w-0">
