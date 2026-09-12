@@ -1,6 +1,6 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { User, Search, Eye, MessageSquare, Video, Phone } from 'lucide-react';
+import { User, Search, Eye, MessageSquare, Video, Phone, ChevronUp, ChevronDown, X } from 'lucide-react';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -136,7 +136,7 @@ function HoverPopup({ emp, totalMembers, directReports, anchorRect, onMouseEnter
    • Hover → show details popup with action buttons (handled by parent).
    The parent owns the hover popup so it can be portal-rendered above
    sibling z-indexes without being clipped by the column's overflow. */
-function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHoverChange, mini = false }) {
+function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHoverChange, mini = false, matched = false }) {
   const [photoBroken, setPhotoBroken] = useState(false);
   const cardRef = useRef(null);
 
@@ -169,10 +169,11 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
           className="p-0.5 transition-all hover:shadow-sm"
           style={{
             background: isDark ? '#1f2937' : '#ffffff',
-            borderColor: isExpanded ? '#0088FF' : (isDark ? '#374151' : '#e2e8f0'),
+            borderColor: isExpanded ? '#0088FF' : matched ? '#f59e0b' : (isDark ? '#374151' : '#e2e8f0'),
             borderWidth: isExpanded ? 1.5 : 1,
             borderStyle: 'solid',
             borderRadius: 6,
+            boxShadow: matched ? '0 0 0 2px rgba(245,158,11,0.35)' : undefined,
           }}
         >
           <Avatar photoUrl={emp.photoUrl} photoBroken={photoBroken} onPhotoError={() => setPhotoBroken(true)} size={34} />
@@ -204,9 +205,10 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
         background: isExpanded
           ? (isDark ? '#1e3a5f' : '#eff6ff')
           : (isDark ? '#1f2937' : '#ffffff'),
-        borderColor: isExpanded ? '#0088FF' : (isDark ? '#374151' : '#e2e8f0'),
+        borderColor: isExpanded ? '#0088FF' : matched ? '#f59e0b' : (isDark ? '#374151' : '#e2e8f0'),
         borderWidth: isExpanded ? 1.5 : 1,
         borderStyle: 'solid',
+        boxShadow: matched ? '0 0 0 2px rgba(245,158,11,0.35)' : undefined,
       }}
     >
       <Avatar photoUrl={emp.photoUrl} photoBroken={photoBroken} onPhotoError={() => setPhotoBroken(true)} size={36} />
@@ -239,12 +241,22 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
 //   --primarybluclr = #0088FF  → the "active branch" hook
 const LINE_COLOR   = '#DCDCDC';   // gray — the bulk of the tree
 const ACTIVE_COLOR = '#0088FF';   // blue — the "active branch" hook
-const CARD_PITCH   = 70;          // full card: 58px + gap-3 (12px)
-const CARD_HALF    = 29;          // centerline of a full card
-const MINI_PITCH   = 58;          // mini card: 38px + 20px gap
-const MINI_HALF    = 19;          // centerline of a mini card
 const MINI_GAP     = 20;          // breathing room between mini cards
 const FULL_GAP     = 12;          // gap-3 between full cards
+/* Row positions are MEASURED, never assumed.
+ *
+ * They used to come from four constants — a full card "58px + 12px gap", a
+ * mini card "38px + 20px" — and both heights were wrong. A full card is
+ * 62.25px: 20 padding + 2 border + a text block (15px at leading-tight, plus
+ * 13px at the body's line-height 1.5, plus mt-0.5) that is 40.25px and so
+ * outgrows the 36px avatar it sits beside. A mini card is 40px, not 38.
+ *
+ * Four pixels a row does not sound like much until it accumulates: the line
+ * into the 31st report landed roughly two whole cards below the person it
+ * pointed at. Worse, the selected card takes a 1.5px border instead of 1px,
+ * so it is a pixel taller than its siblings and everything under it shifts as
+ * you click around — drift no constant can track. So the geometry now reads
+ * the rendered rows instead of predicting them. */
 // Connector geometry. COL_GAP and HOOK_LEN must be equal so the parent
 // hook exactly bridges the gap from the previous column's right edge to
 // the spine on the children column's left edge.
@@ -252,25 +264,22 @@ const HOOK_LEN     = 20;
 const COL_GAP      = 20;
 
 function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onToggle, onHoverChange,
-                          parentIndex = 0, parentPitch = CARD_PITCH, parentHalf = CARD_HALF, mini = false,
+                          stackRef, centers, parentCenter, matchIds, mini = false,
                           parentScrollDelta = 0 }) {
-  // Pitch/half for THIS column's stack (mini cards are shorter & gap-tighter).
-  const pitch = mini ? MINI_PITCH : CARD_PITCH;
-  const half  = mini ? MINI_HALF  : CARD_HALF;
+  /* Nothing is drawn until this column and its parent have both been
+     measured. One frame without a line beats a frame with the line in the
+     wrong place, and useLayoutEffect measures before the browser paints, so
+     in practice nobody sees the gap. */
+  const ready = centers && centers.length === children.length && parentCenter != null;
 
-  // Y of each child's centerline (children always start at top of column).
-  const firstChildY = half;
-  const lastChildY  = (children.length - 1) * pitch + half;
-  /* Y of the parent's centerline in the previous column — uses the PARENT
-     column's pitch, not this column's, so the hook lands on the right row
-     even when the parent is a mini card.
-
-     parentScrollDelta is (this column's scrollTop − the parent column's).
-     Every column scrolls on its own now, and this whole connector is drawn
-     in THIS column's scrolling content, so without that term the hook stays
-     glued to our own scroll position and slides off the card it points at
-     the moment either column moves. */
-  const parentY     = parentIndex * parentPitch + parentHalf + parentScrollDelta;
+  const firstChildY = ready ? centers[0] : 0;
+  const lastChildY  = ready ? centers[centers.length - 1] : 0;
+  /* parentScrollDelta is (this column's scrollTop − the parent column's).
+     Every column scrolls on its own, and this connector is drawn inside THIS
+     column's scrolling content, so without that term the hook stays glued to
+     our own scroll position and slides off the card it points at the moment
+     either column moves. */
+  const parentY = ready ? parentCenter + parentScrollDelta : 0;
   // Vertical line range — must cover BOTH the parent and every child so
   // the geometry visually closes.
   const lineTop     = Math.min(parentY, firstChildY);
@@ -280,42 +289,44 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
   // blue "active branch" so the line visually traces from parent → selected
   // child as one continuous highlight, matching Zoho's behaviour.
   const selectedChildIdx = children.findIndex(c => expandedIds.has(c._id));
-  const selectedChildY   = selectedChildIdx >= 0
-    ? selectedChildIdx * pitch + half
-    : null;
+  const selectedChildY   = ready && selectedChildIdx >= 0 ? centers[selectedChildIdx] : null;
   const activeTop    = selectedChildY != null ? Math.min(parentY, selectedChildY) : null;
   const activeHeight = selectedChildY != null ? Math.abs(selectedChildY - parentY) : 0;
 
   return (
-    <div className="relative flex flex-col" style={{
+    <div ref={stackRef} className="relative flex flex-col" style={{
       paddingLeft: HOOK_LEN,
       gap: mini ? MINI_GAP : FULL_GAP,
     }}>
-      {/* Gray vertical spine — exactly tall enough to reach both ends */}
-      <div className="absolute" style={{
-        left: 0, top: lineTop, height: lineBottom - lineTop,
-        width: 1, background: LINE_COLOR,
-      }} />
-      {/* Blue vertical overlay: covers only the active sub-path so the
-          highlight is continuous from parent down to the selected child. */}
-      {selectedChildY != null && activeHeight > 0 && (
-        <div className="absolute" style={{
-          left: -1, top: activeTop, height: activeHeight,
-          width: 2, background: ACTIVE_COLOR,
-        }} />
+      {ready && (
+        <>
+          {/* Gray vertical spine — exactly tall enough to reach both ends */}
+          <div className="absolute" style={{
+            left: 0, top: lineTop, height: lineBottom - lineTop,
+            width: 1, background: LINE_COLOR,
+          }} />
+          {/* Blue vertical overlay: covers only the active sub-path so the
+              highlight is continuous from parent down to the selected child. */}
+          {selectedChildY != null && activeHeight > 0 && (
+            <div className="absolute" style={{
+              left: -1, top: activeTop, height: activeHeight,
+              width: 2, background: ACTIVE_COLOR,
+            }} />
+          )}
+          {/* Blue hook back toward the parent — Zoho draws this at 2px. */}
+          <div className="absolute" style={{
+            left: -HOOK_LEN, top: parentY - 1, width: HOOK_LEN, height: 2,
+            background: ACTIVE_COLOR,
+          }} />
+        </>
       )}
-      {/* Blue hook back toward the parent — Zoho draws this at 2px. */}
-      <div className="absolute" style={{
-        left: -HOOK_LEN, top: parentY - 1, width: HOOK_LEN, height: 2,
-        background: ACTIVE_COLOR,
-      }} />
       {/* Children: each card has a horizontal branch from the spine
           into its own left edge. The selected child's branch is BLUE
           and 2px (live branch); others are GRAY 1px (resting). */}
       {children.map(emp => {
         const isActive = expandedIds.has(emp._id);
         return (
-          <div key={emp._id} className="relative">
+          <div key={emp._id} data-row className="relative">
             <div className="absolute" style={{
               left: isActive ? -HOOK_LEN - 1 : -HOOK_LEN,
               top: '50%',
@@ -328,6 +339,7 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
               emp={emp}
               mini={mini}
               isExpanded={isActive}
+              matched={matchIds?.has(emp._id)}
               totalCount={subtreeSize[emp._id] || 0}
               directCount={(childrenOf[emp._id] || []).length}
               onToggle={() => onToggle(emp._id)}
@@ -336,6 +348,39 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* People who are not in any reporting line: nobody reports to them and they
+   report to nobody. Some are not people at all — the system Admin row, a
+   "Zoho ANXT HR" record left behind by the migration, the demo accounts — and
+   they used to render as top-level cards beside the CEO, as though the company
+   had six chief executives. They are listed here instead of dropped, because a
+   real employee with no reporting manager is a data problem somebody should
+   see and fix, not one the chart should quietly hide. */
+function StrayRoots({ people }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-200 dark:border-[#374151]">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1 text-[12px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+      >
+        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        {people.length} not in any reporting line
+      </button>
+      {open && (
+        <ul className="mt-2 space-y-1">
+          {people.map(p => (
+            <li key={p._id} className="text-[12px] text-slate-500 dark:text-slate-400 leading-tight">
+              <span className="font-mono text-slate-400 dark:text-slate-500">{p.employeeId || '—'}</span>{' '}
+              {p.firstName} {p.lastName}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -356,12 +401,24 @@ export default function OrgChart() {
    * connector lines are drawn from them. */
   const colRefs = useRef([]);
   const [colScroll, setColScroll] = useState([]);
+  /* Whether each column has anything above or below the fold, which is all
+   * the chevrons need to know. Kept beside the scroll position because both
+   * change together. */
+  const [colEdges, setColEdges] = useState({});
+  const readEdges = (el) => ({
+    up: el.scrollTop > 1,
+    down: el.scrollTop + el.clientHeight < el.scrollHeight - 1,
+  });
   const handleColScroll = (depth) => (e) => {
-    const top = e.currentTarget.scrollTop;
+    const el = e.currentTarget;
+    const top = el.scrollTop;
     // The hover card is anchored to a viewport rect captured when the pointer
     // arrived, so scrolling the card out from under it would leave it floating
     // over nothing.
     setHovered(null);
+    const edges = readEdges(el);
+    setColEdges(prev => (prev[depth] && prev[depth].up === edges.up && prev[depth].down === edges.down)
+      ? prev : { ...prev, [depth]: edges });
     setColScroll(prev => {
       if (prev[depth] === top) return prev;
       const next = [...prev];
@@ -369,6 +426,19 @@ export default function OrgChart() {
       return next;
     });
   };
+  const nudgeColumn = (depth, dir) => {
+    const el = colRefs.current[depth];
+    if (!el) return;
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollBy({ top: dir * Math.round(el.clientHeight * 0.8), behavior: reduced ? 'auto' : 'smooth' });
+  };
+
+  /* Measured row centres, per column, in that column's own content
+   * coordinates. The connectors are drawn from these — see the note above
+   * ChildrenColumn for why they are measured rather than calculated. */
+  const stackRefs = useRef({});
+  const [rowCenters, setRowCenters] = useState({});
+  const [matchIdx, setMatchIdx] = useState(0);
   // Currently hovered card — drives the floating details popup. null while
   // no card is hovered. Set by EmployeeCard on mouse-enter (after ~150ms).
   const [hovered, setHovered] = useState(null);  // { emp, anchorRect, totalCount, directCount }
@@ -496,19 +566,116 @@ export default function OrgChart() {
         || (e.employeeId  || '').toLowerCase().includes(q);
   };
 
+  /* Everyone the search term names, anywhere in the org — not a filter over
+     one column. See the navigation effect below for why that matters. */
+  const matches = searchTerm.trim() ? employees.filter(filterMatch) : [];
+  const matchIds = new Set(matches.map(e => e._id));
+
+  /* The chain of managers above someone, root-first, which is exactly the
+     shape selectedPath wants: expand each of these and the person lands in
+     the final column. */
+  const pathToEmployee = (id) => {
+    const chain = [];
+    const seen = new Set();
+    let cur = empMap[id];
+    while (cur && cur.reportingManagerId && empMap[cur.reportingManagerId] && !seen.has(cur._id)) {
+      seen.add(cur._id);
+      cur = empMap[cur.reportingManagerId];
+      chain.unshift(cur._id);
+    }
+    return chain;
+  };
+
+  /* A root with no reports is not a tree — it is a person nobody reports to
+     and who reports to nobody. Several are not people at all: the system
+     Admin, a "Zoho ANXT HR" row left over from the migration, the demo
+     accounts. They used to stand beside the CEO as peers. They are still
+     listed, under the tree and behind a count, because a real employee with
+     no manager set is a data problem worth seeing rather than hiding. */
+  const rootHasReports = (r) => (subtreeSize[r._id] || 0) > 0;
+  const treeRoots  = roots.some(rootHasReports) ? roots.filter(rootHasReports) : roots;
+  const strayRoots = roots.some(rootHasReports) ? roots.filter(r => !rootHasReports(r)) : [];
+
   /* ── Build the visible columns from the expanded path ────────────────── */
   // Stop adding columns the moment we hit a leaf with no children — Zoho
   // simply doesn't render an empty "No reports" column at the end. This
   // also keeps the column count tight so the "last 2 full" rule resolves
   // the right columns to full cards.
+  //
+  // Columns are NOT filtered by the search term. Filtering them hid the
+  // searched person's colleagues and, because the search box also cleared
+  // the expanded path, left only the root column to filter — so searching
+  // for anybody who was not a root returned "No employees". A tree search
+  // reveals a person in place; it does not prune the tree around them.
   const columns = [];
-  columns.push(roots.filter(filterMatch));
+  columns.push(treeRoots);
   for (const selId of selectedPath) {
-    const kids = (childrenOf[selId] || []).filter(filterMatch);
+    const kids = childrenOf[selId] || [];
     if (kids.length === 0) break;
     columns.push(kids);
   }
   const expandedIds = new Set(selectedPath);
+
+  /* Measure every visible row, after layout and before paint.
+     Relative to each column's own stack element, so the numbers are
+     independent of how far that column happens to be scrolled — the scroll
+     term is applied separately, once, where the parent hook is drawn.
+     A ResizeObserver repeats the measurement when a card changes height:
+     a web font arriving, a longer designation wrapping, the 1.5px border the
+     selected card takes. */
+  const columnsSig = columns.map(c => c.map(e => e._id).join(',')).join('|');
+  useLayoutEffect(() => {
+    const measure = () => {
+      const next = {};
+      Object.entries(stackRefs.current).forEach(([depth, stack]) => {
+        if (!stack || !stack.isConnected) return;
+        const top = stack.getBoundingClientRect().top;
+        next[depth] = Array.from(stack.querySelectorAll('[data-row]')).map(el => {
+          const r = el.getBoundingClientRect();
+          return r.top - top + r.height / 2;
+        });
+      });
+      setRowCenters(prev => {
+        const keys = Object.keys(next);
+        const same = keys.length === Object.keys(prev).length && keys.every(k =>
+          prev[k] && prev[k].length === next[k].length &&
+          prev[k].every((v, i) => Math.abs(v - next[k][i]) < 0.5));
+        return same ? prev : next;
+      });
+      const edges = {};
+      colRefs.current.forEach((el, depth) => { if (el) edges[depth] = readEdges(el); });
+      setColEdges(prev => {
+        const keys = Object.keys(edges);
+        const same = keys.length === Object.keys(prev).length && keys.every(k =>
+          prev[k] && prev[k].up === edges[k].up && prev[k].down === edges[k].down);
+        return same ? prev : edges;
+      });
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    Object.values(stackRefs.current).forEach(el => el && ro.observe(el));
+    colRefs.current.forEach(el => el && ro.observe(el));
+    return () => ro.disconnect();
+  }, [columnsSig, loading]);
+
+  /* Typing in the search box opens the tree to the first person it names,
+     rather than pruning the columns around them. Enter steps to the next
+     match. */
+  const matchSig = matches.map(e => e._id).join(',');
+  useEffect(() => {
+    if (!matches.length) return;
+    setMatchIdx(0);
+    setSelectedPath(pathToEmployee(matches[0]._id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchSig]);
+
+  const gotoMatch = (i) => {
+    if (!matches.length) return;
+    const next = ((i % matches.length) + matches.length) % matches.length;
+    setMatchIdx(next);
+    setSelectedPath(pathToEmployee(matches[next]._id));
+  };
 
   // Click anywhere on a card (body or badge) toggles expansion of that
   // node at the given depth. Clicking an already-expanded node collapses
@@ -729,15 +896,34 @@ export default function OrgChart() {
         <p className="text-[15px] text-slate-500 dark:text-slate-400">
           Click a card to expand their direct reports. Hover for contact info.
         </p>
-        <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search by name, designation, dept..."
-            value={searchTerm}
-            onChange={e => { setSearchTerm(e.target.value); setSelectedPath([]); }}
-            className="pl-9 pr-4 py-1.5 border border-slate-200 dark:border-[#374151] rounded text-base w-72 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all bg-white dark:bg-[#111827] text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
-          />
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {searchTerm.trim() && (
+            <span className="text-[13px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
+              {matches.length === 0
+                ? 'No matches'
+                : `${matchIdx + 1} of ${matches.length}${matches.length > 1 ? ' · Enter for next' : ''}`}
+            </span>
+          )}
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by name, designation, dept..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); gotoMatch(matchIdx + (e.shiftKey ? -1 : 1)); }
+                if (e.key === 'Escape') setSearchTerm('');
+              }}
+              className="pl-9 pr-8 py-1.5 border border-slate-200 dark:border-[#374151] rounded text-base w-72 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all bg-white dark:bg-[#111827] text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+            />
+            {searchTerm && (
+              <button type="button" onClick={() => setSearchTerm('')} aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -756,48 +942,54 @@ export default function OrgChart() {
               // earlier in the path collapses to mini — matches Zoho.
               const isAncestor    = columns.length >= 3 && depth < columns.length - 2;
               const isRoot        = depth === 0;
-              const prevIsMini    = depth > 0 && columns.length >= 3 && (depth - 1) < columns.length - 2;
-              // Parent index in the previous column — drives the connector
+              // Parent row in the previous column — drives the connector
               // hook's vertical position so the line visibly originates at
-              // the expanded card's row.
+              // the expanded card's row. -1 means the parent is not on screen,
+              // and then no hook is drawn at all: pointing it at row 0 was a
+              // lie the old Math.max(0, …) told silently.
               const parentIndex = depth > 0
-                ? Math.max(0, columns[depth - 1].findIndex(e => e._id === selectedPath[depth - 1]))
+                ? columns[depth - 1].findIndex(e => e._id === selectedPath[depth - 1])
                 : 0;
-              const parentPitch = prevIsMini ? MINI_PITCH : CARD_PITCH;
-              const parentHalf  = prevIsMini ? MINI_HALF  : CARD_HALF;
+              const parentCenter = depth > 0 && parentIndex >= 0
+                ? (rowCenters[depth - 1] || [])[parentIndex]
+                : null;
+              const edges = colEdges[depth] || {};
 
               return (
                 /* py-6 lives on the scroller rather than the outer box so every
                    column starts at the same Y — the connector maths below
                    assumes the columns share a top edge. */
+                <div key={depth} className="relative h-full group/col">
                 <div
-                  key={depth}
                   ref={el => { colRefs.current[depth] = el; }}
                   onScroll={handleColScroll(depth)}
-                  className="h-full overflow-y-auto py-6"
+                  className="h-full overflow-y-auto scrollbar-none py-6"
                 >
                   {isRoot ? (
                     // Root column: no connector (nothing on the left).
                     // Auto-size to card contents; just stack the cards.
-                    <div className="flex flex-col" style={{
-                      gap: isAncestor ? MINI_GAP : FULL_GAP,
-                    }}>
+                    <div className="flex flex-col"
+                         ref={el => { stackRefs.current[depth] = el; }}
+                         style={{ gap: isAncestor ? MINI_GAP : FULL_GAP }}>
                       {colEmps.length === 0 ? (
                         <p className="text-[14px] text-slate-400 italic">No employees</p>
                       ) : (
                         colEmps.map(emp => (
-                          <EmployeeCard
-                            key={emp._id}
-                            emp={emp}
-                            mini={isAncestor}
-                            isExpanded={expandedIds.has(emp._id)}
-                            totalCount={subtreeSize[emp._id] || 0}
-                            directCount={(childrenOf[emp._id] || []).length}
-                            onToggle={() => handleToggle(depth, emp._id)}
-                            onHoverChange={setHover}
-                          />
+                          <div key={emp._id} data-row>
+                            <EmployeeCard
+                              emp={emp}
+                              mini={isAncestor}
+                              isExpanded={expandedIds.has(emp._id)}
+                              matched={matchIds.has(emp._id)}
+                              totalCount={subtreeSize[emp._id] || 0}
+                              directCount={(childrenOf[emp._id] || []).length}
+                              onToggle={() => handleToggle(depth, emp._id)}
+                              onHoverChange={setHover}
+                            />
+                          </div>
                         ))
                       )}
+                      {strayRoots.length > 0 && <StrayRoots people={strayRoots} />}
                     </div>
                   ) : (
                     colEmps.length === 0 ? (
@@ -812,15 +1004,35 @@ export default function OrgChart() {
                         expandedIds={expandedIds}
                         subtreeSize={subtreeSize}
                         childrenOf={childrenOf}
-                        parentIndex={parentIndex}
-                        parentPitch={parentPitch}
-                        parentHalf={parentHalf}
+                        matchIds={matchIds}
+                        stackRef={el => { stackRefs.current[depth] = el; }}
+                        centers={rowCenters[depth]}
+                        parentCenter={parentCenter}
                         parentScrollDelta={(colScroll[depth] || 0) - (colScroll[depth - 1] || 0)}
                         onToggle={(empId) => handleToggle(depth, empId)}
                         onHoverChange={setHover}
                       />
                     )
                   )}
+                </div>
+                {/* Paging chevrons instead of a scrollbar: the reference puts
+                    them above and below the column, showing on hover and only
+                    when there is something past the fold. A native bar is
+                    ~15px wide and the gutter between columns is 20px — the
+                    same 20px the connector hook has to cross — so the bar sat
+                    on top of the line it was meant to sit beside. */}
+                {edges.up && (
+                  <button type="button" aria-label="Scroll up" onClick={() => nudgeColumn(depth, -1)}
+                    className="absolute top-0 left-1/2 -translate-x-1/2 z-10 w-7 h-5 flex items-center justify-center rounded-b bg-white/90 dark:bg-[#1f2937]/90 text-slate-400 hover:text-slate-700 dark:hover:text-slate-100 shadow-sm opacity-0 group-hover/col:opacity-100 focus:opacity-100 transition-opacity">
+                    <ChevronUp size={15} />
+                  </button>
+                )}
+                {edges.down && (
+                  <button type="button" aria-label="Scroll down" onClick={() => nudgeColumn(depth, 1)}
+                    className="absolute bottom-0 left-1/2 -translate-x-1/2 z-10 w-7 h-5 flex items-center justify-center rounded-t bg-white/90 dark:bg-[#1f2937]/90 text-slate-400 hover:text-slate-700 dark:hover:text-slate-100 shadow-sm opacity-0 group-hover/col:opacity-100 focus:opacity-100 transition-opacity">
+                    <ChevronDown size={15} />
+                  </button>
+                )}
                 </div>
               );
             })}
