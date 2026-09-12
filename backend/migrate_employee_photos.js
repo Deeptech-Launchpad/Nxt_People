@@ -1,45 +1,43 @@
-/* ── Bring the employee photos over from Zoho ───────────────────────────────
- *  Every photo_url in this database is a HOTLINK into Zoho's CDN:
+/* ── Fetch the employee photos that were never brought over ─────────────────
+ *  52 of the 57 active people have no photo at all — not a broken link, not a
+ *  stale URL: the column is empty. The migration brought names, attendance and
+ *  leave across and left the faces behind, which is why every avatar in the
+ *  product is a grey silhouette.
  *
- *      https://contacts.zoho.in/file?ID=60014837174&fs=thumb
+ *  So there is no URL to repair. Each person is looked up in Zoho by their
+ *  employee code, and their photo is pulled from the record that comes back,
+ *  stored the way an uploaded photo is stored (uploads/photos, served at
+ *  /uploads/photos/<file>) and written to photo_url.
  *
- *  The migration copied the addresses and never the images. Those URLs need a
- *  Zoho session, which a NxtPeople browser does not have, so every <img> fails
- *  and every avatar in the product falls back to a grey silhouette — the org
- *  chart, the topbar, the directory, all of it.
- *
- *  This downloads each photo through the authenticated Zoho API, stores it the
- *  same way an uploaded photo is stored (uploads/photos, served publicly at
- *  /uploads/photos/<file>), and repoints photo_url at the local copy.
- *
- *  Three modes, and the destructive one is never the default:
- *
- *      node migrate_employee_photos.js --probe          which endpoint works
- *      node migrate_employee_photos.js                  dry run: who would change
- *      node migrate_employee_photos.js --apply          download and write
+ *      node migrate_employee_photos.js --probe     what Zoho actually answers
+ *      node migrate_employee_photos.js             dry run: who would change
+ *      node migrate_employee_photos.js --apply     fetch and write
  *      node migrate_employee_photos.js --apply --limit 5
  *
- *  Start with --probe. Zoho does not document one photo endpoint that is true
- *  for every tenant, so rather than guess and write 148 broken files this
- *  tries the candidates against ONE employee and reports what came back.
+ *  START WITH --probe. Zoho documents no one photo route that holds for every
+ *  tenant, so it dumps the fields of a real record and tries each candidate,
+ *  reporting what came back rather than guessing and writing 52 broken files.
  *
- *  Two safeguards worth knowing about:
+ *  Three things this refuses to do:
  *
- *    Nothing is saved unless the bytes really are an image. An expired token
- *    or a login redirect answers 200 with HTML, and writing that to disk would
- *    replace every working avatar with a broken one. The magic bytes are
- *    checked before anything touches the filesystem or the database.
+ *    Write anything that is not an image. An expired token answers 200 with a
+ *    login page; the magic bytes are checked before the filesystem or the
+ *    database is touched, so a redirect can never become somebody's face.
  *
- *    The old value is kept. photo_url only moves to the local path once the
- *    file is on disk, and the Zoho URL is recorded in the run log printed at
- *    the end, so a bad run can be put back.
+ *    Treat a refusal as "no photo". Zoho answers a refusal with HTTP 200 and
+ *    an envelope carrying no `result` key at all. Reading `result || []` there
+ *    is the same mistake that once had an importer delete 43 people's leave —
+ *    an error is not an empty list, and it is reported, not skipped over.
+ *
+ *    Overwrite a photo somebody already has. Only rows with no local photo are
+ *    considered.
  * ────────────────────────────────────────────────────────────────────────── */
 
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const pool = require('./db');
-const { getAccessToken } = require('./utils/zoho');
+const { getAccessToken, zohoApi } = require('./utils/zoho');
 
 const APPLY = process.argv.includes('--apply');
 const PROBE = process.argv.includes('--probe');
@@ -49,10 +47,10 @@ const LIMIT = (() => {
 })();
 
 const PHOTO_DIR = path.join(__dirname, 'uploads', 'photos');
+const domain = () => (process.env.ZOHO_API_DOMAIN || '').replace(/\/$/, '');
 
-/* Real image or a login page? Content-type lies often enough (Zoho answers
- * text/html for an expired session while still saying 200) that the bytes get
- * the final word. */
+/* Content-type lies often enough — Zoho answers text/html for an expired
+ * session while still saying 200 — that the bytes get the final word. */
 const SIGNATURES = [
   { ext: 'jpg',  test: b => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
   { ext: 'png',  test: b => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
@@ -65,129 +63,165 @@ const imageKind = (buf) => {
   return (SIGNATURES.find(s => s.test(buf)) || {}).ext || null;
 };
 
-const domain = () => (process.env.ZOHO_API_DOMAIN || '').replace(/\/$/, '');
+/* One employee record from Zoho, by the code we hold. Returns
+ * { recordId, fields } or { error } — never an empty object standing in for a
+ * refusal. */
+async function findZohoEmployee(code) {
+  const search = encodeURIComponent(JSON.stringify({
+    searchField: 'Employee_ID', searchOperator: 'Contains', searchText: code,
+  }));
+  let json;
+  try {
+    json = await zohoApi(`forms/employee/getRecords?sIndex=1&limit=5&searchParams=${search}`);
+  } catch (err) {
+    return { error: err.message };
+  }
+  const resp = json && json.response;
+  if (!resp || typeof resp !== 'object') return { error: 'no response object' };
+  if (!('result' in resp)) {
+    return { error: String(resp.message || JSON.stringify(resp.errors || resp.error || {})).slice(0, 90) };
+  }
+  const rows = Array.isArray(resp.result) ? resp.result : [];
+  for (const row of rows) {
+    const recordId = Object.keys(row)[0];
+    const fields = Array.isArray(row[recordId]) ? row[recordId][0] : row[recordId];
+    if (fields && String(fields.Employee_ID || '').trim() === String(code).trim()) {
+      return { recordId, fields };
+    }
+  }
+  return { error: rows.length ? 'no exact code match' : 'not found in Zoho' };
+}
 
-/* The candidates, cheapest and most likely first. `stored` is the URL already
- * in our own column; the rest are Zoho People's own photo routes, which need
- * the record id rather than the contacts id the stored URL carries. */
-function candidatesFor({ storedUrl, recordId, employeeCode }) {
+/* Anything in the record that looks like it points at an image, plus Zoho
+ * People's own photo routes for that record. */
+function candidatesFor(recordId, fields = {}) {
   const out = [];
-  if (storedUrl) {
-    out.push({ name: 'stored URL + oauth', url: storedUrl, auth: true });
-    out.push({ name: 'stored URL, no auth', url: storedUrl, auth: false });
+  for (const [k, v] of Object.entries(fields)) {
+    if (typeof v === 'string' && /^https?:\/\//.test(v) && /photo|image|picture/i.test(k)) {
+      out.push({ name: `field ${k}`, url: v });
+    }
   }
   if (domain() && recordId) {
-    out.push({ name: 'people v2 photo',  url: `${domain()}/people/api/v2/employee/${encodeURIComponent(recordId)}/photo`, auth: true });
-    out.push({ name: 'people getImage',  url: `${domain()}/people/api/forms/employee/getImage?recordId=${encodeURIComponent(recordId)}&fs=thumb`, auth: true });
-  }
-  if (domain() && employeeCode) {
-    out.push({ name: 'people photo by code', url: `${domain()}/people/api/person/photo?encapiKey=&employeeId=${encodeURIComponent(employeeCode)}`, auth: true });
+    out.push({ name: 'v2 employee photo', url: `${domain()}/people/api/v2/employee/${encodeURIComponent(recordId)}/photo` });
+    out.push({ name: 'forms getImage',    url: `${domain()}/people/api/forms/employee/getImage?recordId=${encodeURIComponent(recordId)}` });
+    out.push({ name: 'viewEmployeePhoto', url: `${domain()}/api/viewEmployeePhoto?filename=${encodeURIComponent(recordId)}` });
   }
   return out;
 }
 
-async function attempt(c, token) {
+async function attempt(url, token) {
   try {
-    const r = await fetch(c.url, c.auth ? { headers: { Authorization: `Zoho-oauthtoken ${token}` } } : {});
+    const r = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${token}` } });
     const buf = Buffer.from(await r.arrayBuffer());
-    return { ok: r.ok, status: r.status, type: r.headers.get('content-type') || '', bytes: buf.length, kind: imageKind(buf), buf };
+    return { status: r.status, type: r.headers.get('content-type') || '', bytes: buf.length, kind: imageKind(buf), buf };
   } catch (err) {
-    return { ok: false, status: 0, type: '', bytes: 0, kind: null, error: err.message };
+    return { status: 0, type: '', bytes: 0, kind: null, error: err.message };
   }
 }
 
 /* Zoho rate-limits the TOKEN endpoint separately from the API and reports it
- * as a 400, not a 429 — so a tight loop looks like a credentials failure. The
- * token is cached on disk between runs; this only spaces out the downloads. */
-const breathe = () => new Promise(r => setTimeout(r, 250));
+ * as a 400 rather than a 429, so a tight loop reads as bad credentials. The
+ * token itself is cached on disk between runs; this spaces out the calls. */
+const breathe = () => new Promise(r => setTimeout(r, 400));
 
 async function main() {
   const rows = (await pool.query(
-    `SELECT id, employee_id AS code, first_name AS first, last_name AS last, photo_url AS url
+    `SELECT id, employee_id AS code, TRIM(CONCAT(first_name, ' ', last_name)) AS name
        FROM employees
-      WHERE deleted_at IS NULL
-        AND photo_url IS NOT NULL AND photo_url <> ''
-        AND photo_url NOT LIKE '/uploads/%'
-        -- ID=-1 is Zoho's "this person has no photo" sentinel, not an address.
-        -- Fetching it returns a placeholder or a 404; either way it is not
-        -- their face, so these keep their silhouette.
-        AND photo_url NOT LIKE '%ID=-1%'
+      WHERE deleted_at IS NULL AND status = 'active'
+        AND employee_id IS NOT NULL AND employee_id <> ''
+        AND (photo_url IS NULL OR photo_url = '' OR photo_url NOT LIKE '/uploads/%')
       ORDER BY employee_id`
   )).rows;
+  const have = (await pool.query(
+    `SELECT COUNT(*)::int n FROM employees
+      WHERE deleted_at IS NULL AND status='active' AND photo_url LIKE '/uploads/%'`)).rows[0].n;
 
-  const local = (await pool.query(
-    `SELECT COUNT(*)::int n FROM employees WHERE deleted_at IS NULL AND photo_url LIKE '/uploads/%'`
-  )).rows[0].n;
+  console.log(`\n  without a local photo : ${rows.length}`);
+  console.log(`  already have one      : ${have}\n`);
+  if (!rows.length) { console.log('  Nothing to fetch.\n'); return; }
 
-  console.log(`\n  external (Zoho) photo links : ${rows.length}`);
-  console.log(`  already stored locally      : ${local}\n`);
-  if (!rows.length) { console.log('  Nothing to migrate.\n'); return; }
-
-  let token = null;
-  try {
-    token = await getAccessToken();
-  } catch (err) {
+  let token;
+  try { token = await getAccessToken(); }
+  catch (err) {
     console.error(`  Cannot reach Zoho: ${err.message}`);
-    console.error('  Check ZOHO_* variables in the ROOT .env and that they are listed in docker-compose.\n');
+    console.error('  Check the ZOHO_* variables in the ROOT .env and that docker-compose passes them through.\n');
     process.exitCode = 1;
     return;
   }
 
   if (PROBE) {
     const s = rows[0];
-    console.log(`  Probing with ${s.code} ${s.first} ${s.last}`);
-    console.log(`  stored: ${s.url}\n`);
-    for (const c of candidatesFor({ storedUrl: s.url, recordId: null, employeeCode: s.code })) {
-      const r = await attempt(c, token);
-      const verdict = r.kind ? `IMAGE (${r.kind})` : r.ok ? 'not an image' : 'failed';
-      console.log(`  ${String(c.name).padEnd(22)} ${String(r.status).padEnd(4)} ${String(r.type).slice(0, 28).padEnd(30)} ${String(r.bytes).padStart(7)}b  ${verdict}`);
+    console.log(`  Probing with ${s.code} ${s.name}\n`);
+    const found = await findZohoEmployee(s.code);
+    if (found.error) {
+      console.log(`  Zoho lookup failed: ${found.error}`);
+      console.log('  Without a record there is no photo to ask for — that is the thing to fix first.\n');
+      return;
+    }
+    console.log(`  record id: ${found.recordId}`);
+    const keys = Object.keys(found.fields || {});
+    console.log(`  ${keys.length} fields; ones that mention a photo:`);
+    const photoish = keys.filter(k => /photo|image|picture/i.test(k));
+    if (photoish.length) photoish.forEach(k => console.log(`    ${k} = ${String(found.fields[k]).slice(0, 90)}`));
+    else console.log('    (none — the photo is not a field, so it has to come from a route below)');
+
+    console.log('');
+    for (const c of candidatesFor(found.recordId, found.fields)) {
+      const r = await attempt(c.url, token);
+      const verdict = r.kind ? `IMAGE (${r.kind})` : r.status ? 'not an image' : `failed: ${r.error || ''}`;
+      console.log(`  ${c.name.padEnd(20)} ${String(r.status).padEnd(4)} ${String(r.type).slice(0, 26).padEnd(28)} ${String(r.bytes).padStart(7)}b  ${verdict}`);
       await breathe();
     }
-    console.log('\n  Any line saying IMAGE is a working route — tell me which and I will');
-    console.log('  wire the migration to it. If none work, the photos have to come from');
-    console.log('  a Zoho export instead of the API.\n');
+    console.log('\n  Any line reading IMAGE is a working route. Send me this output and I will');
+    console.log('  pin the fetch to it. If none work, the photos have to come out of a Zoho');
+    console.log('  export instead of the API.\n');
     return;
   }
 
   const work = LIMIT ? rows.slice(0, LIMIT) : rows;
   if (!APPLY) {
-    console.log('  DRY RUN — nothing will be downloaded or written. Add --apply to run it.\n');
-    work.slice(0, 10).forEach(r => console.log(`    ${r.code.padEnd(14)} ${`${r.first} ${r.last}`.padEnd(28)} ${r.url}`));
-    if (work.length > 10) console.log(`    … and ${work.length - 10} more`);
-    console.log(`\n  ${work.length} photo(s) would be fetched into uploads/photos and repointed.\n`);
+    console.log('  DRY RUN — nothing is fetched or written. Add --apply to run it.\n');
+    work.slice(0, 12).forEach(r => console.log(`    ${r.code.padEnd(14)} ${r.name}`));
+    if (work.length > 12) console.log(`    … and ${work.length - 12} more`);
+    console.log(`\n  ${work.length} employee(s) would be looked up in Zoho and their photo stored.\n`);
     return;
   }
 
   fs.mkdirSync(PHOTO_DIR, { recursive: true });
-  let saved = 0, failed = 0;
+  let saved = 0, noPhoto = 0, failed = 0;
   const log = [];
 
   for (const r of work) {
+    const found = await findZohoEmployee(r.code);
+    if (found.error) {
+      failed++; log.push({ code: r.code, outcome: `lookup failed: ${found.error}` });
+      await breathe();
+      continue;
+    }
     let done = false;
-    for (const c of candidatesFor({ storedUrl: r.url, recordId: null, employeeCode: r.code })) {
-      const got = await attempt(c, token);
+    for (const c of candidatesFor(found.recordId, found.fields)) {
+      const got = await attempt(c.url, token);
       if (!got.kind) continue;
-
       const file = `zoho-${r.code}-${Date.now()}.${got.kind}`;
       fs.writeFileSync(path.join(PHOTO_DIR, file), got.buf);
       await pool.query(`UPDATE employees SET photo_url = $1, updated_at = NOW() WHERE id = $2`,
         [`/uploads/photos/${file}`, r.id]);
-      log.push({ code: r.code, was: r.url, now: `/uploads/photos/${file}`, via: c.name, bytes: got.bytes });
+      log.push({ code: r.code, outcome: 'saved', via: c.name, file, bytes: got.bytes });
       saved++; done = true;
       break;
     }
-    if (!done) { failed++; log.push({ code: r.code, was: r.url, now: null, via: null }); }
+    if (!done) { noPhoto++; log.push({ code: r.code, outcome: 'no image from any route' }); }
     await breathe();
   }
 
-  console.log(`  saved   ${saved}`);
-  console.log(`  failed  ${failed}\n`);
-  if (saved) {
-    const out = path.join(__dirname, `photo_migration_${Date.now()}.json`);
-    fs.writeFileSync(out, JSON.stringify(log, null, 2));
-    console.log(`  Every old URL recorded in ${path.basename(out)} — keep it, it is how this run gets undone.\n`);
-  }
-  if (failed) console.log('  Run with --probe to see what the failing downloads answered.\n');
+  console.log(`  saved            ${saved}`);
+  console.log(`  no photo in Zoho ${noPhoto}`);
+  console.log(`  lookup failed    ${failed}\n`);
+  const out = path.join(__dirname, `photo_fetch_${Date.now()}.json`);
+  fs.writeFileSync(out, JSON.stringify(log, null, 2));
+  console.log(`  Full per-person outcome in ${path.basename(out)}.\n`);
+  if (noPhoto || failed) console.log('  Re-run with --probe to see what the failures answered.\n');
 }
 
 main()
