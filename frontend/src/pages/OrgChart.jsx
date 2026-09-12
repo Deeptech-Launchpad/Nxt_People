@@ -950,7 +950,7 @@ export default function OrgChart() {
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="flex items-stretch min-w-max h-full" style={{ gap: COL_GAP }}>
+          <div className="flex items-stretch min-w-max h-full">
             {columns.map((colEmps, depth) => {
               // Ancestor compression: keep the last TWO columns as full
               // cards (the active card's row + its children). Everything
@@ -973,11 +973,24 @@ export default function OrgChart() {
               return (
                 /* py-6 lives on the scroller rather than the outer box so every
                    column starts at the same Y — the connector maths below
-                   assumes the columns share a top edge. */
+                   assumes the columns share a top edge.
+                
+                   The GUTTER is this column's left padding rather than a gap
+                   between columns, because this column is what draws the line
+                   across it. The hook back to the parent sits at
+                   left:-HOOK_LEN inside the scroller, and `overflow-y: auto`
+                   clips horizontally as well as vertically — so while the
+                   gutter was a flex gap that hook fell outside the scroller
+                   and was clipped away entirely. The spine and its stubs
+                   survived because they sit at x >= 0, which is why the line
+                   appeared to begin abruptly at the card and never reach the
+                   count badge it came from. Carried as padding, the same hook
+                   lands inside and the line is one piece again. */
                 <div key={depth} className="relative h-full group/col">
                 <div
                   ref={el => { colRefs.current[depth] = el; }}
                   onScroll={handleColScroll(depth)}
+                  style={{ paddingLeft: depth ? COL_GAP : 0 }}
                   className="h-full overflow-y-auto scrollbar-none py-6"
                 >
                   {isRoot ? (
