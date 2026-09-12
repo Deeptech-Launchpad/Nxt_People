@@ -697,6 +697,14 @@ router.get('/my', async (req, res) => {
                 working_hours as "workingHours", status,
                 late_minutes as "lateMinutes",
                 check_in_location as "checkInLocation",
+                check_out_location as "checkOutLocation",
+                -- The punch's coordinates, for the day-detail panel. The
+                -- *_location columns hold a LABEL ('Office', 'GPS (12.9716,
+                -- 77.5946)'), never a street address — only these can be
+                -- resolved to one or opened on a map.
+                check_in_latitude  as "checkInLat",  check_in_longitude  as "checkInLng",
+                check_out_latitude as "checkOutLat", check_out_longitude as "checkOutLng",
+                source,
                 -- Compute minutes-past-midnight in IST (default; overridden
                 -- below if settings.timezone differs). PG's AT TIME ZONE on
                 -- a TIMESTAMPTZ converts to that zone's wall clock.
@@ -746,6 +754,10 @@ router.get('/my', async (req, res) => {
                 working_hours as "workingHours", status,
                 late_minutes as "lateMinutes",
                 check_in_location as "checkInLocation",
+                check_out_location as "checkOutLocation",
+                check_in_latitude  as "checkInLat",  check_in_longitude  as "checkInLng",
+                check_out_latitude as "checkOutLat", check_out_longitude as "checkOutLng",
+                source,
                 CASE WHEN check_in IS NULL THEN NULL ELSE
                   (EXTRACT(HOUR   FROM check_in AT TIME ZONE $4::text) * 60 +
                    EXTRACT(MINUTE FROM check_in AT TIME ZONE $4::text))::int
@@ -775,6 +787,12 @@ router.get('/my', async (req, res) => {
       logger.error({ err: err.message, employeeId: empId }, '[attendance] sessions range query failed');
     }
 
+    /* One migration created the coordinate columns as DOUBLE PRECISION and
+     * another as NUMERIC, and pg hands NUMERIC back as a string — so whether a
+     * caller receives a number or a string depends on which migration built
+     * the database it is talking to. Settled here, once. */
+    const coord = v => (v === null || v === undefined || v === '' ? null : Number(v));
+
     const mapped = rows.map(r => {
       // Always compute lateness from the SQL-extracted check-in minutes
       // (timezone-correct). Take the max of stored vs computed so we never
@@ -790,6 +808,10 @@ router.get('/my', async (req, res) => {
         ...rest,
         workingHours: Number(rest.workingHours) || 0,
         lateMinutes,
+        checkInLat:  coord(rest.checkInLat),
+        checkInLng:  coord(rest.checkInLng),
+        checkOutLat: coord(rest.checkOutLat),
+        checkOutLng: coord(rest.checkOutLng),
         sessions: sessionsByAtt[r._id] || [],
       };
     });

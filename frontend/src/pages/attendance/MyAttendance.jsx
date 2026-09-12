@@ -2,10 +2,12 @@
 import {
   ChevronLeft, ChevronRight, Grid3X3, List, Calendar,
   ChevronDown, Filter, MoreHorizontal, RotateCcw, Minus,
-  LogIn, LogOut, Download, Eye
+  LogIn, LogOut, Download, Eye, Pencil, MapPin, ExternalLink
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
+import { reverseGeocode } from '../../utils/reverseGeocode';
+import RegularizeModal from '../../components/requests/RegularizeModal';
 import { useAuth } from '../../context/AuthContext';
 import { useAttendance } from '../../context/AttendanceContext';
 import { useWeekendRules } from '../../context/WeekendRulesContext';
@@ -158,6 +160,13 @@ const SHIFT_START = 8 * 60;   // 08:00 → leftmost tick
 const SHIFT_END   = 20 * 60;  // 20:00 → rightmost tick
 const TICK_HOURS  = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
 
+/* The one place minutes become a horizontal position. The axis has to read off
+   the same scale the bars are drawn on, or it is decoration that lies. */
+const pctOfDay = (mins) =>
+  Math.max(0, Math.min(100, ((mins - SHIFT_START) / (SHIFT_END - SHIFT_START)) * 100));
+
+const minutesNow = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+
 function TimelineBar({ record, isToday, isCheckedIn }) {
   const total = SHIFT_END - SHIFT_START;
   const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
@@ -284,6 +293,214 @@ function TimelineBar({ record, isToday, isCheckedIn }) {
   );
 }
 
+/* ── One punch, and where it happened ────────────────────────────────────
+ *
+ * check_in_location / check_out_location are LABELS — they hold 'Office' or
+ * 'GPS (12.9716, 77.5946)' — so they are shown as what they are and never
+ * dressed up as a street address. The address comes from the coordinates, and
+ * only from them.
+ *
+ * The lookup runs when this panel opens, never per row: Nominatim asks callers
+ * to keep the volume light, and geocoding a whole week of rows nobody clicked
+ * would be dozens of requests for one answer. reverseGeocode caches by rounded
+ * coordinates, so reopening the same day is free.
+ *
+ * Zoho puts a device icon beside each punch. We record no user agent, so there
+ * is nothing to draw — `source` only separates a punch from a manual entry or
+ * an import, and it is only worth saying when it is NOT a punch (every
+ * Zoho-migrated row carries the column's 'punch' default).
+ */
+const osmLink = (lat, lng) =>
+  `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
+
+function PunchDetail({ label, time, locationLabel, lat, lng }) {
+  /* 0,0 is the Atlantic, and it is what a failed capture writes — the same
+     guard LocationMapPicker makes for the office pin. */
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+  const [address, setAddress] = useState(null);
+  const [resolving, setResolving] = useState(false);
+
+  useEffect(() => {
+    if (!hasCoords) return;
+    let cancelled = false;
+    setResolving(true);
+    reverseGeocode(lat, lng)
+      .then(a => { if (!cancelled) { setAddress(a); setResolving(false); } })
+      .catch(() => { if (!cancelled) setResolving(false); });
+    return () => { cancelled = true; };
+  }, [lat, lng, hasCoords]);
+
+  return (
+    <div className="border border-slate-200 rounded-lg px-3.5 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
+        <span className="text-[15px] font-bold text-slate-800">{time || '—'}</span>
+      </div>
+
+      {!time ? (
+        <p className="text-[13px] text-slate-400 mt-2">Not recorded.</p>
+      ) : (
+        <div className="mt-2.5 flex items-start gap-2">
+          <MapPin size={14} className="text-slate-400 mt-[3px] flex-shrink-0" />
+          <div className="min-w-0">
+            {hasCoords ? (
+              <>
+                <p className="text-[14px] text-slate-700 break-words">
+                  {resolving
+                    ? 'Resolving address…'
+                    : (address || 'Address could not be resolved for these coordinates')}
+                </p>
+                <p className="text-[12px] text-slate-400 mt-0.5">
+                  {lat.toFixed(5)}, {lng.toFixed(5)}
+                </p>
+                <a
+                  href={osmLink(lat, lng)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[13px] font-semibold text-blue-600 hover:text-blue-700 mt-1.5"
+                >
+                  View map <ExternalLink size={12} />
+                </a>
+              </>
+            ) : (
+              <>
+                {locationLabel && <p className="text-[14px] text-slate-600">{locationLabel}</p>}
+                <p className="text-[13px] text-slate-400 mt-0.5">
+                  No coordinates were captured for this punch, so there is no address and no map.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── One day, in full ───────────────────────────────────────────────────── */
+const SOURCE_NOTE = { manual: 'Entered manually', import: 'Imported from a file' };
+
+function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose }) {
+  const sessions = record?.sessions || [];
+  const firstIn  = sessions[0]?.checkIn || record?.checkIn || null;
+  const lastOut  = sessions.length
+    ? sessions[sessions.length - 1]?.checkOut || null
+    : record?.checkOut || null;
+  const sourceNote = record?.source && record.source !== 'punch'
+    ? (SOURCE_NOTE[record.source] || `Source: ${record.source}`)
+    : null;
+
+  const heading = date.toLocaleDateString('en-GB', {
+    weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+  });
+
+  return (
+    <div className="fixed inset-0 z-40" onClick={onClose}>
+      <div
+        className="absolute right-0 top-0 h-full w-[400px] max-w-full bg-white shadow-2xl border-l border-slate-200 flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-[17px] font-bold text-slate-800">{heading}</h3>
+            <p className="text-[13px] text-slate-500 mt-0.5">{shiftLabel}</p>
+          </div>
+          <button onClick={onClose}
+            className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400">
+            ✕
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          {kind?.holiday && (
+            <div className="text-[13px] font-semibold bg-cyan-50 border border-cyan-200 text-cyan-700 rounded-lg px-3 py-2">
+              {kind.name || 'Holiday'}
+            </div>
+          )}
+          {kind?.weekend && (
+            <div className="text-[13px] font-semibold bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-3 py-2">
+              Weekend
+            </div>
+          )}
+          {sourceNote && (
+            <div className="text-[13px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              {sourceNote}
+            </div>
+          )}
+
+          {/* A day we never fetched is not a day nobody worked — the same
+              distinction the rest of the page makes. */}
+          {!record && date > new Date(new Date().setHours(23, 59, 59, 999)) ? (
+            <p className="text-[14px] text-slate-500">This day hasn’t happened yet.</p>
+          ) : !record && !loaded ? (
+            <p className="text-[14px] text-slate-500">
+              This day is outside the range that was loaded, so there is nothing to show yet.
+            </p>
+          ) : !record ? (
+            <p className="text-[14px] text-slate-500">No attendance was recorded for this day.</p>
+          ) : (
+            <>
+              <PunchDetail
+                label="Check-in"
+                time={fmtTime(firstIn)}
+                locationLabel={record.checkInLocation}
+                lat={record.checkInLat}
+                lng={record.checkInLng}
+              />
+              <PunchDetail
+                label="Check-out"
+                time={fmtTime(lastOut)}
+                locationLabel={record.checkOutLocation}
+                lat={record.checkOutLat}
+                lng={record.checkOutLng}
+              />
+
+              {/* Only two coordinate pairs are stored per day, so with several
+                  sessions the map above belongs to the first in and the last
+                  out. The middle punches are still listed, rather than left
+                  looking like they never happened. */}
+              {sessions.length > 1 && (
+                <div className="border border-slate-200 rounded-lg px-3.5 py-3">
+                  <p className="text-[12px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                    Sessions
+                  </p>
+                  {sessions.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between text-[13.5px] text-slate-600 py-1">
+                      <span>Session {i + 1}</span>
+                      <span className="tabular-nums">
+                        {fmtTime(s.checkIn) || '—'} – {fmtTime(s.checkOut) || 'running'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {record.lateMinutes > 0 && (
+                <p className="text-[13px] font-semibold" style={{ color: '#F5A623' }}>
+                  Late by {fmtHHMM(record.lateMinutes / 60)}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="border-t border-slate-100 grid grid-cols-3 divide-x divide-slate-100">
+          {[
+            { label: 'First Check-In',  val: fmtTime(firstIn) || '—' },
+            { label: 'Last Check-Out',  val: fmtTime(lastOut) || '—' },
+            { label: 'Total Hours',     val: record?.workingHours ? fmtHHMM(record.workingHours) : '—' },
+          ].map(({ label, val }) => (
+            <div key={label} className="px-3 py-3 text-center">
+              <p className="text-[12px] text-slate-400">{label}</p>
+              <p className="text-[14px] font-bold text-slate-700 mt-0.5">{val}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ══════════════════════════════════════════════════════════════════════ */
 
 export default function MyAttendance() {
@@ -309,6 +526,26 @@ export default function MyAttendance() {
   const [reportTab, setReportTab] = useState('days');
   const [hoveredDay, setHoveredDay] = useState(null);
   const [showRequestMenu, setShowRequestMenu] = useState(null);
+  const [detailDay, setDetailDay] = useState(null);
+  const [regularizeDate, setRegularizeDate] = useState(null);
+  /* Bumped after a request is submitted so the week reloads — the fetch below
+     is keyed on the visible range, which does not change when a form closes. */
+  const [reloadKey, setReloadKey] = useState(0);
+
+  /* Regularization can be switched off in Configuration → Methods, and the
+     route behind it refuses the request while it is. An action that leads to a
+     403 is worse than no action, so it goes with the switch. Treated as ON
+     until the call answers: the same default AttendanceLanding uses, so a
+     failed load still offers it rather than hiding it silently. */
+  const [methods, setMethods] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/attendance-config/methods')
+      .then(r => { if (!cancelled) setMethods(r.data?.data || {}); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const regularizationOn = !methods || methods.regularization !== false;
 
   /**
    * Final weekend decision for a date, applying holiday overrides on top of
@@ -423,7 +660,7 @@ export default function MyAttendance() {
       setLoadedRange({ start: rangeStart, end: rangeEnd });
     }).catch(() => {}).finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStart.getMonth(), weekStart.getFullYear(), weekStart.getDate(), filterPeriod]);
+  }, [weekStart.getMonth(), weekStart.getFullYear(), weekStart.getDate(), filterPeriod, reloadKey]);
 
   /* ── map records by date ── */
   const recordMap = {};
@@ -475,6 +712,12 @@ export default function MyAttendance() {
     : fmtRange(weekStart, weekEndDate);
 
   const todayStr = isoDate(new Date());
+
+  /* The axis only marks "now" when the week on screen actually contains today.
+     Recomputed each render, exactly like the per-row now-line above it, so the
+     two always agree. */
+  const weekHasToday = week.some(d => isoDate(d) === todayStr);
+  const nowMins = minutesNow();
 
   // Close request menu on outside click
   useEffect(() => {
@@ -787,9 +1030,13 @@ export default function MyAttendance() {
                        })()}
                      </div>
 
-                     {/* Add Request Button — hover-revealed, viewport-clamped popup */}
-                     {!isOff && hoveredDay === ds && (
-                       <div className="flex-shrink-0 relative">
+                     {/* Add Request Button — hover-revealed, viewport-clamped popup.
+                         The column itself is always here, even empty: appearing
+                         only on hover resized the bar area under the pointer and
+                         slid every bar sideways, and an axis can only mean
+                         something if the scale stays put. */}
+                     <div className="w-[104px] flex-shrink-0 flex justify-end">
+                       {!isOff && hoveredDay === ds && (
                          <button
                            onClick={(e) => {
                              e.stopPropagation();
@@ -804,7 +1051,7 @@ export default function MyAttendance() {
                               * server accepts a date with no attendance row and
                               * creates one when the request is approved, and it
                               * owns the deadline. */
-                             const canRegularize = (ds === todayStr) || isPastDay;
+                             const canRegularize = regularizationOn && ((ds === todayStr) || isPastDay);
                              setShowRequestMenu({
                                buttonRect: {
                                  top: rect.top, bottom: rect.bottom,
@@ -817,32 +1064,66 @@ export default function MyAttendance() {
                          >
                            Add Request
                          </button>
-                       </div>
-                     )}
+                       )}
+                     </div>
                    </div>
                  );
               })}
 
-              {/* Timeline axis */}
-              <div className="flex items-start px-5 py-2 bg-slate-50/80 border-t border-slate-100">
+              {/* ── Time axis ──────────────────────────────────────────────
+               *  One axis for every row above, so where a bar sits says when.
+               *  It reads the SAME SHIFT_START/SHIFT_END scale the bars are
+               *  positioned on via pctOfDay — a second scale here would drift
+               *  the day somebody widened the window.
+               *
+               *  The spacers are not decoration: this row must have the same
+               *  children and the same gap as a day row, or the flex-1 middle
+               *  is a different width than the one the bars live in and every
+               *  label points at the wrong minute. */}
+              <div className="flex items-start gap-4 px-5 py-2 bg-slate-50/80 border-t border-slate-100">
                 <div className="w-[64px] flex-shrink-0" />
                 <div className="w-[80px] flex-shrink-0" />
-                <div className="flex-1 relative h-4">
+                <div className="flex-1 min-w-0 relative h-9">
                   {TICK_HOURS.map(h => {
-                    const pct = ((h * 60 - SHIFT_START) / (SHIFT_END - SHIFT_START)) * 100;
+                    const pct = pctOfDay(h * 60);
                     const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
                     return (
-                      <span
-                        key={h}
-                        className="absolute text-[12px] text-slate-400 transform -translate-x-1/2"
-                        style={{ left: `${pct}%` }}
-                      >
-                        {h12}:00{h < 12 ? 'AM' : 'PM'}
-                      </span>
+                      <React.Fragment key={h}>
+                        <div
+                          className="absolute top-0 h-1.5 border-l border-slate-300"
+                          style={{ left: `${pct}%` }}
+                        />
+                        <span
+                          className="absolute top-2.5 text-[12px] text-slate-400 transform -translate-x-1/2 whitespace-nowrap"
+                          style={{ left: `${pct}%` }}
+                        >
+                          {h12}:00{h < 12 ? 'AM' : 'PM'}
+                        </span>
+                      </React.Fragment>
                     );
                   })}
+                  {/* "Now", but only when it is both on screen and on the
+                      scale: outside 08:00–20:00 the marker would pin itself to
+                      an edge and name a time it is not. */}
+                  {weekHasToday && nowMins >= SHIFT_START && nowMins <= SHIFT_END && (
+                    <>
+                      <div
+                        className="absolute top-0 h-2.5 border-l border-blue-400"
+                        style={{ left: `${pctOfDay(nowMins)}%` }}
+                      />
+                      {/* Sits under the hour labels rather than among them, so
+                          it cannot land on top of one. */}
+                      <span
+                        className="absolute top-[22px] text-[12px] font-semibold text-blue-500 transform -translate-x-1/2 whitespace-nowrap"
+                        style={{ left: `${pctOfDay(nowMins)}%` }}
+                      >
+                        Now
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div className="w-[100px] flex-shrink-0" />
+                <div className="w-[104px] flex-shrink-0" />
               </div>
             </>
           )}
@@ -858,6 +1139,8 @@ export default function MyAttendance() {
                 {['Date', 'Day', 'Check In', 'Check Out', 'Hours', 'Status'].map(h => (
                   <th key={h} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
+                {/* The action column only exists while the action does. */}
+                {regularizationOn && <th className="px-5 py-3 w-[60px]" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -866,8 +1149,17 @@ export default function MyAttendance() {
                 const r = recordMap[ds];
                 const kind = dayInfo(day);
                 const isFuture = ds > todayStr;
+                /* Same rule the timeline's Add Request uses: today or any past
+                   day, and not gated on a record existing — a day with no punch
+                   at all is exactly what regularization is for. The server owns
+                   the deadline. */
+                const canRegularize = regularizationOn && ds <= todayStr;
                 return (
-                  <tr key={ds} className={`hover:bg-slate-50 transition-colors ${ds === todayStr ? 'bg-blue-50/30' : ''}`}>
+                  <tr
+                    key={ds}
+                    onClick={() => setDetailDay(ds)}
+                    className={`hover:bg-slate-50 transition-colors cursor-pointer ${ds === todayStr ? 'bg-blue-50/30' : ''}`}
+                  >
                     <td className="px-5 py-3 text-[14px] font-medium text-slate-700">
                       <div>{day.toLocaleDateString('en-IN', { day:'2-digit', month:'short' })}</div>
                       {r?.lateMinutes > 0 && (
@@ -897,6 +1189,21 @@ export default function MyAttendance() {
                             : <StatusPill status={r?.status || 'absent'} />
                       }
                     </td>
+                    {regularizationOn && (
+                      <td className="px-5 py-3 text-right">
+                        {canRegularize && (
+                          <button
+                            /* The row opens the day's detail, so this must not
+                               also open it on the way to the form. */
+                            onClick={(e) => { e.stopPropagation(); setRegularizeDate(ds); }}
+                            title="Request Regularization"
+                            className="w-7 h-7 inline-flex items-center justify-center rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -1103,6 +1410,29 @@ export default function MyAttendance() {
             </div>
            </div>
          </div>
+       )}
+
+       {/* ── One day's detail, opened from a list row ────────────────── */}
+       {detailDay && (
+         <DayDetailPanel
+           date={parseLocalDate(detailDay)}
+           record={recordMap[detailDay] || null}
+           shiftLabel={shiftLabel}
+           kind={dayInfo(parseLocalDate(detailDay))}
+           loaded={isLoaded(detailDay)}
+           onClose={() => setDetailDay(null)}
+         />
+       )}
+
+       {/* Regularization, prefilled with the day whose pencil was pressed.
+           The one form in the product — it reads its own reason list and
+           mandatory-field rules from Settings, so a copy here would drift. */}
+       {regularizeDate && (
+         <RegularizeModal
+           date={regularizeDate}
+           onClose={() => setRegularizeDate(null)}
+           onDone={() => { setRegularizeDate(null); setReloadKey(k => k + 1); }}
+         />
        )}
 
        {/* Request Dropdown Menu */}
