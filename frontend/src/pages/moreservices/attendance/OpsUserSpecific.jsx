@@ -22,6 +22,13 @@ import OnDutyModal from '../../../components/requests/OnDutyModal';
  *  row — could not be seen at all. The month's shape now comes from the
  *  server alongside the punches, so weekends and holidays are labelled and
  *  the gaps are visible as gaps.
+ *
+ *  The person view is exported as UserAttendanceTabs because Attendance →
+ *  Team opens the same four tabs on a reportee. It takes its roster and its
+ *  `canManage` from the caller: the Operations door is full-access, the Team
+ *  door is a manager, and the two are allowed to do different things to
+ *  somebody else's attendance. Two copies of this screen would be two chances
+ *  for a reportee's month to read differently depending on how you got there.
  */
 const STATUS_LABEL = {
   present: { label: 'Present', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
@@ -382,11 +389,14 @@ function OverflowMenu({ onExport, onAudit, onImport }) {
         className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">
         <MoreHorizontal size={16} />
       </button>
+      {/* Import lands on an Operations-only screen and Audit History reads
+          /audit, which is full-access only. Offering either to a manager would
+          be offering a 403, so they are dropped rather than shown disabled. */}
       {open && (
         <div className="absolute right-0 mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-30">
-          <Item icon={Upload} label="Import" onClick={onImport} />
+          {onImport && <Item icon={Upload} label="Import" onClick={onImport} />}
           <Item icon={Download} label="Export" onClick={onExport} />
-          <Item icon={History} label="Audit History" onClick={onAudit} />
+          {onAudit && <Item icon={History} label="Audit History" onClick={onAudit} />}
         </div>
       )}
     </div>
@@ -440,7 +450,7 @@ function AuditDialog({ employee, onClose }) {
 
 const VIEWS = [['list', 'List'], ['timeline', 'Timeline'], ['calendar', 'Calendar']];
 
-function AttendanceSummaryTab({ employee, onGoTo }) {
+function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
   const [mode, setMode] = useState('monthly');
   const [anchor, setAnchor] = useState(() => new Date());
   const [rows, setRows] = useState(null);
@@ -513,8 +523,12 @@ function AttendanceSummaryTab({ employee, onGoTo }) {
 
           {/* Raise a correction for this person without leaving the screen —
               the reference's Request button. The request belongs to them; the
-              server routes it through their approvers, not ours. */}
-          <RequestMenu onPick={setRequest} />
+              server routes it through their approvers, not ours.
+              Full access only: raising on somebody else's behalf is a
+              full-access power, and the POST silently files on the caller
+              instead of refusing, so a manager's click would quietly land on
+              their own day. */}
+          {canManage && <RequestMenu onPick={setRequest} />}
 
           <div className="relative">
             <button onClick={() => setShowFilter(f => !f)} title="Filter"
@@ -534,7 +548,9 @@ function AttendanceSummaryTab({ employee, onGoTo }) {
             )}
           </div>
 
-          <OverflowMenu onExport={exportCsv} onAudit={() => setShowAudit(true)} onImport={() => onGoTo('import')} />
+          <OverflowMenu onExport={exportCsv}
+            onAudit={canManage ? () => setShowAudit(true) : undefined}
+            onImport={canManage ? () => onGoTo('import') : undefined} />
         </div>
       </div>
 
@@ -736,7 +752,7 @@ const inMonth = (ymd, anchor) => {
   return d.slice(0, 7) === `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, '0')}`;
 };
 
-function RegularizationTab({ employee }) {
+function RegularizationTab({ employee, canManage = true }) {
   const [status, setStatus] = useState('all');
   const [anchor, setAnchor] = useState(() => new Date());
   const [rows, setRows] = useState(null);
@@ -767,7 +783,8 @@ function RegularizationTab({ employee }) {
   return (
     <div>
       <MonthBar anchor={anchor} setAnchor={setAnchor} status={status} setStatus={setStatus}
-        options={REG_STATUS} count={filtered.length} onAdd={() => setAdding(true)} />
+        options={REG_STATUS} count={filtered.length}
+        onAdd={canManage ? () => setAdding(true) : undefined} />
       {rows === null ? (
         <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
       ) : filtered.length === 0 ? (
@@ -835,7 +852,7 @@ function RegularizationTab({ employee }) {
 
 /* ── On Duty ─────────────────────────────────────────────────────────────── */
 
-function OnDutyTab({ employee }) {
+function OnDutyTab({ employee, canManage = true }) {
   const [status, setStatus] = useState('all');
   const [anchor, setAnchor] = useState(() => new Date());
   const [rows, setRows] = useState(null);
@@ -869,7 +886,8 @@ function OnDutyTab({ employee }) {
   return (
     <div>
       <MonthBar anchor={anchor} setAnchor={setAnchor} status={status} setStatus={setStatus}
-        options={ONDUTY_STATUS} count={filtered.length} onAdd={() => setAdding(true)} />
+        options={ONDUTY_STATUS} count={filtered.length}
+        onAdd={canManage ? () => setAdding(true) : undefined} />
       {rows === null ? (
         <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
       ) : filtered.length === 0 ? (
@@ -920,12 +938,21 @@ function OnDutyTab({ employee }) {
 
 /* ── the screen ──────────────────────────────────────────────────────────── */
 
+/* `full: true` marks a tab whose endpoint is full-access-only underneath.
+ * Expected vs Worked reads /reports/attendance/expected-vs-worked, which
+ * authorizes admin, director, hr_admin and manager but NOT team_incharge —
+ * so a Team Incharge opening it got a 403 and nine error toasts, one per
+ * month fetched. The tab is dropped for them rather than the role being added
+ * to a reports route: hiding a door is a UI fix, opening one is an
+ * access-control decision. */
 const SUBTABS = [
   ['summary', 'Attendance Summary', AttendanceSummaryTab],
-  ['expected', 'Expected vs Worked Hours', ExpectedVsWorkedTab],
+  ['expected', 'Expected vs Worked Hours', ExpectedVsWorkedTab, { full: true }],
   ['regularization', 'Regularization', RegularizationTab],
   ['onduty', 'On Duty', OnDutyTab],
 ];
+
+const subtabsFor = (canManage) => SUBTABS.filter(([, , , o]) => canManage || !o?.full);
 
 const Avatar = ({ person, size = 32 }) => (
   person?.photoUrl
@@ -984,11 +1011,64 @@ function EmployeeSwitcher({ people, picked, onPick }) {
   );
 }
 
+/* ── one person's attendance, four tabs ───────────────────────────────────
+ *  The half of this screen that is about an employee rather than about
+ *  finding one. Operations reaches it through the search below; Attendance →
+ *  Team reaches it from a reportee card, where the roster is the manager's
+ *  reportees and `onBack` goes to that list rather than to a search box.
+ *
+ *  `canManage` false hides the affordances that are full-access-only behind
+ *  the scenes rather than letting a manager press them and get a 403 — or
+ *  worse, a write that silently lands on themselves.
+ */
+export function UserAttendanceTabs({
+  employee, people = [], onPick, onBack, backTitle = 'Back',
+  onGoTo = () => {}, canManage = true,
+}) {
+  const [subtab, setSubtab] = useState('summary');
+  const tabs = subtabsFor(canManage);
+  // A hidden tab is still reachable by URL or by a stale bit of state, and
+  // find() on a missing id would throw rather than degrade.
+  const ActiveTab = (tabs.find(([id]) => id === subtab) || tabs[0])[2];
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        {onBack && (
+          <button onClick={onBack} title={backTitle}
+            className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">
+            <ChevronLeft size={16} />
+          </button>
+        )}
+        {/* Only worth a switcher when there is somebody to switch to. */}
+        {onPick && people.length > 1
+          ? <EmployeeSwitcher people={people} picked={employee} onPick={onPick} />
+          : (
+            <span className="flex items-center gap-2.5 px-2 py-1.5">
+              <Avatar person={employee} />
+              <span className="text-[15px] font-semibold text-slate-800">{labelOf(employee)}</span>
+            </span>
+          )}
+      </div>
+      <div className="flex gap-0.5 border-b border-slate-200 mb-5 overflow-x-auto">
+        {tabs.map(([id, label]) => (
+          <button key={id} onClick={() => setSubtab(id)}
+            className={`px-3 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+              subtab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <ActiveTab employee={employee} onGoTo={onGoTo} canManage={canManage} />
+    </div>
+  );
+}
+
 export default function OpsUserSpecific({ onGoTo = () => {} }) {
   const { people } = useEmployeeList();
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState(null);
-  const [subtab, setSubtab] = useState('summary');
 
   const matches = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -1017,7 +1097,7 @@ export default function OpsUserSpecific({ onGoTo = () => {} }) {
         {matches.length > 0 && (
           <div className="mt-2 border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-50">
             {matches.map(p => (
-              <button key={p._id} onClick={() => { setPicked(p); setSubtab('summary'); }}
+              <button key={p._id} onClick={() => setPicked(p)}
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left">
                 <Avatar person={p} size={30} />
                 <span className="text-[14.5px] text-slate-700 flex-1 truncate">{labelOf(p)}</span>
@@ -1034,28 +1114,10 @@ export default function OpsUserSpecific({ onGoTo = () => {} }) {
     );
   }
 
-  const ActiveTab = SUBTABS.find(([id]) => id === subtab)[2];
-
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-4">
-        <button onClick={() => setPicked(null)} title="Back to search"
-          className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">
-          <ChevronLeft size={16} />
-        </button>
-        <EmployeeSwitcher people={people} picked={picked} onPick={setPicked} />
-      </div>
-      <div className="flex gap-0.5 border-b border-slate-200 mb-5 overflow-x-auto">
-        {SUBTABS.map(([id, label]) => (
-          <button key={id} onClick={() => setSubtab(id)}
-            className={`px-3 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
-              subtab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <ActiveTab employee={picked} onGoTo={onGoTo} />
-    </div>
+    <UserAttendanceTabs
+      employee={picked} people={people} onPick={setPicked}
+      onBack={() => setPicked(null)} backTitle="Back to search"
+      onGoTo={onGoTo} />
   );
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import TeamAttendance from '../attendance/TeamAttendance';
 import OpsRegularizationQueue from '../moreservices/attendance/OpsRegularizationQueue';
 import OpsOnDutyQueue from '../moreservices/attendance/OpsOnDutyQueue';
@@ -21,6 +21,10 @@ import { TeamTabs, WorkspaceHeader } from './teamShared';
  *  full-access user sees everything, exactly as on the Approvals page. They
  *  are rendered rather than linked to so that acting on a request does not
  *  send anybody out of Attendance to do it.
+ *
+ *  A Reportees card opens that person's attendance at
+ *  /attendance/team/user/:employeeId — still inside Attendance, and still the
+ *  same screen Operations uses for an employee rather than a second one.
  * ────────────────────────────────────────────────────────────────────────── */
 
 const TABS = [
@@ -33,6 +37,7 @@ const TABS = [
 
 export default function AttendanceTeam() {
   const { tab } = useParams();
+  const navigate = useNavigate();
   // The bare /attendance/team keeps doing what it did before this workspace
   // existed — it opens on Team Members.
   const active = TABS.some(t => t.key === tab) ? tab : 'members';
@@ -43,7 +48,8 @@ export default function AttendanceTeam() {
       <TeamTabs tabs={TABS} active={active} />
 
       <div className="bg-slate-50 min-h-[420px]">
-        {active === 'reportees'      && <Reportees embedded />}
+        {active === 'reportees'      && <Reportees embedded
+          onOpen={p => navigate(`/attendance/team/user/${p.id}`)} />}
         {active === 'members'        && <TeamAttendance embedded />}
         {active === 'shift-schedule' && <TeamShiftSchedule embedded />}
         {active === 'regularization' && <div className="p-5"><OpsRegularizationQueue /></div>}

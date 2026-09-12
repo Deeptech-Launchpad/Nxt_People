@@ -6,6 +6,7 @@ const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
 const { deadlineFor, isClosed: deadlinePassed } = require('../utils/regularizationWindow');
 const { isFullAccess } = require('../utils/roles');
+const { resolveEmployeeId } = require('../utils/employeeScope');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { classifyDay } = require('../utils/attendanceRule');
 const { createNotification } = require('./notifications');
@@ -82,10 +83,12 @@ const REG_LEVELS_JSON = approvalLevelsJson('regularization', 'r');
 // GET my regularization requests
 router.get('/my', async (req, res) => {
   try {
-    // Same guard as elsewhere: a full-access caller may look at somebody
-    // else's history (Operations -> Attendance -> User-specific Operations),
-    // everybody else always gets their own regardless of what they pass.
-    const empId = isFullAccess(req.user.role) && req.query.employeeId ? req.query.employeeId : req.user._id;
+    // Same guard as elsewhere: full access may look at anybody's history, a
+    // manager at their reporting line's (Attendance -> Team -> a reportee),
+    // anybody else is refused. It refuses rather than quietly substituting the
+    // caller's own history, which is what this line did until now.
+    const empId = await resolveEmployeeId(req, res, req.query.employeeId);
+    if (!empId) return;
     const result = await pool.query(
       /* Carries the same before-and-after the approval queue shows.
        *

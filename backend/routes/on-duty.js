@@ -5,6 +5,7 @@ const pool = require('../db');
 const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
+const { resolveEmployeeId } = require('../utils/employeeScope');
 const { createNotification } = require('./notifications');
 const { createLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
 const { sendLeaveApprovalEmail } = require('../utils/mailer');
@@ -101,10 +102,12 @@ const daySpan = (start, end) =>
 router.get('/my', async (req, res) => {
   try {
     const { status, from, to, employeeId } = req.query;
-    // Same guard as elsewhere: a full-access caller may look at somebody
-    // else's history, everybody else always gets their own regardless of
-    // what they pass.
-    const empId = isFullAccess(req.user.role) && employeeId ? employeeId : req.user._id;
+    // Same guard as elsewhere: full access may look at anybody's history, a
+    // manager at their reporting line's, anybody else is refused. It refuses
+    // rather than quietly substituting the caller's own history, which is what
+    // this line did until now.
+    const empId = await resolveEmployeeId(req, res, employeeId);
+    if (!empId) return;
     const params = [empId];
     let clause = '';
     if (status && status !== 'all') { params.push(status); clause += ` AND o.status = $${params.length}`; }

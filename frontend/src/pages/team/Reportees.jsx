@@ -15,8 +15,15 @@ import {
  *  Tracker's Team → Reportees tab shows and the Attendance one does not. One
  *  component with a flag rather than two pages, because the identity half of
  *  the card is identical and would otherwise drift.
+ *
+ *  `onOpen` makes the card open that person, and is passed only by the
+ *  workspace that has somewhere in its OWN section to send you — Attendance
+ *  has a per-employee attendance screen, the Leave Tracker does not, and a
+ *  card that jumped out of Leave Tracker into Attendance is the kind of
+ *  cross-section hop these workspaces were built to stop. Absent it the card
+ *  is the plain tile it has always been, not a button that does nothing.
  * ────────────────────────────────────────────────────────────────────────── */
-export default function Reportees({ showLeaveBooked = false, embedded = false }) {
+export default function Reportees({ showLeaveBooked = false, embedded = false, onOpen = null }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
@@ -64,9 +71,20 @@ export default function Reportees({ showLeaveBooked = false, embedded = false })
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {shown.map(p => (
+            /* A div rather than a button: the card already holds the phone and
+               mail links, and interactive-inside-interactive is invalid markup
+               that browsers resolve by guessing. The keyboard gets the same
+               affordance explicitly instead. */
             <div key={p.id}
-              className="bg-white rounded-lg border border-slate-200 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)]
-                         hover:shadow-[0_2px_8px_rgba(0,0,0,0.1)] transition-all">
+              {...(onOpen ? {
+                role: 'button', tabIndex: 0,
+                onClick: () => onOpen(p),
+                onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(p); } },
+                title: `Open ${p.firstName}'s attendance`,
+              } : {})}
+              className={`bg-white rounded-lg border border-slate-200 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)]
+                         hover:shadow-[0_2px_8px_rgba(0,0,0,0.1)] transition-all
+                         ${onOpen ? 'cursor-pointer hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200' : ''}`}>
               <div className="flex items-start gap-3">
                 <Avatar person={p} size={44} />
                 <div className="flex-1 min-w-0">
@@ -96,7 +114,8 @@ export default function Reportees({ showLeaveBooked = false, embedded = false })
                     text={`${Number(p.leaveBookedThisYear) || 0} day${Number(p.leaveBookedThisYear) === 1 ? '' : 's'} booked this year`} />
                 )}
 
-                <div className="flex items-center gap-3 pt-1">
+                {/* Calling somebody is not asking to open their attendance. */}
+                <div className="flex items-center gap-3 pt-1" onClick={e => e.stopPropagation()}>
                   {p.phone && (
                     <a href={`tel:${p.phone}`} title={p.phone}
                       className="text-slate-400 hover:text-blue-600"><Phone size={14} /></a>

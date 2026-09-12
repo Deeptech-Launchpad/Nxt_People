@@ -5,6 +5,7 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { shiftForCheckIn, autoAssignEnabled } = require('../utils/shiftPatterns');
 const { isFullAccess } = require('../utils/roles');
+const { resolveEmployeeId } = require('../utils/employeeScope');
 const { sendCheckOutReminderEmail } = require('../utils/mailer');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { classifyDay } = require('../utils/attendanceRule');
@@ -672,11 +673,8 @@ router.get('/my', async (req, res) => {
     const start = toDateStr(new Date(y, m, 1));
     const end   = toDateStr(new Date(y, m + 1, 0));
 
-    // Same guard /summary already uses a few dozen lines below: a full-access
-    // caller may look at somebody else's month, everybody else always gets
-    // their own regardless of what they pass. Absent employeeId this is
-    // req.user._id exactly as before — self-service behaviour is unchanged.
-    const empId = isFullAccess(req.user.role) && employeeId ? employeeId : req.user._id;
+    const empId = await resolveEmployeeId(req, res, employeeId);
+    if (!empId) return;
 
     // Read the org timezone from settings (defaults to DEFAULT_TZ) so the
     // SQL EXTRACT below returns the wall-clock time the employee actually
@@ -897,9 +895,14 @@ router.get('/team', authorize('admin', 'director', 'hr_admin', 'manager', 'team_
     let attParams = [targetDate];
     let attIdx = 2;
 
+    // ?employeeId= used to skip the reporting-line narrowing applied to the
+    // employee list above, so a manager could name anybody in the org and get
+    // their day back. The override is scoped like every other one now.
     if (employeeId) {
+      const empId = await resolveEmployeeId(req, res, employeeId);
+      if (!empId) return;
       attQuery += ` AND a.employee_id = $${attIdx++}`;
-      attParams.push(employeeId);
+      attParams.push(empId);
     } else if (employeesRes.rows.length > 0) {
       const ids = employeesRes.rows.map(e => e._id);
       attQuery += ` AND a.employee_id = ANY($${attIdx++})`;
@@ -963,7 +966,8 @@ router.get('/summary', async (req, res) => {
       end   = toDateStr(new Date(y, m + 1, 0));
     }
 
-    const empId = isFullAccess(req.user.role) && employeeId ? employeeId : req.user._id;
+    const empId = await resolveEmployeeId(req, res, employeeId);
+    if (!empId) return;
 
     // Pull attendance + holidays + settings + weekend_rules in parallel.
     // settings.working_days is the simplest weekend source; if weekend_rules
@@ -1115,7 +1119,8 @@ router.get('/export', async (req, res) => {
     if (!startDate || !endDate) {
       return res.status(400).json({ success: false, message: 'startDate and endDate required (YYYY-MM-DD)' });
     }
-    const empId = isFullAccess(req.user.role) && employeeId ? employeeId : req.user._id;
+    const empId = await resolveEmployeeId(req, res, employeeId);
+    if (!empId) return;
 
     const r = await pool.query(
       `SELECT e.employee_id AS "employeeId",
@@ -1239,9 +1244,13 @@ router.get('/location', async (req, res) => {
     const params = [];
     let idx = 1;
 
-    if (full) {
-      if (employeeId) { where.push(`l.employee_id = $${idx++}`); params.push(employeeId); }
-    } else {
+    // The same silent fallback in a different spelling: a non-full-access
+    // caller who asked for somebody else's trail was quietly given their own.
+    if (employeeId) {
+      const empId = await resolveEmployeeId(req, res, employeeId);
+      if (!empId) return;
+      where.push(`l.employee_id = $${idx++}`); params.push(empId);
+    } else if (!full) {
       where.push(`l.employee_id = $${idx++}`); params.push(req.user._id);
     }
     if (type && ['checkin', 'checkout'].includes(type)) { where.push(`l.type = $${idx++}`); params.push(type); }

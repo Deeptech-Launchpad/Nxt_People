@@ -103,6 +103,7 @@ const TeamReportees      = lazy(() => import('./pages/team/Reportees'));
 const TeamList           = lazy(() => import('./pages/team/TeamList'));
 const TeamExEmployees    = lazy(() => import('./pages/team/ExEmployees'));
 const AttendanceTeam     = lazy(() => import('./pages/team/AttendanceTeam'));
+const ReporteeAttendance = lazy(() => import('./pages/team/ReporteeAttendance'));
 const LeaveTrackerTeam   = lazy(() => import('./pages/team/LeaveTrackerTeam'));
 
 /* ── New pages — Phase 4: Organization ─────────────────────────────── */
@@ -218,6 +219,9 @@ const AppRoutes = () => {
               its own and was linked from nowhere; it now opens the workspace on
               its Team Members tab, so the old URL lands where it always did. */}
           <Route path="attendance/team"           element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><AttendanceTeam/></ProtectedRoute>}/>
+          {/* One reportee's attendance, opened from a Reportees card. Declared
+              before the :tab catch-all so "user" is never mistaken for a tab. */}
+          <Route path="attendance/team/user/:employeeId" element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><ReporteeAttendance/></ProtectedRoute>}/>
           <Route path="attendance/team/:tab"      element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><AttendanceTeam/></ProtectedRoute>}/>
           {/* Attendance configuration lives under Settings now; the old path
               still resolves so links and bookmarks keep working. */}
@@ -344,9 +348,9 @@ const AppRoutes = () => {
               team via Team Space / Org Chart, not this admin page. */}
           <Route path="employees"    element={<ProtectedRoute roles={['admin','director','hr_admin']}><Employees/></ProtectedRoute>}/>
           {/* Read-only profile of any colleague — reachable from the eye
-              button on the Employee/Department tree popups. Open to every
-              logged-in role; the backend GET /api/employees/:id is already
-              just `protect`-gated. */}
+              button on the Employee/Department tree popups. The backend
+              GET /api/employees/:id returns the full record to self and
+              full-access callers and a thin one to everybody else. */}
           <Route path="employees/:id" element={<EmployeeProfile/>}/>
           {/* Onboarding creates employees — full-access only (no manager CRUD). */}
           <Route path="registrations"element={<ProtectedRoute roles={['admin','director','hr_admin']}><Registrations/></ProtectedRoute>}/>
