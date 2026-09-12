@@ -161,7 +161,21 @@ app.use('/uploads', (req, res, next) => {
 // Bypass in non-production so local dev and Cypress can iterate freely.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  /* A whole company shares one address.
+   *
+   * This is keyed by IP, and the office sits behind a single NAT address, so
+   * every employee spends from the same budget. Signing in costs two requests
+   * — /check-email then /login — so 57 people arriving in the morning is 114,
+   * and the 100 that used to be here ran out before the last of them was in.
+   * Whoever got there late was told to wait, having done nothing at all.
+   *
+   * Brute force is not what this stops; the per-route limiters in
+   * routes/auth.js do that, and they do it better because they key on IP AND
+   * email: login is 10 failed attempts per 15 minutes per address, and a
+   * successful one is not counted. An attacker rotating passwords is stopped
+   * by that, not by this. This is only a backstop against a runaway client,
+   * so it is set where a script trips it and a floor of people does not. */
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
@@ -169,9 +183,15 @@ const authLimiter = rateLimit({
     /* Session upkeep, not a credential-guessing surface. /auth/me runs on every
      * page load (AuthContext) and already requires a valid token, so billing it
      * to the brute-force budget meant ordinary use consumed the allowance that
-     * exists to stop password guessing. /auth/refresh carries a credential and
-     * stays limited. */
-    if (req.path === '/me') return true;
+     * exists to stop password guessing.
+     *
+     * /auth/refresh is the same thing and used to be billed anyway. It needs a
+     * refresh token that is already the caller's own, so it is not a surface
+     * anybody guesses at: a stolen token needs ONE request, not a hundred.
+     * What it is, is every open tab quietly renewing itself — which on a
+     * shared address is precisely the traffic that used to lock the front
+     * door on people who had not touched it. */
+    if (req.path === '/me' || req.path === '/refresh') return true;
     return false;
   },
   /* Without an explicit message express-rate-limit answers with a plain-text
