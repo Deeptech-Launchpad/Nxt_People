@@ -271,9 +271,18 @@ async function main() {
     console.log(`  ${placeholder} people share one identical image in Zoho — that is its stand-in`);
     console.log('  avatar, not their face, so they keep the silhouette.\n');
   }
-  const out = path.join(__dirname, `photo_fetch_${Date.now()}.json`);
-  fs.writeFileSync(out, JSON.stringify(log, null, 2));
-  console.log(`  Per-person outcome in ${path.basename(out)}.\n`);
+  /* Into uploads/, not /app: the container runs as `node` and only uploads is
+   * writable, so the old path threw AFTER every photo had been saved and every
+   * row updated — a finished run reporting a fatal error. And a log that
+   * cannot be written must never be the thing that fails the run. */
+  try {
+    const out = path.join(PHOTO_DIR, '..', `photo_fetch_${Date.now()}.json`);
+    fs.writeFileSync(out, JSON.stringify(log, null, 2));
+    console.log(`  Per-person outcome in uploads/${path.basename(out)}.\n`);
+  } catch (err) {
+    console.log(`  (Could not write the run log: ${err.message})`);
+    console.log('  The counts above are the record — the photos themselves are saved.\n');
+  }
 }
 
 main()

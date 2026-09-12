@@ -369,19 +369,19 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
 function StrayRoots({ people }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mt-3 pt-3 border-t border-slate-200 dark:border-[#374151]">
+    <div className="relative flex-shrink-0">
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[12px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+        className="flex items-center gap-1 text-[12px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors whitespace-nowrap"
       >
         {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         {people.length} not in any reporting line
       </button>
       {open && (
-        <ul className="mt-2 space-y-1">
+        <ul className="absolute left-0 top-full mt-1 z-20 min-w-[240px] max-h-64 overflow-y-auto bg-white dark:bg-[#1f2937] border border-slate-200 dark:border-[#374151] rounded-lg shadow-xl p-2 space-y-1">
           {people.map(p => (
-            <li key={p._id} className="text-[12px] text-slate-500 dark:text-slate-400 leading-tight">
+            <li key={p._id} className="text-[12px] text-slate-500 dark:text-slate-400 leading-tight whitespace-nowrap">
               <span className="font-mono text-slate-400 dark:text-slate-500">{p.employeeId || '—'}</span>{' '}
               {p.firstName} {p.lastName}
             </li>
@@ -900,9 +900,17 @@ export default function OrgChart() {
   return (
     <div className="bg-white dark:bg-[#1f2937] rounded-xl shadow-sm border border-slate-200 dark:border-[#374151] flex flex-col h-[calc(100vh-10rem)]">
       <div className="p-4 border-b border-slate-100 dark:border-[#374151] flex justify-between items-center bg-white dark:bg-[#1f2937] z-10 rounded-t-xl">
-        <p className="text-[15px] text-slate-500 dark:text-slate-400">
-          Click a card to expand their direct reports. Hover for contact info.
-        </p>
+        <div className="flex items-center gap-4 min-w-0">
+          <p className="text-[15px] text-slate-500 dark:text-slate-400">
+            Click a card to expand their direct reports. Hover for contact info.
+          </p>
+          {/* Here, not in the root column. Inside it, this line -- far wider
+              than a mini card -- was what set that column's width, so the gap
+              to the next column grew to about 115px while the connector hook
+              is a fixed 20px. The line then stopped well short of the card it
+              pointed at, which read as the tree failing to join up. */}
+          {strayRoots.length > 0 && <StrayRoots people={strayRoots} />}
+        </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {searchTerm.trim() && (
             <span className="text-[13px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
@@ -1002,7 +1010,6 @@ export default function OrgChart() {
                           </div>
                         ))
                       )}
-                      {strayRoots.length > 0 && <StrayRoots people={strayRoots} />}
                     </div>
                   ) : (
                     colEmps.length === 0 ? (
