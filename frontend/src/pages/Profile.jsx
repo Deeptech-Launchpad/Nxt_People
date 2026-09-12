@@ -24,6 +24,89 @@ const Row = ({ label, children }) => (
 );
 
 /** Card section with title + a 2-column grid of rows. */
+/* ── What colleagues may see of you ────────────────────────────────────────
+ *  The backend half of this has existed since the privacy_prefs migration and
+ *  nothing ever called it, so every employee sat on the "share it" default
+ *  with no way to say otherwise — the choice existed only in the database.
+ *
+ *  Two gates, not one. The organisation decides which of these are offered at
+ *  all (Settings -> Organization -> Policy -> Personal Information); only then
+ *  does the employee get a say. A field the org does not offer is not shown
+ *  here as a disabled switch, because a control you cannot move is a worse
+ *  answer than no control.
+ */
+const PRIVACY_FIELDS = [
+  { key: 'mobileNumber',    label: 'Mobile number',    hint: 'Shown in the Directory and on your profile' },
+  { key: 'birthday',        label: 'Birthday',         hint: 'Shown in Birthday Folks and the dashboard' },
+  { key: 'workAnniversary', label: 'Work anniversary', hint: 'Shown in the dashboard' },
+];
+
+function PrivacyCard() {
+  const [prefs, setPrefs] = useState(null);
+  const [offered, setOffered] = useState({});
+  const [saving, setSaving] = useState(null);
+
+  useEffect(() => {
+    api.get('/profile/privacy')
+      .then(r => { setPrefs(r.data.data.prefs || {}); setOffered(r.data.data.offered || {}); })
+      .catch(() => setPrefs({}));
+  }, []);
+
+  const toggle = async (key) => {
+    const next = !(prefs[key] !== false);
+    setSaving(key);
+    // Optimistic, then reconciled against what the server actually stored —
+    // a switch that springs back is clearer than one that lies.
+    setPrefs(p => ({ ...p, [key]: next }));
+    try {
+      const r = await api.patch('/profile/privacy', { [key]: next });
+      setPrefs(r.data.data || {});
+    } catch {
+      setPrefs(p => ({ ...p, [key]: !next }));
+      toast.error('Could not save that preference');
+    } finally { setSaving(null); }
+  };
+
+  const visible = PRIVACY_FIELDS.filter(f => offered[f.key]);
+  if (!prefs || !visible.length) return null;
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-md">
+      <h3 className="px-6 py-4 text-[17px] font-bold text-slate-800 border-b border-slate-100">
+        Privacy
+      </h3>
+      <div className="px-6 py-2 divide-y divide-slate-100">
+        {visible.map(f => {
+          const on = prefs[f.key] !== false;
+          return (
+            <div key={f.key} className="flex items-center justify-between gap-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[15px] text-slate-700">{f.label}</p>
+                <p className="text-[13px] text-slate-400">{f.hint}</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                aria-label={f.label}
+                disabled={saving === f.key}
+                onClick={() => toggle(f.key)}
+                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-60 ${
+                  on ? 'bg-blue-600' : 'bg-slate-300'
+                }`}
+              >
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${
+                  on ? 'left-[22px]' : 'left-0.5'
+                }`} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 const Section = ({ title, children }) => (
   <section className="bg-white border border-slate-200 rounded-md">
     <h3 className="px-6 py-4 text-[17px] font-bold text-slate-800 border-b border-slate-100">
@@ -706,6 +789,8 @@ export default function Profile() {
             </p>
           )}
         </section>
+
+        <PrivacyCard />
 
         <Section title="Security">
           <Row label="Password">

@@ -162,12 +162,22 @@ router.get('/', async (req, res) => {
       query += ' AND e.deleted_at IS NULL';
     }
 
-    // Managers can only see their direct reports — never the full org.
-    // Admins (and the elevated 'director' role if used) see everyone.
-    if (req.user.role === 'manager') {
-      query += ` AND e.reporting_manager_id = $${paramIndex++}`;
-      params.push(req.user._id);
-    }
+    /* No row scoping here any more, and that is the point.
+     *
+     * This endpoint feeds the Directory, Peers, the org chart and the topbar
+     * search — all open to every role — so it was answering two questions at
+     * once: "the company phone book" and "the employee master". It resolved
+     * them backwards. A `manager` was narrowed to their direct reports, which
+     * made the company directory useless to exactly the people who need it,
+     * while a `team_member` — and a `team_incharge`, which this literal
+     * 'manager' string never matched even though it holds the same
+     * people.viewReports permission — got every colleague's date of birth,
+     * home address, marital status and personal phone.
+     *
+     * Rows were standing in for field limits. Now the fields are limited
+     * below, so everybody can see everybody, and nobody outside HR sees
+     * anything a phone book would not print.
+     */
 
     if (department)  { query += ` AND e.department = $${paramIndex++}`;  params.push(department); }
     if (role)        { query += ` AND e.role = $${paramIndex++}`;        params.push(role); }
@@ -289,7 +299,11 @@ router.get('/', async (req, res) => {
     const data = visible.map(row =>
       (canSeeSalary || String(row._id) === String(req.user._id))
         ? (({ privacyPrefs, ...rest }) => rest)(row)
-        : applyPrivacy(row, policy));
+        // applyPrivacy still runs first: the allowlist decides which fields
+        // exist, the employee's own preference can still remove one of the
+        // survivors. Narrowing twice is fine; the order only matters in that
+        // neither may widen.
+        : toColleagueView(applyPrivacy(row, policy)));
 
     res.json({ success: true, data, total, page: Number(page), pages: Math.ceil(total / limitNum) });
   } catch (err) {
@@ -297,13 +311,57 @@ router.get('/', async (req, res) => {
   }
 });
 
+/* ── What one colleague may see of another ─────────────────────────────────
+ *  An allowlist, not a blocklist. The record has ~60 columns and gains more
+ *  every few weeks; a list of things to hide is one migration away from
+ *  leaking the next one by default, and a leak that arrives by omission is
+ *  exactly the kind nobody notices.
+ *
+ *  This is the company phone book: who somebody is, what they do, where they
+ *  sit, how to reach them at work. Not their date of birth, home address,
+ *  marital status, personal email or personal phone — which the Directory,
+ *  Peers, the org chart and the topbar search were all handing to every
+ *  logged-in employee for all 57 people.
+ *
+ *  `shift` and `manager` are objects the query already builds, so they come
+ *  through whole; everything else is scalar.
+ */
+const COLLEAGUE_FIELDS = [
+  '_id', 'firstName', 'lastName', 'employeeId', 'designation', 'department',
+  'company', 'workLocation', 'email', 'photoUrl', 'status',
+  'presence', 'isCheckedIn', 'shift', 'manager',
+  /* Contact numbers stay, because a directory nobody can ring is not a
+   * directory: only 6 of 68 people have a work number, so dropping the mobile
+   * would empty that column for the other 50. It is governed rather than
+   * removed — applyPrivacy() runs first and blanks it for anyone who has
+   * opted out under Organization -> Policy -> Personal Information. That
+   * preference has no screen yet, so today it is on for everybody. */
+  'phone', 'workPhone', 'extension',
+];
+
+const toColleagueView = (row) => {
+  const out = {};
+  for (const k of COLLEAGUE_FIELDS) if (row[k] !== undefined) out[k] = row[k];
+  return out;
+};
+
 // GET single employee — Bug #9 fix: include leave balance columns
 router.get('/:id', async (req, res) => {
-  // Full-access roles (admin/director/hr_admin) may fetch any employee's PII.
-  // All other roles may only fetch their own record (needed for the profile page).
-  if (!isFullAccess(req.user.role) && String(req.params.id) !== String(req.user._id)) {
-    return res.status(403).json({ success: false, message: 'Access denied.' });
-  }
+  /* Two view levels, and the caller is told which one it got.
+   *
+   * This used to 403 anybody who was neither the subject nor full-access,
+   * which made every link to a colleague — the topbar search, the org chart's
+   * eye button, the command palette — a dead end for around fifty of the
+   * fifty-seven people here, landing on "Something went wrong". A colleague's
+   * profile is not a secret; their date of birth is. So the answer is a
+   * thinner record, not a refusal.
+   *
+   * A manager gets the colleague view too. The reporting line already earns
+   * them their reports' attendance and leave; it is not a reason to read
+   * somebody's blood group, and routes/employee-records.js settled that same
+   * question the same way.
+   */
+  const privileged = isFullAccess(req.user.role) || String(req.params.id) === String(req.user._id);
   try {
     // SELECT every column on employees so the Edit modal can populate fields
     // like nickName, personalEmail, workPhone, PAN, Aadhaar, bank, emergency
@@ -399,6 +457,16 @@ router.get('/:id', async (req, res) => {
     delete empData.mfa_backup_codes;
     delete empData.reset_password_token;
     delete empData.reset_password_expires;
+    /* A colleague's answer stops here. Education and documents are neither
+     * fetched nor filtered out afterwards — the two queries below simply do
+     * not run, because the cheapest way to be sure something is not leaked is
+     * not to load it. `viewLevel` tells the page which shape it received, so
+     * it renders the thin view deliberately rather than inferring it from a
+     * pile of undefined fields. */
+    if (!privileged) {
+      return res.json({ success: true, viewLevel: 'colleague', data: toColleagueView(empData) });
+    }
+
     const eduRes = await pool.query('SELECT * FROM employee_education WHERE employee_id = $1 ORDER BY year_of_passing DESC', [req.params.id]);
     // Collapse partial duplicate education rows (same institute + year) so each
     // qualification shows once — same fix as the own-Profile page.
@@ -424,7 +492,7 @@ router.get('/:id', async (req, res) => {
     );
     empData.documents = docsRes.rows;
     
-    res.json({ success: true, data: empData });
+    res.json({ success: true, viewLevel: 'full', data: empData });
   } catch (err) {
     serverError(res, err);
   }
