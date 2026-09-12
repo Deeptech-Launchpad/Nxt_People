@@ -5,7 +5,6 @@ import {
   LogIn, LogOut, Download, Eye
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import BackButton from '../../components/BackButton';
 import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { useAttendance } from '../../context/AttendanceContext';
@@ -303,6 +302,7 @@ export default function MyAttendance() {
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState(null);
   const [holidays, setHolidays] = useState([]);
+  const [calendarMap, setCalendarMap] = useState({});
   const [loadedRange, setLoadedRange] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showReport, setShowReport] = useState(false);
@@ -325,6 +325,36 @@ export default function MyAttendance() {
       if (exception.type !== 'restricted') return true;         // closure
     }
     return isWeekendByRule(date);
+  };
+
+  /**
+   * What KIND of day this is, preferring the calendar[] that /attendance/my
+   * already sends alongside the punches.
+   *
+   * The weekend rules can't answer this on their own: isWeekend() returns true
+   * for any day that closes the office, holidays included, so Vinayagar
+   * Chaturthi was drawn as a Weekend in all three views. The server knows the
+   * difference — and the holiday's name — so it gets the last word.
+   *
+   * Two cases it can't settle, because calendar[] reports every holidays row
+   * as kind 'holiday' regardless of type: a working_day override (which opens
+   * the day) and a restricted holiday (offered, not imposed). Those fall
+   * through to the local rules, which already encode that precedence. So does
+   * any date outside the months we fetched.
+   */
+  const dayInfo = (date) => {
+    const ymd = isoDate(date);
+    const exception = holidays.find(h => isoDate(new Date(h.date)) === ymd);
+    const optional = exception && (exception.type === 'working_day' || exception.type === 'restricted');
+    const cal = calendarMap[ymd];
+    if (cal && !(cal.kind === 'holiday' && optional)) {
+      return {
+        holiday: cal.kind === 'holiday',
+        weekend: cal.kind === 'weekend',
+        name: cal.holidayName || null,
+      };
+    }
+    return { holiday: false, weekend: effectiveIsWeekend(date), name: null };
   };
 
   const week = buildWeek(weekStart);
@@ -373,14 +403,19 @@ export default function MyAttendance() {
 
     Promise.all([
       Promise.all([...months.values()].map(({ y: yy, m: mm }) =>
-        api.get(`/attendance/my?month=${mm}&year=${yy}`).then(r => r.data.data || []).catch(() => []))),
+        api.get(`/attendance/my?month=${mm}&year=${yy}`)
+          .then(r => ({ rows: r.data.data || [], calendar: r.data.calendar || [] }))
+          .catch(() => ({ rows: [], calendar: [] })))),
       api.get(`/attendance/summary?startDate=${rangeStart}&endDate=${rangeEnd}`),
       Promise.all(years.map(yy =>
         api.get(`/holidays?year=${yy}`).then(r => r.data.data || []).catch(() => []))),
     ]).then(([attArrs, r2, holArrs]) => {
-      setRecords(attArrs.flat());
+      setRecords(attArrs.flatMap(a => a.rows));
       setSummary(r2.data.data || {});
       setHolidays(holArrs.flat());
+      const cal = {};
+      attArrs.forEach(a => a.calendar.forEach(c => { cal[c.date] = c; }));
+      setCalendarMap(cal);
       /* What was actually asked for. A day outside this is one we have no
        * information about, which is not the same as a day nobody worked —
        * and telling them apart is what stops a fetch gap wearing the costume
@@ -461,7 +496,8 @@ export default function MyAttendance() {
 
       {/* ── Top bar: shift + check-out ──────────────────────────────── */}
       <div className="bg-white border-b border-slate-200 px-5 py-2.5 flex items-center gap-4 shadow-sm">
-        <BackButton to="/attendance" label="Attendance" />
+        {/* No back link: /attendance now lands here, so it pointed at the page
+            you were already on. The section's own tabs are in the navy bar. */}
         <span className="text-[15px] font-semibold text-slate-700">{shiftLabel}</span>
         <input
           placeholder="Add notes for check-out"
@@ -654,7 +690,10 @@ export default function MyAttendance() {
                 const record = recordMap[ds] || null;
                 const isToday = ds === todayStr;
                 const isFuture = ds > todayStr;
-                const isWeekend = effectiveIsWeekend(day);
+                const kind = dayInfo(day);
+                const isHoliday = kind.holiday;
+                const isWeekend = kind.weekend;
+                const isOff = isHoliday || isWeekend;
                 const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
                 const dayNum = day.getDate();
                 const checkInStr = fmtTime(record?.sessions?.[0]?.checkIn || record?.checkIn);
@@ -681,8 +720,8 @@ export default function MyAttendance() {
                         </div>
                       ) : (
                         <div className="flex flex-col items-center">
-                          <span className={`text-[12px] font-medium ${isWeekend ? 'text-slate-400' : 'text-slate-500'}`}>{dayName}</span>
-                          <span className={`text-[15px] font-semibold mt-0.5 ${isWeekend ? 'text-slate-400' : 'text-slate-700'}`}>{dayNum}</span>
+                          <span className={`text-[12px] font-medium ${isOff ? 'text-slate-400' : 'text-slate-500'}`}>{dayName}</span>
+                          <span className={`text-[15px] font-semibold mt-0.5 ${isOff ? 'text-slate-400' : 'text-slate-700'}`}>{dayNum}</span>
                         </div>
                       )}
                     </div>
@@ -690,7 +729,7 @@ export default function MyAttendance() {
                     {/* Check-in time + Late indicator */}
                     <div className="w-[80px] flex-shrink-0">
                       <span className="text-[14px] text-slate-700 font-medium">
-                        {checkInStr || (isWeekend ? <span className="text-slate-300 text-[13px]">Weekend</span> : '')}
+                        {checkInStr || (isOff ? <span className="text-slate-300 text-[13px]">{isHoliday ? 'Holiday' : 'Weekend'}</span> : '')}
                       </span>
                       {record?.lateMinutes > 0 && (
                         <div className="text-[12px] font-semibold" style={{ color: '#F5A623' }}>
@@ -701,14 +740,19 @@ export default function MyAttendance() {
 
                     {/* Timeline bar */}
                     <div className="flex-1 min-w-0">
-                      {isWeekend ? (
-                        /* Yellow line spanning the row with a centered Weekend pill — matches Zoho */
+                      {isOff ? (
+                        /* Line spanning the row with a centered pill — matches Zoho.
+                           A holiday gets its own colour and carries its name: this
+                           row is the widest place on the page, so it's where the
+                           name actually fits. */
                         <div className="flex-1 flex items-center relative h-6">
-                          <div className="absolute left-[3%] right-[3%] h-[2px] bg-amber-300" style={{ top: '50%', transform: 'translateY(-50%)' }} />
-                          <div className="absolute left-[3%] w-2.5 h-2.5 rounded-full bg-amber-300" style={{ top: '50%', transform: 'translate(-50%,-50%)' }} />
-                          <div className="absolute right-[3%] w-2.5 h-2.5 rounded-full bg-amber-300" style={{ top: '50%', transform: 'translate(50%,-50%)' }} />
-                          <div className="absolute left-1/2 -translate-x-1/2 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 text-[12px] font-semibold text-amber-700 z-10">
-                            Weekend
+                          <div className={`absolute left-[3%] right-[3%] h-[2px] ${isHoliday ? 'bg-cyan-300' : 'bg-amber-300'}`} style={{ top: '50%', transform: 'translateY(-50%)' }} />
+                          <div className={`absolute left-[3%] w-2.5 h-2.5 rounded-full ${isHoliday ? 'bg-cyan-300' : 'bg-amber-300'}`} style={{ top: '50%', transform: 'translate(-50%,-50%)' }} />
+                          <div className={`absolute right-[3%] w-2.5 h-2.5 rounded-full ${isHoliday ? 'bg-cyan-300' : 'bg-amber-300'}`} style={{ top: '50%', transform: 'translate(50%,-50%)' }} />
+                          <div className={`absolute left-1/2 -translate-x-1/2 border rounded px-2 py-0.5 text-[12px] font-semibold z-10 ${
+                            isHoliday ? 'bg-cyan-50 border-cyan-200 text-cyan-700' : 'bg-amber-50 border-amber-200 text-amber-700'
+                          }`}>
+                            {isHoliday ? (kind.name || 'Holiday') : 'Weekend'}
                           </div>
                         </div>
                       ) : (
@@ -720,7 +764,7 @@ export default function MyAttendance() {
                      <div className="w-[100px] flex-shrink-0 text-right">
                        {isFuture ? (
                          <p className="text-slate-300 text-[13px]">—</p>
-                       ) : !isWeekend && (() => {
+                       ) : !isOff && (() => {
                          const liveOnToday = isToday && isCheckedIn;
                          let displayHours;
                          if (liveOnToday) {
@@ -744,7 +788,7 @@ export default function MyAttendance() {
                      </div>
 
                      {/* Add Request Button — hover-revealed, viewport-clamped popup */}
-                     {!isWeekend && hoveredDay === ds && (
+                     {!isOff && hoveredDay === ds && (
                        <div className="flex-shrink-0 relative">
                          <button
                            onClick={(e) => {
@@ -820,7 +864,7 @@ export default function MyAttendance() {
               {week.map(day => {
                 const ds = isoDate(day);
                 const r = recordMap[ds];
-                const isWeekend = effectiveIsWeekend(day);
+                const kind = dayInfo(day);
                 const isFuture = ds > todayStr;
                 return (
                   <tr key={ds} className={`hover:bg-slate-50 transition-colors ${ds === todayStr ? 'bg-blue-50/30' : ''}`}>
@@ -839,11 +883,18 @@ export default function MyAttendance() {
                     <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.sessions?.[r?.sessions?.length - 1]?.checkOut || r?.checkOut) || '—'}</td>
                     <td className="px-5 py-3 text-[14px] text-slate-700">{r?.workingHours ? `${fmtHHMM(r.workingHours)} hrs` : '—'}</td>
                     <td className="px-5 py-3">
-                      {isWeekend
-                        ? <StatusPill status="weekend" />
-                        : isFuture || (!r && !isLoaded(ds))
-                          ? <span className="text-slate-400 text-[13px]">—</span>
-                          : <StatusPill status={r?.status || 'absent'} />
+                      {kind.holiday
+                        ? (
+                          <div>
+                            <StatusPill status="holiday" />
+                            {kind.name && <div className="text-[12px] text-slate-500 mt-0.5">{kind.name}</div>}
+                          </div>
+                        )
+                        : kind.weekend
+                          ? <StatusPill status="weekend" />
+                          : isFuture || (!r && !isLoaded(ds))
+                            ? <span className="text-slate-400 text-[13px]">—</span>
+                            : <StatusPill status={r?.status || 'absent'} />
                       }
                     </td>
                   </tr>
@@ -890,11 +941,21 @@ export default function MyAttendance() {
                 if (!day) return <div key={idx} className="h-[88px] border-r border-b border-slate-100 bg-slate-50/40" />;
                 const ds = isoDate(day);
                 const r  = recordMap[ds];
-                const isWknd = effectiveIsWeekend(day);
+                const kind = dayInfo(day);
+                const isHol  = kind.holiday;
+                const isWknd = kind.weekend;
+                const isOff  = isHol || isWknd;
                 const isToday = ds === todayStr;
                 const isFuture = day > new Date();
                 let pill = null;
-                if (isWknd) {
+                if (isHol) {
+                  pill = (
+                    <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-cyan-50 text-cyan-700 border border-cyan-200">
+                      <div>Holiday</div>
+                      {kind.name && <div className="text-[12px] opacity-80 truncate">{kind.name}</div>}
+                    </div>
+                  );
+                } else if (isWknd) {
                   pill = (
                     <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-slate-100 text-slate-500 border border-slate-200">
                       Weekend
@@ -918,7 +979,7 @@ export default function MyAttendance() {
                       )}
                     </div>
                   );
-                } else if (!isWknd && !isFuture && ds < todayStr) {
+                } else if (!isOff && !isFuture && ds < todayStr) {
                   pill = (
                     <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-rose-50 text-rose-700 border border-rose-200">
                       Absent
@@ -930,12 +991,12 @@ export default function MyAttendance() {
                     key={idx}
                     onClick={() => setWeekStart(weekOf(day))}
                     className={`h-[88px] border-r border-b border-slate-100 p-2 text-left transition-colors hover:bg-blue-50/40 ${
-                      isWknd ? 'bg-amber-50/30' : ''
+                      isHol ? 'bg-cyan-50/30' : isWknd ? 'bg-amber-50/30' : ''
                     }`}
                   >
                     <div className={`text-[13px] font-semibold mb-1 inline-flex items-center justify-center ${
                       isToday ? 'w-6 h-6 rounded-full bg-blue-600 text-white' :
-                      isWknd  ? 'text-slate-400' : 'text-slate-700'
+                      isOff   ? 'text-slate-400' : 'text-slate-700'
                     }`}>
                       {day.getDate()}
                     </div>
@@ -969,6 +1030,12 @@ export default function MyAttendance() {
             // still counts even while the shift is in progress).
             { label: 'Payable Days', val: summary?.payableDays ?? 0, color: '#f59e0b' },
             { label: 'Present',      val: summary?.present ?? 0,     color: '#a78bfa' },
+            /* A half-day adds nothing to Present and nothing to Paid leave, so
+               without a stat of its own the day simply disappeared from the
+               footer. Counted as its own figure rather than as 0.5 of a present
+               day — what half a day is worth in pay is payroll's call, not this
+               footer's. */
+            { label: 'Half Day',     val: summary?.halfDay ?? 0,     color: '#3b82f6' },
             { label: 'On Duty',      val: summary?.onDuty ?? 0,      color: '#6366f1' },
             { label: 'Paid leave',   val: summary?.leave ?? 0,       color: '#22c55e' },
             { label: 'Holidays',     val: summary?.holidays ?? 0,    color: '#f97316' },
@@ -1007,15 +1074,24 @@ export default function MyAttendance() {
             </div>
             {/* Report items */}
             <div className="flex-1 overflow-y-auto py-2">
-              {[
+              {/* The Hours tab used to render the Days rows verbatim, so both
+                  tabs answered the same question. /summary reports exactly two
+                  aggregates measured in hours — worked and late — and those are
+                  what this tab now shows; everything else it returns is a count
+                  of days and belongs on the other tab. */}
+              {(reportTab === 'hours' ? [
+                { label: 'Total Hours',  val: `${fmtHHMM(summary?.totalHours ?? 0)} Hrs`, color: '#22c55e' },
+                { label: 'Late Hours',   val: `${fmtHHMM((summary?.totalLateMinutes ?? 0) / 60)} Hrs`, color: '#F5A623' },
+              ] : [
                 { label: 'Payable Days', val: `${summary?.payableDays ?? 0} Days`, color: '#f59e0b' },
                 { label: 'Present',      val: `${summary?.present ?? 0} Days`,     color: '#22c55e' },
+                { label: 'Half Day',     val: `${summary?.halfDay ?? 0} Day`,      color: '#3b82f6' },
                 { label: 'On Duty',      val: `${summary?.onDuty ?? 0} Day`,       color: '#6366f1' },
                 { label: 'Paid leave',   val: `${summary?.leave ?? 0} Day`,        color: '#34a853' },
                 { label: 'Holidays',     val: `${summary?.holidays ?? 0} Day`,     color: '#f97316' },
                 { label: 'Weekend',      val: `${summary?.weekend ?? 0} Day`,      color: '#94a3b8' },
                 { label: 'Unpaid leave', val: `${summary?.unpaid ?? 0} Day`,       color: '#e53935' },
-              ].map(({ label, val, color }) => (
+              ]).map(({ label, val, color }) => (
                 <div key={label} className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-50 last:border-0">
                   <div className="w-[3px] h-[18px] rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
                   <div className="flex-1">

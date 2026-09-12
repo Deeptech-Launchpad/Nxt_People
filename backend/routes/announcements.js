@@ -130,11 +130,16 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), canManage, async (r
     // glitch doesn't roll back the announcement itself.
     try {
       await pool.query(
+        /* The link carries the announcement's own id. It used to be the bare
+         * '/', so clicking the notification dropped you on the home page —
+         * which is usually the page you were already on, making the whole
+         * notification look inert. `?open=` is what the Announcements page
+         * reads to open that announcement straight away. */
         `INSERT INTO notifications (employee_id, type, title, message, link)
-         SELECT id, 'announcement', $1, $2, '/'
+         SELECT id, 'announcement', $1, $2, $4
            FROM employees
           WHERE status = 'active' AND id != $3`,
-        ['New Announcement', title, req.user._id]
+        ['New Announcement', title, req.user._id, `/announcements?open=${result.rows[0]._id}`]
       );
     } catch (err) {
       logger.warn({ err: err.message }, '[announcements] bulk notification insert failed');

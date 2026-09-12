@@ -208,7 +208,7 @@ const AppRoutes = () => {
           <Route path="holidays"     element={<Holidays/>}/>
 
           {/* ── Attendance ───────────────────────────────────────────── */}
-          <Route path="attendance"                element={<AttendanceLanding/>}/>
+          <Route path="attendance"                element={<Navigate to="/attendance/my" replace/>}/>
           <Route path="attendance/my"             element={<MyAttendance/>}/>
           <Route path="attendance/checkin"        element={<CheckInOut/>}/>
           <Route path="attendance/regularization" element={<Regularization/>}/>

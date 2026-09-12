@@ -1,5 +1,41 @@
 ﻿const express = require('express');
 const router = express.Router();
+
+/* A day's status is stamped at check-out, from whatever the company had
+ * approved at that moment. Approvals normally land afterwards — somebody
+ * punches out at six and their approver acts next morning — so an hour of
+ * permission granted after the fact never reached the day it covered, and that
+ * day kept saying "Half Day" against a full shift it was never expected to
+ * work.
+ *
+ * So whenever an approval starts or stops applying to a day, that day is asked
+ * again. Only the range of the request that changed is touched, and only its
+ * `status`; the punches are the record of what happened.
+ *
+ * It never blocks the response. The approval itself has already committed, and
+ * a failure to re-label a day must not read back to the approver as a failure
+ * to approve. */
+async function refreshAttendanceFor(leave, why) {
+  try {
+    if (!leave || !leave.employee_id || !leave.start_date || !leave.end_date) return;
+    const s = await pool.query(`SELECT attendance_policy_config AS policy FROM settings LIMIT 1`);
+    const cfg = s.rows[0]?.policy || {};
+    const ymd = (d) => new Date(d).toLocaleDateString('en-CA');
+    const out = await reclassifyRange(pool, {
+      employeeId: leave.employee_id,
+      from: ymd(leave.start_date),
+      to: ymd(leave.end_date),
+      cfg,
+    });
+    if (out.changed) {
+      logger.info({ leaveId: leave.id, why, changes: out.changes },
+        '[leaves] attendance re-classified after approval change');
+    }
+  } catch (err) {
+    logger.warn({ err: err.message, leaveId: leave && leave.id, why },
+      '[leaves] attendance re-classification failed');
+  }
+}
 const { body, validationResult } = require('express-validator');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
@@ -19,6 +55,7 @@ const { partialAllowed } = require('../utils/leaveExtension');
 const { notifyChainOfCancellation } = require('../utils/cancellationNotice');
 const { approvalEmail, outcomeEmail } = require('../utils/approvalMessages');
 const { serverError } = require('../utils/serverError');
+const { reclassifyRange } = require('../utils/attendanceReprocess');
 
 router.use(protect);
 
@@ -832,6 +869,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
       // Only once every level has approved. Firing per level would send the
       // "your leave is approved" mail while it is still awaiting someone.
       if (result.allApproved) fire('leave', 'approved', { recordId: leave.id, actorId: req.user._id });
+      if (result.allApproved) await refreshAttendanceFor(leave, 'approved');
       return res.json({
         success: true,
         status: result.status,
@@ -1257,6 +1295,11 @@ router.put('/:id/cancel', async (req, res) => {
       [leave.id, reason || null, req.user._id]
     );
     await client.query('COMMIT');
+
+    // Cancelling an approved leave takes the allowance back off those days, so
+    // they have to be judged again too — otherwise a cancelled permission
+    // leaves the day still credited with hours nobody granted.
+    if (leave.status === 'approved') await refreshAttendanceFor(leave, 'cancelled');
 
     const leaveLabel = leave.leave_type.charAt(0).toUpperCase() + leave.leave_type.slice(1);
     const startLabel = new Date(leave.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });

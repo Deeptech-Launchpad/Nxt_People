@@ -130,4 +130,93 @@ async function reprocess(client, { cfg, from, tz = 'Asia/Kolkata', apply = false
   };
 }
 
-module.exports = { reprocess };
+/* ── One person, the days one approval actually touches ────────────────────
+ *  A day is classified once, at check-out, from what the company had approved
+ *  AT THAT MOMENT. The usual sequence is the other way round: somebody punches
+ *  out at six and their approver acts the next morning. So an hour of
+ *  permission granted after the fact never reached the day it was granted for,
+ *  and that day stayed "Half Day" for good — measured against a full shift it
+ *  was never expected to work.
+ *
+ *  This re-asks the same question, for one employee, over the range of the
+ *  leave that just changed. It is deliberately NOT the bulk sweep above: it
+ *  visits only that range, so no month can move under somebody who has already
+ *  reported on it, and `ruleEffectiveFrom` is still honoured for the same
+ *  reason.
+ *
+ *  Only `status` moves, and only on days that are finished — an unfinished day
+ *  has no verdict to correct yet.
+ */
+const RANGE_DAY_QUERY = `
+  SELECT a.id, a.date::text AS d, a.status, a.working_hours, a.late_minutes,
+         (a.check_in IS NOT NULL OR a.check_out IS NOT NULL) AS has_punch,
+         (a.check_out IS NOT NULL) AS finished,
+         EXTRACT(EPOCH FROM (sh.end_time::time - sh.start_time::time))/3600.0 AS shift_hours,
+         COALESCE(sh.grace_minutes, 15) AS grace,
+         COALESCE((
+           SELECT MAX(CASE WHEN l.is_half_day THEN 0.5 ELSE 1 END)
+             FROM leaves l
+            WHERE l.employee_id = a.employee_id AND l.status = 'approved'
+              AND l.leave_type <> 'permission'
+              AND a.date BETWEEN l.start_date AND l.end_date), 0) AS leave_portion,
+         COALESCE((
+           SELECT SUM(COALESCE(l.hours, 0))
+             FROM leaves l
+            WHERE l.employee_id = a.employee_id AND l.status = 'approved'
+              AND l.leave_type = 'permission'
+              AND a.date BETWEEN l.start_date AND l.end_date), 0) AS permission_hours,
+         EXISTS (
+           SELECT 1 FROM on_duty_requests o
+            WHERE o.employee_id = a.employee_id AND o.status = 'approved'
+              AND a.date BETWEEN o.start_date AND o.end_date) AS on_duty
+    FROM attendance a
+    JOIN employees e ON e.id = a.employee_id
+    LEFT JOIN shifts sh ON sh.id = e.shift_id
+   WHERE a.employee_id = $3
+     AND a.date >= $1::date AND a.date <= $2::date
+     AND a.date <= (NOW() AT TIME ZONE $4)::date
+     AND e.deleted_at IS NULL`;
+
+async function reclassifyRange(client, { employeeId, from, to, cfg = {}, tz = 'Asia/Kolkata' }) {
+  if (!employeeId || !from || !to) return { changed: 0, changes: [] };
+
+  // Never reach back past the date the current policy took effect.
+  const floor = cfg.ruleEffectiveFrom && cfg.ruleEffectiveFrom > from ? cfg.ruleEffectiveFrom : from;
+  if (floor > to) return { changed: 0, changes: [] };
+
+  const { rows } = await client.query(RANGE_DAY_QUERY, [floor, to, employeeId, tz]);
+  const changes = [];
+
+  for (const r of rows) {
+    if (!r.finished) continue;
+    const verdict = classifyDay({
+      workedHours: Number(r.working_hours) || 0,
+      hasPunch: r.has_punch,
+      leavePortion: Number(r.leave_portion) || 0,
+      permissionHours: Number(r.permission_hours) || 0,
+      onDuty: r.on_duty,
+      lateMinutes: Number(r.late_minutes) || 0,
+      graceMinutes: Number(r.grace) || 0,
+      cfg,
+      shiftHours: r.shift_hours === null ? null : Number(r.shift_hours),
+    });
+    // 'late' and 'present' are both a full present day; moving between them is
+    // not a change worth writing.
+    const same = r.status === verdict.status ||
+      (['present', 'late'].includes(r.status) && ['present', 'late'].includes(verdict.status));
+    if (!same) changes.push({ id: r.id, date: r.d, from: r.status, to: verdict.status });
+  }
+
+  if (changes.length) {
+    await client.query(
+      `UPDATE attendance a
+          SET status = v.status, updated_at = NOW()
+         FROM (SELECT UNNEST($1::uuid[]) AS id, UNNEST($2::text[]) AS status) v
+        WHERE a.id = v.id`,
+      [changes.map(c => c.id), changes.map(c => c.to)]
+    );
+  }
+  return { changed: changes.length, changes };
+}
+
+module.exports = { reprocess, reclassifyRange };

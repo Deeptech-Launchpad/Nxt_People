@@ -161,7 +161,6 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
 
   if (mini) {
     return (
-      <div className="flex items-center">
         <button
           type="button"
           onClick={onToggle}
@@ -178,17 +177,6 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
         >
           <Avatar photoUrl={emp.photoUrl} photoBroken={photoBroken} onPhotoError={() => setPhotoBroken(true)} size={34} />
         </button>
-        {totalCount > 0 && (
-          <span
-            onClick={(e) => { e.stopPropagation(); onToggle(); }}
-            onMouseDown={(e) => e.stopPropagation()}
-            title={isExpanded ? 'Collapse' : 'Expand'}
-            className="ml-1 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
-          >
-            {totalCount}
-          </span>
-        )}
-      </div>
     );
   }
 
@@ -216,17 +204,30 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
         <p className="text-[15px] font-bold text-slate-800 dark:text-slate-100 truncate leading-tight">{emp.firstName} {emp.lastName}</p>
         <p className="text-[13px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{emp.designation || emp.role || 'Employee'}</p>
       </div>
-      {totalCount > 0 && (
-        <span
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
-          onMouseDown={(e) => e.stopPropagation()}
-          title={isExpanded ? 'Collapse this team' : 'Expand this team'}
-          className="ml-1 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded flex-shrink-0 cursor-pointer transition-colors"
-        >
-          {totalCount}
-        </span>
-      )}
     </button>
+  );
+}
+
+/* The subtree count, on the connector rather than in the card.
+ *
+ * It used to sit INSIDE the full card at its right edge — which is exactly
+ * where the reference draws the line leaving the card, so the connection read
+ * as broken. Mini cards already had it outside, so the two card types did not
+ * even agree with each other. One component, one place: in the gutter, on the
+ * line, which is also what it means — "this line leads to N people". */
+function CountBadge({ count, isExpanded, onToggle, mini = false }) {
+  if (!count) return null;
+  return (
+    <span
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      onMouseDown={(e) => e.stopPropagation()}
+      title={isExpanded ? 'Collapse this team' : 'Expand this team'}
+      className={`relative z-10 font-bold text-white bg-blue-600 hover:bg-blue-700 rounded cursor-pointer transition-colors flex-shrink-0 ${
+        mini ? 'ml-1 text-[12px] px-1.5 py-0.5' : 'ml-2 text-[13px] px-2 py-0.5'
+      }`}
+    >
+      {count}
+    </span>
   );
 }
 
@@ -326,7 +327,7 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
       {children.map(emp => {
         const isActive = expandedIds.has(emp._id);
         return (
-          <div key={emp._id} data-row className="relative">
+          <div key={emp._id} data-row className="relative flex items-center">
             <div className="absolute" style={{
               left: isActive ? -HOOK_LEN - 1 : -HOOK_LEN,
               top: '50%',
@@ -344,6 +345,12 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
               directCount={(childrenOf[emp._id] || []).length}
               onToggle={() => onToggle(emp._id)}
               onHoverChange={onHoverChange}
+            />
+            <CountBadge
+              count={subtreeSize[emp._id] || 0}
+              isExpanded={isActive}
+              mini={mini}
+              onToggle={() => onToggle(emp._id)}
             />
           </div>
         );
@@ -975,7 +982,7 @@ export default function OrgChart() {
                         <p className="text-[14px] text-slate-400 italic">No employees</p>
                       ) : (
                         colEmps.map(emp => (
-                          <div key={emp._id} data-row>
+                          <div key={emp._id} data-row className="flex items-center">
                             <EmployeeCard
                               emp={emp}
                               mini={isAncestor}
@@ -985,6 +992,12 @@ export default function OrgChart() {
                               directCount={(childrenOf[emp._id] || []).length}
                               onToggle={() => handleToggle(depth, emp._id)}
                               onHoverChange={setHover}
+                            />
+                            <CountBadge
+                              count={subtreeSize[emp._id] || 0}
+                              isExpanded={expandedIds.has(emp._id)}
+                              mini={isAncestor}
+                              onToggle={() => handleToggle(depth, emp._id)}
                             />
                           </div>
                         ))

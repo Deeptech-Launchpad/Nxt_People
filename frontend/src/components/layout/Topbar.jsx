@@ -627,7 +627,15 @@ export default function Topbar() {
       setNotifications(n => n.map(x => x._id === notif._id ? { ...x, isRead: true } : x));
       setUnreadCount(c => Math.max(0, c - 1));
     }
-    if (notif.link) { setShowNotifs(false); navigate(notif.link); }
+    setShowNotifs(false);
+    /* Announcement notifications written before the link carried an id still
+       say '/', which navigates to the home page you are almost certainly
+       already on — the click looked like it did nothing at all. Send those to
+       the list rather than nowhere. */
+    const to = notif.type === 'announcement' && (!notif.link || notif.link === '/')
+      ? '/announcements'
+      : notif.link;
+    if (to) navigate(to);
   };
 
   const section    = getSection(location.pathname);

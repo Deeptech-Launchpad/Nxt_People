@@ -999,9 +999,15 @@ router.get('/summary', async (req, res) => {
       if (wknd) weekendDays++;
       if (hol)  holidayDays++;
 
-      // Payable: any past-or-today day that's NOT a weekend (working day).
-      // Future days don't count; "today" counts even if check-out hasn't
-      // happened yet (Zoho treats the current day as payable once it begins).
+      // Payable: any past-or-today day that isn't a weekend. Future days don't
+      // count; "today" counts even if check-out hasn't happened yet (Zoho
+      // treats the current day as payable once it begins).
+      //
+      // A company holiday is deliberately INSIDE this count. It isn't a working
+      // day, but it is a paid day off, and this figure is about what the month
+      // pays for, not about who was expected at a desk. `hol` is read and not
+      // tested here for exactly that reason — leaving it out would quietly cut
+      // a day's pay for every holiday in the range.
       if (!wknd && dStr <= today) payableDays++;
       cur.setDate(cur.getDate() + 1);
     }

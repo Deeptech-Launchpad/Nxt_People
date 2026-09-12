@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Megaphone, Plus, Trash2, Pin, PinOff, X, AlertTriangle, Info, Calendar,
   MoreHorizontal, Pencil, Link2, Bold, Italic, Underline, Strikethrough,
@@ -167,6 +168,25 @@ export default function Announcements() {
   }, []);
 
   useEffect(load, [load]);
+
+  /* ?open=<id> arrives from the bell: clicking "New Announcement" should show
+     the announcement, not just the list it sits in. Waits for the fetch,
+     because the id means nothing until the rows are here. The param is
+     cleared afterwards so closing the dialog and reloading does not reopen
+     it, and so the back button does not either. */
+  const [openParams, setOpenParams] = useSearchParams();
+  const openId = openParams.get('open');
+  useEffect(() => {
+    if (!openId || loading) return;
+    const found = announcements.find(a => String(a._id) === String(openId));
+    if (found) setReading(found);
+    setOpenParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('open');
+      return next;
+    }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId, loading, announcements]);
 
   const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); setModal(true); };
 
