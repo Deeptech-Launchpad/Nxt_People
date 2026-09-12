@@ -9,7 +9,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { getLeavePolicies } = require('../utils/leavePolicy');
 const { ledgerFor } = require('../utils/leaveLedger');
 const { audit } = require('../middleware/audit');
-const { isFullAccess } = require('../utils/roles');
+const { resolveEmployeeId } = require('../utils/employeeScope');
 const { serverError } = require('../utils/serverError');
 
 router.use(protect);
@@ -348,8 +348,11 @@ router.post('/ledger/rerun', authorize('admin', 'director', 'hr_admin'),
 router.get('/balances', async (req, res) => {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
-    const empId = (isFullAccess(req.user.role) && req.query.employeeId)
-      ? req.query.employeeId : req.user._id;
+    /* Same guard as /leaves/balance, for the same reason: the silent fallback
+     * to req.user._id answered a caller who named somebody they may not read
+     * with their own per-type balances, labelled as that person's. */
+    const empId = await resolveEmployeeId(req, res, req.query.employeeId);
+    if (!empId) return;
 
     // Get all active leave types
     const ltRes = await pool.query(`SELECT * FROM leave_types WHERE is_active=true ORDER BY name`);

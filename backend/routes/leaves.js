@@ -56,6 +56,7 @@ const { notifyChainOfCancellation } = require('../utils/cancellationNotice');
 const { approvalEmail, outcomeEmail } = require('../utils/approvalMessages');
 const { serverError } = require('../utils/serverError');
 const { reclassifyRange } = require('../utils/attendanceReprocess');
+const { resolveEmployeeId } = require('../utils/employeeScope');
 
 router.use(protect);
 
@@ -1556,12 +1557,14 @@ router.get('/day-breakdown', async (req, res) => {
 router.get('/balance', async (req, res) => {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
-    // Default to the caller's own balance. Full-access (Super Admin / HR) may
-    // look up another employee's balance via ?employeeId — read-only, no change
-    // to anyone else's self-balance behaviour.
-    const targetId = (isFullAccess(req.user.role) && req.query.employeeId)
-      ? req.query.employeeId
-      : req.user._id;
+    /* Default to the caller's own balance; ?employeeId is somebody else's and
+     * is decided by the shared guard — full access, or a reporting line that
+     * reaches them. It used to end `: req.user._id`, so a caller with no claim
+     * on the id they named was handed their OWN balance back under that
+     * person's name, which is the failure a leave drill-down would show on
+     * every card. */
+    const targetId = await resolveEmployeeId(req, res, req.query.employeeId);
+    if (!targetId) return;
 
     // Get from employees (legacy columns)
     const empRes = await pool.query(

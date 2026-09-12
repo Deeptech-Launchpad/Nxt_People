@@ -104,6 +104,7 @@ const TeamList           = lazy(() => import('./pages/team/TeamList'));
 const TeamExEmployees    = lazy(() => import('./pages/team/ExEmployees'));
 const AttendanceTeam     = lazy(() => import('./pages/team/AttendanceTeam'));
 const ReporteeAttendance = lazy(() => import('./pages/team/ReporteeAttendance'));
+const ReporteeLeave = lazy(() => import('./pages/team/ReporteeLeave'));
 const LeaveTrackerTeam   = lazy(() => import('./pages/team/LeaveTrackerTeam'));
 
 /* ── New pages — Phase 4: Organization ─────────────────────────────── */
@@ -246,6 +247,8 @@ const AppRoutes = () => {
               Requests | Compensatory Request), which is what the reference puts
               here; the approval queue stays at /team/approvals. Role-gated
               identically — only admins/managers can view it. */}
+          {/* Before the :tab route below, or 'user' is read as a tab name. */}
+          <Route path="leave-tracker/team/user/:employeeId" element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><ReporteeLeave/></ProtectedRoute>}/>
           <Route path="leave-tracker/team"       element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><LeaveTrackerTeam/></ProtectedRoute>}/>
           <Route path="leave-tracker/team/:tab"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><LeaveTrackerTeam/></ProtectedRoute>}/>
           <Route path="leave-tracker/all"        element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerAdmin/></ProtectedRoute>}/>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import CompOff from '../CompOff';
 import Reportees from './Reportees';
 import TeamOnLeave from './TeamOnLeave';
@@ -32,6 +32,7 @@ const TABS = [
 
 export default function LeaveTrackerTeam() {
   const { tab } = useParams();
+  const navigate = useNavigate();
   const active = TABS.some(t => t.key === tab) ? tab : 'reportees';
 
   return (
@@ -42,7 +43,7 @@ export default function LeaveTrackerTeam() {
       <div className="bg-slate-50 min-h-[420px]">
         {/* Reportees carries the year's booked total here, which is the figure
             the Leave Tracker's version of this card is for. */}
-        {active === 'reportees' && <Reportees embedded showLeaveBooked />}
+        {active === 'reportees' && <Reportees onOpen={p => navigate(`/leave-tracker/team/user/${p.id}`)} embedded showLeaveBooked />}
         {active === 'on-leave'  && <TeamOnLeave embedded />}
         {active === 'requests'  && <TeamLeaveRequests embedded />}
         {active === 'comp-off'  && <CompOff />}
