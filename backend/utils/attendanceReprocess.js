@@ -177,7 +177,11 @@ const RANGE_DAY_QUERY = `
      AND a.date <= (NOW() AT TIME ZONE $4)::date
      AND e.deleted_at IS NULL`;
 
-async function reclassifyRange(client, { employeeId, from, to, cfg = {}, tz = 'Asia/Kolkata' }) {
+/* `apply` is true by default because the live caller — a leave being approved
+ * — has already decided. The repair script passes false to collect the diff
+ * first, so that the same classifier answers both questions and a dry run can
+ * never disagree with the write that follows it. */
+async function reclassifyRange(client, { employeeId, from, to, cfg = {}, tz = 'Asia/Kolkata', apply = true }) {
   if (!employeeId || !from || !to) return { changed: 0, changes: [] };
 
   // Never reach back past the date the current policy took effect.
@@ -207,7 +211,7 @@ async function reclassifyRange(client, { employeeId, from, to, cfg = {}, tz = 'A
     if (!same) changes.push({ id: r.id, date: r.d, from: r.status, to: verdict.status });
   }
 
-  if (changes.length) {
+  if (apply && changes.length) {
     await client.query(
       `UPDATE attendance a
           SET status = v.status, updated_at = NOW()
