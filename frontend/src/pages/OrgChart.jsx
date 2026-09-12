@@ -314,14 +314,21 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
           {/* Blue vertical overlay: covers only the active sub-path so the
               highlight is continuous from parent down to the selected child. */}
           {selectedChildY != null && activeHeight > 0 && (
+            /* Same left edge as the grey spine, not one pixel beside it. At
+               left:-1 the active branch ran alongside the resting line rather
+               than along it, so the corner where blue met grey had a visible
+               jog in it — the two halves of one line disagreeing about where
+               that line is. */
             <div className="absolute" style={{
-              left: -1, top: activeTop, height: activeHeight,
+              left: 0, top: activeTop, height: activeHeight,
               width: 2, background: ACTIVE_COLOR,
             }} />
           )}
-          {/* Blue hook back toward the parent — Zoho draws this at 2px. */}
+          {/* Blue hook back toward the parent — Zoho draws this at 2px. It
+              overshoots by the spine's own width so the elbow is a solid
+              corner instead of two strokes that stop short of each other. */}
           <div className="absolute" style={{
-            left: -HOOK_LEN, top: parentY - 1, width: HOOK_LEN, height: 2,
+            left: -HOOK_LEN, top: parentY - 1, width: HOOK_LEN + 2, height: 2,
             background: ACTIVE_COLOR,
           }} />
         </>
@@ -333,10 +340,15 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
         const isActive = expandedIds.has(emp._id);
         return (
           <div key={emp._id} data-row className="relative flex items-center">
+            {/* The branch into this card: blue and 2px on the path you have
+                drilled into, grey and 1px on every other, which is what makes
+                the route through the tree readable at a glance. Both start at
+                the spine's own left edge so they meet it rather than
+                approaching it. */}
             <div className="absolute" style={{
-              left: isActive ? -HOOK_LEN - 1 : -HOOK_LEN,
+              left: -HOOK_LEN,
               top: '50%',
-              width: isActive ? HOOK_LEN + 1 : HOOK_LEN,
+              width: HOOK_LEN + (isActive ? 2 : 1),
               height: isActive ? 2 : 1,
               background: isActive ? ACTIVE_COLOR : LINE_COLOR,
               transform: 'translateY(-50%)',
