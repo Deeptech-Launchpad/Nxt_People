@@ -190,6 +190,11 @@ function EmployeeCard({ emp, isExpanded, totalCount, directCount, onToggle, onHo
       className="rounded-md p-2.5 flex items-center gap-3 text-left transition-shadow hover:shadow-sm"
       style={{
         width: 280,
+        // Lets a card give way on a narrow screen instead of forcing the whole
+        // tree into a horizontal scroll before the first column is even read.
+        // Height is what the connectors are measured from, and the
+        // ResizeObserver re-measures when a wrapped designation changes it.
+        maxWidth: 'calc(100vw - 5rem)',
         background: isExpanded
           ? (isDark ? '#1e3a5f' : '#eff6ff')
           : (isDark ? '#1f2937' : '#ffffff'),
@@ -355,39 +360,6 @@ function ChildrenColumn({ children, expandedIds, subtreeSize, childrenOf, onTogg
           </div>
         );
       })}
-    </div>
-  );
-}
-
-/* People who are not in any reporting line: nobody reports to them and they
-   report to nobody. Some are not people at all — the system Admin row, a
-   "Zoho ANXT HR" record left behind by the migration, the demo accounts — and
-   they used to render as top-level cards beside the CEO, as though the company
-   had six chief executives. They are listed here instead of dropped, because a
-   real employee with no reporting manager is a data problem somebody should
-   see and fix, not one the chart should quietly hide. */
-function StrayRoots({ people }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative flex-shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[12px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors whitespace-nowrap"
-      >
-        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        {people.length} not in any reporting line
-      </button>
-      {open && (
-        <ul className="absolute left-0 top-full mt-1 z-20 min-w-[240px] max-h-64 overflow-y-auto bg-white dark:bg-[#1f2937] border border-slate-200 dark:border-[#374151] rounded-lg shadow-xl p-2 space-y-1">
-          {people.map(p => (
-            <li key={p._id} className="text-[12px] text-slate-500 dark:text-slate-400 leading-tight whitespace-nowrap">
-              <span className="font-mono text-slate-400 dark:text-slate-500">{p.employeeId || '—'}</span>{' '}
-              {p.firstName} {p.lastName}
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }
@@ -599,9 +571,12 @@ export default function OrgChart() {
      accounts. They used to stand beside the CEO as peers. They are still
      listed, under the tree and behind a count, because a real employee with
      no manager set is a data problem worth seeing rather than hiding. */
-  const rootHasReports = (r) => (subtreeSize[r._id] || 0) > 0;
-  const treeRoots  = roots.some(rootHasReports) ? roots.filter(rootHasReports) : roots;
-  const strayRoots = roots.some(rootHasReports) ? roots.filter(r => !rootHasReports(r)) : [];
+  /* Everybody with no manager is a root card, including the accounts that are
+     not people — the reference does exactly this: its own organisation node
+     sits in the first column beside the CEO, with no line between them,
+     because neither reports to the other. Pulling them out into a "not in any
+     reporting line" note said something true about the data and drew a tree
+     that did not match the one it was describing. */
 
   /* ── Build the visible columns from the expanded path ────────────────── */
   // Stop adding columns the moment we hit a leaf with no children — Zoho
@@ -615,7 +590,7 @@ export default function OrgChart() {
   // for anybody who was not a root returned "No employees". A tree search
   // reveals a person in place; it does not prune the tree around them.
   const columns = [];
-  columns.push(treeRoots);
+  columns.push(roots);
   for (const selId of selectedPath) {
     const kids = childrenOf[selId] || [];
     if (kids.length === 0) break;
@@ -899,19 +874,15 @@ export default function OrgChart() {
   /* ── Employee Tree Render — column-based ─────────────────────────────── */
   return (
     <div className="bg-white dark:bg-[#1f2937] rounded-xl shadow-sm border border-slate-200 dark:border-[#374151] flex flex-col h-[calc(100vh-10rem)]">
-      <div className="p-4 border-b border-slate-100 dark:border-[#374151] flex justify-between items-center bg-white dark:bg-[#1f2937] z-10 rounded-t-xl">
+      <div className="p-4 border-b border-slate-100 dark:border-[#374151] flex flex-wrap justify-between items-center gap-3 bg-white dark:bg-[#1f2937] z-10 rounded-t-xl">
         <div className="flex items-center gap-4 min-w-0">
-          <p className="text-[15px] text-slate-500 dark:text-slate-400">
+          {/* The instruction is the first thing to go when the bar is tight:
+              the search box is the one control here that does work. */}
+          <p className="hidden md:block text-[15px] text-slate-500 dark:text-slate-400">
             Click a card to expand their direct reports. Hover for contact info.
           </p>
-          {/* Here, not in the root column. Inside it, this line -- far wider
-              than a mini card -- was what set that column's width, so the gap
-              to the next column grew to about 115px while the connector hook
-              is a fixed 20px. The line then stopped well short of the card it
-              pointed at, which read as the tree failing to join up. */}
-          {strayRoots.length > 0 && <StrayRoots people={strayRoots} />}
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-none justify-end">
           {searchTerm.trim() && (
             <span className="text-[13px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
               {matches.length === 0
@@ -930,7 +901,7 @@ export default function OrgChart() {
                 if (e.key === 'Enter') { e.preventDefault(); gotoMatch(matchIdx + (e.shiftKey ? -1 : 1)); }
                 if (e.key === 'Escape') setSearchTerm('');
               }}
-              className="pl-9 pr-8 py-1.5 border border-slate-200 dark:border-[#374151] rounded text-base w-72 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all bg-white dark:bg-[#111827] text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+              className="pl-9 pr-8 py-1.5 border border-slate-200 dark:border-[#374151] rounded text-base w-full sm:w-72 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all bg-white dark:bg-[#111827] text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
             />
             {searchTerm && (
               <button type="button" onClick={() => setSearchTerm('')} aria-label="Clear search"
