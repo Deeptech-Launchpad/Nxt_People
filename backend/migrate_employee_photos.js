@@ -131,6 +131,12 @@ async function main() {
       WHERE deleted_at IS NULL AND status = 'active'
         AND employee_id IS NOT NULL AND employee_id <> ''
         AND (photo_url IS NULL OR photo_url = '' OR photo_url NOT LIKE '/uploads/%')
+        -- Rows the migration and the demo data left behind. They exist in no
+        -- Zoho record, so every lookup for them fails, and that failure reads
+        -- exactly like a real one.
+        AND employee_id <> '1'
+        AND employee_id NOT LIKE 'ADMIN-%'
+        AND employee_id NOT LIKE 'NXT-TEST-%'
       ORDER BY employee_id`
   )).rows;
   const have = (await pool.query(
@@ -151,14 +157,46 @@ async function main() {
   }
 
   if (PROBE) {
-    const s = rows[0];
-    console.log(`  Probing with ${s.code} ${s.name}\n`);
-    const found = await findZohoEmployee(s.code);
-    if (found.error) {
-      console.log(`  Zoho lookup failed: ${found.error}`);
-      console.log('  Without a record there is no photo to ask for — that is the thing to fix first.\n');
+    /* Can the employee form be read at all? Asking for one record with no
+       search separates "this token cannot see the employee form" from "the
+       search was rejected". Zoho reports both through the same error
+       envelope, and they want completely different fixes. */
+    try {
+      const bare = await zohoApi('forms/employee/getRecords?sIndex=1&limit=1');
+      const ok = bare && bare.response && 'result' in bare.response;
+      console.log(`  employee form readable : ${ok ? 'yes' : 'NO — ' + String((bare && bare.response && bare.response.message) || JSON.stringify((bare && bare.response) || {})).slice(0, 90)}`);
+      if (ok) {
+        const first = Array.isArray(bare.response.result) ? bare.response.result[0] : null;
+        const rid = first && Object.keys(first)[0];
+        const f = first && (Array.isArray(first[rid]) ? first[rid][0] : first[rid]);
+        if (f) console.log(`  a real record          : ${rid} (${Object.keys(f).length} fields)`);
+      }
+    } catch (err) {
+      console.log(`  employee form readable : threw — ${err.message}`);
+    }
+    console.log('');
+
+    /* Try a few real people rather than only the first row: one code that
+       happens to be missing from Zoho would otherwise be reported as the
+       whole integration being broken. */
+    let s = null;
+    let found = null;
+    for (const cand of rows.slice(0, 3)) {
+      console.log(`  looking up ${cand.code} ${cand.name}`);
+      const got = await findZohoEmployee(cand.code);
+      if (!got.error) { s = cand; found = got; break; }
+      console.log(`    -> ${got.error}`);
+      await breathe();
+    }
+    if (!found) {
+      console.log('');
+      console.log('  None of them resolved to a Zoho record. If the line above says the');
+      console.log('  employee form is NOT readable, the integration is missing the employee');
+      console.log('  module in its scope — no photo can be reached until that is granted.');
+      console.log('');
       return;
     }
+    console.log('');
     console.log(`  record id: ${found.recordId}`);
     const keys = Object.keys(found.fields || {});
     console.log(`  ${keys.length} fields; ones that mention a photo:`);
