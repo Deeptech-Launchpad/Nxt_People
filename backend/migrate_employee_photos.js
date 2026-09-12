@@ -32,6 +32,7 @@
 
 require('dotenv').config();
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const pool = require('./db');
 const { getAccessToken, zohoApi } = require('./utils/zoho');
@@ -97,11 +98,20 @@ async function loadZohoRoster() {
 
 /* Anything in the record that looks like it points at an image, plus Zoho
  * People's own photo routes for that record. */
+/* The Photo field is the route that works on this tenant, and it comes with
+ * `fs=thumb` — a thumbnail, around 2KB. Ask for the full-size image first and
+ * keep the thumbnail as the fallback, because an avatar that is upscaled later
+ * (a profile header, a print) should not be stuck at thumbnail resolution. */
+function sizeVariants(url) {
+  if (!/[?&]fs=/.test(url)) return [url];
+  return [url.replace(/([?&])fs=[^&]*/, '$1fs=originalsize'), url];
+}
+
 function candidatesFor(recordId, fields = {}) {
   const out = [];
   for (const [k, v] of Object.entries(fields)) {
     if (typeof v === 'string' && /^https?:\/\//.test(v) && /photo|image|picture/i.test(k)) {
-      out.push({ name: `field ${k}`, url: v });
+      sizeVariants(v).forEach((u, i) => out.push({ name: `field ${k}${i ? ' (thumb)' : ''}`, url: u }));
     }
   }
   if (domain() && recordId) {
@@ -208,30 +218,59 @@ async function main() {
   }
 
   fs.mkdirSync(PHOTO_DIR, { recursive: true });
-  let saved = 0, noPhoto = 0;
+
+  /* Fetch everything first, write nothing yet.
+   *
+   * Zoho hands back a generic avatar for people who never uploaded one, and it
+   * answers 200 with a perfectly valid PNG — so "is this an image" cannot tell
+   * a face from a placeholder. What does tell them apart is that the
+   * placeholder is byte-identical every time. So the bytes are hashed, and any
+   * image that turns up for more than one person is treated as the stand-in it
+   * is and skipped. Saving it would give a dozen colleagues the same face,
+   * which is worse than the silhouette it replaced. */
+  const fetched = [];
+  let noPhoto = 0;
   const log = [];
 
   for (const r of work) {
     const { recordId, fields } = roster.byCode.get(r.code);
-    let done = false;
+    let got = null, via = null;
     for (const c of candidatesFor(recordId, fields)) {
-      const got = await attempt(c.url, token);
-      if (!got.kind) continue;
-      const file = `zoho-${r.code}-${Date.now()}.${got.kind}`;
-      fs.writeFileSync(path.join(PHOTO_DIR, file), got.buf);
-      await pool.query(`UPDATE employees SET photo_url = $1, updated_at = NOW() WHERE id = $2`,
-        [`/uploads/photos/${file}`, r.id]);
-      log.push({ code: r.code, outcome: 'saved', via: c.name, file, bytes: got.bytes });
-      saved++; done = true;
-      break;
+      const a = await attempt(c.url, token);
+      if (a.kind) { got = a; via = c.name; break; }
     }
-    if (!done) { noPhoto++; log.push({ code: r.code, outcome: 'no image from any route' }); }
+    if (got) fetched.push({ r, got, via, hash: crypto.createHash('sha1').update(got.buf).digest('hex') });
+    else { noPhoto++; log.push({ code: r.code, outcome: 'no image from any route' }); }
     await breathe();
   }
 
-  console.log(`  saved            ${saved}`);
-  console.log(`  no photo in Zoho ${noPhoto}`);
-  console.log(`  not in Zoho      ${missing.length}\n`);
+  const seen = new Map();
+  fetched.forEach(f => seen.set(f.hash, (seen.get(f.hash) || 0) + 1));
+  const shared = new Set([...seen.entries()].filter(([, n]) => n > 1).map(([h]) => h));
+
+  let saved = 0, placeholder = 0;
+  for (const f of fetched) {
+    if (shared.has(f.hash)) {
+      placeholder++;
+      log.push({ code: f.r.code, outcome: 'skipped — same image as other employees (Zoho default avatar)' });
+      continue;
+    }
+    const file = `zoho-${f.r.code}-${Date.now()}.${f.got.kind}`;
+    fs.writeFileSync(path.join(PHOTO_DIR, file), f.got.buf);
+    await pool.query(`UPDATE employees SET photo_url = $1, updated_at = NOW() WHERE id = $2`,
+      [`/uploads/photos/${file}`, f.r.id]);
+    log.push({ code: f.r.code, outcome: 'saved', via: f.via, file, bytes: f.got.bytes });
+    saved++;
+  }
+
+  console.log(`  saved                 ${saved}`);
+  console.log(`  default avatar, skipped ${placeholder}`);
+  console.log(`  no photo in Zoho      ${noPhoto}`);
+  console.log(`  not in Zoho           ${missing.length}\n`);
+  if (placeholder) {
+    console.log(`  ${placeholder} people share one identical image in Zoho — that is its stand-in`);
+    console.log('  avatar, not their face, so they keep the silhouette.\n');
+  }
   const out = path.join(__dirname, `photo_fetch_${Date.now()}.json`);
   fs.writeFileSync(out, JSON.stringify(log, null, 2));
   console.log(`  Per-person outcome in ${path.basename(out)}.\n`);
