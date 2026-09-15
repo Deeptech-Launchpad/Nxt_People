@@ -167,7 +167,8 @@ router.get('/directory', async (req, res) => {
                 WHEN a.check_out IS NOT NULL THEN 'out'
                 -- Permission is an hourly absence; the person is expected at work, so it
                 -- never reads as On Leave (same rule as team.js LEAVE_TODAY).
-                WHEN lv.employee_id IS NOT NULL AND lv.leave_type <> 'permission' THEN 'onLeave'
+                -- Pending requests show their detail on the card but do not count as On Leave.
+                WHEN lv.status = 'approved' AND lv.leave_type <> 'permission' THEN 'onLeave'
                 ELSE 'yetToCheckIn'
               END as presence,
               lv.leave_type AS "leaveType", lv.is_half_day AS "isHalfDay",
@@ -178,12 +179,12 @@ router.get('/directory', async (req, res) => {
          -- A full or half-day leave outranks a permission on the same day, so the
          -- presence above still sees the leave when both exist.
          LEFT JOIN LATERAL (
-           SELECT l.employee_id, l.leave_type, l.is_half_day, l.half_day_type,
+           SELECT l.employee_id, l.status, l.leave_type, l.is_half_day, l.half_day_type,
                   l.hours, l.start_time, l.end_time
              FROM leaves l
-            WHERE l.employee_id = e.id AND l.status = 'approved'
+            WHERE l.employee_id = e.id AND l.status IN ('approved', 'pending')
               AND l.start_date <= CURRENT_DATE AND l.end_date >= CURRENT_DATE
-            ORDER BY (l.leave_type = 'permission'), l.start_date
+            ORDER BY (l.leave_type = 'permission'), (l.status <> 'approved'), l.start_date
             LIMIT 1
          ) lv ON TRUE
         WHERE e.status = 'active' AND e.deleted_at IS NULL ${narrow}

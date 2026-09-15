@@ -308,7 +308,7 @@ const PresenceLabel = ({ person }) => {
   const p = presenceOf(person);
   if (!p) return null;
   const detail = person?.leaveType ? leaveChipText(person) : null;
-  const label = p === 'onLeave' && detail && person.leaveType !== 'permission' ? detail : PRESENCE_LABEL[p];
+  const label = (p === 'onLeave' || p === 'yetToCheckIn') && detail && person.leaveType !== 'permission' ? detail : PRESENCE_LABEL[p];
   return (
     <span className={`text-[13px] font-medium ${PRESENCE_COLOR[p]}`}>
       {label}
