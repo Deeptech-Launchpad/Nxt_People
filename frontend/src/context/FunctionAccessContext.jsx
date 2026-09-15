@@ -45,7 +45,7 @@ export const FunctionAccessProvider = ({ children }) => {
 
   const reload = useCallback(() => {
     setLoading(true);
-    api.get('/access-control/my-functions')
+    api.get('/access/my-functions')
       .then(r => {
         setFunctions(r.data?.data?.functions || null);
         setLoadError(null);
