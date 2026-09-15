@@ -1,12 +1,16 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye, Briefcase } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye, Briefcase, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../components/LeaveDetailModal';
 import LeaveRequestDialog from './moreservices/leavetracker/LeaveRequestDialog';
 import { useAuth } from '../context/AuthContext';
 import usePolling from '../hooks/usePolling';
+import { LEAVE_APPROVALS_BASE, APPROVALS_TABS } from './moreservices/operationsWorkspaces';
+import { setWorkspaceBadges, clearWorkspaceBadges } from '../utils/workspaceBadges';
+
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 const LEAVE_TYPE_LABELS = {
   casual:   'Casual Leave',
@@ -69,17 +73,37 @@ const saveSeen = (obj) => {
  * second copy for the tab would be the thing that drifts. */
 export default function Approvals({ embedded = false }) {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  /* Under Operations the navy bar draws the tabs and owns the active one, so
+   * the tab lives in ?tab= there. The other two routes keep their own strip. */
+  const inWorkspace = location.pathname === LEAVE_APPROVALS_BASE || location.pathname.startsWith(`${LEAVE_APPROVALS_BASE}/`);
   // Approve All is available to HR / Super Admin and Team Leads (managers).
   // Managers are still scoped server-side to requests they actually approve.
   const canApproveAll = ['admin', 'director', 'hr_admin', 'manager'].includes(user?.role);
-  const [data, setData] = useState({ leaves: [], permissions: [], timesheets: [], regularizations: [], wfhRequests: [], compOffs: [], onDuty: [], total: 0 });
+  const [data, setData] = useState({ leaves: [], permissions: [], regularizations: [], wfhRequests: [], compOffs: [], onDuty: [], total: 0 });
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState(() => {
+  const [localTab, setLocalTab] = useState(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    const valid = ['leaves','permissions','approvedLeaves','rejectedLeaves','timesheets','regularizations','wfh','compoff','onduty'];
-    return valid.includes(t) ? t : 'leaves';
+    return APPROVALS_TABS.some(x => x.id === t) ? t : 'leaves';
   });
+  const urlTab = searchParams.get('tab');
+  const tab = inWorkspace ? (APPROVALS_TABS.some(x => x.id === urlTab) ? urlTab : 'leaves') : localTab;
+  /* `keepParams` for the automatic switches, which must not lose an ?openId=
+   * still waiting to be opened. A card click starts clean: carrying openId
+   * along would reopen that request's modal every time the tab changed. */
+  const setTab = (id, { keepParams = false } = {}) => {
+    if (!inWorkspace) { setLocalTab(id); return; }
+    if (keepParams) {
+      setSearchParams(prev => { const p = new URLSearchParams(prev); p.set('tab', id); return p; }, { replace: true });
+    } else {
+      setSearchParams({ tab: id });
+    }
+  };
+  const now = new Date();
+  const [sumMonth, setSumMonth] = useState(now.getMonth() + 1);
+  const [sumYear, setSumYear] = useState(now.getFullYear());
+  const [summary, setSummary] = useState(null);
   // Whether the URL itself named a tab. When it did not, the page falls back
   // to 'leaves' regardless of where the pending items actually are — the
   // "Total Pending" card at the top and the tab shown underneath it come
@@ -133,7 +157,6 @@ export default function Approvals({ embedded = false }) {
         const rejected = (d.approvedLeaves || []).filter(l => l.status === 'rejected');
         const permissions = allLeaves.filter(l => l.leaveType === 'permission');
         const leaves = allLeaves.filter(l => l.leaveType !== 'permission');
-        const timesheets = d.timesheets || [];
         const regularizations = d.regularizations || [];
         const wfhRequests = d.wfhRequests || [];
         const compOffs = d.compOffs || [];
@@ -141,7 +164,6 @@ export default function Approvals({ embedded = false }) {
         setData({
           leaves,
           permissions,
-          timesheets,
           regularizations,
           wfhRequests,
           compOffs,
@@ -157,14 +179,14 @@ export default function Approvals({ embedded = false }) {
           // the Approved/Rejected history tabs, which are not what "Total
           // Pending" is counting.
           const byTab = [
-            ['leaves', leaves], ['permissions', permissions], ['timesheets', timesheets],
+            ['leaves', leaves], ['permissions', permissions],
             ['regularizations', regularizations], ['wfh', wfhRequests],
             ['compoff', compOffs], ['onduty', onDuty],
           ];
           const currentIsEmpty = !(byTab.find(([id]) => id === tab)?.[1]?.length);
           if (currentIsEmpty) {
             const firstNonEmpty = byTab.find(([, arr]) => arr.length > 0);
-            if (firstNonEmpty) setTab(firstNonEmpty[0]);
+            if (firstNonEmpty) setTab(firstNonEmpty[0], { keepParams: true });
           }
         }
       })
@@ -177,6 +199,21 @@ export default function Approvals({ embedded = false }) {
 
   // Picks up newly submitted / approved requests without a manual refresh.
   usePolling(() => load(true), 5000);
+
+  // Month-bound history, so it is fetched when the month changes, not polled.
+  useEffect(() => {
+    setSummary(null);
+    api.get(`/approvals/summary?month=${sumMonth}&year=${sumYear}`)
+      .then(res => setSummary(res.data.data || null))
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to load approval summary'));
+  }, [sumMonth, sumYear]);
+
+  const shiftMonth = (delta) => {
+    let m = sumMonth + delta, y = sumYear;
+    if (m < 1)  { m = 12; y -= 1; }
+    if (m > 12) { m = 1;  y += 1; }
+    setSumMonth(m); setSumYear(y);
+  };
 
   /* ── Auto-open modal from ?openId= URL param (email/notification deep-link) ── */
   useEffect(() => {
@@ -195,12 +232,13 @@ export default function Approvals({ embedded = false }) {
     const found = allItems.find(item => item._id === openId);
     if (!found) return;
     const typeToTab = { permission: 'permissions' };
-    if (data.onDuty?.find(o => o._id === openId)) setTab('onduty');
-    else if (data.regularizations?.find(r => r._id === openId)) setTab('regularizations');
-    else if (data.permissions?.find(p => p._id === openId)) setTab('permissions');
-    else if (data.approvedLeaves?.find(l => l._id === openId)) setTab('approvedLeaves');
-    else if (data.rejectedLeaves?.find(l => l._id === openId)) setTab('rejectedLeaves');
-    else setTab(typeToTab[found.leaveType] || 'leaves');
+    const keep = { keepParams: true };
+    if (data.onDuty?.find(o => o._id === openId)) setTab('onduty', keep);
+    else if (data.regularizations?.find(r => r._id === openId)) setTab('regularizations', keep);
+    else if (data.permissions?.find(p => p._id === openId)) setTab('permissions', keep);
+    else if (data.approvedLeaves?.find(l => l._id === openId)) setTab('approvedLeaves', keep);
+    else if (data.rejectedLeaves?.find(l => l._id === openId)) setTab('rejectedLeaves', keep);
+    else setTab(typeToTab[found.leaveType] || 'leaves', keep);
     setDetailLeave(found);
     setDetailBalance(null);
     if (found.status === 'pending' && found.employee?._id) {
@@ -235,24 +273,49 @@ export default function Approvals({ embedded = false }) {
     permission: 'bg-purple-50 text-purple-700'
   };
 
-  const TABS = [
-    ['leaves', 'Leave Requests', data.leaves?.length],
-    ['permissions', 'Permissions', data.permissions?.length],
-    ['approvedLeaves', 'Approved Leaves', data.approvedLeaves?.length],
-    ['rejectedLeaves', 'Rejected Leaves', data.rejectedLeaves?.length],
-    ['timesheets', 'Timesheets', data.timesheets?.length],
-    ['regularizations', 'Regularizations', data.regularizations?.length],
-    ['wfh', 'WFH Requests', data.wfhRequests?.length],
-    ['compoff', 'Comp-Off', data.compOffs?.length],
-    ['onduty', 'On Duty', data.onDuty?.length],
-  ];
+  const tabCounts = {
+    leaves: data.leaves?.length,
+    permissions: data.permissions?.length,
+    approvedLeaves: data.approvedLeaves?.length,
+    rejectedLeaves: data.rejectedLeaves?.length,
+    regularizations: data.regularizations?.length,
+    wfh: data.wfhRequests?.length,
+    compoff: data.compOffs?.length,
+    onduty: data.onDuty?.length,
+  };
+  const TABS = APPROVALS_TABS.map(t => [t.id, t.label, tabCounts[t.id]]);
+
+  // Show the badge only if there's at least one item the user hasn't seen
+  // yet — i.e. the current count is bigger than what they last viewed. After
+  // a hard refresh the seenCounts come back from localStorage, so the badge
+  // stays cleared until new items actually arrive.
+  const unseenCount = (id) => {
+    const currentCount = tabCounts[id] || 0;
+    return currentCount > 0 && currentCount > (seenCounts[id] || 0) ? currentCount : 0;
+  };
+
+  /* The navy bar has no click handler of ours to mark a tab seen, so arriving
+   * on one does it — the same thing clicking it in the in-page strip does. */
+  useEffect(() => {
+    if (inWorkspace && !loading) markTabSeen(tab, tabCounts[tab] || 0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inWorkspace, loading, tab, tabCounts[tab]]);
+
+  const badgeKey = APPROVALS_TABS.map(t => unseenCount(t.id)).join(',');
+  useEffect(() => {
+    if (!inWorkspace) return;
+    setWorkspaceBadges(LEAVE_APPROVALS_BASE, Object.fromEntries(APPROVALS_TABS.map(t => [t.id, unseenCount(t.id)])));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inWorkspace, badgeKey]);
+  useEffect(() => {
+    if (!inWorkspace) return;
+    return () => clearWorkspaceBadges(LEAVE_APPROVALS_BASE);
+  }, [inWorkspace]);
 
   const ActionBtns = ({ endpoint, id, type, canActLeave, status }) => {
     let canAct = false;
     if (endpoint === 'leaves' || endpoint === 'regularizations' || endpoint === 'comp-off' || endpoint === 'wfh' || endpoint === 'on-duty') {
       canAct = status === 'pending' && !!canActLeave;
-    } else if (endpoint === 'timesheets') {
-      canAct = status === 'submitted' && !!canActLeave;
     } else {
       canAct = (status === 'pending' || status === 'submitted');
     }
@@ -310,41 +373,42 @@ export default function Approvals({ embedded = false }) {
 
   return (
     <div className="p-5 space-y-5">
-      {/* Summary cards */}
+      {/* Month switcher — governs the approved counts only; Total Pending is
+          the live queue and has no month. */}
+      <div className="flex items-center justify-end gap-2">
+        <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><ChevronLeft size={15} /></button>
+        <span className="text-[15px] font-semibold text-slate-700 w-36 text-center">{MONTHS[sumMonth - 1]} {sumYear}</span>
+        <button onClick={() => shiftMonth(1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><ChevronRight size={15} /></button>
+      </div>
+
+      {/* Summary cards. The approved counts open no tab: every tab below is a
+          pending queue or a list bounded by leave dates, and none of them is
+          the set the number counts. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
         {[
-          ['Total Pending',   data.total,                    'bg-amber-50 text-amber-700',  null],
-          ['Leaves',          data.leaves?.length,           'bg-blue-50 text-blue-700',    'leaves'],
-          ['Permissions',     data.permissions?.length,      'bg-purple-50 text-purple-700','permissions'],
-          ['Timesheets',      data.timesheets?.length,       'bg-brand-50 text-brand-700',  'timesheets'],
-          ['Regularizations', data.regularizations?.length,  'bg-slate-50 text-slate-600',  'regularizations'],
-          ['WFH Requests',    data.wfhRequests?.length,      'bg-green-50 text-green-700',  'wfh'],
-          ['Comp-Off',        data.compOffs?.length,         'bg-orange-50 text-orange-700','compoff'],
-          ['On Duty',         data.onDuty?.length,           'bg-violet-50 text-violet-700','onduty'],
-        ].map(([l, v, c, tabId]) => (
-          <div
-            key={l}
-            onClick={() => tabId && setTab(tabId)}
-            className={`bg-white rounded-2xl p-4 border border-slate-100 shadow-sm transition-colors ${tabId ? 'cursor-pointer hover:border-slate-300 hover:shadow-md' : ''}`}
-          >
+          ['Total Pending',           loading ? null : data.total,  'bg-amber-50 text-amber-700'],
+          ['Casual Leave Approved',   summary?.casual,              'bg-blue-50 text-blue-700'],
+          ['Permissions Approved',    summary?.permissions,         'bg-purple-50 text-purple-700'],
+          ['Regularization Approved', summary?.regularizations,     'bg-slate-50 text-slate-600'],
+          ['LOP Approved',            summary?.lop,                 'bg-brand-50 text-brand-700'],
+          ['WFH Approved',            summary?.wfh,                 'bg-green-50 text-green-700'],
+          ['Comp-Off Approved',       summary?.compOff,             'bg-orange-50 text-orange-700'],
+          ['On Duty Approved',        summary?.onDuty,              'bg-violet-50 text-violet-700'],
+        ].map(([l, v, c]) => (
+          <div key={l} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm transition-colors">
             <p className="text-sm text-slate-500 mb-2">{l}</p>
-            <p className={`text-4xl font-display font-bold px-3 py-1 rounded-lg w-fit ${c}`}>{v ?? 0}</p>
+            <p className={`text-4xl font-display font-bold px-3 py-1 rounded-lg w-fit ${c}`}>{v ?? '—'}</p>
           </div>
         ))}
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        {/* Tabs */}
+        {/* Tabs — drawn by the navy bar instead when under Operations. */}
+        {!inWorkspace && (
         <div className="flex border-b border-slate-100 overflow-x-auto items-center">
           {TABS.map(([id, label, count]) => {
-            // Show the badge only if there's at least one item the user
-            // hasn't seen yet — i.e. the current count is bigger than
-            // what they last viewed. After a hard refresh the seenCounts
-            // come back from localStorage, so the badge stays cleared
-            // until new items actually arrive.
             const currentCount = count || 0;
-            const seen        = seenCounts[id] || 0;
-            const showBadge   = currentCount > 0 && currentCount > seen;
+            const showBadge   = unseenCount(id) > 0;
             return (
               <button key={id} onClick={() => { setTab(id); markTabSeen(id, currentCount); setSearchFilter(''); }}
                 className={`flex items-center gap-2 px-5 py-4 text-base font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
@@ -363,6 +427,7 @@ export default function Approvals({ embedded = false }) {
             </button>
           </div>
         </div>
+        )}
 
         {['approvedLeaves', 'rejectedLeaves'].includes(tab) && (
           <div className="px-5 py-3 border-b border-slate-100">
@@ -567,35 +632,6 @@ export default function Approvals({ embedded = false }) {
                 <ShowMoreFooter tabId="rejectedLeaves" total={list.length} shown={getVisible('rejectedLeaves', list).length} />
                 </>;
             })()}
-
-            {/* Timesheets */}
-            {tab === 'timesheets' && (
-              data.timesheets?.length === 0
-                ? <EmptyState icon={CheckCircle} message="No pending timesheets" />
-                : <>
-                {getVisible('timesheets', data.timesheets).map(ts => (
-                  <div key={ts._id} className="p-5 flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center text-brand-600 font-display font-bold text-base flex-shrink-0">
-                        {ts.totalHours?.toFixed(0)}h
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-slate-700">{ts.employee?.firstName} {ts.employee?.lastName}</p>
-                          <span className="text-sm bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{ts.employee?.department}</span>
-                        </div>
-                        <p className="text-base text-slate-500 mt-1">
-                          {new Date(ts.weekStartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(ts.weekEndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </p>
-                        <p className="text-sm text-slate-400 mt-1">{ts.totalHours?.toFixed(1)} total hours{ts.notes ? ` · ${ts.notes}` : ''}</p>
-                      </div>
-                    </div>
-                    <ActionBtns endpoint="timesheets" id={ts._id} type="Timesheet" canActLeave={ts.employee?._id !== user?._id} status={ts.status} />
-                  </div>
-                ))}
-                <ShowMoreFooter tabId="timesheets" total={data.timesheets.length} shown={getVisible('timesheets', data.timesheets).length} />
-                </>
-            )}
 
             {/* Regularizations */}
             {tab === 'regularizations' && (

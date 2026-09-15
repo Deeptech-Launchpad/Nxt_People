@@ -1,5 +1,5 @@
 /* ── The navigation for an Operations workspace ───────────────────────────
- *  Attendance, Attendance Marking and Leave Tracker are workspaces: you go
+ *  Attendance, Leave Tracker and Leave Approvals are workspaces: you go
  *  into one and work there. Each has a way back, a name, and its own tabs.
  *
  *  That navigation belongs in the navy bar, the way Settings already does it
@@ -16,21 +16,30 @@
  * ────────────────────────────────────────────────────────────────────────── */
 
 export const ATTENDANCE_BASE = '/more-services/operations/attendance';
-export const MARKING_BASE = '/more-services/operations/attendance-marking';
 export const LEAVE_TRACKER_BASE = '/more-services/operations/leave-tracker';
+export const LEAVE_APPROVALS_BASE = '/more-services/operations/leave-approvals';
 export const EMPLOYEE_INFO_BASE = '/more-services/operations/employee-information';
 export const SHIFT_BASE = '/more-services/operations/shift';
 
-/* Attendance Marking is a tab in this strip but a route of its own, because
- * it is a whole page with its own sub-tabs rather than a panel — so it
- * carries `path` and the rest carry `tab`. */
 export const ATTENDANCE_TABS = [
   { id: 'user', label: 'User-specific Operations' },
   { id: 'regularization', label: 'Regularization' },
   { id: 'onduty', label: 'On Duty' },
   { id: 'biometric', label: 'Biometric ID mapping' },
   { id: 'import-export', label: 'Check-in/out Import & Export' },
-  { id: 'marking', label: 'Attendance Marking', path: MARKING_BASE },
+];
+
+/* The same ids Approvals.jsx has always used for its in-page strip, so the
+ * navy bar, ?tab= links and the page's own badges all mean the same tab. */
+export const APPROVALS_TABS = [
+  { id: 'leaves', label: 'Leave Requests' },
+  { id: 'permissions', label: 'Permissions' },
+  { id: 'approvedLeaves', label: 'Approved Leaves' },
+  { id: 'rejectedLeaves', label: 'Rejected Leaves' },
+  { id: 'regularizations', label: 'Regularizations' },
+  { id: 'wfh', label: 'WFH Requests' },
+  { id: 'compoff', label: 'Comp-Off' },
+  { id: 'onduty', label: 'On Duty' },
 ];
 
 export const LEAVE_TRACKER_TABS = [
@@ -64,18 +73,17 @@ export const EMPLOYEE_INFO_TABS = [
 ];
 
 const WORKSPACES = [
-  { base: MARKING_BASE, title: 'Attendance', tabs: ATTENDANCE_TABS, fixedTab: 'marking' },
   { base: ATTENDANCE_BASE, title: 'Attendance', tabs: ATTENDANCE_TABS, defaultTab: 'user' },
   { base: LEAVE_TRACKER_BASE, title: 'Leave Tracker', tabs: LEAVE_TRACKER_TABS, defaultTab: 'user' },
+  { base: LEAVE_APPROVALS_BASE, title: 'Leave Approvals', tabs: APPROVALS_TABS, defaultTab: 'leaves' },
   { base: EMPLOYEE_INFO_BASE, title: 'Employee Information', tabs: EMPLOYEE_INFO_TABS, defaultTab: 'employees' },
   { base: SHIFT_BASE, title: 'Shift', tabs: SHIFT_TABS, defaultTab: 'user' },
 ];
 
 /**
- * The workspace this path is in, or null. MARKING_BASE is tested before
- * ATTENDANCE_BASE deliberately — one is a prefix of the other, and matching
- * the shorter one first would make Attendance Marking look like the
- * Attendance hub with a stray suffix.
+ * The workspace this path is in, or null. Matched on the base or base + "/",
+ * so a base that is a string prefix of another route never claims it; if two
+ * bases ever nest, list the longer one first.
  */
 export function operationsWorkspaceFor(pathname, search = '') {
   const ws = WORKSPACES.find(w => pathname === w.base || pathname.startsWith(`${w.base}/`));

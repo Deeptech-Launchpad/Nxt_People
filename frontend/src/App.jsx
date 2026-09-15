@@ -141,7 +141,6 @@ const OperationsAttendance = lazy(() => import('./pages/moreservices/OperationsA
 const OperationsShift = lazy(() => import('./pages/moreservices/OperationsShift'));
 const OperationsLeaveTracker = lazy(() => import('./pages/moreservices/OperationsLeaveTracker'));
 const OperationsEmployeeInformation = lazy(() => import('./pages/moreservices/employeeinfo/OperationsEmployeeInformation'));
-const ManualAttendance = lazy(() => import('./pages/moreservices/ManualAttendance'));
 const LeaveTrackerAdmin = lazy(() => import('./pages/moreservices/LeaveTrackerAdmin'));
 const PermissionUsage = lazy(() => import('./pages/moreservices/PermissionUsage'));
 const Conference = lazy(() => import('./pages/moreservices/Conference'));
@@ -288,7 +287,8 @@ const AppRoutes = () => {
               they may edit mapping at all. The route guard would be the third
               gate and the only blunt one. */}
           <Route path="more-services/operations/shift" element={<ProtectedRoute roles={['admin','director','hr_admin','manager']}><OperationsShift/></ProtectedRoute>}/>
-          <Route path="more-services/operations/attendance-marking" element={<ProtectedRoute roles={['admin','director','hr_admin']}><ManualAttendance/></ProtectedRoute>}/>
+          {/* Moved to Home → Marking Present / Absent; kept so old bookmarks land there. */}
+          <Route path="more-services/operations/attendance-marking" element={<Navigate to="/?section=marking" replace/>}/>
           <Route path="more-services/operations/permission-usage" element={<ProtectedRoute roles={['admin','director','hr_admin']}><PermissionUsage/></ProtectedRoute>}/>
           <Route path="more-services/operations/conference" element={<ProtectedRoute roles={['admin','director','hr_admin']}><Conference/></ProtectedRoute>}/>
           <Route path="more-services/travel"       element={<Travel/>}/>

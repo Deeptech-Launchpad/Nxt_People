@@ -8,6 +8,7 @@ const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
 const { requireFunction, optionsFor } = require('../utils/functionAccess');
+const { isFullAccess } = require('../utils/roles');
 
 router.use(protect);
 
@@ -129,8 +130,9 @@ router.get('/departments/:id/employees', requireFunction('department_data'), asy
 // Flat list of active employees with BASIC, non-sensitive directory fields
 // only. Open to every authenticated role (protect-only, no scoping) so the
 // Employee/Department Tree and the "Department Members" card render the full
-// org for everyone. Deliberately excludes salary/CTC/documents/leave/personal
-// records — viewing the directory grants no access to sensitive data, which
+// org for everyone. Deliberately excludes salary/CTC/documents/personal
+// records, and today's leave detail is blanked outside the caller's own
+// department (see below) — viewing the directory grants no access to sensitive data, which
 // stays behind its own RBAC guards (profile pages, payroll, documents, edits).
 /* Not guarded by search_employee.
  *
@@ -163,19 +165,47 @@ router.get('/directory', async (req, res) => {
               CASE
                 WHEN a.check_in IS NOT NULL AND a.check_out IS NULL THEN 'in'
                 WHEN a.check_out IS NOT NULL THEN 'out'
-                WHEN EXISTS (
-                  SELECT 1 FROM leaves lv
-                   WHERE lv.employee_id = e.id AND lv.status = 'approved'
-                     AND lv.start_date <= CURRENT_DATE AND lv.end_date >= CURRENT_DATE
-                ) THEN 'onLeave'
+                -- Permission is an hourly absence; the person is expected at work, so it
+                -- never reads as On Leave (same rule as team.js LEAVE_TODAY).
+                WHEN lv.employee_id IS NOT NULL AND lv.leave_type <> 'permission' THEN 'onLeave'
                 ELSE 'yetToCheckIn'
-              END as presence
+              END as presence,
+              lv.leave_type AS "leaveType", lv.is_half_day AS "isHalfDay",
+              lv.half_day_type AS "halfDayType", lv.hours,
+              lv.start_time::text AS "startTime", lv.end_time::text AS "endTime"
          FROM employees e
          LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
+         -- A full or half-day leave outranks a permission on the same day, so the
+         -- presence above still sees the leave when both exist.
+         LEFT JOIN LATERAL (
+           SELECT l.employee_id, l.leave_type, l.is_half_day, l.half_day_type,
+                  l.hours, l.start_time, l.end_time
+             FROM leaves l
+            WHERE l.employee_id = e.id AND l.status = 'approved'
+              AND l.start_date <= CURRENT_DATE AND l.end_date >= CURRENT_DATE
+            ORDER BY (l.leave_type = 'permission'), l.start_date
+            LIMIT 1
+         ) lv ON TRUE
         WHERE e.status = 'active' AND e.deleted_at IS NULL ${narrow}
         ORDER BY e.first_name ASC`,
       params
     );
+
+    /* Leave detail is scoped per row, not the rows themselves.
+     *
+     * The org chart, attendance location and leave tracker picker read this
+     * endpoint for the whole company, so the list cannot be narrowed to the
+     * caller's department. Which leave somebody took is only for their own
+     * department and for full-access roles; everyone else keeps the plain
+     * presence they have always seen. */
+    if (!isFullAccess(req.user.role)) {
+      const mine = String(req.user.department || '').trim().toLowerCase();
+      for (const row of r.rows) {
+        if (!mine || String(row.department || '').trim().toLowerCase() !== mine) {
+          row.leaveType = row.isHalfDay = row.halfDayType = row.hours = row.startTime = row.endTime = null;
+        }
+      }
+    }
     res.json({ success: true, data: r.rows });
   } catch (err) {
     serverError(res, err);

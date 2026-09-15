@@ -5,6 +5,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess } = require('../utils/roles');
 const { approvalLevelsJson } = require('../utils/leaveApproval');
 const { serverError } = require('../utils/serverError');
+const { DEFAULT_TZ } = require('../utils/timezone');
 router.use(protect);
 
 /* ── What the approval queue shows ─────────────────────────────────────────
@@ -33,15 +34,11 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
     // Full-access (Super Admin / HR) sees the entire org's pending queue;
     // everyone else sees pending leaves where they are an assigned approver of a
     // still-pending hierarchy level. canAct mirrors that (the per-level
-    // "top not first" gate is enforced at action time). Other request types
-    // keep their existing direct-reports scoping.
+    // "top not first" gate is enforced at action time).
     const full = isFullAccess(req.user.role);
-    // Direct-reports predicate for the simple (single-step) request types.
-    const reportFilter = full ? '' : ' AND (e.reporting_manager_id = $1 OR e.approving_authority_id = $1)';
-    const simpleParams = full ? [] : [userId];
 
     /* Every one of these joins employees and none of them excluded a
-     * soft-deleted one, so `e.deleted_at IS NULL` now appears on all seven.
+     * soft-deleted one, so `e.deleted_at IS NULL` now appears on all of them.
      *
      * Employment status is filtered only on the Approved / Rejected query.
      * A PENDING request from somebody who has left is still work to clear,
@@ -49,7 +46,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
      * report, and last year's leave for people who have gone does not
      * belong on this month's. */
     // Order here must match the order of the queries below, exactly.
-    const [leavesRes, timesheetsRes, regRes, wfhRes, onDutyRes, compOffRes, approvedLeavesRes] = await Promise.all([
+    const [leavesRes, regRes, wfhRes, onDutyRes, compOffRes, approvedLeavesRes] = await Promise.all([
       pool.query(`
         SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate", l.end_date as "endDate",
                l.total_days as "totalDays", l.hours, l.start_time as "startTime", l.end_time as "endTime",
@@ -71,15 +68,6 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
           ))
         ORDER BY l.created_at DESC
       `, [userId, full]),
-
-      pool.query(`
-        SELECT t.id as "_id", t.week_start_date as "weekStartDate", t.week_end_date as "weekEndDate",
-               t.total_hours as "totalHours", t.status, t.notes, t.created_at as "createdAt",
-               json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
-                 'department', e.department, 'employeeId', e.employee_id) as employee
-        FROM timesheets t JOIN employees e ON t.employee_id = e.id
-        WHERE t.status = 'submitted' AND e.deleted_at IS NULL${reportFilter} ORDER BY t.created_at DESC
-      `, simpleParams),
 
       // Regularizations now flow through the same hierarchy engine as leaves.
       pool.query(`
@@ -202,18 +190,72 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
     ]);
 
     const leaves = leavesRes.rows;
-    const timesheets = timesheetsRes.rows;
     const regularizations = regRes.rows;
     const wfhRequests = wfhRes.rows;
     const compOffs = compOffRes.rows;
     const onDuty = onDutyRes.rows;
     const approvedLeaves = approvedLeavesRes.rows;
-    const total = leaves.length + timesheets.length + regularizations.length + wfhRequests.length + compOffs.length + onDuty.length;
+    const total = leaves.length + regularizations.length + wfhRequests.length + compOffs.length + onDuty.length;
 
     res.json({
       success: true,
-      data: { leaves, timesheets, regularizations, wfhRequests, compOffs, onDuty, approvedLeaves, total }
+      data: { leaves, regularizations, wfhRequests, compOffs, onDuty, approvedLeaves, total }
     });
+  } catch (err) { serverError(res, err); }
+});
+
+/* ── Approvals done in a month ─────────────────────────────────────────────
+ *  Counted by approved_at, which every one of these action handlers sets only
+ *  on FINAL approval — a request with one level of three signed is still
+ *  pending and is not counted.
+ *
+ *  Scoped the way the Approved Leaves list above is: full access sees the org,
+ *  everyone else sees requests they were an approver on at any level. The
+ *  pending queries' "still-pending level" test cannot apply to finished work.
+ *
+ *  Month boundaries are midnight in the org's timezone, built as timestamptz so
+ *  the comparison is right whether a given approved_at column is TIMESTAMP or
+ *  TIMESTAMPTZ (the migrations created both).
+ * ───────────────────────────────────────────────────────────────────────── */
+router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
+  try {
+    const s = await pool.query(`SELECT timezone FROM settings LIMIT 1`).catch(() => ({ rows: [] }));
+    const tz = s.rows[0]?.timezone || DEFAULT_TZ;
+
+    const [curYear, curMonth] = new Date().toLocaleDateString('en-CA', { timeZone: tz }).split('-').map(Number);
+    const month = req.query.month === undefined ? curMonth : Number(req.query.month);
+    const year = req.query.year === undefined ? curYear : Number(req.query.year);
+    if (!Number.isInteger(month) || month < 1 || month > 12) {
+      return res.status(400).json({ success: false, message: 'month must be 1-12' });
+    }
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      return res.status(400).json({ success: false, message: 'Invalid year' });
+    }
+
+    const full = isFullAccess(req.user.role);
+    const scope = (type, alias) => full
+      ? 'TRUE'
+      : `EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = '${type}' AND x.request_id = ${alias}.id AND x.approver_id = $4)`;
+    const people = `e.deleted_at IS NULL AND (e.status = 'active' OR e.exit_date >= make_date($1::int, $2::int, 1))`;
+    const inMonth = (alias) => `${alias}.status = 'approved'
+          AND ${alias}.approved_at >= (make_date($1::int, $2::int, 1)::timestamp AT TIME ZONE $3::text)
+          AND ${alias}.approved_at <  ((make_date($1::int, $2::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $3::text)`;
+    const leaveCount = (leaveType) => `(SELECT COUNT(*)::int FROM leaves l JOIN employees e ON l.employee_id = e.id
+        WHERE l.leave_type = '${leaveType}' AND ${inMonth('l')} AND ${people} AND ${scope('leave', 'l')})`;
+    const tableCount = (table, alias, type) => `(SELECT COUNT(*)::int FROM ${table} ${alias} JOIN employees e ON ${alias}.employee_id = e.id
+        WHERE ${inMonth(alias)} AND ${people} AND ${scope(type, alias)})`;
+
+    const r = await pool.query(`
+      SELECT ${leaveCount('casual')} AS casual,
+             ${leaveCount('permission')} AS permissions,
+             ${leaveCount('unpaid')} AS lop,
+             ${tableCount('attendance_regularizations', 'r', 'regularization')} AS regularizations,
+             ${tableCount('wfh_requests', 'w', 'wfh')} AS wfh,
+             ${tableCount('comp_offs', 'c', 'comp_off')} AS "compOff",
+             ${tableCount('on_duty_requests', 'o', 'on_duty')} AS "onDuty"
+    `, full ? [year, month, tz] : [year, month, tz, req.user._id]);
+
+    res.json({ success: true, data: { month, year, ...r.rows[0] } });
   } catch (err) { serverError(res, err); }
 });
 

@@ -58,6 +58,10 @@ const FUNCTIONS = [
   },
   { key: 'wedding_anniversary', label: 'Wedding Anniversary', wired: false, default: false },
   { key: 'location_in_org_tab', label: 'Show location details in the organization tab', wired: true, default: true },
+  /* Not one of the reference's sixteen. Off by default because routes/
+   * manual-attendance.js lets full access through before asking, so admins
+   * need no row and every other role stays out until somebody switches it on. */
+  { key: 'attendance_marking', label: 'Marking Present / Absent', wired: true, default: false },
 ];
 
 const FUNCTION_KEYS = new Set(FUNCTIONS.map(f => f.key));

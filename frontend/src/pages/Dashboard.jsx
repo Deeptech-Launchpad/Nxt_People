@@ -3,8 +3,11 @@ import { useAuth } from '../context/AuthContext';
 import { isFullAccess } from '../utils/roles';
 import { useAttendance } from '../context/AttendanceContext';
 import { useWeekendRules } from '../context/WeekendRulesContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import usePolling from '../hooks/usePolling';
+import { useFunctionAccess } from '../context/FunctionAccessContext';
+import { leaveChipText } from './moreservices/shift/shiftGrid';
+import ManualAttendance from './moreservices/ManualAttendance';
 
 import {
   Megaphone, Clock, ExternalLink, User as UserIcon, Image as ImageIcon,
@@ -296,10 +299,24 @@ const PRESENCE_COLOR = { in: 'text-emerald-600', out: 'text-slate-500', onLeave:
 const PRESENCE_DOT   = { in: 'bg-emerald-500',  out: 'bg-slate-400',  onLeave: 'bg-violet-500',  yetToCheckIn: 'bg-amber-500'  };
 
 /* Small inline status pill — used on the manager / approver / dept-member cards. */
+/* Leave detail rides alongside presence the way teamShared's PresenceBadge
+ * merges it: an on-leave person reads as the leave itself. Permission never
+ * makes someone On Leave, so its window is added beside whatever their punch
+ * says instead. The server blanks the detail outside the viewer's own
+ * department, which leaves the plain label. */
 const PresenceLabel = ({ person }) => {
   const p = presenceOf(person);
   if (!p) return null;
-  return <span className={`text-[13px] font-medium ${PRESENCE_COLOR[p]}`}>{PRESENCE_LABEL[p]}</span>;
+  const detail = person?.leaveType ? leaveChipText(person) : null;
+  const label = p === 'onLeave' && detail && person.leaveType !== 'permission' ? detail : PRESENCE_LABEL[p];
+  return (
+    <span className={`text-[13px] font-medium ${PRESENCE_COLOR[p]}`}>
+      {label}
+      {person?.leaveType === 'permission' && detail && (
+        <span className="text-violet-600"> · {detail}</span>
+      )}
+    </span>
+  );
 };
 
 /* ─ Tab button ─ */
@@ -450,6 +467,20 @@ export default function Dashboard() {
 
   const [activeTab, setActiveTab] = useState('activities');
   const [feedTab, setFeedTab] = useState('all');
+
+  /* can() answers true while permissions load, which would flash Marking to
+   * everybody for a moment. Full access never depends on it; everyone else
+   * waits for the real answer. */
+  const { can, loading: functionsLoading } = useFunctionAccess();
+  const canMark = isFullAccess(user) || (!functionsLoading && can('attendance_marking'));
+
+  /* ?section=, not ?tab= — the embedded ManualAttendance keeps its own tab
+   * state and would read a ?tab= as one of its own. Waits on canMark so a
+   * link opened before permissions load still lands on the tab. */
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('section') === 'marking' && canMark) setActiveTab('marking');
+  }, [searchParams, canMark]);
 
   /* ─ Dropdown state ─ */
   const [showPayrollMore, setShowPayrollMore] = useState(false);
@@ -634,7 +665,7 @@ export default function Dashboard() {
      * Removed from the list on success rather than refetched: this list is
      * "what is waiting on me", and an approved request is not.
      */
-    const actOnApproval = async (approval, action) => {
+    const actOnApproval = async (approval, action, approveAll = false) => {
       let rejectionReason;
       if (action === 'rejected') {
         // Optional server-side (rejection_reason is nullable), so an empty
@@ -645,8 +676,9 @@ export default function Dashboard() {
       }
       setActingApproval(approval._id);
       try {
-        await api.put(`/${approval._endpoint}/${approval._id}/action`, { action, rejectionReason });
-        toast.success(action === 'approved' ? 'Approved' : 'Rejected');
+        await api.put(`/${approval._endpoint}/${approval._id}/action`,
+          approveAll ? { action, rejectionReason, approveAll: true } : { action, rejectionReason });
+        toast.success(approveAll ? 'All levels approved' : action === 'approved' ? 'Approved' : 'Rejected');
         setPendingApprovals(list => list.filter(a => a._id !== approval._id));
       } catch (err) {
         toast.error(err.response?.data?.message || `Could not ${action === 'approved' ? 'approve' : 'reject'} that request`);
@@ -982,8 +1014,10 @@ export default function Dashboard() {
   /* ─ tabs ─ */
   // Payslips only appears when payroll is live — see config/features.
   const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance',
+    ...(canMark ? ['Marking Present/Absent'] : []),
     ...(TIME_TRACKER_ENABLED ? ['Time Logs'] : []),
     ...(PAYROLL_ENABLED ? ['Payslips'] : [])];
+  const tabKey = (tab) => (tab === 'Marking Present/Absent' ? 'marking' : tab.toLowerCase().replace(' ', ''));
 
   return (
     <div className="flex flex-col relative w-full min-h-full font-sans bg-[#f2f3f7]">
@@ -1238,8 +1272,8 @@ export default function Dashboard() {
                 {TABS.map(tab => (
                   <Tab
                     key={tab}
-                    active={activeTab === tab.toLowerCase().replace(' ', '')}
-                    onClick={() => setActiveTab(tab.toLowerCase().replace(' ', ''))}
+                    active={activeTab === tabKey(tab)}
+                    onClick={() => setActiveTab(tabKey(tab))}
                   >
                     {tab}
                   </Tab>
@@ -1716,6 +1750,19 @@ export default function Dashboard() {
                               >
                                 {actingApproval === approval._id ? '…' : 'Approve'}
                               </button>
+                              {/* Same gate as Approvals.jsx: the server refuses
+                                  approveAll from team_incharge, and regularizations
+                                  and on-duty ignore the flag and approve one level. */}
+                              {['admin', 'director', 'hr_admin', 'manager'].includes(user?.role)
+                                && ['leaves', 'comp-off', 'wfh'].includes(approval._endpoint) && (
+                                <button
+                                  onClick={() => { if (window.confirm('Approve all remaining levels for this request? This skips any other pending approvers.')) actOnApproval(approval, 'approved', true); }}
+                                  disabled={actingApproval === approval._id}
+                                  className="text-[14px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+                                >
+                                  Approve All
+                                </button>
+                              )}
                               <button
                                 onClick={() => actOnApproval(approval, 'rejected')}
                                 disabled={actingApproval === approval._id}
@@ -1737,7 +1784,7 @@ export default function Dashboard() {
                             onClick={() => navigate(`/more-services/operations/leave-approvals?openId=${approval._id}`)}
                             className="text-[14px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
                           >
-                            Review
+                            View
                           </button>
                         </div>
                       </div>
@@ -1781,6 +1828,8 @@ export default function Dashboard() {
                   </div>
                 );
               })()}
+
+              {activeTab === 'marking' && canMark && <ManualAttendance embedded />}
 
               {/* ─ Attendance tab — Zoho-style weekly log ─ */}
               {activeTab === 'attendance' && (

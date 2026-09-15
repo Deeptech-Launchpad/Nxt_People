@@ -1,4 +1,4 @@
-/* ── Operations → Attendance Marking ────────────────────────────────────────
+/* ── Home → Marking Present / Absent ────────────────────────────────────────
  *  Attendance for staff who have no login: housekeeping, and anyone else who
  *  works a short shift with no device to punch on.
  *
@@ -12,9 +12,17 @@
  *  applied on read and never stored, so the table keeps saying what actually
  *  happened even if the policy changes.
  *
- *  Everything here is full-access only. Marking is one person asserting
- *  another person's attendance, which is not a thing a manager should be able
- *  to do to somebody outside this page's own staff list.
+ *  Two guards, because two different things are being delegated or not.
+ *  Deciding who is on this page and what their shifts are stays full-access
+ *  only. Marking the people already on it — the board, mark, mark-all and the
+ *  summary — is full access, or any role an administrator has switched on
+ *  under Function Based Permissions → Marking Present / Absent. Delegating
+ *  "mark these people present" is not delegating "decide who is on the list",
+ *  and without that split a delegated marker could add anybody to the list and
+ *  then assert their attendance.
+ *
+ *  The delegated guard is not authorize(): that resolves to org.manage, and
+ *  handing a Team Incharge org.manage would open every full-access route.
  *
  *  PAYROLL-DECISION: whether a presumed-present day is a paid day has not been
  *  decided. Nothing here feeds payroll; the summary returns confirmed and
@@ -27,13 +35,29 @@ const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
 const { audit } = require('../middleware/audit');
+const { isFullAccess } = require('../utils/roles');
+const { allows } = require('../utils/functionAccess');
 const {
   DAY_KEYS, clockMinutes, shiftSpanHours, runsOn, creditedHours, syncAttendanceDay,
 } = require('../utils/manualAttendance');
 
 router.use(protect);
 const FULL = ['admin', 'director', 'hr_admin'];
-router.use(authorize(...FULL));
+const fullOnly = authorize(...FULL);
+
+const MARKING = 'attendance_marking';
+async function canMark(req, res, next) {
+  try {
+    if (isFullAccess(req.user.role) || await allows(req, MARKING)) return next();
+    // Same body requireFunction sends, so the frontend reads one shape of refusal.
+    return res.status(403).json({
+      success: false,
+      code: 'FUNCTION_NOT_ALLOWED',
+      functionKey: MARKING,
+      message: 'Marking Present / Absent is switched off for your role under Function Based Permissions.',
+    });
+  } catch (err) { next(err); }
+}
 
 const bad = (msg) => Object.assign(new Error(msg), { status: 400, expose: true });
 const fail = (res, err) => {
@@ -89,7 +113,7 @@ function readShift(body) {
  * this page, and because is_manual keeps them out of rotation, patterns and
  * every ordinary shift picker. */
 
-router.get('/shifts', async (req, res) => {
+router.get('/shifts', fullOnly, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT ${SHIFT_COLS},
@@ -99,7 +123,7 @@ router.get('/shifts', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-router.post('/shifts', audit('CREATE', 'manual_shift'), async (req, res) => {
+router.post('/shifts', fullOnly, audit('CREATE', 'manual_shift'), async (req, res) => {
   try {
     const s = readShift(req.body);
     const { rows } = await pool.query(
@@ -114,7 +138,7 @@ router.post('/shifts', audit('CREATE', 'manual_shift'), async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-router.put('/shifts/:id', audit('UPDATE', 'manual_shift'), async (req, res) => {
+router.put('/shifts/:id', fullOnly, audit('UPDATE', 'manual_shift'), async (req, res) => {
   const client = await pool.connect();
   try {
     if (!isUuid(req.params.id)) throw bad('That is not a shift');
@@ -145,7 +169,7 @@ router.put('/shifts/:id', audit('UPDATE', 'manual_shift'), async (req, res) => {
   } finally { client.release(); }
 });
 
-router.delete('/shifts/:id', audit('DELETE', 'manual_shift'), async (req, res) => {
+router.delete('/shifts/:id', fullOnly, audit('DELETE', 'manual_shift'), async (req, res) => {
   try {
     if (!isUuid(req.params.id)) throw bad('That is not a shift');
     /* Refused rather than cascaded. Deleting a shift with marks against it
@@ -163,7 +187,7 @@ router.delete('/shifts/:id', audit('DELETE', 'manual_shift'), async (req, res) =
 });
 
 // ── Who is on this page ───────────────────────────────────────────────────
-router.get('/staff', async (req, res) => {
+router.get('/staff', fullOnly, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT e.id AS "employeeId", e.employee_id AS "code",
@@ -184,7 +208,7 @@ router.get('/staff', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-router.post('/staff', audit('CREATE', 'manual_attendance_assignment'), async (req, res) => {
+router.post('/staff', fullOnly, audit('CREATE', 'manual_attendance_assignment'), async (req, res) => {
   try {
     const { employeeId, shiftId } = req.body || {};
     if (!isUuid(employeeId)) throw bad('Choose an employee');
@@ -204,7 +228,7 @@ router.post('/staff', audit('CREATE', 'manual_attendance_assignment'), async (re
   } catch (err) { fail(res, err); }
 });
 
-router.delete('/staff/:employeeId/:shiftId', audit('DELETE', 'manual_attendance_assignment'), async (req, res) => {
+router.delete('/staff/:employeeId/:shiftId', fullOnly, audit('DELETE', 'manual_attendance_assignment'), async (req, res) => {
   try {
     const { employeeId, shiftId } = req.params;
     if (!isUuid(employeeId) || !isUuid(shiftId)) throw bad('That is not an assignment');
@@ -226,7 +250,7 @@ async function holidaySet(from, to) {
   return new Set(rows.map(r => r.d));
 }
 
-router.get('/day', async (req, res) => {
+router.get('/day', canMark, async (req, res) => {
   try {
     const date = isDate(req.query.date) ? req.query.date : new Date().toISOString().slice(0, 10);
     const holidays = await holidaySet(date, date);
@@ -279,7 +303,7 @@ router.get('/day', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-router.post('/mark', audit('UPDATE', 'manual_attendance_mark'), async (req, res) => {
+router.post('/mark', canMark, audit('UPDATE', 'manual_attendance_mark'), async (req, res) => {
   const client = await pool.connect();
   try {
     const { employeeId, shiftId, date, state } = req.body || {};
@@ -344,7 +368,7 @@ router.post('/mark', audit('UPDATE', 'manual_attendance_mark'), async (req, res)
 });
 
 /** Mark every unmarked scheduled row on a date — the ordinary day, one click. */
-router.post('/mark-all', audit('UPDATE', 'manual_attendance_mark'), async (req, res) => {
+router.post('/mark-all', canMark, audit('UPDATE', 'manual_attendance_mark'), async (req, res) => {
   const client = await pool.connect();
   try {
     const { date } = req.body || {};
@@ -392,7 +416,7 @@ router.post('/mark-all', audit('UPDATE', 'manual_attendance_mark'), async (req, 
  *
  * PAYROLL-DECISION: if payroll ever consumes this, it has to pick one of these
  * two numbers, and that choice is the decision nobody has made yet. */
-router.get('/summary', async (req, res) => {
+router.get('/summary', canMark, async (req, res) => {
   try {
     const to = isDate(req.query.to) ? req.query.to : new Date().toISOString().slice(0, 10);
     const from = isDate(req.query.from) ? req.query.from : to.slice(0, 8) + '01';

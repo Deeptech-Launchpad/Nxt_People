@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Check, X, RotateCcw, AlertTriangle, CalendarDays } from 'lucide-react';
 import api from '../../../utils/api';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../../context/AuthContext';
+import { isFullAccess } from '../../../utils/roles';
 
 /* ── The day board ──────────────────────────────────────────────────────────
  *  One row per person per shift. Two shifts in a day means two rows for the
@@ -31,6 +33,7 @@ const pretty = (iso) =>
 const hhmm = (t) => String(t || '').slice(0, 5);
 
 export default function MarkDay() {
+  const { user } = useAuth();
   const [date, setDate] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -157,7 +160,9 @@ export default function MarkDay() {
 
               {!loading && !rows.length && (
                 <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-400">
-                  Nobody is set up for attendance marking yet. Add staff and shifts on the next tab.
+                  Nobody is set up for attendance marking yet. {isFullAccess(user)
+                    ? 'Add staff and shifts on the next tab.'
+                    : 'HR adds the staff and shifts marked here.'}
                 </td></tr>
               )}
 

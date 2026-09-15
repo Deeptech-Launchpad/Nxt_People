@@ -24,6 +24,11 @@ const MORE_BUTTON_WIDTH = 52;
  * the reference fits five. This constant only absorbs sub-pixel rounding. */
 const ROUNDING_SLACK = 4;
 
+const Badge = ({ n, className }) => (n > 0 ? (
+  <span className={`min-w-[20px] h-5 px-1 rounded-full text-sm flex items-center justify-center font-bold ${className}`}>{n}</span>
+) : null);
+const navBadge = 'ml-2 bg-white/15 text-white';
+
 export default function WorkspaceTabs({ tabs, activeId, onSelect }) {
   const rowRef = useRef(null);
   const measureRef = useRef(null);
@@ -91,8 +96,9 @@ export default function WorkspaceTabs({ tabs, activeId, onSelect }) {
       <div ref={measureRef} aria-hidden className="absolute invisible pointer-events-none flex whitespace-nowrap" style={{ top: -9999, left: 0 }}>
         {/* Measured in the ACTIVE weight — semibold is wider than medium, so
             this over-estimates rather than under-estimates and a tab can never
-            become the one that overflows just by being selected. */}
-        {tabs.map(t => <span key={t.id} className={tabClass(true)}>{t.label}</span>)}
+            become the one that overflows just by being selected. The badge is
+            part of the width, or a counted tab would slide under the "…". */}
+        {tabs.map(t => <span key={t.id} className={tabClass(true)}>{t.label}<Badge n={t.badge} className={navBadge} /></span>)}
       </div>
 
       {visible.map(t => (
@@ -105,6 +111,7 @@ export default function WorkspaceTabs({ tabs, activeId, onSelect }) {
           <button key={t.id} {...(t.attrs || {})} onClick={() => onSelect(t)}
             className={tabClass(t.id === activeId)}>
             {t.label}
+            <Badge n={t.badge} className={navBadge} />
           </button>
         )
       ))}
@@ -127,12 +134,13 @@ export default function WorkspaceTabs({ tabs, activeId, onSelect }) {
                   disabled={!!t.disabled}
                   title={t.disabled ? (t.disabledReason || 'Coming soon') : undefined}
                   onClick={() => { if (t.disabled) return; setMenuOpen(false); onSelect(t); }}
-                  className={`w-full text-left px-4 py-2.5 text-[14px] ${
+                  className={`w-full text-left px-4 py-2.5 text-[14px] flex items-center justify-between gap-3 ${
                     t.disabled ? 'text-slate-300 cursor-not-allowed'
                       : t.id === activeId ? 'text-brand-600 font-medium hover:bg-slate-50'
                       : 'text-slate-700 hover:bg-slate-50'}`}
                 >
                   {t.label}
+                  <Badge n={t.badge} className="bg-slate-100 text-slate-600" />
                 </button>
               ))}
             </div>

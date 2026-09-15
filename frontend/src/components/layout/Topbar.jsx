@@ -4,6 +4,7 @@ import { Search, Bell, Plus, CheckCircle, X, MoreHorizontal, Settings as Setting
 import { serviceByKey, tabsOf, BASE as SETTINGS_BASE } from '../../pages/settings/serviceCatalog';
 import { operationsWorkspaceFor, tabHref } from '../../pages/moreservices/operationsWorkspaces';
 import WorkspaceTabs from './WorkspaceTabs';
+import { useWorkspaceBadges } from '../../utils/workspaceBadges';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
 import { roleLabel, isFullAccess } from '../../utils/roles';
@@ -203,9 +204,9 @@ const NAV = {
   moreservices: {
     label: 'More Services',
     primaryTabs: [
-      // Operations was relocated to the left sidebar rail (Sidebar.jsx). Its
-      // sub-nav + active detection below still drive the white sub-bar when the
-      // user lands on /more-services/operations from the sidebar.
+      // Operations was relocated to the left sidebar rail (Sidebar.jsx). It has
+      // no sub-nav row: Services is the back arrow and the sidebar target, and
+      // everything else is a tile on that grid or a workspace in the navy bar.
       { key: 'files',        label: 'Files',               to: '/more-services/files'        },
       // Travel + Compensation are intentionally disabled — the underlying
       // workflows aren't fully built out yet. Visible so users see what's
@@ -222,11 +223,6 @@ const NAV = {
       return 'files';
     },
     subNav: {
-      operations:   [
-        { to: '/more-services/operations',                label: 'Services'        },
-        { to: '/more-services/operations/leave-tracker',  label: 'Leave Tracker'   },
-        { to: '/more-services/operations/leave-approvals', label: 'Leave Approvals' },
-      ],
       files:        [{ to: '/more-services/files',        label: 'Document Storage' }],
       travel:       [{ to: '/more-services/travel',       label: 'Travel Requests'  }],
       compensation: [{ to: '/more-services/compensation', label: 'Claims'           }],
@@ -659,11 +655,10 @@ export default function Topbar() {
    * adding a navy "Operations" label and, below that, a second white bar
    * repeating "Services / Leave Tracker / Leave Approvals" — three rows of
    * navigation before any content, where the page's own bar is already the
-   * whole answer. Suppressed here, on these two routes only: the Operations
-   * Services grid and Leave Approvals have no navigation of their own and
-   * still need this bar to get anywhere. */
+   * whole answer. */
   const opsWorkspace = operationsWorkspaceFor(location.pathname, location.search);
   const inOperationsWorkspace = !!opsWorkspace;
+  const wsBadges = useWorkspaceBadges(opsWorkspace?.base);
   // `method` tabs wait for the methods call rather than flashing in and then
   // disappearing: until the answer is back they are treated as on, matching
   // the default the landing tiles use.
@@ -707,7 +702,7 @@ export default function Topbar() {
                 {opsWorkspace.title}
               </span>
               <WorkspaceTabs
-                tabs={opsWorkspace.tabs}
+                tabs={opsWorkspace.tabs.map(t => ({ ...t, badge: wsBadges[t.id] }))}
                 activeId={opsWorkspace.activeId}
                 onSelect={t => navigate(tabHref(opsWorkspace.base, t))}
               />
