@@ -28,6 +28,7 @@ import { richTextToPlain } from '../utils/richText';
 import AnnouncementDetailModal from '../components/AnnouncementDetailModal';
 import toast from 'react-hot-toast';
 import PhotoCropperModal from '../components/PhotoCropperModal';
+import { ImgWithFallback } from '../components/ui';
 import { PAYROLL_ENABLED, TIME_TRACKER_ENABLED } from '../config/features';
 
 /* Same wording LeaveCalendar.jsx and Leave.jsx already use for a leave
@@ -1109,10 +1110,8 @@ export default function Dashboard() {
                   title="View profile photo"
                   className="w-[110px] h-[110px] rounded-xl bg-slate-50 border-4 border-white flex items-center justify-center text-slate-300 -mt-[55px] shadow-xl relative z-10 overflow-hidden hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer transition-colors"
                 >
-                  {user?.photoUrl
-                    ? <img src={user.photoUrl} alt="avatar" className="w-full h-full object-cover" />
-                    : <UserIcon size={60} strokeWidth={1} className="opacity-30" />
-                  }
+                  <ImgWithFallback src={user?.photoUrl} alt="avatar" className="w-full h-full object-cover"
+                    fallback={<UserIcon size={60} strokeWidth={1} className="opacity-30" />} />
                 </button>
               </div>
 
@@ -1236,11 +1235,8 @@ export default function Dashboard() {
                        <div key={member._id} className="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-0">
                          <div className="relative flex-shrink-0">
                            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-300 overflow-hidden">
-                             {member.photoUrl ? (
-                               <img src={member.photoUrl} alt="avatar" className="w-full h-full object-cover" />
-                             ) : (
-                               <User size={24} />
-                             )}
+                             <ImgWithFallback src={member.photoUrl} alt="avatar" className="w-full h-full object-cover"
+                               fallback={<User size={24} />} />
                            </div>
                          </div>
                          <div className="min-w-0 flex-1 pt-0.5">
@@ -1706,11 +1702,8 @@ export default function Dashboard() {
                       <div key={approval._id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm hover:border-blue-200 transition-colors">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 overflow-hidden flex-shrink-0">
-                            {approval.employee?.photoUrl ? (
-                              <img src={approval.employee.photoUrl} alt="avatar" className="w-full h-full object-cover" />
-                            ) : (
-                              <User size={20} />
-                            )}
+                            <ImgWithFallback src={approval.employee?.photoUrl} alt="avatar" className="w-full h-full object-cover"
+                              fallback={<User size={20} />} />
                           </div>
                           <div>
                             <p className="text-[15px] font-bold text-slate-800">
@@ -2300,11 +2293,8 @@ export default function Dashboard() {
                    <div key={member._id} className="flex items-start gap-3 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors rounded-lg px-2">
                      <div className="relative flex-shrink-0">
                        <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-300 overflow-hidden">
-                         {member.photoUrl ? (
-                           <img src={member.photoUrl} alt="avatar" className="w-full h-full object-cover" />
-                         ) : (
-                           <User size={24} />
-                         )}
+                         <ImgWithFallback src={member.photoUrl} alt="avatar" className="w-full h-full object-cover"
+                           fallback={<User size={24} />} />
                        </div>
                      </div>
                      <div className="min-w-0 flex-1 pt-0.5">
@@ -2349,10 +2339,8 @@ export default function Dashboard() {
              </button>
              <div className="flex flex-col items-center">
                <div className="w-64 h-64 rounded-2xl overflow-hidden bg-slate-100 flex items-center justify-center mb-4">
-                 {user?.photoUrl
-                   ? <img src={user.photoUrl} alt={user.firstName || 'avatar'} className="w-full h-full object-cover" />
-                   : <UserIcon size={120} strokeWidth={1} className="text-slate-300" />
-                 }
+                 <ImgWithFallback src={user?.photoUrl} alt={user?.firstName || 'avatar'} className="w-full h-full object-cover"
+                   fallback={<UserIcon size={120} strokeWidth={1} className="text-slate-300" />} />
                </div>
                <p className="text-[15px] font-semibold text-slate-700">
                  {user?.employeeId} <span className="text-slate-400 font-normal">-</span> {user?.firstName} {user?.lastName}

@@ -22,14 +22,16 @@ function useIsDark() {
 /* ── Square photo thumbnail. When no photo, a soft gray User silhouette
    (matches Zoho's placeholder — no initials, no coloured background). */
 function Avatar({ size = 36, photoUrl, photoBroken, onPhotoError }) {
-  const showPhoto = photoUrl && !photoBroken;
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [photoUrl]);
+  const showPhoto = photoUrl && !photoBroken && !broken;
   return (
     <div
       className="rounded border border-slate-200 dark:border-[#374151] bg-slate-100 dark:bg-[#2d3748] flex items-center justify-center flex-shrink-0 overflow-hidden text-slate-400 dark:text-slate-500"
       style={{ width: size, height: size }}
     >
       {showPhoto
-        ? <img src={photoUrl} alt="" className="w-full h-full object-cover" onError={onPhotoError} />
+        ? <img src={photoUrl} alt="" className="w-full h-full object-cover" onError={() => { setBroken(true); onPhotoError?.(); }} />
         : <User size={Math.floor(size * 0.55)} strokeWidth={1.6} />}
     </div>
   );

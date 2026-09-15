@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Check, X } from 'lucide-react';
 import api from '../../../utils/api';
+import LeaveDetailModal from '../../../components/LeaveDetailModal';
+import { useAuth } from '../../../context/AuthContext';
 
 /* ── Operations → Attendance → Regularization ────────────────────────────
  *  The organisation-wide queue, laid out the way the reference does it:
@@ -41,6 +43,8 @@ export default function OpsRegularizationQueue() {
   const [rows, setRows] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [q, setQ] = useState('');
+  const [detail, setDetail] = useState(null);
+  const { user } = useAuth();
 
   const load = () => {
     setRows(null);
@@ -50,12 +54,12 @@ export default function OpsRegularizationQueue() {
   };
   useEffect(load, []);
 
-  const act = async (row, action) => {
+  const act = async (row, action, rejectionReason, confirmed = false) => {
     const who = `${row.employee.firstName} ${row.employee.lastName || ''}`.trim();
-    if (action === 'rejected' && !window.confirm(`Reject ${who}'s regularization for ${fmtDay(row.date)}?`)) return;
+    if (action === 'rejected' && !confirmed && !window.confirm(`Reject ${who}'s regularization for ${fmtDay(row.date)}?`)) return;
     setBusyId(row._id);
     try {
-      await api.put(`/regularizations/${row._id}/action`, { action });
+      await api.put(`/regularizations/${row._id}/action`, rejectionReason ? { action, rejectionReason } : { action });
       toast.success(action === 'approved' ? 'Approved' : 'Rejected');
       load();
     } catch (err) {
@@ -110,7 +114,10 @@ export default function OpsRegularizationQueue() {
                 const levels = r.approvalLevels || [];
                 const done = levels.filter(l => l.status === 'approved').length;
                 return (
-                  <tr key={r._id} className="border-t border-slate-100 hover:bg-slate-50/60">
+                  <tr key={r._id} className="border-t border-slate-100 hover:bg-slate-50/60 cursor-pointer focus:outline-none focus:bg-blue-50/60"
+                    tabIndex={0} role="button"
+                    onClick={() => setDetail(r)}
+                    onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setDetail(r); } }}>
                     <td className="px-4 py-3">
                       <span className="text-slate-700">{r.employee.firstName} {r.employee.lastName || ''}</span>
                       <span className="block text-[12.5px] text-slate-400">{r.employee.employeeId} · {r.employee.department || '—'}</span>
@@ -134,7 +141,7 @@ export default function OpsRegularizationQueue() {
                     </td>
                     <td className="px-4 py-3">
                       {r.canAct ? (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
                           <button onClick={() => act(r, 'approved')} disabled={busyId === r._id}
                             title="Approve"
                             className="flex items-center gap-1 text-[13px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 px-2.5 py-1.5 rounded-lg">
@@ -156,6 +163,17 @@ export default function OpsRegularizationQueue() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {detail && (
+        <LeaveDetailModal
+          leave={detail}
+          kind="regularization"
+          onClose={() => setDetail(null)}
+          canAct={detail.status === 'pending' && !!detail.canAct && detail.employee?._id !== user?._id}
+          onApprove={(x, comment) => { setDetail(null); act(x, 'approved', comment); }}
+          onReject={(x, comment) => { setDetail(null); act(x, 'rejected', comment, true); }}
+        />
       )}
     </div>
   );

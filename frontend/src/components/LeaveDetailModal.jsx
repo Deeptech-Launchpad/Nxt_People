@@ -14,7 +14,7 @@
  *   onApproveAll(comment)                   — Super-Admin only: approve every remaining level at once.
  *   onCancel()                              — owner cancels their own pending request.
  *   balance                                 — array of {code,name,available,booked}.
- *   kind                                    — 'leave' (default) | 'regularization'.
+ *   kind                                    — 'leave' (default) | 'regularization' | 'wfh' | 'on_duty'.
  */
 import React, { useState } from 'react';
 import { X, CheckCircle, CheckCheck, XCircle, Calendar, Clock, FileText, User, Hash, LogIn, LogOut, Eye, ArrowLeft, MessageSquare, Scissors, Pencil } from 'lucide-react';
@@ -111,10 +111,11 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
   const emp = leave.employee;
   const status = leave.status === 'pending' ? 'pending' : leave.status;
   const isWfh = kind === 'wfh';
+  const isOnDuty = kind === 'on_duty';
   const isReg = !isWfh && ((kind === 'regularization') || (!kind && !leave.leaveType && (leave.checkIn !== undefined || leave.checkOut !== undefined || (leave.date && !leave.startDate))));
-  const typeLabel = isWfh ? 'WFH Request' : isReg ? 'Attendance Regularization' : (TYPE_LABEL[leave.leaveType] || `${(leave.leaveType || '').replace(/_/g, ' ')}`);
+  const typeLabel = isWfh ? 'WFH Request' : isOnDuty ? 'On Duty Request' : isReg ? 'Attendance Regularization' : (TYPE_LABEL[leave.leaveType] || `${(leave.leaveType || '').replace(/_/g, ' ')}`);
   const empName = emp ? `${emp.firstName} ${emp.lastName}` : null;
-  const showBalance = !!balanceCards && status === 'pending' && !isReg;
+  const showBalance = !!balanceCards && status === 'pending' && !isReg && !isOnDuty;
   const noteText = leave.rejectionReason;                    // doubles as approver comment
   const noteLabel = status === 'rejected' ? 'Rejection Reason' : 'Comment';
   const showActions = canAct && (onApprove || onReject);
@@ -127,11 +128,11 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
   /* Editing is offered on the same states cancelling is, and for the same
    * reason: a live request can still be corrected, a resolved one is history.
    * Regularizations and WFH have their own shapes and are not edited here. */
-  const showEdit = typeof onEdit === 'function' && ['pending', 'approved'].includes(status) && !isReg && !isWfh;
+  const showEdit = typeof onEdit === 'function' && ['pending', 'approved'].includes(status) && !isReg && !isWfh && !isOnDuty;
   // Only offered on a range: cancelling "part" of a single day is just
   // cancelling it, and offering both would be two buttons for one outcome.
   const isRange = String(leave.startDate || '').slice(0, 10) !== String(leave.endDate || '').slice(0, 10);
-  const showCancelPart = typeof onCancelPart === 'function' && showCancel && isRange && !isReg && !isWfh;
+  const showCancelPart = typeof onCancelPart === 'function' && showCancel && isRange && !isReg && !isWfh && !isOnDuty;
   const c = () => comment.trim() || undefined;
 
   return (
@@ -180,7 +181,7 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
             <div className={`grid grid-cols-1 ${showBalance ? 'md:grid-cols-2' : ''} gap-0`}>
               {/* Details */}
               <div className={`p-6 ${showBalance ? 'md:border-r border-slate-100' : ''}`}>
-                <h4 className="text-[15px] font-bold text-slate-700 mb-3">{isReg ? 'Regularization Details' : 'Leave Details'}</h4>
+                <h4 className="text-[15px] font-bold text-slate-700 mb-3">{isOnDuty ? 'On Duty Details' : isReg ? 'Regularization Details' : 'Leave Details'}</h4>
 
                 {emp?.employeeId && <DetailRow icon={Hash} label="Employee ID">{emp.employeeId}</DetailRow>}
                 {empName && (
@@ -190,11 +191,29 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                 )}
                 <DetailRow icon={FileText} label="Request Type">
                   {typeLabel}
-                  {!isReg && !isWfh && leave.isHalfDay && <span className="ml-2 text-[13px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">Half Day</span>}
+                  {isOnDuty && leave.requestType && <span className="ml-2 text-[13px] text-slate-600">{leave.requestType}</span>}
+                  {!isReg && !isWfh && !isOnDuty && leave.isHalfDay && <span className="ml-2 text-[13px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">Half Day</span>}
                 </DetailRow>
 
                 {isWfh ? (
                   <DetailRow icon={Calendar} label="Date">{fmtDate(leave.date)}</DetailRow>
+                ) : isOnDuty ? (
+                  <>
+                    <DetailRow icon={Calendar} label="Dates">
+                      {fmtDate(leave.startDate)}
+                      {leave.endDate && String(leave.endDate).slice(0, 10) !== String(leave.startDate || '').slice(0, 10) && <> <span className="text-slate-600">→</span> {fmtDate(leave.endDate)}</>}
+                    </DetailRow>
+                    {leave.unit === 'hours' ? (
+                      <>
+                        <DetailRow icon={Clock} label="Time">
+                          {(leave.startTime || '').slice(0, 5) || '—'} <span className="text-slate-600">–</span> {(leave.endTime || '').slice(0, 5) || '—'}
+                        </DetailRow>
+                        <DetailRow icon={Clock} label="Duration">{leave.hours ? `${leave.hours} hour${Number(leave.hours) !== 1 ? 's' : ''}` : '—'}</DetailRow>
+                      </>
+                    ) : (
+                      <DetailRow icon={Clock} label="Unit">Days</DetailRow>
+                    )}
+                  </>
                 ) : isReg ? (
                   <>
                     <DetailRow icon={Calendar} label="Date">{fmtDate(leave.date)}</DetailRow>

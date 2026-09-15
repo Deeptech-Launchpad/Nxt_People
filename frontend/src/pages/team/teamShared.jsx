@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { leaveChipText } from '../moreservices/shift/shiftGrid';
 
@@ -57,9 +57,11 @@ export function WorkspaceHeader({ title, subtitle, right }) {
 
 export function Avatar({ person, size = 40 }) {
   const initials = `${person?.firstName?.[0] || ''}${person?.lastName?.[0] || ''}`.toUpperCase();
-  if (person?.photoUrl) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [person?.photoUrl]);
+  if (person?.photoUrl && !broken) {
     return (
-      <img src={person.photoUrl} alt=""
+      <img src={person.photoUrl} alt="" onError={() => setBroken(true)}
         className="rounded-full object-cover border border-slate-200 flex-shrink-0"
         style={{ width: size, height: size }} />
     );

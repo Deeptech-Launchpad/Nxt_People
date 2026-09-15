@@ -2,7 +2,7 @@
 const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
-const { isFullAccess } = require('../utils/roles');
+const { isFullAccess, reportsScope } = require('../utils/roles');
 const { approvalLevelsJson } = require('../utils/leaveApproval');
 const { serverError } = require('../utils/serverError');
 const { DEFAULT_TZ } = require('../utils/timezone');
@@ -161,10 +161,33 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee,
                l.approved_by as "approvedById",
-               ${LEAVE_LEVELS_JSON} as "approvalLevels"
+               ${LEAVE_LEVELS_JSON} as "approvalLevels",
+               COALESCE(dcd.name, NULLIF(TRIM(CONCAT(ab.first_name, ' ', ab.last_name)), '')) as "decidedByName",
+               COALESCE(lv.on_your_behalf, false) as "onYourBehalf",
+               COALESCE(lv.your_level_acted, false) as "yourLevelActed",
+               COALESCE(dcd.acted_by = $1, false) as "decidedByYou",
+               CASE WHEN lv.level_count = 0 AND l.approved_by IS NULL THEN 'zoho' ELSE 'app' END as source
         FROM leaves l
         JOIN employees e ON l.employee_id = e.id
-        WHERE ${full ? 'TRUE' : `EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1)`}
+        LEFT JOIN employees ab ON l.approved_by = ab.id
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*) AS level_count,
+                 bool_or(al.approver_id = $1 AND (COALESCE(al.on_behalf, false) OR COALESCE(al.by_hr, false))
+                         AND al.acted_by IS NOT NULL AND al.acted_by <> $1) AS on_your_behalf,
+                 bool_or(al.acted_by = $1) AS your_level_acted
+            FROM approval_levels al
+           WHERE al.request_type = 'leave' AND al.request_id = l.id
+        ) lv ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT NULLIF(TRIM(CONCAT(ae.first_name, ' ', ae.last_name)), '') AS name, al.acted_by
+            FROM approval_levels al
+            JOIN employees ae ON al.acted_by = ae.id
+           WHERE al.request_type = 'leave' AND al.request_id = l.id
+             AND al.status IN ('approved', 'rejected')
+           ORDER BY al.level DESC LIMIT 1
+        ) dcd ON TRUE
+        WHERE ${full ? 'TRUE' : `(EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1)
+               OR (TRUE${reportsScope(req.user, 'e', 1).clause}))`}
           AND l.status IN ('approved', 'rejected')
           /* This month only. It had no date bound at all, so the Approved and
            * Rejected tabs were showing 2024 alongside today and the 500-row cap
@@ -186,7 +209,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
             OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date
           )
         ORDER BY l.start_date DESC LIMIT 500
-      `, full ? [] : [userId]),
+      `, [userId]),
     ]);
 
     const leaves = leavesRes.rows;

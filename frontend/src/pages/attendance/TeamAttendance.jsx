@@ -69,11 +69,21 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
     if (!leaveMap[l.employeeId]) leaveMap[l.employeeId] = l;
   });
 
+  /* ── employeeId → a half day or permission covering this date ──
+   * The backend marks a half-day leave fullDayOff too, so isHalfDay is checked
+   * here: those are the entries worth labelling on somebody who did come in. */
+  const partialMap = {};
+  leave.forEach(l => {
+    if (l.fullDayOff && !l.isHalfDay) return;
+    if (!partialMap[l.employeeId]) partialMap[l.employeeId] = l;
+  });
+
   /* ── Split into "In" / "Out" / "Leave" groups ── */
   const allPeople = employees.map(e => ({
     ...e,
     att: attMap[e._id] || null,
     leave: leaveMap[e._id] || null,
+    partial: partialMap[e._id] || null,
   }));
 
   const filtered = allPeople.filter(p =>
@@ -86,14 +96,14 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
    * leave is In, not on leave. Same precedence org.js resolves presence with. */
   const checkedIn  = filtered.filter(p => p.att?.checkIn && !p.att?.checkOut);
   const checkedOut = filtered.filter(p => p.att?.checkOut);
-  const onLeave    = filtered.filter(p => !p.att?.checkIn && p.leave);
-  const notYet     = filtered.filter(p => !p.att?.checkIn && !p.leave);
+  const onLeave    = filtered.filter(p => !p.att?.checkIn && (p.leave || p.partial));
+  const notYet     = filtered.filter(p => !p.att?.checkIn && !p.leave && !p.partial);
 
   const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata' }) : null;
 
   const MemberCard = ({ person }) => {
     const att = person.att;
-    const isIn = att?.checkIn && !att?.checkOut;
+    const leaveLabel = att?.checkIn ? person.partial : (person.leave || person.partial);
     const canOpen = !!onOpen && (!openableIds || openableIds.has(String(person._id)));
     return (
       <div
@@ -151,14 +161,14 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
           {/* Naming the leave is the point of the group: "on leave" alone
               still leaves the manager asking which kind. leaveChipText is the
               same label the shift schedule grid prints. */}
-          {!att?.checkIn && person.leave && (
+          {leaveLabel && (
             <p className="text-[13px] font-medium text-violet-600 mt-0.5">
               {leaveChipText({
-                leaveType: person.leave.leaveType,
-                isHalfDay: person.leave.isHalfDay,
-                halfDayType: person.leave.halfDayType,
-                startTime: person.leave.startTime,
-                endTime: person.leave.endTime,
+                leaveType: leaveLabel.leaveType,
+                isHalfDay: leaveLabel.isHalfDay,
+                halfDayType: leaveLabel.halfDayType,
+                startTime: leaveLabel.startTime,
+                endTime: leaveLabel.endTime,
               })}
             </p>
           )}
@@ -168,7 +178,7 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
   };
 
   const GroupSection = ({ title, count, people, statusColor }) => (
-    <div className="mb-6">
+    <div className="min-w-0">
       <div className="flex items-center gap-2 mb-3">
         <div className={`w-2 h-2 rounded-full ${statusColor}`} />
         <h3 className="text-[15px] font-semibold text-slate-700">{title}</h3>
@@ -176,6 +186,9 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
       </div>
       <div className="space-y-2.5">
         {people.map(p => <MemberCard key={p._id} person={p} />)}
+        {people.length === 0 && (
+          <p className="text-[13px] text-slate-400 py-3 text-center">No one</p>
+        )}
       </div>
     </div>
   );
@@ -227,27 +240,22 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
             <div className="w-7 h-7 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="max-w-[480px]">
-            {checkedIn.length > 0 && (
+          filtered.length === 0 ? (
+            <div className="text-center py-16 text-slate-400">
+              <p className="text-[15px]">No team members found</p>
+            </div>
+          ) : (
+            <div className={`grid grid-cols-1 md:grid-cols-2 gap-5 items-start ${checkedOut.length > 0 ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
               <GroupSection title="In" count={checkedIn.length} people={checkedIn} statusColor="bg-emerald-500" />
-            )}
-            {checkedOut.length > 0 && (
-              <GroupSection title="Checked Out" count={checkedOut.length} people={checkedOut} statusColor="bg-slate-400" />
-            )}
-            {onLeave.length > 0 && (
-              <GroupSection title="Leave" count={onLeave.length} people={onLeave} statusColor="bg-violet-500" />
-            )}
-            {notYet.length > 0 && (
-              isWeekend
+              {isWeekend
                 ? <GroupSection title="Weekend" count={notYet.length} people={notYet} statusColor="bg-violet-400" />
-                : <GroupSection title="Not Yet Checked In" count={notYet.length} people={notYet} statusColor="bg-slate-300" />
-            )}
-            {filtered.length === 0 && (
-              <div className="text-center py-16 text-slate-400">
-                <p className="text-[15px]">No team members found</p>
-              </div>
-            )}
-          </div>
+                : <GroupSection title="Yet to Check-in" count={notYet.length} people={notYet} statusColor="bg-slate-300" />}
+              <GroupSection title="Leave / Permission" count={onLeave.length} people={onLeave} statusColor="bg-violet-500" />
+              {checkedOut.length > 0 && (
+                <GroupSection title="Checked Out" count={checkedOut.length} people={checkedOut} statusColor="bg-slate-400" />
+              )}
+            </div>
+          )
         )}
       </div>
     </div>

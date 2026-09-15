@@ -21,7 +21,8 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { allows } = require('../utils/functionAccess');
-const { reportsScope } = require('../utils/roles');
+const { reportsScope, isFullAccess } = require('../utils/roles');
+const { approvalLevelsJson } = require('../utils/leaveApproval');
 const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
 const logger = require('../logger');
 const { serverError } = require('../utils/serverError');
@@ -32,6 +33,8 @@ router.use(protect);
 // comp-off) and the same set Topbar gates /team/approvals with, so a role that
 // can reach the nav entry can reach the data behind it.
 const approvers = authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge');
+
+const LEAVE_LEVELS_JSON = approvalLevelsJson('leave', 'l');
 
 /**
  * Approved leave that covers a given date, as a LATERAL subquery.
@@ -422,7 +425,7 @@ router.get('/leave-week', approvers, async (req, res) => {
 router.get('/leave-requests', approvers, async (req, res) => {
   try {
     const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
-    const params = [];
+    const params = [req.user._id, isFullAccess(req.user.role)];
     const scope = scopeInto(req.user, 'e', params);
 
     let where = `e.deleted_at IS NULL ${scope}`;
@@ -444,7 +447,12 @@ router.get('/leave-requests', approvers, async (req, res) => {
               json_build_object('_id', e.id, 'employeeId', e.employee_id,
                 'firstName', e.first_name, 'lastName', e.last_name,
                 'department', e.department, 'designation', e.designation,
-                'photoUrl', e.photo_url) AS employee
+                'photoUrl', e.photo_url) AS employee,
+              ${LEAVE_LEVELS_JSON} AS "approvalLevels",
+              (l.status = 'pending' AND ($2::boolean OR EXISTS (
+                 SELECT 1 FROM approval_levels x
+                  WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1 AND x.status = 'pending'
+              ))) AS "canAct"
          FROM leaves l
          JOIN employees e ON e.id = l.employee_id
         WHERE ${where}

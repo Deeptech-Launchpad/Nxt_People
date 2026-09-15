@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { FileText, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
+import LeaveDetailModal from '../../components/LeaveDetailModal';
+import { useAuth } from '../../context/AuthContext';
 import { LEAVE_LABEL, to12 } from '../moreservices/shift/shiftGrid';
 import { Avatar, DirectScopeNote, Spinner, Empty, fmtDay } from './teamShared';
 
@@ -46,6 +48,11 @@ export default function TeamLeaveRequests({ embedded = false }) {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
+  const [reload, setReload] = useState(0);
+  const [detail, setDetail] = useState(null);
+  const [detailBalance, setDetailBalance] = useState(null);
+  const { user } = useAuth();
+  const canApproveAll = ['admin', 'director', 'hr_admin', 'manager'].includes(user?.role);
 
   useEffect(() => {
     let live = true;
@@ -57,7 +64,25 @@ export default function TeamLeaveRequests({ embedded = false }) {
       })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [status]);
+  }, [status, reload]);
+
+  const openDetail = (l) => {
+    setDetail(l); setDetailBalance(null);
+    if (l.status === 'pending' && l.employee?._id) {
+      api.get(`/leaves/balance?employeeId=${l.employee._id}&year=${new Date(l.startDate || Date.now()).getFullYear()}`)
+        .then(r => setDetailBalance(r.data.data || [])).catch(() => setDetailBalance(null));
+    }
+  };
+
+  const action = async (id, act, reason, approveAll = false) => {
+    try {
+      await api.put(`/leaves/${id}/action`, { action: act, rejectionReason: reason, approveAll });
+      toast.success(approveAll ? 'All levels approved' : `${act.charAt(0).toUpperCase() + act.slice(1)} successfully`);
+      setReload(n => n + 1);
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+  };
+
+  const closeDetail = () => { setDetail(null); setDetailBalance(null); };
 
   const term = q.trim().toLowerCase();
   const shown = term
@@ -113,7 +138,10 @@ export default function TeamLeaveRequests({ embedded = false }) {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {shown.map(l => (
-                  <tr key={l._id} className="hover:bg-slate-50/70">
+                  <tr key={l._id} className="hover:bg-slate-50/70 cursor-pointer focus:outline-none focus:bg-blue-50/60"
+                    tabIndex={0} role="button"
+                    onClick={() => openDetail(l)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(l); } }}>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2.5">
                         <Avatar person={l.employee} size={30} />
@@ -148,6 +176,21 @@ export default function TeamLeaveRequests({ embedded = false }) {
           </div>
         )}
       </div>
+
+      {detail && (
+        <LeaveDetailModal
+          leave={detail}
+          kind="leave"
+          balance={detail.status === 'pending' ? detailBalance : undefined}
+          onClose={closeDetail}
+          canAct={detail.status === 'pending' && !!detail.canAct && detail.employee?._id !== user?._id}
+          onApprove={(x, comment) => { closeDetail(); action(x._id, 'approved', comment); }}
+          onApproveAll={canApproveAll && detail.status === 'pending' && !!detail.canAct
+            ? (x, comment) => { if (confirm('Approve all remaining levels for this request? This skips any other pending approvers.')) { closeDetail(); action(x._id, 'approved', comment, true); } }
+            : undefined}
+          onReject={(x, comment) => { closeDetail(); action(x._id, 'rejected', comment); }}
+        />
+      )}
     </div>
   );
 }

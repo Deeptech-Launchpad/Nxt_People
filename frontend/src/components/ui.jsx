@@ -12,6 +12,7 @@ export const PhotoAvatar = ({ photoUrl, firstName, lastName, name, className = '
     ? display.split(/\s+/).filter(Boolean).map(p => p[0]).join('').slice(0, 2).toUpperCase()
     : '?';
   const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => { setBroken(false); }, [photoUrl]);
   const src = (!broken && photoUrl) ? photoUrl : null;
   if (src) {
     return (
@@ -28,4 +29,13 @@ export const PhotoAvatar = ({ photoUrl, firstName, lastName, name, className = '
       {initials}
     </div>
   );
+};
+
+// A photo that renders `fallback` instead of a broken-image glyph when the
+// file behind src is missing. For spots that keep their own placeholder markup.
+export const ImgWithFallback = ({ src, fallback = null, ...rest }) => {
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => { setBroken(false); }, [src]);
+  if (!src || broken) return fallback;
+  return <img src={src} onError={() => setBroken(true)} {...rest} />;
 };

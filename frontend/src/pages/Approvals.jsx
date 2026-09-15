@@ -56,6 +56,15 @@ const amountLabel = (l) => {
   return `${days} day${days === 1 ? '' : 's'}`;
 };
 
+const decisionLabel = (l) => {
+  const verb = l.status === 'rejected' ? 'Rejected' : 'Approved';
+  if (l.onYourBehalf && l.decidedByName) return `${verb} by ${l.decidedByName} on your behalf`;
+  if (l.yourLevelActed) return l.decidedByYou || !l.decidedByName ? `${verb} by you` : `${verb} by ${l.decidedByName}`;
+  if (l.source === 'zoho') return `${verb} in Zoho`;
+  if (l.decidedByName) return `${verb} by ${l.decidedByName}`;
+  return null;
+};
+
 // localStorage key for the "last-seen count per tab" persistence. Bump
 // the v1 suffix if we ever change the shape of the saved value.
 const SEEN_KEY = 'nxt_approvals_seen_v1';
@@ -576,11 +585,14 @@ export default function Approvals({ embedded = false }) {
                         <p className="text-sm text-slate-600 mt-1">{l.reason}</p>
                       </div>
                      </div>
-                     <div className="flex items-center gap-2 flex-shrink-0">
-                       <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
-                         <Eye size={13} /> View
-                       </button>
-                       <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                       <div className="flex items-center gap-2">
+                         <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
+                           <Eye size={13} /> View
+                         </button>
+                         <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                       </div>
+                       {decisionLabel(l) && <p className="text-xs text-slate-500 text-right">{decisionLabel(l)}</p>}
                      </div>
                    </div>
                 ))}
@@ -621,11 +633,14 @@ export default function Approvals({ embedded = false }) {
                         )}
                       </div>
                      </div>
-                     <div className="flex items-center gap-2 flex-shrink-0">
-                       <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
-                         <Eye size={13} /> View
-                       </button>
-                       <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                       <div className="flex items-center gap-2">
+                         <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
+                           <Eye size={13} /> View
+                         </button>
+                         <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                       </div>
+                       {decisionLabel(l) && <p className="text-xs text-slate-500 text-right">{decisionLabel(l)}</p>}
                      </div>
                    </div>
                 ))}

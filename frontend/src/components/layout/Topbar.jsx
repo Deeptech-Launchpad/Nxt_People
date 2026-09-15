@@ -8,7 +8,7 @@ import { useWorkspaceBadges } from '../../utils/workspaceBadges';
 import { useChat } from '../../context/ChatContext';
 import { useAuth } from '../../context/AuthContext';
 import { roleLabel, isFullAccess } from '../../utils/roles';
-import { PhotoAvatar } from '../ui';
+import { PhotoAvatar, ImgWithFallback } from '../ui';
 import api from '../../utils/api';
 
 /* Today's presence, as the employees list already reports it. Someone on
@@ -949,17 +949,16 @@ export default function Topbar() {
               {/* Profile photo if uploaded; falls back to initials. AuthContext
                   updates after Profile photo save, so this re-renders without
                   a page reload. */}
-              {user?.photoUrl ? (
-                <img
-                  src={user.photoUrl}
-                  alt={user.firstName || 'Avatar'}
-                  className="w-8 h-8 rounded-full object-cover ring-2 ring-white/20"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[13px] font-bold text-white ring-2 ring-white/20">
-                  {user?.firstName?.[0] || 'U'}{user?.lastName?.[0] || ''}
-                </div>
-              )}
+              <ImgWithFallback
+                src={user?.photoUrl}
+                alt={user?.firstName || 'Avatar'}
+                className="w-8 h-8 rounded-full object-cover ring-2 ring-white/20"
+                fallback={
+                  <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[13px] font-bold text-white ring-2 ring-white/20">
+                    {user?.firstName?.[0] || 'U'}{user?.lastName?.[0] || ''}
+                  </div>
+                }
+              />
             </button>
             {showUserMenu && (
               <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-[#1f2937] rounded-xl shadow-2xl z-50 border border-slate-100 dark:border-[#374151] overflow-hidden">
