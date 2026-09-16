@@ -434,8 +434,20 @@ router.get('/:id', async (req, res) => {
                 'id', cb.id, 'firstName', cb.first_name, 'lastName', cb.last_name) END AS "createdBy",
               CASE WHEN ub.id IS NOT NULL THEN json_build_object(
                 'id', ub.id, 'firstName', ub.first_name, 'lastName', ub.last_name) END AS "updatedBy",
+              /* Presence is already on the colleague allowlist and already
+               * answered for everybody by the list route; it was simply never
+               * selected here, so the profile drew a chip it could not fill.
+               * The clock time is not on that allowlist and so stays with the
+               * full view. */
+              (a.check_in IS NOT NULL AND a.check_out IS NULL) AS "isCheckedIn",
+              CASE
+                WHEN a.check_in IS NULL  THEN 'yetToCheckIn'
+                WHEN a.check_out IS NULL THEN 'in'
+                ELSE                          'out'
+              END AS presence,
+              a.check_in AS "checkInTime",
               json_build_object('name', s.name, 'startTime', s.start_time, 'endTime', s.end_time) AS shift,
-              json_build_object('firstName', m.first_name, 'lastName', m.last_name, 'email', m.email, 'id', m.id, 'employeeId', m.employee_id, 'designation', m.designation) AS manager,
+              json_build_object('firstName', m.first_name, 'lastName', m.last_name, 'email', m.email, 'id', m.id, 'employeeId', m.employee_id, 'designation', m.designation, 'photoUrl', m.photo_url) AS manager,
               json_build_object('firstName', aa.first_name, 'lastName', aa.last_name, 'email', aa.email, 'id', aa.id, 'employeeId', aa.employee_id, 'designation', aa.designation) AS "approvingAuthority"
          FROM employees e
          LEFT JOIN shifts s ON e.shift_id = s.id
@@ -444,6 +456,7 @@ router.get('/:id', async (req, res) => {
          LEFT JOIN employees sm ON e.secondary_manager_id = sm.id
          LEFT JOIN employees cb ON e.created_by = cb.id
          LEFT JOIN employees ub ON e.updated_by = ub.id
+         LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
         WHERE e.id = $1`,
       [req.params.id]
     );

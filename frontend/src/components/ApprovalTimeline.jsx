@@ -16,7 +16,7 @@
  * Legacy leaves without approvalLevels fall back to a single status line.
  */
 import React from 'react';
-import { Rocket, Check, X, Clock } from 'lucide-react';
+import { Rocket, Check, X, Clock, Minus } from 'lucide-react';
 import { roleLabel } from '../utils/roles';
 
 const initialsOf = (name) =>
@@ -50,6 +50,10 @@ const TOKENS = {
   approved: { ring: 'bg-emerald-500', soft: 'bg-emerald-50 text-emerald-700 border-emerald-200', Icon: Check, label: 'Approved' },
   rejected: { ring: 'bg-rose-500',    soft: 'bg-rose-50 text-rose-700 border-rose-200',          Icon: X,     label: 'Rejected' },
   pending:  { ring: 'bg-amber-400',   soft: 'bg-amber-50 text-amber-700 border-amber-200',       Icon: Clock, label: 'Pending'  },
+  /* A level nobody will ever act on: the request was rejected below it, so it
+   * is finished, not waiting. It used to keep the amber Pending pill for ever,
+   * which read as work still owed by the person named beside it. */
+  skipped:  { ring: 'bg-slate-300',   soft: 'bg-slate-50 text-slate-500 border-slate-200',       Icon: Minus, label: 'Not required' },
 };
 
 function StatusPill({ status }) {
@@ -92,6 +96,14 @@ export default function ApprovalTimeline({ leave, compact = false }) {
   const rejected = leave.status === 'rejected' || levels.some(l => l.status === 'rejected');
   const overall = rejected ? 'rejected' : (leave.status === 'approved' ? 'approved' : 'pending');
 
+  /* One rejection ends the request, but only the rejecting level is written
+   * back — the levels above it keep the 'pending' they were created with. They
+   * are not waiting for anybody, so they are shown as finished rather than as
+   * outstanding work against the person named beside them. */
+  const rejectedAt = levels.find(l => l.status === 'rejected')?.level ?? null;
+  const statusOf = (lvl) =>
+    (rejectedAt !== null && lvl.status === 'pending' && lvl.level > rejectedAt) ? 'skipped' : lvl.status;
+
   // Total duration: submission → the last action (when resolved).
   const actedTimes = levels.map(l => l.actedAt).filter(Boolean).map(t => new Date(t).getTime());
   const lastActedAt = actedTimes.length ? new Date(Math.max(...actedTimes)).toISOString() : null;
@@ -118,7 +130,11 @@ export default function ApprovalTimeline({ leave, compact = false }) {
           <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
           <div className="mt-1"><StatusPill status={overall} /></div>
           {levels.length > 0 && (
-            <p className="text-[12px] text-slate-400 mt-1.5">{approvedCount} of {levels.length} level{levels.length !== 1 ? 's' : ''}</p>
+            <p className="text-[12px] text-slate-400 mt-1.5">
+              {rejectedAt !== null
+                ? `Rejected at Level ${rejectedAt} of ${levels.length}`
+                : `${approvedCount} of ${levels.length} level${levels.length !== 1 ? 's' : ''}`}
+            </p>
           )}
         </div>
       </div>
@@ -156,7 +172,8 @@ export default function ApprovalTimeline({ leave, compact = false }) {
           </div>
         ) : (
           levels.map((lvl, i) => {
-            const t = TOKENS[lvl.status] || TOKENS.pending;
+            const shown = statusOf(lvl);
+            const t = TOKENS[shown] || TOKENS.pending;
             const when = fmtDateTime(lvl.actedAt);
             const isLast = i === levels.length - 1;
             // Headline ALWAYS shows the assigned hierarchy approver (Level N's
@@ -184,9 +201,12 @@ export default function ApprovalTimeline({ leave, compact = false }) {
                     )}
                   </div>
                   <div className="mt-1 flex items-center flex-wrap gap-2">
-                    <StatusPill status={lvl.status} />
+                    <StatusPill status={shown} />
                     {when && <span className="text-[13px] text-slate-400">{when}</span>}
                   </div>
+                  {shown === 'skipped' && (
+                    <p className="mt-0.5 text-[13px] text-slate-400">Not needed — the request was rejected at Level {rejectedAt}</p>
+                  )}
                   {lvl.status !== 'pending' && (
                     <p className="mt-0.5 text-[13px] text-slate-500">{actionNote(lvl)}</p>
                   )}

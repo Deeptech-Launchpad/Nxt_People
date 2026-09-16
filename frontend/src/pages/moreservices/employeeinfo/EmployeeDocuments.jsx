@@ -39,7 +39,7 @@ const fmtSize = (n) => {
 const fmtWhen = (d) => (d ? new Date(d).toLocaleDateString('en-IN', {
   day: '2-digit', month: 'short', year: 'numeric' }) : '');
 
-export default function EmployeeDocuments({ employeeId, canEdit = true }) {
+export default function EmployeeDocuments({ employeeId, canEdit = true, emptyText = 'No documents on file.' }) {
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(null);   // { name, type, file }
@@ -162,7 +162,7 @@ export default function EmployeeDocuments({ employeeId, canEdit = true }) {
           <div className="w-5 h-5 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : rows.length === 0 ? (
-        <p className="text-[14px] text-slate-400">No documents on file.</p>
+        <p className="text-[14px] text-slate-400">{emptyText}</p>
       ) : (
         <div className="space-y-2">
           {rows.map(doc => (
