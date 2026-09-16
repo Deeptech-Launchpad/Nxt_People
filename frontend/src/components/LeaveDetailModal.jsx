@@ -55,7 +55,20 @@ function BalanceCard({ leave, balanceCards }) {
   const avail = card ? r2(card.available) : undefined;
   const booking = r2(isPerm ? (parseFloat(leave.hours) || 0) : (parseFloat(leave.totalDays ?? leave.total_days) || 0));
   const unlimited = avail === null || avail === undefined;
-  const after = unlimited ? null : r2(avail - booking);
+  /* The available figure already has this request in it, so subtracting the
+   * request again charged the same days twice: a pending 1-day casual against
+   * 5 granted and 1 already approved read "available 3, booking 1, after 2"
+   * where the person in fact had 4 and will have 3.
+   *
+   * What counts as already-in differs by type, because the two stores answer
+   * different questions: a day leave debits on apply (pending counts), while
+   * permission's monthly figure counts approved hours only — so a pending
+   * permission genuinely still has to come off. */
+  const countedAlready = isPerm
+    ? leave.status === 'approved'
+    : ['pending', 'approved'].includes(leave.status);
+  const before = unlimited ? null : r2(avail + (countedAlready ? booking : 0));
+  const after = unlimited ? null : r2(before - booking);
   // Convert decimal hours to "Xh Ym" / "Ym" for permission leaves
   const fmtPerm = (h) => {
     if (h === null || h === undefined) return '—';
@@ -79,7 +92,7 @@ function BalanceCard({ leave, balanceCards }) {
         <p className="text-[14px] font-bold text-slate-700">{isPerm ? 'Permission Balance' : 'Leave Balance'}</p>
         <span className="text-[13px] text-slate-600">{TYPE_LABEL[leave.leaveType] || leave.leaveType}</span>
       </div>
-      <Row label={isPerm ? 'Available this month' : 'Available balance'} value={unlimited ? 'Unlimited' : fmt(avail)} />
+      <Row label={isPerm ? 'Available this month' : 'Available balance'} value={unlimited ? 'Unlimited' : fmt(before)} />
       <Row label="Current booking" value={fmt(booking)} />
       <div className="border-t border-slate-100 my-1.5" />
       <Row label="Balance after current booking" value={unlimited ? '—' : fmt(after)} strong />
