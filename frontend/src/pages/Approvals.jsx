@@ -57,12 +57,8 @@ const amountLabel = (l) => {
 };
 
 const decisionLabel = (l) => {
-  const verb = l.status === 'rejected' ? 'Rejected' : 'Approved';
-  if (l.onYourBehalf && l.decidedByName) return `${verb} by ${l.decidedByName} on your behalf`;
-  if (l.yourLevelActed) return l.decidedByYou || !l.decidedByName ? `${verb} by you` : `${verb} by ${l.decidedByName}`;
-  if (l.source === 'zoho') return `${verb} in Zoho`;
-  if (l.decidedByName) return `${verb} by ${l.decidedByName}`;
-  return null;
+  if (!l.onYourBehalf || !l.behalfByName) return null;
+  return `${l.status === 'rejected' ? 'Rejected' : 'Approved'} by ${l.behalfByName} on your behalf`;
 };
 
 // localStorage key for the "last-seen count per tab" persistence. Bump

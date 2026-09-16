@@ -164,6 +164,11 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                ${LEAVE_LEVELS_JSON} as "approvalLevels",
                COALESCE(dcd.name, NULLIF(TRIM(CONCAT(ab.first_name, ' ', ab.last_name)), '')) as "decidedByName",
                COALESCE(lv.on_your_behalf, false) as "onYourBehalf",
+               (SELECT NULLIF(TRIM(CONCAT(be.first_name, ' ', be.last_name)), '')
+                  FROM approval_levels bl JOIN employees be ON be.id = bl.acted_by
+                 WHERE bl.request_type = 'leave' AND bl.request_id = l.id AND bl.approver_id = $1
+                   AND (COALESCE(bl.on_behalf, false) OR COALESCE(bl.by_hr, false)) AND bl.acted_by <> $1
+                 ORDER BY bl.level LIMIT 1) as "behalfByName",
                COALESCE(lv.your_level_acted, false) as "yourLevelActed",
                COALESCE(dcd.acted_by = $1, false) as "decidedByYou",
                CASE WHEN lv.level_count = 0 AND l.approved_by IS NULL THEN 'zoho' ELSE 'app' END as source
