@@ -389,7 +389,7 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
        RETURNING id as "_id", worked_date as "workedDate", comp_off_date as "compOffDate",
                  reason, days_earned as "daysEarned", expires_at as "expiresAt", status,
                  applied_by as "appliedBy", created_at as "createdAt"`,
-      [subject.id, workedDate, compOffDate || null, reason || null, daysEarned, expiresAt,
+      [subject.id, workedDate, compOffDate || null, reason || null, daysEarned, expiry.date,
        subject.onBehalf ? req.user._id : null]
     );
     const created = r.rows[0];

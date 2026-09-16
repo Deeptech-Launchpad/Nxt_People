@@ -21,9 +21,18 @@
  *  and forms/leavetype all answer 200 with "Error occurred" and no result. No
  *  balance-shaped endpoint answers, so the only source is the same manual
  *  Customize Balance export import_zoho_balances.js takes — employees down the
- *  side, leave types across the top, yearly variants ("Casual Leave 2024")
- *  summed into the one type this system has. A column matching no leave type
- *  here is REPORTED AND SKIPPED, never guessed at.
+ *  side, leave types across the top. A column matching no leave type here is
+ *  REPORTED AND SKIPPED, never guessed at.
+ *
+ *  YEAR-SUFFIXED COLUMNS ARE NOT SUMMED. Zoho names a new leave type every
+ *  year — "Casual Leave", "Casual Leave 2023", "Casual Leave2025" — and this
+ *  script used to add them all together into the one type this system has.
+ *  That is not what Zoho's own screen shows: it shows the UNSUFFIXED column,
+ *  the current year's entitlement, and the suffixed ones are closed prior-year
+ *  buckets that often hold negatives. Summing them invented balances nobody
+ *  has ever been quoted — Deepa came out at -1.75 where Zoho says 4. So the
+ *  unsuffixed column IS the figure, and every year-suffixed column is listed
+ *  with its value under "IGNORED, HISTORICAL" and left out of the arithmetic.
  *
  *  Which of our leave rows Zoho never saw is the whole question, so it is
  *  decided by evidence rather than by feel, two ways, and both are printed:
@@ -86,10 +95,15 @@ const num = (n) => (n === null || n === undefined || Number.isNaN(n) ? '' : Stri
 /* Zoho renames a leave type every year — "Casual Leave 2023", "Permission2025".
  * The same normaliser import_zoho_balances.js and the history import use, so
  * all three agree about which column is which type. */
+const YEAR_SUFFIX = /\s*((?:19|20)\d{2})\s*$/;
 const normalise = (raw) => String(raw ?? '')
-  .replace(/\s*(19|20)\d{2}\s*$/, '')
+  .replace(YEAR_SUFFIX, '')
   .trim()
   .toLowerCase();
+/* The year a column is named for, or null for the unsuffixed one. It decides
+ * whether a figure is read or merely listed, so it is read off the header
+ * explicitly rather than inferred from how many columns hit the same type. */
+const yearOf = (header) => (String(header ?? '').match(YEAR_SUFFIX) || [])[1] || null;
 
 /** A CSV row, respecting quotes — a name can contain a comma. */
 function splitCsvLine(line) {
@@ -157,8 +171,9 @@ async function tableExists(name) {
 
   <file> is Zoho's Customize Balance export (Leave -> Reports -> Customize
   Balance, all employees, all leave types, Export as CSV): employees down the
-  side, leave types across the top, one figure per cell. Yearly variants
-  ("Casual Leave 2024") are summed into the one type this system has.
+  side, leave types across the top, one figure per cell. The UNSUFFIXED column
+  is the figure; yearly variants ("Casual Leave 2024") are listed as historical
+  and left out of the arithmetic, which is what Zoho's own screen shows.
 `);
     await pool.end();
     process.exit(1);
@@ -197,7 +212,7 @@ async function tableExists(name) {
     const n = normalise(bare);
     if (!n) return null;
     const type = byName.get(n) || byCode.get(n) || null;
-    return type ? { type, facet, defaulted: !!defaulted } : null;
+    return type ? { type, facet, defaulted: !!defaulted, year: yearOf(bare) } : null;
   };
   const scored = headerRows.map((row, idx) => ({
     idx, row, matches: row.filter((h, i) => matchColumn(h, i)).length,
@@ -231,7 +246,8 @@ async function tableExists(name) {
     if (i === 0) return;
     const m = columnType[i];
     if (!m) { unmatchedColumns.push(h); console.log(`    ${pad(h || '(blank)', 30)}NO MATCHING LEAVE TYPE — skipped`); return; }
-    console.log(`    ${pad(h, 30)}→ ${pad(m.type.name, 20)}${m.facet}`
+    console.log(`    ${pad(h, 30)}→ ${pad(m.type.name, 20)}${pad(m.facet, 11)}`
+      + (m.year ? `IGNORED — ${m.year} is a closed historical bucket` : 'used as the figure')
       + (m.defaulted ? '   (no facet word in the header; read as available)' : ''));
   });
   console.log('');
@@ -243,6 +259,9 @@ async function tableExists(name) {
   const inactiveByName = new Map(everyone.rows.filter(p => !p.active).map(p => [normalise(p.name), p]));
 
   const zoho = new Map();        // `${empId}|${typeId}` → { available, booked, hasBooked }
+  // Every year-suffixed figure, read but never added to anything — listed so the
+  // owner can see what was left out rather than having to trust that it was.
+  const historical = [];         // { person, type, header, year, facet, value }
   const inZohoNotHere = [];
   const matchedByName = [];
   const seenPeople = new Set();
@@ -278,11 +297,17 @@ async function tableExists(name) {
       if (v === '' || v === '-') return;
       const n = parseFloat(v);
       if (!Number.isFinite(n)) return;
+      /* A year-suffixed column is a CLOSED prior-year bucket. Zoho's Customize
+       * Balance screen quotes the unsuffixed column, so that is the opening
+       * figure; adding the suffixed ones to it produced balances nobody has
+       * ever been shown (Deepa −1.75 against Zoho's 4). Recorded, reported,
+       * and deliberately left out of the arithmetic. */
+      if (m.year) {
+        historical.push({ person, type: m.type, header: header[i], year: m.year, facet: m.facet, value: n });
+        return;
+      }
       const key = `${person.id}|${m.type.id}`;
       const cur = zoho.get(key) || { available: 0, booked: 0, hasBooked: false };
-      // Several Zoho columns land on one of our types — Casual Leave and its
-      // yearly variants. They are summed: the same entitlement, split by the
-      // year it was granted in.
       cur[m.facet] += n;
       if (m.facet === 'booked') cur.hasBooked = true;
       zoho.set(key, cur);
@@ -558,6 +583,38 @@ async function tableExists(name) {
     console.log('  balance somebody spends.\n');
   }
 
+  // ── IGNORED, HISTORICAL ──────────────────────────────────────────────────
+  console.log('──────────────────────────────────────────────────────────');
+  console.log('  IGNORED, HISTORICAL — year-suffixed figures left out of the arithmetic');
+  console.log('──────────────────────────────────────────────────────────\n');
+  if (!historical.length) console.log('  None. Every matched column is the current, unsuffixed one.\n');
+  else {
+    console.log('  These were READ AND NOT USED. Zoho\'s Customize Balance screen quotes the');
+    console.log('  unsuffixed column, so that is the opening figure above; these are closed');
+    console.log('  prior-year buckets and adding them in invents a balance nobody has been');
+    console.log('  quoted. They are printed so the decision to drop them is visible.\n');
+    console.log(`  ${pad('code', 14)}${pad('name', 26)}${pad('column', 26)}${pad('type', 18)}${pad('facet', 11)}${lpad('value', 8)}`);
+    for (const h of historical.slice(0, 120)) {
+      console.log(`  ${pad(h.person.code, 14)}${pad((h.person.name || '').slice(0, 24), 26)}`
+        + `${pad(h.header.slice(0, 24), 26)}${pad(h.type.name.slice(0, 16), 18)}${pad(h.facet, 11)}${lpad(num(h.value), 8)}`);
+    }
+    if (historical.length > 120) console.log(`  … and ${historical.length - 120} more`);
+
+    /* A type whose ONLY column is year-suffixed has no current figure at all, so
+     * nothing is planned for it. That is a gap in the export rather than a
+     * balance of zero, and saying so is the difference between "Zoho has no
+     * opening figure here" and "Zoho says none left". */
+    const orphan = historical.filter(h => !zoho.has(`${h.person.id}|${h.type.id}`));
+    const orphanKeys = [...new Set(orphan.map(h => `${h.person.code}|${h.type.name}`))];
+    console.log('');
+    if (orphanKeys.length) {
+      console.log('  Of those, these employee/type pairs have NO unsuffixed column in the file,');
+      console.log('  so they carry no opening figure and nothing is proposed for them:\n');
+      for (const k of orphanKeys) console.log(`    ${k.replace('|', '   ')}`);
+      console.log('');
+    }
+  }
+
   // ── Counts ───────────────────────────────────────────────────────────────
   const up = rows.filter(r => r.delta !== null && r.delta > 0).length;
   const down = rows.filter(r => r.delta !== null && r.delta < 0).length;
@@ -567,7 +624,8 @@ async function tableExists(name) {
   console.log('  Counts');
   console.log('──────────────────────────────────────────────────────────\n');
   console.log(`    ${lpad(dataRows, 6)} data row(s) in the file, after the header`);
-  console.log(`    ${lpad(cells, 6)} figure(s) read from matched columns`);
+  console.log(`    ${lpad(cells, 6)} figure(s) read from matched CURRENT (unsuffixed) columns`);
+  console.log(`    ${lpad(historical.length, 6)} year-suffixed figure(s) listed and deliberately ignored`);
   console.log(`    ${lpad(rows.length, 6)} employee/type pair(s) matched and planned`);
   console.log(`    ${lpad(new Set(rows.map(r => r.person.id)).size, 6)} employee(s) affected`);
   console.log(`    ${lpad(up, 6)} would go UP`);
