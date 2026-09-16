@@ -7,23 +7,30 @@ import {
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
-import { isFullAccess, isApprover, ROLES } from '../utils/roles';
+import { isFullAccess, ROLES } from '../utils/roles';
 import { fmtDate } from '../utils/dateFormat';
 import { formatTime, formatInstantTime } from '../utils/datetime';
 
 /* ── One employee, one tabbed screen ──────────────────────────────────────
  *  Reachable from the topbar search, the Employee / Department tree popup's
  *  eye button and SmartChat. `/api/employees/:id` answers every authenticated
- *  caller with a `viewLevel`, and the two levels differ in how much of the
+ *  caller with a `viewLevel`, and the four levels differ in how much of the
  *  record comes back, not in which screen is drawn:
- *    'full'      — the subject themselves or a full-access role; every field.
+ *    'full'      — the subject or a full-access role; every field.
+ *    'approver'  — this person's own reporting manager / approving authority,
+ *                  in a role that carries reports; the human record, with no
+ *                  identity numbers, bank or pay in the payload at all.
+ *    'manager'   — a role that carries reports, looking at somebody who is
+ *                  not theirs; the record minus everything private.
  *    'colleague' — everyone else; identity, department, location, shift, work
  *                  email, presence and manager. Everything else is undefined,
  *                  so a section with nothing in it is left out rather than
  *                  drawn as a card full of dashes.
  *
- *  Leave, Attendance, Files and Related Data are the person's own, their
- *  reporting line's and full access's. Their tabs are dropped for anybody
+ *  `viewLevel` is the only thing that decides what this page draws — the
+ *  server already weighed the role against the reporting line, and a second
+ *  opinion computed in the browser could only ever disagree with it. Leave,
+ *  Attendance and Files are 'full' and 'approver': their tabs are dropped for anybody
  *  else rather than opened and answered with a 403, and each one is both
  *  code-split and fetched only when it is first pressed — then kept mounted,
  *  so switching back does not re-run somebody's year.
@@ -239,13 +246,18 @@ function PeopleGrid({ loading, failed, people, emptyText, onOpen }) {
  *  written down; your own are already in your own payload, and /employee-io
  *  is full-access only, so revealing your own is done in the browser rather
  *  than by asking an endpoint that would refuse most people.
+ *
+ *  A reporting manager reads the rest of the record but not these: the eye is
+ *  not drawn for them, because the endpoint behind it is full-access only and
+ *  a button that can only fail is worse than no button.
  */
-function IdentitySection({ employee, viewer }) {
+function IdentitySection({ employee, viewer, mayReveal }) {
   const [identity, setIdentity] = useState(null);
   const [revealing, setRevealing] = useState(false);
   const audited = isFullAccess(viewer) && !same(viewer?._id, employee._id);
 
   const reveal = async () => {
+    if (!mayReveal) return;
     if (identity) { setIdentity(null); return; }
     if (!audited) {
       setIdentity({
@@ -275,7 +287,7 @@ function IdentitySection({ employee, viewer }) {
 
   // One press reveals all three, because one audited call fetches all three —
   // three separate calls would put three entries in the trail for one decision.
-  const eye = (
+  const eye = !mayReveal ? null : (
     <button type="button" onClick={reveal} disabled={revealing}
       title={identity ? 'Hide' : audited ? 'Show (recorded in the audit trail)' : 'Show'}
       className="w-6 h-6 inline-flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600">
@@ -300,9 +312,9 @@ function ProfileTab({ emp, viewLevel, viewer }) {
   const [dependents, setDependents] = useState(null);
 
   /* Experience and dependents are their own tables behind their own rule —
-   * self or full access, managers deliberately excluded — so they are fetched
-   * separately and a refusal on one leaves the rest of the profile readable.
-   * The colleague payload cannot reach them at all, so nothing is asked for. */
+   * self or full access — so they are fetched separately and a refusal on one
+   * leaves the rest of the profile readable. An approver's payload carries
+   * them already, and that endpoint would refuse them, so it is not asked. */
   useEffect(() => {
     if (viewLevel !== 'full') return;
     let live = true;
@@ -315,12 +327,19 @@ function ProfileTab({ emp, viewLevel, viewer }) {
     return () => { live = false; };
   }, [emp._id, viewLevel]);
 
+  /* The private rows are dropped rather than left to fall back to "-": at this
+   * level they are not blank, they are none of the viewer's business, and a
+   * column of dashes reads like a record nobody has filled in. */
+  const limited = viewLevel === 'manager';
   const range = shiftRange(emp.shift);
   const manager = emp.manager?.id ? emp.manager : null;
   const approver = emp.approvingAuthority?.id ? emp.approvingAuthority : null;
   const secondary = emp.secondaryManager?.id ? emp.secondaryManager : null;
   const education = emp.education || null;
   const address = emp.currentAddress || emp.address;
+  // Whoever supplied them: in the payload for an approver, fetched for 'full'.
+  const experienceRows = emp.experience ?? experience;
+  const dependentRows = emp.dependents ?? dependents;
 
   return (
     <div className="space-y-4">
@@ -331,7 +350,7 @@ function ProfileTab({ emp, viewLevel, viewer }) {
           <Row label="First name">{emp.firstName}</Row>
           <Row label="Last name">{emp.lastName}</Row>
           <Row label="Email address">{emp.email}</Row>
-          <Row label="Personal email address">{emp.personalEmail}</Row>
+          {!limited && <Row label="Personal email address">{emp.personalEmail}</Row>}
         </Section>
       )}
 
@@ -370,41 +389,51 @@ function ProfileTab({ emp, viewLevel, viewer }) {
         <Section title="Personal details">
           <Row label="Date of birth">{dateOr(emp.dateOfBirth)}</Row>
           <Row label="Age">{ageOf(emp.dateOfBirth)}</Row>
-          <Row label="Gender">{emp.gender}</Row>
-          <Row label="Marital status">{emp.maritalStatus}</Row>
-          <Row label="Blood group">{emp.bloodGroup}</Row>
-          <Row label="Nationality">{emp.nationality}</Row>
+          {!limited && <>
+            <Row label="Gender">{emp.gender}</Row>
+            <Row label="Marital status">{emp.maritalStatus}</Row>
+            <Row label="Blood group">{emp.bloodGroup}</Row>
+            <Row label="Nationality">{emp.nationality}</Row>
+          </>}
           <Row label="Ask me about / Expertise">{emp.expertise}</Row>
-          <Row label="About">{emp.aboutMe}</Row>
+          {!limited && <Row label="About">{emp.aboutMe}</Row>}
         </Section>
       )}
 
       {viewLevel === 'full' && (emp.hasUan || emp.hasPan || emp.hasAadhaar
         || emp.uanNumber || emp.panNumber || emp.aadhaarNumber) && (
-        <IdentitySection employee={emp} viewer={viewer} />
+        <IdentitySection employee={emp} viewer={viewer}
+          mayReveal={isFullAccess(viewer) || same(viewer?._id, emp._id)} />
       )}
 
       {any(emp.email, emp.personalEmail, emp.phone, emp.workPhone, emp.extension,
-           emp.seatingLocation, address, emp.permanentAddress) && (
+           emp.tags, emp.seatingLocation, address, emp.permanentAddress) && (
         <Section title="Contact details">
           <Row label="Work email">{emp.email}</Row>
-          <Row label="Personal email">{emp.personalEmail}</Row>
-          <Row label="Personal mobile">{emp.phone}</Row>
+          {!limited && <>
+            <Row label="Personal email">{emp.personalEmail}</Row>
+            <Row label="Personal mobile">{emp.phone}</Row>
+          </>}
           <Row label="Work phone">{emp.workPhone}</Row>
           <Row label="Extension">{emp.extension}</Row>
-          <Row label="Seating location">{emp.seatingLocation}</Row>
-          <Row label="Present address">{address}</Row>
-          <Row label="Permanent address">{emp.permanentAddress}</Row>
+          {/* Only the levels whose payload carries it — a colleague's contact
+              card is left exactly as it was. */}
+          {viewLevel !== 'colleague' && <Row label="Tags">{emp.tags}</Row>}
+          {!limited && <>
+            <Row label="Seating location">{emp.seatingLocation}</Row>
+            <Row label="Present address">{address}</Row>
+            <Row label="Permanent address">{emp.permanentAddress}</Row>
+          </>}
         </Section>
       )}
 
       {/* `undefined` means the endpoint refused; the section is dropped rather
           than drawn as an empty table that reads like "none on file". */}
-      {Array.isArray(experience) && (
+      {Array.isArray(experienceRows) && (
         <ChildTable
           title="Work experience"
           columns={['Company name', 'Job title', 'From', 'To', 'Description', 'Relevant']}
-          rows={experience.map(e => [
+          rows={experienceRows.map(e => [
             e.companyName, e.jobTitle,
             dateOr(e.fromDate), dateOr(e.toDate),
             e.jobDescription, e.relevant ? 'Yes' : 'No',
@@ -427,11 +456,11 @@ function ProfileTab({ emp, viewLevel, viewer }) {
         />
       )}
 
-      {Array.isArray(dependents) && (
+      {Array.isArray(dependentRows) && (
         <ChildTable
           title="Dependents"
           columns={['Name', 'Relationship', 'Date of birth']}
-          rows={dependents.map(d => [d.name, d.relationship, dateOr(d.dateOfBirth)])}
+          rows={dependentRows.map(d => [d.name, d.relationship, dateOr(d.dateOfBirth)])}
           empty="No dependents on file."
         />
       )}
@@ -687,7 +716,10 @@ export default function EmployeeProfile() {
     api.get(`/employees/${id}`)
       .then(r => {
         setEmp(r.data.data || null);
-        setViewLevel(r.data.viewLevel === 'colleague' ? 'colleague' : 'full');
+        // Anything the server does not name is treated as the thinnest level,
+        // so a stale or unknown answer cannot open a tab by accident.
+        setViewLevel(['colleague', 'manager', 'approver', 'full'].includes(r.data.viewLevel)
+          ? r.data.viewLevel : 'colleague');
       })
       .catch(err => {
         if (err.response?.status === 404) setNotFound(true);
@@ -701,28 +733,20 @@ export default function EmployeeProfile() {
 
   /* Who may open the private half. The subject, their reporting line and full
    * access — the same three the leave, attendance and document endpoints
-   * behind those tabs check for themselves. The manager test reads the
-   * colleague payload's `manager.id`, which is the one field a manager
-   * reliably gets back about their own report. */
+   * behind those tabs check for themselves. That is exactly the test the
+   * server already ran to answer 'full', so it is not re-run here: one source
+   * of truth, and it is the one that the endpoints will agree with. */
   const self = same(user?._id, emp?._id);
   const full = isFullAccess(user);
-  /* The reporting link on its own is not enough: those endpoints ask for the
-   * link AND a role that carries reports, so a team member who happens to be
-   * named as somebody's manager would otherwise be handed four tabs that all
-   * answer empty. */
-  const inLine = isApprover(user) && (
-    same(user?._id, emp?.manager?.id)
-    || same(user?._id, emp?.approvingAuthority?.id)
-    || same(user?._id, emp?.approvingAuthorityId)
-    || same(user?._id, emp?.reportingManagerId));
-  const maySeePrivate = !!emp && (self || full || inLine);
+  const maySeePrivate = !!emp && (viewLevel === 'full' || viewLevel === 'approver');
   // Travel and expense authorize manager but not team_incharge; exit is full
-  // access only. A viewer with no reachable row gets no tab at all.
+  // access only. A viewer with no reachable row gets no tab at all — which is
+  // why a Team Incharge reading somebody else's team sees no Related Data.
   const relatedSpecs = useMemo(
-    () => (maySeePrivate
+    () => (emp && viewLevel !== 'colleague'
       ? relatedFor({ self, full, approver: full || user?.role === ROLES.MANAGER })
       : []),
-    [maySeePrivate, self, full, user?.role],
+    [!!emp, viewLevel, self, full, user?.role],
   );
 
   const tabs = useMemo(() => {
@@ -735,8 +759,8 @@ export default function EmployeeProfile() {
       list.push({ key: 'leave', label: 'Leave' });
       list.push({ key: 'attendance', label: 'Attendance' });
       list.push({ key: 'files', label: 'Files' });
-      if (relatedSpecs.length) list.push({ key: 'related', label: 'Related Data' });
     }
+    if (relatedSpecs.length) list.push({ key: 'related', label: 'Related Data' });
     return list;
   }, [maySeePrivate, relatedSpecs.length]);
 

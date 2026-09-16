@@ -5,7 +5,7 @@ const { fire } = require('../utils/workflowEngine');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { protect, authorize } = require('../middleware/auth');
-const { isFullAccess } = require('../utils/roles');
+const { isFullAccess, isManager, canActOnEmployee } = require('../utils/roles');
 const { sendOnboardingEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
@@ -339,15 +339,65 @@ const COLLEAGUE_FIELDS = [
   'phone', 'workPhone', 'extension',
 ];
 
-const toColleagueView = (row) => {
+/* ── What an approver outside this person's line may see ───────────────────
+ *  A role that carries reports (manager / team_incharge) opens profiles all
+ *  day — interviewing for a transfer, finding who owns a system, checking a
+ *  joining date before a handover — and the phone book is too thin for that.
+ *  It is still not their reporting line, so this is the personnel record
+ *  minus everything private: no identity numbers, no bank, no pay, no home
+ *  address, no personal email or date of anything except birth, no blood
+ *  group, marital status, gender, emergency contact or dependent.
+ *
+ *  Built as COLLEAGUE_FIELDS plus a named handful, and filtered the same
+ *  allowlist way, so the column somebody adds next month is invisible here
+ *  until a person decides otherwise.
+ */
+const MANAGER_FIELDS = [
+  ...COLLEAGUE_FIELDS,
+  'nickName', 'employmentType', 'sourceOfHire',
+  // Two columns hold the same fact; the record view reads either.
+  'joiningDate', 'dateOfJoining',
+  'totalExperience', 'division',
+  'secondaryManager', 'approvingAuthority',
+  'dateOfBirth', 'expertise', 'tags', 'education',
+  'createdBy', 'updatedBy', 'createdAt', 'updatedAt',
+];
+
+/* ── What this person's own approver may see ───────────────────────────────
+ *  The human record: the whole of what the profile page draws, because these
+ *  are the facts somebody needs to approve a leave, ring a next of kin or
+ *  understand why a report is out. A reporting line is not a payroll seat
+ *  though, so the line stops firmly short of the things only HR ever needs —
+ *  identity documents, bank, pay — which stay with full access and the
+ *  subject. Nothing here can be revealed, either: the numbers are not in the
+ *  payload at all, so the page has nothing to un-mask.
+ */
+const APPROVER_FIELDS = [
+  ...MANAGER_FIELDS,
+  'gender', 'maritalStatus', 'bloodGroup', 'nationality', 'aboutMe',
+  'personalEmail', 'seatingLocation', 'currentAddress', 'permanentAddress', 'address',
+  'emergencyContactName', 'emergencyContactPhone', 'emergencyContactRelation',
+  'checkInTime', 'documents',
+  /* Work experience and dependents are deliberately NOT here. routes/
+   * employee-records.js keeps both to the person and to full access — "a
+   * reporting line is a reason to approve leave, not to read a colleague's
+   * dependents" — and reading them here would be the same widening through a
+   * different door. */
+];
+
+const pick = (row, fields) => {
   const out = {};
-  for (const k of COLLEAGUE_FIELDS) if (row[k] !== undefined) out[k] = row[k];
+  for (const k of fields) if (row[k] !== undefined) out[k] = row[k];
   return out;
 };
 
+const toColleagueView = (row) => pick(row, COLLEAGUE_FIELDS);
+const toManagerView   = (row) => pick(row, MANAGER_FIELDS);
+const toApproverView  = (row) => pick(row, APPROVER_FIELDS);
+
 // GET single employee — Bug #9 fix: include leave balance columns
 router.get('/:id', async (req, res) => {
-  /* Two view levels, and the caller is told which one it got.
+  /* Four view levels, and the caller is told which one it got.
    *
    * This used to 403 anybody who was neither the subject nor full-access,
    * which made every link to a colleague — the topbar search, the org chart's
@@ -356,12 +406,22 @@ router.get('/:id', async (req, res) => {
    * profile is not a secret; their date of birth is. So the answer is a
    * thinner record, not a refusal.
    *
-   * A manager gets the colleague view too. The reporting line already earns
-   * them their reports' attendance and leave; it is not a reason to read
-   * somebody's blood group, and routes/employee-records.js settled that same
-   * question the same way.
+   *   'colleague' — everybody else: the company phone book.
+   *   'manager'   — a role that carries reports, looking at somebody who is
+   *                 not theirs: the personnel record minus the private half.
+   *   'approver'  — a role that carries reports AND is this person's own
+   *                 reporting manager / approving authority: the human record,
+   *                 still without identity numbers, bank or pay.
+   *   'full'      — the subject, or full access. Nothing else. Everything.
+   *
+   * A reporting link on its own grants nothing: the twelve people named as
+   * somebody's reporting manager here are all plain team members, and a row
+   * in a column is not a decision to trust somebody with a colleague's
+   * record. The role has to carry reports as well, which is why the level is
+   * settled after the SELECT — the link is read off the row, the authority
+   * off the role, and both have to agree.
    */
-  const privileged = isFullAccess(req.user.role) || String(req.params.id) === String(req.user._id);
+  const isSelf = String(req.params.id) === String(req.user._id);
   try {
     // SELECT every column on employees so the Edit modal can populate fields
     // like nickName, personalEmail, workPhone, PAN, Aadhaar, bank, emergency
@@ -470,14 +530,22 @@ router.get('/:id', async (req, res) => {
     delete empData.mfa_backup_codes;
     delete empData.reset_password_token;
     delete empData.reset_password_expires;
+    // canActOnEmployee() is the same reporting-line test the leave and
+    // attendance approvals use, so "my approver" means one thing in one place.
+    const carriesReports = isManager(req.user.role);
+    const viewLevel = (isSelf || isFullAccess(req.user.role)) ? 'full'
+      : (carriesReports && canActOnEmployee(req.user, empData)) ? 'approver'
+      : carriesReports ? 'manager'
+      : 'colleague';
+
     /* A colleague's answer stops here. Education and documents are neither
      * fetched nor filtered out afterwards — the two queries below simply do
      * not run, because the cheapest way to be sure something is not leaked is
      * not to load it. `viewLevel` tells the page which shape it received, so
      * it renders the thin view deliberately rather than inferring it from a
      * pile of undefined fields. */
-    if (!privileged) {
-      return res.json({ success: true, viewLevel: 'colleague', data: toColleagueView(empData) });
+    if (viewLevel === 'colleague') {
+      return res.json({ success: true, viewLevel, data: toColleagueView(empData) });
     }
 
     const eduRes = await pool.query('SELECT * FROM employee_education WHERE employee_id = $1 ORDER BY year_of_passing DESC', [req.params.id]);
@@ -488,7 +556,15 @@ router.get('/:id', async (req, res) => {
       (r) => `${String(r.university_or_institution || '').trim().toLowerCase()}|${r.year_of_passing || ''}`,
       ['highest_qualification', 'degree', 'course', 'university_or_institution', 'year_of_passing', 'percentage_or_cgpa']
     );
-    
+
+    /* Education is a qualification, not a private fact, so it survives the
+     * filter. Documents stop here: the file list is scans of exactly the
+     * things this level must never read, and /documents is guarded for
+     * itself anyway. */
+    if (viewLevel === 'manager') {
+      return res.json({ success: true, viewLevel, data: toManagerView(empData) });
+    }
+
     // employee_documents was migrated from (document_type, file_path,
     // original_name, mime_type, size) to (type, file_url, name, file_size).
     // Fresh deploys only have the new columns — alias them to the legacy
@@ -504,8 +580,12 @@ router.get('/:id', async (req, res) => {
       [req.params.id]
     );
     empData.documents = docsRes.rows;
-    
-    res.json({ success: true, viewLevel: 'full', data: empData });
+
+    if (viewLevel === 'approver') {
+      return res.json({ success: true, viewLevel, data: toApproverView(empData) });
+    }
+
+    res.json({ success: true, viewLevel, data: empData });
   } catch (err) {
     serverError(res, err);
   }
