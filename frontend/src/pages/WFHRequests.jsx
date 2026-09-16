@@ -160,7 +160,7 @@ export default function WFHRequests() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Date *</label>
-                <input type="date" value={form.date} min={new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, date: e.target.value })} required
+                <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
               </div>
               <div>

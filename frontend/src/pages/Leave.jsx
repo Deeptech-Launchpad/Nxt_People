@@ -293,7 +293,7 @@ export default function Leave() {
                 <>
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1.5">Date</label>
-                    <input type="date" value={form.startDate} min={new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                    <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -325,13 +325,15 @@ export default function Leave() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-slate-600 mb-1.5">From</label>
-                      {/* Block past-dated leave requests at the UI level. Local
-                          date in YYYY-MM-DD so the input accepts it directly. */}
-                      <input type="date" value={form.startDate} min={new Date().toLocaleDateString('en-CA')} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: form.isHalfDay ? e.target.value : (e.target.value > form.endDate ? e.target.value : form.endDate) })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                      {/* A past day is somebody recording what already happened,
+                          which routes/leaves.js allows for your own record; only
+                          a finalised payroll month refuses it, with its own
+                          message. This input used to forbid it silently. */}
+                      <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: form.isHalfDay ? e.target.value : (e.target.value > form.endDate ? e.target.value : form.endDate) })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-600 mb-1.5">To</label>
-                      <input type="date" value={form.endDate} min={form.startDate || new Date().toLocaleDateString('en-CA')} disabled={form.isHalfDay} onChange={e => setForm({ ...form, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 disabled:bg-slate-50 disabled:text-slate-400" />
+                      <input type="date" value={form.endDate} min={form.startDate || undefined} disabled={form.isHalfDay} onChange={e => setForm({ ...form, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 disabled:bg-slate-50 disabled:text-slate-400" />
                     </div>
                   </div>
                 </>
