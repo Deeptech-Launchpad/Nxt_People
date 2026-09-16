@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, User, ChevronLeft, ChevronRight, ChevronDown, X, CalendarDays, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../../utils/api';
+import LeaveDetailModal from '../../../components/LeaveDetailModal';
+import { useAuth } from '../../../context/AuthContext';
 import useEmployeeList, { labelOf } from './useEmployeeList';
 import { LEAVE_LABEL, to12 } from '../shift/shiftGrid';
 
@@ -289,6 +291,29 @@ function LeaveRequestsTab({ employee }) {
   const [rows, setRows] = useState(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
+  const [detail, setDetail] = useState(null);
+  const [detailBalance, setDetailBalance] = useState(null);
+  const { user } = useAuth();
+  const canApproveAll = ['admin', 'director', 'hr_admin', 'manager'].includes(user?.role);
+
+  const openDetail = (l) => {
+    const row = { ...l, employee: l.employee || employee };
+    setDetail(row); setDetailBalance(null);
+    if (l.status === 'pending') {
+      api.get(`/leaves/balance?employeeId=${employee._id}&year=${new Date(l.startDate || Date.now()).getFullYear()}`)
+        .then(r => setDetailBalance(r.data.data || [])).catch(() => setDetailBalance(null));
+    }
+  };
+  const closeDetail = () => { setDetail(null); setDetailBalance(null); };
+
+  const action = async (id, act, reason, approveAll = false) => {
+    try {
+      await api.put(`/leaves/${id}/action`, { action: act, rejectionReason: reason, approveAll });
+      toast.success(approveAll ? 'All levels approved' : `${act.charAt(0).toUpperCase() + act.slice(1)} successfully`);
+      setReload(n => n + 1);
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+  };
 
   useEffect(() => {
     let live = true;
@@ -306,7 +331,7 @@ function LeaveRequestsTab({ employee }) {
       })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [employee._id]);
+  }, [employee._id, reload]);
 
   return (
     <Panel title="Leave Requests"
@@ -325,7 +350,10 @@ function LeaveRequestsTab({ employee }) {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {rows.map(l => (
-                  <tr key={l._id} className="hover:bg-slate-50/70">
+                  <tr key={l._id} className="hover:bg-slate-50/70 cursor-pointer"
+                      role="button" tabIndex={0}
+                      onClick={() => openDetail(l)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(l); } }}>
                     <td className="px-4 py-3">
                       <StatusPill status={l.status}
                         title={l.status === 'rejected' && l.rejectionReason ? l.rejectionReason : undefined} />
@@ -349,6 +377,20 @@ function LeaveRequestsTab({ employee }) {
             </p>
           )}
         </>
+      )}
+      {detail && (
+        <LeaveDetailModal
+          leave={detail}
+          kind="leave"
+          balance={detail.status === 'pending' ? detailBalance : undefined}
+          onClose={closeDetail}
+          canAct={detail.status === 'pending' && !!detail.canAct && detail.employee?._id !== user?._id}
+          onApprove={(x, comment) => { closeDetail(); action(x._id, 'approved', comment); }}
+          onApproveAll={canApproveAll && detail.status === 'pending' && !!detail.canAct
+            ? (x, comment) => { if (confirm('Approve all remaining levels for this request? This skips any other pending approvers.')) { closeDetail(); action(x._id, 'approved', comment, true); } }
+            : undefined}
+          onReject={(x, comment) => { closeDetail(); action(x._id, 'rejected', comment); }}
+        />
       )}
     </Panel>
   );

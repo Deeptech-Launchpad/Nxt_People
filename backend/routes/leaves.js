@@ -179,13 +179,27 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
     const scope = reportsScope(req.user, 'e', idx);
     if (scope.clause) { query += scope.clause; params.push(...scope.params); idx += scope.params.length; }
 
+    // The COUNT below shares the WHERE but not the select list, so it keeps the
+    // parameters as they stand before canAct adds one of its own.
+    const countParams = [...params];
+
+    /* Whether this viewer may still act on a row, so a list can open the same
+     * approval dialog the Approvals page uses instead of sending them there. */
+    let canActExpr = 'TRUE';
+    if (!isFullAccess(req.user.role)) {
+      canActExpr = `EXISTS (SELECT 1 FROM approval_levels x
+                             WHERE x.request_type = 'leave' AND x.request_id = l.id
+                               AND x.approver_id = $${idx} AND x.status = 'pending')`;
+      params.push(req.user._id); idx++;
+    }
+
     const [countRes, result] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS n
            FROM leaves l
            JOIN employees e ON l.employee_id = e.id
           ${query}`,
-        params
+        countParams
       ),
       pool.query(
         `SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate",
@@ -199,7 +213,8 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
          CASE WHEN aa.id IS NOT NULL THEN json_build_object('id', aa.id, 'firstName', aa.first_name, 'lastName', aa.last_name) ELSE NULL END as "approvingAuthority",
          l.approved_by as "approvedById",
          json_build_object('firstName', a.first_name, 'lastName', a.last_name) as "approvedBy",
-         ${APPROVAL_LEVELS_JSON} as "approvalLevels"
+         ${APPROVAL_LEVELS_JSON} as "approvalLevels",
+         ${canActExpr} as "canAct"
          FROM leaves l
          JOIN employees e ON l.employee_id = e.id
          LEFT JOIN employees rm ON e.reporting_manager_id = rm.id
