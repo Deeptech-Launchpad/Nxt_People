@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import usePolling from '../../hooks/usePolling';
 import { leaveChipText } from '../moreservices/shift/shiftGrid';
+import { useTeamScope, ScopeSwitch, withScope } from '../team/teamShared';
 
 /* `embedded` renders this as the Team Members tab of the Attendance → Team
  * workspace, which already draws its own tab bar and page chrome. Same
@@ -26,6 +27,7 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [date, setDate] = useState(new Date().toLocaleDateString('en-CA'));
+  const scope = useTeamScope(embedded ? 'attendance-members' : null);
 
   const fetchTeamAttendance = (silent = false) => {
     if (!silent) setLoading(true);
@@ -35,8 +37,8 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
      * the approved leave rows for the day and merged by employee id, so it can
      * only ever label a person this roster already shows. */
     Promise.all([
-      api.get(`/attendance/team?date=${date}`),
-      api.get(`/team/on-leave?date=${date}`),
+      api.get(withScope(`/attendance/team?date=${date}`, scope)),
+      api.get(withScope(`/team/on-leave?date=${date}`, scope)),
     ])
       .then(([att, lv]) => {
         setEmployees(att.data.employees || []);
@@ -48,10 +50,10 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
       .finally(() => { if (!silent) setLoading(false); });
   };
 
-  useEffect(fetchTeamAttendance, [date]);
+  useEffect(fetchTeamAttendance, [date, scope.scope]);
 
   // Picks up teammates' check-in/check-out without needing a manual refresh.
-  usePolling(() => fetchTeamAttendance(true), 5000, [date]);
+  usePolling(() => fetchTeamAttendance(true), 5000, [date, scope.scope]);
 
   /* ── Build a map: employeeId → attendance record ── */
   const attMap = {};
@@ -233,6 +235,7 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
             }}
             className="border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400 bg-white text-slate-600"
           />
+          <div className="ml-auto"><ScopeSwitch ctl={scope} /></div>
         </div>
 
         {loading ? (

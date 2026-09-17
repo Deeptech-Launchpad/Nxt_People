@@ -19,7 +19,7 @@ router.use(protect);
 async function relationTo(user, employeeId) {
   if (String(user._id) === String(employeeId)) return 'self';
   const r = await pool.query(
-    `SELECT 1 FROM employees WHERE id = $1 AND reporting_manager_id = $2`,
+    `SELECT 1 FROM employees WHERE id = $1 AND (reporting_manager_id = $2 OR approving_authority_id = $2)`,
     [employeeId, user._id]
   );
   return r.rows.length ? 'manager' : null;
@@ -93,7 +93,7 @@ router.get('/', async (req, res) => {
         const team = await pool.query(
           teamScope(req) === 'all'
             ? `SELECT e.id FROM employees e WHERE ${subtreeClause('e', 1)}`
-            : `SELECT id FROM employees WHERE reporting_manager_id = $1`, [req.user._id]);
+            : `SELECT id FROM employees WHERE reporting_manager_id = $1 OR approving_authority_id = $1`, [req.user._id]);
         team.rows.forEach(r => ids.add(String(r.id)));
       }
       if (cfg.allowViewDepartmentSchedules) {
@@ -179,7 +179,7 @@ router.get('/', async (req, res) => {
  * this table's. Filtering weekends out here would mean a Saturday callout had
  * no shift to be measured against.
  */
-router.post('/assign-range', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+router.post('/assign-range', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   const client = await pool.connect();
   try {
     const { employeeIds, criteria, shiftId, fromDate, toDate, reason } = req.body;
@@ -253,7 +253,7 @@ router.post('/assign-range', authorize('admin', 'director', 'hr_admin', 'manager
 });
 
 // POST assign shift (admin/manager)
-router.post('/assign', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+router.post('/assign', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
     const { employeeId, shiftId, date } = req.body;
     if (!employeeId || !shiftId || !date) return res.status(400).json({ success: false, message: 'employeeId, shiftId, date required' });
@@ -272,7 +272,7 @@ router.post('/assign', authorize('admin', 'director', 'hr_admin', 'manager'), as
 });
 
 // POST bulk assign (copy previous week)
-router.post('/copy-week', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+router.post('/copy-week', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
     const { fromStart, toStart } = req.body;
     if (!fromStart || !toStart) {
@@ -291,7 +291,7 @@ router.post('/copy-week', authorize('admin', 'director', 'hr_admin', 'manager'),
           message: 'Changing shift mapping is not permitted for your role' });
       }
       const team = await pool.query(
-        `SELECT id FROM employees WHERE reporting_manager_id = $1`, [req.user._id]);
+        `SELECT id FROM employees WHERE reporting_manager_id = $1 OR approving_authority_id = $1`, [req.user._id]);
       scope = team.rows.map(r => r.id);
       if (!scope.length) {
         return res.json({ success: true, message: 'Copied 0 assignments' });
@@ -314,7 +314,7 @@ router.post('/copy-week', authorize('admin', 'director', 'hr_admin', 'manager'),
 });
 
 // DELETE assignment
-router.delete('/:id', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+router.delete('/:id', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
     // Read the row before removing it: which employee and which date it belongs
     // to is what decides whether this caller may touch it at all.

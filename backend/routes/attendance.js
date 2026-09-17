@@ -4,7 +4,7 @@ const logger = require('../logger');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { shiftForCheckIn, autoAssignEnabled } = require('../utils/shiftPatterns');
-const { isFullAccess } = require('../utils/roles');
+const { isFullAccess, reportsScope, teamScope } = require('../utils/roles');
 const { resolveEmployeeId } = require('../utils/employeeScope');
 const { sendCheckOutReminderEmail } = require('../utils/mailer');
 const { DEFAULT_TZ } = require('../utils/timezone');
@@ -869,7 +869,10 @@ router.get('/team', authorize('admin', 'director', 'hr_admin', 'manager', 'team_
     let empIdx = 1;
 
     if (department) { empQuery += ` AND e.department = $${empIdx++}`; empParams.push(department); }
-    if (['manager', 'team_incharge'].includes(req.user.role)) { empQuery += ` AND e.reporting_manager_id = $${empIdx++}`; empParams.push(req.user._id); }
+    // The same people every other Team read shows: reporting manager OR
+    // approving authority, and with ?scope=all everybody below them.
+    const team = reportsScope(req.user, 'e', empIdx, teamScope(req));
+    empQuery += team.clause; empParams.push(...team.params); empIdx += team.params.length;
 
     const [employeesRes, weekend] = await Promise.all([
       pool.query(

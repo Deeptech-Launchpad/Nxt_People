@@ -74,10 +74,10 @@ export default function TeamShiftSchedule({ embedded = false, scopeKey = null })
 
   useEffect(load, [load]);
 
-  /* /roster/assign-range authorizes a manager but not a Team Incharge, and a
-   * manager only where Shifts → General lets managers edit mapping. */
+  /* A manager or Team Incharge may assign only where Shifts → General lets
+   * managers edit mapping; /roster/assign-range enforces the same switch. */
   useEffect(() => {
-    if (full || user?.role !== ROLES.MANAGER) { setManagerMayEdit(false); return undefined; }
+    if (full || ![ROLES.MANAGER, ROLES.TEAM_INCHARGE].includes(user?.role)) { setManagerMayEdit(false); return undefined; }
     let live = true;
     api.get('/shift-config/general')
       .then(r => { if (live) setManagerMayEdit(!!r.data.data?.mappingPermissions?.edit?.manager); })
