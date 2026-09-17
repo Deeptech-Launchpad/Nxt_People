@@ -373,6 +373,45 @@ function heading(prefix, why) {
     });
   }
 
+  /* Several people with no punch on exactly the same dates did not all stay away
+   * together. Balaji D and Sanjana V share every working day from 5 to 28
+   * January; half the company shares 28 February and 12 May. That is a gap in
+   * the record — an induction, a closure the calendar does not know about, a day
+   * no attendance was imported — and it has one answer, not one per person.
+   * Dates are grouped by the exact set of people missing on them, so a cohort
+   * that shares a run of dates becomes a single row. */
+  const COHORT_MIN = 3;
+  const noPunchByDate = new Map();
+  for (const r of payable) {
+    if (bulkEmployees.has(r.employee_id) || r.has_in) continue;
+    if (!noPunchByDate.has(r.date)) noPunchByDate.set(r.date, []);
+    noPunchByDate.get(r.date).push(r);
+  }
+  const cohorts = new Map();
+  for (const [date, people] of noPunchByDate) {
+    if (people.length < COHORT_MIN) continue;
+    const key = people.map(p => p.employee_id).sort().join(',');
+    if (!cohorts.has(key)) cohorts.set(key, { people, dates: [] });
+    cohorts.get(key).dates.push(date);
+  }
+  let cohortDays = 0;
+  for (const { people, dates } of cohorts.values()) {
+    dates.sort();
+    for (const p of people) for (const d of dates) { handledDays.add(`${p.employee_id}|${d}`); cohortDays++; }
+    const names = people.map(p => `${p.code} ${p.name}`).join('; ');
+    addCase('D2', {
+      employee_code: people[0].code,
+      employee_name: `${people.length} people: ${names}`,
+      department: [...new Set(people.map(p => p.department))].join(', '),
+      date: dates.join(' '), day_of_week: `${dates.length} date(s)`,
+      what_we_see: `${people.length} people have no punch and no leave on the same ${dates.length} working `
+        + 'date(s). Payroll would deduct each of them for each date.',
+      suggestion: 'the same dates for several people is a gap in the record, not a group staying away — '
+        + 'check whether these were an induction or training period, an office closure or holiday the '
+        + 'calendar is missing, or days no attendance was recorded. One answer covers everybody on this row',
+    });
+  }
+
   /* A check-in with no check-out is the same mistake repeated, and it has one
    * answer for all of its days: the person was here, the punch is missing. One
    * row per person asks it once. Payroll still counts these days as absent
@@ -461,6 +500,8 @@ function heading(prefix, why) {
     + '.');
   console.log(`  Not listed, because payroll never deducts them: ${skippedShut} day(s) the office was shut, `
     + `${skippedFuture} date(s) still to come.`);
+  console.log(`  Grouped: ${cohortDays} person-day(s) where ${COHORT_MIN}+ people share the same missing dates `
+    + `became ${cohorts.size} row(s).`);
   if (d2.length) {
     console.log('');
     for (const r of d2.slice(0, 8)) {
