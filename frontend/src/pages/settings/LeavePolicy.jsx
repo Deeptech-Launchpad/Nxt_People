@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { SlidersHorizontal, X, CalendarRange, Users, Gift, CalendarCheck, Copy, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const PAY_TYPES = [['paid', 'Paid'], ['unpaid', 'Unpaid'], ['comp_off', 'Compensatory Off']];
 const UNITS = [['days', 'Days'], ['hours', 'Hours']];
@@ -286,8 +288,20 @@ export default function LeavePolicy() {
     return true;
   }), [rows, filters]);
 
-  const enabled = filtered.filter(r => r.isActive);
-  const disabled = filtered.filter(r => !r.isActive);
+  const labelOf = (list, v) => list.find(([k]) => k === v)?.[1] ?? v;
+  const sort = useSortable(filtered, {
+    id: 'settings-leave-policies',
+    columns: {
+      name: 'name',
+      payType: { get: r => labelOf(PAY_TYPES, r.payType), type: 'text' },
+      policyType: { get: r => (r.policyType ? labelOf(POLICY_TYPES, r.policyType) : null), type: 'text' },
+      unit: { get: r => labelOf(UNITS, r.unit), type: 'text' },
+      accrual: { get: r => `${labelOf(ACCRUAL_MODES, r.accrualMode)} ${['annual', 'monthly'].includes(r.accrualMode) ? r.accrualAmount ?? '' : ''}`.trim(), type: 'text' },
+      carryForward: { get: r => (r.carryForward ? r.maxDaysPerYear ?? Number.MAX_SAFE_INTEGER : -1), type: 'number' },
+    },
+  });
+  const enabled = sort.sorted.filter(r => r.isActive);
+  const disabled = sort.sorted.filter(r => !r.isActive);
   const activeFilterCount = Object.entries(filters)
     .filter(([k, v]) => v && !(k === 'status' && v === 'active')).length;
 
@@ -424,12 +438,12 @@ export default function LeavePolicy() {
       <table className="w-full min-w-[860px]">
         <thead className="bg-slate-50 text-[13px] font-semibold text-slate-600">
           <tr>
-            <th className="text-left px-5 py-3">Leave policy</th>
-            <th className="text-left px-5 py-3">Type</th>
-            <th className="text-left px-5 py-3">Policy type</th>
-            <th className="text-left px-5 py-3">Unit</th>
-            <th className="text-left px-5 py-3">Accrual</th>
-            <th className="text-left px-5 py-3">Carry forward</th>
+            <SortableTh sort={sort} k="name" className="text-left px-5 py-3">Leave policy</SortableTh>
+            <SortableTh sort={sort} k="payType" className="text-left px-5 py-3">Type</SortableTh>
+            <SortableTh sort={sort} k="policyType" className="text-left px-5 py-3">Policy type</SortableTh>
+            <SortableTh sort={sort} k="unit" className="text-left px-5 py-3">Unit</SortableTh>
+            <SortableTh sort={sort} k="accrual" className="text-left px-5 py-3">Accrual</SortableTh>
+            <SortableTh sort={sort} k="carryForward" className="text-left px-5 py-3">Carry forward</SortableTh>
             <th className="text-center px-5 py-3 w-[90px]">Status</th>
             <th className="w-[80px]" />
           </tr>

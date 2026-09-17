@@ -1,6 +1,8 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Calendar } from 'lucide-react';
 import api from '../../utils/api';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -16,6 +18,18 @@ export default function LeaveTeam() {
   useEffect(() => {
     api.get('/leaves/team-pending').then(r => setLeaves(r.data.data || [])).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  const sort = useSortable(leaves, {
+    id: 'leave-team-pending',
+    columns: {
+      employee: l => `${l.employee?.firstName || ''} ${l.employee?.lastName || ''}`.trim(),
+      leaveType: 'leaveType',
+      startDate: { get: l => l.startDate, type: 'date' },
+      endDate: { get: l => l.endDate, type: 'date' },
+      totalDays: { get: l => Number(l.totalDays), type: 'number' },
+      status: 'status',
+    },
+  });
 
   const today = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'long' });
 
@@ -36,12 +50,12 @@ export default function LeaveTeam() {
         ) : (
           <table className="w-full">
             <thead><tr className="border-b border-slate-100">
-              {['Employee','Type','From','To','Days','Status'].map(h => (
-                <th key={h} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+              {[['Employee','employee'],['Type','leaveType'],['From','startDate'],['To','endDate'],['Days','totalDays'],['Status','status']].map(([h, k]) => (
+                <SortableTh key={h} sort={sort} k={k} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>
               ))}
             </tr></thead>
             <tbody className="divide-y divide-slate-50">
-              {leaves.map(l => (
+              {sort.sorted.map(l => (
                 <tr key={l._id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-3 text-[14px] font-medium text-slate-800">
                     {l.employee?.firstName} {l.employee?.lastName}

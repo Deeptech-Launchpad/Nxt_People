@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, X, Trash2, Pencil, ArrowRight, AlertTriangle } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* Operations -> Employee Information -> Delegation.
  *
@@ -74,6 +76,18 @@ export default function EmpDelegation() {
   };
   useEffect(load, []);
 
+  const sort = useSortable(rows, {
+    id: 'emp-delegations',
+    columns: {
+      delegator: d => `${d.delegator?.firstName || ''} ${d.delegator?.lastName || ''}`.trim(),
+      delegatee: d => `${d.delegatee?.firstName || ''} ${d.delegatee?.lastName || ''}`.trim(),
+      type: 'type',
+      from: { get: d => d.startsAt, type: 'date' },
+      to: { get: d => d.endsAt, type: 'date' },
+      status: { get: d => (d.inEffect ? 0 : d.isActive ? 1 : 2), type: 'number' },
+    },
+  });
+
   const save = async () => {
     if (!form.delegator) return toast.error('Choose who is delegating');
     if (!form.delegatee) return toast.error('Choose who is covering');
@@ -137,18 +151,18 @@ export default function EmpDelegation() {
           <table className="w-full text-[15px] min-w-max">
             <thead className="bg-slate-50 text-slate-500 text-[13.5px]">
               <tr>
-                <th className="px-4 py-2.5 text-left font-medium">Delegator</th>
+                <SortableTh sort={sort} k="delegator" className="px-4 py-2.5 text-left font-medium">Delegator</SortableTh>
                 <th className="px-4 py-2.5 text-left font-medium" />
-                <th className="px-4 py-2.5 text-left font-medium">Delegatee</th>
-                <th className="px-4 py-2.5 text-left font-medium">Type</th>
-                <th className="px-4 py-2.5 text-left font-medium">From</th>
-                <th className="px-4 py-2.5 text-left font-medium">To</th>
-                <th className="px-4 py-2.5 text-left font-medium">Status</th>
+                <SortableTh sort={sort} k="delegatee" className="px-4 py-2.5 text-left font-medium">Delegatee</SortableTh>
+                <SortableTh sort={sort} k="type" className="px-4 py-2.5 text-left font-medium">Type</SortableTh>
+                <SortableTh sort={sort} k="from" className="px-4 py-2.5 text-left font-medium">From</SortableTh>
+                <SortableTh sort={sort} k="to" className="px-4 py-2.5 text-left font-medium">To</SortableTh>
+                <SortableTh sort={sort} k="status" className="px-4 py-2.5 text-left font-medium">Status</SortableTh>
                 <th className="px-4 py-2.5 w-20" />
               </tr>
             </thead>
             <tbody>
-              {rows.map(d => (
+              {sort.sorted.map(d => (
                 <tr key={d._id} className="border-t border-slate-100 hover:bg-slate-50/70">
                   <td className="px-4 py-2.5 text-slate-800">{d.delegator.firstName} {d.delegator.lastName}</td>
                   <td className="px-2 text-slate-300"><ArrowRight size={15} /></td>

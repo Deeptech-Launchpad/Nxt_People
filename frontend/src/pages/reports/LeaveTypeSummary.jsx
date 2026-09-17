@@ -13,6 +13,8 @@ import DateChip from './DateChip';
 import PeriodPresetChip from './PeriodPresetChip';
 import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
 const LEAVE_LABEL = { casual: 'Casual Leave', comp_off: 'Comp-Off', unpaid: 'Leave Without Pay', permission: 'Permission' };
@@ -45,6 +47,17 @@ export default function LeaveTypeSummary() {
   const [dimFilters, setDimFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
+  const sort = useSortable(rows, {
+    id: 'reports-leave-type-summary',
+    columns: {
+      employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+      openingBalance: { get: r => r.openingBalance, type: 'number' },
+      granted: { get: r => r.granted, type: 'number' },
+      booked: { get: r => r.booked, type: 'number' },
+      closingBalance: { get: r => r.closingBalance, type: 'number' },
+      lapsed: { get: r => r.lapsed, type: 'number' },
+    },
+  });
 
   useEffect(() => {
     api.get('/reports/leave/types-available')
@@ -147,16 +160,16 @@ export default function LeaveTypeSummary() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
-                <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-right px-4 py-2.5">Opening Balance</th>
-                <th className="text-right px-4 py-2.5">Granted</th>
-                <th className="text-right px-4 py-2.5">Booked</th>
-                <th className="text-right px-4 py-2.5">Closing Balance</th>
-                <th className="text-right px-4 py-2.5">Lapsed</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5">Employee</SortableTh>
+                <SortableTh sort={sort} k="openingBalance" className="text-right px-4 py-2.5">Opening Balance</SortableTh>
+                <SortableTh sort={sort} k="granted" className="text-right px-4 py-2.5">Granted</SortableTh>
+                <SortableTh sort={sort} k="booked" className="text-right px-4 py-2.5">Booked</SortableTh>
+                <SortableTh sort={sort} k="closingBalance" className="text-right px-4 py-2.5">Closing Balance</SortableTh>
+                <SortableTh sort={sort} k="lapsed" className="text-right px-4 py-2.5">Lapsed</SortableTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.openingBalance}</td>

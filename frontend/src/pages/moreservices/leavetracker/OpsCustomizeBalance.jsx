@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Search, Check, X } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* ── Customize Balance ──────────────────────────────────────────────────────
  *  Zoho's grid: people down the side, leave types across the top, every cell
@@ -56,6 +58,15 @@ export default function OpsCustomizeBalance() {
     return rows.filter(r =>
       `${r.employeeCode} ${r.name} ${r.department || ''}`.toLowerCase().includes(needle));
   }, [q, rows]);
+
+  const sortColumns = useMemo(() => ({
+    name: { get: r => r.name, type: 'text' },
+    ...Object.fromEntries(types.map(t => [`type:${t._id}`, {
+      get: r => r.balances?.find(x => x.leaveTypeId === t._id)?.available ?? null,
+      type: 'number',
+    }])),
+  }), [types]);
+  const sort = useSortable(shown, { id: 'ops-customize-balance', columns: sortColumns });
 
   const startEdit = (empId, typeId, current) => {
     setEditing(`${empId}|${typeId}`);
@@ -126,17 +137,17 @@ export default function OpsCustomizeBalance() {
                 })}
               </tr>
               <tr className="text-left text-slate-500 text-sm">
-                <th className="px-4 py-3 font-medium sticky left-0 bg-slate-50 z-10">Employee</th>
+                <SortableTh sort={sort} k="name" className="px-4 py-3 font-medium sticky left-0 bg-slate-50 z-10">Employee</SortableTh>
                 {ordered.map(t => (
-                  <th key={t._id} className="px-4 py-3 font-medium text-right whitespace-nowrap">
+                  <SortableTh key={t._id} sort={sort} k={`type:${t._id}`} className="px-4 py-3 font-medium text-right whitespace-nowrap">
                     {t.name}
                     {t.unit === 'hours' && <span className="block text-[12px] text-slate-300 font-normal">hours</span>}
-                  </th>
+                  </SortableTh>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {shown.map(r => (
+              {sort.sorted.map(r => (
                 <tr key={r._id} className="border-t border-slate-50 hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 sticky left-0 bg-white z-10">
                     <span className="text-slate-700">{r.name}</span>

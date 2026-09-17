@@ -14,6 +14,8 @@ import DateChip from './DateChip';
 import PeriodPresetChip from './PeriodPresetChip';
 import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -93,6 +95,16 @@ const TYPE_OPTIONS = [['', 'All'], ...DAY_GROUPS.map(g => [g.key, g.label])];
 // reference prints as N/A. A 0 is a real figure and stays a 0.
 const naIfNull = v => (v === null || v === undefined ? 'N/A' : v);
 const cellValue = (row, spec) => (typeof spec === 'function' ? spec(row) : row[spec]);
+const SORT_COLUMNS = {
+  employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+  permissionAllocated: { get: r => r.permissionAllocated, type: 'number' },
+  permissionBooked: { get: r => r.permissionBooked, type: 'number' },
+  permissionBalance: { get: r => r.permissionBalance, type: 'number' },
+  ...Object.fromEntries(DAY_GROUPS.flatMap(g => g.subs.flatMap(sub => [
+    [`${g.key}-${sub.label}-b`, { get: r => cellValue(r, sub.booked), type: 'number' }],
+    [`${g.key}-${sub.label}-l`, { get: r => cellValue(r, sub.balance), type: 'number' }],
+  ]))),
+};
 const groupTotal = (rows, spec) => rows.reduce((s, r) => s + (Number(cellValue(r, spec)) || 0), 0);
 
 export default function BookedBalance() {
@@ -111,6 +123,7 @@ export default function BookedBalance() {
   // Type narrows which pay-type groups the Day table shows. It is purely a
   // column filter — the rows are unchanged, so it does not refetch.
   const [payTypeFilter, setPayTypeFilter] = useState('');
+  const sort = useSortable(rows, { id: 'reports-booked-balance', columns: SORT_COLUMNS });
 
   const load = () => {
     setLoading(true);
@@ -211,18 +224,18 @@ export default function BookedBalance() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
-                <th className="text-left px-4 py-2.5">Employee</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5">Employee</SortableTh>
                 <th colSpan={3} className="text-center px-4 py-1.5 border-l border-slate-200">Permission</th>
               </tr>
               <tr>
                 <th></th>
-                <th className="text-right px-4 py-2 border-l border-slate-200">Allocated</th>
-                <th className="text-right px-4 py-2">Booked</th>
-                <th className="text-right px-4 py-2">Balance</th>
+                <SortableTh sort={sort} k="permissionAllocated" className="text-right px-4 py-2 border-l border-slate-200">Allocated</SortableTh>
+                <SortableTh sort={sort} k="permissionBooked" className="text-right px-4 py-2">Booked</SortableTh>
+                <SortableTh sort={sort} k="permissionBalance" className="text-right px-4 py-2">Balance</SortableTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
                   <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{row.permissionAllocated}</td>
@@ -238,7 +251,7 @@ export default function BookedBalance() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
-                <th rowSpan={3} className="text-left px-4 py-2.5 align-bottom">Employee</th>
+                <SortableTh sort={sort} k="employee" rowSpan={3} className="text-left px-4 py-2.5 align-bottom">Employee</SortableTh>
                 {visibleGroups.map(g => (
                   <th key={g.key} colSpan={g.subs.length * 2} className="text-center px-4 py-1.5 border-l border-slate-200">
                     {g.label}
@@ -255,13 +268,13 @@ export default function BookedBalance() {
               </tr>
               <tr>
                 {visibleGroups.flatMap(g => g.subs.flatMap((s, i) => ([
-                  <th key={`${g.key}-${s.label}-b`} className={`text-right px-4 py-2 ${i === 0 ? 'border-l border-slate-200' : ''}`}>Booked</th>,
-                  <th key={`${g.key}-${s.label}-l`} className="text-right px-4 py-2">Balance</th>,
+                  <SortableTh key={`${g.key}-${s.label}-b`} sort={sort} k={`${g.key}-${s.label}-b`} className={`text-right px-4 py-2 ${i === 0 ? 'border-l border-slate-200' : ''}`}>Booked</SortableTh>,
+                  <SortableTh key={`${g.key}-${s.label}-l`} sort={sort} k={`${g.key}-${s.label}-l`} className="text-right px-4 py-2">Balance</SortableTh>,
                 ])))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
                   {visibleGroups.flatMap(g => g.subs.flatMap((s, i) => {

@@ -8,6 +8,8 @@ import { PhotoAvatar } from '../../components/ui';
 import ReportShell from './ReportShell';
 import UnitToggle from './UnitToggle';
 import LeaveExportModal from './LeaveExportModal';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const now = new Date();
 
@@ -84,6 +86,15 @@ function SummaryModal({ employeeId, leaveType, label, year, onClose }) {
     const ym = `${year}-${String(row.month).padStart(2, '0')}`;
     return ym >= from.slice(0, 7) && ym <= to.slice(0, 7);
   });
+  const sort = useSortable(visible, {
+    id: 'reports-leave-balance-summary',
+    columns: {
+      period: { get: r => r.month, type: 'number' },
+      granted: { get: r => r.granted, type: 'number' },
+      booked: { get: r => (unit === 'hours' ? r.bookedHours : r.bookedDays), type: 'number' },
+      balance: { get: r => r.balance, type: 'number' },
+    },
+  });
 
   return (
     <div className={modalShell}>
@@ -94,15 +105,15 @@ function SummaryModal({ employeeId, leaveType, label, year, onClose }) {
             <table className="w-full text-[13.5px]">
               <thead className="bg-slate-100 text-[13px] font-medium text-slate-600 sticky top-0">
                 <tr>
-                  {['Period', 'Granted', 'Booked', 'Balance', 'Lapsed'].map(h => (
-                    <th key={h} className="text-left font-medium px-4 py-2.5">{h}</th>
+                  {[['period', 'Period'], ['granted', 'Granted'], ['booked', 'Booked'], ['balance', 'Balance'], [null, 'Lapsed']].map(([k, h]) => (
+                    <SortableTh key={h} sort={k && sort} k={k} className="text-left font-medium px-4 py-2.5">{h}</SortableTh>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {visible.length === 0 ? (
                   <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">No months in this range</td></tr>
-                ) : visible.map(row => (
+                ) : sort.sorted.map(row => (
                   <tr key={row.month}>
                     <td className="px-4 py-2.5 text-slate-700">{row.monthLabel}</td>
                     {/* Casual is granted once, in January — later months show
@@ -149,6 +160,16 @@ function HistoryModal({ employeeId, employeeCode, leaveType, label, year, onClos
   }, [employeeId, leaveType, year]);
 
   const visible = rows.filter(r => r.date >= from && r.date <= to);
+  const sort = useSortable(visible, {
+    id: 'reports-leave-balance-history',
+    columns: {
+      date: { get: r => r.date, type: 'date' },
+      type: { get: r => r.type, type: 'text' },
+      added: { get: r => r.added, type: 'number' },
+      booked: { get: r => r.booked, type: 'number' },
+      balance: { get: r => r.balance, type: 'number' },
+    },
+  });
 
   return (
     <div className={modalShell}>
@@ -162,13 +183,13 @@ function HistoryModal({ employeeId, employeeCode, leaveType, label, year, onClos
             <table className="w-full text-[13.5px]">
               <thead className="bg-slate-100 text-[13px] font-medium text-slate-600 sticky top-0">
                 <tr>
-                  {['Date', 'Type', 'Added', 'Booked', 'Balance'].map(h => (
-                    <th key={h} className="text-left font-medium px-4 py-2.5">{h}</th>
+                  {[['date', 'Date'], ['type', 'Type'], ['added', 'Added'], ['booked', 'Booked'], ['balance', 'Balance']].map(([k, h]) => (
+                    <SortableTh key={h} sort={sort} k={k} className="text-left font-medium px-4 py-2.5">{h}</SortableTh>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {visible.map((row, i) => (
+                {sort.sorted.map((row, i) => (
                   <tr key={`${row.date}-${i}`}>
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{fmtDate(row.date, { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
                     <td className="px-4 py-2.5 text-slate-700">{row.type}</td>

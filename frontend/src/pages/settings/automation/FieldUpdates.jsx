@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, X } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 import { Spinner } from '../configKit';
 import { useCatalog, useScopedList, FormFilter, Field, input, select } from './kit';
 
@@ -129,6 +131,15 @@ export default function FieldUpdates() {
   const catalog = useCatalog();
   const { scope, setScope, rows, reload } = useScopedList('/workflows/field-updates');
   const [editing, setEditing] = useState(null);
+  const sort = useSortable(rows, {
+    id: 'settings-automation-field-updates',
+    columns: {
+      name: 'name',
+      form: r => catalog?.recordTypes.find(t => t.key === r.recordType)?.label || r.recordType,
+      sets: r => catalog?.recordTypes.find(t => t.key === r.recordType)?.writableFields
+        .find(f => f.key === r.targetField)?.label || r.targetField,
+    },
+  });
 
   if (!catalog || rows === null) return <Spinner />;
 
@@ -158,14 +169,14 @@ export default function FieldUpdates() {
         <table className="w-full text-[14px]">
           <thead className="bg-slate-50">
             <tr>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Name</th>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Form name</th>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Sets</th>
+              <SortableTh sort={sort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Name</SortableTh>
+              <SortableTh sort={sort} k="form" className="text-left font-medium text-slate-600 px-6 py-2.5">Form name</SortableTh>
+              <SortableTh sort={sort} k="sets" className="text-left font-medium text-slate-600 px-6 py-2.5">Sets</SortableTh>
               <th className="w-16" />
             </tr>
           </thead>
           <tbody>
-            {rows.map(u => (
+            {sort.sorted.map(u => (
               <tr key={u.id} className="group border-t border-slate-100 hover:bg-slate-50/60">
                 <td className="px-6 py-3">
                   <button onClick={() => setEditing(u)} className="text-blue-600 hover:underline text-left font-medium">{u.name}</button>

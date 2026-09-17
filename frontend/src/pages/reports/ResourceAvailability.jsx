@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Download, RotateCcw, ArrowUpDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
 import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
@@ -13,6 +13,8 @@ import FilterToggleButton from './FilterToggleButton';
 import LeaveExportModal from './LeaveExportModal';
 import usePersistedOpen from './usePersistedOpen';
 import { downloadIcs } from '../../utils/reportIcs';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 // Codes render as plain text over a coloured underline rather than a filled
 // pill — with a month of data on screen, filled badges turn the grid into a
@@ -92,7 +94,6 @@ export default function ResourceAvailability() {
   // grid and the funnel reveals the filters.
   const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [sortAsc, setSortAsc] = useState(true);
   const [showExEmployees, setShowExEmployees] = useState(true);
 
   const shiftMonth = delta => {
@@ -121,16 +122,16 @@ export default function ResourceAvailability() {
 
   // Sorting is client-side on the already-loaded page — the grid is one
   // request's worth of rows, so there's nothing to re-fetch.
-  const rows = data
-    // Sorted by employee id, matching the reference. Sorting by first name put
-    // the grid in an order nobody reading a roster works in — people are looked
-    // up by code, and the code is the first thing in the cell.
-    ? [...data.data].sort((a, b) => {
-        const ac = String(a.employeeCode || '');
-        const bc = String(b.employeeCode || '');
-        return sortAsc ? ac.localeCompare(bc, undefined, { numeric: true }) : bc.localeCompare(ac, undefined, { numeric: true });
-      })
-    : [];
+  // Sorted by employee id by default, matching the reference. Sorting by first
+  // name put the grid in an order nobody reading a roster works in — people are
+  // looked up by code, and the code is the first thing in the cell.
+  const { sorted: rows, ...sort } = useSortable(data?.data || [], {
+    id: 'reports-resource-availability',
+    initial: { key: 'employee', dir: 'asc' },
+    columns: {
+      employee: { get: e => e.employeeCode, type: 'text' },
+    },
+  });
 
   const weekendCols = weekendColumns(rows);
 
@@ -217,15 +218,9 @@ export default function ResourceAvailability() {
             <table className="text-[13px] border-collapse">
               <thead className="sticky top-0 z-20">
                 <tr>
-                  <th className="text-left px-4 py-3 sticky left-0 z-30 bg-slate-100 whitespace-nowrap border-r border-slate-200 w-[280px] max-w-[280px]">
-                    <button
-                      onClick={() => setSortAsc(s => !s)}
-                      className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 hover:text-slate-900"
-                      title="Sort by employee"
-                    >
-                      Employee <ArrowUpDown size={13} className="text-slate-400" />
-                    </button>
-                  </th>
+                  <SortableTh sort={sort} k="employee" className="text-left px-4 py-3 sticky left-0 z-30 bg-slate-100 whitespace-nowrap border-r border-slate-200 w-[280px] max-w-[280px] text-[13px] font-medium text-slate-600">
+                    Employee
+                  </SortableTh>
                   {data.dayLabels.map((d, i) => {
                     const dd = new Date(d);
                     const weekend = weekendCols.has(i);

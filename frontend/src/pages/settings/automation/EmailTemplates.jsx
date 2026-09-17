@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, X } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 import { Spinner } from '../configKit';
 import { useCatalog, Field, MergeFields, input, select } from './kit';
 
@@ -15,6 +17,15 @@ export default function EmailTemplates() {
   const catalog = useCatalog();
   const [rows, setRows] = useState(null);
   const [editing, setEditing] = useState(null);
+  const sort = useSortable(rows, {
+    id: 'settings-automation-email-templates',
+    columns: {
+      name: 'name',
+      form: t => catalog?.recordTypes.find(x => x.key === t.recordType)?.label
+        || (t.service ? t.service.charAt(0).toUpperCase() + t.service.slice(1) : null),
+      subject: 'subject',
+    },
+  });
 
   const load = useCallback(() => (
     api.get('/workflows/templates')
@@ -50,14 +61,14 @@ export default function EmailTemplates() {
         <table className="w-full text-[14px]">
           <thead className="bg-slate-50">
             <tr>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Name</th>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Form name</th>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Subject</th>
+              <SortableTh sort={sort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Name</SortableTh>
+              <SortableTh sort={sort} k="form" className="text-left font-medium text-slate-600 px-6 py-2.5">Form name</SortableTh>
+              <SortableTh sort={sort} k="subject" className="text-left font-medium text-slate-600 px-6 py-2.5">Subject</SortableTh>
               <th className="w-16" />
             </tr>
           </thead>
           <tbody>
-            {rows.map(t => (
+            {sort.sorted.map(t => (
               <tr key={t.id} className="group border-t border-slate-100 hover:bg-slate-50/60">
                 <td className="px-6 py-3">
                   <button onClick={() => setEditing(t)} className="text-blue-600 hover:underline text-left font-medium">

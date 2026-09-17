@@ -10,6 +10,8 @@ import React, { useEffect, useState } from 'react';
 import { Users, Wallet, AlertCircle, RefreshCw, User as UserIcon, Eye } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 import { MONTH_NAMES, fmtINR, fmtINRshort, StatusPill, StatCard } from './_shared';
 import { PayslipModal } from './PayrollRun';
 
@@ -29,6 +31,18 @@ export default function TeamPayroll() {
       .finally(() => setLoading(false));
   };
   useEffect(load, [month, year]);
+
+  const sort = useSortable(data.rows, {
+    id: 'payroll-team',
+    columns: {
+      employee: { get: r => `${r.firstName || ''} ${r.lastName || ''}`.trim(), type: 'text' },
+      designation: { get: r => r.designation, type: 'text' },
+      gross: { get: r => (r.payslipId && r.grossEarnings != null ? Number(r.grossEarnings) : null), type: 'number' },
+      netPay: { get: r => (r.payslipId && r.netPay != null ? Number(r.netPay) : null), type: 'number' },
+      lopDays: { get: r => (r.lopDays == null ? null : Number(r.lopDays)), type: 'number' },
+      status: { get: r => r.payslipStatus || 'pending', type: 'text' },
+    },
+  });
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-5">
@@ -65,12 +79,12 @@ export default function TeamPayroll() {
         <table className="w-full text-left text-[15px]">
           <thead className="bg-slate-50 text-[13px] font-bold text-slate-600 uppercase tracking-wider">
             <tr>
-              <th className="px-4 py-2.5">Employee</th>
-              <th className="px-4 py-2.5">Designation</th>
-              <th className="px-4 py-2.5 text-right">Gross</th>
-              <th className="px-4 py-2.5 text-right">Net Pay</th>
-              <th className="px-4 py-2.5">LOP</th>
-              <th className="px-4 py-2.5">Status</th>
+              <SortableTh sort={sort} k="employee" className="px-4 py-2.5">Employee</SortableTh>
+              <SortableTh sort={sort} k="designation" className="px-4 py-2.5">Designation</SortableTh>
+              <SortableTh sort={sort} k="gross" className="px-4 py-2.5 text-right">Gross</SortableTh>
+              <SortableTh sort={sort} k="netPay" className="px-4 py-2.5 text-right">Net Pay</SortableTh>
+              <SortableTh sort={sort} k="lopDays" className="px-4 py-2.5">LOP</SortableTh>
+              <SortableTh sort={sort} k="status" className="px-4 py-2.5">Status</SortableTh>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
@@ -83,7 +97,7 @@ export default function TeamPayroll() {
                 <p>No direct reports found.</p>
                 <p className="text-[13px] mt-1">Ask HR to set the reporting person on your team members.</p>
               </td></tr>
-            ) : data.rows.map(r => (
+            ) : sort.sorted.map(r => (
               <tr key={r._id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">

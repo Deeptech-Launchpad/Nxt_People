@@ -11,6 +11,8 @@ import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import useFitToViewport from '../../hooks/useFitToViewport';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
 const now = new Date();
@@ -58,6 +60,14 @@ export default function ConsecutiveAbsences() {
   // itself so the page doesn't grow nine thousand pixels.
   const gridRef = useRef(null);
   const gridHeight = useFitToViewport(gridRef, null, [filtersOpen, rows]);
+  const sort = useSortable(rows, {
+    id: 'reports-consecutive-absences',
+    columns: {
+      employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+      period: { get: r => r.startDate, type: 'date' },
+      count: { get: r => r.count, type: 'number' },
+    },
+  });
 
   const load = () => {
     setLoading(true);
@@ -89,7 +99,7 @@ export default function ConsecutiveAbsences() {
   ];
 
   // Runs arrive flat, one per streak; group them so each employee is named once.
-  const byEmployee = rows.reduce((acc, row) => {
+  const byEmployee = sort.sorted.reduce((acc, row) => {
     const key = row._id;
     let group = acc.find(g => g.key === key);
     if (!group) { group = { key, employee: row, streaks: [] }; acc.push(group); }
@@ -148,9 +158,9 @@ export default function ConsecutiveAbsences() {
           <table className="w-full text-[14px] border-collapse">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600 sticky top-0 z-20">
               <tr className="border-b border-slate-200">
-                <th className="text-left px-4 py-2.5 border-r border-slate-200">Employee</th>
-                <th className="text-left px-4 py-2.5 border-r border-slate-200">Absence Period</th>
-                <th className="text-left px-4 py-2.5">Number of Days</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5 border-r border-slate-200">Employee</SortableTh>
+                <SortableTh sort={sort} k="period" className="text-left px-4 py-2.5 border-r border-slate-200">Absence Period</SortableTh>
+                <SortableTh sort={sort} k="count" className="text-left px-4 py-2.5">Number of Days</SortableTh>
               </tr>
             </thead>
             <tbody>

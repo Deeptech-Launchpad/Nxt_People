@@ -3,6 +3,8 @@ import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import api from '../../../utils/api';
 import ScopePicker, { useScopeOptions, scopeLabel } from './ScopePicker';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* ── Holidays and Exceptional Working days ──────────────────────────────────
  *  Two tabs, one table. They are the same record — a row in `holidays` — and
@@ -49,6 +51,17 @@ export default function HolidayTable({ mode }) {
   const [editing, setEditing] = useState(null);   // the row, or {} for a new one
   const [saving, setSaving] = useState(false);
   const { locations, shifts } = useScopeOptions();
+  const sort = useSortable(rows, {
+    id: `holiday-table-${mode || 'holiday'}`,
+    columns: {
+      name: 'name',
+      date: { get: h => (h.date ? String(h.date).slice(0, 10) : null), type: 'date' },
+      location: { get: h => scopeLabel(h.locationIds, locations), type: 'text' },
+      shifts: { get: h => scopeLabel(h.shiftIds, shifts), type: 'text' },
+      type: { get: h => CLASS_LABEL[h.type] || h.type, type: 'text' },
+      description: { get: h => h.description, type: 'text' },
+    },
+  });
 
   const load = () => {
     setLoading(true);
@@ -133,17 +146,17 @@ export default function HolidayTable({ mode }) {
           <table className="w-full text-[15px] min-w-max">
             <thead className="bg-slate-50">
               <tr className="text-left text-slate-500 text-sm">
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Location</th>
-                <th className="px-4 py-3 font-medium">Shifts</th>
-                {!workingDays && <th className="px-4 py-3 font-medium">Classification</th>}
-                <th className="px-4 py-3 font-medium">Description</th>
+                <SortableTh sort={sort} k="name" className="px-4 py-3 font-medium">Name</SortableTh>
+                <SortableTh sort={sort} k="date" className="px-4 py-3 font-medium">Date</SortableTh>
+                <SortableTh sort={sort} k="location" className="px-4 py-3 font-medium">Location</SortableTh>
+                <SortableTh sort={sort} k="shifts" className="px-4 py-3 font-medium">Shifts</SortableTh>
+                {!workingDays && <SortableTh sort={sort} k="type" className="px-4 py-3 font-medium">Classification</SortableTh>}
+                <SortableTh sort={sort} k="description" className="px-4 py-3 font-medium">Description</SortableTh>
                 <th className="px-4 py-3 font-medium w-20"></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(h => (
+              {sort.sorted.map(h => (
                 <tr key={h._id} className="border-t border-slate-50 hover:bg-slate-50/60 group">
                   <td className="px-4 py-3 text-slate-700">{h.name}</td>
                   <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmt(h.date)}</td>

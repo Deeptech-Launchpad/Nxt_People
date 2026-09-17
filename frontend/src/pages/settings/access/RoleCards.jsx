@@ -4,6 +4,8 @@ import { Plus, Pencil, Trash2, X, Search } from 'lucide-react';
 import api from '../../../utils/api';
 import { Spinner } from '../configKit';
 import UserPicker, { Avatar } from './UserPicker';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 // General Role and Specific Role are the same screen with a different `kind`,
 // so they share this one rather than diverging.
@@ -257,6 +259,15 @@ export default function RoleCards({ kind }) {
       .catch(() => setPeek({ role, list: [] }));
   };
 
+  const peekSort = useSortable(peek?.list, {
+    id: 'settings-access-role-members',
+    columns: {
+      name: { get: m => m.name || m.email, type: 'text' },
+      employeeId: { get: m => m.employeeId, type: 'text' },
+      designation: { get: m => m.designation, type: 'text' },
+    },
+  });
+
   if (roles === null) return <Spinner />;
 
   const label = kind === 'general' ? 'General' : 'Specific';
@@ -382,13 +393,13 @@ export default function RoleCards({ kind }) {
                 <table className="w-full text-[14px]">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="text-left font-medium text-slate-600 px-6 py-2.5">Name</th>
-                      <th className="text-left font-medium text-slate-600 px-6 py-2.5">Employee ID</th>
-                      <th className="text-left font-medium text-slate-600 px-6 py-2.5">Designation</th>
+                      <SortableTh sort={peekSort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Name</SortableTh>
+                      <SortableTh sort={peekSort} k="employeeId" className="text-left font-medium text-slate-600 px-6 py-2.5">Employee ID</SortableTh>
+                      <SortableTh sort={peekSort} k="designation" className="text-left font-medium text-slate-600 px-6 py-2.5">Designation</SortableTh>
                     </tr>
                   </thead>
                   <tbody>
-                    {peek.list.map(m => (
+                    {peekSort.sorted.map(m => (
                       <tr key={m.id} className="border-t border-slate-100">
                         <td className="px-6 py-2.5 text-slate-700 flex items-center gap-2">
                           <Avatar user={m} size={26} />{m.name || m.email}

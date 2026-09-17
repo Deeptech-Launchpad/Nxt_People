@@ -4,6 +4,8 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { isApprover } from '../../utils/roles';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const STATUS_TABS = ['All', 'Pending', 'Approved', 'Rejected'];
 const STATUS_COLOR = {
@@ -41,6 +43,17 @@ export default function Compensation() {
   useEffect(load, [load]);
 
   const filtered = tab === 'All' ? claims : claims.filter(c => c.status === tab.toLowerCase());
+  const sort = useSortable(filtered, {
+    id: 'compensation-claims',
+    columns: {
+      employee: r => [r.employee?.firstName, r.employee?.lastName].filter(Boolean).join(' '),
+      type: 'claimType',
+      amount: { get: r => Number(r.amount), type: 'number' },
+      date: { get: r => r.claimDate, type: 'date' },
+      description: 'description',
+      status: 'status',
+    },
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -130,8 +143,12 @@ export default function Compensation() {
         <table className="w-full">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              {(view === 'All (Admin)' ? ['Employee','Type','Amount','Date','Description','Receipt','Status','Actions'] : ['Type','Amount','Date','Description','Receipt','Status','Actions']).map(h => (
-                <th key={h} className="px-4 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+              {[
+                ...(view === 'All (Admin)' ? [['Employee', 'employee']] : []),
+                ['Type', 'type'], ['Amount', 'amount'], ['Date', 'date'], ['Description', 'description'],
+                ['Receipt', null], ['Status', 'status'], ['Actions', null],
+              ].map(([h, k]) => (
+                <SortableTh key={h} sort={sort} k={k} className="px-4 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>
               ))}
             </tr>
           </thead>
@@ -144,7 +161,7 @@ export default function Compensation() {
                 <p className="text-[15px] font-semibold text-slate-400">No claims found</p>
                 <p className="text-[14px] text-slate-300 mt-1">Click "Add Claim" to submit one</p>
               </td></tr>
-            ) : filtered.map(c => (
+            ) : sort.sorted.map(c => (
               <tr key={c._id} className="hover:bg-slate-50 transition-colors">
                 {view === 'All (Admin)' && (
                   <td className="px-4 py-3 text-[14px] text-slate-700">

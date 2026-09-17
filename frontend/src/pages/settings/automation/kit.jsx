@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 // Shared by the Automation screens. The Form filter, the merge-field inserter
 // and the log timeline all appear on more than one of them, and three copies
@@ -99,7 +101,11 @@ const STATUS_STYLE = {
 };
 
 /** The reference groups its logs by day under a year heading. */
-export function LogTimeline({ rows, columns, emptyText }) {
+export function LogTimeline({ rows, columns, emptyText, sortId }) {
+  const sortColumns = { status: 'status' };
+  for (const c of columns) sortColumns[c.key] = c.sortValue || c.key;
+  const sort = useSortable(null, { id: sortId, columns: sortColumns });
+
   if (!rows.length) {
     return (
       <div className="bg-white border border-slate-200 rounded-xl px-6 py-14 text-center">
@@ -133,13 +139,13 @@ export function LogTimeline({ rows, columns, emptyText }) {
                 <thead className="bg-slate-50">
                   <tr>
                     {columns.map(c => (
-                      <th key={c.key} className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{c.label}</th>
+                      <SortableTh key={c.key} sort={sort} k={c.key} className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{c.label}</SortableTh>
                     ))}
-                    <th className="text-left font-medium text-slate-600 px-6 py-2.5">Status</th>
+                    <SortableTh sort={sort} k="status" className="text-left font-medium text-slate-600 px-6 py-2.5">Status</SortableTh>
                   </tr>
                 </thead>
                 <tbody>
-                  {g.rows.map(row => (
+                  {sort.apply(g.rows).map(row => (
                     <tr key={row.id} className="border-t border-slate-100">
                       {columns.map(c => (
                         <td key={c.key} className="px-6 py-3 text-slate-700 align-top">

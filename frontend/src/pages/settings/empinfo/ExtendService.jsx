@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Lock, Info } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* Settings -> Employee Information -> Extend Service.
  *
@@ -23,6 +25,10 @@ function Toggle({ on, onChange, disabled, title }) {
 export function Forms() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const sort = useSortable(rows, {
+    id: 'settings-extend-service-forms',
+    columns: { name: 'label', status: { get: r => (r.isEnabled ? 1 : 0), type: 'number' } },
+  });
 
   const load = () => {
     setLoading(true);
@@ -51,8 +57,8 @@ export function Forms() {
         <table className="w-full text-[15px]">
           <thead className="bg-slate-50 text-slate-500 text-[13.5px]">
             <tr>
-              <th className="px-4 py-2.5 text-left font-medium">Form name</th>
-              <th className="px-4 py-2.5 text-left font-medium w-40">Status</th>
+              <SortableTh sort={sort} k="name" className="px-4 py-2.5 text-left font-medium">Form name</SortableTh>
+              <SortableTh sort={sort} k="status" className="px-4 py-2.5 text-left font-medium w-40">Status</SortableTh>
             </tr>
           </thead>
           <tbody>
@@ -60,7 +66,7 @@ export function Forms() {
               <tr><td colSpan={2} className="py-14 text-center">
                 <div className="inline-block w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
               </td></tr>
-            ) : rows.map(r => (
+            ) : sort.sorted.map(r => (
               <tr key={r.key} className="border-t border-slate-100">
                 <td className="px-4 py-2.5 text-slate-800">
                   <span className="inline-flex items-center gap-2">

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, X, Pencil, Trash2, Users, Briefcase } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* Settings -> Employee Information -> Policy -> Streams.
  *
@@ -172,6 +174,15 @@ export default function Streams() {
   const [enabled, setEnabled] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
+  const sort = useSortable(rows, {
+    id: 'settings-streams',
+    columns: {
+      name: 'name',
+      description: 'description',
+      designations: { get: 'designationCount', type: 'number' },
+      people: { get: 'employeeCount', type: 'number' },
+    },
+  });
 
   const load = () => {
     setLoading(true);
@@ -227,17 +238,17 @@ export default function Streams() {
         <table className="w-full text-[15px]">
           <thead className="bg-slate-50 text-slate-500 text-[13.5px]">
             <tr>
-              <th className="px-4 py-2.5 text-left font-medium">Stream</th>
-              <th className="px-4 py-2.5 text-left font-medium">Description</th>
-              <th className="px-4 py-2.5 text-left font-medium w-32">Designations</th>
-              <th className="px-4 py-2.5 text-left font-medium w-28">People</th>
+              <SortableTh sort={sort} k="name" className="px-4 py-2.5 text-left font-medium">Stream</SortableTh>
+              <SortableTh sort={sort} k="description" className="px-4 py-2.5 text-left font-medium">Description</SortableTh>
+              <SortableTh sort={sort} k="designations" className="px-4 py-2.5 text-left font-medium w-32">Designations</SortableTh>
+              <SortableTh sort={sort} k="people" className="px-4 py-2.5 text-left font-medium w-28">People</SortableTh>
               <th className="px-4 py-2.5 w-24" />
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr><td colSpan={5} className="py-14 text-center text-slate-400">No streams yet.</td></tr>
-            ) : rows.map(r => (
+            ) : sort.sorted.map(r => (
               <tr key={r._id} className="border-t border-slate-100">
                 <td className="px-4 py-2.5 text-slate-800">{r.name}</td>
                 <td className="px-4 py-2.5 text-slate-600">{r.description || <span className="text-slate-300">—</span>}</td>

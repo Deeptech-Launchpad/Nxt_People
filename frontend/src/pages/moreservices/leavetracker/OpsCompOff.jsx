@@ -5,6 +5,8 @@ import api from '../../../utils/api';
 import { useAuth } from '../../../context/AuthContext';
 import CompOffApplyModal from '../../../components/CompOffApplyModal';
 import useEmployeeList from './useEmployeeList';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* ── Operations → Leave Tracker → Compensatory Request ──────────────────────
  *  Zoho's table, with Zoho's columns:
@@ -74,6 +76,21 @@ export default function OpsCompOff() {
     () => (filter ? rows.filter(r => r.status === filter) : rows),
     [rows, filter]);
 
+  const sort = useSortable(shown, {
+    id: 'ops-comp-off',
+    columns: {
+      employee: r => `${r.employee?.firstName || ''} ${r.employee?.lastName || ''}`.trim(),
+      reportingTo: { get: r => r.reportingTo, type: 'text' },
+      workedDate: { get: r => (r.workedDate ? String(r.workedDate).slice(0, 10) : null), type: 'date' },
+      expiresAt: { get: r => (r.expiresAt ? String(r.expiresAt).slice(0, 10) : null), type: 'date' },
+      status: { get: zohoStatus, type: 'text' },
+      credited: { get: r => parseFloat(r.daysEarned) || 0, type: 'number' },
+      taken: { get: r => parseFloat(r.daysUsed) || null, type: 'number' },
+      balance: { get: r => (r.status === 'approved' && !r.expired ? (parseFloat(r.daysEarned) || 0) - (parseFloat(r.daysUsed) || 0) : null), type: 'number' },
+      reason: { get: r => r.reason, type: 'text' },
+    },
+  });
+
   const act = async (id, action) => {
     setActing(id);
     try {
@@ -127,20 +144,20 @@ export default function OpsCompOff() {
           <table className="w-full text-[15px] min-w-max">
             <thead className="bg-slate-50">
               <tr className="text-left text-slate-500 text-sm">
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Reporting to</th>
-                <th className="px-4 py-3 font-medium">Worked date</th>
-                <th className="px-4 py-3 font-medium">Expiry date</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium text-right">Credited</th>
-                <th className="px-4 py-3 font-medium text-right">Taken</th>
-                <th className="px-4 py-3 font-medium text-right">Balance</th>
-                <th className="px-4 py-3 font-medium">Reason</th>
+                <SortableTh sort={sort} k="employee" className="px-4 py-3 font-medium">Employee</SortableTh>
+                <SortableTh sort={sort} k="reportingTo" className="px-4 py-3 font-medium">Reporting to</SortableTh>
+                <SortableTh sort={sort} k="workedDate" className="px-4 py-3 font-medium">Worked date</SortableTh>
+                <SortableTh sort={sort} k="expiresAt" className="px-4 py-3 font-medium">Expiry date</SortableTh>
+                <SortableTh sort={sort} k="status" className="px-4 py-3 font-medium">Status</SortableTh>
+                <SortableTh sort={sort} k="credited" className="px-4 py-3 font-medium text-right">Credited</SortableTh>
+                <SortableTh sort={sort} k="taken" className="px-4 py-3 font-medium text-right">Taken</SortableTh>
+                <SortableTh sort={sort} k="balance" className="px-4 py-3 font-medium text-right">Balance</SortableTh>
+                <SortableTh sort={sort} k="reason" className="px-4 py-3 font-medium">Reason</SortableTh>
                 <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
-              {shown.map(r => {
+              {sort.sorted.map(r => {
                 const credited = parseFloat(r.daysEarned) || 0;
                 const taken = parseFloat(r.daysUsed) || 0;
                 // A credit that was never approved is not a balance, and an

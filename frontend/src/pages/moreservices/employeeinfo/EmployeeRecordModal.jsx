@@ -4,6 +4,8 @@ import { X, Pencil, Eye, EyeOff, Loader2 } from 'lucide-react';
 import api from '../../../utils/api';
 import EmployeeDocuments from './EmployeeDocuments';
 import EmployeeActivity from './EmployeeActivity';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* The full employee record, over the list.
  *
@@ -53,21 +55,26 @@ const Section = ({ title, children }) => (
   </div>
 );
 
-function ChildTable({ title, columns, rows, empty }) {
+function ChildTable({ id, title, columns, rows, raw, empty }) {
+  const items = rows.map((cells, i) => ({ i, cells, raw: raw?.[i] || cells }));
+  const sort = useSortable(items, {
+    id,
+    columns: Object.fromEntries(columns.map((c, j) => [c, x => x.raw[j]])),
+  });
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5">
       <h3 className="text-[16px] font-semibold text-slate-800 pb-3 mb-3 border-b border-slate-100">{title}</h3>
       <div className="border border-slate-200 rounded-lg overflow-hidden">
         <table className="w-full text-[14px]">
           <thead className="bg-slate-50 text-slate-500">
-            <tr>{columns.map(c => <th key={c} className="px-3 py-2 text-left font-medium">{c}</th>)}</tr>
+            <tr>{columns.map(c => <SortableTh key={c} sort={sort} k={c} className="px-3 py-2 text-left font-medium">{c}</SortableTh>)}</tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr><td colSpan={columns.length} className="px-3 py-6 text-center text-slate-400">{empty}</td></tr>
-            ) : rows.map((r, i) => (
+            ) : sort.sorted.map(({ i, cells }) => (
               <tr key={i} className="border-t border-slate-100">
-                {r.map((cell, j) => <td key={j} className="px-3 py-2 text-slate-700">{cell ?? '—'}</td>)}
+                {cells.map((cell, j) => <td key={j} className="px-3 py-2 text-slate-700">{cell ?? '—'}</td>)}
               </tr>
             ))}
           </tbody>
@@ -306,6 +313,7 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
               </Section>
 
               <ChildTable
+                id="employee-record-education"
                 title="Education Details"
                 columns={['Institute Name', 'Degree/Diploma', 'Specialization', 'Year of Passing']}
                 rows={education.map(e => [
@@ -317,19 +325,25 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
               />
 
               <ChildTable
+                id="employee-record-experience"
                 title="Work experience"
                 columns={['Company name', 'Job Title', 'From Date', 'To Date', 'Job Description', 'Relevant']}
                 rows={experience.map(e => [
                   e.companyName, e.jobTitle, fmtDate(e.fromDate), fmtDate(e.toDate),
                   e.jobDescription, e.relevant ? 'Yes' : 'No',
                 ])}
+                raw={experience.map(e => [
+                  e.companyName, e.jobTitle, e.fromDate, e.toDate, e.jobDescription, e.relevant ? 'Yes' : 'No',
+                ])}
                 empty="No rows found."
               />
 
               <ChildTable
+                id="employee-record-dependents"
                 title="Dependent Details"
                 columns={['Name', 'Relationship', 'Date of Birth']}
                 rows={dependents.map(d => [d.name, d.relationship, fmtDate(d.dateOfBirth)])}
+                raw={dependents.map(d => [d.name, d.relationship, d.dateOfBirth])}
                 empty="No rows found."
               />
 
@@ -354,9 +368,11 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
 
               {vaccinations !== undefined && (
                 <ChildTable
+                  id="employee-record-vaccinations"
                   title="Vaccination Status"
                   columns={['Vaccine', 'Dose', 'Vaccinated On', 'Notes']}
                   rows={vaccinations.map(v => [v.vaccine, v.dose, fmtDate(v.vaccinatedOn), v.notes])}
+                  raw={vaccinations.map(v => [v.vaccine, v.dose, v.vaccinatedOn, v.notes])}
                   empty="No rows found."
                 />
               )}

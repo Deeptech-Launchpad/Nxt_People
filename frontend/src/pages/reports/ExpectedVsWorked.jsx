@@ -11,6 +11,8 @@ import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import useFitToViewport from '../../hooks/useFitToViewport';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
 const now = new Date();
@@ -63,6 +65,10 @@ const DEVIATION_COLUMNS = [
   ['overtimeHours', 'Extra Time'],
   ['deficitHours', 'Deficit Time'],
 ];
+const SORT_COLUMNS = {
+  employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+  ...Object.fromEntries([...BASE_COLUMNS, ...DEVIATION_COLUMNS].map(([key]) => [key, { get: r => r[key], type: 'number' }])),
+};
 const columnsFor = tracked => (tracked ? [...BASE_COLUMNS, ...DEVIATION_COLUMNS] : BASE_COLUMNS);
 const exportCols = (decimal, tracked) => columnsFor(tracked).map(([key, header]) => ({
   key, header,
@@ -89,6 +95,7 @@ export default function ExpectedVsWorked() {
   const [exportOpen, setExportOpen] = useState(false);
   const gridRef = useRef(null);
   const gridHeight = useFitToViewport(gridRef, null, [filtersOpen, rows]);
+  const sort = useSortable(rows, { id: 'reports-expected-vs-worked', columns: SORT_COLUMNS });
 
   const load = () => {
     setLoading(true);
@@ -157,14 +164,14 @@ export default function ExpectedVsWorked() {
           <table className="w-full text-[14px] border-collapse">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600 sticky top-0 z-20">
               <tr className="border-b border-slate-200">
-                <th className="text-left px-4 py-2.5 border-r border-slate-200">Employee</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5 border-r border-slate-200">Employee</SortableTh>
                 {COLUMNS.map(([key, header]) => (
-                  <th key={key} className="text-left px-4 py-2.5 border-r border-slate-200 last:border-r-0 whitespace-nowrap">{header}</th>
+                  <SortableTh key={key} sort={sort} k={key} className="text-left px-4 py-2.5 border-r border-slate-200 last:border-r-0 whitespace-nowrap">{header}</SortableTh>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id} className="border-b border-slate-200">
                   <td className="px-4 py-2.5 border-r border-slate-200"><EmployeeCell row={row} /></td>
                   {COLUMNS.map(([key]) => (

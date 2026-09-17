@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const TYPES = [
   { key: 'client_visit', label: 'Client visit' },
@@ -63,6 +65,17 @@ export default function OnDuty() {
     } catch (err) { toast.error(err.response?.data?.message || 'Could not withdraw'); }
   };
 
+  const sort = useSortable(rows, {
+    id: 'on-duty-my',
+    columns: {
+      period: { get: r => (r.startDate ? String(r.startDate).slice(0, 10) : null), type: 'date' },
+      unit: { get: r => (r.unit === 'hours' ? `Hours ${r.startTime || ''}` : 'Days'), type: 'text' },
+      requestType: { get: r => TYPE_LABEL[r.requestType] || r.requestType, type: 'text' },
+      reason: { get: r => r.reason, type: 'text' },
+      status: { get: r => (r.status === 'pending' ? 'Submitted' : r.status), type: 'text' },
+    },
+  });
+
   const stepMonth = n => setMonth(m => new Date(m.getFullYear(), m.getMonth() + n, 1));
 
   return (
@@ -107,16 +120,16 @@ export default function OnDuty() {
             <table className="w-full text-[14px] border-collapse">
               <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
                 <tr className="border-b border-slate-200">
-                  <th className="text-left px-4 py-2.5 border-r border-slate-200">Period</th>
-                  <th className="text-left px-4 py-2.5 border-r border-slate-200">Units</th>
-                  <th className="text-left px-4 py-2.5 border-r border-slate-200">Type</th>
-                  <th className="text-left px-4 py-2.5 border-r border-slate-200">Reason</th>
-                  <th className="text-left px-4 py-2.5 border-r border-slate-200">Status</th>
+                  <SortableTh sort={sort} k="period" className="text-left px-4 py-2.5 border-r border-slate-200">Period</SortableTh>
+                  <SortableTh sort={sort} k="unit" className="text-left px-4 py-2.5 border-r border-slate-200">Units</SortableTh>
+                  <SortableTh sort={sort} k="requestType" className="text-left px-4 py-2.5 border-r border-slate-200">Type</SortableTh>
+                  <SortableTh sort={sort} k="reason" className="text-left px-4 py-2.5 border-r border-slate-200">Reason</SortableTh>
+                  <SortableTh sort={sort} k="status" className="text-left px-4 py-2.5 border-r border-slate-200">Status</SortableTh>
                   <th className="text-left px-4 py-2.5"></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map(r => (
+                {sort.sorted.map(r => (
                   <tr key={r._id} className="border-b border-slate-200">
                     <td className="px-4 py-2.5 whitespace-nowrap border-r border-slate-200">
                       {r.startDate === r.endDate ? fmt(r.startDate) : `${fmt(r.startDate)} - ${fmt(r.endDate)}`}

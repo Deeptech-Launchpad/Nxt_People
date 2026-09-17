@@ -1,5 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import api from '../../utils/api';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const SKILLS = ['JavaScript', 'React', 'Node.js', 'PostgreSQL', 'Python', 'Communication', 'Leadership'];
 const LEVELS = ['', 'Beginner', 'Intermediate', 'Expert'];
@@ -27,6 +29,14 @@ export default function SkillMatrix() {
       .finally(() => setLoading(false));
   }, []);
 
+  const sort = useSortable(employees, {
+    id: 'skill-matrix',
+    columns: {
+      employee: e => `${e.firstName || ''} ${e.lastName || ''}`.trim(),
+      ...Object.fromEntries(SKILLS.map(s => [s, { get: e => LEVELS.indexOf(levels[`${e._id}:${s}`]) || null, type: 'number' }])),
+    },
+  });
+
   if (loading) return <div className="p-6 flex justify-center py-20"><div className="w-6 h-6 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin"/></div>;
 
   return (
@@ -36,12 +46,12 @@ export default function SkillMatrix() {
         <table className="w-full min-w-max">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="px-4 py-3 text-left text-[13px] font-semibold text-slate-600 uppercase w-48 sticky left-0 bg-slate-50">Employee</th>
-              {SKILLS.map(s => <th key={s} className="px-4 py-3 text-[13px] font-semibold text-slate-500 text-center min-w-[110px]">{s}</th>)}
+              <SortableTh sort={sort} k="employee" className="px-4 py-3 text-left text-[13px] font-semibold text-slate-600 uppercase w-48 sticky left-0 bg-slate-50">Employee</SortableTh>
+              {SKILLS.map(s => <SortableTh key={s} sort={sort} k={s} className="px-4 py-3 text-[13px] font-semibold text-slate-500 text-center min-w-[110px]">{s}</SortableTh>)}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {employees.map(e => (
+            {sort.sorted.map(e => (
               <tr key={e._id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-4 py-3 sticky left-0 bg-white">
                   <div className="flex items-center gap-2.5">

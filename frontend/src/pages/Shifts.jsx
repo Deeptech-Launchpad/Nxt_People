@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, Copy, X, Star, ArrowUpDown } from 'lucide-react';
+import { Plus, Trash2, Copy, X, Star } from 'lucide-react';
 import api from '../utils/api';
+import useSortable from '../components/table/useSortable';
+import SortableTh from '../components/table/SortableTh';
 
 // Manage Shifts. One editor for one table — this screen is what both
 // /shifts and Settings → Shifts → Manage Shifts open, because two editors for
@@ -237,7 +239,6 @@ export default function Shifts() {
   const [meta, setMeta] = useState({ eligibilityFields: [] });
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [sort, setSort] = useState({ key: 'name', dir: 1 });
 
   const load = useCallback(() => (
     api.get('/shifts')
@@ -249,6 +250,17 @@ export default function Shifts() {
     load();
     api.get('/shifts/meta').then(r => setMeta(r.data.data)).catch(() => {});
   }, [load]);
+
+  const sort = useSortable(shifts || [], {
+    id: 'manage-shifts',
+    initial: { key: 'name', dir: 'asc' },
+    columns: {
+      name: 'name',
+      startTime: { get: s => s.startTime, type: 'text' },
+      employees: { get: s => Number(s.employeeCount), type: 'number' },
+      weekends: s => (s.weekendSource === 'shift' ? 'This shift' : 'Location calendar'),
+    },
+  });
 
   if (shifts === null) {
     return <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
@@ -278,13 +290,6 @@ export default function Shifts() {
     .then(() => { toast.success(`${s.name} is now the default`); load(); })
     .catch(err => toast.error(err.response?.data?.message || 'Could not change the default'));
 
-  const sorted = [...shifts].sort((a, b) => {
-    const va = sort.key === 'name' ? a.name : a.startTime;
-    const vb = sort.key === 'name' ? b.name : b.startTime;
-    return String(va).localeCompare(String(vb)) * sort.dir;
-  });
-  const toggleSort = key => setSort(s => ({ key, dir: s.key === key ? -s.dir : 1 }));
-
   return (
     <div className="px-5 pt-5 pb-4">
       <div className="flex items-center justify-end mb-4">
@@ -298,23 +303,15 @@ export default function Shifts() {
         <table className="w-full text-[14px]">
           <thead className="bg-slate-50">
             <tr>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">
-                <button onClick={() => toggleSort('name')} className="flex items-center gap-1.5 hover:text-slate-800">
-                  Shift name <ArrowUpDown size={13} className="text-slate-400" />
-                </button>
-              </th>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">
-                <button onClick={() => toggleSort('startTime')} className="flex items-center gap-1.5 hover:text-slate-800">
-                  Shift time <ArrowUpDown size={13} className="text-slate-400" />
-                </button>
-              </th>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Employees</th>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Weekends</th>
+              <SortableTh sort={sort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Shift name</SortableTh>
+              <SortableTh sort={sort} k="startTime" className="text-left font-medium text-slate-600 px-6 py-2.5">Shift time</SortableTh>
+              <SortableTh sort={sort} k="employees" className="text-left font-medium text-slate-600 px-6 py-2.5">Employees</SortableTh>
+              <SortableTh sort={sort} k="weekends" className="text-left font-medium text-slate-600 px-6 py-2.5">Weekends</SortableTh>
               <th className="w-32" />
             </tr>
           </thead>
           <tbody>
-            {sorted.map(s => (
+            {sort.sorted.map(s => (
               <tr key={s.id} className="group border-t border-slate-100 hover:bg-slate-50/60">
                 <td className="px-6 py-3">
                   <button onClick={() => setEditing({ ...s, eligibility: s.eligibility || [], workingDays: s.workingDays || [] })}

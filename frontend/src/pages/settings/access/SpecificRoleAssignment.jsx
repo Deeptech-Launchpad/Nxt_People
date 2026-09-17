@@ -4,6 +4,8 @@ import { X, Trash2, Plus, Inbox } from 'lucide-react';
 import api from '../../../utils/api';
 import { Spinner } from '../configKit';
 import UserPicker, { Avatar } from './UserPicker';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 // Specific Role Assignment — an employee, the specific roles they hold, and
 // the slice of the organization each one applies to.
@@ -205,6 +207,14 @@ export default function SpecificRoleAssignment() {
       .catch(err => toast.error(err.response?.data?.message || 'Could not remove'));
   };
 
+  const sort = useSortable(rows, {
+    id: 'settings-access-specific-assignments',
+    columns: {
+      employee: { get: r => r.employeeName, type: 'text' },
+      employeeRole: { get: r => r.employeeRole, type: 'text' },
+    },
+  });
+
   if (rows === null) return <Spinner />;
 
   const scopeText = applicability => {
@@ -239,15 +249,15 @@ export default function SpecificRoleAssignment() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Employee</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Employee Role</th>
+                <SortableTh sort={sort} k="employee" className="text-left font-medium text-slate-600 px-6 py-2.5">Employee</SortableTh>
+                <SortableTh sort={sort} k="employeeRole" className="text-left font-medium text-slate-600 px-6 py-2.5">Employee Role</SortableTh>
                 <th className="text-left font-medium text-slate-600 px-6 py-2.5">Applicable Specific Roles</th>
                 <th className="w-16" />
               </tr>
             </thead>
             {rows.length > 0 && (
               <tbody>
-                {rows.map(row => (
+                {sort.sorted.map(row => (
                   <tr key={row.employeeId} className="group border-t border-slate-100 hover:bg-slate-50/60">
                     <td className="px-6 py-3 align-top">
                       <button onClick={() => setEditing(row)} className="flex items-center gap-2.5 text-left">

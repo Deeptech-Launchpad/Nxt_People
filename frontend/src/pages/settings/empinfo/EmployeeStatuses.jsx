@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, Check, X, Trash2, GripVertical, Lock } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* Settings -> Employee Information -> Policy -> Employee Status.
  *
@@ -25,6 +27,10 @@ export default function EmployeeStatuses() {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ name: '', type: 'inactive' });
   const [editing, setEditing] = useState(null);
+  const sort = useSortable(rows, {
+    id: 'settings-employee-statuses',
+    columns: { name: 'name', type: 'type', inUse: { get: r => r.inUse || 0, type: 'number' } },
+  });
 
   const load = () => {
     setLoading(true);
@@ -111,9 +117,9 @@ export default function EmployeeStatuses() {
         <table className="w-full text-[15px]">
           <thead className="bg-slate-50 text-slate-500 text-[13.5px]">
             <tr>
-              <th className="px-4 py-2.5 text-left font-medium">Name</th>
-              <th className="px-4 py-2.5 text-left font-medium w-[260px]">Type</th>
-              <th className="px-4 py-2.5 text-left font-medium w-[120px]">In use</th>
+              <SortableTh sort={sort} k="name" className="px-4 py-2.5 text-left font-medium">Name</SortableTh>
+              <SortableTh sort={sort} k="type" className="px-4 py-2.5 text-left font-medium w-[260px]">Type</SortableTh>
+              <SortableTh sort={sort} k="inUse" className="px-4 py-2.5 text-left font-medium w-[120px]">In use</SortableTh>
               <th className="px-4 py-2.5 w-14" />
             </tr>
           </thead>
@@ -122,7 +128,7 @@ export default function EmployeeStatuses() {
               <tr><td colSpan={4} className="py-14 text-center">
                 <div className="inline-block w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
               </td></tr>
-            ) : rows.map(row => (
+            ) : sort.sorted.map(row => (
               <tr key={row._id} className="border-t border-slate-100 group">
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-2">

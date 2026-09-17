@@ -14,6 +14,8 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Search, Pencil, History, X, IndianRupee, Info, Upload, Download, FileSpreadsheet, Plus, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 import { fmtINR, StatCard } from './_shared';
 
 // Mirrors utils/payroll-calc.js's formulas for a live client-side preview —
@@ -541,6 +543,16 @@ export default function PayrollSetup() {
         || (e.department || '').toLowerCase().includes(q);
   });
 
+  const sort = useSortable(filtered, {
+    id: 'payroll-setup',
+    columns: {
+      employee: { get: e => `${e.firstName || ''} ${e.lastName || ''}`.trim(), type: 'text' },
+      designation: { get: e => e.designation, type: 'text' },
+      monthlyGross: { get: e => (e.structure?.monthlyGross == null ? null : Number(e.structure.monthlyGross)), type: 'number' },
+      ctcAnnual: { get: e => (e.structure?.ctcAnnual == null ? null : Number(e.structure.ctcAnnual)), type: 'number' },
+    },
+  });
+
   const stats = useMemo(() => {
     const withStructure = employees.filter(e => e.structure);
     const totalCTC = withStructure.reduce((s, e) => s + (e.structure?.ctcAnnual || 0), 0);
@@ -577,10 +589,10 @@ export default function PayrollSetup() {
         <table className="w-full text-left text-[15px]">
           <thead className="bg-slate-50 text-[13px] font-bold text-slate-600 uppercase tracking-wider">
             <tr>
-              <th className="px-4 py-2.5">Employee</th>
-              <th className="px-4 py-2.5">Designation</th>
-              <th className="px-4 py-2.5 text-right">Monthly Gross</th>
-              <th className="px-4 py-2.5 text-right">Annual CTC</th>
+              <SortableTh sort={sort} k="employee" className="px-4 py-2.5">Employee</SortableTh>
+              <SortableTh sort={sort} k="designation" className="px-4 py-2.5">Designation</SortableTh>
+              <SortableTh sort={sort} k="monthlyGross" className="px-4 py-2.5 text-right">Monthly Gross</SortableTh>
+              <SortableTh sort={sort} k="ctcAnnual" className="px-4 py-2.5 text-right">Annual CTC</SortableTh>
               <th className="px-4 py-2.5 w-20"></th>
             </tr>
           </thead>
@@ -591,7 +603,7 @@ export default function PayrollSetup() {
               <tr><td colSpan={5} className="py-10 text-center text-slate-400">
                 {employees.length === 0 ? 'No employees found.' : 'No employees match the filter.'}
               </td></tr>
-            ) : filtered.map(emp => (
+            ) : sort.sorted.map(emp => (
               <tr key={emp._id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 max-w-[220px]">
                   <div className="font-semibold text-slate-800 truncate">{emp.firstName} {emp.lastName}</div>

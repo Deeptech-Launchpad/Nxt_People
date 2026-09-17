@@ -4,6 +4,8 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { isApprover } from '../../utils/roles';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const STATUS_COLOR = {
   pending:  'bg-amber-100 text-amber-700',
@@ -37,6 +39,19 @@ export default function Travel() {
   }, [view, isAdmin]);
 
   useEffect(load, [load]);
+
+  const sort = useSortable(requests, {
+    id: 'travel-requests',
+    columns: {
+      employee: r => [r.employee?.firstName, r.employee?.lastName].filter(Boolean).join(' '),
+      destination: 'destination',
+      purpose: 'purpose',
+      from: { get: r => r.fromDate, type: 'date' },
+      to: { get: r => r.toDate, type: 'date' },
+      transport: 'transport',
+      status: 'status',
+    },
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -109,8 +124,12 @@ export default function Travel() {
         <table className="w-full">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              {(view === 'All (Admin)' ? ['Employee','Destination','Purpose','From','To','Transport','Status','Actions'] : ['Destination','Purpose','From','To','Transport','Status','Actions']).map(h => (
-                <th key={h} className="px-4 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+              {[
+                ...(view === 'All (Admin)' ? [['Employee', 'employee']] : []),
+                ['Destination', 'destination'], ['Purpose', 'purpose'], ['From', 'from'], ['To', 'to'],
+                ['Transport', 'transport'], ['Status', 'status'], ['Actions', null],
+              ].map(([h, k]) => (
+                <SortableTh key={h} sort={sort} k={k} className="px-4 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>
               ))}
             </tr>
           </thead>
@@ -123,7 +142,7 @@ export default function Travel() {
                 <p className="text-[15px] font-semibold text-slate-400">No travel requests yet</p>
                 <p className="text-[14px] text-slate-300 mt-1">Click "New Request" to submit one</p>
               </td></tr>
-            ) : requests.map(r => (
+            ) : sort.sorted.map(r => (
               <tr key={r._id} className="hover:bg-slate-50 transition-colors">
                 {view === 'All (Admin)' && (
                   <td className="px-4 py-3 text-[14px] text-slate-700">

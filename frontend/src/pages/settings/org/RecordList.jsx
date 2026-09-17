@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast';
 import { Trash2, Plus, X, ArrowLeft, Search, ChevronDown } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 import { Spinner } from '../configKit';
 
 // Locations, Departments, Designations, Companies, Business Units and Divisions
@@ -247,6 +249,14 @@ export default function RecordList({
       .catch(() => setPeek({ row, list: [] }));
   };
 
+  const sortColumns = { userCount: { get: r => r.userCount || 0, type: 'number' } };
+  for (const c of columns) if (!c.render || c.sortValue) sortColumns[c.key] = c.sortValue || c.key;
+  const sort = useSortable(rows, { id: `settings-org-${resource}`, columns: sortColumns });
+  const peekSort = useSortable(peek?.list, {
+    id: `settings-org-${resource}-people`,
+    columns: { name: r => r.name || r.email, employeeId: 'employeeId', designation: 'designation' },
+  });
+
   if (rows === null) return <Spinner />;
 
   const nameKey = fields[0].key;
@@ -334,18 +344,18 @@ export default function RecordList({
             <table className="w-full text-[14px]">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{columns[0].label}</th>
+                  <SortableTh sort={sort} k={columns[0].key} className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{columns[0].label}</SortableTh>
                   {/* Second, as the reference has it: the count is the thing
                       you scan a list like this for. */}
-                  <th className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{usersLabel}</th>
+                  <SortableTh sort={sort} k="userCount" className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{usersLabel}</SortableTh>
                   {columns.slice(1).map(c => (
-                    <th key={c.key} className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{c.label}</th>
+                    <SortableTh key={c.key} sort={sort} k={sortColumns[c.key] ? c.key : null} className="text-left font-medium text-slate-600 px-6 py-2.5 whitespace-nowrap">{c.label}</SortableTh>
                   ))}
                   <th className="w-16" />
                 </tr>
               </thead>
               <tbody>
-                {rows.map(row => (
+                {sort.sorted.map(row => (
                   <tr key={row.id} className="group border-t border-slate-100 hover:bg-slate-50/60">
                     <td className="px-6 py-3 align-top">
                       {/* The name opens the editor, the way the reference does
@@ -432,13 +442,13 @@ export default function RecordList({
                 <table className="w-full text-[14px]">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="text-left font-medium text-slate-600 px-6 py-2.5">Name</th>
-                      <th className="text-left font-medium text-slate-600 px-6 py-2.5">Employee ID</th>
-                      <th className="text-left font-medium text-slate-600 px-6 py-2.5">Designation</th>
+                      <SortableTh sort={peekSort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Name</SortableTh>
+                      <SortableTh sort={peekSort} k="employeeId" className="text-left font-medium text-slate-600 px-6 py-2.5">Employee ID</SortableTh>
+                      <SortableTh sort={peekSort} k="designation" className="text-left font-medium text-slate-600 px-6 py-2.5">Designation</SortableTh>
                     </tr>
                   </thead>
                   <tbody>
-                    {peek.list.map(e => (
+                    {peekSort.sorted.map(e => (
                       <tr key={e.id} className="border-t border-slate-100">
                         <td className="px-6 py-2.5 text-slate-700">{e.name || e.email}</td>
                         <td className="px-6 py-2.5 text-slate-600">{e.employeeId || '—'}</td>

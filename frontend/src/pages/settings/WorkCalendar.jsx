@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Pencil, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const DAYS = [
   ['sun', 'Sunday'], ['mon', 'Monday'], ['tue', 'Tuesday'], ['wed', 'Wednesday'],
@@ -238,6 +240,15 @@ export default function WorkCalendar() {
 
   useEffect(load, []);
 
+  const sort = useSortable(rows, {
+    id: 'settings-work-calendars',
+    columns: {
+      location: { get: r => r.location || 'Default', type: 'text' },
+      year: { get: r => r.year?.start, type: 'date' },
+      workWeek: { get: r => r.workWeekStart, type: 'number' },
+    },
+  });
+
   const remove = row => {
     if (!window.confirm(`Delete the work calendar for ${row.location}?`)) return;
     api.delete(`/work-calendars/${row._id}`)
@@ -270,14 +281,14 @@ export default function WorkCalendar() {
             <table className="w-full min-w-[600px]">
               <thead className="bg-slate-50 text-[13px] font-semibold text-slate-600">
                 <tr>
-                  <th className="text-left px-5 py-3">Location</th>
-                  <th className="text-left px-5 py-3">Calendar year</th>
-                  <th className="text-left px-5 py-3">Work week</th>
+                  <SortableTh sort={sort} k="location" className="text-left px-5 py-3">Location</SortableTh>
+                  <SortableTh sort={sort} k="year" className="text-left px-5 py-3">Calendar year</SortableTh>
+                  <SortableTh sort={sort} k="workWeek" className="text-left px-5 py-3">Work week</SortableTh>
                   <th className="w-[90px]" />
                 </tr>
               </thead>
               <tbody>
-                {rows.map(row => (
+                {sort.sorted.map(row => (
                   <tr key={row._id} className="border-t border-slate-100 hover:bg-slate-50 group">
                     <td className="px-5 py-3.5 text-[14px] text-slate-800">{row.location || 'Default'}</td>
                     <td className="px-5 py-3.5 text-[14px] text-slate-700">{fmt(row.year?.start)} - {fmt(row.year?.end)}</td>

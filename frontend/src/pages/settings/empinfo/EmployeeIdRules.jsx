@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, X, Pencil, Trash2, GripVertical } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* Settings -> Employee Information -> Policy -> Employee ID.
  *
@@ -257,6 +259,14 @@ export default function EmployeeIdRules() {
   const [state, setState] = useState({ rows: [], fields: [], enabled: false });
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);   // null | 'new' | rule
+  const sort = useSortable(state.rows, {
+    id: 'settings-employee-id-rules',
+    columns: {
+      name: 'name',
+      lastId: 'lastGeneratedId',
+      status: { get: r => (r.isActive ? 1 : 0), type: 'number' },
+    },
+  });
 
   const load = () => {
     setLoading(true);
@@ -310,9 +320,9 @@ export default function EmployeeIdRules() {
         <table className="w-full text-[15px]">
           <thead className="bg-slate-50 text-slate-500 text-[13.5px]">
             <tr>
-              <th className="px-4 py-2.5 text-left font-medium">Rule Name</th>
-              <th className="px-4 py-2.5 text-left font-medium w-[200px]">Last Generated Id</th>
-              <th className="px-4 py-2.5 text-left font-medium w-[130px]">Status</th>
+              <SortableTh sort={sort} k="name" className="px-4 py-2.5 text-left font-medium">Rule Name</SortableTh>
+              <SortableTh sort={sort} k="lastId" className="px-4 py-2.5 text-left font-medium w-[200px]">Last Generated Id</SortableTh>
+              <SortableTh sort={sort} k="status" className="px-4 py-2.5 text-left font-medium w-[130px]">Status</SortableTh>
               <th className="px-4 py-2.5 w-24" />
             </tr>
           </thead>
@@ -323,7 +333,7 @@ export default function EmployeeIdRules() {
               </td></tr>
             ) : state.rows.length === 0 ? (
               <tr><td colSpan={4} className="py-14 text-center text-slate-400">No rules yet.</td></tr>
-            ) : state.rows.map(r => (
+            ) : sort.sorted.map(r => (
               <tr key={r._id} className="border-t border-slate-100">
                 <td className="px-4 py-2.5">
                   <span className="inline-flex items-center gap-2">

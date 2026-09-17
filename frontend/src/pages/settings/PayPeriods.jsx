@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Pencil, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 // 32 is the "Last day" sentinel the backend uses, so a rule can name the last
 // day of the month without knowing which month it will be applied to.
@@ -328,6 +330,15 @@ export default function PayPeriods() {
 
   useEffect(load, []);
 
+  const sort = useSortable(rows, {
+    id: 'settings-pay-periods',
+    columns: {
+      name: 'name',
+      cycle: { get: r => r.cycleLabel, type: 'text' },
+      processingDay: { get: r => r.processingDay, type: 'number' },
+    },
+  });
+
   const remove = row => {
     if (!window.confirm(`Delete the “${row.name}” pay period?`)) return;
     api.delete(`/pay-periods/${row._id}`)
@@ -360,14 +371,14 @@ export default function PayPeriods() {
             <table className="w-full min-w-[720px]">
               <thead className="bg-slate-50 text-[13px] font-semibold text-slate-600">
                 <tr>
-                  <th className="text-left px-5 py-3">Pay period name</th>
-                  <th className="text-left px-5 py-3">Pay period cycle</th>
-                  <th className="text-left px-5 py-3">Payroll processing day</th>
+                  <SortableTh sort={sort} k="name" className="text-left px-5 py-3">Pay period name</SortableTh>
+                  <SortableTh sort={sort} k="cycle" className="text-left px-5 py-3">Pay period cycle</SortableTh>
+                  <SortableTh sort={sort} k="processingDay" className="text-left px-5 py-3">Payroll processing day</SortableTh>
                   <th className="w-[90px]" />
                 </tr>
               </thead>
               <tbody>
-                {rows.map(row => (
+                {sort.sorted.map(row => (
                   <tr key={row._id} className="border-t border-slate-100 hover:bg-slate-50 group">
                     <td className="px-5 py-3.5 text-[14px] text-slate-800">{row.name}</td>
                     <td className="px-5 py-3.5 text-[14px] text-slate-700">{row.cycleLabel}</td>

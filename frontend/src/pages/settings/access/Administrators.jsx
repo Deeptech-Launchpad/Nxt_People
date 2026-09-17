@@ -4,6 +4,8 @@ import { X, Trash2, Inbox } from 'lucide-react';
 import api from '../../../utils/api';
 import { Spinner } from '../configKit';
 import UserPicker, { Avatar } from './UserPicker';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 // Administrator — per user, per service, a level for Settings and one for
 // Data. They are separate questions in the reference and they are separate
@@ -97,6 +99,11 @@ export default function Administrators() {
       .catch(err => toast.error(err.response?.data?.message || 'Could not remove'));
   };
 
+  const sort = useSortable(rows, {
+    id: 'settings-access-administrators',
+    columns: { name: { get: r => r.name, type: 'text' } },
+  });
+
   if (rows === null) return <Spinner />;
 
   const empty = (
@@ -145,10 +152,10 @@ export default function Administrators() {
               <thead className="bg-slate-50">
                 <tr>
                   {/* Frozen, so a row stays named while the services scroll. */}
-                  <th rowSpan={2}
+                  <SortableTh sort={sort} k="name" rowSpan={2}
                     className="sticky left-0 z-10 bg-slate-50 text-left font-medium text-slate-600 px-6 py-2.5 border-r border-slate-200 min-w-[240px]">
                     Users
-                  </th>
+                  </SortableTh>
                   {services.map(s => (
                     <th key={s.key} colSpan={2}
                       className="text-center font-medium text-slate-600 px-4 py-2 border-l border-slate-200 whitespace-nowrap">
@@ -165,7 +172,7 @@ export default function Administrators() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(row => (
+                {sort.sorted.map(row => (
                   <tr key={row.employeeId} className="group border-t border-slate-100">
                     <td className="sticky left-0 z-10 bg-white group-hover:bg-slate-50 px-6 py-3 border-r border-slate-200">
                       <div className="flex items-center gap-2.5">

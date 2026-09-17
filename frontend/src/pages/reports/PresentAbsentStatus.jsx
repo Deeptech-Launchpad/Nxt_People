@@ -12,6 +12,8 @@ import useReportFilters from '../../hooks/useReportFilters';
 import { codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
 import { LegendBar, StatusPanel } from './AttendanceLegend';
 import usePersistedOpen from './usePersistedOpen';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 import useFitToViewport from '../../hooks/useFitToViewport';
 
 const now = new Date();
@@ -128,6 +130,12 @@ export default function PresentAbsentStatus() {
   ];
 
   const weekendCols = weekendColumns(data?.data);
+  const sort = useSortable(data?.data || [], {
+    id: 'reports-present-absent-status',
+    columns: {
+      employee: { get: e => [e.employeeCode, e.firstName, e.lastName].filter(Boolean).join(' '), type: 'text' },
+    },
+  });
 
   const step = n => {
     const next = shiftRange(dateRange, n);
@@ -194,7 +202,7 @@ export default function PresentAbsentStatus() {
           <table className="text-[13px] border-collapse">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600 sticky top-0 z-20">
               <tr>
-                <th className="text-left px-3 py-2.5 sticky left-0 bg-slate-50 z-30 whitespace-nowrap border-r border-slate-200">Employee</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-3 py-2.5 sticky left-0 bg-slate-50 z-30 whitespace-nowrap border-r border-slate-200">Employee</SortableTh>
                 {data.dayLabels.map((d, i) => {
                   const dd = new Date(d);
                   return (
@@ -209,7 +217,7 @@ export default function PresentAbsentStatus() {
               </tr>
             </thead>
             <tbody>
-              {data.data.map(emp => (
+              {sort.sorted.map(emp => (
                 <tr key={emp._id} className="border-b border-slate-200 hover:bg-slate-50">
                   {/* No department line — the reference names the employee and
                       nothing else, and the dimension filters already narrow by

@@ -13,6 +13,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Play, Search, Eye, Lock, CheckCircle2, Trash2, Download, RefreshCw, FileText, Filter, AlertCircle, MailCheck, ListChecks, X } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 import { MONTH_NAMES, SHORT_MONTHS, fmtINR, fmtINRshort, StatusPill, StatCard } from './_shared';
 
 export default function PayrollRun() {
@@ -197,6 +199,21 @@ export default function PayrollRun() {
     return rows;
   }, [sourceRows, isPreview, search, statusFilter]);
 
+  const sort = useSortable(filtered, {
+    id: 'payroll-run',
+    columns: {
+      employee: { get: p => `${p.firstName || ''} ${p.lastName || ''}`.trim(), type: 'text' },
+      designation: { get: p => p.designation, type: 'text' },
+      presentDays: { get: p => (p.presentDays == null ? null : Number(p.presentDays)), type: 'number' },
+      absentDays: { get: p => (p.absentDays == null ? null : Number(p.absentDays)), type: 'number' },
+      lopDays: { get: p => (p.lopDays == null ? null : Number(p.lopDays)), type: 'number' },
+      gross: { get: p => (p.grossEarnings == null ? null : Number(p.grossEarnings)), type: 'number' },
+      deductions: { get: p => (p.totalDeductions == null ? null : Number(p.totalDeductions)), type: 'number' },
+      netPay: { get: p => (p.netPay == null ? null : Number(p.netPay)), type: 'number' },
+      status: { get: p => p.status, type: 'text' },
+    },
+  });
+
   const stats = useMemo(() => {
     const total = sourceRows.length;
     const draft = sourceRows.filter(p => p.status === 'draft').length;
@@ -294,15 +311,15 @@ export default function PayrollRun() {
         <table className="w-full text-left text-[15px]">
           <thead className="bg-slate-50 text-[13px] font-bold text-slate-600 uppercase tracking-wider">
             <tr>
-              <th className="px-4 py-2.5">Employee</th>
-              <th className="px-4 py-2.5">Designation</th>
-              <th className="px-4 py-2.5 text-right">Present Days</th>
-              <th className="px-4 py-2.5 text-right">Absent Days</th>
-              <th className="px-4 py-2.5 text-right">LOP</th>
-              <th className="px-4 py-2.5 text-right">Gross</th>
-              <th className="px-4 py-2.5 text-right">Deductions</th>
-              <th className="px-4 py-2.5 text-right">Net Pay</th>
-              <th className="px-4 py-2.5">Status</th>
+              <SortableTh sort={sort} k="employee" className="px-4 py-2.5">Employee</SortableTh>
+              <SortableTh sort={sort} k="designation" className="px-4 py-2.5">Designation</SortableTh>
+              <SortableTh sort={sort} k="presentDays" className="px-4 py-2.5 text-right">Present Days</SortableTh>
+              <SortableTh sort={sort} k="absentDays" className="px-4 py-2.5 text-right">Absent Days</SortableTh>
+              <SortableTh sort={sort} k="lopDays" className="px-4 py-2.5 text-right">LOP</SortableTh>
+              <SortableTh sort={sort} k="gross" className="px-4 py-2.5 text-right">Gross</SortableTh>
+              <SortableTh sort={sort} k="deductions" className="px-4 py-2.5 text-right">Deductions</SortableTh>
+              <SortableTh sort={sort} k="netPay" className="px-4 py-2.5 text-right">Net Pay</SortableTh>
+              <SortableTh sort={sort} k="status" className="px-4 py-2.5">Status</SortableTh>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
@@ -317,7 +334,7 @@ export default function PayrollRun() {
                   <p className="text-[13px]">No employee has a salary structure covering this month yet.</p>
                 </div>
               </td></tr>
-            ) : filtered.map(p => (
+            ) : sort.sorted.map(p => (
               <tr key={p.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <div className="font-semibold text-slate-800">{p.firstName} {p.lastName}</div>
@@ -404,6 +421,17 @@ function PreviewModal({ data, onClose }) {
   const rows = data.data || [];
   const withStructure = rows.filter(r => r.status !== 'no_structure');
   const missing = rows.filter(r => r.status === 'no_structure');
+  const sort = useSortable(withStructure, {
+    id: 'payroll-run-preview',
+    columns: {
+      employee: { get: r => `${r.employee.firstName || ''} ${r.employee.lastName || ''}`.trim(), type: 'text' },
+      paidDays: { get: r => (r.paidDays == null ? null : Number(r.paidDays)), type: 'number' },
+      lopDays: { get: r => (r.lopDays == null ? null : Number(r.lopDays)), type: 'number' },
+      gross: { get: r => (r.grossEarnings == null ? null : Number(r.grossEarnings)), type: 'number' },
+      net: { get: r => (r.netPay == null ? null : Number(r.netPay)), type: 'number' },
+      arrears: { get: r => (r.arrearsAmount == null ? null : Number(r.arrearsAmount)), type: 'number' },
+    },
+  });
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl max-h-[85vh] flex flex-col">
@@ -430,16 +458,16 @@ function PreviewModal({ data, onClose }) {
           <table className="w-full text-[14px]">
             <thead className="text-[12px] font-bold text-slate-500 uppercase">
               <tr>
-                <th className="text-left py-1.5">Employee</th>
-                <th className="text-right py-1.5">Paid Days</th>
-                <th className="text-right py-1.5">LOP</th>
-                <th className="text-right py-1.5">Gross</th>
-                <th className="text-right py-1.5">Net</th>
-                <th className="text-right py-1.5">Arrears</th>
+                <SortableTh sort={sort} k="employee" className="text-left py-1.5">Employee</SortableTh>
+                <SortableTh sort={sort} k="paidDays" className="text-right py-1.5">Paid Days</SortableTh>
+                <SortableTh sort={sort} k="lopDays" className="text-right py-1.5">LOP</SortableTh>
+                <SortableTh sort={sort} k="gross" className="text-right py-1.5">Gross</SortableTh>
+                <SortableTh sort={sort} k="net" className="text-right py-1.5">Net</SortableTh>
+                <SortableTh sort={sort} k="arrears" className="text-right py-1.5">Arrears</SortableTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {withStructure.map((r, i) => (
+              {sort.sorted.map((r, i) => (
                 <tr key={i}>
                   <td className="py-1.5">{r.employee.firstName} {r.employee.lastName}</td>
                   <td className="py-1.5 text-right">{r.paidDays}</td>

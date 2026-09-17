@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Check, X, Eye, Pencil, Trash2, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Download } from 'lucide-react';
+import { Plus, Check, X, Eye, Pencil, Trash2, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import FilterPanel from './FilterPanel';
 import api from '../../../utils/api';
 import useEmployeeList from './useEmployeeList';
 import EmployeePicker from './EmployeePicker';
 import LeaveRequestDialog from './LeaveRequestDialog';
 import RowMenu from './RowMenu';
+import { SortIcon } from '../../../components/table/SortableTh';
 
 /* ── Operations → Leave Tracker → Leave Requests ────────────────────────────
  *  Zoho's table of EVERY leave request, whatever its status, with Add Request
@@ -49,16 +50,15 @@ const takenLabel = (r) => {
   return `${d} Day${d === 1 ? '' : 's'}`;
 };
 
-// A column header that sorts. The arrow only shows on the active column, so
-// the header row does not turn into a wall of chevrons.
+// A column header that sorts on the server.
 function SortTh({ label, k, sort, onSort }) {
   const active = sort.by === k;
   return (
-    <th className="px-4 py-3 font-medium">
-      <button onClick={() => onSort(k)}
-        className={`flex items-center gap-1 hover:text-slate-700 ${active ? 'text-slate-700' : ''}`}>
+    <th className="px-4 py-3 font-medium" aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" onClick={() => onSort(k)}
+        className={`group/sort flex items-center gap-1 hover:text-slate-700 ${active ? 'text-slate-700' : ''}`}>
         {label}
-        {active && (sort.dir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />)}
+        <SortIcon active={active} dir={sort.dir} />
       </button>
     </th>
   );

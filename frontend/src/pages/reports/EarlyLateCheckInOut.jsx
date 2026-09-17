@@ -12,6 +12,8 @@ import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import useFitToViewport from '../../hooks/useFitToViewport';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
 const now = new Date();
@@ -158,6 +160,22 @@ export default function EarlyLateCheckInOut() {
   const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   const gridHeight = useFitToViewport(gridRef, null, [filtersOpen, rows]);
+  const sort = useSortable(rows, {
+    id: 'reports-early-late-check-in-out',
+    columns: {
+      employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+      date: { get: r => r.date, type: 'date' },
+      firstIn: { get: r => r.firstIn, type: 'date' },
+      lastOut: { get: r => r.lastOut, type: 'date' },
+      totalHours: { get: r => r.totalHours, type: 'number' },
+      entryEarly: { get: r => r.entryEarly, type: 'number' },
+      entryLate: { get: r => r.entryLate, type: 'number' },
+      exitEarly: { get: r => r.exitEarly, type: 'number' },
+      exitLate: { get: r => r.exitLate, type: 'number' },
+      netMinutes: { get: r => r.netMinutes, type: 'number' },
+      shiftName: { get: r => r.shiftName, type: 'text' },
+    },
+  });
 
   const load = () => {
     setLoading(true);
@@ -250,27 +268,27 @@ export default function EarlyLateCheckInOut() {
           <table className="w-full text-[14px] border-collapse">
             <thead className="bg-slate-50 text-[13px] text-slate-600 sticky top-0 z-20">
               <tr className="border-b border-slate-200">
-                <th rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Employee</th>
+                <SortableTh sort={sort} k="employee" rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Employee</SortableTh>
                 {/* The date only earns a column when the period is more than one
                     day — on the single-day default the header already says it. */}
-                {multiDay && <th rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Date</th>}
-                <th rowSpan={2} className={`text-left align-bottom ${HEAD}`}>First In</th>
-                <th rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Last Out</th>
-                <th rowSpan={2} className={`text-center align-bottom ${HEAD}`}>Total Hours</th>
+                {multiDay && <SortableTh sort={sort} k="date" rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Date</SortableTh>}
+                <SortableTh sort={sort} k="firstIn" rowSpan={2} className={`text-left align-bottom ${HEAD}`}>First In</SortableTh>
+                <SortableTh sort={sort} k="lastOut" rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Last Out</SortableTh>
+                <SortableTh sort={sort} k="totalHours" rowSpan={2} className={`text-center align-bottom ${HEAD}`}>Total Hours</SortableTh>
                 <th colSpan={2} className={`text-center ${HEAD} border-b border-slate-200`}>Entry</th>
                 <th colSpan={2} className={`text-center ${HEAD} border-b border-slate-200`}>Exit</th>
-                <th rowSpan={2} className={`text-center align-bottom ${HEAD}`}>Net hours</th>
-                <th rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Shift(s)</th>
+                <SortableTh sort={sort} k="netMinutes" rowSpan={2} className={`text-center align-bottom ${HEAD}`}>Net hours</SortableTh>
+                <SortableTh sort={sort} k="shiftName" rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Shift(s)</SortableTh>
               </tr>
               <tr className="border-b border-slate-200">
-                <th className={`text-center ${HEAD}`}>Early</th>
-                <th className={`text-center ${HEAD}`}>Late</th>
-                <th className={`text-center ${HEAD}`}>Early</th>
-                <th className={`text-center ${HEAD}`}>Late</th>
+                <SortableTh sort={sort} k="entryEarly" className={`text-center ${HEAD}`}>Early</SortableTh>
+                <SortableTh sort={sort} k="entryLate" className={`text-center ${HEAD}`}>Late</SortableTh>
+                <SortableTh sort={sort} k="exitEarly" className={`text-center ${HEAD}`}>Early</SortableTh>
+                <SortableTh sort={sort} k="exitLate" className={`text-center ${HEAD}`}>Late</SortableTh>
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id} className="border-b border-slate-200">
                   <td className={CELL}><EmployeeCell row={row} /></td>
                   {multiDay && <td className={`text-slate-600 tabular-nums ${CELL}`}>{fmtDate(row.date)}</td>}

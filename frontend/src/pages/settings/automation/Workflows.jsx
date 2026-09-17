@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, Copy, ArrowLeft, X } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 import { Spinner } from '../configKit';
 import { useCatalog, useScopedList, FormFilter, Field, input, select } from './kit';
 
@@ -330,6 +332,17 @@ export default function Workflows() {
     })[w.triggerEvent] || e?.label || w.triggerEvent;
   }, [catalog]);
 
+  const sort = useSortable(rows, {
+    id: 'settings-automation-workflows',
+    columns: {
+      name: 'name',
+      form: r => labelOf(r.recordType),
+      executedOn: r => executedOn(r),
+      actions: { get: r => r.actions?.length ?? 0, type: 'number' },
+      status: { get: r => (r.isActive ? 1 : 0), type: 'number' },
+    },
+  });
+
   if (!catalog || rows === null) return <Spinner />;
 
   const toggle = w => {
@@ -372,16 +385,16 @@ export default function Workflows() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Workflow name</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Form name</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Executed on</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Actions</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Status</th>
+                <SortableTh sort={sort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Workflow name</SortableTh>
+                <SortableTh sort={sort} k="form" className="text-left font-medium text-slate-600 px-6 py-2.5">Form name</SortableTh>
+                <SortableTh sort={sort} k="executedOn" className="text-left font-medium text-slate-600 px-6 py-2.5">Executed on</SortableTh>
+                <SortableTh sort={sort} k="actions" className="text-left font-medium text-slate-600 px-6 py-2.5">Actions</SortableTh>
+                <SortableTh sort={sort} k="status" className="text-left font-medium text-slate-600 px-6 py-2.5">Status</SortableTh>
                 <th className="w-24" />
               </tr>
             </thead>
             <tbody>
-              {rows.map(w => (
+              {sort.sorted.map(w => (
                 <tr key={w.id} className="group border-t border-slate-100 hover:bg-slate-50/60">
                   <td className="px-6 py-3">
                     <button onClick={() => open(w)} className="text-blue-600 hover:underline text-left font-medium">{w.name}</button>

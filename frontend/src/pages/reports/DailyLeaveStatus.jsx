@@ -13,6 +13,8 @@ import LeaveExportModal from './LeaveExportModal';
 import DirectReportsToggle from './DirectReportsToggle';
 import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -45,6 +47,16 @@ export default function DailyLeaveStatus() {
   const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
+  const sort = useSortable(employees, {
+    id: 'reports-daily-leave-status',
+    columns: {
+      employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+      leaveType: { get: r => LEAVE_LABEL[r.leaveType] || r.leaveType, type: 'text' },
+      category: { get: r => r.category, type: 'text' },
+      reason: { get: r => r.reason, type: 'text' },
+      approvalStatus: { get: r => r.approvalStatus, type: 'text' },
+    },
+  });
 
   const load = () => {
     setLoading(true);
@@ -178,15 +190,15 @@ export default function DailyLeaveStatus() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
-                <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-left px-4 py-2.5">Leavetype</th>
-                <th className="text-left px-4 py-2.5">Type</th>
-                <th className="text-left px-4 py-2.5">Reason</th>
-                <th className="text-left px-4 py-2.5">Approval Status</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5">Employee</SortableTh>
+                <SortableTh sort={sort} k="leaveType" className="text-left px-4 py-2.5">Leavetype</SortableTh>
+                <SortableTh sort={sort} k="category" className="text-left px-4 py-2.5">Type</SortableTh>
+                <SortableTh sort={sort} k="reason" className="text-left px-4 py-2.5">Reason</SortableTh>
+                <SortableTh sort={sort} k="approvalStatus" className="text-left px-4 py-2.5">Approval Status</SortableTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {employees.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
                   <td className="px-4 py-2.5 capitalize">{LEAVE_LABEL[row.leaveType] || row.leaveType}{row.isHalfDay ? ' (Half Day)' : ''}</td>

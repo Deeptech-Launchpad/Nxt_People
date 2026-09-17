@@ -15,6 +15,8 @@ import UnitToggle from './UnitToggle';
 import FilterToggleButton from './FilterToggleButton';
 import PayPeriodChip from './PayPeriodChip';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
 const EXPORT_COLUMNS = [
@@ -50,6 +52,18 @@ export default function LeaveEncashmentDetails() {
   const [showExEmployees, setShowExEmployees] = useState(true);
   const [payPeriod, setPayPeriod] = useState(null);
   const [regenOpen, setRegenOpen] = useState(false);
+  const sort = useSortable(rows, {
+    id: 'reports-leave-encashment-details',
+    columns: {
+      employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+      leaveType: { get: r => LEAVE_LABEL[r.leaveType] || r.leaveType, type: 'text' },
+      allocated: { get: r => r.allocated, type: 'number' },
+      availed: { get: r => r.availed, type: 'number' },
+      balance: { get: r => r.balance, type: 'number' },
+      encashed: { get: r => r.encashed, type: 'number' },
+      encashable: { get: r => r.encashable, type: 'number' },
+    },
+  });
   const navigate = useNavigate();
 
   // Encashment is processed per pay period, so a period with the flag off has
@@ -179,17 +193,17 @@ export default function LeaveEncashmentDetails() {
           <table className="w-full text-[14px] border-collapse">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr className="border-b border-slate-200">
-                <th className="text-left px-4 py-2.5 border-r border-slate-200">Employee</th>
-                <th className="text-left px-4 py-2.5 border-r border-slate-200">Leave Type</th>
-                <th className="text-left px-4 py-2.5 border-r border-slate-200">Allocated</th>
-                <th className="text-left px-4 py-2.5 border-r border-slate-200">Availed</th>
-                <th className="text-left px-4 py-2.5 border-r border-slate-200">Balance</th>
-                <th className="text-left px-4 py-2.5 border-r border-slate-200">Encashed</th>
-                <th className="text-left px-4 py-2.5">Encashable</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5 border-r border-slate-200">Employee</SortableTh>
+                <SortableTh sort={sort} k="leaveType" className="text-left px-4 py-2.5 border-r border-slate-200">Leave Type</SortableTh>
+                <SortableTh sort={sort} k="allocated" className="text-left px-4 py-2.5 border-r border-slate-200">Allocated</SortableTh>
+                <SortableTh sort={sort} k="availed" className="text-left px-4 py-2.5 border-r border-slate-200">Availed</SortableTh>
+                <SortableTh sort={sort} k="balance" className="text-left px-4 py-2.5 border-r border-slate-200">Balance</SortableTh>
+                <SortableTh sort={sort} k="encashed" className="text-left px-4 py-2.5 border-r border-slate-200">Encashed</SortableTh>
+                <SortableTh sort={sort} k="encashable" className="text-left px-4 py-2.5">Encashable</SortableTh>
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id} className="border-b border-slate-200">
                   <td className="px-4 py-2.5 border-r border-slate-200"><EmployeeCell row={row} /></td>
                   <td className="px-4 py-2.5 border-r border-slate-200">{LEAVE_LABEL[row.leaveType] || row.leaveType}</td>

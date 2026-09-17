@@ -10,6 +10,8 @@ import HoursComparatorFilter from './HoursComparatorFilter';
 import LeaveExportModal from './LeaveExportModal';
 
 import usePersistedOpen from './usePersistedOpen';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
@@ -173,6 +175,19 @@ export default function PresenceHoursBreakup() {
     setHours({ mode: 'all', amount: '' });
   };
 
+  const sort = useSortable(data?.data || [], {
+    id: 'reports-presence-hours-breakup',
+    columns: {
+      date: { get: r => r.date, type: 'date' },
+      firstIn: { get: r => r.firstIn, type: 'date' },
+      lastOut: { get: r => r.lastOut, type: 'date' },
+      totalHours: { get: r => r.totalHours, type: 'number' },
+      payableHours: { get: r => r.payableHours, type: 'number' },
+      status: { get: r => r.status, type: 'text' },
+      shift: { get: r => r.shiftName, type: 'text' },
+    },
+  });
+
   const summary = unit === 'hour' ? data?.summaryHours : data?.summaryDays;
   const summaryRows = SUMMARY_KEYS[unit === 'hour' ? 'hour' : 'day'];
   // Hours read as HH:MM with an Hrs/Hr suffix; days as a plain count. The
@@ -249,17 +264,17 @@ export default function PresenceHoursBreakup() {
             <table className="w-full text-[14px]">
               <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
                 <tr>
-                  <th className="text-left px-4 py-2.5">Date</th>
-                  <th className="text-left px-4 py-2.5">First In</th>
-                  <th className="text-left px-4 py-2.5">Last Out</th>
-                  <th className="text-right px-4 py-2.5">Total Hours</th>
-                  <th className="text-right px-4 py-2.5">Payable Hours</th>
-                  <th className="text-left px-4 py-2.5">Status</th>
-                  <th className="text-left px-4 py-2.5">Shift(s)</th>
+                  <SortableTh sort={sort} k="date" className="text-left px-4 py-2.5">Date</SortableTh>
+                  <SortableTh sort={sort} k="firstIn" className="text-left px-4 py-2.5">First In</SortableTh>
+                  <SortableTh sort={sort} k="lastOut" className="text-left px-4 py-2.5">Last Out</SortableTh>
+                  <SortableTh sort={sort} k="totalHours" className="text-right px-4 py-2.5">Total Hours</SortableTh>
+                  <SortableTh sort={sort} k="payableHours" className="text-right px-4 py-2.5">Payable Hours</SortableTh>
+                  <SortableTh sort={sort} k="status" className="text-left px-4 py-2.5">Status</SortableTh>
+                  <SortableTh sort={sort} k="shift" className="text-left px-4 py-2.5">Shift(s)</SortableTh>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {data.data.map(row => (
+                {sort.sorted.map(row => (
                   <tr key={row.date}>
                     <td className="px-4 py-2.5 text-slate-700">
                       {new Date(row.date).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}

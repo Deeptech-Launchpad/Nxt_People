@@ -3,6 +3,8 @@ import { Filter } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
@@ -33,7 +35,8 @@ export function EmployeeCell({ row }) {
 // page — covers every report whose backend endpoint returns { data: [...] }.
 // columns: [{ key, header, align, format?(value, row) }]. A column with
 // key === 'employee' auto-renders the avatar/name/department cell instead
-// of needing a format function repeated on every caller.
+// of needing a format function repeated on every caller. Optional per column:
+// sortValue(row) and sortType ('text'|'number'|'date'); sortable: false opts out.
 export default function TableReportPage({ title, subtitle, endpoint, filterType = 'range', columns, emptyText = 'No data for this period', rowKey, switcherCategory }) {
   const [date, setDate] = useState(todayCA());
   const [year, setYear] = useState(new Date().getFullYear());
@@ -41,6 +44,11 @@ export default function TableReportPage({ title, subtitle, endpoint, filterType 
   const [endDate, setEndDate] = useState(todayCA());
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const sortColumns = Object.fromEntries(columns.filter(c => c.sortable !== false).map(c => [c.key, {
+    get: c.sortValue || (c.key === 'employee' ? r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() : r => r[c.key]),
+    type: c.sortType,
+  }]));
+  const sort = useSortable(rows, { id: `report:${endpoint}`, columns: sortColumns });
 
   const load = () => {
     setLoading(true);
@@ -103,12 +111,12 @@ export default function TableReportPage({ title, subtitle, endpoint, filterType 
       <div className="overflow-x-auto">
         <table className="w-full text-[14px]">
           <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
-            <tr>{columns.map(c => <th key={c.key} className={`px-4 py-2.5 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{c.header}</th>)}</tr>
+            <tr>{columns.map(c => <SortableTh key={c.key} sort={sort} k={c.sortable === false ? null : c.key} className={`px-4 py-2.5 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{c.header}</SortableTh>)}</tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {rows.length === 0 ? (
               <tr><td colSpan={columns.length} className="text-center py-10 text-slate-400">{emptyText}</td></tr>
-            ) : rows.map((row, i) => (
+            ) : sort.sorted.map((row, i) => (
               <tr key={rowKey ? rowKey(row) : row._id || i}>
                 {columns.map(c => (
                   <td key={c.key} className={`px-4 py-2.5 ${c.align === 'right' ? 'text-right tabular-nums' : ''}`}>

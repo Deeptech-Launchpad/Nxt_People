@@ -4,6 +4,8 @@ import { X, Trash2, Plus, Users } from 'lucide-react';
 import api from '../../../utils/api';
 import { Spinner } from '../configKit';
 import UserPicker, { Avatar } from './UserPicker';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 // Applicability groups — named employees, or criteria that decide membership.
 //
@@ -191,6 +193,14 @@ export default function ApplicabilityGroups() {
       .catch(err => toast.error(err.response?.data?.message || 'Could not delete'));
   };
 
+  const sort = useSortable(groups, {
+    id: 'settings-access-applicability-groups',
+    columns: {
+      name: { get: g => g.name, type: 'text' },
+      members: { get: g => g.memberCount, type: 'number' },
+    },
+  });
+
   if (groups === null) return <Spinner />;
 
   return (
@@ -227,14 +237,14 @@ export default function ApplicabilityGroups() {
             <table className="w-full text-[14px]">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="text-left font-medium text-slate-600 px-6 py-2.5">Name</th>
-                  <th className="text-left font-medium text-slate-600 px-6 py-2.5">Members</th>
+                  <SortableTh sort={sort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Name</SortableTh>
+                  <SortableTh sort={sort} k="members" className="text-left font-medium text-slate-600 px-6 py-2.5">Members</SortableTh>
                   <th className="text-left font-medium text-slate-600 px-6 py-2.5">Built from</th>
                   <th className="w-16" />
                 </tr>
               </thead>
               <tbody>
-                {groups.map(g => (
+                {sort.sorted.map(g => (
                   <tr key={g.id} className="group border-t border-slate-100 hover:bg-slate-50/60">
                     <td className="px-6 py-3">
                       <button onClick={() => setEditing(g)} className="text-blue-600 hover:underline font-medium">

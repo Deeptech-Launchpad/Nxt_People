@@ -7,6 +7,8 @@ import React, { useEffect, useState } from 'react';
 import { FileText, Download, Eye } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 import { fmtINR, StatusPill } from './_shared';
 import { PayslipModal } from './PayrollRun';
 
@@ -35,6 +37,16 @@ export default function MyPayroll() {
 
   const years = [...new Set(payslips.map(p => p.payYear))].sort((a, b) => b - a);
   const filtered = year === 'all' ? payslips : payslips.filter(p => String(p.payYear) === String(year));
+  const sort = useSortable(filtered, {
+    id: 'payroll-my-payslips',
+    columns: {
+      month: { get: p => (p.payYear && p.payMonth ? Number(p.payYear) * 100 + Number(p.payMonth) : null), type: 'number' },
+      slip: { get: p => p.slipNumber, type: 'text' },
+      gross: { get: p => (p.grossEarnings == null ? null : Number(p.grossEarnings)), type: 'number' },
+      net: { get: p => (p.netPay == null ? null : Number(p.netPay)), type: 'number' },
+      status: { get: p => p.status, type: 'text' },
+    },
+  });
 
   const downloadPdf = async (id) => {
     if (downloadingId) return;
@@ -88,13 +100,13 @@ export default function MyPayroll() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100">
-                  {['Month', 'Slip #', 'Gross', 'Net Pay', 'Status', ''].map(h => (
-                    <th key={h} className={`px-5 py-3 text-[13px] font-semibold text-slate-500 uppercase tracking-wider ${['Gross', 'Net Pay'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>
+                  {[['month', 'Month'], ['slip', 'Slip #'], ['gross', 'Gross'], ['net', 'Net Pay'], ['status', 'Status'], [null, '']].map(([k, h]) => (
+                    <SortableTh key={h} sort={k && sort} k={k} className={`px-5 py-3 text-[13px] font-semibold text-slate-500 uppercase tracking-wider ${['Gross', 'Net Pay'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</SortableTh>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filtered.map(p => (
+                {sort.sorted.map(p => (
                   <tr key={p._id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3.5">
                       <span className="text-[15px] font-semibold text-[#1a73e8]">{MONTHS[p.payMonth]} {p.payYear}</span>

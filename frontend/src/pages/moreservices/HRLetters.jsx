@@ -4,6 +4,8 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { isApprover } from '../../utils/roles';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const LETTER_TYPES = [
   { value: 'employment_verification', label: 'Employment Verification' },
@@ -55,6 +57,18 @@ export default function HRLetters() {
   }, [view, isAdmin]);
 
   useEffect(load, [load]);
+
+  const sort = useSortable(records, {
+    id: 'hr-letters',
+    columns: {
+      employee: r => [r.employee?.firstName, r.employee?.lastName].filter(Boolean).join(' '),
+      letterType: r => labelFor(r.letterType),
+      purpose: 'purpose',
+      status: { get: r => Object.keys(STATUS_LABEL).indexOf(r.status), type: 'number' },
+      processed: { get: r => (r.processedBy ? r.processedAt : null), type: 'date' },
+      requested: { get: r => r.createdAt, type: 'date' },
+    },
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -136,8 +150,11 @@ export default function HRLetters() {
         <table className="w-full">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              {(view === 'All (Admin)' ? ['Employee','Letter Type','Purpose','Status','Processed','Letter','Actions'] : ['Letter Type','Purpose','Status','Requested','Letter','Actions']).map(h => (
-                <th key={h} className="px-4 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+              {(view === 'All (Admin)'
+                ? [['Employee', 'employee'], ['Letter Type', 'letterType'], ['Purpose', 'purpose'], ['Status', 'status'], ['Processed', 'processed'], ['Letter', null], ['Actions', null]]
+                : [['Letter Type', 'letterType'], ['Purpose', 'purpose'], ['Status', 'status'], ['Requested', 'requested'], ['Letter', null], ['Actions', null]]
+              ).map(([h, k]) => (
+                <SortableTh key={h} sort={sort} k={k} className="px-4 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>
               ))}
             </tr>
           </thead>
@@ -150,7 +167,7 @@ export default function HRLetters() {
                 <p className="text-[15px] font-semibold text-slate-400">No requests yet</p>
                 <p className="text-[14px] text-slate-300 mt-1">Click "Request Letter" to submit one</p>
               </td></tr>
-            ) : records.map(r => (
+            ) : sort.sorted.map(r => (
               <tr key={r._id} className="hover:bg-slate-50 transition-colors">
                 {view === 'All (Admin)' && (
                   <td className="px-4 py-3 text-[14px] text-slate-700">

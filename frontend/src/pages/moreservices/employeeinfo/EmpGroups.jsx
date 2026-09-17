@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, X, Pencil, Trash2, Search, MoreHorizontal } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* Operations -> Employee Information -> Groups.
  *
@@ -91,6 +93,23 @@ export default function EmpGroups() {
   };
   useEffect(load, [scope]);
 
+  const sort = useSortable(rows, {
+    id: 'emp-groups',
+    columns: {
+      name: 'name',
+      email: 'email',
+      description: 'description',
+      members: { get: g => Number(g.memberCount), type: 'number' },
+    },
+  });
+  const memberSort = useSortable(detail?.members || [], {
+    id: 'emp-group-members',
+    columns: {
+      user: m => `${m.firstName || ''} ${m.lastName || ''}`.trim(),
+      role: 'role',
+    },
+  });
+
   const openDetail = (g) => {
     api.get(`/employee-groups/${g._id}`)
       .then(r => setDetail(r.data.data))
@@ -170,10 +189,10 @@ export default function EmpGroups() {
         <table className="w-full text-[15px]">
           <thead className="bg-slate-50 text-slate-500 text-[13.5px]">
             <tr>
-              <th className="px-4 py-2.5 text-left font-medium">Group name</th>
-              <th className="px-4 py-2.5 text-left font-medium">Group email address</th>
-              <th className="px-4 py-2.5 text-left font-medium">Description</th>
-              <th className="px-4 py-2.5 text-left font-medium w-24">Members</th>
+              <SortableTh sort={sort} k="name" className="px-4 py-2.5 text-left font-medium">Group name</SortableTh>
+              <SortableTh sort={sort} k="email" className="px-4 py-2.5 text-left font-medium">Group email address</SortableTh>
+              <SortableTh sort={sort} k="description" className="px-4 py-2.5 text-left font-medium">Description</SortableTh>
+              <SortableTh sort={sort} k="members" className="px-4 py-2.5 text-left font-medium w-24">Members</SortableTh>
               <th className="px-4 py-2.5 w-12" />
             </tr>
           </thead>
@@ -184,7 +203,7 @@ export default function EmpGroups() {
               </td></tr>
             ) : rows.length === 0 ? (
               <tr><td colSpan={5} className="py-16 text-center text-slate-400">No groups yet.</td></tr>
-            ) : rows.map(g => (
+            ) : sort.sorted.map(g => (
               <tr key={g._id} onClick={() => openDetail(g)}
                 className="border-t border-slate-100 hover:bg-slate-50/70 cursor-pointer">
                 <td className="px-4 py-2.5 text-slate-800">{g.name}</td>
@@ -242,8 +261,8 @@ export default function EmpGroups() {
               <table className="w-full text-[15px]">
                 <thead className="bg-slate-50 text-slate-500 text-[13.5px]">
                   <tr>
-                    <th className="px-4 py-2.5 text-left font-medium">User</th>
-                    <th className="px-4 py-2.5 text-left font-medium w-48">Role</th>
+                    <SortableTh sort={memberSort} k="user" className="px-4 py-2.5 text-left font-medium">User</SortableTh>
+                    <SortableTh sort={memberSort} k="role" className="px-4 py-2.5 text-left font-medium w-48">Role</SortableTh>
                     <th className="px-4 py-2.5 w-12" />
                   </tr>
                 </thead>
@@ -251,7 +270,7 @@ export default function EmpGroups() {
                   {detail.members.length === 0 && (
                     <tr><td colSpan={3} className="py-10 text-center text-slate-400">Nobody in this group yet.</td></tr>
                   )}
-                  {detail.members.map(m => (
+                  {memberSort.sorted.map(m => (
                     <tr key={m._id} className="border-t border-slate-100">
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2.5">

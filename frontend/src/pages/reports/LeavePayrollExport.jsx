@@ -15,6 +15,8 @@ import PeriodPresetChip from './PeriodPresetChip';
 import PayPeriodChip from './PayPeriodChip';
 import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -112,6 +114,23 @@ export default function LeavePayrollExport() {
   const [dimFilters, setDimFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [showExEmployees, setShowExEmployees] = useState(true);
+  const sort = useSortable(rows, {
+    id: 'reports-leave-payroll-export',
+    columns: {
+      employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+      totalDays: { get: r => r.totalDays, type: 'number' },
+      weekendCount: { get: r => r.weekendCount, type: 'number' },
+      holidayCount: { get: r => r.holidayCount, type: 'number' },
+      payableDays: { get: r => r.payableDays, type: 'number' },
+      onDutyDays: { get: r => r.onDutyDays, type: 'number' },
+      leavePaid: { get: r => r.leavePaid, type: 'number' },
+      leaveUnpaid: { get: r => r.leaveUnpaid, type: 'number' },
+      leaveComp: { get: r => r.leaveComp, type: 'number' },
+      leaveTotal: { get: r => r.leaveTotal, type: 'number' },
+      lopDays: { get: r => r.lopDays, type: 'number' },
+      paidDays: { get: r => r.paidDays, type: 'number' },
+    },
+  });
 
   const load = () => {
     setLoading(true);
@@ -194,25 +213,25 @@ export default function LeavePayrollExport() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
-                <th rowSpan={2} className="text-left px-4 py-2.5 align-bottom">Employee</th>
-                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom border-l border-slate-200">{totalLabel}</th>
-                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom">Weekend</th>
-                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom">Holidays</th>
-                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom">{payableLabel}</th>
-                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom">{onDutyLabel}</th>
+                <SortableTh sort={sort} k="employee" rowSpan={2} className="text-left px-4 py-2.5 align-bottom">Employee</SortableTh>
+                <SortableTh sort={sort} k="totalDays" rowSpan={2} className="text-right px-4 py-2.5 align-bottom border-l border-slate-200">{totalLabel}</SortableTh>
+                <SortableTh sort={sort} k="weekendCount" rowSpan={2} className="text-right px-4 py-2.5 align-bottom">Weekend</SortableTh>
+                <SortableTh sort={sort} k="holidayCount" rowSpan={2} className="text-right px-4 py-2.5 align-bottom">Holidays</SortableTh>
+                <SortableTh sort={sort} k="payableDays" rowSpan={2} className="text-right px-4 py-2.5 align-bottom">{payableLabel}</SortableTh>
+                <SortableTh sort={sort} k="onDutyDays" rowSpan={2} className="text-right px-4 py-2.5 align-bottom">{onDutyLabel}</SortableTh>
                 <th colSpan={4} className="text-center px-4 py-1.5 border-l border-slate-200">Leave</th>
-                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom border-l border-slate-200">{lopLabel}</th>
-                <th rowSpan={2} className="text-right px-4 py-2.5 align-bottom">{paidLabel}</th>
+                <SortableTh sort={sort} k="lopDays" rowSpan={2} className="text-right px-4 py-2.5 align-bottom border-l border-slate-200">{lopLabel}</SortableTh>
+                <SortableTh sort={sort} k="paidDays" rowSpan={2} className="text-right px-4 py-2.5 align-bottom">{paidLabel}</SortableTh>
               </tr>
               <tr>
-                <th className="text-right px-4 py-2 border-l border-slate-200">Paid</th>
-                <th className="text-right px-4 py-2">Unpaid</th>
-                <th className="text-right px-4 py-2">Comp</th>
-                <th className="text-right px-4 py-2">Total</th>
+                <SortableTh sort={sort} k="leavePaid" className="text-right px-4 py-2 border-l border-slate-200">Paid</SortableTh>
+                <SortableTh sort={sort} k="leaveUnpaid" className="text-right px-4 py-2">Unpaid</SortableTh>
+                <SortableTh sort={sort} k="leaveComp" className="text-right px-4 py-2">Comp</SortableTh>
+                <SortableTh sort={sort} k="leaveTotal" className="text-right px-4 py-2">Total</SortableTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
                   <td className="px-4 py-2.5 text-right tabular-nums border-l border-slate-100">{fmtUnit(row.totalDays, unit)}</td>
@@ -236,14 +255,14 @@ export default function LeavePayrollExport() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
-                <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-right px-4 py-2.5">{totalLabel}</th>
-                <th className="text-right px-4 py-2.5">{lopLabel}</th>
-                <th className="text-right px-4 py-2.5">{paidLabel}</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5">Employee</SortableTh>
+                <SortableTh sort={sort} k="totalDays" className="text-right px-4 py-2.5">{totalLabel}</SortableTh>
+                <SortableTh sort={sort} k="lopDays" className="text-right px-4 py-2.5">{lopLabel}</SortableTh>
+                <SortableTh sort={sort} k="paidDays" className="text-right px-4 py-2.5">{paidLabel}</SortableTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtUnit(row.totalDays, unit)}</td>

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Hourglass, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 /* ── Permission Usage (Super Admin / HR) ──────────────────────────────────
  *  Monthly view of each employee's PERMISSION hours — approved + pending +
@@ -36,6 +38,19 @@ export default function PermissionUsage() {
     if (m > 12) { m = 1;  y += 1; }
     setMonth(m); setYear(y);
   };
+
+  const sort = useSortable(rows, {
+    id: 'permission-usage',
+    columns: {
+      employee: r => `${r.firstName || ''} ${r.lastName || ''}`.trim(),
+      department: { get: r => r.department, type: 'text' },
+      requests: { get: r => Number(r.requests), type: 'number' },
+      approved: { get: r => parseFloat(r.approvedHours) || 0, type: 'number' },
+      pending: { get: r => parseFloat(r.pendingHours) || 0, type: 'number' },
+      remaining: { get: r => parseFloat(r.remainingHours) || 0, type: 'number' },
+      usage: { get: r => (parseFloat(r.approvedHours) || 0) + (parseFloat(r.pendingHours) || 0), type: 'number' },
+    },
+  });
 
   const totalApproved = rows.reduce((s, r) => s + (parseFloat(r.approvedHours) || 0), 0);
   const totalPending  = rows.reduce((s, r) => s + (parseFloat(r.pendingHours) || 0), 0);
@@ -76,13 +91,13 @@ export default function PermissionUsage() {
         <table className="w-full text-left">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-[13px] font-semibold text-slate-500 uppercase tracking-wider">
-              <th className="px-5 py-3">Employee</th>
-              <th className="px-5 py-3">Department</th>
-              <th className="px-5 py-3 text-center">Requests</th>
-              <th className="px-5 py-3 text-center">Approved</th>
-              <th className="px-5 py-3 text-center">Pending</th>
-              <th className="px-5 py-3 text-center">Remaining</th>
-              <th className="px-5 py-3 w-40">Usage (of 4h)</th>
+              <SortableTh sort={sort} k="employee" className="px-5 py-3">Employee</SortableTh>
+              <SortableTh sort={sort} k="department" className="px-5 py-3">Department</SortableTh>
+              <SortableTh sort={sort} k="requests" className="px-5 py-3 text-center">Requests</SortableTh>
+              <SortableTh sort={sort} k="approved" className="px-5 py-3 text-center">Approved</SortableTh>
+              <SortableTh sort={sort} k="pending" className="px-5 py-3 text-center">Pending</SortableTh>
+              <SortableTh sort={sort} k="remaining" className="px-5 py-3 text-center">Remaining</SortableTh>
+              <SortableTh sort={sort} k="usage" className="px-5 py-3 w-40">Usage (of 4h)</SortableTh>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -94,7 +109,7 @@ export default function PermissionUsage() {
                 <p className="text-[15px] font-semibold text-slate-400">No permission requests in {MONTHS[month - 1]} {year}</p>
                 <p className="text-[14px] text-slate-300 mt-1">Usage will appear here once requests are submitted</p>
               </td></tr>
-            ) : rows.map(r => {
+            ) : sort.sorted.map(r => {
               const approved = parseFloat(r.approvedHours) || 0;
               const pending  = parseFloat(r.pendingHours) || 0;
               const used = approved + pending;

@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, X } from 'lucide-react';
 import api from '../../../utils/api';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 import { Spinner } from '../configKit';
 import { useCatalog, useScopedList, FormFilter, Field, MergeFields, input, select } from './kit';
 
@@ -215,6 +217,10 @@ export default function EmailAlerts() {
   const { scope, setScope, rows, reload } = useScopedList('/workflows/alerts');
   const [templates, setTemplates] = useState([]);
   const [editing, setEditing] = useState(null);
+  const sort = useSortable(rows, {
+    id: 'settings-automation-email-alerts',
+    columns: { name: 'name', form: r => catalog?.recordTypes.find(t => t.key === r.recordType)?.label || r.recordType, subject: 'subject' },
+  });
 
   useEffect(() => {
     api.get('/workflows/templates').then(r => setTemplates(r.data.data || [])).catch(() => {});
@@ -245,14 +251,14 @@ export default function EmailAlerts() {
         <table className="w-full text-[14px]">
           <thead className="bg-slate-50">
             <tr>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Name</th>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Form name</th>
-              <th className="text-left font-medium text-slate-600 px-6 py-2.5">Subject</th>
+              <SortableTh sort={sort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Name</SortableTh>
+              <SortableTh sort={sort} k="form" className="text-left font-medium text-slate-600 px-6 py-2.5">Form name</SortableTh>
+              <SortableTh sort={sort} k="subject" className="text-left font-medium text-slate-600 px-6 py-2.5">Subject</SortableTh>
               <th className="w-16" />
             </tr>
           </thead>
           <tbody>
-            {rows.map(a => (
+            {sort.sorted.map(a => (
               <tr key={a.id} className="group border-t border-slate-100 hover:bg-slate-50/60">
                 <td className="px-6 py-3">
                   <button onClick={() => setEditing(a)} className="text-blue-600 hover:underline text-left font-medium">{a.name}</button>

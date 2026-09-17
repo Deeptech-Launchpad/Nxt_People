@@ -3,6 +3,8 @@ import toast from 'react-hot-toast';
 import { History, RefreshCw, X } from 'lucide-react';
 import api from '../../../utils/api';
 import useEmployeeList, { labelOf } from './useEmployeeList';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* ── Customize Policy ───────────────────────────────────────────────────────
  *  Zoho's screen is PER EMPLOYEE: pick a person, see their leave policies with
@@ -49,6 +51,16 @@ export default function OpsCustomizePolicy() {
   };
   useEffect(load, [employeeId, year]);
 
+  const sort = useSortable(rows, {
+    id: 'ops-customize-policy',
+    columns: {
+      name: { get: r => r.name, type: 'text' },
+      payType: { get: r => TYPE_LABEL[r.payType] || r.payType, type: 'text' },
+      unit: { get: r => r.unit, type: 'text' },
+      balance: { get: r => r.balance, type: 'number' },
+    },
+  });
+
   const rerun = async (row) => {
     if (!window.confirm(
       `Rerun ${row.name} for this employee?\n\n` +
@@ -90,15 +102,15 @@ export default function OpsCustomizePolicy() {
           <table className="w-full text-[15px] min-w-max">
             <thead className="bg-slate-50">
               <tr className="text-left text-slate-500 text-sm">
-                <th className="px-4 py-3 font-medium">Leave policy</th>
-                <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium">Unit</th>
-                <th className="px-4 py-3 font-medium text-right">Balance</th>
+                <SortableTh sort={sort} k="name" className="px-4 py-3 font-medium">Leave policy</SortableTh>
+                <SortableTh sort={sort} k="payType" className="px-4 py-3 font-medium">Type</SortableTh>
+                <SortableTh sort={sort} k="unit" className="px-4 py-3 font-medium">Unit</SortableTh>
+                <SortableTh sort={sort} k="balance" className="px-4 py-3 font-medium text-right">Balance</SortableTh>
                 <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
+              {sort.sorted.map(r => (
                 <tr key={r.leaveTypeId} className="border-t border-slate-50 hover:bg-slate-50/60 group">
                   <td className="px-4 py-3 text-slate-700">{r.name}</td>
                   <td className="px-4 py-3">

@@ -3,6 +3,8 @@ import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import BackButton from '../../components/BackButton';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 function weekStart(offset = 0) {
   const d = new Date();
@@ -28,6 +30,18 @@ export default function TimeLogs() {
     setLoading(true);
     api.get('/timesheets/my').then(r => setLogs(r.data.data || [])).catch(() => {}).finally(() => setLoading(false));
   }, [week]);
+
+  const weekEntries = logs.flatMap(ts => ts.entries || []).filter(e => { const d = new Date(e.date); return d >= ws && d <= weEnd; });
+  const sort = useSortable(weekEntries, {
+    id: 'time-logs',
+    columns: {
+      Date: { get: e => e.date, type: 'date' },
+      Project: 'project',
+      Task: 'task',
+      Hours: { get: e => parseFloat(e.hours), type: 'number' },
+      Description: 'description',
+    },
+  });
 
   const handleAdd = async (e) => {
     e.preventDefault(); setSaving(true);
@@ -80,15 +94,15 @@ export default function TimeLogs() {
         <table className="w-full">
           <thead><tr className="bg-slate-50 border-b border-slate-200">
             {['Date','Project','Task','Hours','Description'].map(h => (
-              <th key={h} className="px-4 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+              <SortableTh key={h} sort={sort} k={h} className="px-4 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>
             ))}
           </tr></thead>
           <tbody className="divide-y divide-slate-50">
             {loading ? (
               <tr><td colSpan={5} className="py-12 text-center"><div className="w-5 h-5 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"/></td></tr>
-            ) : logs.flatMap(ts => ts.entries || []).filter(e => { const d = new Date(e.date); return d >= ws && d <= weEnd; }).length === 0 ? (
+            ) : weekEntries.length === 0 ? (
               <tr><td colSpan={5} className="py-12 text-center text-[15px] text-slate-400">No time logs for this week</td></tr>
-            ) : logs.flatMap(ts => ts.entries || []).filter(e => { const d = new Date(e.date); return d >= ws && d <= weEnd; }).map((e, i) => (
+            ) : sort.sorted.map((e, i) => (
               <tr key={i} className="hover:bg-slate-50 transition-colors">
                 <td className="px-4 py-3 text-[14px] text-slate-600">{new Date(e.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</td>
                 <td className="px-4 py-3 text-[14px] font-medium text-slate-700">{e.project}</td>

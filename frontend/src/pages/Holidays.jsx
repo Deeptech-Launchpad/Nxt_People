@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext';
 import BackButton from '../components/BackButton';
 import { isFullAccess } from '../utils/roles';
 import { parseLocalDate as parseLocalDateUtil, fmtDate } from '../utils/dateFormat';
+import useSortable from '../components/table/useSortable';
+import SortableTh from '../components/table/SortableTh';
 
 // Holidays.jsx historically defaults a blank date to "today" rather than
 // null (used as a display fallback in a couple of spots below).
@@ -36,6 +38,15 @@ export default function Holidays() {
   const [viewMode, setViewMode] = useState('list');
   // 3-dot kebab menu state + ref for click-outside-to-close.
   const [moreOpen, setMoreOpen] = useState(false);
+  const sort = useSortable(holidays, {
+    id: 'holidays-list',
+    columns: {
+      name: { get: h => h.name, type: 'text' },
+      date: { get: h => (h.date ? String(h.date).slice(0, 10) : null), type: 'date' },
+      location: { get: h => h.location || 'Saibaba Colony, Coimbatore', type: 'text' },
+      shifts: { get: h => h.shifts || 'General Shift', type: 'text' },
+    },
+  });
   const moreMenuRef = useRef(null);
   useEffect(() => {
     if (!moreOpen) return;
@@ -275,10 +286,10 @@ export default function Holidays() {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-100/50">
-              <th className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 w-1/4">Name</th>
-              <th className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-48">Date</th>
-              <th className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-48">Location</th>
-              <th className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-40">Shifts</th>
+              <SortableTh sort={sort} k="name" className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 w-1/4">Name</SortableTh>
+              <SortableTh sort={sort} k="date" className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-48">Date</SortableTh>
+              <SortableTh sort={sort} k="location" className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-48">Location</SortableTh>
+              <SortableTh sort={sort} k="shifts" className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-40">Shifts</SortableTh>
               <th className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-32">Classification</th>
               <th className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white flex-1 min-w-[200px]"></th>
             </tr>
@@ -289,7 +300,7 @@ export default function Holidays() {
             ) : holidays.length === 0 ? (
                <tr><td colSpan={6} className="py-12 text-center text-base text-slate-400">No holidays found for {year}</td></tr>
             ) : (
-               holidays.map((h, i) => {
+               sort.sorted.map((h, i) => {
                  const d = parseLocalDate(h.date);
                  return (
                    <tr key={h._id || i} className="hover:bg-slate-50 group">

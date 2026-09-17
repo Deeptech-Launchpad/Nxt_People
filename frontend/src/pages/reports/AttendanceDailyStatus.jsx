@@ -13,6 +13,8 @@ import HoursComparatorFilter from './HoursComparatorFilter';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 import { ActiveSlice, makeSliceLabel } from './chartLabels';
 
 import usePersistedOpen from './usePersistedOpen';
@@ -202,6 +204,19 @@ export default function AttendanceDailyStatus() {
   /* With classification switched off nothing is placed, and a chart reading
      "Working from home: 0" would state something the system does not know. */
   const modeOn = !!data?.workMode?.classifyEnabled;
+
+  const sort = useSortable(data?.employees || [], {
+    id: 'reports-attendance-daily-status',
+    columns: {
+      employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+      firstIn: { get: r => r.firstIn, type: 'date' },
+      lastOut: { get: r => r.lastOut, type: 'date' },
+      totalHours: { get: r => r.totalHours, type: 'number' },
+      status: { get: r => r.status, type: 'text' },
+      workMode: { get: r => (!r.firstIn ? null : r.workMode || 'not tracked'), type: 'text' },
+      shiftName: { get: r => r.shiftName, type: 'text' },
+    },
+  });
 
   // Every slice and every legend row is a way into the list behind it — the
   // chart says how many, the list says who. Clicking applies that status as
@@ -419,22 +434,22 @@ export default function AttendanceDailyStatus() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
-                <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-left px-4 py-2.5">First In</th>
-                <th className="text-left px-4 py-2.5">Last Out</th>
-                <th className="text-left px-4 py-2.5">Total Hours</th>
-                <th className="text-left px-4 py-2.5">Status</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5">Employee</SortableTh>
+                <SortableTh sort={sort} k="firstIn" className="text-left px-4 py-2.5">First In</SortableTh>
+                <SortableTh sort={sort} k="lastOut" className="text-left px-4 py-2.5">Last Out</SortableTh>
+                <SortableTh sort={sort} k="totalHours" className="text-left px-4 py-2.5">Total Hours</SortableTh>
+                <SortableTh sort={sort} k="status" className="text-left px-4 py-2.5">Status</SortableTh>
                 {/* Clicking Office on the chart lands here, so the list has to
                     show what was clicked — otherwise the drill-down is a
                     filtered list with no visible reason for its contents. */}
-                {modeOn && <th className="text-left px-4 py-2.5">Working from</th>}
-                <th className="text-left px-4 py-2.5">Shift(s)</th>
+                {modeOn && <SortableTh sort={sort} k="workMode" className="text-left px-4 py-2.5">Working from</SortableTh>}
+                <SortableTh sort={sort} k="shiftName" className="text-left px-4 py-2.5">Shift(s)</SortableTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {data.employees.length === 0 ? (
                 <tr><td colSpan={modeOn ? 7 : 6} className="text-center py-10 text-slate-400">No employees match these filters</td></tr>
-              ) : data.employees.map(row => (
+              ) : sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
                   <td className="px-4 py-2.5">{fmtTime(row.firstIn)}</td>

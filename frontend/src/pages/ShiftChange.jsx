@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, X, Clock, Check, XCircle } from 'lucide-react';
 import api from '../utils/api';
+import useSortable from '../components/table/useSortable';
+import SortableTh from '../components/table/SortableTh';
 
 // Shift Change Request — asking to move from one shift to another.
 //
@@ -143,6 +145,17 @@ export default function ShiftChange() {
     api.get('/shift-change/options').then(r => setOptions(r.data.data)).catch(() => {});
   }, [load]);
 
+  const sort = useSortable((tab === 'mine' ? mine : pending) || [], {
+    id: 'shift-change-requests',
+    columns: {
+      employee: 'employeeName',
+      change: 'toShift',
+      when: { get: r => r.startDate, type: 'date' },
+      reason: 'reason',
+      status: { get: r => Object.keys(STATUS).indexOf(r.status), type: 'number' },
+    },
+  });
+
   if (mine === null) {
     return <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
   }
@@ -199,16 +212,16 @@ export default function ShiftChange() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                {tab === 'pending' && <th className="text-left font-medium text-slate-600 px-6 py-2.5">Employee</th>}
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Change</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">When</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Reason</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Status</th>
+                {tab === 'pending' && <SortableTh sort={sort} k="employee" className="text-left font-medium text-slate-600 px-6 py-2.5">Employee</SortableTh>}
+                <SortableTh sort={sort} k="change" className="text-left font-medium text-slate-600 px-6 py-2.5">Change</SortableTh>
+                <SortableTh sort={sort} k="when" className="text-left font-medium text-slate-600 px-6 py-2.5">When</SortableTh>
+                <SortableTh sort={sort} k="reason" className="text-left font-medium text-slate-600 px-6 py-2.5">Reason</SortableTh>
+                <SortableTh sort={sort} k="status" className="text-left font-medium text-slate-600 px-6 py-2.5">Status</SortableTh>
                 <th className="w-32" />
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
+              {sort.sorted.map(r => (
                 <tr key={r.id} className="border-t border-slate-100">
                   {tab === 'pending' && (
                     <td className="px-6 py-3 text-slate-700 whitespace-nowrap">

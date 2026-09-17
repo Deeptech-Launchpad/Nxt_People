@@ -16,6 +16,8 @@ import PeriodPresetChip from './PeriodPresetChip';
 import PayPeriodChip from './PayPeriodChip';
 import FilterToggleButton from './FilterToggleButton';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
 const todayCA = () => new Date().toLocaleDateString('en-CA');
@@ -59,6 +61,20 @@ export default function LossOfPay() {
   const [showExEmployees, setShowExEmployees] = useState(true);
   const [payPeriod, setPayPeriod] = useState(null);
   const [regenOpen, setRegenOpen] = useState(false);
+  const sort = useSortable(rows, {
+    id: 'reports-loss-of-pay',
+    columns: {
+      employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+      previousPeriodBalance: { get: r => r.previousPeriodBalance, type: 'number' },
+      booked: { get: r => r.booked, type: 'number' },
+      absentDays: { get: r => r.absentDays, type: 'number' },
+      total: { get: r => r.total, type: 'number' },
+      waivedOff: { get: r => r.waivedOff, type: 'number' },
+      carryOver: { get: r => r.carryOver, type: 'number' },
+      reason: { get: r => r.reason, type: 'text' },
+      lopDays: { get: r => r.lopDays, type: 'number' },
+    },
+  });
 
   // This report is computed from source on every request rather than read from
   // a stored copy, so re-running it IS the regeneration — there is no cache to
@@ -210,8 +226,8 @@ export default function LossOfPay() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600 sticky top-0 z-20">
               <tr>
-                <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-right px-4 py-2.5">Previous Pay Period Balance</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5">Employee</SortableTh>
+                <SortableTh sort={sort} k="previousPeriodBalance" className="text-right px-4 py-2.5">Previous Pay Period Balance</SortableTh>
                 {/* Was one column labelled "Absent + Unpaid" that actually only ever
                     showed the unpaid figure — absentDays existed in the data (and
                     in the export) but never reached this screen. Unpaid leave and
@@ -219,17 +235,17 @@ export default function LossOfPay() {
                     (only the first is deducted automatically), so they get their
                     own columns here too, matching the export instead of disagreeing
                     with it. */}
-                <th className="text-right px-4 py-2.5">Taken</th>
-                <th className="text-right px-4 py-2.5">Unmarked absence</th>
-                <th className="text-right px-4 py-2.5 leading-tight"><div>Total</div><div className="font-normal text-slate-400">Previous + Taken</div></th>
-                <th className="text-right px-4 py-2.5">Waived Off</th>
-                <th className="text-right px-4 py-2.5">Carry Over</th>
-                <th className="text-left px-4 py-2.5">Reason</th>
-                <th className="text-right px-4 py-2.5">LOP</th>
+                <SortableTh sort={sort} k="booked" className="text-right px-4 py-2.5">Taken</SortableTh>
+                <SortableTh sort={sort} k="absentDays" className="text-right px-4 py-2.5">Unmarked absence</SortableTh>
+                <SortableTh sort={sort} k="total" className="text-right px-4 py-2.5 leading-tight"><div>Total</div><div className="font-normal text-slate-400">Previous + Taken</div></SortableTh>
+                <SortableTh sort={sort} k="waivedOff" className="text-right px-4 py-2.5">Waived Off</SortableTh>
+                <SortableTh sort={sort} k="carryOver" className="text-right px-4 py-2.5">Carry Over</SortableTh>
+                <SortableTh sort={sort} k="reason" className="text-left px-4 py-2.5">Reason</SortableTh>
+                <SortableTh sort={sort} k="lopDays" className="text-right px-4 py-2.5">LOP</SortableTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.previousPeriodBalance}</td>

@@ -12,6 +12,8 @@ import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import useFitToViewport from '../../hooks/useFitToViewport';
 import { EmployeeCell } from './TableReportPage';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
 const now = new Date();
@@ -44,6 +46,14 @@ const HEAD = 'px-4 py-2.5 whitespace-nowrap border-r border-slate-200 last:borde
 // The reference puts a banner row above the leaf headers so "Payable Day(s)"
 // straddles its three sub-columns, "Worked Day(s)" its three, and so on. The
 // identity block sits under a blank span of the same banner.
+const NUMERIC_KEYS = ['expectedPayableDays', 'payableWorked', 'payablePaidOff', 'payableTotal', 'expectedWorkingDays',
+  'workedPresent', 'workedOnDuty', 'workedTotal', 'paidLeave', 'paidHolidays', 'paidWeekend', 'paidOffTotal',
+  'unpaidLeave', 'unpaidAbsent', 'unpaidTotal'];
+const SORT_COLUMNS = {
+  employee: r => `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+  ...Object.fromEntries(NUMERIC_KEYS.map(k => [k, { get: r => r[k], type: 'number' }])),
+};
+
 const exportColumns = (simple, unit) => {
   const u = unit === 'hour' ? 'Hour(s)' : 'Day(s)';
   if (simple) {
@@ -105,6 +115,7 @@ export default function AttendancePayrollData() {
   // of a page you have to scroll six thousand pixels to reach.
   const gridRef = useRef(null);
   const gridHeight = useFitToViewport(gridRef, null, [filtersOpen, simple, unit, rows]);
+  const sort = useSortable(rows, { id: 'reports-attendance-payroll-data', columns: SORT_COLUMNS });
 
   const load = () => {
     setLoading(true);
@@ -188,14 +199,14 @@ export default function AttendancePayrollData() {
           <table className="w-full text-[14px] border-collapse">
             <thead className="bg-slate-50 text-[13px] text-slate-600 sticky top-0 z-20">
               <tr className="border-b border-slate-200">
-                <th className={`text-left ${HEAD}`}>Employee</th>
-                <th className={`text-center ${HEAD}`}>Payable {u}</th>
-                <th className={`text-center ${HEAD}`}>Expected Working {u}</th>
-                <th className={`text-center ${HEAD}`}>Worked {u}</th>
+                <SortableTh sort={sort} k="employee" className={`text-left ${HEAD}`}>Employee</SortableTh>
+                <SortableTh sort={sort} k="payableTotal" className={`text-center ${HEAD}`}>Payable {u}</SortableTh>
+                <SortableTh sort={sort} k="expectedWorkingDays" className={`text-center ${HEAD}`}>Expected Working {u}</SortableTh>
+                <SortableTh sort={sort} k="workedTotal" className={`text-center ${HEAD}`}>Worked {u}</SortableTh>
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id} className="border-b border-slate-200">
                   <td className={`${CELL} text-left`}><EmployeeCell row={row} /></td>
                   <td className={CELL}>{fmt(row.payableTotal, unit)}</td>
@@ -211,34 +222,34 @@ export default function AttendancePayrollData() {
           <table className="w-full text-[14px] border-collapse">
             <thead className="bg-slate-50 text-[13px] text-slate-600 sticky top-0 z-20">
               <tr className="border-b border-slate-200">
-                <th rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Employee</th>
+                <SortableTh sort={sort} k="employee" rowSpan={2} className={`text-left align-bottom ${HEAD}`}>Employee</SortableTh>
                 {/* Expected Payable is a Day-mode column in the reference; the
                     Hour view opens straight onto Payable Hours. */}
-                {unit !== 'hour' && <th rowSpan={2} className={`text-center align-bottom ${HEAD}`}>Expected Payable {u}</th>}
+                {unit !== 'hour' && <SortableTh sort={sort} k="expectedPayableDays" rowSpan={2} className={`text-center align-bottom ${HEAD}`}>Expected Payable {u}</SortableTh>}
                 <th colSpan={3} className={`text-center ${HEAD} border-b border-slate-200`}>Payable {u}</th>
-                <th rowSpan={2} className={`text-center align-bottom ${HEAD}`}>Expected Working {u}</th>
+                <SortableTh sort={sort} k="expectedWorkingDays" rowSpan={2} className={`text-center align-bottom ${HEAD}`}>Expected Working {u}</SortableTh>
                 <th colSpan={3} className={`text-center ${HEAD} border-b border-slate-200`}>Worked {u}</th>
                 <th colSpan={4} className={`text-center ${HEAD} border-b border-slate-200`}>Paid Off</th>
                 <th colSpan={3} className={`text-center ${HEAD} border-b border-slate-200`}>Unpaid Off</th>
               </tr>
               <tr className="border-b border-slate-200">
-                <th className={`text-center ${HEAD}`}>Worked {u}</th>
-                <th className={`text-center ${HEAD}`}>Paid Off</th>
-                <th className={`text-center ${HEAD}`}>Total</th>
-                <th className={`text-center ${HEAD}`}>Present</th>
-                <th className={`text-center ${HEAD}`}>On Duty</th>
-                <th className={`text-center ${HEAD}`}>Total</th>
-                <th className={`text-center ${HEAD}`}>Leave</th>
-                <th className={`text-center ${HEAD}`}>Holidays</th>
-                <th className={`text-center ${HEAD}`}>Weekend</th>
-                <th className={`text-center ${HEAD}`}>Total</th>
-                <th className={`text-center ${HEAD}`}>Leave</th>
-                <th className={`text-center ${HEAD}`}>Absent</th>
-                <th className={`text-center ${HEAD}`}>Total</th>
+                <SortableTh sort={sort} k="payableWorked" className={`text-center ${HEAD}`}>Worked {u}</SortableTh>
+                <SortableTh sort={sort} k="payablePaidOff" className={`text-center ${HEAD}`}>Paid Off</SortableTh>
+                <SortableTh sort={sort} k="payableTotal" className={`text-center ${HEAD}`}>Total</SortableTh>
+                <SortableTh sort={sort} k="workedPresent" className={`text-center ${HEAD}`}>Present</SortableTh>
+                <SortableTh sort={sort} k="workedOnDuty" className={`text-center ${HEAD}`}>On Duty</SortableTh>
+                <SortableTh sort={sort} k="workedTotal" className={`text-center ${HEAD}`}>Total</SortableTh>
+                <SortableTh sort={sort} k="paidLeave" className={`text-center ${HEAD}`}>Leave</SortableTh>
+                <SortableTh sort={sort} k="paidHolidays" className={`text-center ${HEAD}`}>Holidays</SortableTh>
+                <SortableTh sort={sort} k="paidWeekend" className={`text-center ${HEAD}`}>Weekend</SortableTh>
+                <SortableTh sort={sort} k="paidOffTotal" className={`text-center ${HEAD}`}>Total</SortableTh>
+                <SortableTh sort={sort} k="unpaidLeave" className={`text-center ${HEAD}`}>Leave</SortableTh>
+                <SortableTh sort={sort} k="unpaidAbsent" className={`text-center ${HEAD}`}>Absent</SortableTh>
+                <SortableTh sort={sort} k="unpaidTotal" className={`text-center ${HEAD}`}>Total</SortableTh>
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row._id} className="border-b border-slate-200">
                   <td className={`${CELL} text-left`}><EmployeeCell row={row} /></td>
                   {unit !== 'hour' && <td className={CELL}>{fmt(row.expectedPayableDays, unit)}</td>}

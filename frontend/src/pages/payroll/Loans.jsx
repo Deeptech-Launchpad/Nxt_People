@@ -9,6 +9,8 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Wallet, TrendingDown, CheckCircle2, IndianRupee, FileText, X } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 import { fmtINR, StatCard } from './_shared';
 
 export default function Loans() {
@@ -40,6 +42,18 @@ export default function Loans() {
     active:       s.active       + (l.status === 'active' ? 1 : 0),
     closed:       s.closed       + (l.status === 'closed' ? 1 : 0),
   }), { principal: 0, outstanding: 0, active: 0, closed: 0 });
+
+  const sort = useSortable(rows, {
+    id: 'payroll-loans',
+    columns: {
+      employee: { get: l => `${l.firstName || ''} ${l.lastName || ''}`.trim(), type: 'text' },
+      principal: { get: r => (r.principal == null ? null : Number(r.principal)), type: 'number' },
+      recovered: { get: r => (r.recovered == null ? null : Number(r.recovered)), type: 'number' },
+      outstanding: { get: r => (r.outstanding == null ? null : Number(r.outstanding)), type: 'number' },
+      monthlyRecovery: { get: r => (r.monthlyRecovery == null ? null : Number(r.monthlyRecovery)), type: 'number' },
+      status: { get: l => l.status, type: 'text' },
+    },
+  });
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-5">
@@ -92,17 +106,17 @@ export default function Loans() {
           <table className="w-full text-[15px]">
             <thead className="bg-slate-50">
               <tr className="text-[13px] uppercase tracking-wider text-slate-500">
-                <th className="text-left px-4 py-2.5">Employee</th>
-                <th className="text-right px-4 py-2.5">Principal</th>
-                <th className="text-right px-4 py-2.5">Recovered</th>
-                <th className="text-right px-4 py-2.5">Outstanding</th>
-                <th className="text-right px-4 py-2.5">Monthly EMI</th>
-                <th className="text-center px-4 py-2.5">Status</th>
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5">Employee</SortableTh>
+                <SortableTh sort={sort} k="principal" className="text-right px-4 py-2.5">Principal</SortableTh>
+                <SortableTh sort={sort} k="recovered" className="text-right px-4 py-2.5">Recovered</SortableTh>
+                <SortableTh sort={sort} k="outstanding" className="text-right px-4 py-2.5">Outstanding</SortableTh>
+                <SortableTh sort={sort} k="monthlyRecovery" className="text-right px-4 py-2.5">Monthly EMI</SortableTh>
+                <SortableTh sort={sort} k="status" className="text-center px-4 py-2.5">Status</SortableTh>
                 <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map(l => {
+              {sort.sorted.map(l => {
                 const pct = Number(l.principal) > 0 ? (Number(l.recovered) / Number(l.principal)) * 100 : 0;
                 return (
                   <tr key={l.id} className="hover:bg-slate-50">

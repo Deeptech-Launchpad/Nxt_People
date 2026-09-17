@@ -3,6 +3,8 @@ import { Search, Download, Filter, RefreshCw } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import BackButton from '../components/BackButton';
+import useSortable from '../components/table/useSortable';
+import SortableTh from '../components/table/SortableTh';
 
 /**
  * Daily Attendance — today-focused live snapshot for admin / manager.
@@ -73,6 +75,19 @@ export default function DailyAttendance() {
       if (!name.includes(q) && !(r.employeeId || '').toLowerCase().includes(q)) return false;
     }
     return true;
+  });
+
+  const PRESENCE_ORDER = ['in', 'out', 'yetToCheckIn'];
+  const sort = useSortable(filtered, {
+    id: 'daily-attendance',
+    columns: {
+      employee: { get: r => `${r.firstName || ''} ${r.lastName || ''}`.trim(), type: 'text' },
+      department: { get: r => r.department, type: 'text' },
+      checkIn: { get: r => r.att?.checkIn || null, type: 'date' },
+      checkOut: { get: r => r.att?.checkOut || null, type: 'date' },
+      hours: { get: r => (r.att?.workingHours ? Number(r.att.workingHours) : null), type: 'number' },
+      status: { get: r => PRESENCE_ORDER.indexOf(r.presence), type: 'number' },
+    },
   });
 
   /* ── counts ───────────────────────────────────────────────────────── */
@@ -236,8 +251,8 @@ export default function DailyAttendance() {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50">
-                  {['Employee', 'Department', 'Check In', 'Check Out', 'Hours', 'Status'].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                  {[['Employee', 'employee'], ['Department', 'department'], ['Check In', 'checkIn'], ['Check Out', 'checkOut'], ['Hours', 'hours'], ['Status', 'status']].map(([h, k]) => (
+                    <SortableTh key={h} sort={sort} k={k} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>
                   ))}
                 </tr>
               </thead>
@@ -248,7 +263,7 @@ export default function DailyAttendance() {
                       No employees match the current filters.
                     </td>
                   </tr>
-                ) : filtered.map((r) => {
+                ) : sort.sorted.map((r) => {
                   const att = r.att;
                   return (
                     <tr key={r._id} className="hover:bg-slate-50 transition-colors">

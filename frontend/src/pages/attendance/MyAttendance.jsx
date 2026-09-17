@@ -12,6 +12,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useAttendance } from '../../context/AttendanceContext';
 import { useWeekendRules } from '../../context/WeekendRulesContext';
 import toast from 'react-hot-toast';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 /* ── helpers ────────────────────────────────────────────────────────── */
 
@@ -728,6 +730,29 @@ export default function MyAttendance() {
     }
   }, [showRequestMenu]);
 
+  const istMinutes = (t) => (t ? (new Date(t).getTime() + 330 * 60000) % 86400000 : null);
+  const listSort = useSortable(week, {
+    id: 'my-attendance-list',
+    columns: {
+      date: { get: day => day, type: 'date' },
+      day: { get: day => day.getDay(), type: 'number' },
+      checkIn: { get: day => { const r = recordMap[isoDate(day)]; return istMinutes(r?.sessions?.[0]?.checkIn || r?.checkIn); }, type: 'number' },
+      checkOut: { get: day => { const r = recordMap[isoDate(day)]; return istMinutes(r?.sessions?.[r?.sessions?.length - 1]?.checkOut || r?.checkOut); }, type: 'number' },
+      hours: { get: day => recordMap[isoDate(day)]?.workingHours || null, type: 'number' },
+      status: {
+        get: day => {
+          const ds = isoDate(day);
+          const kind = dayInfo(day);
+          if (kind.holiday) return 'holiday';
+          if (kind.weekend) return 'weekend';
+          if (ds > todayStr || (!recordMap[ds] && !isLoaded(ds))) return null;
+          return recordMap[ds]?.status || 'absent';
+        },
+        type: 'text',
+      },
+    },
+  });
+
   /* ── shift info ── */
   const shift = user?.shift;
   const shiftLabel = shift?.name
@@ -1136,15 +1161,15 @@ export default function MyAttendance() {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
-                {['Date', 'Day', 'Check In', 'Check Out', 'Hours', 'Status'].map(h => (
-                  <th key={h} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                {[['Date', 'date'], ['Day', 'day'], ['Check In', 'checkIn'], ['Check Out', 'checkOut'], ['Hours', 'hours'], ['Status', 'status']].map(([h, k]) => (
+                  <SortableTh key={h} sort={listSort} k={k} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>
                 ))}
                 {/* The action column only exists while the action does. */}
                 {regularizationOn && <th className="px-5 py-3 w-[60px]" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {week.map(day => {
+              {listSort.sorted.map(day => {
                 const ds = isoDate(day);
                 const r = recordMap[ds];
                 const kind = dayInfo(day);

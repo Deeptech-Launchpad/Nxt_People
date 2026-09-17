@@ -5,6 +5,8 @@ import api from '../../../utils/api';
 import { Card, Note, Toggle, selectClass, Spinner } from '../configKit';
 import ApprovalEditor from './ApprovalEditor';
 import { roleLabel } from '../../../utils/roles';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 // Approvals — who a request goes to, and in what order.
 //
@@ -125,6 +127,18 @@ export default function ApprovalRules({ service = null }) {
       .catch(err => toast.error(err.response?.data?.message || 'Could not duplicate'));
   };
 
+  const sort = useSortable(null, {
+    id: 'settings-attendance-approval-rules',
+    columns: {
+      name: { get: r => r.name, type: 'text' },
+      form: { get: r => r.formLabel, type: 'text' },
+      template: { get: r => r.messages?.templateName, type: 'text' },
+      followUp: { get: r => (r.followUp?.enabled ? r.followUp.days : null), type: 'number' },
+      order: { get: r => r.sortOrder, type: 'number' },
+      status: { get: r => (r.isActive ? 0 : 1), type: 'number' },
+    },
+  });
+
   if (rules === null || !meta) return <Spinner />;
 
   // A form can carry several approvals, so filtering by form is how an admin
@@ -193,13 +207,14 @@ export default function ApprovalRules({ service = null }) {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                {['Approval name', 'Form name', 'Template name', 'Chain', 'Follow-up', 'Order', 'Status', ''].map(h => (
-                  <th key={h} className="text-left font-medium text-slate-600 px-4 py-2.5 whitespace-nowrap">{h}</th>
+                {[['Approval name', 'name'], ['Form name', 'form'], ['Template name', 'template'], ['Chain', null],
+                  ['Follow-up', 'followUp'], ['Order', 'order'], ['Status', 'status'], ['', null]].map(([h, k]) => (
+                  <SortableTh key={h} sort={sort} k={k} className="text-left font-medium text-slate-600 px-4 py-2.5 whitespace-nowrap">{h}</SortableTh>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {visible.map(rule => (
+              {sort.apply(visible).map(rule => (
                 <tr key={rule.id} className="border-t border-slate-100">
                   <td className="px-4 py-3 text-slate-800">{rule.name}</td>
                   <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{rule.formLabel}</td>

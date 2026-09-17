@@ -4,6 +4,8 @@ import { ArrowLeft, Plus, Calendar, DoorOpen, Eye, Pencil, X, AlertTriangle } fr
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 /* ── Operations → Conference ──────────────────────────────────────────────
  *  Book a conference hall (Floor 1 / Floor 2) for a date + time window.
@@ -331,6 +333,19 @@ export default function Conference() {
 
   useEffect(() => { load(); }, [load]);
 
+  const sort = useSortable(rows, {
+    id: 'conference-bookings',
+    columns: {
+      date: { get: b => b.bookingDate, type: 'date' },
+      start: { get: b => b.startTime, type: 'text' },
+      end: { get: b => b.endTime, type: 'text' },
+      bookedBy: b => b.bookedBy,
+      hall: 'hall',
+      title: 'title',
+      status: { get: b => Object.keys(STATUS_PILL).indexOf(computeStatus(b)), type: 'number' },
+    },
+  });
+
   const cancelBooking = async (id) => {
     if (!confirm('Cancel this meeting? The slot will be freed and the record will remain in history.')) return;
     try {
@@ -378,13 +393,13 @@ export default function Conference() {
         <table className="w-full text-left">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-[13px] font-semibold text-slate-500 uppercase tracking-wider">
-              <th className="px-5 py-3">Date</th>
-              <th className="px-5 py-3">Start</th>
-              <th className="px-5 py-3">End</th>
-              <th className="px-5 py-3">Booking Details</th>
-              <th className="px-5 py-3">Conference Hall</th>
-              <th className="px-5 py-3">Meeting Purpose</th>
-              <th className="px-5 py-3">Status</th>
+              <SortableTh sort={sort} k="date" className="px-5 py-3">Date</SortableTh>
+              <SortableTh sort={sort} k="start" className="px-5 py-3">Start</SortableTh>
+              <SortableTh sort={sort} k="end" className="px-5 py-3">End</SortableTh>
+              <SortableTh sort={sort} k="bookedBy" className="px-5 py-3">Booking Details</SortableTh>
+              <SortableTh sort={sort} k="hall" className="px-5 py-3">Conference Hall</SortableTh>
+              <SortableTh sort={sort} k="title" className="px-5 py-3">Meeting Purpose</SortableTh>
+              <SortableTh sort={sort} k="status" className="px-5 py-3">Status</SortableTh>
               <th className="px-5 py-3 text-right">Actions</th>
             </tr>
           </thead>
@@ -397,7 +412,7 @@ export default function Conference() {
                 <p className="text-[15px] font-semibold text-slate-400">No bookings for {fmtDate(date)}</p>
                 <p className="text-[14px] text-slate-300 mt-1">Click "Book Conference Hall" to schedule one</p>
               </td></tr>
-            ) : rows.map(b => {
+            ) : sort.sorted.map(b => {
               const dynStatus = computeStatus(b);
               const pill = STATUS_PILL[dynStatus] || STATUS_PILL.booked;
               return (

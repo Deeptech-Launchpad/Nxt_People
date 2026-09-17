@@ -5,6 +5,8 @@ import api from '../../../utils/api';
 import useEmployeeList from '../leavetracker/useEmployeeList';
 import EmployeePicker from '../leavetracker/EmployeePicker';
 import { ymd } from './shiftGrid';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* ── Operations → Shift → Shift Group ─────────────────────────────────────
  *  A named bucket of people with an effective period. The reference uses it
@@ -57,6 +59,15 @@ export default function OpsShiftGroups() {
     }
     return map;
   }, [members]);
+
+  const sort = useSortable([], {
+    id: 'shift-group-members',
+    columns: {
+      employee: 'employeeName',
+      department: 'department',
+      period: { get: m => m.effectiveFrom, type: 'date' },
+    },
+  });
 
   const removeMember = async (id) => {
     try {
@@ -127,14 +138,14 @@ export default function OpsShiftGroups() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-y border-slate-200">
-                      <th className="text-left px-4 py-2 text-[12px] font-medium text-slate-500">Employee</th>
-                      <th className="text-left px-4 py-2 text-[12px] font-medium text-slate-500">Department</th>
-                      <th className="text-left px-4 py-2 text-[12px] font-medium text-slate-500">Effective period</th>
+                      <SortableTh sort={sort} k="employee" className="text-left px-4 py-2 text-[12px] font-medium text-slate-500">Employee</SortableTh>
+                      <SortableTh sort={sort} k="department" className="text-left px-4 py-2 text-[12px] font-medium text-slate-500">Department</SortableTh>
+                      <SortableTh sort={sort} k="period" className="text-left px-4 py-2 text-[12px] font-medium text-slate-500">Effective period</SortableTh>
                       <th className="w-12" />
                     </tr>
                   </thead>
                   <tbody>
-                    {byGroup.get(g._id).map(m => (
+                    {sort.apply(byGroup.get(g._id)).map(m => (
                       <tr key={m._id} className="border-b border-slate-100">
                         <td className="px-4 py-2.5">
                           <span className="text-[13px] text-slate-500">{m.employeeCode}</span>{' '}

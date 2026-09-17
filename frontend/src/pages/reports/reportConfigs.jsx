@@ -22,11 +22,11 @@ export const encashmentConfig = {
   columns: [
     { key: 'employee', header: 'Employee' },
     { key: 'leaveType', header: 'Type', format: v => <span className="capitalize">{v}</span> },
-    { key: 'days', header: 'Days', align: 'right' },
+    { key: 'days', header: 'Days', align: 'right', sortType: 'number' },
     { key: 'status', header: 'Status', format: v => (
         <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full capitalize ${v === 'approved' ? 'bg-emerald-100 text-emerald-700' : v === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{v}</span>
       ) },
-    { key: 'createdAt', header: 'Requested', format: v => new Date(v).toLocaleDateString('en-IN') },
+    { key: 'createdAt', header: 'Requested', sortType: 'date', format: v => new Date(v).toLocaleDateString('en-IN') },
   ],
 };
 

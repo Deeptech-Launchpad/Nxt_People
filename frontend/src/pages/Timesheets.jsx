@@ -3,6 +3,8 @@ import { Plus, X, Send, ChevronDown } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import BackButton from '../components/BackButton';
+import useSortable from '../components/table/useSortable';
+import SortableTh from '../components/table/SortableTh';
 
 const STATUS_STYLE = { draft:'bg-slate-100 text-slate-600', submitted:'bg-amber-100 text-amber-700', approved:'bg-emerald-100 text-emerald-700', rejected:'bg-red-100 text-red-700' };
 
@@ -38,6 +40,17 @@ export default function Timesheets() {
   };
 
   useEffect(load, []);
+
+  const entrySort = useSortable([], {
+    id: 'timesheet-entries',
+    columns: {
+      Date: { get: e => e.date, type: 'date' },
+      Project: 'project',
+      Task: 'task',
+      Hours: { get: e => parseFloat(e.hours), type: 'number' },
+      Notes: 'description',
+    },
+  });
 
   const handleSave = async (submit = false) => {
     setSaving(true);
@@ -112,9 +125,9 @@ export default function Timesheets() {
                 {expandedId === ts._id && (
                   <div className="bg-slate-50 px-5 pb-4 border-t border-slate-100">
                     <table className="w-full mt-3">
-                      <thead><tr>{['Date','Project','Task','Hours','Notes'].map(h=><th key={h} className="text-left text-sm font-semibold text-slate-500 py-2 pr-4">{h}</th>)}</tr></thead>
+                      <thead><tr>{['Date','Project','Task','Hours','Notes'].map(h=><SortableTh key={h} sort={entrySort} k={h} className="text-left text-sm font-semibold text-slate-500 py-2 pr-4">{h}</SortableTh>)}</tr></thead>
                       <tbody>
-                        {ts.entries?.map((e,i) => (
+                        {entrySort.apply(ts.entries).map((e,i) => (
                           <tr key={i} className="border-t border-slate-100">
                             <td className="py-2 pr-4 text-base text-slate-600">{new Date(e.date).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</td>
                             <td className="py-2 pr-4 text-base text-slate-700 font-medium">{e.project}</td>
