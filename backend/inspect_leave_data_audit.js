@@ -1344,12 +1344,30 @@ function facetOf(header) {
   console.log(`  ${lpad(bySev('low'), 6)} low     a missing optional field, or expected migration residue`);
   console.log(`  ${lpad(findings.length, 6)} total findings\n`);
 
-  const affected = new Set(findings.filter(f => f.code).map(f => f.code));
-  const affectedHigh = new Set(findings.filter(f => f.code && f.severity === 'high').map(f => f.code));
+  /* "N of 57 active employee(s)" used to count every code any finding carried,
+   * and E5/E6 deliberately report people who are NOT in the active set —
+   * leavers, deleted rows, an employee row that no longer exists at all. So the
+   * numerator counted people the denominator excluded and could read "81 of 57".
+   * The active line now counts only active codes; the rest are reported on
+   * their own line, the way org-wide findings already are. */
+  const activeCodes = new Set(active.map(p => p.code));
+  const withCode = findings.filter(f => f.code);
+  const affected = new Set(withCode.filter(f => activeCodes.has(f.code)).map(f => f.code));
+  const affectedHigh = new Set(withCode
+    .filter(f => activeCodes.has(f.code) && f.severity === 'high').map(f => f.code));
   console.log(`  ${lpad(affected.size, 6)} of ${active.length} active employee(s) have at least one finding`);
   console.log(`  ${lpad(affectedHigh.size, 6)} of ${active.length} have at least one HIGH finding`);
   if (affectedHigh.size) {
     console.log(`\n  With a high finding: ${[...affectedHigh].sort().join(' ')}`);
+  }
+  const leaverCodes = new Set(withCode.filter(f => !activeCodes.has(f.code)).map(f => f.code));
+  const leaverFindings = withCode.filter(f => !activeCodes.has(f.code)).length;
+  if (leaverFindings) {
+    console.log(`\n  ${lpad(leaverFindings, 6)} finding(s) belong to ${leaverCodes.size} person/people who are NOT in`);
+    console.log('         the active set — leavers, deleted rows, or an employee row that no longer');
+    console.log('         exists. E5 and E6 exist to find exactly these, so they are counted here');
+    console.log('         rather than against the active headcount above.');
+    console.log(`         ${[...leaverCodes].sort().join(' ')}`);
   }
   const orgWide = findings.filter(f => !f.code).length;
   if (orgWide) console.log(`\n  ${orgWide} finding(s) are org-wide rather than about one person.`);
