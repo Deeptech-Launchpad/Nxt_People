@@ -19,6 +19,8 @@ import {
 import CoverImageDialog, { coverStyle, useCanChangeCover, loadCovers } from '../components/CoverImagePicker';
 
 import api from '../utils/api';
+import useSortable from '../components/table/useSortable';
+import SortableTh from '../components/table/SortableTh';
 import RegularizeModal from '../components/requests/RegularizeModal';
 import OnDutyModal from '../components/requests/OnDutyModal';
 import ApplyLeaveModal from '../components/requests/ApplyLeaveModal';
@@ -560,6 +562,16 @@ export default function Dashboard() {
     const [fyList, setFyList] = useState([]);
     const [payslipsLoading, setPayslipsLoading] = useState(false);
     const [payslipDownloading, setPayslipDownloading] = useState(null);
+    const payslipSort = useSortable(payslips, {
+      id: 'dashboard-payslips',
+      columns: {
+        month: { get: p => (Number(p.year) || 0) * 100 + (Number(p.month) || 0), type: 'number' },
+        grossPay: { get: p => p.grossPay, type: 'number' },
+        reimbursements: { get: p => p.reimbursements, type: 'number' },
+        deductions: { get: p => p.deductions, type: 'number' },
+        takeHome: { get: p => p.takeHome, type: 'number' },
+      },
+    });
 
     // The PDF endpoint is authenticated, so it cannot be a plain href — it has
     // to come back as a blob through the api client that carries the token.
@@ -2164,13 +2176,13 @@ export default function Dashboard() {
                         <table className="w-full">
                           <thead>
                             <tr className="border-b border-slate-100">
-                              {['Month','Gross Pay','Reimbursements','Deductions','Take Home','Payslips','Tax Worksheet'].map(h => (
-                                <th key={h} className={`px-5 py-3 text-[13px] font-semibold text-slate-500 uppercase tracking-wider ${['Gross Pay','Reimbursements','Deductions','Take Home'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>
+                              {[['month','Month'],['grossPay','Gross Pay'],['reimbursements','Reimbursements'],['deductions','Deductions'],['takeHome','Take Home'],[null,'Payslips'],[null,'Tax Worksheet']].map(([k, h]) => (
+                                <SortableTh key={h} sort={k ? payslipSort : null} k={k} className={`px-5 py-3 text-[13px] font-semibold text-slate-500 uppercase tracking-wider ${['Gross Pay','Reimbursements','Deductions','Take Home'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</SortableTh>
                               ))}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-50">
-                            {payslips.map(p => (
+                            {payslipSort.sorted.map(p => (
                               <tr key={p._id} className="hover:bg-slate-50 transition-colors">
                                 <td className="px-5 py-3.5">
                                   <button className="text-[15px] font-semibold text-[#1a73e8] hover:underline">

@@ -169,6 +169,7 @@ export default function DataListView({
         ref={el => { if (isFrozen) headRefs.current[i] = el; }}
         className={`px-4 py-2.5 font-medium text-left whitespace-nowrap bg-slate-50 sticky top-0
           ${isFrozen ? 'z-30' : 'z-20'}`}
+        aria-sort={c.sortable === false ? undefined : active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
         style={{ width: w, minWidth: w, maxWidth: w,
                  ...(isFrozen ? { left: offsets[i] ?? 0 } : {}) }}>
         {c.sortable === false ? c.label : (

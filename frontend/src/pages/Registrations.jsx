@@ -3,6 +3,8 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { Clock, CheckCircle2, XCircle, User, Mail, Phone, Briefcase, Building2, Layers, BadgeCheck, ChevronDown, Search, Filter, FileText, Eye, Download } from 'lucide-react';
 import AppAccessPicker from '../components/AppAccessPicker';
+import useSortable from '../components/table/useSortable';
+import SortableTh from '../components/table/SortableTh';
 
 const STATUS_TABS = [
   { key: 'pending', label: 'Pending', color: 'text-amber-400', dot: 'bg-amber-400' },
@@ -473,6 +475,18 @@ export default function Registrations() {
     `${r.firstName} ${r.lastName} ${r.email} ${r.company} ${r.division}`.toLowerCase().includes(search.toLowerCase())
   );
 
+  const sort = useSortable(filtered, {
+    id: 'registrations',
+    columns: {
+      name: { get: r => `${r.firstName || ''} ${r.lastName || ''}`.trim(), type: 'text' },
+      email: { get: r => r.email, type: 'text' },
+      company: { get: r => [r.company, r.division].filter(Boolean).join(' '), type: 'text' },
+      designation: { get: r => r.designation, type: 'text' },
+      status: { get: r => r.registrationStatus, type: 'text' },
+      submitted: { get: r => r.createdAt, type: 'date' },
+    },
+  });
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
@@ -549,13 +563,13 @@ export default function Registrations() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
-                {['Name', 'Email', 'Company / Division', 'Designation', 'Status', 'Submitted', 'Actions'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
+                {[['name', 'Name'], ['email', 'Email'], ['company', 'Company / Division'], ['designation', 'Designation'], ['status', 'Status'], ['submitted', 'Submitted'], [null, 'Actions']].map(([k, h]) => (
+                  <SortableTh key={h} sort={k ? sort : null} k={k} className="px-4 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wide">{h}</SortableTh>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map(r => (
+              {sort.sorted.map(r => (
                 <tr key={r._id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">

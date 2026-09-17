@@ -3,6 +3,8 @@ import toast from 'react-hot-toast';
 import { Plus, Trash2, X } from 'lucide-react';
 import api from '../../../utils/api';
 import { Card, Note, Spinner } from '../configKit';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 // Email Templates — the wording of the mail the system sends.
 //
@@ -52,6 +54,14 @@ export default function EmailTemplates({ service = 'attendance' }) {
       .catch(err => toast.error(err.response?.data?.message || 'Could not delete'));
   };
 
+  const sort = useSortable(rows || [], {
+    id: `email-templates-${service}`,
+    columns: {
+      name: { get: r => r.name, type: 'text' },
+      subject: { get: r => r.subject, type: 'text' },
+    },
+  });
+
   if (rows === null) return <Spinner />;
 
   const input = 'w-full border border-slate-300 rounded-md px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-500';
@@ -78,13 +88,13 @@ export default function EmailTemplates({ service = 'attendance' }) {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Name</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Subject</th>
+                <SortableTh sort={sort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Name</SortableTh>
+                <SortableTh sort={sort} k="subject" className="text-left font-medium text-slate-600 px-6 py-2.5">Subject</SortableTh>
                 <th className="w-24" />
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => (
+              {sort.sorted.map(row => (
                 <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50/60">
                   <td className="px-6 py-3 text-slate-800">
                     {row.name}

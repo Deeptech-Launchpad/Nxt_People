@@ -3,6 +3,8 @@ import { X } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import LeaveExportModal from './LeaveExportModal';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 
 const COLUMNS = [
   { key: 'department', header: 'Department' },
@@ -27,6 +29,16 @@ export default function SliceDrilldown({ by, value, label, onClose }) {
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load employees'))
       .finally(() => setLoading(false));
   }, [by, value]);
+
+  const sort = useSortable(rows, {
+    id: 'report-slice-drilldown',
+    columns: {
+      employee: { get: r => `${r.firstName || ''} ${r.lastName || ''}`.trim(), type: 'text' },
+      department: { get: r => r.department, type: 'text' },
+      designation: { get: r => r.designation, type: 'text' },
+      employmentType: { get: r => r.employmentType, type: 'text' },
+    },
+  });
 
   if (!value) return null;
 
@@ -59,12 +71,12 @@ export default function SliceDrilldown({ by, value, label, onClose }) {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-100 text-[12px] font-semibold text-slate-600">
               <tr>
-                <th className="text-left px-4 py-2.5">Employee</th>
-                {COLUMNS.map(c => <th key={c.key} className="text-left px-4 py-2.5">{c.header}</th>)}
+                <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5">Employee</SortableTh>
+                {COLUMNS.map(c => <SortableTh key={c.key} sort={sort} k={c.key} className="text-left px-4 py-2.5">{c.header}</SortableTh>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map(r => (
+              {sort.sorted.map(r => (
                 <tr key={r._id} className="hover:bg-slate-50">
                   <td className="px-4 py-2.5">
                     <p className="font-medium text-slate-800">

@@ -4,6 +4,8 @@ import api from '../../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../../context/AuthContext';
 import { isFullAccess } from '../../../utils/roles';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* ── The day board ──────────────────────────────────────────────────────────
  *  One row per person per shift. Two shifts in a day means two rows for the
@@ -78,6 +80,15 @@ export default function MarkDay() {
   const rows = data?.rows || [];
   const unmarked = data?.unmarkedScheduled || 0;
 
+  const sort = useSortable(rows, {
+    id: 'manual-attendance-day',
+    columns: {
+      employee: { get: r => r.name, type: 'text' },
+      shift: { get: r => r.shiftName, type: 'text' },
+      status: { get: r => (!r.scheduled ? 'Not scheduled' : r.state === 'present' ? 'Present' : r.state === 'absent' ? 'Absent' : 'Presumed present'), type: 'text' },
+    },
+  });
+
   return (
     <div className="space-y-4">
       {/* Date navigator. Yesterday is one click away because that is when most
@@ -147,9 +158,9 @@ export default function MarkDay() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                <th className="text-left font-medium text-slate-600 px-5 py-2.5">Employee</th>
-                <th className="text-left font-medium text-slate-600 px-5 py-2.5">Shift</th>
-                <th className="text-left font-medium text-slate-600 px-5 py-2.5">Status</th>
+                <SortableTh sort={sort} k="employee" className="text-left font-medium text-slate-600 px-5 py-2.5">Employee</SortableTh>
+                <SortableTh sort={sort} k="shift" className="text-left font-medium text-slate-600 px-5 py-2.5">Shift</SortableTh>
+                <SortableTh sort={sort} k="status" className="text-left font-medium text-slate-600 px-5 py-2.5">Status</SortableTh>
                 <th className="text-left font-medium text-slate-600 px-5 py-2.5 w-[230px]">Mark</th>
               </tr>
             </thead>
@@ -166,7 +177,7 @@ export default function MarkDay() {
                 </td></tr>
               )}
 
-              {!loading && rows.map(r => {
+              {!loading && sort.sorted.map(r => {
                 const key = `${r.employeeId}|${r.shiftId}`;
                 const rowBusy = busy === key || busy === 'all';
                 return (

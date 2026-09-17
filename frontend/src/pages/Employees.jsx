@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { isFullAccess, roleLabel } from '../utils/roles';
 import AppAccessPicker from '../components/AppAccessPicker';
+import SortableTh from '../components/table/SortableTh';
 
 // Options will be fetched dynamically from the database
 
@@ -162,6 +163,16 @@ export default function Employees() {
   const [approvingAuthorities, setApprovingAuthorities] = useState([]);
   const [limit, setLimit] = useState(10);
   const [loadError, setLoadError] = useState(null);
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+  const sort = {
+    sortKey, sortDir,
+    toggle: (k) => {
+      if (k === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+      else { setSortKey(k); setSortDir('asc'); }
+      setPage(1);
+    },
+  };
 
   const load = () => {
     setLoading(true);
@@ -172,6 +183,7 @@ export default function Employees() {
       ...(roleFilter   && { role:        roleFilter }),
       ...(desigFilter  && { designation: desigFilter }),
       ...(statusFilter && { status:      statusFilter }),
+      ...(sortKey      && { sortBy: sortKey, sortDir }),
     });
     api.get(`/employees?${params}`)
       .then(r => { setEmployees(r.data.data); setTotal(r.data.total); setLoadError(null); })
@@ -209,7 +221,7 @@ export default function Employees() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
-  useEffect(load, [page, limit, debouncedSearch, deptFilter, roleFilter, desigFilter, statusFilter]);
+  useEffect(load, [page, limit, debouncedSearch, deptFilter, roleFilter, desigFilter, statusFilter, sortKey, sortDir]);
 
   const openCreate = () => {
     setEditEmp(null);
@@ -535,7 +547,7 @@ export default function Employees() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead><tr className="bg-slate-50">{['Employee','ID','Department','Role','Designation', statusFilter === 'inactive' ? 'Left On' : 'Joining Date','Actions'].map(h=><th key={h} className="px-5 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
+                <thead><tr className="bg-slate-50">{[['firstName','Employee'],['employeeId','ID'],['department','Department'],['role','Role'],['designation','Designation'], statusFilter === 'inactive' ? ['exitDate','Left On'] : [null,'Joining Date'],[null,'Actions']].map(([k,h])=><SortableTh key={h} sort={k ? sort : null} k={k} className="px-5 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>)}</tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {employees.length === 0 ? <tr><td colSpan={7} className="text-center py-12">
                     {loadError

@@ -3,6 +3,8 @@ import toast from 'react-hot-toast';
 import { Plus, Trash2, X, Play, History } from 'lucide-react';
 import api from '../../../utils/api';
 import { Spinner } from '../configKit';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 // Shift Rotation — "to automatically change the assigned shift for employees
 // based on the specified frequency", in the reference's words.
@@ -274,6 +276,26 @@ export default function ShiftRotation() {
     api.get('/access/assignable-users').then(r => setEmployees(r.data.data || [])).catch(() => {});
   }, [load]);
 
+  const sort = useSortable(rotations || [], {
+    id: 'shift-rotations',
+    columns: {
+      name: { get: r => r.name, type: 'text' },
+      frequency: { get: r => (r.frequency === 'weekly' ? `0 ${r.dayOfWeek} ${r.runAt}` : `1 ${String(r.dayOfMonth).padStart(2, '0')} ${r.runAt}`), type: 'text' },
+      steps: { get: r => (r.steps || []).map(s => `${s.fromName} → ${s.toName}`).join(', '), type: 'text' },
+      nextRun: 'nextRun',
+      status: { get: r => (r.isActive ? 1 : 0), type: 'number' },
+    },
+  });
+  const runSort = useSortable(runs || [], {
+    id: 'shift-rotation-runs',
+    initial: { key: 'ranAt', dir: 'desc' },
+    columns: {
+      ranAt: { get: r => r.ranAt, type: 'date' },
+      employee: { get: r => r.employeeName, type: 'text' },
+      change: { get: r => (r.fromShift && r.toShift ? `${r.fromShift} → ${r.toShift}` : r.message), type: 'text' },
+    },
+  });
+
   if (rotations === null) return <Spinner />;
 
   const remove = r => {
@@ -326,16 +348,16 @@ export default function ShiftRotation() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Scheduler name</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Frequency</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Rotations</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Next change</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Status</th>
+                <SortableTh sort={sort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Scheduler name</SortableTh>
+                <SortableTh sort={sort} k="frequency" className="text-left font-medium text-slate-600 px-6 py-2.5">Frequency</SortableTh>
+                <SortableTh sort={sort} k="steps" className="text-left font-medium text-slate-600 px-6 py-2.5">Rotations</SortableTh>
+                <SortableTh sort={sort} k="nextRun" className="text-left font-medium text-slate-600 px-6 py-2.5">Next change</SortableTh>
+                <SortableTh sort={sort} k="status" className="text-left font-medium text-slate-600 px-6 py-2.5">Status</SortableTh>
                 <th className="w-28" />
               </tr>
             </thead>
             <tbody>
-              {rotations.map(r => (
+              {sort.sorted.map(r => (
                 <tr key={r.id} className="group border-t border-slate-100 hover:bg-slate-50/60">
                   <td className="px-6 py-3">
                     <button onClick={() => setEditing({ ...r, criteria: r.criteria || [], employeeIds: r.employeeIds || [], steps: r.steps || [] })}
@@ -391,13 +413,13 @@ export default function ShiftRotation() {
                 <table className="w-full text-[14px]">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="text-left font-medium text-slate-600 px-6 py-2.5">When</th>
-                      <th className="text-left font-medium text-slate-600 px-6 py-2.5">Employee</th>
-                      <th className="text-left font-medium text-slate-600 px-6 py-2.5">Change</th>
+                      <SortableTh sort={runSort} k="ranAt" className="text-left font-medium text-slate-600 px-6 py-2.5">When</SortableTh>
+                      <SortableTh sort={runSort} k="employee" className="text-left font-medium text-slate-600 px-6 py-2.5">Employee</SortableTh>
+                      <SortableTh sort={runSort} k="change" className="text-left font-medium text-slate-600 px-6 py-2.5">Change</SortableTh>
                     </tr>
                   </thead>
                   <tbody>
-                    {runs.map(r => (
+                    {runSort.sorted.map(r => (
                       <tr key={r.id} className="border-t border-slate-100">
                         <td className="px-6 py-2.5 text-slate-600">{new Date(r.ranAt).toLocaleString('en-GB')}</td>
                         <td className="px-6 py-2.5 text-slate-700">{r.employeeName || '—'}</td>

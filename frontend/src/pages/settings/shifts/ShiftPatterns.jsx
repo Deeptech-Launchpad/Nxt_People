@@ -3,6 +3,8 @@ import toast from 'react-hot-toast';
 import { Plus, Trash2, X, ArrowLeft, Filter, CalendarRange } from 'lucide-react';
 import api from '../../../utils/api';
 import { Spinner } from '../configKit';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 // Shift Patterns — a rotation, expressed as a grid of day to shift.
 //
@@ -275,6 +277,17 @@ export default function ShiftPatterns() {
     api.get('/shift-patterns/gallery').then(r => setGallery(r.data.data || [])).catch(() => {});
   }, []);
 
+  const sort = useSortable(patterns || [], {
+    id: 'shift-patterns',
+    columns: {
+      name: { get: p => p.name, type: 'text' },
+      type: { get: p => p.patternType, type: 'text' },
+      cycle: { get: p => (p.cycleMode === 'calendar_weeks' ? 0 : Number(p.cycleWeeks) || 0), type: 'number' },
+      assigned: { get: p => p.assignedCount, type: 'number' },
+      rosteredAhead: { get: p => p.rosteredAhead, type: 'number' },
+    },
+  });
+
   if (patterns === null) return <Spinner />;
 
   const remove = p => {
@@ -350,16 +363,16 @@ export default function ShiftPatterns() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Pattern name</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Type</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Cycle</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Assigned</th>
-                <th className="text-left font-medium text-slate-600 px-6 py-2.5">Rostered ahead</th>
+                <SortableTh sort={sort} k="name" className="text-left font-medium text-slate-600 px-6 py-2.5">Pattern name</SortableTh>
+                <SortableTh sort={sort} k="type" className="text-left font-medium text-slate-600 px-6 py-2.5">Type</SortableTh>
+                <SortableTh sort={sort} k="cycle" className="text-left font-medium text-slate-600 px-6 py-2.5">Cycle</SortableTh>
+                <SortableTh sort={sort} k="assigned" className="text-left font-medium text-slate-600 px-6 py-2.5">Assigned</SortableTh>
+                <SortableTh sort={sort} k="rosteredAhead" className="text-left font-medium text-slate-600 px-6 py-2.5">Rostered ahead</SortableTh>
                 <th className="w-16" />
               </tr>
             </thead>
             <tbody>
-              {patterns.map(p => (
+              {sort.sorted.map(p => (
                 <tr key={p.id} className="group border-t border-slate-100 hover:bg-slate-50/60">
                   <td className="px-6 py-3">
                     <button

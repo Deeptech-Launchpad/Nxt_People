@@ -3,6 +3,8 @@ import toast from 'react-hot-toast';
 import { Plus, Trash2, Search } from 'lucide-react';
 import api from '../../../utils/api';
 import useEmployeeList, { labelOf } from '../leavetracker/useEmployeeList';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* ── Biometric ID mapping ─────────────────────────────────────────────────
  *  Which employee a biometric device's numeric user ID belongs to, matching
@@ -38,6 +40,15 @@ export default function OpsBiometricMapping() {
   const matches = empQuery.trim()
     ? people.filter(p => !mappedIds.has(p._id) && labelOf(p).toLowerCase().includes(empQuery.trim().toLowerCase())).slice(0, 8)
     : [];
+
+  const sort = useSortable(rows, {
+    id: 'ops-biometric-mapping',
+    columns: {
+      employee: r => `${r.firstName || ''} ${r.lastName || ''}`.trim(),
+      department: 'department',
+      biometricId: 'biometricId',
+    },
+  });
 
   const openAdd = () => { setAdding(true); setPicked(null); setEmpQuery(''); setBiometricId(''); };
 
@@ -88,14 +99,14 @@ export default function OpsBiometricMapping() {
           <table className="w-full text-[15px] min-w-max">
             <thead className="bg-slate-50">
               <tr className="text-left text-slate-500 text-sm">
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Department</th>
-                <th className="px-4 py-3 font-medium">Biometric ID</th>
+                <SortableTh sort={sort} k="employee" className="px-4 py-3 font-medium">Employee</SortableTh>
+                <SortableTh sort={sort} k="department" className="px-4 py-3 font-medium">Department</SortableTh>
+                <SortableTh sort={sort} k="biometricId" className="px-4 py-3 font-medium">Biometric ID</SortableTh>
                 <th className="px-4 py-3 font-medium w-16"></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
+              {sort.sorted.map(r => (
                 <tr key={r._id} className="border-t border-slate-50 hover:bg-slate-50/60 group">
                   <td className="px-4 py-3 text-slate-700">
                     {r.employeeCode ? `${r.employeeCode} — ` : ''}{r.firstName} {r.lastName || ''}

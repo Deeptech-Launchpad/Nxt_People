@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
 import ApplyLeaveModal from '../../components/ApplyLeaveModal';
 import { useAuth } from '../../context/AuthContext';
+import SortableTh from '../../components/table/SortableTh';
 
 /* ── Admin Leave Tracker (Super Admin / HR) ───────────────────────────────
  *  Zoho-People-style listing of ALL org leave requests. Read-only over the
@@ -59,6 +60,16 @@ export default function LeaveTrackerAdmin() {
   const [employeeId, setEmployeeId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [sortKey, setSortKey] = useState('startDate');
+  const [sortDir, setSortDir] = useState('desc');
+  const sort = {
+    sortKey, sortDir,
+    toggle: (k) => {
+      if (k === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+      else { setSortKey(k); setSortDir('asc'); }
+      setPage(1);
+    },
+  };
 
   const [directory, setDirectory] = useState([]);          // for employee + department filters
   const [detail, setDetail] = useState(null);              // selected leave for modal
@@ -105,11 +116,13 @@ export default function LeaveTrackerAdmin() {
     if (endDate) params.set('endDate', endDate);
     params.set('page', page);
     params.set('limit', limit);
+    params.set('sortBy', sortKey);
+    params.set('sortDir', sortDir);
     api.get(`/leaves?${params.toString()}`)
       .then(r => { setRows(r.data.data || []); setTotal(r.data.total || 0); })
       .catch(() => toast.error('Failed to load leave requests'))
       .finally(() => setLoading(false));
-  }, [tab, department, employeeId, startDate, endDate, page, limit, leaveType]);
+  }, [tab, department, employeeId, startDate, endDate, page, limit, leaveType, sortKey, sortDir]);
 
   useEffect(() => { load(); }, [load]);
   // Reset to page 1 whenever a filter changes.
@@ -223,13 +236,13 @@ export default function LeaveTrackerAdmin() {
         <table className="w-full text-left">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-[12px] font-bold text-slate-600 uppercase tracking-wider">
-              <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4">Employee</th>
-              <th className="px-6 py-4">Leave Type</th>
+              <SortableTh sort={sort} k="status" className="px-6 py-4">Status</SortableTh>
+              <SortableTh sort={sort} k="employee" className="px-6 py-4">Employee</SortableTh>
+              <SortableTh sort={sort} k="leaveType" className="px-6 py-4">Leave Type</SortableTh>
               <th className="px-6 py-4">Category</th>
-              <th className="px-6 py-4">Period</th>
-              <th className="px-6 py-4">Duration</th>
-              <th className="px-6 py-4">Requested On</th>
+              <SortableTh sort={sort} k="startDate" className="px-6 py-4">Period</SortableTh>
+              <SortableTh sort={sort} k="totalDays" className="px-6 py-4">Duration</SortableTh>
+              <SortableTh sort={sort} k="createdAt" className="px-6 py-4">Requested On</SortableTh>
               <th className="px-6 py-4 text-right">Action</th>
             </tr>
           </thead>

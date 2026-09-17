@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Download, AlertTriangle } from 'lucide-react';
 import api from '../../../utils/api';
 import toast from 'react-hot-toast';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* ── The month, read back ───────────────────────────────────────────────────
  *  Confirmed and presumed are always shown apart. A single "present" figure
@@ -67,6 +69,19 @@ export default function MarkSummary() {
 
   const t = data?.totals;
 
+  const sort = useSortable(data?.rows || [], {
+    id: 'manual-attendance-summary',
+    columns: {
+      employee: { get: r => r.name, type: 'text' },
+      scheduled: { get: r => r.scheduled, type: 'number' },
+      confirmed: { get: r => r.confirmedPresent, type: 'number' },
+      presumed: { get: r => r.presumedPresent, type: 'number' },
+      absent: { get: r => r.absent, type: 'number' },
+      hours: { get: r => r.hours, type: 'number' },
+      unconfirmed: { get: r => (r.unconfirmedDates || []).length, type: 'number' },
+    },
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3">
@@ -118,13 +133,13 @@ export default function MarkSummary() {
           <table className="w-full text-[14px]">
             <thead className="bg-slate-50">
               <tr>
-                <th className="text-left font-medium text-slate-600 px-5 py-2.5">Employee</th>
-                <th className="text-right font-medium text-slate-600 px-3 py-2.5">Scheduled</th>
-                <th className="text-right font-medium text-slate-600 px-3 py-2.5">Confirmed</th>
-                <th className="text-right font-medium text-slate-600 px-3 py-2.5">Presumed</th>
-                <th className="text-right font-medium text-slate-600 px-3 py-2.5">Absent</th>
-                <th className="text-right font-medium text-slate-600 px-3 py-2.5">Hours</th>
-                <th className="text-left font-medium text-slate-600 px-5 py-2.5">Unconfirmed dates</th>
+                <SortableTh sort={sort} k="employee" className="text-left font-medium text-slate-600 px-5 py-2.5">Employee</SortableTh>
+                <SortableTh sort={sort} k="scheduled" className="text-right font-medium text-slate-600 px-3 py-2.5">Scheduled</SortableTh>
+                <SortableTh sort={sort} k="confirmed" className="text-right font-medium text-slate-600 px-3 py-2.5">Confirmed</SortableTh>
+                <SortableTh sort={sort} k="presumed" className="text-right font-medium text-slate-600 px-3 py-2.5">Presumed</SortableTh>
+                <SortableTh sort={sort} k="absent" className="text-right font-medium text-slate-600 px-3 py-2.5">Absent</SortableTh>
+                <SortableTh sort={sort} k="hours" className="text-right font-medium text-slate-600 px-3 py-2.5">Hours</SortableTh>
+                <SortableTh sort={sort} k="unconfirmed" className="text-left font-medium text-slate-600 px-5 py-2.5">Unconfirmed dates</SortableTh>
               </tr>
             </thead>
             <tbody>
@@ -134,7 +149,7 @@ export default function MarkSummary() {
                   Nothing in this range.
                 </td></tr>
               )}
-              {!loading && (data?.rows || []).map(r => (
+              {!loading && sort.sorted.map(r => (
                 <tr key={r.employeeId} className="border-t border-slate-100">
                   <td className="px-5 py-3.5">
                     <div className="font-medium text-slate-800">{r.name}</div>
