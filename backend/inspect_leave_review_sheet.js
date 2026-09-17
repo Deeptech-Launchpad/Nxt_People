@@ -174,6 +174,7 @@ function heading(prefix, why) {
   const everyone = (await pool.query(
     `SELECT id, employee_id AS code, TRIM(CONCAT(first_name,' ',COALESCE(last_name,''))) AS name,
             COALESCE(NULLIF(TRIM(department), ''), '(none recorded)') AS department,
+            joining_date::date::text AS joined,
             (deleted_at IS NULL AND (status IS NULL OR LOWER(status) = 'active')) AS active
        FROM employees ORDER BY employee_id`)).rows;
   const byId = new Map(everyone.map(p => [p.id, p]));
@@ -338,15 +339,25 @@ function heading(prefix, why) {
    * absent 180 times — they are somebody the attendance system does not track
    * (housekeeping marked by hand, a director who never badges). One row asking
    * that question is what HR can answer; 180 rows is not. */
+  /* "Not tracked" is a share, not a count. 46 missed days out of 170 is somebody
+   * who punches and often forgets; 179 out of 180 is somebody who never punches.
+   * A fixed threshold of 20 called both of them untracked. */
   const BULK = 20;
+  const UNTRACKED_SHARE = 0.6;
+  const yesterday = shiftDays(TODAY, -1);
   const perEmployee = new Map();
   for (const r of payable) {
     if (!perEmployee.has(r.employee_id)) perEmployee.set(r.employee_id, []);
     perEmployee.get(r.employee_id).push(r);
   }
   const bulkEmployees = new Set();
+  const handledDays = new Set();
   for (const [empId, days] of perEmployee) {
     if (days.length <= BULK) continue;
+    const joined = byId.get(empId)?.joined;
+    const from = joined && joined > `${YEAR}-01-01` ? joined : `${YEAR}-01-01`;
+    const possible = from <= yesterday ? await workingDaysFor(from, yesterday) : 0;
+    if (!possible || days.length < possible * UNTRACKED_SHARE) continue;
     bulkEmployees.add(empId);
     const first = days[0], last = days[days.length - 1];
     const withIn = days.filter(d => d.has_in).length;
@@ -362,8 +373,29 @@ function heading(prefix, why) {
     });
   }
 
+  /* A check-in with no check-out is the same mistake repeated, and it has one
+   * answer for all of its days: the person was here, the punch is missing. One
+   * row per person asks it once. Payroll still counts these days as absent
+   * (routes/payroll.js:484 needs both punches), so they cannot be dropped. */
+  for (const [empId, days] of perEmployee) {
+    if (bulkEmployees.has(empId)) continue;
+    const forgot = days.filter(d => d.has_in && !d.has_out);
+    if (forgot.length < 2) continue;
+    for (const d of forgot) handledDays.add(`${empId}|${d.date}`);
+    const first = forgot[0];
+    addCase('D2', {
+      employee_code: first.code, employee_name: first.name, department: first.department,
+      date: forgot.map(d => d.date).join(' '), day_of_week: `${forgot.length} days`,
+      what_we_see: `${forgot.length} working days with a check-in but no check-out. Payroll counts a day `
+        + 'as attended only with both punches, so every one of these would be deducted.',
+      suggestion: 'the person was at work on these days and forgot to check out — "present - fix attendance" '
+        + 'covers all of them at once, unless HR knows otherwise for a particular date',
+    });
+  }
+
   for (const r of payable) {
     if (bulkEmployees.has(r.employee_id)) continue;
+    if (handledDays.has(`${r.employee_id}|${r.date}`)) continue;
     const before = coveredBy(r.employee_id, shiftDays(r.date, -1));
     const after = coveredBy(r.employee_id, shiftDays(r.date, 1));
     const reg = regs.get(`${r.employee_id}|${r.date}`);
@@ -425,7 +457,7 @@ function heading(prefix, why) {
   const d2 = rows.filter(r => r.section === 'D2');
   const d2emp = new Set(d2.map(r => r.employee_code));
   console.log(`  ${d2.length} case(s) across ${d2emp.size} employee(s)`
-    + (bulkEmployees.size ? ` — ${bulkEmployees.size} of them a single row for somebody with more than ${BULK} such days` : '')
+    + (bulkEmployees.size ? ` — ${bulkEmployees.size} a single row for somebody missing a punch on most working days` : '')
     + '.');
   console.log(`  Not listed, because payroll never deducts them: ${skippedShut} day(s) the office was shut, `
     + `${skippedFuture} date(s) still to come.`);
@@ -477,6 +509,16 @@ function heading(prefix, why) {
    *   two permissions on one day are legitimate — different hours of it
    *   a leave split by an extension or a partial cancellation shares a parent
    *   only live statuses count; a rejected or cancelled row charges nothing */
+  /* A split day is not a double charge. Zoho records a day that was half casual
+   * and half unpaid — or half leave and an hour's permission — as two rows of
+   * different types that each carry only part of the day, so they overlap on
+   * that date by construction. Deepa's 24 June is 0.5 casual + 0.5 unpaid: one
+   * day, charged once. Only a pair where at least one row takes a WHOLE day is a
+   * day that can have come off twice. */
+  const partOfDay = (l) => l.leave_type === 'permission' || l.is_half_day
+    || Math.abs(Number(l.total_days) % 1) > 0.001;
+  const splitIds = new Set();
+  let splitDays = 0;
   const e2pairs = [];
   for (const p of active) {
     const rowsOf = (byEmpLeaves.get(p.id) || []).filter(l => LIVE_STATUSES.has(l.status));
@@ -490,6 +532,10 @@ function heading(prefix, why) {
           || (b.split_from && String(b.split_from) === String(a.id))
           || (a.split_from && b.split_from && String(a.split_from) === String(b.split_from));
         if (related) continue;
+        if (!exact && a.leave_type !== b.leave_type && partOfDay(a) && partOfDay(b)) {
+          splitIds.add(a.id); splitIds.add(b.id); splitDays++;
+          continue;
+        }
         e2pairs.push({ p, a, b, exact });
       }
     }
@@ -562,6 +608,8 @@ function heading(prefix, why) {
   console.log(`  ${e2.length} pair(s) across ${e2emp.size} employee(s)`
     + ` — ${e2.filter(r => r.kind === 'exact duplicate').length} exact duplicate(s),`
     + ` ${e2.filter(r => r.kind === 'overlap').length} overlap(s).`);
+  console.log(`  Not listed: ${splitDays} split day(s) — two part-day rows of different types sharing a date, `
+    + 'which is how a day that was half one kind and half another is recorded.');
   if (e2.length) {
     console.log('');
     for (const r of e2.slice(0, 6)) {
@@ -603,6 +651,10 @@ function heading(prefix, why) {
     const got = l.total_days === null ? null : round2(l.total_days);
     // A range with no working day in it at all is E3's case, asked once there.
     if (wd === 0 && !l.is_half_day) continue;
+    // Half a day short on a row that shares its edge day with another type is
+    // that split day's other half, not a miscount.
+    if (splitIds.has(l.id) && l.total_days !== null
+        && Math.abs(Math.abs(round2(l.total_days) - (wd + (l.sandwich_days || 0))) - 0.5) < 0.01) continue;
     if (got !== null && Math.abs(got - expect) > 0.01) e1cases.push({ l, wd, expect, got });
     else if (got === null) e1cases.push({ l, wd, expect, got: null });
   }
@@ -711,6 +763,16 @@ function heading(prefix, why) {
 
   const e3 = rows.filter(r => r.section === 'E3');
   console.log(`  ${e3.length} leave row(s) across ${new Set(e3.map(r => r.employee_code)).size} employee(s).`);
+  /* When every one of these lands on the same one or two dates it is rarely six
+   * people making the same mistake. It is the calendar: Zoho charged a day this
+   * system now calls a weekend. The rule's own start date answers which. */
+  if (e3.length) {
+    console.log('  Active weekend rules and when each starts — a rule starting AFTER these dates, or');
+    console.log('  one Zoho never had, means the day was a working day when the leave was taken:');
+    for (const w of weekendRules) {
+      console.log(`    "${w.name}"  starts ${w.start_date ? String(w.start_date).slice(0, 10) : '(no start date)'}`);
+    }
+  }
   if (e3.length) {
     console.log('');
     for (const r of e3.slice(0, 8)) {
