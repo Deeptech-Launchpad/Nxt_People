@@ -1,3 +1,7 @@
+# NOT IN USE. Live runs docker-compose.yml (uploads bind-mounted at
+# ./backend/uploads). This file mounts a separate named volume for uploads, so
+# starting it splits photos and employee documents across two places.
+#
 # Production Docker Compose.
 #
 # Differences from docker-compose.yml (the dev/seed setup):

@@ -1,5 +1,10 @@
 # Deployment Runbook
 
+> **Outdated.** Live runs `docker-compose.yml`, not `docker-compose.prod.yml`.
+> Do not start the prod file: it stores uploads in a separate Docker volume, and
+> photos and employee documents end up split across two places. Secrets go in the
+> root `.env` and must be listed in `docker-compose.yml`.
+
 Production deployment of Nxt People. Target: a Linux host with Docker + Docker Compose v2.
 
 This document is the source of truth for going live. The dev setup in README.md
