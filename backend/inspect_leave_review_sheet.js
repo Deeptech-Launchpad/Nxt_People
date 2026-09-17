@@ -118,7 +118,18 @@ const COLUMNS = [
 ];
 const rows = [];
 const counters = {};
+/* "1 - Zoho ANXT HR" is the account the Zoho migration ran under, not a person.
+ * Its 50 overlapping leave pairs were test and import residue; asking HR to
+ * adjudicate them buried the six real pairs underneath. Every real employee
+ * code here starts ANXT, so anything else is set aside and counted, never
+ * silently dropped. */
+const isPerson = (code) => /^ANXT/i.test(String(code || ''));
+const setAside = {};
 function addCase(prefix, fields) {
+  if (!isPerson(fields.employee_code)) {
+    setAside[prefix] = (setAside[prefix] || 0) + 1;
+    return null;
+  }
   counters[prefix] = (counters[prefix] || 0) + 1;
   const case_id = `${prefix}-${String(counters[prefix]).padStart(3, '0')}`;
   const row = { section: prefix, case_id, decision: '' };
@@ -134,7 +145,7 @@ const SECTION_TITLES = {
   E3: 'Leave charged on a day the office was shut',
 };
 const ALLOWED = {
-  D2: ['LOP', 'add leave (type)', 'present - fix attendance', 'ignore'],
+  D2: ['LOP', 'add leave (type)', 'present - fix attendance', 'ignore', 'not tracked - ignore all'],
   E2: ['keep A', 'keep B', 'keep both', 'HR to check'],
   E1: ['set to expected', 'keep as is', 'HR to check'],
   E3: ['refund the day', 'keep as is', 'HR to check'],
@@ -310,7 +321,49 @@ function heading(prefix, why) {
     regs.set(`${r.employee_id}|${r.date}`, r.status);
   }
 
+  /* Only what payroll would actually deduct is a question for HR.
+   * absentDaysForRange (routes/payroll.js:463) counts past WORKING days only, so
+   * a Saturday the office was shut or a date still to come can never cost
+   * anybody pay. They were listed as cases, which is how 55 people became 1,357
+   * rows. They are counted and said out loud instead. */
+  let skippedShut = 0, skippedFuture = 0;
+  const payable = [];
   for (const r of uncovered) {
+    if (r.date > TODAY) { skippedFuture++; continue; }
+    if (whyShut(r.date)) { skippedShut++; continue; }
+    payable.push(r);
+  }
+
+  /* Somebody with a punch missing on most working days of the year is not
+   * absent 180 times — they are somebody the attendance system does not track
+   * (housekeeping marked by hand, a director who never badges). One row asking
+   * that question is what HR can answer; 180 rows is not. */
+  const BULK = 20;
+  const perEmployee = new Map();
+  for (const r of payable) {
+    if (!perEmployee.has(r.employee_id)) perEmployee.set(r.employee_id, []);
+    perEmployee.get(r.employee_id).push(r);
+  }
+  const bulkEmployees = new Set();
+  for (const [empId, days] of perEmployee) {
+    if (days.length <= BULK) continue;
+    bulkEmployees.add(empId);
+    const first = days[0], last = days[days.length - 1];
+    const withIn = days.filter(d => d.has_in).length;
+    addCase('D2', {
+      employee_code: first.code, employee_name: first.name, department: first.department,
+      date: `${first.date}..${last.date}`, day_of_week: `${days.length} working days`,
+      what_we_see: `${days.length} past working days between ${first.date} and ${last.date} with no `
+        + 'complete punch and no leave or on-duty covering them'
+        + (withIn ? ` (${withIn} of them have a check-in but no check-out)` : '')
+        + '. Payroll would deduct every one of them.',
+      suggestion: 'this looks like somebody the attendance system does not track, not somebody absent '
+        + `${days.length} times — confirm whether they punch at all before deciding any single day`,
+    });
+  }
+
+  for (const r of payable) {
+    if (bulkEmployees.has(r.employee_id)) continue;
     const before = coveredBy(r.employee_id, shiftDays(r.date, -1));
     const after = coveredBy(r.employee_id, shiftDays(r.date, 1));
     const reg = regs.get(`${r.employee_id}|${r.date}`);
@@ -371,7 +424,11 @@ function heading(prefix, why) {
 
   const d2 = rows.filter(r => r.section === 'D2');
   const d2emp = new Set(d2.map(r => r.employee_code));
-  console.log(`  ${d2.length} day(s) across ${d2emp.size} employee(s).`);
+  console.log(`  ${d2.length} case(s) across ${d2emp.size} employee(s)`
+    + (bulkEmployees.size ? ` — ${bulkEmployees.size} of them a single row for somebody with more than ${BULK} such days` : '')
+    + '.');
+  console.log(`  Not listed, because payroll never deducts them: ${skippedShut} day(s) the office was shut, `
+    + `${skippedFuture} date(s) still to come.`);
   if (d2.length) {
     console.log('');
     for (const r of d2.slice(0, 8)) {
@@ -459,7 +516,10 @@ function heading(prefix, why) {
     };
 
     let suggestion;
-    if (aImp && bImp) {
+    if (aImp && bImp && a.leave_type !== b.leave_type) {
+      suggestion = `two different Zoho leaves on the same day — ${a.leave_type} (A) and ${b.leave_type} (B). `
+        + 'They are not copies of each other, so HR has to say which one the person actually took';
+    } else if (aImp && bImp) {
       const later = new Date(a.created_at) >= new Date(b.created_at) ? a : b;
       suggestion = 'two copies of the same Zoho leave, keep one — the later-created copy is '
         + `#${String(later.id).slice(0, 8)} (${later === a ? 'A' : 'B'})`;
@@ -541,6 +601,8 @@ function heading(prefix, why) {
     const wd = await workingDaysFor(l.start_date, l.end_date);
     const expect = l.is_half_day ? 0.5 : round2(wd + (l.sandwich_days || 0));
     const got = l.total_days === null ? null : round2(l.total_days);
+    // A range with no working day in it at all is E3's case, asked once there.
+    if (wd === 0 && !l.is_half_day) continue;
     if (got !== null && Math.abs(got - expect) > 0.01) e1cases.push({ l, wd, expect, got });
     else if (got === null) e1cases.push({ l, wd, expect, got: null });
   }
@@ -731,6 +793,12 @@ function heading(prefix, why) {
   console.log('  ' + '─'.repeat(60));
   console.log(`  ${pad('', 5)}${pad('TOTAL cases to decide', 44)}${lpad(rows.length, 6)}`);
   console.log(`  ${pad('', 5)}${pad('employees they touch', 44)}${lpad(perEmp.size, 6)}\n`);
+  const asideTotal = Object.values(setAside).reduce((s, n) => s + n, 0);
+  if (asideTotal) {
+    console.log(`  Set aside, not asked: ${asideTotal} case(s) on accounts that are not people `
+      + `(employee code not starting ANXT, e.g. the Zoho migration account) — `
+      + Object.entries(setAside).map(([k, n]) => `${k}×${n}`).join('  ') + '\n');
+  }
   if (perEmp.size) {
     const top = [...perEmp].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0])).slice(0, 10);
     console.log('  Most cases first — start here:\n');
