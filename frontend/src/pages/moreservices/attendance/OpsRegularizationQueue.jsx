@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Check, X } from 'lucide-react';
+import { Check, X, Plus } from 'lucide-react';
 import api from '../../../utils/api';
 import LeaveDetailModal from '../../../components/LeaveDetailModal';
+import RegularizeModal from '../../../components/requests/RegularizeModal';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 import { useAuth } from '../../../context/AuthContext';
+import {
+  useTeamScope, ScopeSwitch, withScope, useFilingPeople, DirectScopeNote, addButtonClass,
+} from '../../team/teamShared';
 
 /* ── Operations → Attendance → Regularization ────────────────────────────
  *  The organisation-wide queue, laid out the way the reference does it:
@@ -39,20 +45,27 @@ const requestedHours = (checkIn, checkOut) => {
   return mins > 0 ? mins / 60 : null;
 };
 
-export default function OpsRegularizationQueue() {
+const levelsDone = (r) => (r.approvalLevels || []).filter(l => l.status === 'approved').length;
+
+/* `scopeKey` is passed by Attendance → Team, where a manager-role viewer gets
+ * Direct | All. Operations is full access and passes none. */
+export default function OpsRegularizationQueue({ scopeKey = null }) {
   const [rows, setRows] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [q, setQ] = useState('');
   const [detail, setDetail] = useState(null);
+  const [adding, setAdding] = useState(false);
   const { user } = useAuth();
+  const scope = useTeamScope(scopeKey);
+  const filers = useFilingPeople(adding);
 
   const load = () => {
     setRows(null);
-    api.get('/regularizations/pending')
+    api.get(withScope('/regularizations/pending', scope))
       .then(r => setRows(r.data.data || []))
       .catch(err => { toast.error(err.response?.data?.message || 'Could not load regularizations'); setRows([]); });
   };
-  useEffect(load, []);
+  useEffect(load, [scope.scope]);
 
   const act = async (row, action, rejectionReason, confirmed = false) => {
     const who = `${row.employee.firstName} ${row.employee.lastName || ''}`.trim();
@@ -74,14 +87,36 @@ export default function OpsRegularizationQueue() {
       `${r.employee.firstName} ${r.employee.lastName || ''} ${r.employee.employeeId || ''}`.toLowerCase().includes(needle));
   }, [rows, q]);
 
+  const sort = useSortable(filtered, {
+    id: 'ops-regularization-queue',
+    columns: {
+      employee: r => `${r.employee.firstName || ''} ${r.employee.lastName || ''}`.trim(),
+      date: { get: r => (r.date ? String(r.date).slice(0, 10) : null), type: 'date' },
+      oldHours: { get: r => (r.oldHours == null ? null : Number(r.oldHours)), type: 'number' },
+      newHours: { get: r => requestedHours(r.checkIn, r.checkOut), type: 'number' },
+      oldStatus: { get: r => STATUS_WORD[r.oldStatus] || 'Absent', type: 'text' },
+      reason: { get: r => r.reason, type: 'text' },
+      approval: { get: levelsDone, type: 'number' },
+    },
+  });
+
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search employee"
           className="border border-slate-200 rounded-xl px-3 py-2 text-[14px] w-64 focus:outline-none focus:border-brand-400" />
-        <span className="text-[13px] text-slate-400">
-          {rows === null ? '' : `${filtered.length} waiting for approval`}
-        </span>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="text-[13px] text-slate-400 text-right">
+            {rows === null ? '' : `${filtered.length} waiting for approval`}
+            {scope.enabled && <DirectScopeNote scope={scope.scope} />}
+          </div>
+          <ScopeSwitch ctl={scope} />
+          {filers.canFile && (
+            <button type="button" onClick={() => setAdding(true)} className={addButtonClass}>
+              <Plus size={14} /> Add Request
+            </button>
+          )}
+        </div>
       </div>
 
       {rows === null ? (
@@ -93,26 +128,26 @@ export default function OpsRegularizationQueue() {
           <table className="w-full text-[14.5px] min-w-max">
             <thead className="bg-slate-50">
               <tr className="text-left text-slate-500 text-sm">
-                <th className="px-4 py-3 font-medium" rowSpan={2}>Employee</th>
-                <th className="px-4 py-3 font-medium" rowSpan={2}>Worked day</th>
+                <SortableTh sort={sort} k="employee" className="px-4 py-3 font-medium" rowSpan={2}>Employee</SortableTh>
+                <SortableTh sort={sort} k="date" className="px-4 py-3 font-medium" rowSpan={2}>Worked day</SortableTh>
                 <th className="px-4 py-2 font-medium text-center border-l border-slate-200" colSpan={2}>Hours</th>
                 <th className="px-4 py-2 font-medium text-center border-l border-slate-200" colSpan={2}>Status</th>
-                <th className="px-4 py-3 font-medium border-l border-slate-200" rowSpan={2}>Reason</th>
-                <th className="px-4 py-3 font-medium" rowSpan={2}>Approval Status</th>
+                <SortableTh sort={sort} k="reason" className="px-4 py-3 font-medium border-l border-slate-200" rowSpan={2}>Reason</SortableTh>
+                <SortableTh sort={sort} k="approval" className="px-4 py-3 font-medium" rowSpan={2}>Approval Status</SortableTh>
                 <th className="px-4 py-3 font-medium w-28" rowSpan={2}></th>
               </tr>
               <tr className="text-left text-slate-400 text-[13px]">
-                <th className="px-4 pb-2 font-medium border-l border-slate-200">Old</th>
-                <th className="px-4 pb-2 font-medium">New</th>
-                <th className="px-4 pb-2 font-medium border-l border-slate-200">Old</th>
+                <SortableTh sort={sort} k="oldHours" className="px-4 pb-2 font-medium border-l border-slate-200">Old</SortableTh>
+                <SortableTh sort={sort} k="newHours" className="px-4 pb-2 font-medium">New</SortableTh>
+                <SortableTh sort={sort} k="oldStatus" className="px-4 pb-2 font-medium border-l border-slate-200">Old</SortableTh>
                 <th className="px-4 pb-2 font-medium">New</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(r => {
+              {sort.sorted.map(r => {
                 const newHours = requestedHours(r.checkIn, r.checkOut);
                 const levels = r.approvalLevels || [];
-                const done = levels.filter(l => l.status === 'approved').length;
+                const done = levelsDone(r);
                 return (
                   <tr key={r._id} className="border-t border-slate-100 hover:bg-slate-50/60 cursor-pointer focus:outline-none focus:bg-blue-50/60"
                     tabIndex={0} role="button"
@@ -163,6 +198,12 @@ export default function OpsRegularizationQueue() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {adding && (
+        <RegularizeModal people={filers.people} peopleLoading={filers.loading}
+          onClose={() => setAdding(false)}
+          onDone={() => { setAdding(false); load(); }} />
       )}
 
       {detail && (

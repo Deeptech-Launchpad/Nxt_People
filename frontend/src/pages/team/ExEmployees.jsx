@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { UserMinus, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 import { Avatar, DirectScopeNote, Spinner, Empty, fmtDay } from './teamShared';
 
 /* ── Ex-Employees ─────────────────────────────────────────────────────────
@@ -16,6 +18,11 @@ import { Avatar, DirectScopeNote, Spinner, Empty, fmtDay } from './teamShared';
  *  from employees.total_experience: that column is free text carried in from
  *  the Zoho import and says nothing about tenure here.
  * ────────────────────────────────────────────────────────────────────────── */
+const COLUMNS = [
+  ['employee', 'Employee'], ['designation', 'Designation'], ['department', 'Department'],
+  ['joined', 'Joined'], ['relieved', 'Relieved On'], ['experience', 'Experience'],
+];
+
 export default function ExEmployees({ embedded = false }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +45,22 @@ export default function ExEmployees({ embedded = false }) {
         `${p.firstName} ${p.lastName}`.toLowerCase().includes(term) ||
         (p.employeeId || '').toLowerCase().includes(term))
     : rows;
+
+  const sort = useSortable(shown, {
+    id: 'team-ex-employees',
+    columns: {
+      employee: p => `${p.firstName || ''} ${p.lastName || ''}`.trim(),
+      designation: { get: p => p.designation, type: 'text' },
+      department: { get: p => p.department, type: 'text' },
+      joined: { get: p => (p.joinedOn ? String(p.joinedOn).slice(0, 10) : null), type: 'date' },
+      relieved: { get: p => (p.exitDate ? String(p.exitDate).slice(0, 10) : null), type: 'date' },
+      experience: {
+        get: p => (p.exitDate && p.joinedOn
+          ? (Number(p.experienceYears) || 0) * 12 + (Number(p.experienceMonths) || 0) : null),
+        type: 'number',
+      },
+    },
+  });
 
   return (
     <div className={embedded ? 'p-5' : 'p-6'}>
@@ -66,15 +89,15 @@ export default function ExEmployees({ embedded = false }) {
             <table className="w-full min-w-[820px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  {['Employee', 'Designation', 'Department', 'Joined', 'Relieved On', 'Experience'].map(h => (
-                    <th key={h} className="px-5 py-2.5 text-left text-[12px] font-medium text-slate-500 uppercase tracking-wider">
+                  {COLUMNS.map(([k, h]) => (
+                    <SortableTh key={k} sort={sort} k={k} className="px-5 py-2.5 text-left text-[12px] font-medium text-slate-500 uppercase tracking-wider">
                       {h}
-                    </th>
+                    </SortableTh>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {shown.map(p => (
+                {sort.sorted.map(p => (
                   <tr key={p.id} className="hover:bg-slate-50/70">
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2.5">

@@ -3,7 +3,9 @@ import { ChevronLeft, ChevronRight, CalendarOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { ymd, weekStart, addDays, isToday, isWeekendDay, leaveChipText } from '../moreservices/shift/shiftGrid';
-import { Avatar, DirectScopeNote, Spinner, Empty } from './teamShared';
+import {
+  Avatar, DirectScopeNote, Spinner, Empty, useTeamScope, ScopeSwitch, withScope,
+} from './teamShared';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -18,10 +20,11 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
  *  person per day — rather than a count from one query and names from
  *  another, which is how a strip ends up saying "3" above two names.
  * ────────────────────────────────────────────────────────────────────────── */
-export default function TeamOnLeave({ embedded = false }) {
+export default function TeamOnLeave({ embedded = false, scopeKey = null }) {
   const [anchor, setAnchor] = useState(() => new Date());
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const scope = useTeamScope(scopeKey);
 
   const days = useMemo(() => {
     const s = weekStart(anchor);
@@ -32,14 +35,14 @@ export default function TeamOnLeave({ embedded = false }) {
   useEffect(() => {
     let live = true;
     setLoading(true);
-    api.get(`/team/leave-week?start=${start}`)
+    api.get(withScope(`/team/leave-week?start=${start}`, scope))
       .then(r => { if (live) setRows(r.data.data || []); })
       .catch(err => {
         if (live) toast.error(err.response?.data?.message || 'Could not load the team leave week');
       })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [start]);
+  }, [start, scope.scope]);
 
   const byDay = useMemo(() => {
     const m = new Map(days.map(d => [ymd(d), []]));
@@ -67,11 +70,14 @@ export default function TeamOnLeave({ embedded = false }) {
           <button onClick={() => setAnchor(new Date())}
             className="ml-2 text-[13px] font-medium text-blue-600 hover:text-blue-700">This week</button>
         </div>
-        <div className="ml-auto text-right">
-          <p className="text-[13px] font-semibold text-slate-600">
-            {total} {total === 1 ? 'person' : 'people'} off this week
-          </p>
-          <DirectScopeNote />
+        <div className="ml-auto flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-[13px] font-semibold text-slate-600">
+              {total} {total === 1 ? 'person' : 'people'} off this week
+            </p>
+            <DirectScopeNote scope={scope.scope} />
+          </div>
+          <ScopeSwitch ctl={scope} />
         </div>
       </div>
 

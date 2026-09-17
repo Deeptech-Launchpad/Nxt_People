@@ -68,14 +68,14 @@ export default function AttendanceTeam() {
       <TeamTabs tabs={TABS} active={active} />
 
       <div className="bg-slate-50 min-h-[420px]">
-        {active === 'reportees'      && <Reportees embedded
+        {active === 'reportees'      && <Reportees embedded scopeKey="attendance-reportees"
           onOpen={p => navigate(`/attendance/team/user/${p.id}`)} />}
         {active === 'members'        && <TeamAttendance embedded
           onOpen={p => navigate(`/attendance/team/user/${p._id}`)}
           openableIds={openable} />}
-        {active === 'shift-schedule' && <TeamShiftSchedule embedded />}
-        {active === 'regularization' && <div className="p-5"><OpsRegularizationQueue /></div>}
-        {active === 'on-duty'        && <div className="p-5"><OpsOnDutyQueue /></div>}
+        {active === 'shift-schedule' && <TeamShiftSchedule embedded scopeKey="attendance-shift-schedule" />}
+        {active === 'regularization' && <div className="p-5"><OpsRegularizationQueue scopeKey="attendance-regularization" /></div>}
+        {active === 'on-duty'        && <div className="p-5"><OpsOnDutyQueue scopeKey="attendance-on-duty" /></div>}
       </div>
     </div>
   );

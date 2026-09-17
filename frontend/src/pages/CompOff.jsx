@@ -8,6 +8,7 @@ import { isApprover } from '../utils/roles';
 import ApprovalTimeline from '../components/ApprovalTimeline';
 import CompOffDetailModal from '../components/CompOffDetailModal';
 import CompOffApplyModal from '../components/CompOffApplyModal';
+import { useTeamScope, ScopeSwitch, withScope, useFilingPeople, DirectScopeNote } from './team/teamShared';
 
 const STATUS_STYLE = { pending: 'bg-amber-100 text-amber-700', approved: 'bg-emerald-100 text-emerald-700', rejected: 'bg-red-100 text-red-700' };
 
@@ -27,9 +28,16 @@ const ymd = (dt) => dt.toLocaleDateString('en-CA');
  * Compensatory Request, which is a table rather than this card list.
  *
  * The apply form itself is shared with that page (CompOffApplyModal), so the
- * rules cannot drift between the two doors. */
-export default function CompOff() {
+ * rules cannot drift between the two doors.
+ *
+ * `teamView` is Leave Tracker → Team → Compensatory Request: the same page plus
+ * an Add Request for somebody the viewer may file for, and Direct | All over
+ * the team queue. The personal route renders it without, unchanged. */
+export default function CompOff({ teamView = false }) {
   const { user } = useAuth();
+  const scope = useTeamScope(teamView ? 'leave-comp-off' : null);
+  const [filing, setFiling] = useState(false);
+  const filers = useFilingPeople(teamView && filing);
   const [myRequests, setMyRequests] = useState([]);
   const [pending, setPending] = useState([]);
   const [balance, setBalance] = useState(0);
@@ -62,7 +70,7 @@ export default function CompOff() {
   const load = () => {
     setLoading(true);
     const calls = [api.get('/comp-off/my')];
-    if (isApprover(user)) calls.push(api.get('/comp-off/pending'));
+    if (isApprover(user)) calls.push(api.get(withScope('/comp-off/pending', scope)));
     Promise.all(calls).then(([myRes, pendingRes]) => {
       setMyRequests(myRes.data.data || []);
       setBalance(myRes.data.balance || 0);
@@ -70,7 +78,7 @@ export default function CompOff() {
     }).catch(err => toast.error(err.response?.data?.message || 'Failed to load comp-off requests')).finally(() => setLoading(false));
   };
 
-  useEffect(() => { if (user !== undefined) load(); }, [user?.role]);
+  useEffect(() => { if (user !== undefined) load(); }, [user?.role, scope.scope]);
   useEffect(() => { if (user?.role === 'team_member') setTab('my'); }, [user?.role]);
 
 
@@ -120,9 +128,22 @@ export default function CompOff() {
             <h3 className="font-display font-semibold text-slate-800">Compensatory Off</h3>
             <p className="text-slate-400 text-base mt-0.5">Work a weekend or holiday, earn a comp-off, use it within {monthsLabel}</p>
           </div>
-          <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
-            <Plus size={16} /> Apply Comp-Off
-          </button>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {teamView && scope.enabled && (
+              <>
+                <DirectScopeNote scope={scope.scope} className="hidden lg:block" />
+                <ScopeSwitch ctl={scope} />
+              </>
+            )}
+            {teamView && filers.canFile && (
+              <button onClick={() => setFiling(true)} className="flex items-center gap-2 border border-brand-200 text-brand-600 hover:bg-brand-50 px-4 py-2.5 rounded-xl text-base font-medium transition-colors">
+                <Plus size={16} /> Add Request
+              </button>
+            )}
+            <button onClick={() => setModal(true)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
+              <Plus size={16} /> Apply Comp-Off
+            </button>
+          </div>
         </div>
         {isApprover(user) && (
           <div className="flex border-b border-slate-100">
@@ -201,6 +222,17 @@ export default function CompOff() {
         onDone={load}
         expiryMonths={expiryMonths}
       />
+
+      {teamView && (
+        <CompOffApplyModal
+          open={filing}
+          onClose={() => setFiling(false)}
+          onDone={load}
+          people={filers.people}
+          currentUserId={user?._id}
+          expiryMonths={expiryMonths}
+        />
+      )}
 
       {viewItem && (
         <CompOffDetailModal

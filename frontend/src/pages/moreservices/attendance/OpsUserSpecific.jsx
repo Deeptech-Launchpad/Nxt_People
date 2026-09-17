@@ -8,6 +8,8 @@ import api from '../../../utils/api';
 import useEmployeeList, { labelOf } from '../leavetracker/useEmployeeList';
 import RegularizeModal from '../../../components/requests/RegularizeModal';
 import OnDutyModal from '../../../components/requests/OnDutyModal';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 
 /* ── User-specific Operations ─────────────────────────────────────────────
  *  Zoho's first Attendance tab: search an employee, then act on THEIR
@@ -484,6 +486,17 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
 
   const days = useMemo(() => (rows === null ? [] : buildDays(period, rows, calendar)), [rows, calendar, period]);
   const shiftLabel = fmtShiftLabel(employee.shift);
+  const sort = useSortable(days, {
+    id: 'user-attendance-summary',
+    columns: {
+      date: { get: d => d.date, type: 'date' },
+      firstIn: { get: d => d.att?.checkIn || null, type: 'date' },
+      lastOut: { get: d => d.att?.checkOut || null, type: 'date' },
+      hours: { get: d => hoursOf(d.att), type: 'number' },
+      status: { get: d => (d.derivedStatus ? (STATUS_LABEL[d.derivedStatus]?.label || d.derivedStatus) : null), type: 'text' },
+      late: { get: d => (d.att?.lateMinutes > 0 ? Number(d.att.lateMinutes) : null), type: 'number' },
+    },
+  });
 
   const exportCsv = () => {
     const head = ['Date', 'Day type', 'First In', 'Last Out', 'Total Hours', 'Status', 'Late By'];
@@ -565,16 +578,16 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
                 <table className="w-full text-[14.5px] min-w-max">
                   <thead className="bg-slate-50">
                     <tr className="text-left text-slate-500 text-sm">
-                      <th className="px-4 py-3 font-medium">Date</th>
-                      <th className="px-4 py-3 font-medium">First In</th>
-                      <th className="px-4 py-3 font-medium">Last Out</th>
-                      <th className="px-4 py-3 font-medium">Total Hours</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Late By</th>
+                      <SortableTh sort={sort} k="date" className="px-4 py-3 font-medium">Date</SortableTh>
+                      <SortableTh sort={sort} k="firstIn" className="px-4 py-3 font-medium">First In</SortableTh>
+                      <SortableTh sort={sort} k="lastOut" className="px-4 py-3 font-medium">Last Out</SortableTh>
+                      <SortableTh sort={sort} k="hours" className="px-4 py-3 font-medium">Total Hours</SortableTh>
+                      <SortableTh sort={sort} k="status" className="px-4 py-3 font-medium">Status</SortableTh>
+                      <SortableTh sort={sort} k="late" className="px-4 py-3 font-medium">Late By</SortableTh>
                     </tr>
                   </thead>
                   <tbody>
-                    {days.map(d => (
+                    {sort.sorted.map(d => (
                       <tr key={d.date} className={`border-t border-slate-50 ${d.kind !== 'working' ? 'bg-slate-50/60' : 'hover:bg-slate-50/60'}`}>
                         <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{fmtDate(d.date)}</td>
                         <td className="px-4 py-3 text-slate-600">{fmtTime(d.att?.checkIn)}</td>
@@ -670,7 +683,22 @@ function ExpectedVsWorkedTab({ employee }) {
       .catch(err => { toast.error(err.response?.data?.message || 'Could not load the hours ledger'); setRows([]); });
   }, [employee._id]);
 
-  const Head = ({ children }) => <th className="px-4 py-3 font-medium whitespace-nowrap">{children}</th>;
+  const sort = useSortable(rows, {
+    id: 'user-expected-vs-worked',
+    columns: {
+      from: { get: x => x.start, type: 'date' },
+      to: { get: x => x.end, type: 'date' },
+      previousBalance: { get: x => x.row?.previousBalance ?? null, type: 'number' },
+      expectedHours: { get: x => x.row?.expectedHours ?? null, type: 'number' },
+      payableHours: { get: x => x.row?.payableHours ?? null, type: 'number' },
+      paidHours: { get: x => x.row?.paidHours ?? null, type: 'number' },
+      adjustmentHours: { get: x => x.row?.adjustmentHours ?? null, type: 'number' },
+      balanceHours: { get: x => x.row?.balanceHours ?? null, type: 'number' },
+    },
+  });
+  const Head = ({ k, children }) => (
+    <SortableTh sort={sort} k={k} className="px-4 py-3 font-medium whitespace-nowrap">{children}</SortableTh>
+  );
 
   return (
     <div>
@@ -682,13 +710,13 @@ function ExpectedVsWorkedTab({ employee }) {
             <table className="w-full text-[14.5px] min-w-max">
               <thead className="bg-slate-50">
                 <tr className="text-left text-slate-500 text-sm">
-                  <Head>From</Head><Head>To</Head><Head>Previous Balance</Head>
-                  <Head>Expected Hours</Head><Head>Payable Hours</Head><Head>Paid Hours</Head>
-                  <Head>Adjustment Hours</Head><Head>Balance Hours</Head>
+                  <Head k="from">From</Head><Head k="to">To</Head><Head k="previousBalance">Previous Balance</Head>
+                  <Head k="expectedHours">Expected Hours</Head><Head k="payableHours">Payable Hours</Head><Head k="paidHours">Paid Hours</Head>
+                  <Head k="adjustmentHours">Adjustment Hours</Head><Head k="balanceHours">Balance Hours</Head>
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ start, end, row }) => (
+                {sort.sorted.map(({ start, end, row }) => (
                   <tr key={start} className="border-t border-slate-50 hover:bg-slate-50/60">
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{fmtDateFull(start)}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{fmtDateFull(end)}</td>
@@ -752,7 +780,7 @@ const inMonth = (ymd, anchor) => {
   return d.slice(0, 7) === `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, '0')}`;
 };
 
-function RegularizationTab({ employee, canManage = true }) {
+function RegularizationTab({ employee, canFile = true }) {
   const [status, setStatus] = useState('all');
   const [anchor, setAnchor] = useState(() => new Date());
   const [rows, setRows] = useState(null);
@@ -780,11 +808,24 @@ function RegularizationTab({ employee, canManage = true }) {
     return mins > 0 ? mins / 60 : null;
   };
 
+  const sort = useSortable(filtered, {
+    id: 'user-regularization',
+    columns: {
+      date: { get: r => ymdOf(r.date) || null, type: 'date' },
+      oldHours: { get: r => (r.oldHours == null ? null : Number(r.oldHours)), type: 'number' },
+      newHours: { get: newHoursOf, type: 'number' },
+      oldStatus: { get: r => (r.oldStatus ? (STATUS_LABEL[r.oldStatus]?.label || r.oldStatus) : null), type: 'text' },
+      requested: { get: r => (r.checkIn ? String(r.checkIn) : null), type: 'text' },
+      reason: { get: r => r.reason, type: 'text' },
+      status: { get: r => r.status, type: 'text' },
+    },
+  });
+
   return (
     <div>
       <MonthBar anchor={anchor} setAnchor={setAnchor} status={status} setStatus={setStatus}
         options={REG_STATUS} count={filtered.length}
-        onAdd={canManage ? () => setAdding(true) : undefined} />
+        onAdd={canFile ? () => setAdding(true) : undefined} />
       {rows === null ? (
         <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
       ) : filtered.length === 0 ? (
@@ -794,22 +835,22 @@ function RegularizationTab({ employee, canManage = true }) {
           <table className="w-full text-[14.5px] min-w-max">
             <thead className="bg-slate-50">
               <tr className="text-left text-slate-500 text-sm">
-                <th className="px-4 py-3 font-medium" rowSpan={2}>Worked day</th>
+                <SortableTh sort={sort} k="date" className="px-4 py-3 font-medium" rowSpan={2}>Worked day</SortableTh>
                 <th className="px-4 py-2 font-medium text-center border-l border-slate-200" colSpan={2}>Hours</th>
                 <th className="px-4 py-2 font-medium text-center border-l border-slate-200" colSpan={2}>Status</th>
-                <th className="px-4 py-3 font-medium border-l border-slate-200" rowSpan={2}>Requested</th>
-                <th className="px-4 py-3 font-medium" rowSpan={2}>Reason</th>
-                <th className="px-4 py-3 font-medium" rowSpan={2}>Approval Status</th>
+                <SortableTh sort={sort} k="requested" className="px-4 py-3 font-medium border-l border-slate-200" rowSpan={2}>Requested</SortableTh>
+                <SortableTh sort={sort} k="reason" className="px-4 py-3 font-medium" rowSpan={2}>Reason</SortableTh>
+                <SortableTh sort={sort} k="status" className="px-4 py-3 font-medium" rowSpan={2}>Approval Status</SortableTh>
               </tr>
               <tr className="text-left text-slate-400 text-[12.5px]">
-                <th className="px-4 py-1.5 font-medium border-l border-slate-200">Old</th>
-                <th className="px-4 py-1.5 font-medium">New</th>
-                <th className="px-4 py-1.5 font-medium border-l border-slate-200">Old</th>
+                <SortableTh sort={sort} k="oldHours" className="px-4 py-1.5 font-medium border-l border-slate-200">Old</SortableTh>
+                <SortableTh sort={sort} k="newHours" className="px-4 py-1.5 font-medium">New</SortableTh>
+                <SortableTh sort={sort} k="oldStatus" className="px-4 py-1.5 font-medium border-l border-slate-200">Old</SortableTh>
                 <th className="px-4 py-1.5 font-medium">New</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(r => {
+              {sort.sorted.map(r => {
                 const nh = newHoursOf(r);
                 return (
                   <tr key={r._id} className="border-t border-slate-50 hover:bg-slate-50/60">
@@ -852,7 +893,7 @@ function RegularizationTab({ employee, canManage = true }) {
 
 /* ── On Duty ─────────────────────────────────────────────────────────────── */
 
-function OnDutyTab({ employee, canManage = true }) {
+function OnDutyTab({ employee, canFile = true }) {
   const [status, setStatus] = useState('all');
   const [anchor, setAnchor] = useState(() => new Date());
   const [rows, setRows] = useState(null);
@@ -883,11 +924,22 @@ function OnDutyTab({ employee, canManage = true }) {
     return `${span} day(s)`;
   };
 
+  const sort = useSortable(filtered, {
+    id: 'user-on-duty',
+    columns: {
+      period: { get: r => ymdOf(r.startDate) || null, type: 'date' },
+      type: { get: r => titleCase(r.requestType) || null, type: 'text' },
+      duration: { get: r => (r.unit === 'hours' ? Number(r.hours) || 0 : parseFloat(durationOf(r)) * 24), type: 'number' },
+      reason: { get: r => r.reason, type: 'text' },
+      status: { get: r => r.status, type: 'text' },
+    },
+  });
+
   return (
     <div>
       <MonthBar anchor={anchor} setAnchor={setAnchor} status={status} setStatus={setStatus}
         options={ONDUTY_STATUS} count={filtered.length}
-        onAdd={canManage ? () => setAdding(true) : undefined} />
+        onAdd={canFile ? () => setAdding(true) : undefined} />
       {rows === null ? (
         <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
       ) : filtered.length === 0 ? (
@@ -897,15 +949,15 @@ function OnDutyTab({ employee, canManage = true }) {
           <table className="w-full text-[14.5px] min-w-max">
             <thead className="bg-slate-50">
               <tr className="text-left text-slate-500 text-sm">
-                <th className="px-4 py-3 font-medium">Period</th>
-                <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium">Duration</th>
-                <th className="px-4 py-3 font-medium">Reason</th>
-                <th className="px-4 py-3 font-medium">Approval Status</th>
+                <SortableTh sort={sort} k="period" className="px-4 py-3 font-medium">Period</SortableTh>
+                <SortableTh sort={sort} k="type" className="px-4 py-3 font-medium">Type</SortableTh>
+                <SortableTh sort={sort} k="duration" className="px-4 py-3 font-medium">Duration</SortableTh>
+                <SortableTh sort={sort} k="reason" className="px-4 py-3 font-medium">Reason</SortableTh>
+                <SortableTh sort={sort} k="status" className="px-4 py-3 font-medium">Approval Status</SortableTh>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(r => (
+              {sort.sorted.map(r => (
                 <tr key={r._id} className="border-t border-slate-50 hover:bg-slate-50/60">
                   <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
                     {fmtDate(r.startDate)}
@@ -1023,7 +1075,7 @@ function EmployeeSwitcher({ people, picked, onPick }) {
  */
 export function UserAttendanceTabs({
   employee, people = [], onPick, onBack, backTitle = 'Back',
-  onGoTo = () => {}, canManage = true,
+  onGoTo = () => {}, canManage = true, canFile = true,
 }) {
   const [subtab, setSubtab] = useState('summary');
   const tabs = subtabsFor(canManage);
@@ -1060,7 +1112,7 @@ export function UserAttendanceTabs({
           </button>
         ))}
       </div>
-      <ActiveTab employee={employee} onGoTo={onGoTo} canManage={canManage} />
+      <ActiveTab employee={employee} onGoTo={onGoTo} canManage={canManage} canFile={canFile} />
     </div>
   );
 }

@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { leaveChipText } from '../moreservices/shift/shiftGrid';
+import api from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
+import { isFullAccess, isManager } from '../../utils/roles';
 
 /* ── Shared chrome for the three Team workspaces ──────────────────────────
  *  Home → Team, Attendance → Team and Leave Tracker → Team draw the same
@@ -32,16 +36,86 @@ export function TeamTabs({ tabs, active }) {
   );
 }
 
-/* The reference has a "Direct | All" toggle over the whole downstream tree.
- * Our reporting model answers direct reports only, so the scope is stated
- * rather than offered as a choice one half of which would be a lie. */
-export function DirectScopeNote({ className = '' }) {
+/* The reference's "Direct | All" toggle. Direct is the people whose reporting
+ * manager or approving authority is you; All adds everybody below them, to
+ * read only — filing on somebody's behalf stays direct reports. */
+export function DirectScopeNote({ className = '', scope = 'direct' }) {
   return (
     <p className={`text-[12px] text-slate-400 ${className}`}>
-      Direct reports only — people whose reporting manager or approving authority is you.
+      {scope === 'all'
+        ? 'Everyone below you in the reporting tree.'
+        : 'Direct reports only — people whose reporting manager or approving authority is you.'}
     </p>
   );
 }
+
+/* The switch is offered to a manager-role viewer only: full access already
+ * sees everyone. `key` null turns it off for a caller that is not a Team page. */
+export function useTeamScope(key) {
+  const { user } = useAuth();
+  const enabled = !!key && isManager(user);
+  const [scope, setScopeState] = useState(() => {
+    if (!key) return 'direct';
+    try { return sessionStorage.getItem(`team-scope:${key}`) === 'all' ? 'all' : 'direct'; } catch { return 'direct'; }
+  });
+  const setScope = (next) => {
+    setScopeState(next);
+    try { sessionStorage.setItem(`team-scope:${key}`, next); } catch { /* storage unavailable */ }
+  };
+  const effective = enabled ? scope : 'direct';
+  return { scope: effective, setScope, enabled, param: effective === 'all' ? 'scope=all' : '' };
+}
+
+export function ScopeSwitch({ ctl }) {
+  if (!ctl?.enabled) return null;
+  return (
+    <div className="flex rounded-md border border-slate-300 overflow-hidden flex-shrink-0">
+      {[['direct', 'Direct'], ['all', 'All']].map(([k, label]) => (
+        <button key={k} type="button" onClick={() => ctl.setScope(k)}
+          className={`px-3 py-1.5 text-[13px] font-medium
+            ${ctl.scope === k ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export const withScope = (url, ctl) => (ctl?.param ? `${url}${url.includes('?') ? '&' : '?'}${ctl.param}` : url);
+
+/* Who the viewer may file a request for: full access, every active employee;
+ * a manager-role, their direct reports; anyone else, nobody. Loaded only while
+ * `enabled`, so a list page does not fetch the roster until a form opens. */
+export function useFilingPeople(enabled = true) {
+  const { user } = useAuth();
+  const full = isFullAccess(user);
+  const mgr = isManager(user);
+  const [people, setPeople] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!enabled || (!full && !mgr)) { setPeople([]); setLoading(false); return undefined; }
+    let live = true;
+    setLoading(true);
+    const req = full
+      ? api.get('/employees?limit=500&status=active').then(r => r.data.data || [])
+      : api.get('/team/reportees').then(r => (r.data.data || []).map(p => ({ ...p, _id: p.id })));
+    req
+      .then(list => { if (live) setPeople(list); })
+      .catch(err => {
+        if (live) {
+          setPeople([]);
+          toast.error(err.response?.data?.message || 'Could not load the people you can file for');
+        }
+      })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [enabled, full, mgr]);
+
+  return { people, loading, canFile: full || mgr };
+}
+
+export const addButtonClass = 'flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-md text-[13px] font-semibold flex-shrink-0';
 
 export function WorkspaceHeader({ title, subtitle, right }) {
   return (

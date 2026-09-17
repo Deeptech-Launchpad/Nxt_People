@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { DateField, TimeField, useFormat } from '../../utils/datetime';
 import RequestShell, { Field, AttachmentField, inputClass } from './RequestShell';
+import EmployeePicker from '../../pages/moreservices/leavetracker/EmployeePicker';
 
 /* Regularize Attendance, over the day you pressed.
  *
@@ -57,9 +58,13 @@ function datesFor(period, anchor, customFrom, customTo) {
 /* employeeId raises the request FOR somebody else — HR acting from
  * User-specific Operations. Absent, this is the ordinary self-service
  * path and the server uses the caller, so nothing changes for an
- * employee raising their own. */
-export default function RegularizeModal({ date, employeeId, onClose, onDone }) {
+ * employee raising their own. `people` instead puts an employee picker on top,
+ * for a Team or Operations list that has no one person on screen. */
+export default function RegularizeModal({ date, employeeId, people = null, peopleLoading = false, onClose, onDone }) {
   const fmt = useFormat();
+  const [pickedId, setPickedId] = useState('');
+  const picking = !employeeId && Array.isArray(people);
+  const subject = employeeId || pickedId;
   const [config, setConfig] = useState(null);
   const [period, setPeriod] = useState('day');
   const [anchor, setAnchor] = useState(date || iso(new Date()));
@@ -104,6 +109,7 @@ export default function RegularizeModal({ date, employeeId, onClose, onDone }) {
   };
 
   const submit = async () => {
+    if (picking && !subject) return toast.error('Choose an employee');
     if (!filled.length) return toast.error('Enter a check-in or check-out on at least one day');
     if (reasonMandatory) {
       const missing = filled.find(d => !row(d).reason.trim());
@@ -121,7 +127,7 @@ export default function RegularizeModal({ date, employeeId, onClose, onDone }) {
           if (r.checkOut) fd.append('checkOut', r.checkOut);
           fd.append('reason', [r.reason, r.description].filter(Boolean).join(' — '));
           fd.append('attachment', file);
-          if (employeeId) fd.append('employeeId', employeeId);
+          if (subject) fd.append('employeeId', subject);
           await api.post('/regularizations', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
           await api.post('/regularizations', {
@@ -129,7 +135,7 @@ export default function RegularizeModal({ date, employeeId, onClose, onDone }) {
             checkIn: r.checkIn || undefined,
             checkOut: r.checkOut || undefined,
             reason: [r.reason, r.description].filter(Boolean).join(' — '),
-            ...(employeeId ? { employeeId } : {}),
+            ...(subject ? { employeeId: subject } : {}),
           });
         }
         ok++;
@@ -146,6 +152,13 @@ export default function RegularizeModal({ date, employeeId, onClose, onDone }) {
   return (
     <RequestShell title="Request Regularization" onClose={onClose} onSubmit={submit} submitting={saving} wide>
       <div className="space-y-4">
+        {picking && (
+          <div className="max-w-2xl">
+            <Field label="Employee" required>
+              <EmployeePicker people={people} loading={peopleLoading} value={pickedId} onChange={setPickedId} />
+            </Field>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
           <Field label="Period">
             <select className={inputClass} value={period} onChange={e => setPeriod(e.target.value)}>

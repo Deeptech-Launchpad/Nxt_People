@@ -10,6 +10,8 @@ import { useAuth } from '../context/AuthContext';
 import { isFullAccess, ROLES } from '../utils/roles';
 import { fmtDate } from '../utils/dateFormat';
 import { formatTime, formatInstantTime } from '../utils/datetime';
+import useSortable from '../components/table/useSortable';
+import SortableTh from '../components/table/SortableTh';
 
 /* ── One employee, one tabbed screen ──────────────────────────────────────
  *  Reachable from the topbar search, the Employee / Department tree popup's
@@ -120,29 +122,40 @@ const Section = ({ title, children }) => (
   </section>
 );
 
+/* Sorting a table whose cells are already formatted: `raw` is the unformatted
+ * value per cell, in the same order, so a date sorts as a date. */
+const byIndex = (count) => Object.fromEntries(
+  Array.from({ length: count }, (_, j) => [`c${j}`, x => x.raw[j]]));
+
 /* The child sections — experience, education, dependents — are rows rather
  * than fields, and a table is the only honest shape for "none on file". */
-const ChildTable = ({ title, columns, rows, empty }) => (
-  <section className="bg-white border border-slate-200 rounded-md">
-    <h3 className="px-6 py-4 text-[17px] font-bold text-slate-800 border-b border-slate-100">{title}</h3>
-    <div className="p-6 pt-4 overflow-x-auto">
-      <table className="w-full text-[14px]">
-        <thead className="bg-slate-50 text-slate-500">
-          <tr>{columns.map(c => <th key={c} className="px-3 py-2 text-left font-medium whitespace-nowrap">{c}</th>)}</tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr><td colSpan={columns.length} className="px-3 py-6 text-center text-slate-400">{empty}</td></tr>
-          ) : rows.map((r, i) => (
-            <tr key={i} className="border-t border-slate-100">
-              {r.map((cell, j) => <td key={j} className="px-3 py-2 text-slate-700">{filled(cell) ? cell : '-'}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  </section>
-);
+const ChildTable = ({ title, columns, rows, raw, empty }) => {
+  const items = rows.map((cells, i) => ({ cells, raw: raw?.[i] || cells, i }));
+  const sort = useSortable(items, { id: `profile-${title}`, columns: byIndex(columns.length) });
+  return (
+    <section className="bg-white border border-slate-200 rounded-md">
+      <h3 className="px-6 py-4 text-[17px] font-bold text-slate-800 border-b border-slate-100">{title}</h3>
+      <div className="p-6 pt-4 overflow-x-auto">
+        <table className="w-full text-[14px]">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>{columns.map((c, j) => (
+              <SortableTh key={c} sort={sort} k={`c${j}`} className="px-3 py-2 text-left font-medium whitespace-nowrap">{c}</SortableTh>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={columns.length} className="px-3 py-6 text-center text-slate-400">{empty}</td></tr>
+            ) : sort.sorted.map(r => (
+              <tr key={r.i} className="border-t border-slate-100">
+                {r.cells.map((cell, j) => <td key={j} className="px-3 py-2 text-slate-700">{filled(cell) ? cell : '-'}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+};
 
 function Avatar({ photoUrl, initials, size = 80 }) {
   const [broken, setBroken] = useState(false);
@@ -438,6 +451,9 @@ function ProfileTab({ emp, viewLevel, viewer }) {
             dateOr(e.fromDate), dateOr(e.toDate),
             e.jobDescription, e.relevant ? 'Yes' : 'No',
           ])}
+          raw={experienceRows.map(e => [
+            e.companyName, e.jobTitle, e.fromDate, e.toDate, e.jobDescription, e.relevant ? 'Yes' : 'No',
+          ])}
           empty="No work experience on file."
         />
       )}
@@ -461,6 +477,7 @@ function ProfileTab({ emp, viewLevel, viewer }) {
           title="Dependents"
           columns={['Name', 'Relationship', 'Date of birth']}
           rows={dependentRows.map(d => [d.name, d.relationship, dateOr(d.dateOfBirth)])}
+          raw={dependentRows.map(d => [d.name, d.relationship, d.dateOfBirth])}
           empty="No dependents on file."
         />
       )}
@@ -606,6 +623,7 @@ const RELATED = [
       : (data || []).filter(r => same(r.employee?._id, id))),
     columns: ['Status', 'Resignation date', 'Last working date', 'Reason'],
     cells: r => [r.status, short(r.resignationDate), short(r.lastWorkingDate), r.reason],
+    raw: r => [r.status, r.resignationDate, r.lastWorkingDate, r.reason],
   },
   {
     key: 'travel', label: 'Travel Request',
@@ -616,6 +634,7 @@ const RELATED = [
       : (data || []).filter(r => same(r.employee?._id, id))),
     columns: ['Status', 'Destination', 'From', 'To', 'Purpose'],
     cells: r => [r.status, r.destination, short(r.fromDate), short(r.toDate), r.purpose],
+    raw: r => [r.status, r.destination, r.fromDate, r.toDate, r.purpose],
   },
   {
     key: 'expense', label: 'Travel Expense',
@@ -629,6 +648,7 @@ const RELATED = [
         && String(r.claimType || '').toLowerCase() === 'travel'),
     columns: ['Status', 'Claim date', 'Amount', 'Description'],
     cells: r => [r.status, short(r.claimDate), money(r.amount), r.description],
+    raw: r => [r.status, r.claimDate, r.amount == null ? null : Number(r.amount), r.description],
   },
 ];
 
@@ -647,6 +667,9 @@ function RelatedRow({ spec, ctx, employeeId }) {
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employeeId, spec.key]);
+
+  const items = useMemo(() => (rows || []).map((r, i) => ({ r, i, raw: spec.raw(r) })), [rows, spec]);
+  const sort = useSortable(items, { id: `profile-related-${spec.key}`, columns: byIndex(spec.columns.length) });
 
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
@@ -668,12 +691,12 @@ function RelatedRow({ spec, ctx, employeeId }) {
           ) : (
             <table className="w-full text-[14px]">
               <thead className="bg-slate-50 text-slate-500">
-                <tr>{spec.columns.map(c => (
-                  <th key={c} className="px-3 py-2 text-left font-medium whitespace-nowrap">{c}</th>
+                <tr>{spec.columns.map((c, j) => (
+                  <SortableTh key={c} sort={sort} k={`c${j}`} className="px-3 py-2 text-left font-medium whitespace-nowrap">{c}</SortableTh>
                 ))}</tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
+                {sort.sorted.map(({ r, i }) => (
                   <tr key={r._id || i} className="border-t border-slate-100">
                     {spec.cells(r).map((cell, j) => (
                       <td key={j} className="px-3 py-2 text-slate-700">{filled(cell) ? cell : '-'}</td>
@@ -739,6 +762,9 @@ export default function EmployeeProfile() {
   const self = same(user?._id, emp?._id);
   const full = isFullAccess(user);
   const maySeePrivate = !!emp && (viewLevel === 'full' || viewLevel === 'approver');
+  // Filing on somebody's behalf: yourself, full access, or their manager-role
+  // approver — the same three utils/onBehalf.js allows.
+  const canFile = self || full || viewLevel === 'approver';
   // Travel and expense authorize manager but not team_incharge; exit is full
   // access only. A viewer with no reachable row gets no tab at all — which is
   // why a Team Incharge reading somebody else's team sees no Related Data.
@@ -926,7 +952,7 @@ export default function EmployeeProfile() {
           <div className={panel('leave')}>
             <div className="bg-white border border-slate-200 rounded-md p-5">
               <Suspense fallback={<Spinner />}>
-                <LeaveTabs employee={person} canManage={full} />
+                <LeaveTabs employee={person} canManage={full} canFile={canFile} />
               </Suspense>
             </div>
           </div>
@@ -936,7 +962,7 @@ export default function EmployeeProfile() {
           <div className={panel('attendance')}>
             <div className="bg-white border border-slate-200 rounded-md p-5">
               <Suspense fallback={<Spinner />}>
-                <AttendanceTabs employee={person} canManage={full} />
+                <AttendanceTabs employee={person} canManage={full} canFile={canFile} />
               </Suspense>
             </div>
           </div>

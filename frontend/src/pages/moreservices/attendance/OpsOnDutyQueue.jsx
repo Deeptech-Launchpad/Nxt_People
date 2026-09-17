@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Check, X } from 'lucide-react';
+import { Check, X, Plus } from 'lucide-react';
 import api from '../../../utils/api';
 import LeaveDetailModal from '../../../components/LeaveDetailModal';
+import OnDutyModal from '../../../components/requests/OnDutyModal';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 import { useAuth } from '../../../context/AuthContext';
+import {
+  useTeamScope, ScopeSwitch, withScope, useFilingPeople, DirectScopeNote, addButtonClass,
+} from '../../team/teamShared';
 
 /* ── Operations → Attendance → On Duty ───────────────────────────────────
  *  The organisation-wide queue, in the reference's column layout: who, the
@@ -25,20 +31,26 @@ const durationOf = (r) => {
   return `${days} day${days === 1 ? '' : 's'}`;
 };
 
-export default function OpsOnDutyQueue() {
+const levelsDone = (r) => (r.approvalLevels || []).filter(l => l.status === 'approved').length;
+
+/* `scopeKey` — see OpsRegularizationQueue. */
+export default function OpsOnDutyQueue({ scopeKey = null }) {
   const [rows, setRows] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [q, setQ] = useState('');
   const [detail, setDetail] = useState(null);
+  const [adding, setAdding] = useState(false);
   const { user } = useAuth();
+  const scope = useTeamScope(scopeKey);
+  const filers = useFilingPeople(adding);
 
   const load = () => {
     setRows(null);
-    api.get('/on-duty/pending')
+    api.get(withScope('/on-duty/pending', scope))
       .then(r => setRows(r.data.data || []))
       .catch(err => { toast.error(err.response?.data?.message || 'Could not load on-duty requests'); setRows([]); });
   };
-  useEffect(load, []);
+  useEffect(load, [scope.scope]);
 
   const act = async (row, action, rejectionReason, confirmed = false) => {
     const who = `${row.employee.firstName} ${row.employee.lastName || ''}`.trim();
@@ -60,14 +72,35 @@ export default function OpsOnDutyQueue() {
       `${r.employee.firstName} ${r.employee.lastName || ''} ${r.employee.employeeId || ''}`.toLowerCase().includes(needle));
   }, [rows, q]);
 
+  const sort = useSortable(filtered, {
+    id: 'ops-on-duty-queue',
+    columns: {
+      employee: r => `${r.employee.firstName || ''} ${r.employee.lastName || ''}`.trim(),
+      period: { get: r => (r.startDate ? String(r.startDate).slice(0, 10) : null), type: 'date' },
+      type: { get: r => r.requestType, type: 'text' },
+      duration: { get: r => (r.unit === 'hours' ? Number(r.hours) || 0 : parseFloat(durationOf(r)) * 24), type: 'number' },
+      reason: { get: r => r.reason, type: 'text' },
+      approval: { get: levelsDone, type: 'number' },
+    },
+  });
+
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search employee"
           className="border border-slate-200 rounded-xl px-3 py-2 text-[14px] w-64 focus:outline-none focus:border-brand-400" />
-        <span className="text-[13px] text-slate-400">
-          {rows === null ? '' : `${filtered.length} waiting for approval`}
-        </span>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="text-[13px] text-slate-400 text-right">
+            {rows === null ? '' : `${filtered.length} waiting for approval`}
+            {scope.enabled && <DirectScopeNote scope={scope.scope} />}
+          </div>
+          <ScopeSwitch ctl={scope} />
+          {filers.canFile && (
+            <button type="button" onClick={() => setAdding(true)} className={addButtonClass}>
+              <Plus size={14} /> Add Request
+            </button>
+          )}
+        </div>
       </div>
 
       {rows === null ? (
@@ -79,19 +112,19 @@ export default function OpsOnDutyQueue() {
           <table className="w-full text-[14.5px] min-w-max">
             <thead className="bg-slate-50">
               <tr className="text-left text-slate-500 text-sm">
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Period</th>
-                <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium">Duration</th>
-                <th className="px-4 py-3 font-medium">Reason</th>
-                <th className="px-4 py-3 font-medium">Approval Status</th>
+                <SortableTh sort={sort} k="employee" className="px-4 py-3 font-medium">Employee</SortableTh>
+                <SortableTh sort={sort} k="period" className="px-4 py-3 font-medium">Period</SortableTh>
+                <SortableTh sort={sort} k="type" className="px-4 py-3 font-medium">Type</SortableTh>
+                <SortableTh sort={sort} k="duration" className="px-4 py-3 font-medium">Duration</SortableTh>
+                <SortableTh sort={sort} k="reason" className="px-4 py-3 font-medium">Reason</SortableTh>
+                <SortableTh sort={sort} k="approval" className="px-4 py-3 font-medium">Approval Status</SortableTh>
                 <th className="px-4 py-3 font-medium w-28"></th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(r => {
+              {sort.sorted.map(r => {
                 const levels = r.approvalLevels || [];
-                const done = levels.filter(l => l.status === 'approved').length;
+                const done = levelsDone(r);
                 const sameDay = !r.endDate || String(r.endDate).slice(0, 10) === String(r.startDate).slice(0, 10);
                 return (
                   <tr key={r._id} className="border-t border-slate-100 hover:bg-slate-50/60 cursor-pointer focus:outline-none focus:bg-blue-50/60"
@@ -136,6 +169,12 @@ export default function OpsOnDutyQueue() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {adding && (
+        <OnDutyModal people={filers.people} peopleLoading={filers.loading}
+          onClose={() => setAdding(false)}
+          onDone={() => { setAdding(false); load(); }} />
       )}
 
       {detail && (

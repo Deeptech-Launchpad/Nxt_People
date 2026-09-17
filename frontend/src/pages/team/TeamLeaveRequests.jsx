@@ -1,11 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { FileText, Search } from 'lucide-react';
+import { FileText, Search, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
+import LeaveRequestDialog from '../moreservices/leavetracker/LeaveRequestDialog';
+import useSortable from '../../components/table/useSortable';
+import SortableTh from '../../components/table/SortableTh';
 import { useAuth } from '../../context/AuthContext';
 import { LEAVE_LABEL, to12 } from '../moreservices/shift/shiftGrid';
-import { Avatar, DirectScopeNote, Spinner, Empty, fmtDay } from './teamShared';
+import {
+  Avatar, DirectScopeNote, Spinner, Empty, fmtDay,
+  useTeamScope, ScopeSwitch, withScope, useFilingPeople, addButtonClass,
+} from './teamShared';
 
 /* ── Leave Requests ───────────────────────────────────────────────────────
  *  The team's leave history — every status, not just the pending queue.
@@ -43,7 +49,12 @@ const amountLabel = (l) => {
   return `${days} day${days === 1 ? '' : 's'}${half}`;
 };
 
-export default function TeamLeaveRequests({ embedded = false }) {
+const COLUMNS = [
+  ['employee', 'Employee'], ['type', 'Type'], ['from', 'From'], ['to', 'To'],
+  ['amount', 'Amount'], ['reason', 'Reason'], ['status', 'Status'],
+];
+
+export default function TeamLeaveRequests({ embedded = false, scopeKey = null }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
@@ -51,20 +62,29 @@ export default function TeamLeaveRequests({ embedded = false }) {
   const [reload, setReload] = useState(0);
   const [detail, setDetail] = useState(null);
   const [detailBalance, setDetailBalance] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [types, setTypes] = useState([]);
   const { user } = useAuth();
   const canApproveAll = ['admin', 'director', 'hr_admin', 'manager'].includes(user?.role);
+  const scope = useTeamScope(scopeKey);
+  const filers = useFilingPeople(adding);
+
+  useEffect(() => {
+    if (!adding || types.length) return;
+    api.get('/leave-types').then(r => setTypes(r.data.data || [])).catch(() => {});
+  }, [adding, types.length]);
 
   useEffect(() => {
     let live = true;
     setLoading(true);
-    api.get(`/team/leave-requests${status ? `?status=${status}` : ''}`)
+    api.get(withScope(`/team/leave-requests${status ? `?status=${status}` : ''}`, scope))
       .then(r => { if (live) setRows(r.data.data || []); })
       .catch(err => {
         if (live) toast.error(err.response?.data?.message || 'Could not load the team leave history');
       })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [status, reload]);
+  }, [status, reload, scope.scope]);
 
   const openDetail = (l) => {
     setDetail(l); setDetailBalance(null);
@@ -91,6 +111,19 @@ export default function TeamLeaveRequests({ embedded = false }) {
         (l.employee?.employeeId || '').toLowerCase().includes(term))
     : rows;
 
+  const sort = useSortable(shown, {
+    id: 'team-leave-requests',
+    columns: {
+      employee: l => `${l.employee?.firstName || ''} ${l.employee?.lastName || ''}`.trim(),
+      type: l => LEAVE_LABEL[l.leaveType] || l.leaveType,
+      from: { get: l => (l.startDate ? String(l.startDate).slice(0, 10) : null), type: 'date' },
+      to: { get: l => (l.endDate ? String(l.endDate).slice(0, 10) : null), type: 'date' },
+      amount: { get: l => (l.leaveType === 'permission' ? Number(l.hours) || 0 : Number(l.totalDays) || 0), type: 'number' },
+      reason: { get: l => l.reason, type: 'text' },
+      status: { get: l => l.status, type: 'text' },
+    },
+  });
+
   return (
     <div className={embedded ? 'p-5' : 'p-6'}>
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -109,9 +142,17 @@ export default function TeamLeaveRequests({ embedded = false }) {
             className="w-full pl-9 pr-3 py-2 text-[14px] border border-slate-200 rounded-lg bg-white
                        focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200" />
         </div>
-        <div className="ml-auto text-right">
-          <p className="text-[13px] font-semibold text-slate-600">{shown.length} request{shown.length === 1 ? '' : 's'}</p>
-          <DirectScopeNote />
+        <div className="ml-auto flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-[13px] font-semibold text-slate-600">{shown.length} request{shown.length === 1 ? '' : 's'}</p>
+            <DirectScopeNote scope={scope.scope} />
+          </div>
+          <ScopeSwitch ctl={scope} />
+          {filers.canFile && (
+            <button type="button" onClick={() => setAdding(true)} className={addButtonClass}>
+              <Plus size={14} /> Add Request
+            </button>
+          )}
         </div>
       </div>
 
@@ -129,15 +170,15 @@ export default function TeamLeaveRequests({ embedded = false }) {
             <table className="w-full min-w-[900px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  {['Employee', 'Type', 'From', 'To', 'Amount', 'Reason', 'Status'].map(h => (
-                    <th key={h} className="px-5 py-2.5 text-left text-[12px] font-medium text-slate-500 uppercase tracking-wider">
+                  {COLUMNS.map(([k, h]) => (
+                    <SortableTh key={k} sort={sort} k={k} className="px-5 py-2.5 text-left text-[12px] font-medium text-slate-500 uppercase tracking-wider">
                       {h}
-                    </th>
+                    </SortableTh>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {shown.map(l => (
+                {sort.sorted.map(l => (
                   <tr key={l._id} className="hover:bg-slate-50/70 cursor-pointer focus:outline-none focus:bg-blue-50/60"
                     tabIndex={0} role="button"
                     onClick={() => openDetail(l)}
@@ -176,6 +217,17 @@ export default function TeamLeaveRequests({ embedded = false }) {
           </div>
         )}
       </div>
+
+      {adding && (
+        <LeaveRequestDialog
+          mode="apply"
+          people={filers.people}
+          peopleLoading={filers.loading}
+          types={types}
+          onClose={() => setAdding(false)}
+          onSaved={() => setReload(n => n + 1)}
+        />
+      )}
 
       {detail && (
         <LeaveDetailModal

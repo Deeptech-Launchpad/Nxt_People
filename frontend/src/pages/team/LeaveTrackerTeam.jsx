@@ -43,10 +43,10 @@ export default function LeaveTrackerTeam() {
       <div className="bg-slate-50 min-h-[420px]">
         {/* Reportees carries the year's booked total here, which is the figure
             the Leave Tracker's version of this card is for. */}
-        {active === 'reportees' && <Reportees onOpen={p => navigate(`/leave-tracker/team/user/${p.id}`)} embedded showLeaveBooked />}
-        {active === 'on-leave'  && <TeamOnLeave embedded />}
-        {active === 'requests'  && <TeamLeaveRequests embedded />}
-        {active === 'comp-off'  && <CompOff />}
+        {active === 'reportees' && <Reportees onOpen={p => navigate(`/leave-tracker/team/user/${p.id}`)} embedded showLeaveBooked scopeKey="leave-reportees" />}
+        {active === 'on-leave'  && <TeamOnLeave embedded scopeKey="leave-on-leave" />}
+        {active === 'requests'  && <TeamLeaveRequests embedded scopeKey="leave-requests" />}
+        {active === 'comp-off'  && <CompOff teamView />}
       </div>
     </div>
   );

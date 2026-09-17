@@ -22,6 +22,7 @@ const BLANK = { workedDate: '', compOffDate: '', reason: '', daysEarned: 1, empl
 export default function CompOffApplyModal({
   open, onClose, onDone,
   people = null,          // null → no employee field at all (the My Data door)
+  employee = null,        // one person already on screen, shown rather than picked
   expiryMonths = 3,
   currentUserId = null,
 }) {
@@ -30,9 +31,11 @@ export default function CompOffApplyModal({
   const [eligibility, setEligibility] = useState(null);
   const [checking, setChecking] = useState(false);
 
-  const forOthers = Array.isArray(people);
+  const forOthers = Array.isArray(people) || (!!employee && String(employee._id) !== String(currentUserId));
 
-  useEffect(() => { if (open) { setForm(BLANK); setEligibility(null); } }, [open]);
+  useEffect(() => {
+    if (open) { setForm({ ...BLANK, employeeId: employee?._id || '' }); setEligibility(null); }
+  }, [open, employee?._id]);
 
   // Asked as the date or the person changes, so the answer is on screen before
   // Submit is pressed rather than arriving as a refusal afterwards.
@@ -63,7 +66,7 @@ export default function CompOffApplyModal({
     setSaving(true);
     try {
       await api.post('/comp-off', form);
-      const who = (people || []).find(p => p._id === form.employeeId);
+      const who = (people || (forOthers ? [employee] : [])).find(p => p._id === form.employeeId);
       toast.success(who ? `Comp-off filed for ${who.firstName} ${who.lastName}` : 'Comp-off request submitted!');
       onClose();
       onDone?.();
@@ -86,7 +89,20 @@ export default function CompOffApplyModal({
         </div>
 
         <form onSubmit={submit} className="p-6 space-y-4 overflow-y-auto">
-          {forOthers && (
+          {forOthers && employee && (
+            <div>
+              <label className={label}>Employee</label>
+              <p className="text-base text-slate-800">
+                {employee.employeeId ? `${employee.employeeId} — ` : ''}{employee.firstName} {employee.lastName}
+              </p>
+              <p className="text-[13px] text-amber-600 mt-1">
+                This grants them a paid day off. It is recorded against your name and still goes
+                to their own reporting line for approval.
+              </p>
+            </div>
+          )}
+
+          {forOthers && !employee && (
             <div>
               <label className={label}>Employee *</label>
               {/* No "Myself" here. Reaching this form through Operations means

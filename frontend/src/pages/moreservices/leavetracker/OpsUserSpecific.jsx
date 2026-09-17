@@ -1,10 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, User, ChevronLeft, ChevronRight, ChevronDown, X, CalendarDays, FileText } from 'lucide-react';
+import { Search, User, ChevronLeft, ChevronRight, ChevronDown, X, CalendarDays, FileText, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../../utils/api';
 import LeaveDetailModal from '../../../components/LeaveDetailModal';
+import CompOffApplyModal from '../../../components/CompOffApplyModal';
+import useSortable from '../../../components/table/useSortable';
+import SortableTh from '../../../components/table/SortableTh';
 import { useAuth } from '../../../context/AuthContext';
+import { isManager } from '../../../utils/roles';
 import useEmployeeList, { labelOf } from './useEmployeeList';
+import LeaveRequestDialog from './LeaveRequestDialog';
 import { LEAVE_LABEL, to12 } from '../shift/shiftGrid';
 
 /* ── User-specific Operations ───────────────────────────────────────────────
@@ -85,6 +90,22 @@ const StatusPill = ({ status, title }) => (
   </span>
 );
 
+const addClass = 'flex items-center gap-1.5 bg-brand-600 hover:bg-brand-500 text-white px-3 py-1.5 rounded-lg text-[13px] font-medium normal-case tracking-normal';
+
+/* Apply Leave / Add Request on a person's tab — the Operations apply form with
+ * the employee already filled in. Leave types are read when it opens. */
+function ApplyLeaveFor({ employee, onClose, onSaved }) {
+  const [types, setTypes] = useState([]);
+  useEffect(() => {
+    api.get('/leave-types').then(r => setTypes(r.data.data || [])).catch(() => {});
+  }, []);
+  return (
+    <LeaveRequestDialog mode="apply" types={types}
+      selfOnly selfEmployeeId={employee._id} selfLabel={labelOf(employee)}
+      onClose={onClose} onSaved={onSaved} />
+  );
+}
+
 const Loading = () => <p className="px-5 py-6 text-slate-400 text-sm">Loading…</p>;
 const Blank = ({ text }) => <p className="px-5 py-8 text-slate-400 text-sm text-center">{text}</p>;
 
@@ -108,8 +129,10 @@ const Panel = ({ title, right, children }) => (
  *  Two sources for one question is how an administrator and an employee end
  *  up quoting different numbers at each other.
  */
-function LeaveSummaryTab({ employee, canManage = true }) {
+function LeaveSummaryTab({ employee, canManage = true, canFile = true }) {
   const [year, setYear] = useState(() => new Date().getFullYear());
+  const [applying, setApplying] = useState(false);
+  const [reload, setReload] = useState(0);
   const [cards, setCards] = useState(null);
   const [summary, setSummary] = useState({});
   const [leaves, setLeaves] = useState([]);
@@ -140,7 +163,7 @@ function LeaveSummaryTab({ employee, canManage = true }) {
       setCards([]); setSummary({}); setLeaves([]); setHolidays([]);
     }).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [employee._id, year]);
+  }, [employee._id, year, reload]);
 
   const { upcoming, past } = useMemo(() => {
     const today = todayYmd();
@@ -182,14 +205,27 @@ function LeaveSummaryTab({ employee, canManage = true }) {
           Absent : <span className="font-semibold text-slate-700">{summary.absentDays ?? 0}</span>
         </span>
 
-        <div className="ml-auto flex items-center gap-2 border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] text-slate-600">
-          <button onClick={() => setYear(y => y - 1)} title="Previous year"
-            className="hover:text-brand-600"><ChevronLeft size={14} /></button>
-          <span className="font-semibold text-slate-700">01/01/{year} - 31/12/{year}</span>
-          <button onClick={() => setYear(y => y + 1)} title="Next year"
-            className="hover:text-brand-600"><ChevronRight size={14} /></button>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-2 py-1.5 text-[14px] text-slate-600">
+            <button onClick={() => setYear(y => y - 1)} title="Previous year"
+              className="hover:text-brand-600"><ChevronLeft size={14} /></button>
+            <span className="font-semibold text-slate-700">01/01/{year} - 31/12/{year}</span>
+            <button onClick={() => setYear(y => y + 1)} title="Next year"
+              className="hover:text-brand-600"><ChevronRight size={14} /></button>
+          </div>
+          {canFile && (
+            <button type="button" onClick={() => setApplying(true)} className={addClass}>
+              <Plus size={14} /> Apply Leave
+            </button>
+          )}
         </div>
       </div>
+
+      {applying && (
+        <ApplyLeaveFor employee={employee}
+          onClose={() => setApplying(false)}
+          onSaved={() => setReload(n => n + 1)} />
+      )}
 
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -287,8 +323,9 @@ const DayList = ({ items }) => (
  *  authorizes approvers and narrows them to their own reporting line, so the
  *  Team door needs nothing added to it.
  */
-function LeaveRequestsTab({ employee }) {
+function LeaveRequestsTab({ employee, canFile = true }) {
   const [rows, setRows] = useState(null);
+  const [adding, setAdding] = useState(false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
@@ -333,9 +370,39 @@ function LeaveRequestsTab({ employee }) {
     return () => { live = false; };
   }, [employee._id, reload]);
 
+  const sort = useSortable(rows, {
+    id: 'user-leave-requests',
+    columns: {
+      status: { get: l => l.status, type: 'text' },
+      leaveType: l => LEAVE_LABEL[l.leaveType] || l.leaveType,
+      paid: l => (UNPAID.has(l.leaveType) ? 'Unpaid' : 'Paid'),
+      period: { get: l => ymd(l.startDate) || null, type: 'date' },
+      taken: { get: l => (l.leaveType === 'permission' ? Number(l.hours) || 0 : Number(l.totalDays) || 0), type: 'number' },
+      createdAt: { get: l => ymd(l.createdAt) || null, type: 'date' },
+    },
+  });
+  /* A clamped page is the most recent 200, not the whole history, so sorting
+   * it in the browser would present a partial order as the full one. */
+  const sortable = rows && total <= rows.length ? sort : null;
+  const list = sortable ? sort.sorted : rows;
+
   return (
     <Panel title="Leave Requests"
-      right={<span className="text-[13px] text-slate-500">{total} request{total === 1 ? '' : 's'}</span>}>
+      right={
+        <div className="flex items-center gap-3">
+          <span className="text-[13px] text-slate-500">{total} request{total === 1 ? '' : 's'}</span>
+          {canFile && (
+            <button type="button" onClick={() => setAdding(true)} className={addClass}>
+              <Plus size={14} /> Add Request
+            </button>
+          )}
+        </div>
+      }>
+      {adding && (
+        <ApplyLeaveFor employee={employee}
+          onClose={() => setAdding(false)}
+          onSaved={() => setReload(n => n + 1)} />
+      )}
       {loading ? <Loading /> : !rows || rows.length === 0 ? (
         <Blank text="No leave has been applied for." />
       ) : (
@@ -344,12 +411,15 @@ function LeaveRequestsTab({ employee }) {
             <table className="w-full text-[14px]">
               <thead>
                 <tr className="text-left text-slate-400 text-[12px] uppercase tracking-wider bg-slate-50/60">
-                  {['Status', 'Employee Name', 'Leave type', 'Type', 'Leave period', 'Days/hours taken', 'Date of request']
-                    .map(h => <th key={h} className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>)}
+                  {[['status', 'Status'], [null, 'Employee Name'], ['leaveType', 'Leave type'], ['paid', 'Type'],
+                    ['period', 'Leave period'], ['taken', 'Days/hours taken'], ['createdAt', 'Date of request']]
+                    .map(([k, h]) => (
+                      <SortableTh key={h} sort={sortable} k={k} className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</SortableTh>
+                    ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {rows.map(l => (
+                {list.map(l => (
                   <tr key={l._id} className="hover:bg-slate-50/70 cursor-pointer"
                       role="button" tabIndex={0}
                       onClick={() => openDetail(l)}
@@ -399,24 +469,32 @@ function LeaveRequestsTab({ employee }) {
 /* ── Compensatory Request ────────────────────────────────────────────────
  *  Credited, taken and what is left, for this person.
  *
- *  /comp-off/all is full-access only, and it is the only read that answers
- *  the whole picture — /comp-off/pending is pending-by-definition, so
- *  labelling it "Compensatory Request" for a manager would show a partial
- *  list as if it were the lot. The tab is dropped for them instead (see
- *  SUBTABS); Leave Tracker → Team has its own Compensatory Request tab, which
- *  is the comp-off screen scoped to their reports.
+ *  /comp-off/employee/:id is the one-person slice of /comp-off/all that the
+ *  person and their own manager may also read, so the tab is shown to a
+ *  manager-role viewer as well as to full access (see SUBTABS).
  */
-function CompRequestTab({ employee }) {
+function CompRequestTab({ employee, canFile = true }) {
+  const { user } = useAuth();
   const [rows, setRows] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [expiryMonths, setExpiryMonths] = useState(3);
+
+  useEffect(() => {
+    if (!adding) return;
+    api.get('/settings')
+      .then(r => setExpiryMonths(parseInt(r.data.data?.compOffExpiryMonths, 10) || 3))
+      .catch(() => {});
+  }, [adding]);
 
   useEffect(() => {
     let live = true;
     setLoading(true);
-    api.get('/comp-off/all')
+    api.get(`/comp-off/employee/${employee._id}`)
       .then(r => {
         if (!live) return;
-        setRows((r.data.data || []).filter(c => String(c.employee?._id) === String(employee._id)));
+        setRows(r.data.data || []);
       })
       .catch(err => {
         if (!live) return;
@@ -425,11 +503,42 @@ function CompRequestTab({ employee }) {
       })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [employee._id]);
+  }, [employee._id, reload]);
+
+  const statusOf = c => (c.expired && c.status === 'approved' ? 'expired' : c.status);
+  const sort = useSortable(rows, {
+    id: 'user-comp-off',
+    columns: {
+      status: { get: statusOf, type: 'text' },
+      workedDate: { get: c => ymd(c.workedDate) || null, type: 'date' },
+      compOffDate: { get: c => ymd(c.compOffDate) || null, type: 'date' },
+      expiresAt: { get: c => ymd(c.expiresAt) || null, type: 'date' },
+      credited: { get: c => Number(c.daysEarned) || 0, type: 'number' },
+      taken: { get: c => Number(c.daysUsed) || 0, type: 'number' },
+      createdAt: { get: c => ymd(c.createdAt) || null, type: 'date' },
+    },
+  });
 
   return (
     <Panel title="Compensatory Request"
-      right={<span className="text-[13px] text-slate-500">{rows?.length || 0} request{rows?.length === 1 ? '' : 's'}</span>}>
+      right={
+        <div className="flex items-center gap-3">
+          <span className="text-[13px] text-slate-500">{rows?.length || 0} request{rows?.length === 1 ? '' : 's'}</span>
+          {canFile && (
+            <button type="button" onClick={() => setAdding(true)} className={addClass}>
+              <Plus size={14} /> Add Request
+            </button>
+          )}
+        </div>
+      }>
+      <CompOffApplyModal
+        open={adding}
+        onClose={() => setAdding(false)}
+        onDone={() => setReload(n => n + 1)}
+        employee={employee}
+        currentUserId={user?._id}
+        expiryMonths={expiryMonths}
+      />
       {loading ? <Loading /> : !rows || rows.length === 0 ? (
         <Blank text="No compensatory off has been claimed." />
       ) : (
@@ -437,15 +546,18 @@ function CompRequestTab({ employee }) {
           <table className="w-full text-[14px]">
             <thead>
               <tr className="text-left text-slate-400 text-[12px] uppercase tracking-wider bg-slate-50/60">
-                {['Status', 'Employee Name', 'Worked date', 'Comp-off date', 'Expires', 'Credited', 'Taken', 'Date of request']
-                  .map(h => <th key={h} className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>)}
+                {[['status', 'Status'], [null, 'Employee Name'], ['workedDate', 'Worked date'], ['compOffDate', 'Comp-off date'],
+                  ['expiresAt', 'Expires'], ['credited', 'Credited'], ['taken', 'Taken'], ['createdAt', 'Date of request']]
+                  .map(([k, h]) => (
+                    <SortableTh key={h} sort={sort} k={k} className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</SortableTh>
+                  ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {rows.map(c => (
+              {sort.sorted.map(c => (
                 <tr key={c._id} className="hover:bg-slate-50/70">
                   <td className="px-4 py-3">
-                    <StatusPill status={c.expired && c.status === 'approved' ? 'expired' : c.status}
+                    <StatusPill status={statusOf(c)}
                       title={c.status === 'rejected' && c.rejectionReason ? c.rejectionReason : undefined} />
                   </td>
                   <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{nameOf(c.employee || employee)}</td>
@@ -471,18 +583,18 @@ function CompRequestTab({ employee }) {
 
 /* ── the screen ──────────────────────────────────────────────────────────── */
 
-/* `full: true` marks a tab whose endpoint is full-access-only underneath, so
- * it is dropped rather than disabled for a manager — pressing it would earn
- * them a 403 and nothing else. Hiding a door is a UI fix; opening one is an
- * access-control decision, and widening /comp-off/all to approvers would
- * widen it to every employee in the company, not to their reports. */
+/* `team: true` marks a tab shown to full access and to a manager-role viewer
+ * but dropped for anybody else. Compensatory Request reads
+ * /comp-off/employee/:id, which the person's manager may read; a team member
+ * looking at their own profile keeps their own comp-off page instead. */
 const SUBTABS = [
   ['summary', 'Leave Summary', LeaveSummaryTab],
   ['requests', 'Leave Requests', LeaveRequestsTab],
-  ['comp-off', 'Compensatory Request', CompRequestTab, { full: true }],
+  ['comp-off', 'Compensatory Request', CompRequestTab, { team: true }],
 ];
 
-const subtabsFor = (canManage) => SUBTABS.filter(([, , , o]) => canManage || !o?.full);
+const subtabsFor = (canManage, teamViewer) =>
+  SUBTABS.filter(([, , , o]) => !o?.team || canManage || teamViewer);
 
 const Avatar = ({ person, size = 32 }) => (
   person?.photoUrl
@@ -554,10 +666,11 @@ function EmployeeSwitcher({ people, picked, onPick }) {
  *  the scenes rather than letting a manager press them and get a 403.
  */
 export function UserLeaveTabs({
-  employee, people = [], onPick, onBack, backTitle = 'Back', canManage = true,
+  employee, people = [], onPick, onBack, backTitle = 'Back', canManage = true, canFile = true,
 }) {
+  const { user } = useAuth();
   const [subtab, setSubtab] = useState('summary');
-  const tabs = subtabsFor(canManage);
+  const tabs = subtabsFor(canManage, isManager(user));
   // A hidden tab is still reachable by a stale bit of state, and find() on a
   // missing id would throw rather than degrade.
   const ActiveTab = (tabs.find(([id]) => id === subtab) || tabs[0])[2];
@@ -591,7 +704,7 @@ export function UserLeaveTabs({
           </button>
         ))}
       </div>
-      <ActiveTab employee={employee} canManage={canManage} />
+      <ActiveTab employee={employee} canManage={canManage} canFile={canFile} />
     </div>
   );
 }

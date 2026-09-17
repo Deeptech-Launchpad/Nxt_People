@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { DateField, TimeField, useFormat } from '../../utils/datetime';
 import RequestShell, { Field, AttachmentField, inputClass } from './RequestShell';
+import EmployeePicker from '../../pages/moreservices/leavetracker/EmployeePicker';
 
 /* Request On Duty, over the day you pressed.
  *
@@ -20,9 +21,13 @@ const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); r
 const TYPES = ['Client visit', 'Work from home'];
 const DURATIONS = ['Full Day', 'Half Day', 'Quarter Day'];
 
-/* employeeId raises the request FOR somebody else — see RegularizeModal. */
-export default function OnDutyModal({ date, employeeId, onClose, onDone }) {
+/* employeeId raises the request FOR somebody else, and `people` picks who —
+ * see RegularizeModal. */
+export default function OnDutyModal({ date, employeeId, people = null, peopleLoading = false, onClose, onDone }) {
   const fmt = useFormat();
+  const [pickedId, setPickedId] = useState('');
+  const picking = !employeeId && Array.isArray(people);
+  const subject = employeeId || pickedId;
   const [config, setConfig] = useState(null);
   const [from, setFrom] = useState(date || iso(new Date()));
   const [to, setTo] = useState(date || iso(new Date()));
@@ -57,6 +62,7 @@ export default function OnDutyModal({ date, employeeId, onClose, onDone }) {
   const descriptionMandatory = config?.fields?.description?.mandatory !== false;
 
   const submit = async () => {
+    if (picking && !subject) return toast.error('Choose an employee');
     if (!days.length) return toast.error('Pick a valid date range');
     if (descriptionMandatory && !description.trim()) return toast.error('A description is required');
     if (unit === 'hours' && (!startTime || !endTime)) {
@@ -69,7 +75,7 @@ export default function OnDutyModal({ date, employeeId, onClose, onDone }) {
         requestType: type,
         reason: description.trim(),
         ...(unit === 'hours' ? { startTime, endTime } : {}),
-        ...(employeeId ? { employeeId } : {}),
+        ...(subject ? { employeeId: subject } : {}),
       };
       if (file && showDocument) {
         const fd = new FormData();
@@ -89,6 +95,12 @@ export default function OnDutyModal({ date, employeeId, onClose, onDone }) {
   return (
     <RequestShell title="Request On Duty" onClose={onClose} onSubmit={submit} submitting={saving}>
       <div className="space-y-4 max-w-2xl">
+        {picking && (
+          <Field label="Employee" required>
+            <EmployeePicker people={people} loading={peopleLoading} value={pickedId} onChange={setPickedId} />
+          </Field>
+        )}
+
         <Field label="Period">
           <div className="grid grid-cols-2 gap-3">
             <DateField value={from} onChange={setFrom} />

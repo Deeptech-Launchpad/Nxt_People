@@ -42,13 +42,14 @@ const CRITERIA_FIELDS = [
 ];
 
 export default function AssignShiftDialog({
-  mode = 'single',            // 'single' (one employee) | 'criteria' (bulk)
+  mode = 'single',            // 'single' (one employee) | 'pick' (one, chosen here) | 'criteria' (bulk)
   employeeId = null,          // required when mode === 'single'
   employeeName = '',
   people = [],
   peopleLoading = false,
   defaultFrom = '',
   defaultTo = '',
+  rangeOnly = false,          // dated roster rows only, no "until I change it"
   onClose,
   onSaved,
 }) {
@@ -63,7 +64,8 @@ export default function AssignShiftDialog({
    * for "from now on": expressing a permanent change that way means picking
    * an arbitrary far-future end date and writing thousands of rows that all
    * have to be unpicked to change it back. */
-  const [duration, setDuration] = useState('standing');
+  const [duration, setDuration] = useState(rangeOnly ? 'range' : 'standing');
+  const [pickedId, setPickedId] = useState('');
   const [fromDate, setFromDate] = useState(defaultFrom);
   const [toDate, setToDate] = useState(defaultTo || defaultFrom);
   const [reason, setReason] = useState('');
@@ -99,6 +101,9 @@ export default function AssignShiftDialog({
     const who = {};
     if (mode === 'single') {
       who.employeeIds = [employeeId];
+    } else if (mode === 'pick') {
+      if (!pickedId) return toast.error('Choose an employee');
+      who.employeeIds = [pickedId];
     } else {
       const criteria = rows
         .map(r => ({ field: r.field, values: r.values.filter(Boolean) }))
@@ -147,6 +152,14 @@ export default function AssignShiftDialog({
           <div className="bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5">
             <p className="text-[12px] text-slate-500">Applicable to</p>
             <p className="text-[14px] font-medium text-slate-800">{employeeName || '—'}</p>
+          </div>
+        ) : mode === 'pick' ? (
+          <div>
+            <label className="block text-[13px] font-medium text-slate-600 mb-1.5">
+              Employee <span className="text-red-500">*</span>
+            </label>
+            <EmployeePicker people={people} loading={peopleLoading} value={pickedId}
+              placeholder="Search name or code" onChange={setPickedId} />
           </div>
         ) : (
           <div>
@@ -215,33 +228,35 @@ export default function AssignShiftDialog({
           </select>
         </div>
 
-        <div>
-          <label className="block text-[13px] font-medium text-slate-600 mb-1.5">
-            For how long <span className="text-red-500">*</span>
-          </label>
-          <div className="space-y-2">
-            <label className="flex items-start gap-2.5 border border-slate-200 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-slate-50">
-              <input type="radio" name="duration" className="mt-1" checked={duration === 'standing'}
-                onChange={() => setDuration('standing')} />
-              <span>
-                <span className="block text-[14px] font-medium text-slate-800">Until I change it</span>
-                <span className="block text-[12px] text-slate-500">
-                  Becomes their shift from now on. This is what most changes are.
-                </span>
-              </span>
+        {!rangeOnly && (
+          <div>
+            <label className="block text-[13px] font-medium text-slate-600 mb-1.5">
+              For how long <span className="text-red-500">*</span>
             </label>
-            <label className="flex items-start gap-2.5 border border-slate-200 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-slate-50">
-              <input type="radio" name="duration" className="mt-1" checked={duration === 'range'}
-                onChange={() => setDuration('range')} />
-              <span>
-                <span className="block text-[14px] font-medium text-slate-800">For a set period</span>
-                <span className="block text-[12px] text-slate-500">
-                  A day, a week, a month — they go back to their usual shift afterwards.
+            <div className="space-y-2">
+              <label className="flex items-start gap-2.5 border border-slate-200 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+                <input type="radio" name="duration" className="mt-1" checked={duration === 'standing'}
+                  onChange={() => setDuration('standing')} />
+                <span>
+                  <span className="block text-[14px] font-medium text-slate-800">Until I change it</span>
+                  <span className="block text-[12px] text-slate-500">
+                    Becomes their shift from now on. This is what most changes are.
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+              <label className="flex items-start gap-2.5 border border-slate-200 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+                <input type="radio" name="duration" className="mt-1" checked={duration === 'range'}
+                  onChange={() => setDuration('range')} />
+                <span>
+                  <span className="block text-[14px] font-medium text-slate-800">For a set period</span>
+                  <span className="block text-[12px] text-slate-500">
+                    A day, a week, a month — they go back to their usual shift afterwards.
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
-        </div>
+        )}
 
         {duration === 'range' && (
           <>
