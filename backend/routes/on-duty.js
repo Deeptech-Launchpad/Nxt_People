@@ -4,7 +4,9 @@ const { body, validationResult } = require('express-validator');
 const pool = require('../db');
 const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
-const { isFullAccess } = require('../utils/roles');
+const { isFullAccess, subtreeClause, teamScope } = require('../utils/roles');
+const { resolveFilingSubject } = require('../utils/onBehalf');
+const { logAudit } = require('../utils/audit');
 const { resolveEmployeeId } = require('../utils/employeeScope');
 const { createNotification } = require('./notifications');
 const { createLevels, canUserAct, applyApproval, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
@@ -132,6 +134,8 @@ router.get('/my', async (req, res) => {
 router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
     const full = isFullAccess(req.user.role);
+    // ?scope=all (Team, All) adds everybody below the caller, to read only.
+    const below = teamScope(req) === 'all' ? ` OR ${subtreeClause('e', 1)}` : '';
     const result = await pool.query(
       `SELECT ${SELECT_FIELDS},
               json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
@@ -147,7 +151,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
           AND ($2::boolean OR EXISTS (
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'on_duty' AND x.request_id = o.id AND x.approver_id = $1 AND x.status = 'pending'
-          ))
+          )${below})
         ORDER BY o.start_date DESC`,
       [req.user._id, full]
     );
@@ -196,19 +200,15 @@ router.post('/', requireOnDutyEnabled, uploadAttachment, [
 
     /* Whose request this is — see the same block in routes/regularizations.js.
      * HR raises on-duty for somebody from User-specific Operations; the chain
-     * that approves it has to be the subject's, never the raiser's. */
-    const subjectId = isFullAccess(req.user.role) && req.body.employeeId
-      ? String(req.body.employeeId)
-      : req.user._id;
-    const onBehalf = String(subjectId) !== String(req.user._id);
-    if (onBehalf) {
-      const who = await pool.query(
-        `SELECT id FROM employees WHERE id=$1 AND deleted_at IS NULL`, [subjectId]);
-      if (!who.rows.length) {
-        discardUpload();
-        return res.status(404).json({ success: false, message: 'That employee no longer exists' });
-      }
+     * that approves it has to be the subject's, never the raiser's. Who may
+     * name somebody else is utils/onBehalf.js. */
+    const subject = await resolveFilingSubject(pool, req.user, req.body.employeeId);
+    if (subject.error) {
+      discardUpload();
+      return res.status(subject.error).json({ success: false, message: subject.message });
     }
+    const subjectId = subject.id;
+    const onBehalf = subject.onBehalf;
 
     const cfg = await attendanceConfig.section('onduty');
     const { keys: allowedTypes, label: typeLabels } = await typeOptions();
@@ -320,6 +320,15 @@ router.post('/', requireOnDutyEnabled, uploadAttachment, [
       throw err;
     } finally {
       client.release();
+    }
+
+    if (onBehalf) {
+      await logAudit(req, {
+        action: 'APPLY_ON_BEHALF',
+        resource: 'OnDuty',
+        resourceId: od._id,
+        changes: { employee: subject.name || subjectId, startDate, endDate, unit, requestType },
+      });
     }
 
     // Notifications are best-effort: a mail server having a bad day must not

@@ -44,6 +44,7 @@ const { createNotification } = require('./notifications');
 const { createLevels, getLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
 const { sendMail, sendLeaveApprovalEmail, sendLeaveStatusEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
+const { resolveFilingSubject } = require('../utils/onBehalf');
 const { countWorkingDays, ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
 const { sandwichedDays } = require('../utils/sandwichLeave');
 const { getLeavePolicies, getJoiningRule, grantedToDate } = require('../utils/leavePolicy');
@@ -237,11 +238,11 @@ router.get('/', authorize('admin', 'director', 'hr_admin', 'manager', 'team_inch
 /* Whose leave is this, and may the caller file it?
  *
  * Zoho reaches one form through two doors: My Data files for you and has no
- * employee field, Operations puts a selector on top and files for anybody.
- * Filing for somebody else spends THEIR balance and can cost them pay, so it is
- * an administrative act and gated like one — a team lead approving a report is
- * not the same authority as booking leave in their name. */
-const LEAVE_UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+ * employee field, Operations puts a selector on top and files for somebody
+ * else. Who may name somebody else — full access for anybody, a manager for
+ * their own reports — is utils/onBehalf.js, shared with comp-off,
+ * regularization and on-duty. The request still goes through the subject's
+ * whole approval chain; filing it approves nothing. */
 
 /* Is that month's payroll already settled?
  *
@@ -268,20 +269,7 @@ async function payrollLockFor(date) {
 }
 
 async function resolveLeaveSubject(user, employeeId) {
-  if (!employeeId || String(employeeId) === String(user._id)) {
-    return { id: user._id, onBehalf: false };
-  }
-  if (!isFullAccess(user.role)) {
-    return { error: 403, message: 'Only HR and administrators can apply leave for another employee.' };
-  }
-  if (!LEAVE_UUID.test(String(employeeId))) {
-    return { error: 400, message: 'That is not a valid employee.' };
-  }
-  const r = await pool.query(
-    `SELECT id, TRIM(CONCAT(first_name, ' ', last_name)) AS name
-       FROM employees WHERE id = $1 AND deleted_at IS NULL`, [employeeId]);
-  if (!r.rows.length) return { error: 404, message: 'That employee no longer exists.' };
-  return { id: r.rows[0].id, name: r.rows[0].name, onBehalf: true };
+  return resolveFilingSubject(pool, user, employeeId);
 }
 
 router.post('/', [
@@ -339,7 +327,7 @@ router.post('/', [
      * accuracy.
      *
      * What stays gated is filing for SOMEBODY ELSE, which resolveLeaveSubject
-     * already restricts to admin, HR and directors — that is an administrative
+     * restricts to full access and the person's own manager — that is an administrative
      * act on another person's balance and pay, and a different thing entirely
      * from correcting your own record.
      *

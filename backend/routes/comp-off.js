@@ -3,7 +3,9 @@ const router = express.Router();
 const pool = require('../db');
 const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
-const { isFullAccess } = require('../utils/roles');
+const { isFullAccess, canActOnEmployee, subtreeClause, teamScope } = require('../utils/roles');
+const { resolveFilingSubject } = require('../utils/onBehalf');
+const { logAudit } = require('../utils/audit');
 const { audit } = require('../middleware/audit');
 const { createNotification } = require('./notifications');
 const {
@@ -128,34 +130,16 @@ async function workedOn(db, employeeId, date) {
  *
  * Zoho reaches the same form through two doors: My Data files for yourself and
  * has no employee field at all, while Operations puts an employee selector on
- * top and files for anybody. One form, one record, two contexts — so this takes
- * an optional employeeId and decides, rather than there being two endpoints
- * that could drift apart.
+ * top and files for somebody else. One form, one record, two contexts — so this
+ * takes an optional employeeId and decides, rather than there being two
+ * endpoints that could drift apart.
  *
- * Filing for somebody else grants them a paid day off, so it is an
- * administrative act and is gated like one. Absent or self-addressed, nothing
- * changes and the employee's own route behaves exactly as it did. */
+ * Who may name somebody else is utils/onBehalf.js, the rule leave,
+ * regularization and on-duty share. Absent or self-addressed, nothing changes
+ * and the employee's own route behaves exactly as it did. */
 const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
-async function resolveSubject(db, user, employeeId) {
-  if (!employeeId || String(employeeId) === String(user._id)) {
-    return { id: user._id, onBehalf: false };
-  }
-  if (!isFullAccess(user.role)) {
-    return { error: 403, message: 'Only HR and administrators can file a comp-off for another employee.' };
-  }
-  // An id that is not a UUID would reach postgres as a cast error and surface
-  // as a 500, which reads as "the server broke" rather than "that is not an
-  // employee". Refuse it here where the reason can still be stated.
-  if (!UUID.test(String(employeeId))) {
-    return { error: 400, message: 'That is not a valid employee.' };
-  }
-  const r = await db.query(
-    `SELECT id, TRIM(CONCAT(first_name, ' ', last_name)) AS name
-       FROM employees WHERE id = $1 AND deleted_at IS NULL`, [employeeId]);
-  if (!r.rows.length) return { error: 404, message: 'That employee no longer exists.' };
-  return { id: r.rows[0].id, name: r.rows[0].name, onBehalf: true };
-}
+const resolveSubject = resolveFilingSubject;
 
 // Today's date in the app's default timezone as YYYY-MM-DD, so the
 // past/future guards match what users see.
@@ -193,10 +177,13 @@ router.get('/my', async (req, res) => {
 
 // GET pending (admin/manager) — same hierarchy scoping as the leave queue:
 // full-access sees the whole org; everyone else sees requests where they are an
-// assigned approver of a still-pending level.
+// assigned approver of a still-pending level. ?scope=all (Team → All) also lists
+// the pending requests of everybody below the caller, to read — canAct is still
+// only true where they hold a pending level.
 router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
     const full = isFullAccess(req.user.role);
+    const below = teamScope(req) === 'all' ? ` OR ${subtreeClause('e', 1)}` : '';
     const r = await pool.query(
       `SELECT c.id as "_id", c.worked_date as "workedDate", c.comp_off_date as "compOffDate",
               c.reason, c.days_earned as "daysEarned", c.expires_at as "expiresAt",
@@ -219,7 +206,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                SELECT 1 FROM approval_levels x
                 WHERE x.request_type = 'comp_off' AND x.request_id = c.id
                   AND x.approver_id = $1 AND x.status = 'pending'
-          ))
+          )${below})
         ORDER BY c.worked_date DESC`,
       [req.user._id, full]
     );
@@ -306,6 +293,58 @@ router.get('/all', authorize('admin', 'director', 'hr_admin'), async (req, res) 
          LEFT JOIN employees m ON m.id = e.reporting_manager_id
         ORDER BY c.created_at DESC
         LIMIT 500`);
+    res.json({ success: true, data: r.rows });
+  } catch (err) { serverError(res, err); }
+});
+
+/* One employee's comp-offs, whatever their status — the Compensatory Request
+ * tab on a person's Leave Tracker page. /all answers the same question for the
+ * whole company and stays full access; this is the one-person slice of it that
+ * the person themselves and their own manager may also read, so the tab can be
+ * shown to a manager without opening /all to them. Same row shape as /all. */
+router.get('/employee/:employeeId', async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    if (!UUID.test(String(employeeId))) {
+      return res.status(400).json({ success: false, message: 'That is not a valid employee.' });
+    }
+    if (String(employeeId) !== String(req.user._id) && !isFullAccess(req.user.role)) {
+      const t = await pool.query(
+        `SELECT reporting_manager_id, approving_authority_id
+           FROM employees WHERE id = $1 AND deleted_at IS NULL`, [employeeId]);
+      if (!t.rows[0] || !canActOnEmployee(req.user, t.rows[0])) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only view comp-off requests for yourself and the people who report to you.',
+        });
+      }
+    }
+    const r = await pool.query(
+      `SELECT c.id as "_id", c.worked_date as "workedDate", c.comp_off_date as "compOffDate",
+              c.reason, c.days_earned as "daysEarned", c.days_used as "daysUsed",
+              c.expires_at as "expiresAt", c.status,
+              c.rejection_reason as "rejectionReason", c.created_at as "createdAt",
+              (c.expires_at IS NOT NULL AND c.expires_at < CURRENT_DATE) as "expired",
+              CASE WHEN c.applied_by IS NULL THEN NULL
+                   ELSE TRIM(CONCAT(f.first_name, ' ', f.last_name)) END as "appliedBy",
+              json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
+                'department', e.department, 'employeeId', e.employee_id) as employee,
+              CASE WHEN m.id IS NULL THEN NULL
+                   ELSE TRIM(CONCAT(m.first_name, ' ', m.last_name)) END as "reportingTo",
+              ${COMPOFF_LEVELS_JSON} as "approvalLevels",
+              ($3::boolean OR (c.status = 'pending' AND EXISTS (
+                 SELECT 1 FROM approval_levels x
+                  WHERE x.request_type = 'comp_off' AND x.request_id = c.id
+                    AND x.approver_id = $2 AND x.status = 'pending'
+              ))) as "canAct"
+         FROM comp_offs c
+         JOIN employees e ON c.employee_id = e.id
+         LEFT JOIN employees f ON f.id = c.applied_by
+         LEFT JOIN employees m ON m.id = e.reporting_manager_id
+        WHERE c.employee_id = $1
+        ORDER BY c.created_at DESC
+        LIMIT 500`,
+      [employeeId, req.user._id, isFullAccess(req.user.role)]);
     res.json({ success: true, data: r.rows });
   } catch (err) { serverError(res, err); }
 });
@@ -403,6 +442,15 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
      * the person why, which is the version that gets fixed. */
     await createLevels(client, 'comp_off', created._id, subject.id);
     await client.query('COMMIT');
+
+    if (subject.onBehalf) {
+      await logAudit(req, {
+        action: 'APPLY_ON_BEHALF',
+        resource: 'CompOff',
+        resourceId: created._id,
+        changes: { employee: subject.name || subject.id, workedDate, compOffDate: compOffDate || null, daysEarned },
+      });
+    }
 
     res.status(201).json({ success: true, data: created });
   } catch (err) {

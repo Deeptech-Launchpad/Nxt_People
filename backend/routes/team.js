@@ -21,7 +21,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { allows } = require('../utils/functionAccess');
-const { reportsScope, isFullAccess } = require('../utils/roles');
+const { reportsScope, isFullAccess, teamScope } = require('../utils/roles');
 const { approvalLevelsJson } = require('../utils/leaveApproval');
 const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
 const logger = require('../logger');
@@ -71,8 +71,8 @@ const PRESENCE = `
   END`;
 
 /** Push reportsScope()'s clause and params onto a query being built. */
-function scopeInto(user, alias, params) {
-  const s = reportsScope(user, alias, params.length + 1);
+function scopeInto(user, alias, params, scope) {
+  const s = reportsScope(user, alias, params.length + 1, scope);
   params.push(...s.params);
   return s.clause;
 }
@@ -215,7 +215,7 @@ router.get('/on-leave', approvers, async (req, res) => {
   try {
     const date = dateArg(req.query.date);
     const params = [date];
-    const scope = scopeInto(req.user, 'e', params);
+    const scope = scopeInto(req.user, 'e', params, teamScope(req));
 
     const r = await pool.query(
       `SELECT l.employee_id AS "employeeId", l.leave_type AS "leaveType",
@@ -250,7 +250,7 @@ router.get('/reportees', approvers, async (req, res) => {
   try {
     const date = dateArg(req.query.date);
     const params = [date];
-    const scope = scopeInto(req.user, 'e', params);
+    const scope = scopeInto(req.user, 'e', params, teamScope(req));
 
     const r = await pool.query(
       `SELECT e.id, e.employee_id AS "employeeId",
@@ -309,7 +309,7 @@ router.get('/list', approvers, async (req, res) => {
     const orderBy = buildOrder(TEAM_LIST_FIELDS, req.query.sortBy, req.query.sortDir, 'e.first_name');
 
     const params = [];
-    const scope = scopeInto(req.user, 'e', params);
+    const scope = scopeInto(req.user, 'e', params, teamScope(req));
     let where = `e.status = 'active' AND e.deleted_at IS NULL ${scope}`;
 
     // The same filter engine Employee Information's list uses, over a field
@@ -358,7 +358,7 @@ router.get('/list', approvers, async (req, res) => {
 router.get('/ex-employees', approvers, async (req, res) => {
   try {
     const params = [];
-    const scope = scopeInto(req.user, 'e', params);
+    const scope = scopeInto(req.user, 'e', params, teamScope(req));
 
     const r = await pool.query(
       `SELECT e.id, e.employee_id AS "employeeId",
@@ -393,7 +393,7 @@ router.get('/leave-week', approvers, async (req, res) => {
   try {
     const start = dateArg(req.query.start);
     const params = [start];
-    const scope = scopeInto(req.user, 'e', params);
+    const scope = scopeInto(req.user, 'e', params, teamScope(req));
 
     const r = await pool.query(
       `SELECT d.day::date::text AS date, e.id AS "employeeId", e.employee_id AS "employeeCode",
@@ -426,7 +426,7 @@ router.get('/leave-requests', approvers, async (req, res) => {
   try {
     const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
     const params = [req.user._id, isFullAccess(req.user.role)];
-    const scope = scopeInto(req.user, 'e', params);
+    const scope = scopeInto(req.user, 'e', params, teamScope(req));
 
     let where = `e.deleted_at IS NULL ${scope}`;
     const status = String(req.query.status || '').trim();

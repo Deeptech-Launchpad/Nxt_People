@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
-const { isFullAccess } = require('../utils/roles');
+const { isFullAccess, subtreeClause, teamScope } = require('../utils/roles');
 const { shiftConfig, mayEditMapping, mayViewMapping } = require('../utils/shiftConfig');
 const { resolveTargets } = require('../utils/employeeCriteria');
 router.use(protect);
@@ -88,8 +88,12 @@ router.get('/', async (req, res) => {
       const cfg = await shiftConfig();
       const ids = new Set([String(req.user._id)]);
       if (mayViewMapping(cfg, 'manager')) {
+        // ?scope=all (Team, All) widens the reports to everybody below the
+        // caller; the default stays their direct reports.
         const team = await pool.query(
-          `SELECT id FROM employees WHERE reporting_manager_id = $1`, [req.user._id]);
+          teamScope(req) === 'all'
+            ? `SELECT e.id FROM employees e WHERE ${subtreeClause('e', 1)}`
+            : `SELECT id FROM employees WHERE reporting_manager_id = $1`, [req.user._id]);
         team.rows.forEach(r => ids.add(String(r.id)));
       }
       if (cfg.allowViewDepartmentSchedules) {

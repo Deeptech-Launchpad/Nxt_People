@@ -5,7 +5,9 @@ const pool = require('../db');
 const { fire } = require('../utils/workflowEngine');
 const { protect, authorize } = require('../middleware/auth');
 const { deadlineFor, isClosed: deadlinePassed } = require('../utils/regularizationWindow');
-const { isFullAccess } = require('../utils/roles');
+const { isFullAccess, subtreeClause, teamScope } = require('../utils/roles');
+const { resolveFilingSubject } = require('../utils/onBehalf');
+const { logAudit } = require('../utils/audit');
 const { resolveEmployeeId } = require('../utils/employeeScope');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { classifyDay } = require('../utils/attendanceRule');
@@ -118,7 +120,9 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
   try {
     // Full-access sees the whole pending queue; everyone else sees regularizations
     // where they are an assigned approver of a still-pending hierarchy level.
+    // ?scope=all (Team, All) adds everybody below the caller, to read only.
     const full = isFullAccess(req.user.role);
+    const below = teamScope(req) === 'all' ? ` OR ${subtreeClause('e', 1)}` : '';
     const result = await pool.query(
       `SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
        r.reason, r.status, r.created_at as "createdAt",
@@ -140,7 +144,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
          AND ($2::boolean OR EXISTS (
               SELECT 1 FROM approval_levels x
                WHERE x.request_type = 'regularization' AND x.request_id = r.id AND x.approver_id = $1 AND x.status = 'pending'
-         ))
+         )${below})
        ORDER BY r.date DESC`,
       [req.user._id, full]
     );
@@ -173,19 +177,12 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
      * and not the admin's. An admin raising a request that routes to the
      * admin's own manager would be an approval no one intended.
      *
-     * Only full access may name somebody else. Everyone else raises their
-     * own regardless of what they send. */
-    const subjectId = isFullAccess(req.user.role) && req.body.employeeId
-      ? String(req.body.employeeId)
-      : req.user._id;
-    const onBehalf = String(subjectId) !== String(req.user._id);
-    if (onBehalf) {
-      const who = await pool.query(
-        `SELECT id FROM employees WHERE id=$1 AND deleted_at IS NULL`, [subjectId]);
-      if (!who.rows.length) {
-        return res.status(404).json({ success: false, message: 'That employee no longer exists' });
-      }
-    }
+     * Who may name somebody else — full access for anybody, a manager for
+     * their own reports — is utils/onBehalf.js. */
+    const subject = await resolveFilingSubject(pool, req.user, req.body.employeeId);
+    if (subject.error) return res.status(subject.error).json({ success: false, message: subject.message });
+    const subjectId = subject.id;
+    const onBehalf = subject.onBehalf;
 
     const cfg = await attendanceConfig.section('regularization');
     const restrictions = cfg.restrictions || {};
@@ -206,8 +203,11 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
     // Full access can still act after the deadline. A biometric that never
     // registered is exactly the case a hard close would strand, and the
     // override is written to the audit trail rather than being silent.
-    if (!isFullAccess(req.user.role) && await deadlinePassed(req.user._id, date)) {
-      const missed = await deadlineFor(req.user._id, date);
+    //
+    // Anybody else meets the deadline exactly as the employee would, and it is
+    // the employee's deadline that applies, not the filer's.
+    if (!isFullAccess(req.user.role) && await deadlinePassed(subjectId, date)) {
+      const missed = await deadlineFor(subjectId, date);
       return res.status(400).json({
         success: false,
         message: `The window for ${date} closed on ${missed}. It now counts as an unregularized absence — ask HR if it needs correcting.`,
@@ -312,6 +312,15 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
       throw err;
     } finally {
       client.release();
+    }
+
+    if (onBehalf) {
+      await logAudit(req, {
+        action: 'APPLY_ON_BEHALF',
+        resource: 'Regularization',
+        resourceId: reg._id,
+        changes: { employee: subject.name || subjectId, date, checkIn: checkIn || null, checkOut: checkOut || null },
+      });
     }
 
     // ── Notify all levels ──

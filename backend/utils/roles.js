@@ -60,9 +60,12 @@ const isManager    = (role) => roleCan(role, 'people.viewReports');
  * @param {number} paramIndex  next positional placeholder index ($N)
  * @returns {{clause: string, params: any[]}}
  */
-function reportsScope(user, alias, paramIndex) {
+function reportsScope(user, alias, paramIndex, scope) {
   if (isFullAccess(user.role)) return { clause: '', params: [] };
   if (isManager(user.role)) {
+    if (scope === 'all') {
+      return { clause: ` AND ${subtreeClause(alias, paramIndex)}`, params: [user._id] };
+    }
     return {
       clause: ` AND (${alias}.reporting_manager_id = $${paramIndex} OR ${alias}.approving_authority_id = $${paramIndex})`,
       params: [user._id],
@@ -71,6 +74,32 @@ function reportsScope(user, alias, paramIndex) {
   // Non-approver fallthrough: match nothing.
   return { clause: ' AND 1=0', params: [] };
 }
+
+/**
+ * `${alias}.id` is anywhere below the manager at $paramIndex: their direct
+ * reports (reporting manager OR approving authority, as reportsScope counts
+ * them) and everybody who reports up to one of those through
+ * reporting_manager_id. Depth-capped like deriveLevels, so a cycle in the
+ * reporting data cannot run away, and the manager is never their own report.
+ *
+ * Read-only visibility for the Team pages' "All" view. Filing on somebody's
+ * behalf stays direct reports only (utils/onBehalf.js).
+ */
+function subtreeClause(alias, paramIndex) {
+  return `${alias}.id IN (
+    WITH RECURSIVE below AS (
+      SELECT t.id, 1 AS depth FROM employees t
+       WHERE t.reporting_manager_id = $${paramIndex} OR t.approving_authority_id = $${paramIndex}
+      UNION ALL
+      SELECT t.id, b.depth + 1 FROM employees t
+        JOIN below b ON t.reporting_manager_id = b.id
+       WHERE b.depth < 20
+    )
+    SELECT id FROM below WHERE id <> $${paramIndex})`;
+}
+
+/** The Team pages' Direct / All switch. Anything but ?scope=all is direct. */
+const teamScope = (req) => (req.query && req.query.scope === 'all' ? 'all' : 'direct');
 
 /**
  * True when `user` may approve/act on a request belonging to the employee
@@ -86,5 +115,5 @@ function canActOnEmployee(user, target) {
 
 module.exports = {
   ROLES, FULL_ACCESS, APPROVERS,
-  isFullAccess, isManager, reportsScope, canActOnEmployee,
+  isFullAccess, isManager, reportsScope, subtreeClause, teamScope, canActOnEmployee,
 };
