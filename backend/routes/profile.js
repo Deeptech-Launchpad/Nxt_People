@@ -10,6 +10,7 @@ const { protect } = require('../middleware/auth');
 const { mergeRows } = require('../utils/mergeRows');
 const { serverError } = require('../utils/serverError');
 const { orgPolicy, mayUpdatePhoto, applyPrivacy } = require('../utils/orgPolicy');
+const { saveProfilePhoto, deleteProfilePhoto } = require('../utils/profilePhoto');
 router.use(protect);
 
 // Identity of one real entry — used to collapse the partial duplicate rows the
@@ -20,32 +21,11 @@ const eduKey     = (r) => `${String(r.institute || '').trim().toLowerCase()}|${r
 const PROFILE_PHOTO_MAX_MB = 10;
 
 /* ── Photo upload (used by every role: employee / manager / admin) ────────
- *   Stored under backend/uploads/photos/ and served via /uploads/photos/<f>. */
-const photosDir = path.join(__dirname, '..', 'uploads', 'photos');
-if (!fs.existsSync(photosDir)) fs.mkdirSync(photosDir, { recursive: true });
-
-// Strict allowlist — anything outside this set is rejected at fileFilter,
-// and the saved filename is locked to ONLY this extension. Defends against
-// "image.jpg.php" double-extension tricks: even if Apache (or a future
-// proxy) is misconfigured to map .php in /uploads, we never write that
-// extension to disk.
+ *   Saved into the employee's own folder — see utils/profilePhoto.js. */
 const ALLOWED_PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 
-const photoStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, photosDir),
-  filename:    (req, file, cb) => {
-    // Re-check against the allowlist inside filename() so a future change
-    // to fileFilter can't accidentally let a bad ext through to disk.
-    const rawExt = path.extname(file.originalname).toLowerCase();
-    const ext = ALLOWED_PHOTO_EXTS.has(rawExt) ? rawExt : '.jpg';
-    // crypto.randomBytes prevents the Date.now() millisecond-collision case
-    // where two uploads in the same ms clobbered each other.
-    const rand = crypto.randomBytes(8).toString('hex');
-    cb(null, `${req.user._id}-${rand}${ext}`);
-  },
-});
 const photoUpload = multer({
-  storage: photoStorage,
+  storage: multer.memoryStorage(),
   limits:  { fileSize: PROFILE_PHOTO_MAX_MB * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     // path.extname returns ONLY the final extension, so "image.jpg.php"
@@ -383,21 +363,11 @@ router.post('/photo', (req, res, next) => {
       });
     }
 
-    const photoUrl = `/uploads/photos/${req.file.filename}`;
-
-    // Best-effort cleanup of the previous file so the directory doesn't grow forever.
-    const prev = await pool.query('SELECT photo_url FROM employees WHERE id = $1', [req.user._id]);
-    const oldUrl = prev.rows[0]?.photo_url;
-    if (oldUrl && oldUrl.startsWith('/uploads/photos/')) {
-      const oldPath = path.join(__dirname, '..', oldUrl);
-      fs.unlink(oldPath, () => {}); // ignore errors — file may already be gone
-    }
-
-    await pool.query('UPDATE employees SET photo_url = $1, updated_at = NOW() WHERE id = $2',
-      [photoUrl, req.user._id]);
+    const photoUrl = await saveProfilePhoto(pool, req.user._id, req.file.buffer, req.file.originalname);
 
     res.json({ success: true, photoUrl });
   } catch (err) {
+    if (err.userFacing) return res.status(400).json({ success: false, message: err.message });
     serverError(res, err);
   }
 });
@@ -405,13 +375,7 @@ router.post('/photo', (req, res, next) => {
 // DELETE /api/profile/photo — remove the caller's profile picture (revert to initials).
 router.delete('/photo', async (req, res) => {
   try {
-    const prev = await pool.query('SELECT photo_url FROM employees WHERE id = $1', [req.user._id]);
-    const oldUrl = prev.rows[0]?.photo_url;
-    if (oldUrl && oldUrl.startsWith('/uploads/photos/')) {
-      const oldPath = path.join(__dirname, '..', oldUrl);
-      fs.unlink(oldPath, () => {});
-    }
-    await pool.query('UPDATE employees SET photo_url = NULL, updated_at = NOW() WHERE id = $1', [req.user._id]);
+    await deleteProfilePhoto(pool, req.user._id);
     res.json({ success: true });
   } catch (err) {
     serverError(res, err);

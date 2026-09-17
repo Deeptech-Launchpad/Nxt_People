@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const pool = require('./db');
 const store = require('./utils/documentStore');
+const { isPhotoName } = require('./utils/profilePhoto');
 
 const APPLY = process.env.APPLY === '1' || process.argv.includes('--apply');
 const fmtSize = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
@@ -50,6 +51,8 @@ const fmtSize = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 10
     for (const file of fs.readdirSync(dir)) {
       onDisk++;
       if (claimed.has(`${folder}/${file}`)) continue;
+      // The profile photo lives here too and has no document row.
+      if (isPhotoName(file)) continue;
       const { size, mtime } = fs.statSync(path.join(dir, file));
       orphans.push({ folder, file, size, mtime });
     }

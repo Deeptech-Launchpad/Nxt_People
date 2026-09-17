@@ -23,6 +23,7 @@ const xlsx = require('xlsx');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
+const { saveProfilePhoto } = require('../utils/profilePhoto');
 const { logAudit } = require('../utils/audit');
 const { buildCriteria } = require('../utils/listQuery');
 const { canImportExport } = require('./employee-info-permissions');
@@ -461,7 +462,6 @@ router.get('/import-template/:module', (req, res) => {
 
 /* ── Profile photos, in bulk ─────────────────────────────────────────────── */
 
-const PHOTO_DIR = path.join(__dirname, '..', 'uploads', 'photos');
 const ALLOWED_PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 
 const bulkPhotoUpload = multer({
@@ -489,7 +489,6 @@ router.post('/photos', (req, res, next) => {
     const files = req.files || [];
     if (!files.length) return res.status(400).json({ success: false, message: 'Attach at least one image' });
 
-    fs.mkdirSync(PHOTO_DIR, { recursive: true });
     const matched = [], unmatched = [];
 
     for (const f of files) {
@@ -498,19 +497,12 @@ router.post('/photos', (req, res, next) => {
         `SELECT id, photo_url FROM employees WHERE employee_id = $1 AND deleted_at IS NULL`, [code]);
       if (!emp.rows.length) { unmatched.push({ file: f.originalname, reason: `No employee with ID "${code}"` }); continue; }
 
-      const ext = path.extname(f.originalname).toLowerCase();
-      const name = `bulk-${emp.rows[0].id}-${Date.now()}${ext}`;
-      fs.writeFileSync(path.join(PHOTO_DIR, name), f.buffer);
-      const url = `/uploads/photos/${name}`;
-
-      await pool.query(`UPDATE employees SET photo_url = $1, updated_at = NOW() WHERE id = $2`,
-        [url, emp.rows[0].id]);
-
-      // Best-effort cleanup of the file it replaced, so the directory does not
-      // grow by one image per re-upload forever.
-      const old = emp.rows[0].photo_url;
-      if (old && old.startsWith('/uploads/photos/')) {
-        fs.unlink(path.join(__dirname, '..', old), () => {});
+      try {
+        await saveProfilePhoto(pool, emp.rows[0].id, f.buffer, f.originalname);
+      } catch (err) {
+        if (!err.userFacing) throw err;
+        unmatched.push({ file: f.originalname, reason: err.message });
+        continue;
       }
       matched.push({ file: f.originalname, employeeId: code });
     }

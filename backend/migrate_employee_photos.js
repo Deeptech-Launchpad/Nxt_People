@@ -36,6 +36,7 @@ const crypto = require('crypto');
 const path = require('path');
 const pool = require('./db');
 const { getAccessToken, zohoApi } = require('./utils/zoho');
+const { saveProfilePhoto } = require('./utils/profilePhoto');
 
 const APPLY = process.argv.includes('--apply');
 const PROBE = process.argv.includes('--probe');
@@ -255,10 +256,7 @@ async function main() {
       log.push({ code: f.r.code, outcome: 'skipped — same image as other employees (Zoho default avatar)' });
       continue;
     }
-    const file = `zoho-${f.r.code}-${Date.now()}.${f.got.kind}`;
-    fs.writeFileSync(path.join(PHOTO_DIR, file), f.got.buf);
-    await pool.query(`UPDATE employees SET photo_url = $1, updated_at = NOW() WHERE id = $2`,
-      [`/uploads/photos/${file}`, f.r.id]);
+    const file = await saveProfilePhoto(pool, f.r.id, f.got.buf, `photo.${f.got.kind}`);
     log.push({ code: f.r.code, outcome: 'saved', via: f.via, file, bytes: f.got.bytes });
     saved++;
   }

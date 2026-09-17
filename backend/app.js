@@ -145,6 +145,10 @@ app.use('/uploads/covers', express.static(path.join(__dirname, 'uploads', 'cover
 // And the organization logo, for the same reason: it renders in an <img> on
 // the sign-in page, which nobody has a token on yet.
 app.use('/uploads/logos', express.static(path.join(__dirname, 'uploads', 'logos')));
+// Profile photos kept in the employee folders. Only the exact
+// <ID>_Profile-Photo.<ext> name is served without a token; every other file in
+// those folders falls through to the token check below.
+app.use('/uploads/employees', require('./utils/profilePhoto').servePublicPhoto);
 const jwt = require('jsonwebtoken');
 app.use('/uploads', (req, res, next) => {
   const authHeader = req.headers.authorization;
