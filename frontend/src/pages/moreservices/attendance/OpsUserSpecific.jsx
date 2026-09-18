@@ -11,6 +11,7 @@ import OnDutyModal from '../../../components/requests/OnDutyModal';
 import useSortable from '../../../components/table/useSortable';
 import SortableTh from '../../../components/table/SortableTh';
 import { useLocaleFormat, formatTime, formatInstantTime } from '../../../utils/datetime';
+import { AttendanceTimelineList, AttendanceListTable, AttendanceCalendarMonth } from '../../attendance/attendanceViews';
 
 /* ── User-specific Operations ─────────────────────────────────────────────
  *  Zoho's first Attendance tab: search an employee, then act on THEIR
@@ -189,115 +190,10 @@ const hoursOf = (att) => {
 };
 
 /* ── views ───────────────────────────────────────────────────────────────── */
-
-const DAY_START_MIN = 8 * 60, DAY_END_MIN = 20 * 60;
-const minutesOf = (iso) => {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const ist = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  return ist.getHours() * 60 + ist.getMinutes();
-};
-const pct = (min) => Math.max(0, Math.min(100, ((min - DAY_START_MIN) / (DAY_END_MIN - DAY_START_MIN)) * 100));
-
-function TimelineView({ days }) {
-  const { timeFormat } = useLocaleFormat();
-  return (
-    <div className="border border-slate-200 rounded-2xl divide-y divide-slate-50 overflow-hidden">
-      <div className="flex items-center px-4 py-2 bg-slate-50 text-[12px] text-slate-400">
-        <span className="w-32 flex-shrink-0">Day</span>
-        <span className="flex-1 flex justify-between">
-          {['08:00', '11:00', '14:00', '17:00', '20:00'].map(t => <span key={t}>{t}</span>)}
-        </span>
-        <span className="w-24 text-right flex-shrink-0">Worked</span>
-      </div>
-      {days.map(d => {
-        const inMin = minutesOf(d.att?.checkIn), outMin = minutesOf(d.att?.checkOut);
-        const left = inMin === null ? null : pct(inMin);
-        const right = outMin === null ? null : pct(outMin);
-        const off = d.kind !== 'working';
-        return (
-          <div key={d.date} className={`flex items-center px-4 py-2.5 ${off ? 'bg-slate-50/70' : 'hover:bg-slate-50/60'}`}>
-            <span className="w-32 flex-shrink-0 text-[13.5px] text-slate-600">{fmtDate(d.date)}</span>
-            <span className="flex-1 relative h-6 bg-slate-100 rounded">
-              {left !== null && (
-                <span
-                  className={`absolute top-0 h-6 rounded ${d.att?.lateMinutes > 0 ? 'bg-amber-400' : 'bg-emerald-400'}`}
-                  style={{ left: `${left}%`, width: `${Math.max(1.5, (right === null ? left + 1.5 : right) - left)}%` }}
-                  title={`${fmtTime(d.att?.checkIn, timeFormat)} – ${fmtTime(d.att?.checkOut, timeFormat)}`}
-                />
-              )}
-              {left === null && (
-                <span className="absolute inset-0 flex items-center justify-center text-[12px] text-slate-400">
-                  {d.kind === 'holiday' ? d.holidayName || 'Holiday'
-                    : d.kind === 'weekend' ? 'Weekend'
-                    : d.isFuture ? '' : 'Absent'}
-                </span>
-              )}
-            </span>
-            <span className="w-24 text-right flex-shrink-0 font-mono text-[13.5px] text-slate-700">
-              {fmtHM(hoursOf(d.att))}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function CalendarView({ days, period }) {
-  const byDate = new Map(days.map(d => [d.date, d]));
-  const first = new Date(period.year, period.month, 1);
-  const daysInMonth = new Date(period.year, period.month + 1, 0).getDate();
-  const cells = [
-    ...Array.from({ length: first.getDay() }, () => null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
-  const today = toYmd(new Date());
-
-  return (
-    <div className="border border-slate-200 rounded-2xl overflow-hidden">
-      <div className="grid grid-cols-7 bg-slate-50 text-[12.5px] text-slate-500">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-          <div key={d} className="px-2 py-2 font-medium">{d}</div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7">
-        {cells.map((day, i) => {
-          if (day === null) return <div key={`x${i}`} className="min-h-[92px] border-t border-r border-slate-100 bg-slate-50/40" />;
-          const ymd = `${period.year}-${String(period.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const d = byDate.get(ymd);
-          /* Weekends and holidays are tinted rather than left blank — the
-             shape of the month is the reason to look at a calendar. */
-          const off = d && d.kind !== 'working';
-          return (
-            <div key={ymd} className={`min-h-[92px] border-t border-r border-slate-100 p-1.5 ${off ? 'bg-amber-50/40' : ''}`}>
-              <div className={`text-[12.5px] mb-1 ${ymd === today
-                ? 'w-5 h-5 rounded-full bg-brand-600 text-white flex items-center justify-center font-semibold' : 'text-slate-400'}`}>
-                {day}
-              </div>
-              {d?.kind === 'holiday' && (
-                <div className="rounded px-1.5 py-1 text-[11.5px] leading-tight border bg-sky-50 text-sky-700 border-sky-200 mb-1">
-                  {d.holidayName || 'Holiday'}
-                </div>
-              )}
-              {d?.att && (
-                <div className={`rounded px-1.5 py-1 text-[12px] leading-tight border ${
-                  STATUS_LABEL[d.att.status]?.cls || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                  <span className="block font-medium">{STATUS_LABEL[d.att.status]?.label || d.att.status}</span>
-                  {hoursOf(d.att) > 0 && <span className="block font-mono">{fmtHM(hoursOf(d.att))}</span>}
-                </div>
-              )}
-              {!d?.att && d?.kind === 'working' && !d?.isFuture && (
-                <div className="rounded px-1.5 py-1 text-[12px] border bg-red-50 text-red-500 border-red-100">Absent</div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+/* Timeline, List and Calendar all live in attendanceViews.jsx now — the same
+ * three views My Attendance draws for your own days. One implementation, so
+ * a reportee's day looks the same whether you open it from Team or from
+ * Operations, and the same as it looks to them. */
 
 /* The period totalled, the way the reference footers it. Days and Hours are
  * two readings of the same window, so they are a toggle rather than two
@@ -453,7 +349,7 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
   const [calendar, setCalendar] = useState([]);
   const [view, setView] = useState('list');
   const [showFilter, setShowFilter] = useState(false);
-  const [request, setRequest] = useState(null);   // 'regularization' | 'onduty'
+  const [request, setRequest] = useState(null);   // { type: 'regularization' | 'onduty', date }
   const [showAudit, setShowAudit] = useState(false);
   const [reload, setReload] = useState(0);
 
@@ -480,17 +376,27 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
 
   const days = useMemo(() => (rows === null ? [] : buildDays(period, rows, calendar)), [rows, calendar, period]);
   const shiftLabel = fmtShiftLabel(employee.shift, timeFormat);
-  const sort = useSortable(days, {
-    id: 'user-attendance-summary',
-    columns: {
-      date: { get: d => d.date, type: 'date' },
-      firstIn: { get: d => d.att?.checkIn || null, type: 'date' },
-      lastOut: { get: d => d.att?.checkOut || null, type: 'date' },
-      hours: { get: d => hoursOf(d.att), type: 'number' },
-      status: { get: d => (d.derivedStatus ? (STATUS_LABEL[d.derivedStatus]?.label || d.derivedStatus) : null), type: 'text' },
-      late: { get: d => (d.att?.lateMinutes > 0 ? Number(d.att.lateMinutes) : null), type: 'number' },
-    },
-  });
+
+  /* The shape attendanceViews.jsx draws -- the same one My Attendance builds
+   * for its own week, so a reportee's timeline, list and calendar are pixel
+   * for pixel what they would see of themselves. */
+  const todayYmd = toYmd(new Date());
+  const sharedDays = useMemo(() => days.map(d => ({
+    date: d.date,
+    isToday: d.date === todayYmd,
+    isFuture: d.isFuture,
+    isLoaded: true,
+    off: d.kind === 'holiday' ? { kind: 'holiday', label: d.holidayName || 'Holiday' }
+       : d.kind === 'weekend' ? { kind: 'weekend', label: 'Weekend' }
+       : null,
+    record: d.att ? {
+      checkIn: d.att.checkIn, checkOut: d.att.checkOut, sessions: d.att.sessions,
+      workingHours: d.att.workingHours, lateMinutes: d.att.lateMinutes,
+      sessionStartedAt: d.att.sessionStartedAt, status: d.att.status,
+    } : null,
+  })), [days, todayYmd]);
+
+  const [rowRequest, setRowRequest] = useState(null); // { date, buttonRect } -- the hover Add Request popup
 
   const exportCsv = () => {
     const head = ['Date', 'Day type', 'First In', 'Last Out', 'Total Hours', 'Status', 'Late By'];
@@ -535,7 +441,7 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
               full-access power, and the POST silently files on the caller
               instead of refusing, so a manager's click would quietly land on
               their own day. */}
-          {canManage && <RequestMenu onPick={setRequest} />}
+          {canManage && <RequestMenu onPick={(type) => setRequest({ type, date: toYmd(new Date()) })} />}
 
           <div className="relative">
             <button onClick={() => setShowFilter(f => !f)} title="Filter"
@@ -565,57 +471,72 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
         <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
       ) : (
         <>
-          {view === 'timeline' ? <TimelineView days={days} />
-            : view === 'calendar' ? <CalendarView days={days} period={period} />
-            : (
-              <div className="border border-slate-200 rounded-2xl overflow-auto">
-                <table className="w-full text-[14.5px] min-w-max">
-                  <thead className="bg-slate-50">
-                    <tr className="text-left text-slate-500 text-sm">
-                      <SortableTh sort={sort} k="date" className="px-4 py-3 font-medium">Date</SortableTh>
-                      <SortableTh sort={sort} k="firstIn" className="px-4 py-3 font-medium">First In</SortableTh>
-                      <SortableTh sort={sort} k="lastOut" className="px-4 py-3 font-medium">Last Out</SortableTh>
-                      <SortableTh sort={sort} k="hours" className="px-4 py-3 font-medium">Total Hours</SortableTh>
-                      <SortableTh sort={sort} k="status" className="px-4 py-3 font-medium">Status</SortableTh>
-                      <SortableTh sort={sort} k="late" className="px-4 py-3 font-medium">Late By</SortableTh>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sort.sorted.map(d => (
-                      <tr key={d.date} className={`border-t border-slate-50 ${d.kind !== 'working' ? 'bg-slate-50/60' : 'hover:bg-slate-50/60'}`}>
-                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{fmtDate(d.date)}</td>
-                        <td className="px-4 py-3 text-slate-600">{fmtTime(d.att?.checkIn, timeFormat)}</td>
-                        <td className="px-4 py-3 text-slate-600">{fmtTime(d.att?.checkOut, timeFormat)}</td>
-                        <td className="px-4 py-3 text-slate-700 font-mono">{fmtHM(hoursOf(d.att))}</td>
-                        <td className="px-4 py-3">
-                          {d.derivedStatus
-                            ? <StatusPill status={d.derivedStatus} title={d.holidayName || undefined} />
-                            : <span className="text-slate-300">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-amber-600">
-                          {d.att?.lateMinutes > 0 ? `Late by ${fmtHM(d.att.lateMinutes / 60)}` : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+          {view === 'timeline'
+            ? <AttendanceTimelineList days={sharedDays} timeFormat={timeFormat}
+                onAddRequest={canManage ? (date, buttonRect) => setRowRequest({ date, buttonRect }) : undefined} />
+            : view === 'calendar'
+              ? <AttendanceCalendarMonth year={period.year} month={period.month} days={sharedDays} />
+              : <AttendanceListTable days={sharedDays} timeFormat={timeFormat} sortId="user-attendance-summary"
+                  onQuickRegularize={canManage ? (date) => setRequest({ type: 'regularization', date }) : undefined} />}
           <SummaryFooter days={days} shiftLabel={shiftLabel} />
         </>
       )}
 
-      {request === 'regularization' && (
-        <RegularizeModal date={toYmd(new Date())} employeeId={employee._id}
+      {rowRequest && (
+        <RowRequestPopup buttonRect={rowRequest.buttonRect}
+          onClose={() => setRowRequest(null)}
+          onPick={(type) => { setRequest({ type, date: rowRequest.date }); setRowRequest(null); }} />
+      )}
+
+      {request?.type === 'regularization' && (
+        <RegularizeModal date={request.date} employeeId={employee._id}
           onClose={() => setRequest(null)}
           onDone={() => { setRequest(null); setReload(n => n + 1); }} />
       )}
-      {request === 'onduty' && (
-        <OnDutyModal date={toYmd(new Date())} employeeId={employee._id}
+      {request?.type === 'onduty' && (
+        <OnDutyModal date={request.date} employeeId={employee._id}
           onClose={() => setRequest(null)}
           onDone={() => { setRequest(null); setReload(n => n + 1); }} />
       )}
       {showAudit && <AuditDialog employee={employee} onClose={() => setShowAudit(false)} />}
+    </div>
+  );
+}
+
+/* The Timeline row's own hover "Add Request", offering the same two options
+ * the header's does, but against the day that was hovered rather than today.
+ * Positioned off the button's own rect, the way My Attendance's row menu is. */
+function RowRequestPopup({ buttonRect, onClose, onPick }) {
+  const ref = useRef(null);
+  const [pos, setPos] = useState({ left: -9999, top: -9999, ready: false });
+
+  useEffect(() => {
+    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, [onClose]);
+
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !buttonRect) return;
+    const GUTTER = 16;
+    const menuH = el.offsetHeight, menuW = el.offsetWidth;
+    const spaceBelow = window.innerHeight - buttonRect.bottom;
+    const openAbove = spaceBelow < menuH + GUTTER && buttonRect.top > spaceBelow;
+    const top = openAbove ? Math.max(GUTTER, buttonRect.top - menuH - 6) : Math.min(window.innerHeight - menuH - GUTTER, buttonRect.bottom + 6);
+    const left = Math.max(GUTTER, Math.min(buttonRect.right - menuW, window.innerWidth - menuW - GUTTER));
+    setPos({ left, top, ready: true });
+  }, [buttonRect]);
+
+  return (
+    <div ref={ref} className="fixed z-50 bg-white rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.12)] border border-slate-100 w-48 py-1"
+      style={{ left: pos.left, top: pos.top, opacity: pos.ready ? 1 : 0 }}>
+      {[['regularization', 'Regularization'], ['onduty', 'On Duty']].map(([id, label]) => (
+        <button key={id} onClick={() => onPick(id)}
+          className="w-full px-3.5 py-2 text-[14px] text-slate-600 hover:bg-slate-50 text-left">
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

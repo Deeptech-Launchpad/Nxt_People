@@ -12,9 +12,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useAttendance } from '../../context/AttendanceContext';
 import { useWeekendRules } from '../../context/WeekendRulesContext';
 import toast from 'react-hot-toast';
-import useSortable from '../../components/table/useSortable';
-import SortableTh from '../../components/table/SortableTh';
 import { useFormat, useLocaleFormat, formatInstantTime } from '../../utils/datetime';
+import { AttendanceTimelineList, AttendanceListTable, AttendanceCalendarMonth } from './attendanceViews';
 
 /* ── helpers ────────────────────────────────────────────────────────── */
 
@@ -55,36 +54,6 @@ function buildWeek(weekStart) {
     return d;
   });
 }
-
-/* Timeline: converts a time string "HH:MM" or timestamp to minute offset from shiftStart */
-function timeToMinutes(t) {
-  if (!t) return null;
-  const d = new Date(t);
-  return d.getHours() * 60 + d.getMinutes();
-}
-
-/* ── Status pill ─────────────────────────────────────────────────────── */
-const StatusPill = ({ status }) => {
-  const MAP = {
-    present:   { label: 'Present',   cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-    absent:    { label: 'Absent',     cls: 'bg-red-100 text-red-600 border-red-200'             },
-    'half-day':{ label: 'Half Day',   cls: 'bg-blue-100 text-blue-600 border-blue-200'          },
-    leave:     { label: 'On Leave',   cls: 'bg-purple-100 text-purple-600 border-purple-200'    },
-    holiday:   { label: 'Holiday',    cls: 'bg-cyan-100 text-cyan-600 border-cyan-200'          },
-    weekend:   { label: 'Weekend',    cls: 'bg-slate-100 text-slate-500 border-slate-200'       },
-  };
-  /* Late is a property of the arrival, not a verdict on the day: somebody who
-     came in at 09:46 was present. The minutes are already spelled out under
-     the date, so a "Late" pill here answered a question nobody asked and
-     crowded out the one they did — present, absent, or half. */
-  const key = status === 'late' ? 'present' : status;
-  const s = MAP[key] || { label: key || '—', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
-  return (
-    <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full border ${s.cls}`}>
-      {s.label}
-    </span>
-  );
-};
 
 /* ── Add Request Dropdown Menu ────────────────────────────────────────── */
 // Same positioning model as the Dashboard variant — caller hands in the
@@ -161,145 +130,6 @@ const RequestMenu = ({ buttonRect, onClose, canRegularize = false, date = null }
     </div>
   );
 };
-
-/* ── Timeline bar for one row ───────────────────────────────────────── */
-const SHIFT_START = 8 * 60;   // 08:00 → leftmost tick
-const SHIFT_END   = 20 * 60;  // 20:00 → rightmost tick
-const TICK_HOURS  = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
-
-/* The one place minutes become a horizontal position. The axis has to read off
-   the same scale the bars are drawn on, or it is decoration that lies. */
-const pctOfDay = (mins) =>
-  Math.max(0, Math.min(100, ((mins - SHIFT_START) / (SHIFT_END - SHIFT_START)) * 100));
-
-const minutesNow = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
-
-function TimelineBar({ record, isToday, isCheckedIn }) {
-  const { timeFormat } = useLocaleFormat();
-  const total = SHIFT_END - SHIFT_START;
-  const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-  const nowPct = Math.max(0, Math.min(100, ((nowMins - SHIFT_START) / total) * 100));
-  const showNowLine = isToday;
-
-  const sessions = record?.sessions;
-  const hasMultiSession = sessions && sessions.length > 1;
-
-  // Row with no check-in yet — only show baseline dots and (if today) the now-line.
-  if (!record?.checkIn && !hasMultiSession) {
-    return (
-      <div className="flex-1 flex items-center relative h-12">
-        <div className="absolute left-[3%] right-[3%] h-[1px] border-t border-dashed border-slate-200" style={{ top: '50%' }} />
-        <div className="absolute left-[3%] w-2 h-2 rounded-full border-2 border-slate-300 bg-white" style={{ top: '50%', transform: 'translate(-50%,-50%)' }} />
-        <div className="absolute right-[3%] w-2 h-2 rounded-full border-2 border-slate-300 bg-white" style={{ top: '50%', transform: 'translate(50%,-50%)' }} />
-        {showNowLine && (
-          <div className="absolute top-0 bottom-0 border-l border-dashed border-blue-400 z-20" style={{ left: `${nowPct}%` }} />
-        )}
-      </div>
-    );
-  }
-
-  /* One colour for a worked day. The amber meant "late", but next to the
-     amber weekend rails it read as a different KIND of day — and the lateness
-     is already stated in words beside the check-in time. */
-  const color = '#22c55e';
-
-  if (hasMultiSession) {
-    return (
-      <div className="flex-1 flex items-center relative h-12">
-        <div className="absolute left-[3%] right-[3%] h-[1px] border-t border-dashed border-slate-200" style={{ top: '50%' }} />
-        {sessions.map((s, i) => {
-          const sMins = timeToMinutes(s.checkIn);
-          const eMins = s.checkOut ? timeToMinutes(s.checkOut) : null;
-          const sPct = Math.max(0, Math.min(100, ((sMins - SHIFT_START) / total) * 100));
-          const ePct = eMins !== null ? Math.max(0, Math.min(100, ((eMins - SHIFT_START) / total) * 100)) : null;
-          const isActive = isToday && isCheckedIn && i === sessions.length - 1 && !s.checkOut;
-          const livePct = isActive ? Math.max(sPct, nowPct) : null;
-          return (
-            <React.Fragment key={i}>
-              {ePct !== null && (
-                <div className="absolute h-1 rounded-full" style={{ left: `${sPct}%`, width: `${Math.max(0, ePct - sPct)}%`, backgroundColor: color, top: '50%', transform: 'translateY(-50%)' }} />
-              )}
-              {livePct !== null && (
-                <div className="absolute h-0 border-t-2 border-dashed" style={{ left: `${sPct}%`, width: `${Math.max(0, livePct - sPct)}%`, borderColor: '#22c55e', top: '50%', transform: 'translateY(-50%)' }} />
-              )}
-              <div
-                className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
-                style={{ left: `${sPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-                title={`Session ${i + 1} in: ${fmtTime(s.checkIn, timeFormat)}`}
-              />
-              {ePct !== null && (
-                <div
-                  className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
-                  style={{ left: `${ePct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-                  title={`Session ${i + 1} out: ${fmtTime(s.checkOut, timeFormat)}`}
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
-        {showNowLine && (
-          <div className="absolute top-0 bottom-0 border-l border-dashed border-blue-400 z-20" style={{ left: `${nowPct}%` }} />
-        )}
-      </div>
-    );
-  }
-
-  // Single session — use sessions[0] times when available (preserves first check-in on re-check-in days)
-  const ci = sessions?.[0]?.checkIn || record.checkIn;
-  const co = sessions?.[0]?.checkOut || record.checkOut;
-
-  const checkInMins  = timeToMinutes(ci);
-  const checkOutMins = co ? timeToMinutes(co) : null;
-
-  const startPct = Math.max(0, Math.min(100, ((checkInMins - SHIFT_START) / total) * 100));
-  const endPct   = checkOutMins ? Math.max(0, Math.min(100, ((checkOutMins - SHIFT_START) / total) * 100)) : null;
-
-  const liveEndPct = isToday && isCheckedIn && !checkOutMins
-    ? Math.max(startPct, nowPct)
-    : null;
-
-  return (
-    <div className="flex-1 flex items-center relative h-12">
-      {/* Dashed baseline */}
-      <div className="absolute left-[3%] right-[3%] h-[1px] border-t border-dashed border-slate-200" style={{ top: '50%' }} />
-
-      {endPct !== null && (
-        <div
-          className="absolute h-1 rounded-full"
-          style={{ left: `${startPct}%`, width: `${endPct - startPct}%`, backgroundColor: color, top: '50%', transform: 'translateY(-50%)' }}
-        />
-      )}
-
-      {liveEndPct !== null && (
-        <div
-          className="absolute h-0 border-t-2 border-dashed"
-          style={{ left: `${startPct}%`, width: `${liveEndPct - startPct}%`, borderColor: '#22c55e', top: '50%', transform: 'translateY(-50%)' }}
-        />
-      )}
-
-      <div
-        className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
-        style={{ left: `${startPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-        title={`Check-in, ${fmtTime(ci, timeFormat)}`}
-      />
-
-      {endPct !== null && (
-        <div
-          className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
-          style={{ left: `${endPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-          title={`Check-out, ${fmtTime(co, timeFormat)}`}
-        />
-      )}
-
-      {showNowLine && (
-        <div
-          className="absolute top-0 bottom-0 border-l border-dashed border-blue-400 z-20"
-          style={{ left: `${nowPct}%` }}
-        />
-      )}
-    </div>
-  );
-}
 
 /* ── One punch, and where it happened ────────────────────────────────────
  *
@@ -723,12 +553,6 @@ export default function MyAttendance() {
 
   const todayStr = isoDate(new Date());
 
-  /* The axis only marks "now" when the week on screen actually contains today.
-     Recomputed each render, exactly like the per-row now-line above it, so the
-     two always agree. */
-  const weekHasToday = week.some(d => isoDate(d) === todayStr);
-  const nowMins = minutesNow();
-
   // Close request menu on outside click
   useEffect(() => {
     const handleClick = () => setShowRequestMenu(null);
@@ -738,27 +562,23 @@ export default function MyAttendance() {
     }
   }, [showRequestMenu]);
 
-  const istMinutes = (t) => (t ? (new Date(t).getTime() + 330 * 60000) % 86400000 : null);
-  const listSort = useSortable(week, {
-    id: 'my-attendance-list',
-    columns: {
-      date: { get: day => day, type: 'date' },
-      day: { get: day => day.getDay(), type: 'number' },
-      checkIn: { get: day => { const r = recordMap[isoDate(day)]; return istMinutes(r?.sessions?.[0]?.checkIn || r?.checkIn); }, type: 'number' },
-      checkOut: { get: day => { const r = recordMap[isoDate(day)]; return istMinutes(r?.sessions?.[r?.sessions?.length - 1]?.checkOut || r?.checkOut); }, type: 'number' },
-      hours: { get: day => recordMap[isoDate(day)]?.workingHours || null, type: 'number' },
-      status: {
-        get: day => {
-          const ds = isoDate(day);
-          const kind = dayInfo(day);
-          if (kind.holiday) return 'holiday';
-          if (kind.weekend) return 'weekend';
-          if (ds > todayStr || (!recordMap[ds] && !isLoaded(ds))) return null;
-          return recordMap[ds]?.status || 'absent';
-        },
-        type: 'text',
-      },
-    },
+  /* The shape attendanceViews.jsx draws. Built from the same week,
+   * recordMap and dayInfo the rest of this page already computes, so this
+   * is a relabelling, not a second source of truth. */
+  const sharedDays = week.map(day => {
+    const ds = isoDate(day);
+    const r = recordMap[ds] || null;
+    const kind = dayInfo(day);
+    return {
+      date: ds,
+      isToday: ds === todayStr,
+      isFuture: ds > todayStr,
+      isLoaded: isLoaded(ds),
+      off: kind.holiday ? { kind: 'holiday', label: kind.name || 'Holiday' }
+         : kind.weekend ? { kind: 'weekend', label: 'Weekend' }
+         : null,
+      record: r,
+    };
   });
 
   /* ── shift info ── */
@@ -835,13 +655,15 @@ export default function MyAttendance() {
           {/* View mode */}
           <div className="flex items-center border border-slate-200 rounded-md overflow-hidden">
             {[
-              { icon: <Grid3X3 size={13} />, val: 'timeline' },
-              { icon: <List size={13} />, val: 'list' },
-              { icon: <Calendar size={13} />, val: 'calendar' },
-            ].map(({ icon, val }) => (
+              { icon: <Grid3X3 size={13} />, val: 'timeline', label: 'Timeline' },
+              { icon: <List size={13} />, val: 'list', label: 'List' },
+              { icon: <Calendar size={13} />, val: 'calendar', label: 'Calendar' },
+            ].map(({ icon, val, label }) => (
               <button
                 key={val}
                 onClick={() => setView(val)}
+                title={label}
+                aria-label={label}
                 className={`px-2.5 py-1.5 transition-colors ${view === val ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
               >
                 {icon}
@@ -954,295 +776,43 @@ export default function MyAttendance() {
 
       {/* ── Timeline view ────────────────────────────────────────────── */}
       {view === 'timeline' && (
-        <div className="flex flex-col mx-4 my-4 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+        <div className="mx-4 my-4">
           {loading ? (
-            <div className="flex justify-center py-16">
+            <div className="flex justify-center py-16 bg-white rounded-lg border border-slate-200 shadow-sm">
               <div className="w-6 h-6 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
-            <>
-              {week.map((day, idx) => {
-                const ds = isoDate(day);
-                const record = recordMap[ds] || null;
-                const isToday = ds === todayStr;
-                const isFuture = ds > todayStr;
-                const kind = dayInfo(day);
-                const isHoliday = kind.holiday;
-                const isWeekend = kind.weekend;
-                const isOff = isHoliday || isWeekend;
-                const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
-                const dayNum = day.getDate();
-                const checkInStr = fmtTime(record?.sessions?.[0]?.checkIn || record?.checkIn, fmt.timeFormat);
-                const checkOutStr = fmtTime(record?.sessions?.[record?.sessions?.length - 1]?.checkOut || record?.checkOut, fmt.timeFormat);
-                const hoursStr = fmtHHMM(record?.workingHours);
-
-                 return (
-                   <div
-                     key={ds}
-                     className={`flex items-center gap-4 px-5 py-3.5 border-b border-slate-100 last:border-0 min-h-[56px] transition-colors relative
-                       ${isToday ? 'bg-blue-50/30' : 'hover:bg-slate-50/80'}
-                     `}
-                     onMouseEnter={() => setHoveredDay(ds)}
-                     onMouseLeave={() => setHoveredDay(null)}
-                   >
-                    {/* Day label — matches Zoho: "Today" replaces the weekday name on the current row */}
-                    <div className="w-[64px] flex-shrink-0 flex items-center gap-2">
-                      {isToday ? (
-                        <div className="flex flex-col items-center">
-                          <span className="text-[12px] font-semibold text-slate-600">Today</span>
-                          <div className="w-7 h-7 rounded bg-blue-600 text-white flex items-center justify-center text-[15px] font-bold mt-1">
-                            {dayNum}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center">
-                          <span className={`text-[12px] font-medium ${isOff ? 'text-slate-400' : 'text-slate-500'}`}>{dayName}</span>
-                          <span className={`text-[15px] font-semibold mt-0.5 ${isOff ? 'text-slate-400' : 'text-slate-700'}`}>{dayNum}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Check-in time + Late indicator */}
-                    <div className="w-[80px] flex-shrink-0">
-                      <span className="text-[14px] text-slate-700 font-medium">
-                        {checkInStr || (isOff ? <span className="text-slate-300 text-[13px]">{isHoliday ? 'Holiday' : 'Weekend'}</span> : '')}
-                      </span>
-                      {record?.lateMinutes > 0 && (
-                        <div className="text-[12px] font-semibold" style={{ color: '#F5A623' }}>
-                          Late by {fmtHHMM(record.lateMinutes / 60)}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Timeline bar */}
-                    <div className="flex-1 min-w-0">
-                      {isOff ? (
-                        /* Line spanning the row with a centered pill — matches Zoho.
-                           A holiday gets its own colour and carries its name: this
-                           row is the widest place on the page, so it's where the
-                           name actually fits. */
-                        <div className="flex-1 flex items-center relative h-6">
-                          <div className={`absolute left-[3%] right-[3%] h-[2px] ${isHoliday ? 'bg-cyan-300' : 'bg-amber-300'}`} style={{ top: '50%', transform: 'translateY(-50%)' }} />
-                          <div className={`absolute left-[3%] w-2.5 h-2.5 rounded-full ${isHoliday ? 'bg-cyan-300' : 'bg-amber-300'}`} style={{ top: '50%', transform: 'translate(-50%,-50%)' }} />
-                          <div className={`absolute right-[3%] w-2.5 h-2.5 rounded-full ${isHoliday ? 'bg-cyan-300' : 'bg-amber-300'}`} style={{ top: '50%', transform: 'translate(50%,-50%)' }} />
-                          <div className={`absolute left-1/2 -translate-x-1/2 border rounded px-2 py-0.5 text-[12px] font-semibold z-10 ${
-                            isHoliday ? 'bg-cyan-50 border-cyan-200 text-cyan-700' : 'bg-amber-50 border-amber-200 text-amber-700'
-                          }`}>
-                            {isHoliday ? (kind.name || 'Holiday') : 'Weekend'}
-                          </div>
-                        </div>
-                      ) : (
-                        <TimelineBar record={record} isToday={isToday} isCheckedIn={isCheckedIn} />
-                      )}
-                    </div>
-
-                     {/* Hours worked — live ticking on today's row when checked in */}
-                     <div className="w-[100px] flex-shrink-0 text-right">
-                       {isFuture ? (
-                         <p className="text-slate-300 text-[13px]">—</p>
-                       ) : !isOff && (() => {
-                         const liveOnToday = isToday && isCheckedIn;
-                         let displayHours;
-                         if (liveOnToday) {
-                           const h = Math.floor(elapsed / 3600);
-                           const m = Math.floor((elapsed % 3600) / 60);
-                           const s = elapsed % 60;
-                           displayHours = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-                         } else {
-                           displayHours = record?.workingHours ? hoursStr
-                             : (!record && !isLoaded(ds)) ? '—' : '00:00';
-                         }
-                         return (
-                           <>
-                             <p className={`text-[15px] font-bold ${liveOnToday ? 'text-emerald-600' : 'text-slate-700'}`}>
-                               {displayHours}
-                             </p>
-                             <p className="text-[12px] text-slate-400 mt-0.5">{liveOnToday ? 'Hrs' : 'Hrs worked'}</p>
-                           </>
-                         );
-                       })()}
-                     </div>
-
-                     {/* Add Request Button — hover-revealed, viewport-clamped popup.
-                         The column itself is always here, even empty: appearing
-                         only on hover resized the bar area under the pointer and
-                         slid every bar sideways, and an axis can only mean
-                         something if the scale stays put. */}
-                     <div className="w-[104px] flex-shrink-0 flex justify-end">
-                       {!isOff && hoveredDay === ds && (
-                         <button
-                           onClick={(e) => {
-                             e.stopPropagation();
-                             // Hand the button's rect to RequestMenu; it measures
-                             // its own height and decides above/below.
-                             const rect = e.currentTarget.getBoundingClientRect();
-                             const isPastDay = ds < todayStr;
-                             /* Not gated on a record existing. Requiring one
-                              * hid Regularize on days with no punch at all —
-                              * the days it exists for — and offered it only
-                              * where attendance was already recorded. The
-                              * server accepts a date with no attendance row and
-                              * creates one when the request is approved, and it
-                              * owns the deadline. */
-                             const canRegularize = regularizationOn && ((ds === todayStr) || isPastDay);
-                             setShowRequestMenu({
-                               buttonRect: {
-                                 top: rect.top, bottom: rect.bottom,
-                                 left: rect.left, right: rect.right,
-                               },
-                               canRegularize,
-                               date: ds,
-                             });
-                           }}
-                           className="request-menu-trigger flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold px-2.5 py-1.5 rounded-md transition-colors shadow-sm"
-                         >
-                           Add Request
-                         </button>
-                       )}
-                     </div>
-                   </div>
-                 );
-              })}
-
-              {/* ── Time axis ──────────────────────────────────────────────
-               *  One axis for every row above, so where a bar sits says when.
-               *  It reads the SAME SHIFT_START/SHIFT_END scale the bars are
-               *  positioned on via pctOfDay — a second scale here would drift
-               *  the day somebody widened the window.
-               *
-               *  The spacers are not decoration: this row must have the same
-               *  children and the same gap as a day row, or the flex-1 middle
-               *  is a different width than the one the bars live in and every
-               *  label points at the wrong minute. */}
-              <div className="flex items-start gap-4 px-5 py-2 bg-slate-50/80 border-t border-slate-100">
-                <div className="w-[64px] flex-shrink-0" />
-                <div className="w-[80px] flex-shrink-0" />
-                <div className="flex-1 min-w-0 relative h-9">
-                  {TICK_HOURS.map(h => {
-                    const pct = pctOfDay(h * 60);
-                    const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
-                    return (
-                      <React.Fragment key={h}>
-                        <div
-                          className="absolute top-0 h-1.5 border-l border-slate-300"
-                          style={{ left: `${pct}%` }}
-                        />
-                        <span
-                          className="absolute top-2.5 text-[12px] text-slate-400 transform -translate-x-1/2 whitespace-nowrap"
-                          style={{ left: `${pct}%` }}
-                        >
-                          {h12}:00{h < 12 ? 'AM' : 'PM'}
-                        </span>
-                      </React.Fragment>
-                    );
-                  })}
-                  {/* "Now", but only when it is both on screen and on the
-                      scale: outside 08:00–20:00 the marker would pin itself to
-                      an edge and name a time it is not. */}
-                  {weekHasToday && nowMins >= SHIFT_START && nowMins <= SHIFT_END && (
-                    <>
-                      <div
-                        className="absolute top-0 h-2.5 border-l border-blue-400"
-                        style={{ left: `${pctOfDay(nowMins)}%` }}
-                      />
-                      {/* Sits under the hour labels rather than among them, so
-                          it cannot land on top of one. */}
-                      <span
-                        className="absolute top-[22px] text-[12px] font-semibold text-blue-500 transform -translate-x-1/2 whitespace-nowrap"
-                        style={{ left: `${pctOfDay(nowMins)}%` }}
-                      >
-                        Now
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="w-[100px] flex-shrink-0" />
-                <div className="w-[104px] flex-shrink-0" />
-              </div>
-            </>
+            <AttendanceTimelineList
+              days={sharedDays}
+              timeFormat={fmt.timeFormat}
+              onAddRequest={(ds, buttonRect) => {
+                /* Not gated on a record existing. Requiring one hid Regularize
+                 * on days with no punch at all — the days it exists for — and
+                 * offered it only where attendance was already recorded. The
+                 * server accepts a date with no attendance row and creates one
+                 * when the request is approved, and it owns the deadline. */
+                const isPastDay = ds < todayStr;
+                const canRegularize = regularizationOn && ((ds === todayStr) || isPastDay);
+                setShowRequestMenu({ buttonRect, canRegularize, date: ds });
+              }}
+            />
           )}
         </div>
       )}
 
       {/* ── List view ────────────────────────────────────────────────── */}
       {view === 'list' && (
-        <div className="mx-4 my-4 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                {[['Date', 'date'], ['Day', 'day'], ['Check In', 'checkIn'], ['Check Out', 'checkOut'], ['Hours', 'hours'], ['Status', 'status']].map(([h, k]) => (
-                  <SortableTh key={h} sort={listSort} k={k} className="px-5 py-3 text-left text-[13px] font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>
-                ))}
-                {/* The action column only exists while the action does. */}
-                {regularizationOn && <th className="px-5 py-3 w-[60px]" />}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {listSort.sorted.map(day => {
-                const ds = isoDate(day);
-                const r = recordMap[ds];
-                const kind = dayInfo(day);
-                const isFuture = ds > todayStr;
-                /* Same rule the timeline's Add Request uses: today or any past
-                   day, and not gated on a record existing — a day with no punch
-                   at all is exactly what regularization is for. The server owns
-                   the deadline. */
-                const canRegularize = regularizationOn && ds <= todayStr;
-                return (
-                  <tr
-                    key={ds}
-                    onClick={() => setDetailDay(ds)}
-                    className={`hover:bg-slate-50 transition-colors cursor-pointer ${ds === todayStr ? 'bg-blue-50/30' : ''}`}
-                  >
-                    <td className="px-5 py-3 text-[14px] font-medium text-slate-700">
-                      <div>{day.toLocaleDateString('en-IN', { day:'2-digit', month:'short' })}</div>
-                      {r?.lateMinutes > 0 && (
-                        <div className="text-[12px] font-semibold mt-0.5" style={{ color: '#F5A623' }}>
-                          Late by {fmtHHMM(r.lateMinutes / 60)}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-[14px] text-slate-500">
-                      {day.toLocaleDateString('en-US', { weekday:'short' })}
-                    </td>
-                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.sessions?.[0]?.checkIn || r?.checkIn, fmt.timeFormat) || '—'}</td>
-                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.sessions?.[r?.sessions?.length - 1]?.checkOut || r?.checkOut, fmt.timeFormat) || '—'}</td>
-                    <td className="px-5 py-3 text-[14px] text-slate-700">{r?.workingHours ? `${fmtHHMM(r.workingHours)} hrs` : '—'}</td>
-                    <td className="px-5 py-3">
-                      {kind.holiday
-                        ? (
-                          <div>
-                            <StatusPill status="holiday" />
-                            {kind.name && <div className="text-[12px] text-slate-500 mt-0.5">{kind.name}</div>}
-                          </div>
-                        )
-                        : kind.weekend
-                          ? <StatusPill status="weekend" />
-                          : isFuture || (!r && !isLoaded(ds))
-                            ? <span className="text-slate-400 text-[13px]">—</span>
-                            : <StatusPill status={r?.status || 'absent'} />
-                      }
-                    </td>
-                    {regularizationOn && (
-                      <td className="px-5 py-3 text-right">
-                        {canRegularize && (
-                          <button
-                            /* The row opens the day's detail, so this must not
-                               also open it on the way to the form. */
-                            onClick={(e) => { e.stopPropagation(); setRegularizeDate(ds); }}
-                            title="Request Regularization"
-                            className="w-7 h-7 inline-flex items-center justify-center rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="mx-4 my-4">
+          <AttendanceListTable
+            days={sharedDays}
+            timeFormat={fmt.timeFormat}
+            sortId="my-attendance-list"
+            onRowClick={(ds) => setDetailDay(ds)}
+            onQuickRegularize={regularizationOn ? (ds) => setRegularizeDate(ds) : undefined}
+            /* Same rule the timeline's Add Request uses: today or any past
+               day, and not gated on a record existing. */
+            canQuickRegularize={(ds) => ds <= todayStr}
+          />
         </div>
       )}
 
@@ -1256,96 +826,13 @@ export default function MyAttendance() {
         const m = weekStart.getMonth();
         const y = weekStart.getFullYear();
         const monthName = new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        const firstDay  = new Date(y, m, 1);
-        const lastDay   = new Date(y, m + 1, 0);
-        // Lead with empty cells so the 1st lands on the right weekday.
-        const cells = [];
-        for (let i = 0; i < firstDay.getDay(); i++) cells.push(null);
-        for (let d = 1; d <= lastDay.getDate(); d++) cells.push(new Date(y, m, d));
-        // Trail with empty cells so the grid is rectangular (6 rows × 7 cols).
-        while (cells.length % 7 !== 0) cells.push(null);
-
         return (
-          <div className="mx-4 my-4 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-slate-100">
-              <h3 className="text-[16px] font-bold text-slate-800">{monthName}</h3>
-            </div>
-            {/* Weekday header */}
-            <div className="grid grid-cols-7 border-b border-slate-100">
-              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-                <div key={d} className="px-3 py-2 text-[13px] font-semibold text-slate-500 uppercase tracking-wide">{d}</div>
-              ))}
-            </div>
-            {/* Date cells */}
-            <div className="grid grid-cols-7">
-              {cells.map((day, idx) => {
-                if (!day) return <div key={idx} className="h-[88px] border-r border-b border-slate-100 bg-slate-50/40" />;
-                const ds = isoDate(day);
-                const r  = recordMap[ds];
-                const kind = dayInfo(day);
-                const isHol  = kind.holiday;
-                const isWknd = kind.weekend;
-                const isOff  = isHol || isWknd;
-                const isToday = ds === todayStr;
-                const isFuture = day > new Date();
-                let pill = null;
-                if (isHol) {
-                  pill = (
-                    <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-cyan-50 text-cyan-700 border border-cyan-200">
-                      <div>Holiday</div>
-                      {kind.name && <div className="text-[12px] opacity-80 truncate">{kind.name}</div>}
-                    </div>
-                  );
-                } else if (isWknd) {
-                  pill = (
-                    <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-slate-100 text-slate-500 border border-slate-200">
-                      Weekend
-                    </div>
-                  );
-                } else if (r) {
-                  const isAbsent = r.status === 'absent';
-                  const isLate = r.status === 'late';
-                  const status = isLate ? 'Present' : r.status === 'half-day' ? 'Half day' : (r.status || 'Present').replace(/^./, c => c.toUpperCase());
-                  pill = (
-                    <div className={`text-[13px] font-medium px-2 py-1 rounded leading-tight ${
-                      isAbsent ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                               : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    }`}>
-                      <div>{status}</div>
-                      {r.workingHours != null && <div className="text-[12px] opacity-80">{fmtHHMM(r.workingHours)} Hrs</div>}
-                      {isLate && r.lateMinutes > 0 && (
-                        <div className="text-[11px] font-semibold mt-0.5" style={{ color: '#F5A623' }}>
-                          Late {fmtHHMM(r.lateMinutes / 60)}
-                        </div>
-                      )}
-                    </div>
-                  );
-                } else if (!isOff && !isFuture && ds < todayStr) {
-                  pill = (
-                    <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-rose-50 text-rose-700 border border-rose-200">
-                      Absent
-                    </div>
-                  );
-                }
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => setWeekStart(weekOf(day))}
-                    className={`h-[88px] border-r border-b border-slate-100 p-2 text-left transition-colors hover:bg-blue-50/40 ${
-                      isHol ? 'bg-cyan-50/30' : isWknd ? 'bg-amber-50/30' : ''
-                    }`}
-                  >
-                    <div className={`text-[13px] font-semibold mb-1 inline-flex items-center justify-center ${
-                      isToday ? 'w-6 h-6 rounded-full bg-blue-600 text-white' :
-                      isOff   ? 'text-slate-400' : 'text-slate-700'
-                    }`}>
-                      {day.getDate()}
-                    </div>
-                    {pill}
-                  </button>
-                );
-              })}
-            </div>
+          <div className="mx-4 my-4">
+            <AttendanceCalendarMonth
+              year={y} month={m} title={monthName}
+              days={sharedDays}
+              onDayClick={(ymd) => setWeekStart(weekOf(parseLocalDate(ymd)))}
+            />
           </div>
         );
       })()}
