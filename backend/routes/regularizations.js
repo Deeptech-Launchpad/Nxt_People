@@ -506,7 +506,8 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
          * check out" means. */
         const exists = await client.query(
           `SELECT id, check_in, check_out, working_hours,
-                  TO_CHAR(check_in AT TIME ZONE 'UTC' AT TIME ZONE '${DEFAULT_TZ}', 'HH24:MI:SS') AS check_in_local
+                  TO_CHAR(check_in AT TIME ZONE 'UTC' AT TIME ZONE '${DEFAULT_TZ}', 'HH24:MI:SS') AS check_in_local,
+                  TO_CHAR(check_out AT TIME ZONE 'UTC' AT TIME ZONE '${DEFAULT_TZ}', 'HH24:MI:SS') AS check_out_local
              FROM attendance WHERE employee_id=$1 AND date=$2`,
           [reg.employee_id, reg.date]
         );
@@ -521,6 +522,30 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         let workingHours = null;
         let newStatus = 'present';
         let newLateMinutes = 0;
+
+        /* What a day of this length is called. The same engine check-out uses,
+         * so a regularized day and a punched day of identical length are called
+         * the same thing. Named rather than inline because the total can change
+         * once the day's stints are added up, and the verdict has to follow it. */
+        const verdictFor = (hours, minsLate) => {
+          if (!ruleCfg.ruleEffectiveFrom || regDate >= ruleCfg.ruleEffectiveFrom) {
+            return classifyDay({
+              workedHours: hours,
+              hasPunch: true,
+              leavePortion: Number(dayFacts.leave_portion) || 0,
+              permissionHours: Number(dayFacts.permission_hours) || 0,
+              onDuty: dayFacts.on_duty === true,
+              lateMinutes: newLateMinutes,
+              graceMinutes,
+              cfg: ruleCfg,
+              shiftHours: dayFacts.shift_hours === null || dayFacts.shift_hours === undefined
+                ? null : Number(dayFacts.shift_hours),
+            }).status;
+          }
+          if (hours < halfDayHours) return 'absent';
+          if (hours < fullDayHours) return 'half-day';
+          return (minsLate > graceMinutes) ? 'late' : 'present';
+        };
 
         if (effectiveCheckIn) {
           const ciTime = new Date(`${regDate}T${effectiveCheckIn}`);
@@ -558,29 +583,7 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
 
             if (diffMs > 0) {
               workingHours = parseFloat((diffMs / 3600000).toFixed(8));
-              // The same engine check-out uses. A regularized day and a punched
-              // day of identical length must be called the same thing, or
-              // correcting a forgotten check-out would change the verdict.
-              if (!ruleCfg.ruleEffectiveFrom || regDate >= ruleCfg.ruleEffectiveFrom) {
-                newStatus = classifyDay({
-                  workedHours: workingHours,
-                  hasPunch: true,
-                  leavePortion: Number(dayFacts.leave_portion) || 0,
-                  permissionHours: Number(dayFacts.permission_hours) || 0,
-                  onDuty: dayFacts.on_duty === true,
-                  lateMinutes: newLateMinutes,
-                  graceMinutes,
-                  cfg: ruleCfg,
-                  shiftHours: dayFacts.shift_hours === null || dayFacts.shift_hours === undefined
-                    ? null : Number(dayFacts.shift_hours),
-                }).status;
-              } else if (workingHours < halfDayHours) {
-                newStatus = 'absent';
-              } else if (workingHours < fullDayHours) {
-                newStatus = 'half-day';
-              } else {
-                newStatus = (minsLate > graceMinutes) ? 'late' : 'present';
-              }
+              newStatus = verdictFor(workingHours, minsLate);
             }
           } else {
             newStatus = (minsLate > graceMinutes) ? 'late' : 'present';
@@ -594,13 +597,76 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
         const regCfg = await attendanceConfig.section('regularization');
         const addsEntry = regCfg.entryMode === 'create';
 
-        /* Adding a SECOND stint only makes sense when the request supplies both
-         * ends of it. A one-sided correction is completing the entry that is
-         * already there, and taking this branch inserted a session row with a
-         * null check_in — which that table forbids, so every "forgot to check
-         * out" approval died on a not-null violation. */
-        if (exists.rows.length > 0 && addsEntry && exists.rows[0].check_in
-            && reg.check_in && reg.check_out) {
+        /* A second request over hours the day ALREADY covers is a correction of
+         * that stint, not a second stint worked. Added as a new entry its hours
+         * landed on top of the first: two approved requests for one day put
+         * 17.7 hours on a day nobody could have worked, and every later
+         * approval would have added more. Overlap is what tells them apart —
+         * 10:29-19:15 corrected to 10:29-19:25 overlaps; a genuine second
+         * stint, 09:00-13:00 then 18:00-21:00, does not. */
+        const sessionRows = (reg.check_in && reg.check_out && exists.rows.length > 0)
+          ? (await client.query(
+              `SELECT id, session_hours,
+                      TO_CHAR(check_in  AT TIME ZONE 'UTC' AT TIME ZONE '${DEFAULT_TZ}', 'HH24:MI:SS') AS in_local,
+                      TO_CHAR(check_out AT TIME ZONE 'UTC' AT TIME ZONE '${DEFAULT_TZ}', 'HH24:MI:SS') AS out_local
+                 FROM attendance_sessions
+                WHERE employee_id = $1 AND date = $2
+                ORDER BY check_in ASC`,
+              [reg.employee_id, reg.date])).rows
+          : [];
+        const overlaps = (aIn, aOut, bIn, bOut) =>
+          !!aIn && !!bIn && String(aIn) <= String(bOut || bIn) && String(aOut || aIn) >= String(bIn);
+        const correctsSession = sessionRows.find(
+          r => overlaps(reg.check_in, reg.check_out, r.in_local, r.out_local));
+        /* A day recorded before stints were kept separately has no session rows
+         * at all, so the day's own pair is what the request is measured against. */
+        const correctsDay = !sessionRows.length && exists.rows.length > 0
+          && overlaps(reg.check_in, reg.check_out,
+                      exists.rows[0].check_in_local, exists.rows[0].check_out_local);
+
+        if (correctsSession) {
+          // The stint this request corrects, rewritten to the times asked for.
+          await client.query(
+            `UPDATE attendance_sessions
+                SET check_in  = (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC'),
+                    check_out = (($2::date + $4::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC'),
+                    session_hours = COALESCE($5::numeric, 0)
+              WHERE id = $1`,
+            [correctsSession.id, reg.date, reg.check_in, reg.check_out, workingHours]);
+
+          /* The day loses what that stint used to be worth and gains what it is
+           * worth now — rather than gaining the whole stint a second time. The
+           * hours of other stints are left alone, including hours from days
+           * recorded before stints were kept separately. */
+          const credited = parseFloat(correctsSession.session_hours) || 0;
+          const previous = parseFloat(exists.rows[0].working_hours) || 0;
+          /* Whether the day begins and ends with this stint. A day can hold
+           * hours that are in no session row at all — every day recorded before
+           * stints were kept separately does — so "the only session" is not the
+           * same as "the whole day", and treating it that way threw the morning
+           * away when the evening was corrected. */
+          const startsDay = exists.rows[0].check_in_local === correctsSession.in_local;
+          const endsDay = !exists.rows[0].check_out_local
+            || exists.rows[0].check_out_local === correctsSession.out_local;
+          const wholeDay = sessionRows.length === 1 && startsDay && endsDay;
+          const dayHours = wholeDay
+            ? (workingHours || 0)
+            : Math.max(0, parseFloat((previous - credited + (workingHours || 0)).toFixed(8)));
+          await client.query(
+            `UPDATE attendance
+                SET check_in = CASE WHEN $8 THEN (($2::date + $1::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')
+                                    ELSE LEAST(check_in, (($2::date + $1::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')) END,
+                    check_out = CASE WHEN $9 OR check_out IS NULL THEN (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')
+                                     ELSE GREATEST(check_out, (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')) END,
+                    working_hours = $5,
+                    status = $6,
+                    late_minutes = $7,
+                    updated_at = NOW()
+              WHERE employee_id = $4 AND date = $2`,
+            [reg.check_in, reg.date, reg.check_out, reg.employee_id, dayHours,
+             verdictFor(dayHours, newLateMinutes), newLateMinutes, startsDay, endsDay]);
+        } else if (exists.rows.length > 0 && addsEntry && exists.rows[0].check_in
+            && reg.check_in && reg.check_out && !correctsDay) {
           const row = exists.rows[0];
           // The day now spans the earliest check-in to the latest check-out,
           // and its hours are the sum of both pairs rather than either one.
@@ -616,22 +682,29 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
                COALESCE($6::numeric, 0))`,
             [row.id, reg.employee_id, reg.date, reg.check_in, reg.check_out, workingHours]
           );
-          const combined = workingHours === null
-            ? row.working_hours
-            : parseFloat(((parseFloat(row.working_hours) || 0) + workingHours).toFixed(8));
-          await client.query(
-            `UPDATE attendance
-             SET check_in = LEAST(check_in, (($2::date + $1::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')),
-                 check_out = CASE
-                   WHEN $3::time IS NULL THEN check_out
-                   WHEN check_out IS NULL THEN (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')
-                   ELSE GREATEST(check_out, (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')) END,
-                 working_hours = $5,
-                 status = $6,
-                 updated_at = NOW()
-             WHERE employee_id=$4 AND date=$2`,
-            [reg.check_in, reg.date, reg.check_out, reg.employee_id, combined, newStatus]
-          );
+          /* Where the day already keeps its stints, add them up rather than
+             adding to a running total — a total that was itself wrong stays
+             wrong otherwise. Only a day recorded before stints were kept has
+             nothing to count, and there the running total is all there is. */
+          {
+            const combined = workingHours === null
+              ? row.working_hours
+              : parseFloat(((parseFloat(row.working_hours) || 0) + workingHours).toFixed(8));
+            await client.query(
+              `UPDATE attendance
+               SET check_in = LEAST(check_in, (($2::date + $1::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')),
+                   check_out = CASE
+                     WHEN $3::time IS NULL THEN check_out
+                     WHEN check_out IS NULL THEN (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')
+                     ELSE GREATEST(check_out, (($2::date + $3::time) AT TIME ZONE '${DEFAULT_TZ}' AT TIME ZONE 'UTC')) END,
+                   working_hours = $5,
+                   status = $6,
+                   updated_at = NOW()
+               WHERE employee_id=$4 AND date=$2`,
+              [reg.check_in, reg.date, reg.check_out, reg.employee_id, combined, verdictFor(
+                workingHours === null ? (parseFloat(row.working_hours) || 0) : combined, newLateMinutes)]
+            );
+          }
         } else if (exists.rows.length > 0) {
           await client.query(
             `UPDATE attendance
