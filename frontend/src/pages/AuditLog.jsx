@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { History, ChevronDown, ChevronRight, Filter, RotateCw } from 'lucide-react';
 import api from '../utils/api';
+import { useLocaleFormat, formatInstantTime } from '../utils/datetime';
 
 // Who changed what, and when.
 //
@@ -21,9 +22,9 @@ const fmt = (v) => {
   return String(v);
 };
 
-const when = (iso) => new Date(iso).toLocaleString('en-GB', {
-  day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-});
+const when = (iso, timeFormat) =>
+  `${new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}, `
+  + formatInstantTime(iso, timeFormat);
 
 const ACTION_STYLE = {
   CREATE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -34,6 +35,7 @@ const ACTION_STYLE = {
 };
 
 export default function AuditLog() {
+  const { timeFormat } = useLocaleFormat();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -148,7 +150,7 @@ export default function AuditLog() {
                         </button>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap tabular-nums">{when(r.createdAt)}</td>
+                    <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap tabular-nums">{when(r.createdAt, timeFormat)}</td>
                     <td className="px-4 py-2.5">
                       <div className="text-slate-800">{who}</div>
                       <div className="text-[12px] text-slate-400">{r.actor?.role || ''}</div>

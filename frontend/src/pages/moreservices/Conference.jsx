@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
+import { useFormat, formatTime } from '../../utils/datetime';
 
 /* ── Operations → Conference ──────────────────────────────────────────────
  *  Book a conference hall (Floor 1 / Floor 2) for a date + time window.
@@ -38,10 +39,9 @@ const from12 = (h, m, mer) => {
   const mm = String(m === '' || m == null ? 0 : m).padStart(2, '0');
   return `${String(H).padStart(2, '0')}:${mm}`;
 };
-const fmt12 = (hhmm) => {
+const fmtClock = (hhmm, timeFormat) => {
   if (!hhmm || !HHMM.test(hhmm)) return '—';
-  const { h, m, mer } = to12(hhmm);
-  return `${h}:${m} ${mer}`;
+  return formatTime(hhmm, timeFormat);
 };
 
 /* ── Dynamic status ───────────────────────────────────────────────────────
@@ -271,6 +271,7 @@ function BookingModal({ initial, onClose, onSaved, onCancel }) {
 }
 
 function ViewModal({ booking, onClose }) {
+  const { timeFormat } = useFormat();
   const Row = ({ label, children }) => (
     <div className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
       <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-400 w-32 flex-shrink-0">{label}</span>
@@ -291,7 +292,7 @@ function ViewModal({ booking, onClose }) {
           </Row>
           <Row label="Meeting Purpose">{booking.title}</Row>
           <Row label="Date">{fmtDate(booking.bookingDate)}</Row>
-          <Row label="Time">{fmt12(booking.startTime)} – {fmt12(booking.endTime)}</Row>
+          <Row label="Time">{fmtClock(booking.startTime, timeFormat)} – {fmtClock(booking.endTime, timeFormat)}</Row>
           <Row label="Hall">{booking.hall}</Row>
           {booking.description && <Row label="Additional Info">{booking.description}</Row>}
         </div>
@@ -301,6 +302,7 @@ function ViewModal({ booking, onClose }) {
 }
 
 export default function Conference() {
+  const { timeFormat } = useFormat();
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -418,8 +420,8 @@ export default function Conference() {
               return (
                 <tr key={b._id} className="hover:bg-slate-50/70">
                   <td className="px-5 py-3.5 text-[14px] text-slate-600">{fmtDate(b.bookingDate)}</td>
-                  <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmt12(b.startTime)}</td>
-                  <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmt12(b.endTime)}</td>
+                  <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmtClock(b.startTime, timeFormat)}</td>
+                  <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmtClock(b.endTime, timeFormat)}</td>
                   <td className="px-5 py-3.5 text-[14px] text-slate-700 max-w-[200px] truncate" title={`By ${b.bookedBy || '—'}${b.bookedFor ? ` For ${b.bookedFor}` : ''}`}>
                     By {b.bookedBy || '—'}
                     {b.bookedFor && <span className="text-slate-500"> For {b.bookedFor}</span>}

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../../utils/api';
 import { Card, Toggle, Note, Spinner, SaveBar } from '../configKit';
+import { useFormat } from '../../../utils/datetime';
 
 // Auto Shift Assignment.
 //
@@ -14,6 +15,7 @@ import { Card, Toggle, Note, Spinner, SaveBar } from '../configKit';
 // pattern generated, is a decision somebody made; this only fills the gap.
 
 export default function AutoShiftAssignment() {
+  const fmt = useFormat();
   const [config, setConfig] = useState(null);
   const [saved, setSaved] = useState(null);
   const [shifts, setShifts] = useState([]);
@@ -81,7 +83,7 @@ export default function AutoShiftAssignment() {
               {shifts.map(s => (
                 <span key={s.id} className="flex items-center gap-1.5 bg-white border border-slate-200 rounded px-2.5 py-1 text-[13px] text-slate-700">
                   <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: s.color }} />
-                  {s.name} <span className="text-slate-400">starts {s.startTime}</span>
+                  {s.name} <span className="text-slate-400">starts {fmt.time(s.startTime)}</span>
                 </span>
               ))}
             </div>

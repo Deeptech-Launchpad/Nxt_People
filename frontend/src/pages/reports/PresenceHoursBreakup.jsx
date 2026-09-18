@@ -12,6 +12,7 @@ import LeaveExportModal from './LeaveExportModal';
 import usePersistedOpen from './usePersistedOpen';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
+import { useFormat } from '../../utils/datetime';
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
@@ -145,6 +146,7 @@ function SummaryPanel({ unit, setUnit, rows, valueOf, onClose }) {
 // Single-employee day-by-day presence ledger with a Day/Hour summary strip —
 // Zoho's Presence Hours Break-up is a drilldown, not an all-employees table.
 export default function PresenceHoursBreakup() {
+  const fmt = useFormat();
   const [employee, setEmployee] = useState(null);
   const [periodKey, setPeriodKey] = useState('thisWeek');
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS.find(o => o.key === 'thisWeek').value);
@@ -279,8 +281,8 @@ export default function PresenceHoursBreakup() {
                     <td className="px-4 py-2.5 text-slate-700">
                       {new Date(row.date).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
                     </td>
-                    <td className="px-4 py-2.5">{fmtTime(row.firstIn)}</td>
-                    <td className="px-4 py-2.5">{fmtTime(row.lastOut)}</td>
+                    <td className="px-4 py-2.5">{fmt.instant(row.firstIn) || '-'}</td>
+                    <td className="px-4 py-2.5">{fmt.instant(row.lastOut) || '-'}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{fmtHrs(row.totalHours)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{fmtHrs(row.payableHours)}</td>
                     <td className="px-4 py-2.5">

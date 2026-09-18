@@ -19,6 +19,7 @@
 import React, { useState } from 'react';
 import { X, CheckCircle, CheckCheck, XCircle, Calendar, Clock, FileText, User, Hash, LogIn, LogOut, Eye, ArrowLeft, MessageSquare, Scissors, Pencil } from 'lucide-react';
 import ApprovalTimeline from './ApprovalTimeline';
+import { useFormat } from '../utils/datetime';
 
 const TYPE_LABEL = { casual: 'Casual Leave', comp_off: 'Compensatory Off', unpaid: 'Leave Without Pay', permission: 'Permission', sick: 'Sick Leave', earned: 'Earned Leave' };
 
@@ -106,6 +107,7 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
   const [view, setView] = useState(defaultView);   // 'details' | 'timeline'
   const [comment, setComment] = useState('');
   const [acting, setActing] = useState(false);
+  const fmt = useFormat();
   if (!leave) return null;
 
   const runAction = (handler) => async (...args) => {
@@ -219,7 +221,7 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                     {leave.unit === 'hours' ? (
                       <>
                         <DetailRow icon={Clock} label="Time">
-                          {(leave.startTime || '').slice(0, 5) || '—'} <span className="text-slate-600">–</span> {(leave.endTime || '').slice(0, 5) || '—'}
+                          {fmt.time(leave.startTime) || '—'} <span className="text-slate-600">–</span> {fmt.time(leave.endTime) || '—'}
                         </DetailRow>
                         <DetailRow icon={Clock} label="Duration">{leave.hours ? `${leave.hours} hour${Number(leave.hours) !== 1 ? 's' : ''}` : '—'}</DetailRow>
                       </>
@@ -230,14 +232,14 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                 ) : isReg ? (
                   <>
                     <DetailRow icon={Calendar} label="Date">{fmtDate(leave.date)}</DetailRow>
-                    <DetailRow icon={LogIn} label="Check-in">{leave.checkIn || '—'}</DetailRow>
-                    <DetailRow icon={LogOut} label="Check-out">{leave.checkOut || '—'}</DetailRow>
+                    <DetailRow icon={LogIn} label="Check-in">{fmt.time(leave.checkIn) || '—'}</DetailRow>
+                    <DetailRow icon={LogOut} label="Check-out">{fmt.time(leave.checkOut) || '—'}</DetailRow>
                   </>
                 ) : leave.leaveType === 'permission' ? (
                   <>
                     <DetailRow icon={Calendar} label="Date">{fmtDate(leave.startDate)}</DetailRow>
                     <DetailRow icon={Clock} label="Time">
-                      {(leave.startTime || '').slice(0, 5) || '—'} <span className="text-slate-600">–</span> {(leave.endTime || '').slice(0, 5) || '—'}
+                      {fmt.time(leave.startTime) || '—'} <span className="text-slate-600">–</span> {fmt.time(leave.endTime) || '—'}
                     </DetailRow>
                     <DetailRow icon={Clock} label="Duration">{leave.hours ? `${leave.hours} hour${Number(leave.hours) !== 1 ? 's' : ''}` : '—'}</DetailRow>
                   </>

@@ -8,6 +8,7 @@ import {
   ymd, weekDates, monthCells, addDays, shiftFor, leavesFor, leaveChipText,
   shiftLabel, to12, BAND_HOURS, BAND_START, placeOnBand, isWeekendDay, isToday,
 } from './shiftGrid';
+import { useFormat } from '../../../utils/datetime';
 
 /* ── Operations → Shift → User-specific Operations ────────────────────────
  *  One person's schedule, Weekly or Monthly, with Assign shift on it.
@@ -222,6 +223,7 @@ export default function OpsShiftUserSpecific() {
 
 /** Hours across, days down — the reference's Weekly view. */
 function WeeklyBand({ days, employeeId, employee, rosterByKey, leaves, onRemove }) {
+  const { timeFormat } = useFormat();
   return (
     <div className="overflow-x-auto">
       <div className="min-w-[900px]">
@@ -229,7 +231,7 @@ function WeeklyBand({ days, employeeId, employee, rosterByKey, leaves, onRemove 
           <div className="bg-slate-50 border-b border-slate-200" />
           {BAND_HOURS.map(h => (
             <div key={h} className="bg-slate-50 border-b border-l border-slate-200 px-2 py-2 text-[12px] text-slate-500 text-center">
-              {to12(`${String(Math.floor(h / 60)).padStart(2, '0')}:00`)}
+              {to12(`${String(Math.floor(h / 60)).padStart(2, '0')}:00`, timeFormat)}
             </div>
           ))}
         </div>
@@ -257,7 +259,7 @@ function WeeklyBand({ days, employeeId, employee, rosterByKey, leaves, onRemove 
                       style={placeOnBand(shift.startTime, shift.endTime)}
                       title={shift.reason ? `Reason: ${shift.reason}` : undefined}>
                       <p className="text-[12px] font-semibold text-blue-800 leading-tight truncate">{shift.name}</p>
-                      <p className="text-[11px] text-blue-700 leading-tight truncate">{shiftLabel(shift)}</p>
+                      <p className="text-[11px] text-blue-700 leading-tight truncate">{shiftLabel(shift, timeFormat)}</p>
                     </div>
                     {shift.rostered && (
                       <button onClick={() => onRemove(shift.rosterId)}
@@ -274,7 +276,7 @@ function WeeklyBand({ days, employeeId, employee, rosterByKey, leaves, onRemove 
                       style={l.leaveType === 'permission' && l.startTime
                         ? placeOnBand(l.startTime, l.endTime)
                         : { left: 0, width: '100%' }}>
-                      <p className="text-[11px] font-medium text-amber-800 leading-tight truncate">{leaveChipText(l)}</p>
+                      <p className="text-[11px] font-medium text-amber-800 leading-tight truncate">{leaveChipText(l, timeFormat)}</p>
                     </div>
                   </div>
                 ))}
@@ -292,6 +294,7 @@ function WeeklyBand({ days, employeeId, employee, rosterByKey, leaves, onRemove 
 
 /** A month of chips — the reference's Monthly view. */
 function MonthlyCells({ cells, employeeId, employee, rosterByKey, leaves, onRemove }) {
+  const { timeFormat } = useFormat();
   return (
     <div className="overflow-x-auto">
       <div className="min-w-[900px]">
@@ -316,7 +319,7 @@ function MonthlyCells({ cells, employeeId, employee, rosterByKey, leaves, onRemo
                   <div className="group relative rounded bg-blue-100 border border-blue-200 px-1.5 py-1 mb-1"
                     title={shift.reason ? `Reason: ${shift.reason}` : undefined}>
                     <p className="text-[11px] font-semibold text-blue-800 leading-tight truncate">{shift.name}</p>
-                    <p className="text-[10px] text-blue-700 leading-tight truncate">{shiftLabel(shift)}</p>
+                    <p className="text-[10px] text-blue-700 leading-tight truncate">{shiftLabel(shift, timeFormat)}</p>
                     {shift.rostered && (
                       <button onClick={() => onRemove(shift.rosterId)}
                         title="Remove this day's assignment"
@@ -328,7 +331,7 @@ function MonthlyCells({ cells, employeeId, employee, rosterByKey, leaves, onRemo
                 )}
                 {dayLeaves.map(l => (
                   <div key={l._id} className="rounded bg-amber-100 border border-amber-300 px-1.5 py-1 mb-1">
-                    <p className="text-[10px] font-medium text-amber-800 leading-tight">{leaveChipText(l)}</p>
+                    <p className="text-[10px] font-medium text-amber-800 leading-tight">{leaveChipText(l, timeFormat)}</p>
                   </div>
                 ))}
               </div>

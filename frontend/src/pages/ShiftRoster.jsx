@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Copy, Trash2, RefreshCw, Users } from 'lucid
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import BackButton from '../components/BackButton';
+import { useFormat } from '../utils/datetime';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const SHIFT_COLORS = ['bg-brand-100 text-brand-700 border-brand-200', 'bg-emerald-100 text-emerald-700 border-emerald-200', 'bg-purple-100 text-purple-700 border-purple-200', 'bg-amber-100 text-amber-700 border-amber-200', 'bg-pink-100 text-pink-700 border-pink-200'];
@@ -27,6 +28,7 @@ function getMondayOfWeek(date) {
 }
 
 export default function ShiftRoster() {
+  const fmt = useFormat();
   const [monday, setMonday] = useState(getMondayOfWeek(new Date()));
   const [roster, setRoster] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -120,7 +122,7 @@ export default function ShiftRoster() {
         {shifts.map(s => (
           <div key={s._id} className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border font-medium ${shiftColorMap[s._id]}`}>
             <span>{s.name}</span>
-            <span className="opacity-70">{s.startTime?.substring(0,5)}–{s.endTime?.substring(0,5)}</span>
+            <span className="opacity-70">{fmt.time(s.startTime)}–{fmt.time(s.endTime)}</span>
           </div>
         ))}
       </div>
@@ -191,7 +193,7 @@ export default function ShiftRoster() {
                               className="text-sm border border-dashed border-slate-200 rounded-xl px-2 py-1.5 text-slate-300 hover:border-brand-300 hover:text-brand-500 transition-colors cursor-pointer focus:outline-none bg-transparent"
                               defaultValue="">
                               <option value="" disabled>+ Assign</option>
-                              {shifts.map(s => <option key={s._id} value={s._id}>{s.name} ({s.startTime?.substring(0,5)})</option>)}
+                              {shifts.map(s => <option key={s._id} value={s._id}>{s.name} ({fmt.time(s.startTime)})</option>)}
                             </select>
                           )}
                         </td>

@@ -74,7 +74,10 @@ export function formatInstantTime(iso, timeFormat = '12') {
     hour: '2-digit', minute: '2-digit',
     hour12: String(timeFormat) !== '24',
     timeZone: 'Asia/Kolkata',
-  }).replace(/^0/, String(timeFormat) === '24' ? '0' : '');
+  })
+    .replace(/^0/, String(timeFormat) === '24' ? '0' : '')
+    // en-GB writes "9:30 am"; every other time on screen reads "9:30 AM".
+    .replace(/\b(am|pm)\b/, s => s.toUpperCase());
 }
 
 /** A date (Date, ISO string or yyyy-mm-dd) in the org's date format. */

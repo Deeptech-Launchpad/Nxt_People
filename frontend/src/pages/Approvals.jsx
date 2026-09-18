@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import usePolling from '../hooks/usePolling';
 import { LEAVE_APPROVALS_BASE, APPROVALS_TABS } from './moreservices/operationsWorkspaces';
 import { setWorkspaceBadges, clearWorkspaceBadges } from '../utils/workspaceBadges';
+import { useFormat, formatTime } from '../utils/datetime';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -17,15 +18,6 @@ const LEAVE_TYPE_LABELS = {
   comp_off: 'Compensatory Off',
   unpaid:   'Leave Without Pay',
   permission: 'Permission'
-};
-
-// Convert HH:MM or HH:MM:SS (24-hour) to 12-hour AM/PM display.
-const fmt12 = (t) => {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 };
 
 // Safe date-only formatter — never renders "Invalid Date" for a blank value.
@@ -46,10 +38,10 @@ const fmtDay = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', ye
  * next door has always rendered these correctly; this is that same line,
  * shared, so the two cannot drift again.
  */
-const amountLabel = (l) => {
+const amountLabel = (l, timeFormat) => {
   if (l.leaveType === 'permission') {
     const hours = Number(l.hours) || 0;
-    const window = l.startTime && l.endTime ? ` (${fmt12(l.startTime)}–${fmt12(l.endTime)})` : '';
+    const window = l.startTime && l.endTime ? ` (${formatTime(l.startTime, timeFormat)}–${formatTime(l.endTime, timeFormat)})` : '';
     return `${hours}h${window}`;
   }
   const days = Number(l.totalDays) || 0;
@@ -78,6 +70,7 @@ const saveSeen = (obj) => {
  * second copy for the tab would be the thing that drifts. */
 export default function Approvals({ embedded = false }) {
   const { user } = useAuth();
+  const fmt = useFormat();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   /* Under Operations the navy bar draws the tabs and owns the active one, so
@@ -527,7 +520,7 @@ export default function Approvals({ embedded = false }) {
                             )}
                          </div>
                          <p className="text-base text-slate-500 mt-1 capitalize">
-                           Permission · {p.hours}h {p.startTime && p.endTime && `(${fmt12(p.startTime)}–${fmt12(p.endTime)})`}
+                           Permission · {p.hours}h {p.startTime && p.endTime && `(${fmt.time(p.startTime)}–${fmt.time(p.endTime)})`}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
                           {fmtDay(p.startDate, { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -572,7 +565,7 @@ export default function Approvals({ embedded = false }) {
                            <span className="text-sm bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                          </div>
                          <p className="text-base text-slate-700 mt-1">
-                           {LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l)}
+                           {LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l, fmt.timeFormat)}
                            {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
@@ -615,7 +608,7 @@ export default function Approvals({ embedded = false }) {
                            <span className="text-sm bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                          </div>
                          <p className="text-base text-slate-700 mt-1">
-                           {LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l)}
+                           {LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l, fmt.timeFormat)}
                            {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
@@ -665,7 +658,7 @@ export default function Approvals({ embedded = false }) {
                           {fmtDay(r.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
                         <p className="text-sm text-slate-600 mt-0.5">
-                          {r.checkIn ? `In: ${fmt12(r.checkIn)}` : ''}{r.checkIn && r.checkOut ? ' · ' : ''}{r.checkOut ? `Out: ${fmt12(r.checkOut)}` : ''}
+                          {r.checkIn ? `In: ${fmt.time(r.checkIn)}` : ''}{r.checkIn && r.checkOut ? ' · ' : ''}{r.checkOut ? `Out: ${fmt.time(r.checkOut)}` : ''}
                         </p>
                         <p className="text-sm text-slate-600 mt-0.5 max-w-xs">{r.reason}</p>
                       </div>
@@ -753,7 +746,7 @@ export default function Approvals({ embedded = false }) {
                             ? fmtDay(o.startDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
                             : `${fmtDay(o.startDate)} – ${fmtDay(o.endDate)}`}
                           {o.unit === 'hours' && o.startTime && (
-                            <span className="text-slate-400"> · {String(o.startTime).slice(0, 5)} – {String(o.endTime).slice(0, 5)}</span>
+                            <span className="text-slate-400"> · {fmt.time(o.startTime)} – {fmt.time(o.endTime)}</span>
                           )}
                         </p>
                         {o.reason && <p className="text-sm text-slate-400 mt-0.5 max-w-xs">{o.reason}</p>}

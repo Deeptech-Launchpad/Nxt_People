@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
+import { useFormat } from '../utils/datetime';
 
 // Correcting somebody else's attendance entry.
 //
@@ -17,6 +18,7 @@ import api from '../utils/api';
 const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
 export default function EditAttendanceEntry({ employee, date: initialDate, onClose, onSaved }) {
+  const fmt = useFormat();
   const [date, setDate] = useState(initialDate || todayStr());
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
@@ -104,7 +106,7 @@ export default function EditAttendanceEntry({ employee, date: initialDate, onClo
           {!loading && (
             <p className="text-[12.5px] text-slate-500">
               {current
-                ? `Currently ${current.checkIn || '—'}${current.checkOut ? ` to ${current.checkOut}` : ''}`
+                ? `Currently ${fmt.time(current.checkIn) || '—'}${current.checkOut ? ` to ${fmt.time(current.checkOut)}` : ''}`
                   + `, recorded as ${current.status}.`
                 : 'Nothing is recorded for this day yet.'}
             </p>

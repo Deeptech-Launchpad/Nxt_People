@@ -18,6 +18,7 @@ import SortableTh from '../../components/table/SortableTh';
 import { ActiveSlice, makeSliceLabel } from './chartLabels';
 
 import usePersistedOpen from './usePersistedOpen';
+import { useFormat } from '../../utils/datetime';
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const shiftDay = (dateStr, delta) => {
   const d = new Date(dateStr);
@@ -120,6 +121,7 @@ function LegendRow({ color, label, count, onClick }) {
 // this for each person", the presence donut answers "who is at their desk
 // right now".
 export default function AttendanceDailyStatus() {
+  const fmt = useFormat();
   const f = useReportFilters();
   const [date, setDate] = useState(todayCA());
   const [view, setView] = useState('chart');
@@ -452,8 +454,8 @@ export default function AttendanceDailyStatus() {
               ) : sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5">{fmtTime(row.firstIn)}</td>
-                  <td className="px-4 py-2.5">{fmtTime(row.lastOut)}</td>
+                  <td className="px-4 py-2.5">{fmt.instant(row.firstIn) || '—'}</td>
+                  <td className="px-4 py-2.5">{fmt.instant(row.lastOut) || '—'}</td>
                   <td className="px-4 py-2.5 tabular-nums">{fmtHrs(row.totalHours)}</td>
                   {/* Plain text, not a coloured pill: the cell names the day's
                       actual leave records, which run long enough that a pill

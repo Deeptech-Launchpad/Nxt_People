@@ -11,6 +11,7 @@ import { isManager } from '../../../utils/roles';
 import useEmployeeList, { labelOf } from './useEmployeeList';
 import LeaveRequestDialog from './LeaveRequestDialog';
 import { LEAVE_LABEL, to12 } from '../shift/shiftGrid';
+import { useFormat } from '../../../utils/datetime';
 
 /* ── User-specific Operations ───────────────────────────────────────────────
  *  Zoho's first Leave Tracker tab, and the one that explains the whole
@@ -65,10 +66,10 @@ const todayYmd = () => {
 
 /* Permission is hourly and its total_days is 0 by design, so printing days on
  * a permission row would put the one number the row cannot be next to it. */
-const takenLabel = (l) => {
+const takenLabel = (l, timeFormat) => {
   if (l.leaveType === 'permission') {
     const h = Number(l.hours) || 0;
-    const window = l.startTime && l.endTime ? ` (${to12(l.startTime)}–${to12(l.endTime)})` : '';
+    const window = l.startTime && l.endTime ? ` (${to12(l.startTime, timeFormat)}–${to12(l.endTime, timeFormat)})` : '';
     return `${h} Hour${h === 1 ? '' : 's'}${window}`;
   }
   const d = Number(l.totalDays) || 0;
@@ -130,6 +131,7 @@ const Panel = ({ title, right, children }) => (
  *  up quoting different numbers at each other.
  */
 function LeaveSummaryTab({ employee, canManage = true, canFile = true }) {
+  const { timeFormat } = useFormat();
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [applying, setApplying] = useState(false);
   const [reload, setReload] = useState(0);
@@ -178,14 +180,14 @@ function LeaveSummaryTab({ employee, canManage = true, canFile = true }) {
           key: `l-${l._id}`, date: ymd(l.startDate), end: ymd(l.endDate),
           kind: LEAVE_LABEL[l.leaveType] || l.leaveType,
           title: periodLabel(l), note: l.reason || '', status: l.status,
-          taken: takenLabel(l),
+          taken: takenLabel(l, timeFormat),
         })),
     ];
     return {
       upcoming: items.filter(i => (i.end || i.date) >= today).sort((a, b) => a.date.localeCompare(b.date)),
       past: items.filter(i => (i.end || i.date) < today).sort((a, b) => b.date.localeCompare(a.date)),
     };
-  }, [holidays, leaves]);
+  }, [holidays, leaves, timeFormat]);
 
   const four = (cards || []).filter(c => ['casual', 'comp_off', 'unpaid', 'permission'].includes(c.code));
 
@@ -324,6 +326,7 @@ const DayList = ({ items }) => (
  *  Team door needs nothing added to it.
  */
 function LeaveRequestsTab({ employee, canFile = true }) {
+  const { timeFormat } = useFormat();
   const [rows, setRows] = useState(null);
   const [adding, setAdding] = useState(false);
   const [total, setTotal] = useState(0);
@@ -432,7 +435,7 @@ function LeaveRequestsTab({ employee, canFile = true }) {
                     <td className="px-4 py-3 text-slate-700">{LEAVE_LABEL[l.leaveType] || l.leaveType}</td>
                     <td className="px-4 py-3 text-slate-500">{UNPAID.has(l.leaveType) ? 'Unpaid' : 'Paid'}</td>
                     <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{periodLabel(l)}</td>
-                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{takenLabel(l)}</td>
+                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{takenLabel(l, timeFormat)}</td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtDate(l.createdAt)}</td>
                   </tr>
                 ))}

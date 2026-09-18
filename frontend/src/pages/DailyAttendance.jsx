@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import BackButton from '../components/BackButton';
 import useSortable from '../components/table/useSortable';
 import SortableTh from '../components/table/SortableTh';
+import { useFormat } from '../utils/datetime';
 
 /**
  * Daily Attendance — today-focused live snapshot for admin / manager.
@@ -13,6 +14,7 @@ import SortableTh from '../components/table/SortableTh';
  * the requested date.
  */
 export default function DailyAttendance() {
+  const fmt = useFormat();
   const todayCA = new Date().toLocaleDateString('en-CA');
 
   const [date, setDate]             = useState(todayCA);
@@ -99,8 +101,7 @@ export default function DailyAttendance() {
   }), [rows]);
 
   /* ── helpers ──────────────────────────────────────────────────────── */
-  const fmtTime = (iso) =>
-    iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '—';
+  const fmtTime = (iso) => fmt.instant(iso) || '—';
 
   const exportCSV = () => {
     if (!filtered.length) return;

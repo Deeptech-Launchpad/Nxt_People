@@ -4,6 +4,7 @@ import { Plus, Trash2, Copy, X, Star } from 'lucide-react';
 import api from '../utils/api';
 import useSortable from '../components/table/useSortable';
 import SortableTh from '../components/table/SortableTh';
+import { useFormat } from '../utils/datetime';
 
 // Manage Shifts. One editor for one table — this screen is what both
 // /shifts and Settings → Shifts → Manage Shifts open, because two editors for
@@ -31,14 +32,6 @@ const blank = () => ({
   coreEnabled: false, coreStart: '10:00', coreEnd: '16:00',
   weekendSource: 'location', allowanceEnabled: false, eligibility: [],
 });
-
-const to12 = t => {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
-  const period = h >= 12 ? 'PM' : 'AM';
-  const hr = h % 12 === 0 ? 12 : h % 12;
-  return `${String(hr).padStart(2, '0')} : ${String(m).padStart(2, '0')} ${period}`;
-};
 
 function Editor({ value, meta, onChange, onClose, onSave, busy }) {
   const set = patch => onChange({ ...value, ...patch });
@@ -235,6 +228,7 @@ function Editor({ value, meta, onChange, onClose, onSave, busy }) {
 }
 
 export default function Shifts() {
+  const fmt = useFormat();
   const [shifts, setShifts] = useState(null);
   const [meta, setMeta] = useState({ eligibilityFields: [] });
   const [editing, setEditing] = useState(null);
@@ -326,7 +320,7 @@ export default function Shifts() {
                   </button>
                 </td>
                 <td className="px-6 py-3 text-slate-700 whitespace-nowrap">
-                  {to12(s.startTime)} - {to12(s.endTime)}
+                  {fmt.time(s.startTime)} - {fmt.time(s.endTime)}
                 </td>
                 <td className="px-6 py-3 text-slate-700">{s.employeeCount}</td>
                 <td className="px-6 py-3 text-slate-600">

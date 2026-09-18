@@ -10,6 +10,8 @@
  *  using it.
  * ────────────────────────────────────────────────────────────────────────── */
 
+import { formatTime } from '../../../utils/datetime';
+
 export const ymd = (d) => d.toLocaleDateString('en-CA');
 
 export const LEAVE_LABEL = {
@@ -62,16 +64,12 @@ export function toMinutes(time) {
   return (h || 0) * 60 + (m || 0);
 }
 
-/** "09:30:00" → "9:30 AM". */
-export function to12(time) {
-  const mins = toMinutes(time);
-  if (mins === null) return '';
-  const h = Math.floor(mins / 60), m = mins % 60;
-  const period = h >= 12 ? 'PM' : 'AM';
-  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${period}`;
+/** "09:30:00" → "9:30 AM", or "09:30" when the org is on 24-hour. */
+export function to12(time, timeFormat) {
+  return formatTime(time, timeFormat);
 }
 
-export const shiftLabel = (s) => (s ? `${to12(s.startTime)} - ${to12(s.endTime)}` : '');
+export const shiftLabel = (s, timeFormat) => (s ? `${to12(s.startTime, timeFormat)} - ${to12(s.endTime, timeFormat)}` : '');
 
 /**
  * Which shift applies to one employee on one date.
@@ -98,10 +96,10 @@ export function leavesFor(date, employeeId, leaves) {
     && iso >= String(l.startDate).slice(0, 10) && iso <= String(l.endDate).slice(0, 10));
 }
 
-export function leaveChipText(l) {
+export function leaveChipText(l, timeFormat) {
   const label = LEAVE_LABEL[l.leaveType] || l.leaveType;
   if (l.leaveType === 'permission' && l.startTime) {
-    return `${label} ${to12(l.startTime)} - ${to12(l.endTime)}`;
+    return `${label} ${to12(l.startTime, timeFormat)} - ${to12(l.endTime, timeFormat)}`;
   }
   if (l.isHalfDay) return `${label} (${l.halfDayType === 'second_half' ? '2nd' : '1st'} half)`;
   return label;

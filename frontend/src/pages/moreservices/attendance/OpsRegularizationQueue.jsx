@@ -7,6 +7,7 @@ import RegularizeModal from '../../../components/requests/RegularizeModal';
 import useSortable from '../../../components/table/useSortable';
 import SortableTh from '../../../components/table/SortableTh';
 import { useAuth } from '../../../context/AuthContext';
+import { useFormat, formatTime } from '../../../utils/datetime';
 import {
   useTeamScope, ScopeSwitch, withScope, useFilingPeople, DirectScopeNote, addButtonClass,
 } from '../../team/teamShared';
@@ -26,11 +27,7 @@ const fmtHM = (n) => {
   if (!Number.isFinite(total)) return '00:00';
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 };
-const fmtTime = (hms) => {
-  if (!hms) return '—';
-  const [h, m] = String(hms).split(':').map(Number);
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
-};
+const fmtTime = (hms, timeFormat) => formatTime(hms, timeFormat) || '—';
 const fmtDay = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 const STATUS_WORD = { present: 'Present', late: 'Present', absent: 'Absent', 'half-day': 'Half Day', on_duty: 'On Duty' };
 
@@ -50,6 +47,7 @@ const levelsDone = (r) => (r.approvalLevels || []).filter(l => l.status === 'app
 /* `scopeKey` is passed by Attendance → Team, where a manager-role viewer gets
  * Direct | All. Operations is full access and passes none. */
 export default function OpsRegularizationQueue({ scopeKey = null }) {
+  const { timeFormat } = useFormat();
   const [rows, setRows] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [q, setQ] = useState('');
@@ -165,7 +163,7 @@ export default function OpsRegularizationQueue({ scopeKey = null }) {
                     <td className="px-4 py-3 text-slate-500 max-w-[200px] truncate border-l border-slate-100" title={r.reason}>
                       {r.reason || '—'}
                       <span className="block text-[12.5px] text-slate-400">
-                        In {fmtTime(r.checkIn)} · Out {fmtTime(r.checkOut)}
+                        In {fmtTime(r.checkIn, timeFormat)} · Out {fmtTime(r.checkOut, timeFormat)}
                       </span>
                     </td>
                     <td className="px-4 py-3">

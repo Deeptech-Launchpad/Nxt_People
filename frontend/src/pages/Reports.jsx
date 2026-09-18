@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { deliverWorkbook } from '../utils/protectedExport';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import { useFormat } from '../utils/datetime';
 
 const STATUS_STYLE = { present:'bg-emerald-100 text-emerald-700', absent:'bg-red-100 text-red-700', 'half-day':'bg-blue-100 text-blue-700', leave:'bg-purple-100 text-purple-700' };
 const DAILY_CATEGORIES = [
@@ -87,6 +88,7 @@ function SortableTh({ field, label, align = 'right', sortField, sortDir, onSort 
 const VALID_TABS = ['detail', 'summary', 'daily'];
 
 export default function Reports() {
+  const format = useFormat();
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState([]);
   const [daily, setDaily] = useState(null);
@@ -185,7 +187,7 @@ export default function Reports() {
     await deliverWorkbook(wb, `nxt-people-report-${stamp}.xlsx`);
   };
 
-  const fmt = d => d ? new Date(d).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'}) : '—';
+  const fmt = d => format.instant(d) || '—';
 
   const toggleSort = (field) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');

@@ -16,6 +16,7 @@ import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
+import { useFormat } from '../../utils/datetime';
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
@@ -148,6 +149,7 @@ function Delta({ value, sign, tone, bold = false }) {
 // An employee with no shift assigned has nothing to be early or late against,
 // so every delta on their row — Net hours included — reads "-".
 export default function EarlyLateCheckInOut() {
+  const fmt = useFormat();
   const f = useReportFilters();
   const [periodKey, setPeriodKey] = useState('today');
   const [dateRange, setDateRange] = useState(PERIOD_OPTIONS[0].value);
@@ -292,8 +294,8 @@ export default function EarlyLateCheckInOut() {
                 <tr key={row._id} className="border-b border-slate-200">
                   <td className={CELL}><EmployeeCell row={row} /></td>
                   {multiDay && <td className={`text-slate-600 tabular-nums ${CELL}`}>{fmtDate(row.date)}</td>}
-                  <td className={CELL}>{fmtTime(row.firstIn)}</td>
-                  <td className={CELL}>{fmtTime(row.lastOut)}</td>
+                  <td className={CELL}>{fmt.instant(row.firstIn) || '-'}</td>
+                  <td className={CELL}>{fmt.instant(row.lastOut) || '-'}</td>
                   <td className={`text-center tabular-nums ${CELL}`}>{fmtHrs(row.totalHours)}</td>
                   <Delta value={row.entryEarly} sign="+" tone="text-emerald-600" />
                   <Delta value={row.entryLate} sign="-" tone="text-red-600" />

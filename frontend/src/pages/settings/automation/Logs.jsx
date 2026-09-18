@@ -4,12 +4,11 @@ import { RefreshCw } from 'lucide-react';
 import api from '../../../utils/api';
 import { Spinner } from '../configKit';
 import { useCatalog, LogTimeline } from './kit';
+import { useLocaleFormat, formatInstantTime } from '../../../utils/datetime';
 
 // The two log screens. A workflow you cannot see having run is a workflow
 // nobody trusts, which is why "the criteria did not match" is a logged outcome
 // here rather than silence.
-
-const time = v => new Date(v).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
 function useLogs(path) {
   const [rows, setRows] = useState(null);
@@ -38,6 +37,7 @@ function Header({ title, hint, onRefresh }) {
 }
 
 export function WorkflowLogs() {
+  const { timeFormat } = useLocaleFormat();
   const catalog = useCatalog();
   const { rows, reload } = useLogs('/workflows/logs');
   if (!catalog || rows === null) return <Spinner />;
@@ -62,7 +62,7 @@ export function WorkflowLogs() {
               r.actionKind === 'email_alert' ? 'Mail Alert' : r.actionKind === 'field_update' ? 'Field Update' : null) },
           { key: 'actionName', label: 'Action Name' },
           { key: 'subjectName', label: 'Employee' },
-          { key: 'executedAt', label: 'Execution Time', render: r => time(r.executedAt) },
+          { key: 'executedAt', label: 'Execution Time', render: r => formatInstantTime(r.executedAt, timeFormat) },
         ]}
       />
     </div>
@@ -70,6 +70,7 @@ export function WorkflowLogs() {
 }
 
 export function SchedulerLogs() {
+  const { timeFormat } = useLocaleFormat();
   const { rows, reload } = useLogs('/workflows/scheduler-logs');
   if (rows === null) return <Spinner />;
 
@@ -86,7 +87,7 @@ export function SchedulerLogs() {
         columns={[
           { key: 'name', label: 'Name' },
           { key: 'kind', label: 'Type' },
-          { key: 'executedAt', label: 'Execution Time', render: r => time(r.executedAt) },
+          { key: 'executedAt', label: 'Execution Time', render: r => formatInstantTime(r.executedAt, timeFormat) },
           { key: 'durationMs', label: 'Took', render: r => (r.durationMs != null ? `${r.durationMs} ms` : null) },
         ]}
       />

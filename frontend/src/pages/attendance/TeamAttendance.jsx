@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import usePolling from '../../hooks/usePolling';
 import { leaveChipText } from '../moreservices/shift/shiftGrid';
 import { useTeamScope, ScopeSwitch, withScope } from '../team/teamShared';
+import { useFormat, formatTime, formatInstantTime } from '../../utils/datetime';
 
 /* `embedded` renders this as the Team Members tab of the Attendance → Team
  * workspace, which already draws its own tab bar and page chrome. Same
@@ -20,6 +21,7 @@ import { useTeamScope, ScopeSwitch, withScope } from '../team/teamShared';
  * outside that set stays inert rather than becoming a link to a 403. */
 export default function TeamAttendance({ embedded = false, onOpen = null, openableIds = null }) {
   const { user } = useAuth();
+  const { timeFormat } = useFormat();
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
   const [leave, setLeave] = useState([]);
@@ -101,7 +103,7 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
   const onLeave    = filtered.filter(p => !p.att?.checkIn && (p.leave || p.partial));
   const notYet     = filtered.filter(p => !p.att?.checkIn && !p.leave && !p.partial);
 
-  const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata' }) : null;
+  const fmtTime = ts => (ts ? formatInstantTime(ts, timeFormat) : null);
 
   const MemberCard = ({ person }) => {
     const att = person.att;
@@ -151,7 +153,7 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
         <div className="mt-2.5 pl-[52px]">
           {person.shift?.name && (
             <p className="text-[13px] text-slate-500">
-              {person.shift.name}{person.shift.start_time && person.shift.end_time ? ` · ${person.shift.start_time} - ${person.shift.end_time}` : ''}
+              {person.shift.name}{person.shift.start_time && person.shift.end_time ? ` · ${formatTime(person.shift.start_time, timeFormat)} - ${formatTime(person.shift.end_time, timeFormat)}` : ''}
             </p>
           )}
           {att?.checkIn && (
@@ -171,7 +173,7 @@ export default function TeamAttendance({ embedded = false, onOpen = null, openab
                 halfDayType: leaveLabel.halfDayType,
                 startTime: leaveLabel.startTime,
                 endTime: leaveLabel.endTime,
-              })}
+              }, timeFormat)}
             </p>
           )}
         </div>

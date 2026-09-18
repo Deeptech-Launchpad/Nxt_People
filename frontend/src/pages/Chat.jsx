@@ -4,12 +4,9 @@ import { Send, Search, UserPlus, Check, X, Clock, Circle, MessageCircle, ArrowLe
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
+import { useFormat, formatInstantTime } from '../utils/datetime';
 
-const fmtTime = (iso) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-};
+const fmtTime = (iso, timeFormat) => formatInstantTime(iso, timeFormat);
 const fmtDay = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -41,6 +38,7 @@ function Avatar({ name, photoUrl, online, size = 40 }) {
 
 export default function Chat() {
   const { user } = useAuth();
+  const { timeFormat } = useFormat();
   const {
     wsState, contacts,
     messagesByPeer, loadMessages, sendMessage, markRead, sendTyping,
@@ -365,7 +363,7 @@ export default function Chat() {
                     }`}>
                       <p className="text-[15px] whitespace-pre-wrap break-words">{m.content}</p>
                       <p className={`text-[12px] mt-0.5 ${isMe ? 'text-blue-100' : 'text-slate-400'}`}>
-                        {fmtTime(m.createdAt)}
+                        {fmtTime(m.createdAt, timeFormat)}
                         {isMe && (() => {
                           // 3-state delivery indicator on outgoing messages.
                           //   m.id starts with 'tmp-' → optimistic, not yet ACKed → "Sending"

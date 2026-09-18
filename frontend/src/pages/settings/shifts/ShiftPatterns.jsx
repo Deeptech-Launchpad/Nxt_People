@@ -5,6 +5,7 @@ import api from '../../../utils/api';
 import { Spinner } from '../configKit';
 import useSortable from '../../../components/table/useSortable';
 import SortableTh from '../../../components/table/SortableTh';
+import { useFormat } from '../../../utils/datetime';
 
 // Shift Patterns — a rotation, expressed as a grid of day to shift.
 //
@@ -35,6 +36,7 @@ const blank = () => ({
 });
 
 function DayCell({ value, shifts, onPick }) {
+  const fmt = useFormat();
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState('');
   const shift = shifts.find(s => s.id === value);
@@ -55,7 +57,7 @@ function DayCell({ value, shifts, onPick }) {
             <span className="w-2.5 h-2.5 rounded-sm mt-1 flex-shrink-0" style={{ backgroundColor: shift.color }} />
             <span className="min-w-0">
               <span className="block text-[12.5px] text-slate-800 truncate">{shift.name}</span>
-              <span className="block text-[11.5px] text-slate-500">{shift.startTime}</span>
+              <span className="block text-[11.5px] text-slate-500">{fmt.time(shift.startTime)}</span>
             </span>
           </span>
         ) : (
@@ -79,7 +81,7 @@ function DayCell({ value, shifts, onPick }) {
                 className="w-full text-left px-3 py-2 text-[13px] hover:bg-slate-50 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: s.color }} />
                 <span className="truncate">{s.name}</span>
-                <span className="text-slate-400 ml-auto text-[12px]">{s.startTime}</span>
+                <span className="text-slate-400 ml-auto text-[12px]">{fmt.time(s.startTime)}</span>
               </button>
             ))}
           </div>

@@ -8,6 +8,7 @@ import {
   ymd, weekDates, addDays, shiftFor, leavesFor, leaveChipText, shiftLabel,
   to12, BAND_HOURS, placeOnBand, isWeekendDay, isToday,
 } from './shiftGrid';
+import { useFormat } from '../../../utils/datetime';
 
 /* ── Operations → Shift → Employee Shift Mapping ──────────────────────────
  *  Everybody's schedule at once: Weekly (days across, people down) or Daily
@@ -200,6 +201,7 @@ export default function OpsEmployeeShiftMapping() {
 
 /** Days across, people down. */
 function WeeklyGrid({ days, rows, rosterByKey, leaves }) {
+  const { timeFormat } = useFormat();
   return (
     <div className="overflow-x-auto">
       <table className="min-w-[1100px] w-full border-collapse">
@@ -237,14 +239,14 @@ function WeeklyGrid({ days, rows, rosterByKey, leaves }) {
                           ? `Rostered${shift.reason ? ` — ${shift.reason}` : ''}`
                           : 'Standing shift'}>
                         <p className="text-[11px] font-semibold text-blue-800 leading-tight truncate">{shift.name}</p>
-                        <p className="text-[10px] text-blue-700 leading-tight truncate">{shiftLabel(shift)}</p>
+                        <p className="text-[10px] text-blue-700 leading-tight truncate">{shiftLabel(shift, timeFormat)}</p>
                       </div>
                     ) : (
                       <p className="text-[11px] text-slate-300">—</p>
                     )}
                     {dayLeaves.map(l => (
                       <div key={l._id} className="rounded bg-amber-100 border border-amber-300 px-2 py-1">
-                        <p className="text-[10px] font-medium text-amber-800 leading-tight">{leaveChipText(l)}</p>
+                        <p className="text-[10px] font-medium text-amber-800 leading-tight">{leaveChipText(l, timeFormat)}</p>
                       </div>
                     ))}
                   </td>
@@ -260,6 +262,7 @@ function WeeklyGrid({ days, rows, rosterByKey, leaves }) {
 
 /** Hours across, people down — one day. */
 function DailyBand({ day, rows, rosterByKey, leaves }) {
+  const { timeFormat } = useFormat();
   return (
     <div className="overflow-x-auto">
       <div className="min-w-[1100px]">
@@ -268,7 +271,7 @@ function DailyBand({ day, rows, rosterByKey, leaves }) {
           <div className="px-4 py-2.5 text-[12px] font-medium text-slate-500">Employee</div>
           {BAND_HOURS.map(h => (
             <div key={h} className="border-l border-slate-200 px-2 py-2.5 text-[12px] text-slate-500 text-center">
-              {to12(`${String(Math.floor(h / 60)).padStart(2, '0')}:00`)}
+              {to12(`${String(Math.floor(h / 60)).padStart(2, '0')}:00`, timeFormat)}
             </div>
           ))}
         </div>
@@ -292,7 +295,7 @@ function DailyBand({ day, rows, rosterByKey, leaves }) {
                     <div className="absolute h-8 rounded bg-blue-100 border border-blue-200 px-2 py-1 overflow-hidden"
                       style={placeOnBand(shift.startTime, shift.endTime)}>
                       <p className="text-[12px] font-semibold text-blue-800 leading-tight truncate">{shift.name}</p>
-                      <p className="text-[11px] text-blue-700 leading-tight truncate">{shiftLabel(shift)}</p>
+                      <p className="text-[11px] text-blue-700 leading-tight truncate">{shiftLabel(shift, timeFormat)}</p>
                     </div>
                   </div>
                 ) : <p className="text-[12px] text-slate-300 pl-2">No shift</p>}
@@ -302,7 +305,7 @@ function DailyBand({ day, rows, rosterByKey, leaves }) {
                       style={l.leaveType === 'permission' && l.startTime
                         ? placeOnBand(l.startTime, l.endTime)
                         : { left: 0, width: '100%' }}>
-                      <p className="text-[11px] font-medium text-amber-800 leading-tight truncate">{leaveChipText(l)}</p>
+                      <p className="text-[11px] font-medium text-amber-800 leading-tight truncate">{leaveChipText(l, timeFormat)}</p>
                     </div>
                   </div>
                 ))}

@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { roleLabel } from '../utils/roles';
 import MfaSettingsCard from '../components/MfaSettingsCard';
 import PhotoCropperModal from '../components/PhotoCropperModal';
+import { useFormat } from '../utils/datetime';
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 
@@ -182,6 +183,7 @@ const Masked = ({ value }) => {
 /* ── page ──────────────────────────────────────────────────────────────────── */
 
 export default function Profile() {
+  const fmt = useFormat();
   const navigate = useNavigate();
   const { setUser } = useAuth();
   const [profile, setProfile] = useState(null);
@@ -643,7 +645,7 @@ export default function Profile() {
           <Row label="Expertise">{profile.expertise}</Row>
           <Row label="Shift">
             {profile.shift?.name
-              ? `${profile.shift.name} (${profile.shift.startTime}–${profile.shift.endTime})`
+              ? `${profile.shift.name} (${fmt.time(profile.shift.startTime)}–${fmt.time(profile.shift.endTime)})`
               : null}
           </Row>
           <Row label="Exit Date">{profile.exitDate ? fmtDate(profile.exitDate) : null}</Row>

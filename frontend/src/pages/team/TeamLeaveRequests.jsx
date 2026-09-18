@@ -8,6 +8,7 @@ import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
 import { useAuth } from '../../context/AuthContext';
 import { LEAVE_LABEL, to12 } from '../moreservices/shift/shiftGrid';
+import { useFormat } from '../../utils/datetime';
 import {
   Avatar, DirectScopeNote, Spinner, Empty, fmtDay,
   useTeamScope, ScopeSwitch, withScope, useFilingPeople, addButtonClass,
@@ -38,10 +39,10 @@ const FILTERS = [
 /* Permission is hourly — total_days is 0 on every permission row by design,
  * so printing days there would put the one number the row cannot be next to
  * it. The same rule Approvals.jsx applies. */
-const amountLabel = (l) => {
+const amountLabel = (l, timeFormat) => {
   if (l.leaveType === 'permission') {
     const hours = Number(l.hours) || 0;
-    const window = l.startTime && l.endTime ? ` (${to12(l.startTime)}–${to12(l.endTime)})` : '';
+    const window = l.startTime && l.endTime ? ` (${to12(l.startTime, timeFormat)}–${to12(l.endTime, timeFormat)})` : '';
     return `${hours}h${window}`;
   }
   const days = Number(l.totalDays) || 0;
@@ -55,6 +56,7 @@ const COLUMNS = [
 ];
 
 export default function TeamLeaveRequests({ embedded = false, scopeKey = null }) {
+  const { timeFormat } = useFormat();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
@@ -199,7 +201,7 @@ export default function TeamLeaveRequests({ embedded = false, scopeKey = null })
                     </td>
                     <td className="px-5 py-3 text-[14px] text-slate-600">{fmtDay(l.startDate, { day: '2-digit', month: 'short' })}</td>
                     <td className="px-5 py-3 text-[14px] text-slate-600">{fmtDay(l.endDate, { day: '2-digit', month: 'short' })}</td>
-                    <td className="px-5 py-3 text-[14px] font-medium text-slate-700">{amountLabel(l)}</td>
+                    <td className="px-5 py-3 text-[14px] font-medium text-slate-700">{amountLabel(l, timeFormat)}</td>
                     <td className="px-5 py-3 text-[13px] text-slate-500 max-w-[240px]">
                       <span className="block truncate" title={l.reason || ''}>{l.reason || '—'}</span>
                     </td>

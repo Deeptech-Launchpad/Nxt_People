@@ -25,7 +25,7 @@ import RegularizeModal from '../components/requests/RegularizeModal';
 import OnDutyModal from '../components/requests/OnDutyModal';
 import ApplyLeaveModal from '../components/requests/ApplyLeaveModal';
 import LeaveRequestDialog from './moreservices/leavetracker/LeaveRequestDialog';
-import { formatTimeRange, useLocaleFormat } from '../utils/datetime';
+import { formatTimeRange, useFormat, useLocaleFormat } from '../utils/datetime';
 import { richTextToPlain } from '../utils/richText';
 import AnnouncementDetailModal from '../components/AnnouncementDetailModal';
 import toast from 'react-hot-toast';
@@ -308,9 +308,10 @@ const PRESENCE_DOT   = { in: 'bg-emerald-500',  out: 'bg-slate-400',  onLeave: '
  * says instead. The server blanks the detail outside the viewer's own
  * department, which leaves the plain label. */
 const PresenceLabel = ({ person }) => {
+  const { timeFormat } = useLocaleFormat();
   const p = presenceOf(person);
   if (!p) return null;
-  const detail = person?.leaveType ? leaveChipText(person) : null;
+  const detail = person?.leaveType ? leaveChipText(person, timeFormat) : null;
   const label = (p === 'onLeave' || p === 'yetToCheckIn') && detail && person.leaveType !== 'permission' ? detail : PRESENCE_LABEL[p];
   return (
     <span className={`text-[13px] font-medium ${PRESENCE_COLOR[p]}`}>
@@ -435,6 +436,7 @@ const RequestMenu = ({ buttonRect, onClose, canRegularize = false, onPick }) => 
 
 export default function Dashboard() {
   const { user, setUser } = useAuth();
+  const fmt = useFormat();
   const {
     isCheckedIn, isCheckedOut, timerDisplay,
     hrs, mins, secs,
@@ -1190,7 +1192,7 @@ export default function Dashboard() {
                 {isCheckedOut && record?.checkOut && (
                   <div className="space-y-2">
                     <p className="text-[13px] text-slate-400 font-medium">
-                      Checked out at <span className="text-slate-600 font-bold">{new Date(record.checkOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'})}</span>
+                      Checked out at <span className="text-slate-600 font-bold">{fmt.instant(record.checkOut)}</span>
                     </p>
                     <button
                       onClick={handleCheckIn}
@@ -1632,7 +1634,7 @@ export default function Dashboard() {
                           <div>
                             <p className="text-[13.5px] font-bold text-slate-800">{f.title}</p>
                             <p className="text-[13px] text-slate-400 font-medium">
-                              {new Date(f.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'})} • {f.type?.toUpperCase() || 'UPDATE'}
+                              {fmt.instant(f.createdAt)} • {f.type?.toUpperCase() || 'UPDATE'}
                             </p>
                           </div>
                         </div>
@@ -1908,12 +1910,8 @@ export default function Dashboard() {
                        * and says when it closed. */
                       const canRegularize = !isWeekend && (isToday || isPast);
 
-                      // Pretty-print "09:48 AM" — Zoho's exact format.
-                      const fmtClock = (iso) =>
-                        iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : null;
-
-                      const checkInTxt  = att?.checkIn  ? fmtClock(att.checkIn)  : 'No check-in';
-                      const checkOutTxt = att?.checkOut ? fmtClock(att.checkOut) : 'No check-out';
+                      const checkInTxt  = att?.checkIn  ? fmt.instant(att.checkIn)  : 'No check-in';
+                      const checkOutTxt = att?.checkOut ? fmt.instant(att.checkOut) : 'No check-out';
                       const hoursTxt = (() => {
                         if (isToday && isCheckedIn) return `${timerDisplay} Hrs`;
                         if (att?.workingHours !== undefined) return `${fmtHHMM(att.workingHours)} Hrs`;
@@ -2026,7 +2024,7 @@ export default function Dashboard() {
                                 return (
                                   <>
                                     <p className="text-slate-700">
-                                      <span>{record?.checkIn ? fmtClock(record.checkIn) : 'Checked in'}</span>
+                                      <span>{record?.checkIn ? fmt.instant(record.checkIn) : 'Checked in'}</span>
                                       <span className="text-slate-400"> - </span>
                                       <span className="text-slate-400">No check-out</span>
                                       <span className="text-slate-400 mx-1">·</span>

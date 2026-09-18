@@ -4,6 +4,7 @@ import {
   UserPlus, LogOut, FileText, CalendarDays, Clock, Briefcase, Pencil, IndianRupee, Circle,
 } from 'lucide-react';
 import api from '../../../utils/api';
+import { useFormat, formatInstantTime } from '../../../utils/datetime';
 
 /* What has happened to this person's record.
  *
@@ -51,16 +52,16 @@ const FILTERS = [
 
 const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('en-IN', {
   day: '2-digit', month: 'short', year: 'numeric' }) : '');
-const fmtTime = (d) => {
+const fmtTime = (d, timeFormat) => {
   if (!d) return '';
   const t = new Date(d);
   /* A date-only value (a joining date, an exit date) has no meaningful time,
      and printing 00:00 beside it invents a precision that is not there. */
-  return t.getHours() === 0 && t.getMinutes() === 0
-    ? '' : t.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return t.getHours() === 0 && t.getMinutes() === 0 ? '' : formatInstantTime(d, timeFormat);
 };
 
 export default function EmployeeActivity({ employeeId }) {
+  const { timeFormat } = useFormat();
   const [rows, setRows] = useState(null);
   const [note, setNote] = useState('');
   const [filter, setFilter] = useState('all');
@@ -143,7 +144,7 @@ export default function EmployeeActivity({ employeeId }) {
                               </span>
                             )}
                           </p>
-                          <span className="text-[12px] text-slate-400 flex-shrink-0">{fmtTime(e.at)}</span>
+                          <span className="text-[12px] text-slate-400 flex-shrink-0">{fmtTime(e.at, timeFormat)}</span>
                         </div>
                         {e.detail && <p className="text-[13px] text-slate-500 mt-0.5">{e.detail}</p>}
                         {e.actor && <p className="text-[12.5px] text-slate-400 mt-0.5">by {e.actor}</p>}

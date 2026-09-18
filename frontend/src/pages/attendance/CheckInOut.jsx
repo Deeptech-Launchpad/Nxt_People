@@ -5,6 +5,7 @@ import { useAttendance } from '../../context/AttendanceContext';
 import api from '../../utils/api';
 import { reverseGeocode } from '../../utils/reverseGeocode';
 import BackButton from '../../components/BackButton';
+import { useFormat } from '../../utils/datetime';
 
 function useGeolocation() {
   const [position, setPosition] = useState(null);
@@ -29,6 +30,7 @@ const STATUS_COLORS = { present: 'text-emerald-600 bg-emerald-50 border-emerald-
 
 export default function CheckInOut() {
   const { user } = useAuth();
+  const fmt = useFormat();
   // Read + mutate attendance through the shared context so other pages
   // (Home dashboard, top-bar avatar, calendar) refresh in lockstep when
   // we check in/out from this page. Was previously calling the API
@@ -82,7 +84,7 @@ export default function CheckInOut() {
   };
   const workingHours = record?.workingHours ? `${Math.floor(record.workingHours)}h ${Math.round((record.workingHours % 1) * 60)}m` : null;
 
-  const timeStr = time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata' });
+  const timeStr = time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: fmt.timeFormat !== '24', timeZone: 'Asia/Kolkata' });
   const dateStr = time.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' });
 
   return (
@@ -167,8 +169,8 @@ export default function CheckInOut() {
             {/* Times grid */}
             <div className="grid grid-cols-3 gap-3 mb-5">
               {[
-                ['Check In', (record?.sessions?.[0]?.checkIn || record?.checkIn) ? new Date(record?.sessions?.[0]?.checkIn || record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata' }) : '—'],
-                ['Check Out', record?.checkOut ? new Date(record.checkOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata' }) : '—'],
+                ['Check In', fmt.instant(record?.sessions?.[0]?.checkIn || record?.checkIn) || '—'],
+                ['Check Out', fmt.instant(record?.checkOut) || '—'],
                 ['Work Hours', workingHours || (isCheckedIn ? 'In Progress' : '—')],
               ].map(([label, val]) => (
                 <div key={label} className="text-center p-4 bg-slate-50 rounded-xl border border-slate-100">
@@ -219,7 +221,7 @@ export default function CheckInOut() {
             {/* Live elapsed timer */}
             {isCheckedIn && !forgotCheckout && (
               <p className="text-center text-sm text-slate-400 mt-3">
-                Clocked in at {new Date(record?.sessions?.[0]?.checkIn || record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} · {Math.floor(elapsed / 3600)}h {Math.floor((elapsed % 3600) / 60)}m worked today
+                Clocked in at {fmt.instant(record?.sessions?.[0]?.checkIn || record.checkIn)} · {Math.floor(elapsed / 3600)}h {Math.floor((elapsed % 3600) / 60)}m worked today
               </p>
             )}
 
@@ -228,7 +230,7 @@ export default function CheckInOut() {
                 no explanation is what sent people looking for a refresh. */}
             {isCheckedIn && forgotCheckout && (
               <p className="text-center text-sm text-amber-600 mt-3">
-                Still open from {new Date(record?.sessions?.[0]?.checkIn || record.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} — it looks like the check-out was missed.
+                Still open from {fmt.instant(record?.sessions?.[0]?.checkIn || record.checkIn)} — it looks like the check-out was missed.
                 Check out now to close the day, or raise a regularization to correct the time.
               </p>
             )}
@@ -240,9 +242,9 @@ export default function CheckInOut() {
                   <div key={i} className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
                     <span className="text-slate-500 font-medium">Session {i + 1}</span>
                     <span className="text-slate-700">
-                      {new Date(s.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+                      {fmt.instant(s.checkIn)}
                       {' → '}
-                      {s.checkOut ? new Date(s.checkOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : <span className="text-emerald-600">Active</span>}
+                      {s.checkOut ? fmt.instant(s.checkOut) : <span className="text-emerald-600">Active</span>}
                     </span>
                     {parseFloat(s.sessionHours) > 0 && (
                       <span className="text-slate-400 text-xs">{Math.floor(s.sessionHours)}h {Math.round((s.sessionHours % 1) * 60)}m</span>

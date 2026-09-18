@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Plus, X, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
+import { useLocaleFormat, formatTime } from '../../utils/datetime';
 
 const TYPES = [
   { key: 'client_visit', label: 'Client visit' },
@@ -34,11 +36,24 @@ const fmt = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month
 // a day worked from home. It is not leave: the day is payable and counts as
 // worked, which is why every attendance report has an On Duty column.
 export default function OnDuty() {
+  const { timeFormat } = useLocaleFormat();
   const [month, setMonth] = useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [status, setStatus] = useState('pending');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
+  const [formDate, setFormDate] = useState(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  /* Arriving from Add Request on My Attendance: open the form on the day that
+     was pressed. Cleared afterwards so a refresh does not reopen it. */
+  useEffect(() => {
+    if (!location.state?.openNew) return;
+    setFormDate(location.state.date || null);
+    setFormOpen(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state]);
 
   const range = (() => {
     const start = new Date(month.getFullYear(), month.getMonth(), 1);
@@ -102,7 +117,7 @@ export default function OnDuty() {
             {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
           <button
-            onClick={() => setFormOpen(true)}
+            onClick={() => { setFormDate(null); setFormOpen(true); }}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors"
           >
             <Plus size={15} /> Add Request
@@ -135,7 +150,7 @@ export default function OnDuty() {
                       {r.startDate === r.endDate ? fmt(r.startDate) : `${fmt(r.startDate)} - ${fmt(r.endDate)}`}
                     </td>
                     <td className="px-4 py-2.5 whitespace-nowrap border-r border-slate-200">
-                      {r.unit === 'hours' ? `${r.startTime?.slice(0, 5)} - ${r.endTime?.slice(0, 5)}` : 'Days'}
+                      {r.unit === 'hours' ? `${formatTime(r.startTime, timeFormat)} - ${formatTime(r.endTime, timeFormat)}` : 'Days'}
                     </td>
                     <td className="px-4 py-2.5 whitespace-nowrap border-r border-slate-200">{TYPE_LABEL[r.requestType] || r.requestType}</td>
                     <td className="px-4 py-2.5 max-w-xs truncate border-r border-slate-200" title={r.reason || ''}>{r.reason || '—'}</td>
@@ -164,14 +179,14 @@ export default function OnDuty() {
 
       <p className="text-[13px] text-slate-500">Total Record Count : <span className="text-blue-600 font-medium">{rows.length}</span></p>
 
-      {formOpen && <RequestForm onClose={() => setFormOpen(false)} onSaved={() => { setFormOpen(false); load(); }} />}
+      {formOpen && <RequestForm date={formDate} onClose={() => setFormOpen(false)} onSaved={() => { setFormOpen(false); load(); }} />}
     </div>
   );
 }
 
-function RequestForm({ onClose, onSaved }) {
-  const [startDate, setStartDate] = useState(todayCA());
-  const [endDate, setEndDate] = useState(todayCA());
+function RequestForm({ onClose, onSaved, date = null }) {
+  const [startDate, setStartDate] = useState(date || todayCA());
+  const [endDate, setEndDate] = useState(date || todayCA());
   const [unit, setUnit] = useState('days');
   const [requestType, setRequestType] = useState('');
   const [startTime, setStartTime] = useState('09:30');

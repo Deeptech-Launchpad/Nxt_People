@@ -14,6 +14,7 @@ import { useWeekendRules } from '../../context/WeekendRulesContext';
 import toast from 'react-hot-toast';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
+import { useFormat, useLocaleFormat, formatInstantTime } from '../../utils/datetime';
 
 /* ── helpers ────────────────────────────────────────────────────────── */
 
@@ -23,9 +24,9 @@ function parseLocalDate(s) {
   return new Date(s + 'T00:00:00');
 }
 
-function fmtTime(d) {
+function fmtTime(d, timeFormat) {
   if (!d) return null;
-  return new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+  return formatInstantTime(d, timeFormat);
 }
 
 function fmtHHMM(hours) {
@@ -89,14 +90,18 @@ const StatusPill = ({ status }) => {
 // Same positioning model as the Dashboard variant — caller hands in the
 // button's bounding rect, the menu measures its own real height in a
 // useLayoutEffect and flips above when there isn't room below.
-const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
+const RequestMenu = ({ buttonRect, onClose, canRegularize = false, date = null }) => {
   const navigate = useNavigate();
   const menuRef  = useRef(null);
   const [pos, setPos] = useState({ left: -9999, top: -9999, ready: false });
 
+  /* The day the button was pressed on travels with the navigation, so the form
+     opens on that date rather than on today — and Apply OnDuty lands on On Duty
+     instead of on the Regularization screen, which is where it used to go. */
+  const forDay = { openNew: true, date };
   const options = [
-    canRegularize && { label: 'Regularize Attendance', path: '/attendance/regularization', icon: '✏️' },
-    { label: 'Apply OnDuty',           path: '/attendance/regularization', icon: '📍' },
+    canRegularize && { label: 'Regularize Attendance', path: '/attendance/regularization', icon: '✏️', state: forDay },
+    { label: 'Apply OnDuty',           path: '/attendance/on-duty',     icon: '📍', state: forDay },
     { label: 'Apply Leave',            path: '/leave-tracker/requests',    icon: '📅' },
     { label: 'Apply Compensatory Off', path: '/leave-tracker/comp-off',    icon: '🔁' },
   ].filter(Boolean);
@@ -141,7 +146,7 @@ const RequestMenu = ({ buttonRect, onClose, canRegularize = false }) => {
         {options.map((opt, idx) => (
           <button
             key={idx}
-            onClick={() => { navigate(opt.path); onClose(); }}
+            onClick={() => { navigate(opt.path, opt.state ? { state: opt.state } : undefined); onClose(); }}
             className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50/50 transition-colors text-left group"
           >
             <span className="text-base bg-slate-50 group-hover:bg-blue-100/50 w-7 h-7 flex items-center justify-center rounded-lg border border-slate-100 group-hover:border-blue-200 transition-colors">
@@ -170,6 +175,7 @@ const pctOfDay = (mins) =>
 const minutesNow = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 
 function TimelineBar({ record, isToday, isCheckedIn }) {
+  const { timeFormat } = useLocaleFormat();
   const total = SHIFT_END - SHIFT_START;
   const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
   const nowPct = Math.max(0, Math.min(100, ((nowMins - SHIFT_START) / total) * 100));
@@ -219,13 +225,13 @@ function TimelineBar({ record, isToday, isCheckedIn }) {
               <div
                 className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
                 style={{ left: `${sPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-                title={`Session ${i + 1} in: ${new Date(s.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`}
+                title={`Session ${i + 1} in: ${fmtTime(s.checkIn, timeFormat)}`}
               />
               {ePct !== null && (
                 <div
                   className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
                   style={{ left: `${ePct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-                  title={`Session ${i + 1} out: ${new Date(s.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`}
+                  title={`Session ${i + 1} out: ${fmtTime(s.checkOut, timeFormat)}`}
                 />
               )}
             </React.Fragment>
@@ -274,14 +280,14 @@ function TimelineBar({ record, isToday, isCheckedIn }) {
       <div
         className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
         style={{ left: `${startPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-        title={`Check-in, ${new Date(ci).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`}
+        title={`Check-in, ${fmtTime(ci, timeFormat)}`}
       />
 
       {endPct !== null && (
         <div
           className="absolute w-2.5 h-2.5 rounded-full bg-white z-10 border-2"
           style={{ left: `${endPct}%`, top: '50%', transform: 'translate(-50%,-50%)', borderColor: color }}
-          title={`Check-out, ${new Date(co).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`}
+          title={`Check-out, ${fmtTime(co, timeFormat)}`}
         />
       )}
 
@@ -383,6 +389,7 @@ function PunchDetail({ label, time, locationLabel, lat, lng }) {
 const SOURCE_NOTE = { manual: 'Entered manually', import: 'Imported from a file' };
 
 function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose }) {
+  const { timeFormat } = useLocaleFormat();
   const sessions = record?.sessions || [];
   const firstIn  = sessions[0]?.checkIn || record?.checkIn || null;
   const lastOut  = sessions.length
@@ -444,14 +451,14 @@ function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose }) {
             <>
               <PunchDetail
                 label="Check-in"
-                time={fmtTime(firstIn)}
+                time={fmtTime(firstIn, timeFormat)}
                 locationLabel={record.checkInLocation}
                 lat={record.checkInLat}
                 lng={record.checkInLng}
               />
               <PunchDetail
                 label="Check-out"
-                time={fmtTime(lastOut)}
+                time={fmtTime(lastOut, timeFormat)}
                 locationLabel={record.checkOutLocation}
                 lat={record.checkOutLat}
                 lng={record.checkOutLng}
@@ -470,7 +477,7 @@ function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose }) {
                     <div key={i} className="flex items-center justify-between text-[13.5px] text-slate-600 py-1">
                       <span>Session {i + 1}</span>
                       <span className="tabular-nums">
-                        {fmtTime(s.checkIn) || '—'} – {fmtTime(s.checkOut) || 'running'}
+                        {fmtTime(s.checkIn, timeFormat) || '—'} – {fmtTime(s.checkOut, timeFormat) || 'running'}
                       </span>
                     </div>
                   ))}
@@ -488,8 +495,8 @@ function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose }) {
 
         <div className="border-t border-slate-100 grid grid-cols-3 divide-x divide-slate-100">
           {[
-            { label: 'First Check-In',  val: fmtTime(firstIn) || '—' },
-            { label: 'Last Check-Out',  val: fmtTime(lastOut) || '—' },
+            { label: 'First Check-In',  val: fmtTime(firstIn, timeFormat) || '—' },
+            { label: 'Last Check-Out',  val: fmtTime(lastOut, timeFormat) || '—' },
             { label: 'Total Hours',     val: record?.workingHours ? fmtHHMM(record.workingHours) : '—' },
           ].map(({ label, val }) => (
             <div key={label} className="px-3 py-3 text-center">
@@ -507,6 +514,7 @@ function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose }) {
 
 export default function MyAttendance() {
   const { user } = useAuth();
+  const fmt = useFormat();
   const { isCheckedIn, isCheckedOut, timerDisplay, checkIn, checkOut, actionLoading: attLoading, elapsed } = useAttendance();
   const { isWeekend: isWeekendByRule } = useWeekendRules();
   const [view, setView] = useState('timeline');
@@ -756,8 +764,8 @@ export default function MyAttendance() {
   /* ── shift info ── */
   const shift = user?.shift;
   const shiftLabel = shift?.name
-    ? `${shift.name} [ ${shift.start_time || '9:30 AM'} - ${shift.end_time || '6:00 PM'} ]`
-    : 'General Shift [ 9:30 AM - 6:00 PM ]';
+    ? `${shift.name} [ ${fmt.time(shift.start_time || '09:30')} - ${fmt.time(shift.end_time || '18:00')} ]`
+    : `General Shift [ ${fmt.time('09:30')} - ${fmt.time('18:00')} ]`;
 
   return (
     <div className="flex flex-col h-full font-sans bg-[#f2f3f7] min-h-screen pb-10">
@@ -964,8 +972,8 @@ export default function MyAttendance() {
                 const isOff = isHoliday || isWeekend;
                 const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
                 const dayNum = day.getDate();
-                const checkInStr = fmtTime(record?.sessions?.[0]?.checkIn || record?.checkIn);
-                const checkOutStr = fmtTime(record?.sessions?.[record?.sessions?.length - 1]?.checkOut || record?.checkOut);
+                const checkInStr = fmtTime(record?.sessions?.[0]?.checkIn || record?.checkIn, fmt.timeFormat);
+                const checkOutStr = fmtTime(record?.sessions?.[record?.sessions?.length - 1]?.checkOut || record?.checkOut, fmt.timeFormat);
                 const hoursStr = fmtHHMM(record?.workingHours);
 
                  return (
@@ -1083,6 +1091,7 @@ export default function MyAttendance() {
                                  left: rect.left, right: rect.right,
                                },
                                canRegularize,
+                               date: ds,
                              });
                            }}
                            className="request-menu-trigger flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold px-2.5 py-1.5 rounded-md transition-colors shadow-sm"
@@ -1196,8 +1205,8 @@ export default function MyAttendance() {
                     <td className="px-5 py-3 text-[14px] text-slate-500">
                       {day.toLocaleDateString('en-US', { weekday:'short' })}
                     </td>
-                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.sessions?.[0]?.checkIn || r?.checkIn) || '—'}</td>
-                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.sessions?.[r?.sessions?.length - 1]?.checkOut || r?.checkOut) || '—'}</td>
+                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.sessions?.[0]?.checkIn || r?.checkIn, fmt.timeFormat) || '—'}</td>
+                    <td className="px-5 py-3 text-[14px] text-slate-700">{fmtTime(r?.sessions?.[r?.sessions?.length - 1]?.checkOut || r?.checkOut, fmt.timeFormat) || '—'}</td>
                     <td className="px-5 py-3 text-[14px] text-slate-700">{r?.workingHours ? `${fmtHHMM(r.workingHours)} hrs` : '—'}</td>
                     <td className="px-5 py-3">
                       {kind.holiday
@@ -1465,6 +1474,7 @@ export default function MyAttendance() {
          <RequestMenu
            buttonRect={showRequestMenu.buttonRect}
            canRegularize={!!showRequestMenu.canRegularize}
+           date={showRequestMenu.date}
            onClose={() => setShowRequestMenu(null)}
          />
        )}

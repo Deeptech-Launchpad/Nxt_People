@@ -19,6 +19,7 @@ import BackButton from '../../components/BackButton';
 import { useAuth } from '../../context/AuthContext';
 import { isFullAccess } from '../../utils/roles';
 import { reverseGeocode, coordKey } from '../../utils/reverseGeocode';
+import { useFormat, formatInstantTime } from '../../utils/datetime';
 
 const TYPE_OPTIONS = [
   { key: '',         label: 'Check-in & Check-out' },
@@ -35,7 +36,7 @@ const WORK_MODE_PILL = {
 };
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-const fmtTime = (d) => d ? new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '—';
+const fmtTime = (d, timeFormat) => d ? formatInstantTime(d, timeFormat) : '—';
 const coordStr = (v) => (v === null || v === undefined) ? null : Number(v).toFixed(5);
 
 function TypeBadge({ type }) {
@@ -49,6 +50,7 @@ function TypeBadge({ type }) {
 
 export default function AttendanceLocation() {
   const { user } = useAuth();
+  const { timeFormat } = useFormat();
   const full = isFullAccess(user);
 
   const [rows, setRows] = useState([]);
@@ -217,7 +219,7 @@ export default function AttendanceLocation() {
                 return (
                   <tr key={l._id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmtDate(l.capturedAt)}</td>
-                    <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmtTime(l.capturedAt)}</td>
+                    <td className="px-5 py-3.5 text-[15px] text-slate-600">{fmtTime(l.capturedAt, timeFormat)}</td>
                     {full && (
                       <td className="px-5 py-3.5">
                         <p className="text-[15px] font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>

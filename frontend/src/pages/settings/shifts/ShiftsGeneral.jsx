@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card, Check, Note, NotWired, selectClass, useConfigSection, SaveBar, Spinner } from '../configKit';
 import { PermissionMatrix } from '../attendance/kit';
+import { useFormat } from '../../../utils/datetime';
 
 // Shifts → General.
 //
@@ -32,6 +33,7 @@ const ROWS = [
 ];
 
 export default function ShiftsGeneral() {
+  const fmt = useFormat();
   const { config, set, loading, saving, dirty, save } =
     useConfigSection('general', 'Shift', 'shift-config');
 
@@ -58,7 +60,7 @@ export default function ShiftsGeneral() {
         >
           {shifts.map(s => (
             <option key={s.id} value={s.id}>
-              {s.name} [{s.startTime} – {s.endTime}]
+              {s.name} [{fmt.time(s.startTime)} – {fmt.time(s.endTime)}]
             </option>
           ))}
         </select>

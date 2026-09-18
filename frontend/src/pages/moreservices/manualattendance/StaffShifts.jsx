@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Plus, Trash2, Pencil, X, Clock, Users } from 'lucide-react';
 import api from '../../../utils/api';
 import toast from 'react-hot-toast';
+import { useLocaleFormat, formatTime } from '../../../utils/datetime';
 
 /* ── Staff and their shifts ─────────────────────────────────────────────────
  *  Shifts are defined here rather than on the main Shifts screens, because
@@ -29,6 +30,7 @@ const BLANK = {
 const hhmm = (t) => String(t || '').slice(0, 5);
 
 export default function StaffShifts() {
+  const { timeFormat } = useLocaleFormat();
   const [shifts, setShifts] = useState([]);
   const [staff, setStaff] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -209,7 +211,7 @@ export default function StaffShifts() {
               <div>
                 <div className="font-medium text-slate-800 text-[14px]">{s.name}</div>
                 <div className="text-[12px] text-slate-400 mt-0.5">
-                  {hhmm(s.startTime)}–{hhmm(s.endTime)} · {s.spanHours}h ·{' '}
+                  {formatTime(s.startTime, timeFormat)}–{formatTime(s.endTime, timeFormat)} · {s.spanHours}h ·{' '}
                   {(s.daysOfWeek || []).map(d => d[0].toUpperCase() + d.slice(1, 3)).join(' ')}
                 </div>
                 <div className="text-[12px] text-slate-400">
@@ -284,7 +286,7 @@ export default function StaffShifts() {
                 {(p.shifts || []).map(s => (
                   <span key={s.id}
                     className="inline-flex items-center gap-1.5 bg-slate-100 rounded-lg pl-2.5 pr-1.5 py-1 text-[12.5px] text-slate-700">
-                    {s.name} <span className="text-slate-400">{hhmm(s.startTime)}–{hhmm(s.endTime)}</span>
+                    {s.name} <span className="text-slate-400">{formatTime(s.startTime, timeFormat)}–{formatTime(s.endTime, timeFormat)}</span>
                     <button
                       onClick={() => removeAssignment(p.employeeId, s.id)}
                       title="Remove from this shift"

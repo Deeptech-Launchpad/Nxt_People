@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, X, CheckCircle, XCircle, Clock, AlertTriangle, Send, Eye } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
@@ -6,13 +7,15 @@ import { useAuth } from '../../context/AuthContext';
 import BackButton from '../../components/BackButton';
 import { isApprover } from '../../utils/roles';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
+import { useFormat, DateField, TimeField } from '../../utils/datetime';
 
-function formatTime(dateStr) {
+/* What the <input type="time"> needs, which is always 24-hour "HH:MM" —
+   never what is shown to the reader. The screen uses the org's format
+   through useFormat(), so a punch reads the same here as everywhere else. */
+function inputTime(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '';
-  // hour12: false + en-GB gives a plain 24-hour "HH:MM" string, pinned to
-  // Asia/Kolkata so this matches the check-in/out times shown elsewhere.
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
 }
 
@@ -24,6 +27,9 @@ const STATUS_STYLE = {
 
 export default function Regularization() {
   const { user } = useAuth();
+  const fmt = useFormat();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [myRequests, setMyRequests] = useState([]);
   const [pending, setPending] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +79,20 @@ export default function Regularization() {
   useEffect(() => { if (user !== undefined) load(); }, [user?.role]);
   useEffect(() => { if (user?.role === 'team_member') setTab('my'); }, [user?.role]);
 
+  /* Arriving from Add Request on My Attendance. An approver opens this screen
+     on Team Pending, which is not where a request you are filing belongs: land
+     on your own requests, open the form, and start it on the day that was
+     pressed rather than on today. The date stays editable. The state is
+     cleared so a refresh does not open the form again. */
+  useEffect(() => {
+    if (!location.state?.openNew) return;
+    const { date } = location.state;
+    setTab('my');
+    setForm(prev => ({ ...prev, date: date || prev.date, checkIn: '', checkOut: '', reason: '' }));
+    setModal(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state]);
+
   useEffect(() => {
     if (!modal) return;
     if (!form.date) return;
@@ -85,8 +105,8 @@ export default function Regularization() {
         if (record) {
           setForm(prev => ({
             ...prev,
-            checkIn: record.checkIn ? formatTime(record.checkIn) : '',
-            checkOut: record.checkOut ? formatTime(record.checkOut) : '',
+            checkIn: record.checkIn ? inputTime(record.checkIn) : '',
+            checkOut: record.checkOut ? inputTime(record.checkOut) : '',
           }));
         } else {
           setForm(prev => ({
@@ -168,8 +188,8 @@ export default function Regularization() {
                     {tab === 'pending' && <p className="font-semibold text-slate-700">{r.employee?.firstName} {r.employee?.lastName} <span className="text-sm text-slate-400">({r.employee?.employeeId})</span></p>}
                     <p className="font-medium text-slate-700 text-base">{new Date(String(r.date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
                     <p className="text-sm text-slate-500 mt-0.5">
-                      {r.checkIn ? `Check-in: ${r.checkIn}` : 'No check-in specified'}
-                      {r.checkOut ? ` · Check-out: ${r.checkOut}` : ''}
+                      {r.checkIn ? `Check-in: ${fmt.time(r.checkIn)}` : 'No check-in specified'}
+                      {r.checkOut ? ` · Check-out: ${fmt.time(r.checkOut)}` : ''}
                     </p>
                     <p className="text-sm text-slate-400 mt-0.5 max-w-sm truncate">Reason: {r.reason}</p>
                     {r.rejectionReason && <p className="text-sm text-red-500 mt-0.5">Rejected: {r.rejectionReason}</p>}
@@ -210,9 +230,8 @@ export default function Regularization() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1.5">Date *</label>
-                <input type="date" value={form.date} onChange={e => { const v = e.target.value; setForm(prev => ({ ...prev, date: v })); }} required
-                  min={dateBounds.min} max={dateBounds.max}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
+                <DateField value={form.date} onChange={v => setForm(prev => ({ ...prev, date: v }))}
+                  min={dateBounds.min} max={dateBounds.max} />
                 {restrictions.withinDays?.enabled && (
                   <p className="text-[13px] text-slate-400 mt-1">
                     Within {restrictions.withinDays.days} day(s) of the date being regularized.
@@ -222,13 +241,11 @@ export default function Regularization() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-600 mb-1.5">Correct Check-In</label>
-                  <input type="time" value={form.checkIn} onChange={e => { const v = e.target.value; setForm(prev => ({ ...prev, checkIn: v })); }}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
+                  <TimeField value={form.checkIn} onChange={v => setForm(prev => ({ ...prev, checkIn: v }))} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-600 mb-1.5">Correct Check-Out</label>
-                  <input type="time" value={form.checkOut} onChange={e => { const v = e.target.value; setForm(prev => ({ ...prev, checkOut: v })); }}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
+                  <TimeField value={form.checkOut} onChange={v => setForm(prev => ({ ...prev, checkOut: v }))} />
                 </div>
               </div>
               <div>

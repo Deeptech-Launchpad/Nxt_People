@@ -5,6 +5,7 @@ import { leaveChipText } from '../moreservices/shift/shiftGrid';
 import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { isFullAccess, isManager } from '../../utils/roles';
+import { useLocaleFormat, formatInstantTime } from '../../utils/datetime';
 
 /* ── Shared chrome for the three Team workspaces ──────────────────────────
  *  Home → Team, Attendance → Team and Leave Tracker → Team draw the same
@@ -165,13 +166,14 @@ const PRESENCE_STYLE = {
  * "Not Yet Checked In".
  */
 export function PresenceBadge({ person }) {
+  const { timeFormat } = useLocaleFormat();
   const s = PRESENCE_STYLE[person?.presence] || PRESENCE_STYLE.yetToCheckIn;
   const label = person?.presence === 'onLeave' && person?.leaveType
     ? leaveChipText({
         leaveType: person.leaveType,
         isHalfDay: person.isHalfDay,
         halfDayType: person.halfDayType,
-      })
+      }, timeFormat)
     : s.label;
   return (
     <span className={`inline-flex items-center text-[12px] font-semibold px-2 py-0.5 rounded-full ${s.cls}`}>
@@ -180,9 +182,7 @@ export function PresenceBadge({ person }) {
   );
 }
 
-export const fmtTime = (ts) => (ts
-  ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
-  : null);
+export const fmtTime = (ts, timeFormat) => (ts ? formatInstantTime(ts, timeFormat) : null);
 
 export const fmtDay = (d, opts = { day: '2-digit', month: 'short', year: 'numeric' }) => {
   if (!d) return '—';

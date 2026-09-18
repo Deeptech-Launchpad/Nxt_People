@@ -4,6 +4,7 @@ import { X, Trash2, Plus } from 'lucide-react';
 import api from '../../../utils/api';
 import EmployeePicker from '../leavetracker/EmployeePicker';
 import { to12 } from './shiftGrid';
+import { useFormat } from '../../../utils/datetime';
 
 /* ── Assign shift ─────────────────────────────────────────────────────────
  *  The reference has this form twice, and they are not the same form:
@@ -53,6 +54,7 @@ export default function AssignShiftDialog({
   onClose,
   onSaved,
 }) {
+  const { timeFormat } = useFormat();
   const [shifts, setShifts] = useState([]);
   const [shiftId, setShiftId] = useState('');
   /* 'standing' is the common case and the one the form had no way to say:
@@ -222,7 +224,7 @@ export default function AssignShiftDialog({
             <option value="">Select</option>
             {shifts.map(s => (
               <option key={s.id} value={s.id}>
-                {s.name}  ·  {to12(s.startTime)} - {to12(s.endTime)}
+                {s.name}  ·  {to12(s.startTime, timeFormat)} - {to12(s.endTime, timeFormat)}
               </option>
             ))}
           </select>

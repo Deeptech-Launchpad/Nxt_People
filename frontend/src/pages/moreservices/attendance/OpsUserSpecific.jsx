@@ -10,6 +10,7 @@ import RegularizeModal from '../../../components/requests/RegularizeModal';
 import OnDutyModal from '../../../components/requests/OnDutyModal';
 import useSortable from '../../../components/table/useSortable';
 import SortableTh from '../../../components/table/SortableTh';
+import { useLocaleFormat, formatTime, formatInstantTime } from '../../../utils/datetime';
 
 /* ── User-specific Operations ─────────────────────────────────────────────
  *  Zoho's first Attendance tab: search an employee, then act on THEIR
@@ -46,9 +47,7 @@ const StatusPill = ({ status, title }) => {
   return <span title={title} className={`text-[12px] font-semibold px-2 py-0.5 rounded-full border ${s.cls}`}>{s.label}</span>;
 };
 
-const fmtTime = (iso) => iso
-  ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
-  : '—';
+const fmtTime = (iso, timeFormat) => (iso ? formatInstantTime(iso, timeFormat) : '—');
 
 /* Hours as HH:MM.
  *
@@ -82,19 +81,12 @@ const fmtDateFull = (v) => {
 };
 // attendance_regularizations.check_in/out are TIME columns — pg returns
 // "09:30:00" as a plain string, not a value Date() can be pointed at.
-const fmtTimeStr = (hms) => {
-  if (!hms) return '—';
-  const [h, m] = String(hms).split(':').map(Number);
-  if (!Number.isFinite(h)) return '—';
-  const period = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return `${h12}:${String(m || 0).padStart(2, '0')} ${period}`;
-};
+const fmtTimeStr = (hms, timeFormat) => formatTime(hms, timeFormat) || '—';
 /* A shift reads in the same 12-hour clock as the rest of the product. It was
  * the one place left printing 09:30 - 18:00. */
-const fmtShiftLabel = (shift) => {
+const fmtShiftLabel = (shift, timeFormat) => {
   if (!shift?.name) return '';
-  const t = (hms) => fmtTimeStr(hms);
+  const t = (hms) => fmtTimeStr(hms, timeFormat);
   return `${shift.name} [ ${t(shift.startTime)} - ${t(shift.endTime)} ]`;
 };
 
@@ -209,6 +201,7 @@ const minutesOf = (iso) => {
 const pct = (min) => Math.max(0, Math.min(100, ((min - DAY_START_MIN) / (DAY_END_MIN - DAY_START_MIN)) * 100));
 
 function TimelineView({ days }) {
+  const { timeFormat } = useLocaleFormat();
   return (
     <div className="border border-slate-200 rounded-2xl divide-y divide-slate-50 overflow-hidden">
       <div className="flex items-center px-4 py-2 bg-slate-50 text-[12px] text-slate-400">
@@ -231,7 +224,7 @@ function TimelineView({ days }) {
                 <span
                   className={`absolute top-0 h-6 rounded ${d.att?.lateMinutes > 0 ? 'bg-amber-400' : 'bg-emerald-400'}`}
                   style={{ left: `${left}%`, width: `${Math.max(1.5, (right === null ? left + 1.5 : right) - left)}%` }}
-                  title={`${fmtTime(d.att?.checkIn)} – ${fmtTime(d.att?.checkOut)}`}
+                  title={`${fmtTime(d.att?.checkIn, timeFormat)} – ${fmtTime(d.att?.checkOut, timeFormat)}`}
                 />
               )}
               {left === null && (
@@ -453,6 +446,7 @@ function AuditDialog({ employee, onClose }) {
 const VIEWS = [['list', 'List'], ['timeline', 'Timeline'], ['calendar', 'Calendar']];
 
 function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
+  const { timeFormat } = useLocaleFormat();
   const [mode, setMode] = useState('monthly');
   const [anchor, setAnchor] = useState(() => new Date());
   const [rows, setRows] = useState(null);
@@ -485,7 +479,7 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
   }, [employee._id, period.start, period.end, period.month, period.year, reload]);
 
   const days = useMemo(() => (rows === null ? [] : buildDays(period, rows, calendar)), [rows, calendar, period]);
-  const shiftLabel = fmtShiftLabel(employee.shift);
+  const shiftLabel = fmtShiftLabel(employee.shift, timeFormat);
   const sort = useSortable(days, {
     id: 'user-attendance-summary',
     columns: {
@@ -590,8 +584,8 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
                     {sort.sorted.map(d => (
                       <tr key={d.date} className={`border-t border-slate-50 ${d.kind !== 'working' ? 'bg-slate-50/60' : 'hover:bg-slate-50/60'}`}>
                         <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{fmtDate(d.date)}</td>
-                        <td className="px-4 py-3 text-slate-600">{fmtTime(d.att?.checkIn)}</td>
-                        <td className="px-4 py-3 text-slate-600">{fmtTime(d.att?.checkOut)}</td>
+                        <td className="px-4 py-3 text-slate-600">{fmtTime(d.att?.checkIn, timeFormat)}</td>
+                        <td className="px-4 py-3 text-slate-600">{fmtTime(d.att?.checkOut, timeFormat)}</td>
                         <td className="px-4 py-3 text-slate-700 font-mono">{fmtHM(hoursOf(d.att))}</td>
                         <td className="px-4 py-3">
                           {d.derivedStatus
@@ -781,6 +775,7 @@ const inMonth = (ymd, anchor) => {
 };
 
 function RegularizationTab({ employee, canFile = true }) {
+  const { timeFormat } = useLocaleFormat();
   const [status, setStatus] = useState('all');
   const [anchor, setAnchor] = useState(() => new Date());
   const [rows, setRows] = useState(null);
@@ -867,7 +862,7 @@ function RegularizationTab({ employee, canFile = true }) {
                       {r.status === 'approved' ? <StatusPill status="present" /> : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap border-l border-slate-100">
-                      {fmtTimeStr(r.checkIn)} – {fmtTimeStr(r.checkOut)}
+                      {fmtTimeStr(r.checkIn, timeFormat)} – {fmtTimeStr(r.checkOut, timeFormat)}
                     </td>
                     <td className="px-4 py-3 text-slate-500 max-w-[220px] truncate" title={r.reason}>{r.reason || '—'}</td>
                     <td className="px-4 py-3">

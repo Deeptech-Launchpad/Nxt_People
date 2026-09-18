@@ -6,6 +6,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { isFullAccess } from '../../../utils/roles';
 import useSortable from '../../../components/table/useSortable';
 import SortableTh from '../../../components/table/SortableTh';
+import { useLocaleFormat, formatTime } from '../../../utils/datetime';
 
 /* ── The day board ──────────────────────────────────────────────────────────
  *  One row per person per shift. Two shifts in a day means two rows for the
@@ -32,10 +33,9 @@ const pretty = (iso) =>
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
 
-const hhmm = (t) => String(t || '').slice(0, 5);
-
 export default function MarkDay() {
   const { user } = useAuth();
+  const { timeFormat } = useLocaleFormat();
   const [date, setDate] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -189,7 +189,7 @@ export default function MarkDay() {
                     <td className="px-5 py-3.5">
                       <div className="text-slate-700">{r.shiftName}</div>
                       <div className="text-[12px] text-slate-400">
-                        {hhmm(r.startTime)}–{hhmm(r.endTime)} · {r.spanHours}h
+                        {formatTime(r.startTime, timeFormat)}–{formatTime(r.endTime, timeFormat)} · {r.spanHours}h
                         {r.payMode === 'actual' ? ' · hours' : ''}
                       </div>
                     </td>

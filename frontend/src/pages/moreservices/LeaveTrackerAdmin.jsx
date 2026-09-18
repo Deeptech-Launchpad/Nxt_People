@@ -10,6 +10,7 @@ import LeaveDetailModal from '../../components/LeaveDetailModal';
 import ApplyLeaveModal from '../../components/ApplyLeaveModal';
 import { useAuth } from '../../context/AuthContext';
 import SortableTh from '../../components/table/SortableTh';
+import { useFormat } from '../../utils/datetime';
 
 /* ── Admin Leave Tracker (Super Admin / HR) ───────────────────────────────
  *  Zoho-People-style listing of ALL org leave requests. Read-only over the
@@ -44,6 +45,7 @@ function StatusCell({ status }) {
 
 export default function LeaveTrackerAdmin() {
   const navigate = useNavigate();
+  const { time } = useFormat();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   // This admin page is HR / Super Admin only (route-gated); both may Approve All.
@@ -266,7 +268,7 @@ export default function LeaveTrackerAdmin() {
                 </td>
                 <td className="px-6 py-4 text-[14px] text-slate-700">
                   {l.leaveType === 'permission'
-                    ? `${fmt(l.startDate)} · ${(l.startTime || '').slice(0,5)}–${(l.endTime || '').slice(0,5)}`
+                    ? `${fmt(l.startDate)} · ${time(l.startTime)}–${time(l.endTime)}`
                     : `${fmt(l.startDate)} – ${fmt(l.endDate)}`}
                 </td>
                 <td className="px-6 py-4 text-[14px] font-semibold text-slate-700">

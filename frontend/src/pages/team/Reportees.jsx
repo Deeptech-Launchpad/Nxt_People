@@ -7,6 +7,7 @@ import {
   Avatar, PresenceBadge, DirectScopeNote, Spinner, Empty, fmtTime,
   useTeamScope, ScopeSwitch, withScope,
 } from './teamShared';
+import { useFormat } from '../../utils/datetime';
 
 /* ── Reportees ────────────────────────────────────────────────────────────
  *  A card per direct report: who they are, where they stand today, and the
@@ -25,6 +26,7 @@ import {
  *  is the plain tile it has always been, not a button that does nothing.
  * ────────────────────────────────────────────────────────────────────────── */
 export default function Reportees({ showLeaveBooked = false, embedded = false, onOpen = null, scopeKey = null }) {
+  const { timeFormat } = useFormat();
   const [rows, setRows] = useState([]);
   const [directIds, setDirectIds] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -117,14 +119,14 @@ export default function Reportees({ showLeaveBooked = false, embedded = false, o
 
                 <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
                   <Line icon={Clock} text={p.shift?.name
-                    ? `${p.shift.name}${p.shift.startTime && p.shift.endTime ? ` · ${to12(p.shift.startTime)} – ${to12(p.shift.endTime)}` : ''}`
+                    ? `${p.shift.name}${p.shift.startTime && p.shift.endTime ? ` · ${to12(p.shift.startTime, timeFormat)} – ${to12(p.shift.endTime, timeFormat)}` : ''}`
                     : 'No shift assigned'} muted={!p.shift?.name} />
 
                   {/* Times only where there are times. A dash beside "In" reads
                       as a failed lookup rather than as somebody who is not in. */}
                   {p.checkIn && (
                     <Line icon={Clock}
-                      text={`In ${fmtTime(p.checkIn)}${p.checkOut ? ` · Out ${fmtTime(p.checkOut)}` : ''}`} />
+                      text={`In ${fmtTime(p.checkIn, timeFormat)}${p.checkOut ? ` · Out ${fmtTime(p.checkOut, timeFormat)}` : ''}`} />
                   )}
 
                   {showLeaveBooked && (
