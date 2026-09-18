@@ -1,23 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, X, CheckCircle, XCircle, Clock, AlertTriangle, Send, Eye } from 'lucide-react';
+import { Plus, CheckCircle, XCircle, Clock, AlertTriangle, Eye } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import BackButton from '../../components/BackButton';
 import { isApprover } from '../../utils/roles';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
-import { useFormat, DateField, TimeField } from '../../utils/datetime';
-
-/* What the <input type="time"> needs, which is always 24-hour "HH:MM" —
-   never what is shown to the reader. The screen uses the org's format
-   through useFormat(), so a punch reads the same here as everywhere else. */
-function inputTime(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
-}
+import { useFormat } from '../../utils/datetime';
+import RegularizeModal from '../../components/requests/RegularizeModal';
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -34,37 +25,10 @@ export default function Regularization() {
   const [pending, setPending] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ date: new Date().toLocaleDateString('en-CA'), checkIn: '', checkOut: '', reason: '' });
-  const [saving, setSaving] = useState(false);
+  const [formDate, setFormDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [actionLoading, setActionLoading] = useState('');
   const [detailReq, setDetailReq] = useState(null);  // request shown in the detail/timeline modal
   const [tab, setTab] = useState(user?.role === 'team_member' ? 'my' : 'pending');
-  // The same rules the route enforces on submit. Drawn from configuration so
-  // the form cannot offer something that will come back as a 400.
-  const [cfg, setCfg] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.get('/regularizations/config')
-      .then(r => { if (!cancelled) setCfg(r.data.data); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
-  const reasonOptions = cfg?.reasons || [];
-  const restrictions = cfg?.restrictions || {};
-  // The earliest date still inside the configured window, and the latest one
-  // allowed if future requests are off.
-  const dateBounds = (() => {
-    const today = new Date().toLocaleDateString('en-CA');
-    const bounds = { max: restrictions.allowFutureDates ? undefined : today };
-    if (restrictions.withinDays?.enabled) {
-      const d = new Date(today + 'T00:00:00Z');
-      d.setUTCDate(d.getUTCDate() - Number(restrictions.withinDays.days || 0));
-      bounds.min = d.toISOString().slice(0, 10);
-    }
-    return bounds;
-  })();
 
   const load = () => {
     setLoading(true);
@@ -88,49 +52,10 @@ export default function Regularization() {
     if (!location.state?.openNew) return;
     const { date } = location.state;
     setTab('my');
-    setForm(prev => ({ ...prev, date: date || prev.date, checkIn: '', checkOut: '', reason: '' }));
+    if (date) setFormDate(date);
     setModal(true);
     navigate(location.pathname, { replace: true, state: null });
   }, [location.state]);
-
-  useEffect(() => {
-    if (!modal) return;
-    if (!form.date) return;
-
-    const targetDate = form.date;
-
-    api.get(`/attendance/by-date?date=${targetDate}`)
-      .then(res => {
-        const record = res.data.data;
-        if (record) {
-          setForm(prev => ({
-            ...prev,
-            checkIn: record.checkIn ? inputTime(record.checkIn) : '',
-            checkOut: record.checkOut ? inputTime(record.checkOut) : '',
-          }));
-        } else {
-          setForm(prev => ({
-            ...prev,
-            checkIn: '',
-            checkOut: '',
-          }));
-        }
-      })
-      .catch(() => {
-        setForm(prev => ({ ...prev, checkIn: '', checkOut: '' }));
-      });
-  }, [form.date, modal]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault(); setSaving(true);
-    try {
-      await api.post('/regularizations', form);
-      toast.success('Regularization request submitted!');
-      setModal(false); setForm({ date: new Date().toLocaleDateString('en-CA'), checkIn: '', checkOut: '', reason: '' });
-      load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
-    finally { setSaving(false); }
-  };
 
   const handleAction = async (id, action, reason) => {
     setActionLoading(id);
@@ -154,7 +79,7 @@ export default function Regularization() {
             <p className="text-slate-400 text-base mt-0.5">Request correction for missed check-in or check-out</p>
           </div>
           <button onClick={() => {
-            setForm(prev => ({ ...prev, checkIn: '', checkOut: '', reason: '' }));
+            setFormDate(new Date().toLocaleDateString('en-CA'));
             setModal(true);
           }} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
             <Plus size={16} /> New Request
@@ -219,62 +144,14 @@ export default function Regularization() {
         )}
       </div>
 
-      {/* Submit Modal */}
+      {/* The one regularization form in the product — the same dialog Home and
+          My Attendance open, so a request looks the same wherever it is raised. */}
       {modal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <h3 className="font-display font-semibold text-slate-800 text-xl">Request Regularization</h3>
-              <button onClick={() => setModal(false)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"><X size={16} /></button>
-            </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">Date *</label>
-                <DateField value={form.date} onChange={v => setForm(prev => ({ ...prev, date: v }))}
-                  min={dateBounds.min} max={dateBounds.max} />
-                {restrictions.withinDays?.enabled && (
-                  <p className="text-[13px] text-slate-400 mt-1">
-                    Within {restrictions.withinDays.days} day(s) of the date being regularized.
-                  </p>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1.5">Correct Check-In</label>
-                  <TimeField value={form.checkIn} onChange={v => setForm(prev => ({ ...prev, checkIn: v }))} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1.5">Correct Check-Out</label>
-                  <TimeField value={form.checkOut} onChange={v => setForm(prev => ({ ...prev, checkOut: v }))} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">
-                  Reason{cfg?.reasonMandatory !== false && ' *'}
-                </label>
-                {reasonOptions.length > 0 ? (
-                  <select value={form.reason} onChange={e => { const v = e.target.value; setForm(prev => ({ ...prev, reason: v })); }}
-                    required={cfg?.reasonMandatory !== false}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base bg-white focus:outline-none focus:border-brand-400">
-                    <option value="">Select a reason</option>
-                    {reasonOptions.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                ) : (
-                  <textarea value={form.reason} onChange={e => { const v = e.target.value; setForm(prev => ({ ...prev, reason: v })); }}
-                    required={cfg?.reasonMandatory !== false} rows={3}
-                    placeholder="Explain why your attendance needs correction..."
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none" />
-                )}
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                  <Send size={14} />{saving ? 'Submitting...' : 'Submit Request'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <RegularizeModal
+          date={formDate}
+          onClose={() => setModal(false)}
+          onDone={() => { setModal(false); load(); }}
+        />
       )}
 
       {/* Request details + approval timeline modal */}
