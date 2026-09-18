@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Plus, Trash2, X } from 'lucide-react';
 import { Toggle, selectClass } from '../configKit';
 import { roleLabel } from '../../../utils/roles';
+import TimeInput from '../../../components/TimeInput';
 
 // Add / Edit Approval.
 //
@@ -392,10 +393,9 @@ export default function ApprovalEditor({ value, meta, forms, busy, onChange, onS
 
                         <div className="flex items-center gap-2 flex-wrap text-[14px] text-slate-700">
                           <span>Follow-up email sent at</span>
-                          <input
-                            type="time"
+                          <TimeInput
                             value={value.followUp.time || '10:00'}
-                            onChange={e => set({ followUp: { ...value.followUp, time: e.target.value } })}
+                            onChange={v => set({ followUp: { ...value.followUp, time: v } })}
                             className="border border-slate-300 rounded px-2 py-1.5 text-[14px]" />
                         </div>
 

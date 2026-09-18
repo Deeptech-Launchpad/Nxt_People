@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { X } from 'lucide-react';
 import api from '../../../utils/api';
 import { Card, Check, Note, Toggle, selectClass, Spinner } from '../configKit';
+import TimeInput from '../../../components/TimeInput';
 
 // Email Alerts — when the scheduled mail goes out, to whom, and using which
 // wording.
@@ -130,8 +131,8 @@ export default function EmailAlerts({ service = 'attendance' }) {
 
               <div>
                 <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Send at</label>
-                <input type="time" value={editing.sendAt || '09:00'}
-                  onChange={e => setEditing(v => ({ ...v, sendAt: e.target.value }))} className={selectClass} />
+                <TimeInput value={editing.sendAt || '09:00'}
+                  onChange={v => setEditing(x => ({ ...x, sendAt: v }))} className={selectClass} />
                 <p className="text-[12.5px] text-slate-500 mt-1.5">Asia/Kolkata, on working days only.</p>
               </div>
 

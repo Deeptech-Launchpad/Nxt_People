@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Search } from 'lucide-react';
 import api from '../../utils/api';
-import { DateField, TimeField, useFormat } from '../../utils/datetime';
+import { DateField, useFormat } from '../../utils/datetime';
+import TimeInput from '../TimeInput';
 import RequestShell, { Field, inputClass } from './RequestShell';
 
 /* Apply Leave, over the day you pressed.
@@ -171,8 +172,8 @@ export default function ApplyLeaveModal({ date, mode = 'leave', onClose, onDone 
 
         {isPermission && (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="From" required><TimeField value={startTime} onChange={setStartTime} /></Field>
-            <Field label="To" required><TimeField value={endTime} onChange={setEndTime} /></Field>
+            <Field label="From" required><TimeInput value={startTime} onChange={setStartTime} /></Field>
+            <Field label="To" required><TimeInput value={endTime} onChange={setEndTime} assumePm /></Field>
           </div>
         )}
 

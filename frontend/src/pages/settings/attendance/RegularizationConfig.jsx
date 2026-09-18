@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card, Check, Note, selectClass, useConfigSection, SaveBar, Spinner } from '../configKit';
 import { ListEditor, FieldVisibilityTable } from './kit';
+import TimeInput from '../../../components/TimeInput';
 
 // Regularization — what an employee may fix, how often, and what the request
 // has to say. Every rule here is enforced on submission, not only drawn on the
@@ -159,10 +160,10 @@ export default function RegularizationConfig() {
                 onChange={v => set({ deadlineReminders: { ...reminders, enabled: v } })}
                 label="Remind employees about unmarked absences at"
               />
-              <input
-                type="time" disabled={!reminders.enabled}
+              <TimeInput
+                disabled={!reminders.enabled}
                 value={reminders.sendAt || '10:00'}
-                onChange={e => set({ deadlineReminders: { ...reminders, sendAt: e.target.value } })}
+                onChange={v => set({ deadlineReminders: { ...reminders, sendAt: v } })}
                 className="text-[14px] rounded-md border border-slate-300 px-2.5 py-1.5 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
               />
             </div>

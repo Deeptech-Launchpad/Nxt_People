@@ -6,6 +6,7 @@ import useSortable from '../../../components/table/useSortable';
 import SortableTh from '../../../components/table/SortableTh';
 import { Spinner } from '../configKit';
 import { useCatalog, useScopedList, FormFilter, Field, input, select } from './kit';
+import TimeInput from '../../../components/TimeInput';
 
 // Workflows — the reference's centrepiece: a trigger, optional criteria, and
 // the actions that follow.
@@ -197,7 +198,7 @@ function Editor({ catalog, initial, onClose, onSaved }) {
                   </div>
                 </Field>
                 <Field label="Time of execution">
-                  <input type="time" value={draft.executeAt} onChange={e => set({ executeAt: e.target.value })} className={input} />
+                  <TimeInput value={draft.executeAt} onChange={v => set({ executeAt: v })} className={input} />
                 </Field>
                 <Field label="Execution occurrence">
                   <select value={draft.occurrence} onChange={e => set({ occurrence: e.target.value })} className={select}>

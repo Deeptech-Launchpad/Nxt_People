@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
-import { DateField, TimeField, useFormat } from '../../utils/datetime';
+import { DateField, useFormat } from '../../utils/datetime';
+import TimeInput from '../TimeInput';
 import RequestShell, { Field, AttachmentField, inputClass } from './RequestShell';
 import EmployeePicker from '../../pages/moreservices/leavetracker/EmployeePicker';
 
@@ -224,8 +225,8 @@ export default function RegularizeModal({ date, employeeId, people = null, peopl
                         {dt.toLocaleDateString('en-GB', { weekday: 'short' })}
                       </span>
                     </td>
-                    <td className="px-3 py-2"><TimeField value={row(d).checkIn} onChange={v => setRow(d, { checkIn: v })} /></td>
-                    <td className="px-3 py-2"><TimeField value={row(d).checkOut} onChange={v => setRow(d, { checkOut: v })} /></td>
+                    <td className="px-3 py-2"><TimeInput value={row(d).checkIn} onChange={v => setRow(d, { checkIn: v })} /></td>
+                    <td className="px-3 py-2"><TimeInput value={row(d).checkOut} onChange={v => setRow(d, { checkOut: v })} assumePm /></td>
                     <td className="px-3 py-2 text-slate-600 tabular-nums">{totalHours(d) || '—'}</td>
                     <td className="px-3 py-2">
                       <select className={inputClass} value={row(d).reason}

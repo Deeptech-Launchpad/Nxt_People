@@ -8,6 +8,7 @@ import BackButton from '../components/BackButton';
 import LeaveDetailModal from '../components/LeaveDetailModal';
 import CancelPartDialog from '../components/CancelPartDialog';
 import CompOffDetailModal from '../components/CompOffDetailModal';
+import TimeInput from '../components/TimeInput';
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -298,11 +299,11 @@ export default function Leave() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-slate-600 mb-1.5">Start Time</label>
-                      <input type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                      <TimeInput value={form.startTime} onChange={v => setForm({ ...form, startTime: v })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-600 mb-1.5">End Time</label>
-                      <input type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
+                      <TimeInput value={form.endTime} onChange={v => setForm({ ...form, endTime: v })} required assumePm className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
                     </div>
                   </div>
                   <p className="text-[13px] text-purple-600 -mt-1">

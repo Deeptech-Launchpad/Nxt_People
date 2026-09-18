@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../../utils/api';
 import { Card, Check, Toggle, Note, selectClass, useConfigSection, SaveBar, Spinner } from '../configKit';
+import TimeInput from '../../../components/TimeInput';
 
 // Attendance Policy — how a day's hours are counted, and which days are paid.
 //
@@ -512,10 +513,9 @@ export default function AttendancePolicy() {
         <div className="space-y-5">
           <div>
             <label className="block text-[13.5px] font-medium text-slate-700 mb-1.5">Late mark after</label>
-            <input
-              type="time"
+            <TimeInput
               value={minutesToTime(config.lateAfterMinutes)}
-              onChange={e => set({ lateAfterMinutes: timeToMinutes(e.target.value) })}
+              onChange={v => set({ lateAfterMinutes: timeToMinutes(v) })}
               className={selectClass}
             />
             <p className="text-[13px] text-slate-500 mt-1.5 max-w-[620px]">
@@ -547,9 +547,9 @@ export default function AttendancePolicy() {
         </p>
         {night.enabled && (
           <div className="flex items-center gap-3 mt-4 ml-14">
-            <input type="time" value={night.from || '22:00'} onChange={e => setIn('lateNightHours', { from: e.target.value })} className={selectClass} />
+            <TimeInput value={night.from || '22:00'} onChange={v => setIn('lateNightHours', { from: v })} className={selectClass} />
             <span className="text-[13.5px] text-slate-500">to</span>
-            <input type="time" value={night.to || '06:00'} onChange={e => setIn('lateNightHours', { to: e.target.value })} className={selectClass} />
+            <TimeInput value={night.to || '06:00'} onChange={v => setIn('lateNightHours', { to: v })} className={selectClass} />
           </div>
         )}
       </Card>

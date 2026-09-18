@@ -10,6 +10,7 @@ import { confirmCancel, cancellationRules } from '../../utils/cancelLeave';
 import BackButton from '../../components/BackButton';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
+import TimeInput from '../../components/TimeInput';
 
 /* ── helpers ────────────────────────────────────────────────────────── */
 function fmtDate(s) {
@@ -196,14 +197,14 @@ function ApplyLeaveModal({ cards, holidays, onClose, onSubmitted }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[14px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Start Time *</label>
-                  <input type="time" value={form.startTime}
-                    onChange={e => setForm({ ...form, startTime: e.target.value })}
+                  <TimeInput value={form.startTime}
+                    onChange={v => setForm({ ...form, startTime: v })}
                     className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
                 </div>
                 <div>
                   <label className="block text-[14px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">End Time *</label>
-                  <input type="time" value={form.endTime}
-                    onChange={e => setForm({ ...form, endTime: e.target.value })}
+                  <TimeInput value={form.endTime}
+                    onChange={v => setForm({ ...form, endTime: v })} assumePm
                     className="w-full border border-gray-200 rounded px-3 py-2.5 text-[13.5px] outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-100 transition" />
                 </div>
               </div>

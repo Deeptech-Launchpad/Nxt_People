@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../../utils/api';
 import { Card, Check, Note, Toggle, selectClass, SaveBar, Spinner } from '../configKit';
+import TimeInput from '../../../components/TimeInput';
 
 // Absent Scheduler — closes off the day for anyone who never checked in.
 //
@@ -57,8 +58,8 @@ export default function AbsentScheduler() {
             <>
               <div>
                 <label className="block text-[13.5px] font-medium text-slate-700 mb-1.5">Run at</label>
-                <input type="time" value={config.runAt || '21:00'}
-                  onChange={e => set({ runAt: e.target.value })} className={selectClass} />
+                <TimeInput value={config.runAt || '21:00'}
+                  onChange={v => set({ runAt: v })} className={selectClass} />
                 <p className="text-[13px] text-slate-500 mt-1.5 max-w-[560px]">
                   Late enough that anyone who forgot has had the whole day to notice. Asia/Kolkata.
                 </p>

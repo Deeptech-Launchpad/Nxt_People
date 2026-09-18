@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
-import { DateField, TimeField, useFormat } from '../../utils/datetime';
+import { DateField, useFormat } from '../../utils/datetime';
+import TimeInput from '../TimeInput';
 import RequestShell, { Field, AttachmentField, inputClass } from './RequestShell';
 import EmployeePicker from '../../pages/moreservices/leavetracker/EmployeePicker';
 
@@ -119,8 +120,8 @@ export default function OnDutyModal({ date, employeeId, people = null, peopleLoa
             would ask for something that is ignored. */}
         {unit === 'hours' && (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="From" required><TimeField value={startTime} onChange={setStartTime} /></Field>
-            <Field label="To" required><TimeField value={endTime} onChange={setEndTime} /></Field>
+            <Field label="From" required><TimeInput value={startTime} onChange={setStartTime} /></Field>
+            <Field label="To" required><TimeInput value={endTime} onChange={setEndTime} assumePm /></Field>
           </div>
         )}
 

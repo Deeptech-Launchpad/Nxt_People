@@ -3,6 +3,7 @@ import { X, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { useFormat } from '../utils/datetime';
+import TimeInput from './TimeInput';
 
 // Correcting somebody else's attendance entry.
 //
@@ -93,12 +94,12 @@ export default function EditAttendanceEntry({ employee, date: initialDate, onClo
           <div className="flex gap-3">
             <div>
               <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Check-in</label>
-              <input type="time" value={checkIn} onChange={e => setCheckIn(e.target.value)}
+              <TimeInput value={checkIn} onChange={setCheckIn}
                 disabled={loading} className={fieldClass} />
             </div>
             <div>
               <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Check-out</label>
-              <input type="time" value={checkOut} onChange={e => setCheckOut(e.target.value)}
+              <TimeInput value={checkOut} onChange={setCheckOut} assumePm
                 disabled={loading} className={fieldClass} />
             </div>
           </div>

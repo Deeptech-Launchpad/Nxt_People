@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
 import { useLocaleFormat, formatTime } from '../../utils/datetime';
+import TimeInput from '../../components/TimeInput';
 
 const TYPES = [
   { key: 'client_visit', label: 'Client visit' },
@@ -292,12 +293,12 @@ function RequestForm({ onClose, onSaved, date = null }) {
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <label className="block text-[13px] font-medium text-slate-700 mb-1.5">From</label>
-                <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
+                <TimeInput value={startTime} onChange={setStartTime}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400" />
               </div>
               <div className="flex-1">
                 <label className="block text-[13px] font-medium text-slate-700 mb-1.5">To</label>
-                <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
+                <TimeInput value={endTime} onChange={setEndTime} assumePm
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400" />
               </div>
             </div>

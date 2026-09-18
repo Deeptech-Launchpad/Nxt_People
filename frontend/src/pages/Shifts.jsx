@@ -5,6 +5,7 @@ import api from '../utils/api';
 import useSortable from '../components/table/useSortable';
 import SortableTh from '../components/table/SortableTh';
 import { useFormat } from '../utils/datetime';
+import TimeInput from '../components/TimeInput';
 
 // Manage Shifts. One editor for one table — this screen is what both
 // /shifts and Settings → Shifts → Manage Shifts open, because two editors for
@@ -71,13 +72,13 @@ function Editor({ value, meta, onChange, onClose, onSave, busy }) {
               <label className="block text-[13px] font-medium text-slate-700 mb-1.5">
                 From<span className="text-red-500 ml-0.5">*</span>
               </label>
-              <input type="time" value={value.startTime} onChange={e => set({ startTime: e.target.value })} className={input} />
+              <TimeInput value={value.startTime} onChange={v => set({ startTime: v })} className={input} />
             </div>
             <div>
               <label className="block text-[13px] font-medium text-slate-700 mb-1.5">
                 To<span className="text-red-500 ml-0.5">*</span>
               </label>
-              <input type="time" value={value.endTime} onChange={e => set({ endTime: e.target.value })} className={input} />
+              <TimeInput value={value.endTime} onChange={v => set({ endTime: v })} assumePm className={input} />
             </div>
             <div>
               <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Grace period</label>
@@ -104,10 +105,10 @@ function Editor({ value, meta, onChange, onClose, onSave, busy }) {
           {value.marginEnabled && (
             <div className="ml-7 flex items-center gap-3 flex-wrap bg-slate-50 rounded-lg px-4 py-3">
               <span className="text-[13.5px] text-slate-700">From</span>
-              <input type="time" value={value.marginBefore} onChange={e => set({ marginBefore: e.target.value })}
+              <TimeInput value={value.marginBefore} onChange={v => set({ marginBefore: v })}
                 className={`${input} w-32`} />
               <span className="text-[13.5px] text-slate-700">before, to</span>
-              <input type="time" value={value.marginAfter} onChange={e => set({ marginAfter: e.target.value })}
+              <TimeInput value={value.marginAfter} onChange={v => set({ marginAfter: v })}
                 className={`${input} w-32`} />
               <span className="text-[13.5px] text-slate-700">after the shift.</span>
               <span className="text-[12px] text-amber-700 w-full">Saved, but not applied to payable hours yet.</span>
@@ -125,9 +126,9 @@ function Editor({ value, meta, onChange, onClose, onSave, busy }) {
           </label>
           {value.coreEnabled && (
             <div className="ml-7 flex items-center gap-3 flex-wrap bg-slate-50 rounded-lg px-4 py-3">
-              <input type="time" value={value.coreStart} onChange={e => set({ coreStart: e.target.value })} className={`${input} w-32`} />
+              <TimeInput value={value.coreStart} onChange={v => set({ coreStart: v })} className={`${input} w-32`} />
               <span className="text-[13.5px] text-slate-700">to</span>
-              <input type="time" value={value.coreEnd} onChange={e => set({ coreEnd: e.target.value })} className={`${input} w-32`} />
+              <TimeInput value={value.coreEnd} onChange={v => set({ coreEnd: v })} assumePm className={`${input} w-32`} />
               <span className="text-[12px] text-amber-700 w-full">Saved, but not enforced yet.</span>
             </div>
           )}

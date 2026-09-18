@@ -149,8 +149,14 @@ export function DateField({ value, onChange, className = '', disabled, min, max,
   );
 }
 
-/* A time input, same idea. Native time inputs follow the browser locale too,
- * so an org on 24-hour would still see AM/PM on a US machine. */
+/* Deprecated — do not reach for this one. The overlay below shows the org's
+ * format, but clicking into a native <input type="time"> hands control to the
+ * BROWSER's own picker, which follows the visitor's own computer, not this
+ * setting or who they are: two people on the same org, same role, one on a
+ * 24-hour Windows machine and one on a 12-hour one, get two different pickers
+ * regardless of any code here. That is what was happening in Regularize/On
+ * Duty/Apply Leave until they were moved to components/TimeInput.jsx, which
+ * draws its own picker instead of trusting the browser's. Use that one. */
 export function TimeField({ value, onChange, className = '', disabled }) {
   const { timeFormat } = useLocaleFormat();
   const shown = value ? formatTime(value, timeFormat) : '';

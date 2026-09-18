@@ -5,6 +5,7 @@ import api from '../../../utils/api';
 import { Spinner } from '../configKit';
 import useSortable from '../../../components/table/useSortable';
 import SortableTh from '../../../components/table/SortableTh';
+import TimeInput from '../../../components/TimeInput';
 
 // Shift Rotation — "to automatically change the assigned shift for employees
 // based on the specified frequency", in the reference's words.
@@ -108,7 +109,7 @@ function Editor({ value, shifts, meta, employees, onChange, onClose, onSaved }) 
                 <label className="block text-[13px] font-medium text-slate-700 mb-1.5">
                   Time of schedule<span className="text-red-500 ml-0.5">*</span>
                 </label>
-                <input type="time" value={value.runAt} onChange={e => set({ runAt: e.target.value })} className={input} />
+                <TimeInput value={value.runAt} onChange={v => set({ runAt: v })} className={input} />
               </div>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { Plus, Trash2, Pencil, X, Clock, Users } from 'lucide-react';
 import api from '../../../utils/api';
 import toast from 'react-hot-toast';
 import { useLocaleFormat, formatTime } from '../../../utils/datetime';
+import TimeInput from '../../../components/TimeInput';
 
 /* ── Staff and their shifts ─────────────────────────────────────────────────
  *  Shifts are defined here rather than on the main Shifts screens, because
@@ -143,12 +144,12 @@ export default function StaffShifts() {
             />
 
             <div className="flex items-center gap-2">
-              <input type="time" value={form.startTime}
-                onChange={e => setForm(f => ({ ...f, startTime: e.target.value }))}
+              <TimeInput value={form.startTime}
+                onChange={v => setForm(f => ({ ...f, startTime: v }))}
                 className="border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400" />
               <span className="text-slate-400 text-[13px]">to</span>
-              <input type="time" value={form.endTime}
-                onChange={e => setForm(f => ({ ...f, endTime: e.target.value }))}
+              <TimeInput value={form.endTime} assumePm
+                onChange={v => setForm(f => ({ ...f, endTime: v }))}
                 className="border border-slate-200 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400" />
             </div>
 
