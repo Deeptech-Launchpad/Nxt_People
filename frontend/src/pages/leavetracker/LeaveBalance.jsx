@@ -41,7 +41,7 @@ export default function LeaveBalance() {
           return (
             <div key={c.code} className={`rounded-xl p-6 bg-gradient-to-br ${COLORS[c.code] || DEFAULT_COLOR} text-white shadow-lg`}>
               <p className="text-[13px] font-semibold uppercase tracking-wider opacity-80 mb-3">{c.name || LEAVE_TYPE_LABELS[c.code] || c.code}</p>
-              <p className="text-[40px] font-bold leading-none">{isUnlimited ? '∞' : (c.available ?? '—')}</p>
+              <p className="text-[40px] font-bold leading-none">{isUnlimited ? '0' : (c.available ?? '—')}</p>
               <p className="text-[15px] opacity-80 mt-2">days remaining</p>
             </div>
           );

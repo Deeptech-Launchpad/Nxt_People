@@ -1,4 +1,4 @@
-﻿/**
+/**
  * LeaveDetailModal — request detail popup (leave OR regularization).
  *
  * Layout (Zoho-style):
@@ -93,7 +93,7 @@ function BalanceCard({ leave, balanceCards }) {
         <p className="text-[14px] font-bold text-slate-700">{isPerm ? 'Permission Balance' : 'Leave Balance'}</p>
         <span className="text-[13px] text-slate-600">{TYPE_LABEL[leave.leaveType] || leave.leaveType}</span>
       </div>
-      <Row label={isPerm ? 'Available this month' : 'Available balance'} value={unlimited ? 'Unlimited' : fmt(before)} />
+      <Row label={isPerm ? 'Available this month' : 'Available balance'} value={unlimited ? (leave.leaveType === 'unpaid' ? '0' : 'Unlimited') : fmt(before)} />
       <Row label="Current booking" value={fmt(booking)} />
       <div className="border-t border-slate-100 my-1.5" />
       <Row label="Balance after current booking" value={unlimited ? '—' : fmt(after)} strong />
