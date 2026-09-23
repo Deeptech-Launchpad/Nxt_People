@@ -4,6 +4,7 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../components/LeaveDetailModal';
+import { actionNote } from '../components/ApprovalTimeline';
 import LeaveRequestDialog from './moreservices/leavetracker/LeaveRequestDialog';
 import { useAuth } from '../context/AuthContext';
 import usePolling from '../hooks/usePolling';
@@ -51,6 +52,16 @@ const amountLabel = (l, timeFormat) => {
 const decisionLabel = (l) => {
   if (!l.onYourBehalf || !l.behalfByName) return null;
   return `${l.status === 'rejected' ? 'Rejected' : 'Approved'} by ${l.behalfByName} on your behalf`;
+};
+
+/* The "N of M levels approved" pill said HOW MANY had signed off but never
+ * HOW — a level someone approved on another approver's behalf read exactly
+ * like an ordinary approval, and the only place that showed otherwise was
+ * inside the detail popup, one request at a time. Reuses ApprovalTimeline's
+ * own wording so the two never say it two different ways. */
+const pendingBehalfNote = (levels) => {
+  const lvl = (levels || []).find(a => a.status === 'approved' && (a.onBehalf || a.byHr));
+  return lvl ? actionNote(lvl) : null;
 };
 
 // localStorage key for the "last-seen count per tab" persistence. Bump
@@ -469,6 +480,9 @@ export default function Approvals({ embedded = false }) {
                               </span>
                             )}
                          </div>
+                         {pendingBehalfNote(l.approvalLevels) && (
+                           <p className="text-[12.5px] text-amber-700 mt-0.5">{pendingBehalfNote(l.approvalLevels)}</p>
+                         )}
                          <p className="text-base text-slate-700 mt-1 capitalize">
                            {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
                            {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
@@ -519,6 +533,9 @@ export default function Approvals({ embedded = false }) {
                               </span>
                             )}
                          </div>
+                         {pendingBehalfNote(p.approvalLevels) && (
+                           <p className="text-[12.5px] text-amber-700 mt-0.5">{pendingBehalfNote(p.approvalLevels)}</p>
+                         )}
                          <p className="text-base text-slate-500 mt-1 capitalize">
                            Permission · {p.hours}h {p.startTime && p.endTime && `(${fmt.time(p.startTime)}–${fmt.time(p.endTime)})`}
                          </p>
@@ -697,6 +714,9 @@ export default function Approvals({ embedded = false }) {
                             </span>
                           )}
                         </div>
+                        {pendingBehalfNote(w.approvalLevels) && (
+                          <p className="text-[12.5px] text-amber-700 mt-0.5">{pendingBehalfNote(w.approvalLevels)}</p>
+                        )}
                         <p className="text-base text-slate-500 mt-1">
                           {fmtDay(w.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                         </p>
@@ -741,6 +761,9 @@ export default function Approvals({ embedded = false }) {
                             </span>
                           )}
                         </div>
+                        {pendingBehalfNote(o.approvalLevels) && (
+                          <p className="text-[12.5px] text-amber-700 mt-0.5">{pendingBehalfNote(o.approvalLevels)}</p>
+                        )}
                         <p className="text-base text-slate-500 mt-1">
                           {o.startDate === o.endDate
                             ? fmtDay(o.startDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })

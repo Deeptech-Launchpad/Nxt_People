@@ -71,7 +71,7 @@ function StatusPill({ status }) {
 // appears — and only when someone OTHER than the assigned approver acted.
 //   • self-approval (assigned approver acts on own level) → "Approved"
 //   • someone else acts on their behalf → "Approved on behalf of Level N by <Actor> (<Role>)"
-function actionNote(lvl) {
+export function actionNote(lvl) {
   const onBehalf = lvl.onBehalf || lvl.byHr;
   const actor = lvl.actedByName
     ? `${lvl.actedByName}${lvl.actedByRole ? ` (${roleLabel(lvl.actedByRole)})` : ''}`
