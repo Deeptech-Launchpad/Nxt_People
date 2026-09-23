@@ -168,7 +168,7 @@ const NAV = {
     getActiveTab: p => {
       if (p === '/leave-tracker')                                              return '__landing__';
       if (p.startsWith('/leave-tracker/team'))                                 return 'team';
-      if (p.startsWith('/leave-tracker/holidays') || p.startsWith('/leave-tracker/weekends')) return 'holidays';
+      if (p.startsWith('/leave-tracker/holidays') || p.startsWith('/leave-tracker/working-days') || p.startsWith('/leave-tracker/weekends')) return 'holidays';
       return 'mydata';
     },
     subNav: {
@@ -181,8 +181,9 @@ const NAV = {
       // The workspace draws its own tab strip, the same way Operations does,
       // so the white sub-nav bar stays out of its way.
       holidays: [
-        { to: '/leave-tracker/holidays', label: 'Holidays'                                   },
-        { to: '/leave-tracker/weekends', label: 'Weekend Rules', roles: ['admin','director','hr_admin'] },
+        { to: '/leave-tracker/holidays',     label: 'Holidays'                                   },
+        { to: '/leave-tracker/working-days', label: 'Exception Working Day', roles: ['admin','director','hr_admin'] },
+        { to: '/leave-tracker/weekends',     label: 'Weekend Rules', roles: ['admin','director','hr_admin'] },
       ],
     },
   },

@@ -1,5 +1,5 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Calendar, LayoutList, CalendarDays, MoreHorizontal, Download, Upload, Plus, Trash2, X, RotateCw } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Calendar, LayoutList, CalendarDays, MoreHorizontal, Download, Upload, Plus, Pencil, Trash2, X, RotateCw } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -8,43 +8,80 @@ import { isFullAccess } from '../utils/roles';
 import { parseLocalDate as parseLocalDateUtil, fmtDate } from '../utils/dateFormat';
 import useSortable from '../components/table/useSortable';
 import SortableTh from '../components/table/SortableTh';
+import ScopePicker, { useScopeOptions, scopeLabel } from './moreservices/leavetracker/ScopePicker';
 
-// Holidays.jsx historically defaults a blank date to "today" rather than
-// null (used as a display fallback in a couple of spots below).
+/* ── Holidays, and Exception Working Days ─────────────────────────────────
+ *  Two tabs, one record — a row in `holidays` — and only which way it points
+ *  differs:
+ *    a closing type  the office shuts. Nobody is judged on the day, and
+ *                    working it can earn a comp-off.
+ *    working_day     the opposite: a weekend the company is working, so
+ *                    everyone IS judged on it and working it earns nothing.
+ *  Zoho keeps them as two tabs so a working-day exception can never be
+ *  mistaken for a holiday in the list; `mode` is what used to be a "Working
+ *  Day Exception" option buried inside the Type dropdown, which is exactly
+ *  how one ended up saved as a working day but read, everywhere else, as an
+ *  ordinary holiday — the Classification column said "Holiday" for every
+ *  row regardless of type, and there was nowhere separate to check it.
+ *
+ *  Location and Shifts are real scoping now (ScopePicker/useScopeOptions),
+ *  not the two fixed strings this page used to print under every row.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+// Holiday returned after Save — lets the admin click "Send Email" right after.
 function parseLocalDate(dateStr) {
   return parseLocalDateUtil(dateStr) || new Date();
 }
+const isWeekendDate = (ymd) => {
+  if (!ymd) return false;
+  const day = new Date(String(ymd).slice(0, 10) + 'T00:00:00').getDay();
+  return day === 0 || day === 6;
+};
 
-export default function Holidays() {
+const CLASSIFICATIONS = [
+  ['company',    'Company Holiday'],
+  ['national',   'National Holiday'],
+  ['restricted', 'Restricted Holiday'],
+];
+const CLASS_LABEL = Object.fromEntries(CLASSIFICATIONS.map(([v, l]) => [v, l]));
+
+const BLANK_FORM = (workingDay, year) => ({
+  name: '', date: workingDay ? '' : `${year}-01-01`, description: '',
+  type: workingDay ? 'working_day' : 'company',
+  locationIds: [], shiftIds: [],
+  category: '', isCompensatory: false, mailBody: '',
+  compensationType: '', compensatedHolidayId: '',
+});
+
+export default function Holidays({ mode = 'holiday' }) {
+  const workingDay = mode === 'working_day';
   const { user } = useAuth();
-  const [holidays, setHolidays] = useState([]);
+  const [allHolidays, setAllHolidays] = useState([]);   // unfiltered, so "Select Compensated Holiday" can see the other tab too
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({
-    name: '', date: '', type: 'company', description: '',
-    location: 'Saibaba Colony, Coimbatore', shifts: 'General Shift',
-    category: '', isCompensatory: false, mailBody: '',
-    compensationType: '', compensatedHolidayId: '',
-  });
+  const [editingId, setEditingId] = useState(null);   // holiday _id being edited, or null for Add
+  const [form, setForm] = useState(BLANK_FORM(workingDay, new Date().getFullYear()));
   const [saving, setSaving]   = useState(false);
-  // Holiday returned after Save — lets the admin click "Send Email" right after.
   const [lastSaved, setLastSaved] = useState(null);
   const [notifying, setNotifying] = useState(false);
-  // Bulk import — hidden file input drives the visible "Import" button.
   const fileInputRef = useRef(null);
   const [importing, setImporting] = useState(false);
-  // View toggle: 'list' (default table) vs 'calendar' (12-month grid).
   const [viewMode, setViewMode] = useState('list');
-  // 3-dot kebab menu state + ref for click-outside-to-close.
   const [moreOpen, setMoreOpen] = useState(false);
+  const { locations, shifts } = useScopeOptions();
+
+  const holidays = allHolidays.filter(h => workingDay ? h.type === 'working_day' : h.type !== 'working_day');
+
   const sort = useSortable(holidays, {
-    id: 'holidays-list',
+    id: `holidays-list-${mode}`,
     columns: {
       name: { get: h => h.name, type: 'text' },
       date: { get: h => (h.date ? String(h.date).slice(0, 10) : null), type: 'date' },
-      location: { get: h => h.location || 'Saibaba Colony, Coimbatore', type: 'text' },
-      shifts: { get: h => h.shifts || 'General Shift', type: 'text' },
+      location: { get: h => scopeLabel(h.locationIds, locations), type: 'text' },
+      shifts: { get: h => scopeLabel(h.shiftIds, shifts), type: 'text' },
+      type: { get: h => CLASS_LABEL[h.type] || h.type, type: 'text' },
+      description: { get: h => h.description, type: 'text' },
     },
   });
   const moreMenuRef = useRef(null);
@@ -55,19 +92,22 @@ export default function Holidays() {
     return () => document.removeEventListener('mousedown', close);
   }, [moreOpen]);
 
+  const weekendOk = !workingDay || !form.date || isWeekendDate(form.date);
+
   // Export the holidays currently visible (filtered by the year nav above)
   // as a plain CSV — admin can open in Excel / share over email.
   const handleExportCsv = () => {
-    if (!holidays.length) { toast.error('No holidays to export'); return; }
+    if (!holidays.length) { toast.error('Nothing to export'); return; }
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const header = 'Name,Date,Type,Location,Shifts,Description\n';
-    const rows = holidays.map(h => {
-      return [h.name, fmtDate(h.date, { day: '2-digit', month: '2-digit', year: 'numeric' }), h.type, h.location, h.shifts, h.description].map(esc).join(',');
-    }).join('\n');
+    const header = 'Name,Date,Classification,Location,Shifts,Description\n';
+    const rows = holidays.map(h => [
+      h.name, fmtDate(h.date, { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      CLASS_LABEL[h.type] || h.type, scopeLabel(h.locationIds, locations), scopeLabel(h.shiftIds, shifts), h.description,
+    ].map(esc).join(',')).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `holidays-${year}.csv`; a.click();
+    a.href = url; a.download = `${workingDay ? 'working-days' : 'holidays'}-${year}.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -106,26 +146,58 @@ export default function Holidays() {
       toast.error(err.response?.data?.message || 'Import failed');
     } finally {
       setImporting(false);
-      // Reset so the same file can be picked again after fixing rows.
       e.target.value = '';
     }
   };
 
   const load = () => {
     setLoading(true);
-    api.get(`/holidays?year=${year}`).then(r => setHolidays(r.data.data)).catch(console.error).finally(() => setLoading(false));
+    api.get(`/holidays?year=${year}`).then(r => setAllHolidays(r.data.data || [])).catch(console.error).finally(() => setLoading(false));
   };
 
   useEffect(load, [year]);
 
+  const openAdd = () => {
+    setEditingId(null);
+    setForm(BLANK_FORM(workingDay, year));
+    setModal(true);
+  };
+
+  const openEdit = (h) => {
+    setEditingId(h._id);
+    setForm({
+      name: h.name || '', date: String(h.date).slice(0, 10), description: h.description || '',
+      type: h.type || (workingDay ? 'working_day' : 'company'),
+      locationIds: h.locationIds || [], shiftIds: h.shiftIds || [],
+      category: h.category || '', isCompensatory: !!h.isCompensatory, mailBody: h.mailBody || '',
+      compensationType: h.compensationType || '', compensatedHolidayId: h.compensatedHolidayId || '',
+    });
+    setModal(true);
+  };
+
   const handleSave = async (e) => {
-    e.preventDefault(); setSaving(true);
+    e.preventDefault();
+    if (workingDay && !weekendOk) {
+      toast.error('That date is already a working day. Pick a Saturday or Sunday to declare an exception.');
+      return;
+    }
+    setSaving(true);
     try {
       const yearFromDate = new Date(form.date + 'T00:00:00').getFullYear();
-      const r = await api.post('/holidays', { ...form, year: yearFromDate });
-      toast.success('Holiday saved!');
-      setLastSaved(r.data.data);   // keeps the modal open so admin can hit "Send Email"
-      load();
+      const body = { ...form, year: yearFromDate };
+      if (editingId) {
+        const r = await api.put(`/holidays/${editingId}`, body);
+        toast.success('Saved');
+        setModal(false);
+        setEditingId(null);
+        setForm(BLANK_FORM(workingDay, year));
+        load();
+      } else {
+        const r = await api.post('/holidays', body);
+        toast.success(workingDay ? 'Working day added' : 'Holiday saved!');
+        setLastSaved(r.data.data);   // keeps the modal open so admin can hit "Send Email"
+        load();
+      }
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setSaving(false); }
   };
@@ -133,12 +205,8 @@ export default function Holidays() {
   const closeModal = () => {
     setModal(false);
     setLastSaved(null);
-    setForm({
-      name: '', date: '', type: 'company', description: '',
-      location: 'Saibaba Colony, Coimbatore', shifts: 'General Shift',
-      category: '', isCompensatory: false, mailBody: '',
-      compensationType: '', compensatedHolidayId: '',
-    });
+    setEditingId(null);
+    setForm(BLANK_FORM(workingDay, year));
   };
 
   // Send the holiday's mail_body to every active employee. Idempotent on
@@ -159,11 +227,17 @@ export default function Holidays() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Delete this holiday?')) return;
-    try { await api.delete(`/holidays/${id}`); toast.success('Deleted'); load(); }
+  const handleDelete = async (h) => {
+    const consequence = workingDay
+      ? 'That date goes back to being a weekend — nobody will be judged on it, and working it can earn a comp-off again.'
+      : 'Attendance on that day will be judged as a normal working day.';
+    if (!confirm(`Remove "${h.name}" on ${fmtDate(h.date, { day: '2-digit', month: '2-digit', year: 'numeric' })}?\n\n${consequence}`)) return;
+    try { await api.delete(`/holidays/${h._id}`); toast.success('Removed'); load(); }
     catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
   };
+
+  const title = workingDay ? 'Exception Working Day' : 'Holiday';
+  const colSpan = workingDay ? 5 : 6;
 
   return (
     <div className="bg-white min-h-[calc(100vh-8rem)]">
@@ -175,40 +249,37 @@ export default function Holidays() {
           {isFullAccess(user) && (
             <>
               <button
-                onClick={() => {
-                  // Pre-fill the date with Jan 1 of the year currently being
-                  // viewed in the table so admins don't think the form is
-                  // year-less. They can then change day/month freely — the
-                  // year comes along automatically.
-                  setForm(f => ({ ...f, date: `${year}-01-01` }));
-                  setModal(true);
-                }}
+                onClick={openAdd}
                 className="flex items-center gap-2 bg-[#1a73e8] hover:bg-[#1557B0] text-white px-3 py-1.5 rounded text-sm font-semibold transition-colors"
               >
-                <Plus size={14} /> Add Holiday
+                <Plus size={14} /> Add {title}
               </button>
-              <button
-                onClick={handleDownloadTemplate}
-                title="Download the xlsx template — fill it in, then click Import."
-                className="flex items-center gap-2 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded text-sm font-semibold transition-colors"
-              >
-                <Download size={14} /> Template
-              </button>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={importing}
-                title="Upload a filled-in template. Each row becomes one holiday."
-                className="flex items-center gap-2 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded text-sm font-semibold transition-colors disabled:opacity-60"
-              >
-                <Upload size={14} /> {importing ? 'Importing…' : 'Import'}
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleImport}
-                className="hidden"
-              />
+              {!workingDay && (
+                <>
+                  <button
+                    onClick={handleDownloadTemplate}
+                    title="Download the xlsx template — fill it in, then click Import."
+                    className="flex items-center gap-2 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded text-sm font-semibold transition-colors"
+                  >
+                    <Download size={14} /> Template
+                  </button>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={importing}
+                    title="Upload a filled-in template. Each row becomes one holiday."
+                    className="flex items-center gap-2 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded text-sm font-semibold transition-colors disabled:opacity-60"
+                  >
+                    <Upload size={14} /> {importing ? 'Importing…' : 'Import'}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleImport}
+                    className="hidden"
+                  />
+                </>
+              )}
             </>
           )}
         </div>
@@ -227,7 +298,7 @@ export default function Holidays() {
           </button>
         </div>
 
-        {/* Right: view toggle + kebab menu. Both now have real handlers. */}
+        {/* Right: view toggle + kebab menu */}
         <div className="flex items-center gap-3 shrink-0">
           <div className="flex border border-slate-200 rounded text-slate-400">
             <button
@@ -290,49 +361,59 @@ export default function Holidays() {
               <SortableTh sort={sort} k="date" className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-48">Date</SortableTh>
               <SortableTh sort={sort} k="location" className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-48">Location</SortableTh>
               <SortableTh sort={sort} k="shifts" className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-40">Shifts</SortableTh>
-              <th className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-32">Classification</th>
-              <th className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white flex-1 min-w-[200px]"></th>
+              {!workingDay && <SortableTh sort={sort} k="type" className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white w-40">Classification</SortableTh>}
+              <SortableTh sort={sort} k="description" className="px-6 py-3.5 text-[15px] font-semibold text-slate-600 border-l border-white flex-1 min-w-[200px]">Description</SortableTh>
+              {isFullAccess(user) && <th className="px-4 py-3.5 border-l border-white w-20"></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-               <tr><td colSpan={6} className="py-12 text-center text-base text-slate-400">Loading holidays...</td></tr>
+               <tr><td colSpan={colSpan} className="py-12 text-center text-base text-slate-400">Loading…</td></tr>
             ) : holidays.length === 0 ? (
-               <tr><td colSpan={6} className="py-12 text-center text-base text-slate-400">No holidays found for {year}</td></tr>
+               <tr><td colSpan={colSpan} className="py-12 text-center text-base text-slate-400">
+                 {workingDay ? `No exception working days for ${year}` : `No holidays found for ${year}`}
+               </td></tr>
             ) : (
                sort.sorted.map((h, i) => {
                  const d = parseLocalDate(h.date);
                  return (
                    <tr key={h._id || i} className="hover:bg-slate-50 group">
-                     <td className="px-6 py-4 text-[15px] text-slate-800">
-                       <div className="flex items-center justify-between">
-                         {h.name}
-                         {isFullAccess(user) && (
-                           <button onClick={() => handleDelete(h._id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
-                             <Trash2 size={14} />
-                           </button>
-                         )}
-                       </div>
-                     </td>
+                     <td className="px-6 py-4 text-[15px] text-slate-800">{h.name}</td>
                      <td className="px-6 py-4 text-[15px] text-slate-600 border-l border-slate-100">
                        {fmtDate(d, { day: '2-digit', month: '2-digit', year: 'numeric' })}, {fmtDate(d, { weekday: 'short' })}
                      </td>
                      <td className="px-6 py-4 border-l border-slate-100">
-                       <span className="inline-block px-2.5 py-1 bg-slate-100 rounded text-[14px] text-slate-500">
-                         {h.location || 'Saibaba Colony, Coimbatore'}
+                       <span className={`inline-block px-2.5 py-1 rounded text-[14px] ${h.locationIds?.length ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                         {scopeLabel(h.locationIds, locations)}
                        </span>
                      </td>
                      <td className="px-6 py-4 border-l border-slate-100">
-                       <span className="inline-block px-2.5 py-1 bg-slate-100 rounded text-[14px] text-slate-500">
-                         {h.shifts || 'General Shift'}
+                       <span className={`inline-block px-2.5 py-1 rounded text-[14px] ${h.shiftIds?.length ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                         {scopeLabel(h.shiftIds, shifts)}
                        </span>
                      </td>
-                     <td className="px-6 py-4 text-[15px] text-slate-600 border-l border-slate-100">
-                       Holiday
-                     </td>
+                     {!workingDay && (
+                       <td className="px-6 py-4 text-[15px] text-slate-600 border-l border-slate-100">
+                         <span className={`inline-block px-2.5 py-1 rounded text-[13px] ${h.type === 'restricted' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                           {CLASS_LABEL[h.type] || h.type}
+                         </span>
+                       </td>
+                     )}
                      <td className="px-6 py-4 text-[14px] text-slate-500 border-l border-slate-100 whitespace-normal leading-relaxed">
-                       {h.description || `Wishing you everyone a very Happy ${h.name}`}
+                       {h.description || '—'}
                      </td>
+                     {isFullAccess(user) && (
+                       <td className="px-4 py-4 border-l border-slate-100">
+                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <button onClick={() => openEdit(h)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+                             <Pencil size={14} />
+                           </button>
+                           <button onClick={() => handleDelete(h)} title="Delete" className="w-8 h-8 flex items-center justify-center rounded-lg text-rose-500 hover:bg-rose-50">
+                             <Trash2 size={14} />
+                           </button>
+                         </div>
+                       </td>
+                     )}
                    </tr>
                  );
                })
@@ -346,7 +427,7 @@ export default function Holidays() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-800">{form.type === 'working_day' ? 'Add Working Day Exception' : 'Add Holiday'}</h3>
+              <h3 className="font-semibold text-slate-800">{editingId ? 'Edit' : 'Add'} {title}</h3>
               <button onClick={closeModal} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
             </div>
 
@@ -354,10 +435,10 @@ export default function Holidays() {
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1">Name</label>
                 <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required disabled={!!lastSaved}
-                  placeholder={form.type === 'working_day' ? 'e.g. Working Day (Saturday)' : 'e.g. Diwali 2026'}
+                  placeholder={workingDay ? 'e.g. Working Day (Saturday)' : 'e.g. Diwali 2026'}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className={workingDay ? '' : 'grid grid-cols-2 gap-3'}>
                 <div>
                   <label className="block text-sm font-medium text-slate-600 mb-1">Date</label>
                   <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required disabled={!!lastSaved}
@@ -367,24 +448,37 @@ export default function Holidays() {
                       Will be added under year <span className="font-semibold text-slate-600">{new Date(form.date + 'T00:00:00').getFullYear()}</span>
                     </p>
                   )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Type</label>
-                  <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} disabled={!!lastSaved}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
-                    <option value="company">Company Holiday</option>
-                    <option value="restricted">Restricted Holiday</option>
-                    <option value="working_day">Working Day Exception</option>
-                  </select>
-                  {form.type === 'restricted' && (
-                    <p className="text-[13px] text-slate-400 mt-1">
-                      Optional — the office stays open and the day still counts as a working day.
+                  {workingDay && form.date && !weekendOk && (
+                    <p className="text-[13px] text-rose-600 mt-1">
+                      {fmtDate(form.date, { day: '2-digit', month: '2-digit', year: 'numeric' })} is already a working day. Only a Saturday or Sunday can be declared an exception.
                     </p>
                   )}
                 </div>
+                {!workingDay && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">Classification</label>
+                    <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} disabled={!!lastSaved}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
+                      {CLASSIFICATIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                    {form.type === 'restricted' && (
+                      <p className="text-[13px] text-slate-400 mt-1">
+                        Optional — the office stays open and the day still counts as a working day.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {form.type !== 'working_day' ? (
+              <ScopePicker
+                locationIds={form.locationIds}
+                shiftIds={form.shiftIds}
+                locations={locations}
+                shifts={shifts}
+                onChange={(next) => setForm({ ...form, ...next })}
+              />
+
+              {!workingDay ? (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1">Holiday Due to</label>
@@ -404,7 +498,7 @@ export default function Holidays() {
                     <div className="flex gap-3">
                       {[
                         { v: false, label: 'No',  desc: 'No make-up working day needed' },
-                        { v: true,  label: 'Yes', desc: 'A Working Day Exception will be declared later to compensate. This holiday will then appear in the "Select Compensated Holiday" dropdown.' },
+                        { v: true,  label: 'Yes', desc: 'An Exception Working Day will be declared later to compensate. This holiday will then appear in the "Select Compensated Holiday" dropdown.' },
                       ].map(o => (
                         <label key={String(o.v)} className={`flex-1 px-3 py-2 rounded-lg border text-sm cursor-pointer ${form.isCompensatory === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'} ${lastSaved ? 'opacity-60 pointer-events-none' : ''}`}>
                           <input type="radio" name="iscomp" className="hidden" checked={form.isCompensatory === o.v} onChange={() => setForm({...form, isCompensatory: o.v})}/>
@@ -425,8 +519,8 @@ export default function Holidays() {
                 <>
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1">Working Day Due to</label>
-                    <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} disabled={!!lastSaved}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
+                    <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500">
                       <option value="">Select…</option>
                       <option value="additional_workload">Additional Workload</option>
                       <option value="project_deadline">Project Deadline</option>
@@ -441,7 +535,7 @@ export default function Holidays() {
                         { v: 'future', label: 'Future Compensation',  desc: 'Employees get a future day off' },
                         { v: 'past',   label: 'For a Past Holiday',   desc: 'Makes up for a previously-given holiday' },
                       ].map(o => (
-                        <label key={o.v} className={`flex-1 px-3 py-2 rounded-lg border text-sm cursor-pointer ${form.compensationType === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'} ${lastSaved ? 'opacity-60 pointer-events-none' : ''}`}>
+                        <label key={o.v} className={`flex-1 px-3 py-2 rounded-lg border text-sm cursor-pointer ${form.compensationType === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                           <input type="radio" name="comptype" className="hidden" checked={form.compensationType === o.v} onChange={() => setForm({...form, compensationType: o.v})}/>
                           <p className="font-semibold">{o.label}</p>
                           <p className="text-[12px] mt-0.5 opacity-70">{o.desc}</p>
@@ -452,16 +546,19 @@ export default function Holidays() {
                   {form.compensationType === 'past' && (
                     <div>
                       <label className="block text-sm font-medium text-slate-600 mb-1">Select Compensated Holiday <span className="text-slate-400 font-normal">(which past holiday is this making up for?)</span></label>
-                      <select value={form.compensatedHolidayId} onChange={e => setForm({ ...form, compensatedHolidayId: e.target.value })} disabled={!!lastSaved}
-                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
+                      <select value={form.compensatedHolidayId} onChange={e => setForm({ ...form, compensatedHolidayId: e.target.value })}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500">
                         <option value="">Select…</option>
-                        {holidays.filter(h => h.type !== 'working_day' && h.isCompensatory).map(h => (
-                          <option key={h._id} value={h._id}>{fmtDate(h.date)} — {h.name}</option>
+                        {allHolidays.filter(h => h.type !== 'working_day' && h.isCompensatory).map(h => (
+                          <option key={h._id} value={h._id}>{fmtDate(h.date, { day: '2-digit', month: '2-digit', year: 'numeric' })} — {h.name}</option>
                         ))}
                       </select>
                       <p className="text-[12px] text-slate-400 mt-1">Only shows holidays marked Compensatory.</p>
                     </div>
                   )}
+                  <p className="text-[13px] text-amber-600">
+                    Everyone in scope is judged on this day as a normal working day, and working it will no longer earn a comp-off.
+                  </p>
                 </>
               )}
 
@@ -471,21 +568,22 @@ export default function Holidays() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50" />
               </div>
 
-              {/* After saving the holiday, switch the action bar to a
+              {/* After saving a NEW holiday, switch the action bar to a
                   "Send Email" / "Done" pair so admin can decide whether to
-                  notify employees. mail_body is empty → button disabled. */}
+                  notify employees. Editing an existing row skips this — it
+                  goes straight back to the list, like Zoho's Edit popup does. */}
               {!lastSaved ? (
                 <div className="flex gap-2 pt-2">
                   <button type="button" onClick={closeModal} className="flex-1 border border-slate-200 text-slate-600 py-2 rounded-lg text-base font-medium hover:bg-slate-50">Cancel</button>
-                  <button type="submit" disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-base font-semibold disabled:opacity-60">
+                  <button type="submit" disabled={saving || (workingDay && !weekendOk)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-base font-semibold disabled:opacity-60">
                     {saving ? 'Saving…' : 'Save'}
                   </button>
                 </div>
               ) : (
                 <div className="flex gap-2 pt-2 bg-emerald-50 -mx-5 -mb-5 px-5 py-4 border-t border-emerald-100 rounded-b-xl">
                   <button type="button" onClick={closeModal} className="flex-1 border border-slate-200 bg-white text-slate-600 py-2 rounded-lg text-base font-medium hover:bg-slate-50">Done</button>
-                  <button type="button" onClick={handleNotify} disabled={notifying || !form.mailBody?.trim() || form.type === 'working_day'}
-                    title={form.type === 'working_day' ? 'Email notifications are for holidays, not working day exceptions' : (!form.mailBody?.trim() ? 'Add a mail body before sending' : '')}
+                  <button type="button" onClick={handleNotify} disabled={notifying || !form.mailBody?.trim() || workingDay}
+                    title={workingDay ? 'Email notifications are for holidays, not working day exceptions' : (!form.mailBody?.trim() ? 'Add a mail body before sending' : '')}
                     className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg text-base font-semibold disabled:opacity-60 disabled:cursor-not-allowed">
                     {notifying ? 'Sending…' : '📧 Send Email to All Employees'}
                   </button>
@@ -500,7 +598,7 @@ export default function Holidays() {
 }
 
 /* ─ Calendar view: 12 mini-month boxes in a 4x3 grid ─
- * Days that have a holiday get a red background + tooltip with the name.
+ * Days that have an entry get a red background + tooltip with the name.
  * Pure read-only — clicking a day does nothing right now (add later if
  * the team wants click-to-edit behaviour). */
 function CalendarYearGrid({ year, holidays, parseLocalDate }) {

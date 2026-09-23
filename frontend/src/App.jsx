@@ -252,6 +252,7 @@ const AppRoutes = () => {
           <Route path="leave-tracker/team/:tab"  element={<ProtectedRoute roles={['admin','director','hr_admin','manager','team_incharge']}><LeaveTrackerTeam/></ProtectedRoute>}/>
           <Route path="leave-tracker/all"        element={<ProtectedRoute roles={['admin','director','hr_admin']}><LeaveTrackerAdmin/></ProtectedRoute>}/>
           <Route path="leave-tracker/holidays"   element={<Holidays/>}/>
+          <Route path="leave-tracker/working-days" element={<Holidays mode="working_day"/>}/>
           {/* The weekend pattern is part of a work calendar now, so the
               standalone screen redirects into it rather than editing the same
               rules from two places. */}
