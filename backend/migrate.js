@@ -114,6 +114,7 @@ const ORDER = [
   'migrate_work_calendar.js',
   'migrate_holiday_scope.js',            // holiday_scopes — needs holidays
   'migrate_holiday_zoho_fields.js',      // holidays.day_type/reminder_days/reminder_sent_at
+  'migrate_holiday_preference.js',       // holidays.preference — shift-based overrides location-based
   'migrate_leave_policy.js',
   'migrate_leave_methods.js',
   'migrate_leave_config_rest.js',

@@ -52,6 +52,7 @@ const BLANK_FORM = (workingDay, year) => ({
   category: '', mailBody: '',
   compensationType: '', compensatedHolidayId: '',
   dayType: 'full', reminderDays: 0, notifyFeeds: false, reprocessLeave: false,
+  preference: 'except_shift_based',
 });
 
 // Summary line for the two "on save" actions — shown once, right after Save.
@@ -183,6 +184,7 @@ export default function Holidays({ mode = 'holiday' }) {
       compensationType: h.compensationType || '', compensatedHolidayId: h.compensatedHolidayId || '',
       dayType: h.dayType === 'half' ? 'half' : 'full', reminderDays: h.reminderDays || 0,
       notifyFeeds: false, reprocessLeave: false,
+      preference: h.preference === 'all' ? 'all' : 'except_shift_based',
     });
     setModal(true);
   };
@@ -507,6 +509,33 @@ export default function Holidays({ mode = 'holiday' }) {
                 shifts={shifts}
                 onChange={(next) => setForm({ ...form, ...next })}
               />
+
+              {!workingDay && form.locationIds.length > 0 && form.shiftIds.length === 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">Preference</label>
+                  <div className="space-y-2">
+                    {[
+                      ['all', 'All users tagged to selected locations'],
+                      ['except_shift_based', 'All users tagged to selected locations except employees tagged to shift-based holidays'],
+                    ].map(([v, label]) => (
+                      <label key={v} className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm cursor-pointer ${form.preference === v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'} ${lastSaved ? 'opacity-60 pointer-events-none' : ''}`}>
+                        <input type="radio" name="preference" className="mt-0.5" checked={form.preference === v} onChange={() => setForm({ ...form, preference: v })} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  {form.preference !== 'all' && (
+                    <p className="text-[12px] text-slate-400 mt-1">
+                      Applicable to all the employees assigned to selected locations except employees applicable to shift-based holidays on selected holiday dates.
+                    </p>
+                  )}
+                </div>
+              )}
+              {!workingDay && form.locationIds.length > 0 && form.shiftIds.length > 0 && (
+                <p className="text-[12px] text-amber-600 -mt-2">
+                  Shift based holiday will override the location based holiday.
+                </p>
+              )}
 
               {!workingDay ? (
                 <>

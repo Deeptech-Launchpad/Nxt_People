@@ -274,13 +274,13 @@ async function loadHolidaysAndRules(month, year) {
   const monthEnd = new Date(year, month, 0).toLocaleDateString('en-CA');
   const [holsRes, rulesRes] = await Promise.all([
     pool.query(
-      `SELECT h.date, h.type,
+      `SELECT h.date, h.type, h.preference,
                 COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'location'), '{}') AS location_ids,
                 COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'shift'), '{}') AS shift_ids
            FROM holidays h
            LEFT JOIN holiday_scopes s ON s.holiday_id = h.id
           WHERE h.date BETWEEN $1::date AND $2::date
-          GROUP BY h.id, h.date, h.type`, [monthStart, monthEnd]),
+          GROUP BY h.id, h.date, h.type, h.preference`, [monthStart, monthEnd]),
     pool.query(
       `SELECT days_of_week, weeks_of_month, interval_weeks,
               start_date, end_type, end_date, end_count, is_active
@@ -295,7 +295,7 @@ async function loadHolidaysAndRules(month, year) {
     const d = new Date(h.date);
     const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
     if (!holMap.has(key)) holMap.set(key, []);
-    holMap.get(key).push({ type: h.type, locationIds: h.location_ids || [], shiftIds: h.shift_ids || [] });
+    holMap.get(key).push({ type: h.type, preference: h.preference, locationIds: h.location_ids || [], shiftIds: h.shift_ids || [] });
   }
   /* No active weekend rule means every day of the week counts as a working
    * day, everywhere: Sundays become absences, expected hours roughly double,

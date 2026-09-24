@@ -130,6 +130,43 @@ const nights   = { workLocationId: OFFICE, shiftId: NIGHT };
   check('the old date-to-string shape is still understood',
     holidayTypeFor(oldShape, '2026-10-20', atOffice) === 'company');
 
+  console.log('\n════ A shift-based holiday overrides a location-based one ════\n');
+
+  /* Zoho's "Preference" radio: a location-only holiday defaults to
+   * 'except_shift_based', meaning it steps aside for anyone a separate,
+   * shift-scoped holiday also reaches on the same date. */
+  const overrideMap = new Map();
+  const put2 = (key, row) => {
+    if (!overrideMap.has(key)) overrideMap.set(key, []);
+    overrideMap.get(key).push(row);
+  };
+  put2('2026-12-25', { type: 'company', locationIds: [OFFICE], shiftIds: [], preference: 'except_shift_based' });
+  put2('2026-12-25', { type: 'working_day', locationIds: [], shiftIds: [NIGHT] });
+
+  check('the night shift gets its own shift-based holiday, not the office one',
+    holidayTypeFor(overrideMap, '2026-12-25', nights) === 'working_day');
+  check('everyone else at the office still gets the location-based holiday',
+    holidayTypeFor(overrideMap, '2026-12-25', atOffice) === 'company');
+
+  // Explicit preference 'all' opts back out of the override.
+  const noOverrideMap = new Map();
+  noOverrideMap.set('2026-12-25', [
+    { type: 'company', locationIds: [OFFICE], shiftIds: [], preference: 'all' },
+    { type: 'working_day', locationIds: [], shiftIds: [NIGHT] },
+  ]);
+  check('preference "all" applies the location holiday even to a shift the night holiday reaches',
+    holidayTypeFor(noOverrideMap, '2026-12-25', nights) === 'company');
+
+  // A holiday with a shift of its own is not "location-only" — the rule must
+  // not eat a holiday just because it happens to also name a location.
+  const bothScoped = new Map();
+  bothScoped.set('2026-12-25', [
+    { type: 'company', locationIds: [OFFICE], shiftIds: [GENERAL], preference: 'except_shift_based' },
+    { type: 'working_day', locationIds: [], shiftIds: [NIGHT] },
+  ]);
+  check('a holiday that already carries its own shift scope is not overridden',
+    holidayTypeFor(bothScoped, '2026-12-25', atOffice) === 'company');
+
   const failed = checks.filter(c => !c).length;
   console.log(`\n${checks.length - failed}/${checks.length} passed\n`);
   process.exit(failed ? 1 : 0);

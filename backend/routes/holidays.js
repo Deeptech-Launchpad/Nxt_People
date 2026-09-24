@@ -119,7 +119,7 @@ const SELECT_COLS = `
   h.compensated_rule_id    AS "compensatedRuleId",
   h.notified_at AS "notifiedAt",
   h.day_type AS "dayType", h.reminder_days AS "reminderDays",
-  h.reminder_sent_at AS "reminderSentAt"
+  h.reminder_sent_at AS "reminderSentAt", h.preference
 `;
 
 router.get('/', async (req, res) => {
@@ -145,21 +145,22 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), audit('CREATE', 'ho
       name, date, type, description, year,
       category, isCompensatory, mailBody,
       compensationType, compensatedHolidayId, compensatedRuleId,
-      dayType, reminderDays,
+      dayType, reminderDays, preference,
     } = req.body;
     const result = await pool.query(
       `INSERT INTO holidays
          (name, date, type, description, year,
           category, is_compensatory, mail_body,
           compensation_type, compensated_holiday_id, compensated_rule_id,
-          day_type, reminder_days)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          day_type, reminder_days, preference)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING ${SELECT_COLS.replace(/h\./g, '')}`,
       [
         name, date, type || 'company', description, year,
         category || null, !!isCompensatory, mailBody || null,
         compensationType || null, compensatedHolidayId || null, compensatedRuleId || null,
         dayType === 'half' ? 'half' : 'full', parseInt(reminderDays) || 0,
+        preference === 'all' ? 'all' : 'except_shift_based',
       ]
     );
     const holiday = result.rows[0];
@@ -184,7 +185,7 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), audit('UPDATE', '
       name, date, type, description, year,
       category, isCompensatory, mailBody,
       compensationType, compensatedHolidayId, compensatedRuleId,
-      dayType, reminderDays,
+      dayType, reminderDays, preference,
     } = req.body;
     const result = await pool.query(
       `UPDATE holidays
@@ -194,14 +195,16 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), audit('UPDATE', '
               compensated_rule_id = $11,
               day_type = $12, reminder_days = $13,
               reminder_sent_at = NULL,
+              preference = $14,
               updated_at = NOW()
-        WHERE id = $14
+        WHERE id = $15
         RETURNING ${SELECT_COLS.replace(/h\./g, '')}`,
       [
         name, date, type, description, year,
         category || null, !!isCompensatory, mailBody || null,
         compensationType || null, compensatedHolidayId || null, compensatedRuleId || null,
         dayType === 'half' ? 'half' : 'full', parseInt(reminderDays) || 0,
+        preference === 'all' ? 'all' : 'except_shift_based',
         req.params.id,
       ]
     );

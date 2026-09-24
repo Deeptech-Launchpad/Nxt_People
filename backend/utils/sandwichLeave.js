@@ -109,13 +109,13 @@ async function sandwichedDays(db, { employeeId, start, end, leaveType, cfg, excl
   const [resolver, holRes, whoRes] = await Promise.all([
     loadWeekendResolver(),
     db.query(
-      `SELECT h.date::text AS ymd, h.type,
+      `SELECT h.date::text AS ymd, h.type, h.preference,
               COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'location'), '{}') AS location_ids,
               COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'shift'), '{}') AS shift_ids
          FROM holidays h
          LEFT JOIN holiday_scopes s ON s.holiday_id = h.id
         WHERE h.date BETWEEN $1::date AND $2::date
-        GROUP BY h.id, h.date, h.type`,
+        GROUP BY h.id, h.date, h.type, h.preference`,
       [ymd(addDays(from, -REACH)), ymd(addDays(to, REACH))]),
     // Which holidays reach this person depends on where they work and on what
     // shift, so the bridging question cannot be answered without them.
@@ -126,7 +126,7 @@ async function sandwichedDays(db, { employeeId, start, end, leaveType, cfg, excl
   const holMap = new Map();
   for (const h of holRes.rows) {
     if (!holMap.has(h.ymd)) holMap.set(h.ymd, []);
-    holMap.get(h.ymd).push({ type: h.type, locationIds: h.location_ids || [], shiftIds: h.shift_ids || [] });
+    holMap.get(h.ymd).push({ type: h.type, preference: h.preference, locationIds: h.location_ids || [], shiftIds: h.shift_ids || [] });
   }
 
   const isOff = (d) => {

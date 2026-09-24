@@ -83,6 +83,25 @@ function holidayAppliesTo(holiday, employee = {}) {
  * this behaved before scopes existed — so a caller that has not been taught
  * about them degrades to the old answer rather than to a wrong one.
  */
+/* A location-scoped holiday can defer to a shift-scoped one landing on the
+ * same date for the same employee — Zoho's "Preference" radio on Add Holiday
+ * ('all' | 'except_shift_based', defaulting to the latter). A holiday with a
+ * shift of its own is "shift-based"; one with locations but no shift of its
+ * own is "location-only" and, unless its preference is 'all', steps aside
+ * the moment a shift-based holiday also claims the date for that employee —
+ * this is what "Shift based holiday will override the location based
+ * holiday" means. A holiday with no location scope at all was never
+ * "location-based" to begin with, so this rule leaves it alone. */
+function isShiftBasedHoliday(h) {
+  return (h?.shiftIds || []).length > 0;
+}
+function isLocationOnlyHoliday(h) {
+  return (h?.locationIds || []).length > 0 && !isShiftBasedHoliday(h);
+}
+function deferToShiftBased(h) {
+  return (h?.preference || 'except_shift_based') !== 'all';
+}
+
 function holidayTypeFor(holMap, key, employee) {
   const rows = holMap?.get(key);
   if (!rows) return undefined;
@@ -91,8 +110,14 @@ function holidayTypeFor(holMap, key, employee) {
   // mark a whole company absent on Deepavali.
   if (typeof rows === 'string') return rows;
 
-  const mine = rows.filter(h => holidayAppliesTo(h, employee));
+  let mine = rows.filter(h => holidayAppliesTo(h, employee));
   if (!mine.length) return undefined;
+
+  if (mine.some(isShiftBasedHoliday)) {
+    mine = mine.filter(h => !(isLocationOnlyHoliday(h) && deferToShiftBased(h)));
+    if (!mine.length) return undefined;
+  }
+
   const closing = mine.find(h => holidayClosesOffice(h.type));
   if (closing) return closing.type;
   return mine[0].type;
