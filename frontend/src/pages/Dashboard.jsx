@@ -1222,7 +1222,7 @@ export default function Dashboard() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[14px] font-bold text-slate-700">Reporting Person</p>
-                    <p className="text-[13px] font-bold text-slate-600 truncate">
+                    <p className="text-[15px] font-bold text-slate-700 truncate">
                       {(manager || profileData?.manager).employeeId} - {(manager || profileData?.manager).firstName}
                     </p>
                     <PresenceLabel person={manager || profileData?.manager} />
