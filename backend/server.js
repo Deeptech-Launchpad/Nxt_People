@@ -20,6 +20,7 @@ const { sweepRegularizationReminders } = require('./utils/regularizationReminder
 const { sweepReportEmails } = require('./utils/reportEmailSender');
 const { sweepShiftRotations } = require('./utils/shiftRotation');
 const { runYearEndRollover } = require('./utils/leaveYearEnd');
+const { sweepHolidayReminders } = require('./utils/holidayReminders');
 // The email-alerts cron below has called automationConfig.* since it was
 // written without this line, so every run logged "automationConfig is not
 // defined" and sent nothing.
@@ -435,6 +436,18 @@ cron.schedule('15 0 * * *', async () => {
     }
   } catch (err) {
     logger.error({ err }, 'Auto-unpin cron failed');
+  }
+}, cronOpts);
+
+// 6b. Holiday reminder emails — "No of day(s) before... reminder is to be
+//     sent" from the Holiday popup. Runs daily at 07:00, well before anyone's
+//     in for the day. See utils/holidayReminders.js.
+cron.schedule('0 7 * * *', async () => {
+  try {
+    const { checked, sent } = await sweepHolidayReminders();
+    if (sent > 0) logger.info({ checked, sent }, 'Holiday reminder emails sent');
+  } catch (err) {
+    logger.error({ err }, 'Holiday reminder cron failed');
   }
 }, cronOpts);
 

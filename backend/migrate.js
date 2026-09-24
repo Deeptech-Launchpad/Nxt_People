@@ -113,6 +113,7 @@ const ORDER = [
   // Leave and the calendar it depends on
   'migrate_work_calendar.js',
   'migrate_holiday_scope.js',            // holiday_scopes — needs holidays
+  'migrate_holiday_zoho_fields.js',      // holidays.day_type/reminder_days/reminder_sent_at
   'migrate_leave_policy.js',
   'migrate_leave_methods.js',
   'migrate_leave_config_rest.js',

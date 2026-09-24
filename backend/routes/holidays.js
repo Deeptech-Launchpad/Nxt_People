@@ -6,6 +6,7 @@ const xlsx = require('xlsx');
 const { protect, authorize } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
 const { serverError } = require('../utils/serverError');
+const { notifyHolidayViaFeeds, reprocessLeaveForHoliday } = require('../utils/holidayActions');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -116,7 +117,9 @@ const SELECT_COLS = `
   h.compensation_type AS "compensationType",
   h.compensated_holiday_id AS "compensatedHolidayId",
   h.compensated_rule_id    AS "compensatedRuleId",
-  h.notified_at AS "notifiedAt"
+  h.notified_at AS "notifiedAt",
+  h.day_type AS "dayType", h.reminder_days AS "reminderDays",
+  h.reminder_sent_at AS "reminderSentAt"
 `;
 
 router.get('/', async (req, res) => {
@@ -142,22 +145,36 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), audit('CREATE', 'ho
       name, date, type, description, year,
       category, isCompensatory, mailBody,
       compensationType, compensatedHolidayId, compensatedRuleId,
+      dayType, reminderDays,
     } = req.body;
     const result = await pool.query(
       `INSERT INTO holidays
          (name, date, type, description, year,
           category, is_compensatory, mail_body,
-          compensation_type, compensated_holiday_id, compensated_rule_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          compensation_type, compensated_holiday_id, compensated_rule_id,
+          day_type, reminder_days)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING ${SELECT_COLS.replace(/h\./g, '')}`,
       [
         name, date, type || 'company', description, year,
         category || null, !!isCompensatory, mailBody || null,
         compensationType || null, compensatedHolidayId || null, compensatedRuleId || null,
+        dayType === 'half' ? 'half' : 'full', parseInt(reminderDays) || 0,
       ]
     );
-    await setScopes(pool, result.rows[0]._id || result.rows[0].id, req.body.locationIds, req.body.shiftIds);
-    res.status(201).json({ success: true, data: result.rows[0] });
+    const holiday = result.rows[0];
+    await setScopes(pool, holiday._id || holiday.id, req.body.locationIds, req.body.shiftIds);
+    holiday.locationIds = req.body.locationIds || [];
+    holiday.shiftIds = req.body.shiftIds || [];
+
+    const actions = {};
+    if (req.body.notifyFeeds) {
+      actions.feedsNotified = await notifyHolidayViaFeeds(pool, holiday);
+    }
+    if (req.body.reprocessLeave) {
+      actions.leaveReprocessed = await reprocessLeaveForHoliday(pool, holiday);
+    }
+    res.status(201).json({ success: true, data: holiday, actions });
   } catch (err) { serverError(res, err); }
 });
 
@@ -167,6 +184,7 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), audit('UPDATE', '
       name, date, type, description, year,
       category, isCompensatory, mailBody,
       compensationType, compensatedHolidayId, compensatedRuleId,
+      dayType, reminderDays,
     } = req.body;
     const result = await pool.query(
       `UPDATE holidays
@@ -174,26 +192,40 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), audit('UPDATE', '
               category = $6, is_compensatory = $7, mail_body = $8,
               compensation_type = $9, compensated_holiday_id = $10,
               compensated_rule_id = $11,
+              day_type = $12, reminder_days = $13,
+              reminder_sent_at = NULL,
               updated_at = NOW()
-        WHERE id = $12
+        WHERE id = $14
         RETURNING ${SELECT_COLS.replace(/h\./g, '')}`,
       [
         name, date, type, description, year,
         category || null, !!isCompensatory, mailBody || null,
         compensationType || null, compensatedHolidayId || null, compensatedRuleId || null,
+        dayType === 'half' ? 'half' : 'full', parseInt(reminderDays) || 0,
         req.params.id,
       ]
     );
     if (!result.rows.length) {
       return res.status(404).json({ success: false, message: 'That holiday no longer exists.' });
     }
+    const holiday = result.rows[0];
     // Only touch the scope when the caller actually sent one. A PUT that omits
     // it is editing the name or the date, and silently widening a narrowed
     // holiday to the whole company would be the worst kind of side effect.
     if ('locationIds' in req.body || 'shiftIds' in req.body) {
       await setScopes(pool, req.params.id, req.body.locationIds, req.body.shiftIds);
+      holiday.locationIds = req.body.locationIds || [];
+      holiday.shiftIds = req.body.shiftIds || [];
     }
-    res.json({ success: true, data: result.rows[0] });
+
+    const actions = {};
+    if (req.body.notifyFeeds) {
+      actions.feedsNotified = await notifyHolidayViaFeeds(pool, holiday);
+    }
+    if (req.body.reprocessLeave) {
+      actions.leaveReprocessed = await reprocessLeaveForHoliday(pool, holiday);
+    }
+    res.json({ success: true, data: holiday, actions });
   } catch (err) { serverError(res, err); }
 });
 

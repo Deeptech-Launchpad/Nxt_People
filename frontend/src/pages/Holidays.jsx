@@ -51,7 +51,17 @@ const BLANK_FORM = (workingDay, year) => ({
   locationIds: [], shiftIds: [],
   category: '', isCompensatory: false, mailBody: '',
   compensationType: '', compensatedHolidayId: '',
+  dayType: 'full', reminderDays: 0, notifyFeeds: false, reprocessLeave: false,
 });
+
+// Summary line for the two "on save" actions — shown once, right after Save.
+function actionsSummary(actions) {
+  if (!actions) return null;
+  const parts = [];
+  if (actions.feedsNotified != null) parts.push(`Notified ${actions.feedsNotified} employee(s) via feeds`);
+  if (actions.leaveReprocessed) parts.push(`Reprocessed ${actions.leaveReprocessed.recomputed} of ${actions.leaveReprocessed.scanned} leave application(s)`);
+  return parts.length ? parts.join(' · ') : null;
+}
 
 export default function Holidays({ mode = 'holiday' }) {
   const workingDay = mode === 'working_day';
@@ -171,6 +181,8 @@ export default function Holidays({ mode = 'holiday' }) {
       locationIds: h.locationIds || [], shiftIds: h.shiftIds || [],
       category: h.category || '', isCompensatory: !!h.isCompensatory, mailBody: h.mailBody || '',
       compensationType: h.compensationType || '', compensatedHolidayId: h.compensatedHolidayId || '',
+      dayType: h.dayType === 'half' ? 'half' : 'full', reminderDays: h.reminderDays || 0,
+      notifyFeeds: false, reprocessLeave: false,
     });
     setModal(true);
   };
@@ -188,6 +200,8 @@ export default function Holidays({ mode = 'holiday' }) {
       if (editingId) {
         const r = await api.put(`/holidays/${editingId}`, body);
         toast.success('Saved');
+        const summary = actionsSummary(r.data.actions);
+        if (summary) toast(summary, { icon: 'ℹ️' });
         setModal(false);
         setEditingId(null);
         setForm(BLANK_FORM(workingDay, year));
@@ -195,6 +209,8 @@ export default function Holidays({ mode = 'holiday' }) {
       } else {
         const r = await api.post('/holidays', body);
         toast.success(workingDay ? 'Working day added' : 'Holiday saved!');
+        const summary = actionsSummary(r.data.actions);
+        if (summary) toast(summary, { icon: 'ℹ️' });
         setLastSaved(r.data.data);   // keeps the modal open so admin can hit "Send Email"
         load();
       }
@@ -456,19 +472,33 @@ export default function Holidays({ mode = 'holiday' }) {
                 </div>
                 {!workingDay && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">Classification</label>
-                    <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} disabled={!!lastSaved}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
-                      {CLASSIFICATIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                    {form.type === 'restricted' && (
-                      <p className="text-[13px] text-slate-400 mt-1">
-                        Optional — the office stays open and the day still counts as a working day.
-                      </p>
-                    )}
+                    <label className="block text-sm font-medium text-slate-600 mb-1">Day Type</label>
+                    <div className="flex gap-2">
+                      {[['full', 'Full Day'], ['half', 'Half Day']].map(([v, l]) => (
+                        <label key={v} className={`flex-1 text-center px-2 py-2 rounded-lg border text-sm cursor-pointer ${form.dayType === v ? 'border-blue-400 bg-blue-50 text-blue-700 font-medium' : 'border-slate-200 text-slate-500 hover:bg-slate-50'} ${lastSaved ? 'opacity-60 pointer-events-none' : ''}`}>
+                          <input type="radio" name="dayType" className="hidden" checked={form.dayType === v} onChange={() => setForm({ ...form, dayType: v })} />
+                          {l}
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
+
+              {!workingDay && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">Classification</label>
+                  <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} disabled={!!lastSaved}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
+                    {CLASSIFICATIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                  {form.type === 'restricted' && (
+                    <p className="text-[13px] text-slate-400 mt-1">
+                      Optional — the office stays open and the day still counts as a working day.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <ScopePicker
                 locationIds={form.locationIds}
@@ -514,6 +544,26 @@ export default function Holidays({ mode = 'holiday' }) {
                       placeholder="e.g. Due to the Election the Company has declared a holiday for all employees on 23-Apr-2026. Please plan accordingly."
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 resize-none disabled:bg-slate-50" />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">
+                      No. of day(s) before to send a reminder email <span className="text-slate-400 font-normal">(0 = no reminder)</span>
+                    </label>
+                    <input type="number" min="0" max="60" value={form.reminderDays} disabled={!!lastSaved}
+                      onChange={e => setForm({ ...form, reminderDays: Math.max(0, parseInt(e.target.value) || 0) })}
+                      className="w-28 border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50" />
+                  </div>
+                  {!lastSaved && (
+                    <div className="space-y-2 pt-1">
+                      <label className="flex items-start gap-2 text-sm text-slate-600 cursor-pointer">
+                        <input type="checkbox" checked={form.notifyFeeds} onChange={e => setForm({ ...form, notifyFeeds: e.target.checked })} className="mt-0.5" />
+                        Notify applicable employees via feeds
+                      </label>
+                      <label className="flex items-start gap-2 text-sm text-slate-600 cursor-pointer">
+                        <input type="checkbox" checked={form.reprocessLeave} onChange={e => setForm({ ...form, reprocessLeave: e.target.checked })} className="mt-0.5" />
+                        Reprocess leave applications based on this {editingId ? 'updated' : 'added'} holiday
+                      </label>
+                    </div>
+                  )}
                 </>
               ) : (
                 <>

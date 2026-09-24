@@ -211,12 +211,12 @@ async function countWorkingDays(startDate, endDate) {
          FROM weekend_rules WHERE is_active = TRUE`
       ),
       pool.query(
-        `SELECT date::text as ymd, type FROM holidays WHERE date BETWEEN $1::date AND $2::date`,
+        `SELECT date::text as ymd, type, day_type as "dayType" FROM holidays WHERE date BETWEEN $1::date AND $2::date`,
         [startYmd, endYmd]
       ),
     ]);
     rules = rulesRes.rows;
-    holRes.rows.forEach(h => holidayMap.set(h.ymd, h.type));
+    holRes.rows.forEach(h => holidayMap.set(h.ymd, { type: h.type, dayType: h.dayType }));
   } catch (_) {
     // Tables missing → fall back to "weekday only" so we still return something sane.
     let count = 0;
@@ -232,17 +232,23 @@ async function countWorkingDays(startDate, endDate) {
   let count = 0;
   const cur = new Date(start);
   while (cur <= end) {
-    const holType = holidayMap.get(ymd(cur));
+    const hol = holidayMap.get(ymd(cur));
+    const holType = hol?.type;
     let isWorkingDay;
+    // A Half Day holiday only shuts the office for part of the day, so it
+    // still counts toward the total — just half of it, the same way a
+    // half-day leave counts as 0.5 rather than dropping the day entirely.
+    let dayValue = 1;
     if (holidayClosesOffice(holType)) {
-      isWorkingDay = false;
+      if (hol?.dayType === 'half') { isWorkingDay = true; dayValue = 0.5; }
+      else { isWorkingDay = false; }
     } else if (holType === 'working_day') {
       isWorkingDay = true;
     } else {
       const isWeekend = rules.some(rule => ruleMatchesDate(rule, cur));
       isWorkingDay = !isWeekend;
     }
-    if (isWorkingDay) count++;
+    if (isWorkingDay) count += dayValue;
     cur.setDate(cur.getDate() + 1);
   }
   return count;
