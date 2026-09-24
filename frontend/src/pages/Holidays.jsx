@@ -76,6 +76,7 @@ export default function Holidays({ mode = 'holiday' }) {
   const [saving, setSaving]   = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [notifying, setNotifying] = useState(false);
+  const [showMailTemplate, setShowMailTemplate] = useState(false);
   const fileInputRef = useRef(null);
   const [importing, setImporting] = useState(false);
   const [viewMode, setViewMode] = useState('list');
@@ -171,6 +172,7 @@ export default function Holidays({ mode = 'holiday' }) {
   const openAdd = () => {
     setEditingId(null);
     setForm(BLANK_FORM(workingDay, year));
+    setShowMailTemplate(false);
     setModal(true);
   };
 
@@ -186,6 +188,7 @@ export default function Holidays({ mode = 'holiday' }) {
       notifyFeeds: false, reprocessLeave: false,
       preference: h.preference === 'all' ? 'all' : 'except_shift_based',
     });
+    setShowMailTemplate(!!h.mailBody);
     setModal(true);
   };
 
@@ -225,6 +228,7 @@ export default function Holidays({ mode = 'holiday' }) {
     setLastSaved(null);
     setEditingId(null);
     setForm(BLANK_FORM(workingDay, year));
+    setShowMailTemplate(false);
   };
 
   // Send the holiday's mail_body to every active employee. Idempotent on
@@ -456,49 +460,30 @@ export default function Holidays({ mode = 'holiday' }) {
                   placeholder={workingDay ? 'e.g. Working Day (Saturday)' : 'e.g. Diwali 2026'}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50" />
               </div>
-              <div className={workingDay ? '' : 'grid grid-cols-2 gap-3'}>
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Date</label>
-                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required disabled={!!lastSaved}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50" />
-                  {form.date && (
-                    <p className="text-[13px] text-slate-400 mt-1">
-                      Will be added under year <span className="font-semibold text-slate-600">{new Date(form.date + 'T00:00:00').getFullYear()}</span>
-                    </p>
-                  )}
-                  {workingDay && form.date && !weekendOk && (
-                    <p className="text-[13px] text-rose-600 mt-1">
-                      {fmtDate(form.date, { day: '2-digit', month: '2-digit', year: 'numeric' })} is already a working day. Only a Saturday or Sunday can be declared an exception.
-                    </p>
-                  )}
-                </div>
-                {!workingDay && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">Day Type</label>
-                    <div className="flex gap-2">
-                      {[['full', 'Full Day'], ['half', 'Half Day']].map(([v, l]) => (
-                        <label key={v} className={`flex-1 text-center px-2 py-2 rounded-lg border text-sm cursor-pointer ${form.dayType === v ? 'border-blue-400 bg-blue-50 text-blue-700 font-medium' : 'border-slate-200 text-slate-500 hover:bg-slate-50'} ${lastSaved ? 'opacity-60 pointer-events-none' : ''}`}>
-                          <input type="radio" name="dayType" className="hidden" checked={form.dayType === v} onChange={() => setForm({ ...form, dayType: v })} />
-                          {l}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Date</label>
+                <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required disabled={!!lastSaved}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50" />
+                {form.date && (
+                  <p className="text-[13px] text-slate-400 mt-1">
+                    Will be added under year <span className="font-semibold text-slate-600">{new Date(form.date + 'T00:00:00').getFullYear()}</span>
+                  </p>
+                )}
+                {workingDay && form.date && !weekendOk && (
+                  <p className="text-[13px] text-rose-600 mt-1">
+                    {fmtDate(form.date, { day: '2-digit', month: '2-digit', year: 'numeric' })} is already a working day. Only a Saturday or Sunday can be declared an exception.
+                  </p>
                 )}
               </div>
 
-              {!workingDay && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Classification</label>
-                  <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} disabled={!!lastSaved}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
-                    {CLASSIFICATIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              {!workingDay && form.date && (
+                <div className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  <span className="text-sm text-slate-600">{fmtDate(form.date, { weekday: 'short' })} {fmtDate(form.date, { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                  <select value={form.dayType} disabled={!!lastSaved} onChange={e => setForm({ ...form, dayType: e.target.value })}
+                    className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100">
+                    <option value="full">Full Day</option>
+                    <option value="half">Half Day</option>
                   </select>
-                  {form.type === 'restricted' && (
-                    <p className="text-[13px] text-slate-400 mt-1">
-                      Optional — the office stays open and the day still counts as a working day.
-                    </p>
-                  )}
                 </div>
               )}
 
@@ -531,39 +516,65 @@ export default function Holidays({ mode = 'holiday' }) {
                   )}
                 </div>
               )}
-              {!workingDay && form.locationIds.length > 0 && form.shiftIds.length > 0 && (
-                <p className="text-[12px] text-amber-600 -mt-2">
-                  Shift based holiday will override the location based holiday.
-                </p>
+
+              {!workingDay && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">Classification</label>
+                  <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} disabled={!!lastSaved}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
+                    {CLASSIFICATIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                  {form.type === 'restricted' && (
+                    <p className="text-[13px] text-slate-400 mt-1">
+                      Optional — the office stays open and the day still counts as a working day.
+                    </p>
+                  )}
+                </div>
               )}
 
               {!workingDay ? (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">Mail Details <span className="text-slate-400 font-normal">(used by "Send Email" below)</span></label>
-                    <textarea rows={3} value={form.mailBody} onChange={e => setForm({ ...form, mailBody: e.target.value })} disabled={!!lastSaved}
-                      placeholder="e.g. Due to the Election the Company has declared a holiday for all employees on 23-Apr-2026. Please plan accordingly."
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 resize-none disabled:bg-slate-50" />
+                    <label className="block text-sm font-medium text-slate-600 mb-1">Description</label>
+                    <input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} disabled={!!lastSaved}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">
-                      No. of day(s) before to send a reminder email <span className="text-slate-400 font-normal">(0 = no reminder)</span>
-                    </label>
-                    <input type="number" min="0" max="60" value={form.reminderDays} disabled={!!lastSaved}
-                      onChange={e => setForm({ ...form, reminderDays: Math.max(0, parseInt(e.target.value) || 0) })}
-                      className="w-28 border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50" />
+                    <label className="block text-sm font-medium text-slate-600 mb-1">No of day(s) before when the reminder email is to be sent</label>
+                    <select value={form.reminderDays} disabled={!!lastSaved}
+                      onChange={e => setForm({ ...form, reminderDays: parseInt(e.target.value) || 0 })}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
+                      <option value={0}>Select…</option>
+                      {[1, 2, 3, 5, 7, 10, 15, 30].map(n => <option key={n} value={n}>{n} day{n > 1 ? 's' : ''} before</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <button type="button" onClick={() => setShowMailTemplate(s => !s)} disabled={!!lastSaved}
+                      className="text-sm text-blue-600 hover:text-blue-700 font-medium disabled:opacity-60">
+                      Customize Email Template
+                    </button>
+                    {showMailTemplate && (
+                      <textarea rows={3} value={form.mailBody} onChange={e => setForm({ ...form, mailBody: e.target.value })} disabled={!!lastSaved}
+                        placeholder="e.g. Due to the Election the Company has declared a holiday for all employees on 23-Apr-2026. Please plan accordingly."
+                        className="mt-2 w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 resize-none disabled:bg-slate-50" />
+                    )}
                   </div>
                   {!lastSaved && (
                     <div className="space-y-2 pt-1">
                       <label className="flex items-start gap-2 text-sm text-slate-600 cursor-pointer">
                         <input type="checkbox" checked={form.notifyFeeds} onChange={e => setForm({ ...form, notifyFeeds: e.target.checked })} className="mt-0.5" />
-                        Notify applicable employees via feeds
+                        <span>Notify applicable employees via feeds<br /><span className="text-[12px] text-slate-400">(They will receive a feed notification instantly once this holiday is saved)</span></span>
                       </label>
                       <label className="flex items-start gap-2 text-sm text-slate-600 cursor-pointer">
                         <input type="checkbox" checked={form.reprocessLeave} onChange={e => setForm({ ...form, reprocessLeave: e.target.checked })} className="mt-0.5" />
-                        Reprocess leave applications based on this {editingId ? 'updated' : 'added'} holiday
+                        <span>Reprocess leave applications based on this {editingId ? 'updated' : 'added'} holiday<br /><span className="text-[12px] text-slate-400">(Leaves that are already applied for this holiday will be reprocessed and the balance will be adjusted accordingly)</span></span>
                       </label>
                     </div>
+                  )}
+                  {form.locationIds.length > 0 && (
+                    <p className="text-[12px] bg-amber-50 text-amber-700 px-3 py-2 rounded-lg">
+                      Note : Shift based holiday will override the location based holiday.
+                    </p>
                   )}
                 </>
               ) : (
@@ -612,11 +623,13 @@ export default function Holidays({ mode = 'holiday' }) {
                 </>
               )}
 
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Description</label>
-                <input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} disabled={!!lastSaved}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50" />
-              </div>
+              {workingDay && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">Description</label>
+                  <input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} disabled={!!lastSaved}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50" />
+                </div>
+              )}
 
               {/* After saving a NEW holiday, switch the action bar to a
                   "Send Email" / "Done" pair so admin can decide whether to
