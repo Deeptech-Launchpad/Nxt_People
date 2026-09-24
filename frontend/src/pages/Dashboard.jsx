@@ -758,25 +758,23 @@ export default function Dashboard() {
    // eslint-disable-next-line react-hooks/exhaustive-deps
    }, []);
 
-    // Department Members = everyone in the same department as the logged-in user
-    // (self excluded), sourced from the role-open org directory so it's complete
-    // for every role — not just the viewer's direct reports.
+    // Department Members: who this shows depends on the viewer's role
+    // (?scope=team on the org directory — see routes/org.js) —
+    //   full-access:            department-wide, as before
+    //   manager / team_incharge: their own reportees, which can sit in a
+    //                            different department than the manager
+    //   team_member:            peers only (same designation + same
+    //                            reporting manager)
+    // so the department-equality re-filter this used to do client-side would
+    // wrongly drop a manager's out-of-department reportee — self-exclusion is
+    // the only filter still needed here.
     const fetchDeptMembers = (silent = false) => {
       if (!profileData?.department) return;
       if (!silent) setLoadingDeptMembers(true);
       const myId = user?._id || profileData?.id;
-      /* Ask for the department rather than the whole company.
-       *
-       * This polls every five seconds per open tab, and was fetching all 68
-       * employees with their attendance and leave joins to find the handful in
-       * one department — then discarding the rest here in the browser. The
-       * filter is still applied below, because the department name is what the
-       * server matched on and self is still excluded. */
-      api.get(`/org/directory?department=${encodeURIComponent(profileData.department)}`)
+      api.get(`/org/directory?scope=team&department=${encodeURIComponent(profileData.department)}`)
         .then(r => {
-          const members = (r.data.data || []).filter(m =>
-            m.department === profileData.department && String(m._id) !== String(myId)
-          );
+          const members = (r.data.data || []).filter(m => String(m._id) !== String(myId));
           setDeptMembers(members);
         })
         .catch(() => { if (!silent) setDeptMembers([]); })
@@ -1210,7 +1208,10 @@ export default function Dashboard() {
             <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
               <h3 className="text-[13px] font-bold text-slate-500 uppercase tracking-wider mb-3">Reporting Person</h3>
               {(manager || profileData?.manager) ? (
-                <div className="flex items-center gap-3">
+                <div
+                  className="flex items-center gap-3 -m-1 p-1 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors"
+                  onClick={() => navigate(`/employees/${(manager || profileData?.manager).id || (manager || profileData?.manager)._id}`)}
+                >
                   <div className="relative flex-shrink-0">
                     <img
                       src={`https://ui-avatars.com/api/?name=${(manager || profileData?.manager).firstName}+${(manager || profileData?.manager).lastName}&background=e0e7ff&color=4f46e5&size=44`}
@@ -1221,7 +1222,7 @@ export default function Dashboard() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[14px] font-bold text-slate-700">Reporting Person</p>
-                    <p className="text-[13px] text-slate-600 truncate">
+                    <p className="text-[13px] text-blue-600 hover:underline truncate">
                       {(manager || profileData?.manager).employeeId} - {(manager || profileData?.manager).firstName}
                     </p>
                     <PresenceLabel person={manager || profileData?.manager} />
@@ -1246,7 +1247,8 @@ export default function Dashboard() {
                  ) : (
                    <>
                      {deptMembers.slice(0, 3).map((member, idx) => (
-                       <div key={member._id} className="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-0">
+                       <div key={member._id} onClick={() => navigate(`/employees/${member._id}`)}
+                         className="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 -mx-1 px-1 rounded transition-colors">
                          <div className="relative flex-shrink-0">
                            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-300 overflow-hidden">
                              <ImgWithFallback src={member.photoUrl} alt="avatar" className="w-full h-full object-cover"
@@ -1254,7 +1256,7 @@ export default function Dashboard() {
                            </div>
                          </div>
                          <div className="min-w-0 flex-1 pt-0.5">
-                           <p className="text-[14px] font-medium text-slate-700 truncate">{member.employeeId} - {member.firstName}</p>
+                           <p className="text-[14px] font-medium text-blue-600 hover:underline truncate">{member.employeeId} - {member.firstName}</p>
                            <PresenceLabel person={member} />
                          </div>
                        </div>
@@ -2300,7 +2302,8 @@ export default function Dashboard() {
                  {deptMembers
                    .filter(m => membersSearch ? `${m.firstName} ${m.lastName} ${m.employeeId}`.toLowerCase().includes(membersSearch.toLowerCase()) : true)
                    .map(member => (
-                   <div key={member._id} className="flex items-start gap-3 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors rounded-lg px-2">
+                   <div key={member._id} onClick={() => { setMembersModalOpen(false); navigate(`/employees/${member._id}`); }}
+                     className="flex items-start gap-3 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors rounded-lg px-2 cursor-pointer">
                      <div className="relative flex-shrink-0">
                        <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-300 overflow-hidden">
                          <ImgWithFallback src={member.photoUrl} alt="avatar" className="w-full h-full object-cover"
@@ -2308,7 +2311,7 @@ export default function Dashboard() {
                        </div>
                      </div>
                      <div className="min-w-0 flex-1 pt-0.5">
-                       <p className="text-[15px] font-medium text-slate-700 truncate">{member.employeeId} - {member.firstName}</p>
+                       <p className="text-[15px] font-medium text-blue-600 hover:underline truncate">{member.employeeId} - {member.firstName}</p>
                        <PresenceLabel person={member} />
                      </div>
                    </div>

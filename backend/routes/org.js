@@ -8,7 +8,7 @@ const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
 const { requireFunction, optionsFor } = require('../utils/functionAccess');
-const { isFullAccess } = require('../utils/roles');
+const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
 
 router.use(protect);
 
@@ -152,8 +152,39 @@ router.get('/directory', async (req, res) => {
      * second. Omitting the parameter still returns everybody, so every other
      * caller is unaffected. */
     const department = String(req.query.department || '').trim();
-    const params = department ? [department] : [];
-    const narrow = department ? 'AND e.department = $1' : '';
+
+    /* Opt-in role-based narrowing for the Dashboard's "Department Members"
+     * card ONLY (?scope=team). Every other caller of this endpoint — the org
+     * chart, the attendance location picker, the leave tracker's employee
+     * picker — never sends this flag, so they keep seeing exactly what they
+     * always have. This must never become the endpoint's default: see the
+     * comment above the route.
+     *
+     *   full-access   unchanged — department-wide (or whole company with no
+     *                 department param), same as before this existed.
+     *   manager/team_incharge   their reportees (reportsScope, direct only),
+     *                 regardless of department — a reportee can sit in a
+     *                 different department than their manager.
+     *   team_member   peers only: same designation AND same reporting
+     *                 manager — Zoho's "who's around me" reading of this
+     *                 card, not "everyone with my job title company-wide".
+     */
+    const teamScoped = req.query.scope === 'team';
+    let narrow = '';
+    let params = [];
+
+    if (teamScoped && isManager(req.user.role)) {
+      const scope = reportsScope(req.user, 'e', 1);
+      narrow = scope.clause;
+      params = scope.params;
+    } else if (teamScoped && !isFullAccess(req.user.role)) {
+      narrow = ` AND e.designation = (SELECT designation FROM employees WHERE id = $1)
+                 AND e.reporting_manager_id = (SELECT reporting_manager_id FROM employees WHERE id = $1)`;
+      params = [req.user._id];
+    } else if (department) {
+      narrow = 'AND e.department = $1';
+      params = [department];
+    }
 
     const r = await pool.query(
       `SELECT e.id as "_id", e.employee_id as "employeeId",
