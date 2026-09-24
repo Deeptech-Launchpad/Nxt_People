@@ -242,10 +242,14 @@ router.delete('/staff/:employeeId/:shiftId', fullOnly, audit('DELETE', 'manual_a
 });
 
 // ── The marking board ─────────────────────────────────────────────────────
-/** Holidays in a range, as a Set of ISO dates. */
+/** Holidays in a range, as a Set of ISO dates. working_day is the opposite
+ * of a holiday — a weekend the company is working — so it must never be
+ * mistaken for one here: that would make a shift that "observes holidays"
+ * skip marking attendance on the very day it's supposed to enforce. */
 async function holidaySet(from, to) {
   const { rows } = await pool.query(
-    `SELECT DISTINCT TO_CHAR(date, 'YYYY-MM-DD') AS d FROM holidays WHERE date BETWEEN $1::date AND $2::date`,
+    `SELECT DISTINCT TO_CHAR(date, 'YYYY-MM-DD') AS d FROM holidays
+      WHERE date BETWEEN $1::date AND $2::date AND type <> 'working_day'`,
     [from, to]);
   return new Set(rows.map(r => r.d));
 }

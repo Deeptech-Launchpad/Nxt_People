@@ -586,7 +586,7 @@ export default function Holidays({ mode = 'holiday' }) {
                       <option value="">Select…</option>
                       <option value="additional_workload">Additional Workload</option>
                       <option value="project_deadline">Project Deadline</option>
-                      <option value="compensate_holiday">Compensate Previous Holiday</option>
+                      <option value="compensate_holiday">Compensate Holiday</option>
                       <option value="other">Other</option>
                     </select>
                   </div>
@@ -594,8 +594,8 @@ export default function Holidays({ mode = 'holiday' }) {
                     <label className="block text-sm font-medium text-slate-600 mb-1">Compensation Type</label>
                     <div className="flex gap-3">
                       {[
-                        { v: 'future', label: 'Future Compensation',  desc: 'Employees get a future day off' },
-                        { v: 'past',   label: 'For a Past Holiday',   desc: 'Makes up for a previously-given holiday' },
+                        { v: 'future', label: 'Compensation',    desc: 'Employees get a future day off' },
+                        { v: 'past',   label: 'For a Holiday',   desc: 'Makes up for a previously-given holiday' },
                       ].map(o => (
                         <label key={o.v} className={`flex-1 px-3 py-2 rounded-lg border text-sm cursor-pointer ${form.compensationType === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                           <input type="radio" name="comptype" className="hidden" checked={form.compensationType === o.v} onChange={() => setForm({...form, compensationType: o.v})}/>
@@ -607,7 +607,7 @@ export default function Holidays({ mode = 'holiday' }) {
                   </div>
                   {form.compensationType === 'past' && (
                     <div>
-                      <label className="block text-sm font-medium text-slate-600 mb-1">Select Compensated Holiday <span className="text-slate-400 font-normal">(which past holiday is this making up for?)</span></label>
+                      <label className="block text-sm font-medium text-slate-600 mb-1">Select Compensated Holiday <span className="text-slate-400 font-normal">(which holiday is this making up for?)</span></label>
                       <select value={form.compensatedHolidayId} onChange={e => setForm({ ...form, compensatedHolidayId: e.target.value })}
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500">
                         <option value="">Select…</option>

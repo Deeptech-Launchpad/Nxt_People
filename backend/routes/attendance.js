@@ -839,10 +839,13 @@ router.get('/my', async (req, res) => {
       for (let d = 1; d <= last; d++) {
         const ymd = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const hol = holidays.get(ymd);
+        // working_day is the opposite of a holiday — a weekend the company is
+        // working — so it must read as an ordinary working day here too.
+        const closes = hol && hol.type !== 'working_day';
         calendar.push({
           date: ymd,
-          kind: hol ? 'holiday' : (weekend.isWeekend(new Date(y, m, d)) ? 'weekend' : 'working'),
-          holidayName: hol ? hol.name : null,
+          kind: closes ? 'holiday' : (weekend.isWeekend(new Date(y, m, d)) ? 'weekend' : 'working'),
+          holidayName: closes ? hol.name : null,
         });
       }
     } catch (err) {
@@ -981,7 +984,7 @@ router.get('/summary', async (req, res) => {
         [empId, start, end]
       ),
       pool.query(
-        `SELECT date FROM holidays WHERE date >= $1::date AND date <= $2::date`,
+        `SELECT date, type FROM holidays WHERE date >= $1::date AND date <= $2::date`,
         [start, end]
       ),
       loadWeekendResolver(),
@@ -1013,7 +1016,11 @@ router.get('/summary', async (req, res) => {
     const isWeekend = d => weekend.isWeekend(d);
 
     // Iterate every day in the range to compute weekend/holiday/payable counts.
-    const holidayDates = new Set(hRes.rows.map(r => toDateStr(new Date(r.date))));
+    // working_day is the opposite of a holiday — a weekend the company is
+    // working — so it must never inflate this count.
+    const holidayDates = new Set(
+      hRes.rows.filter(r => r.type !== 'working_day').map(r => toDateStr(new Date(r.date)))
+    );
     const attByDate    = new Map(attRes.rows.map(r => [toDateStr(new Date(r.date)), r]));
 
     const today = toDateStr(now);
