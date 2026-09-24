@@ -49,7 +49,7 @@ const BLANK_FORM = (workingDay, year) => ({
   name: '', date: workingDay ? '' : `${year}-01-01`, description: '',
   type: workingDay ? 'working_day' : 'company',
   locationIds: [], shiftIds: [],
-  category: '', isCompensatory: false, mailBody: '',
+  category: '', mailBody: '',
   compensationType: '', compensatedHolidayId: '',
   dayType: 'full', reminderDays: 0, notifyFeeds: false, reprocessLeave: false,
 });
@@ -179,7 +179,7 @@ export default function Holidays({ mode = 'holiday' }) {
       name: h.name || '', date: String(h.date).slice(0, 10), description: h.description || '',
       type: h.type || (workingDay ? 'working_day' : 'company'),
       locationIds: h.locationIds || [], shiftIds: h.shiftIds || [],
-      category: h.category || '', isCompensatory: !!h.isCompensatory, mailBody: h.mailBody || '',
+      category: h.category || '', mailBody: h.mailBody || '',
       compensationType: h.compensationType || '', compensatedHolidayId: h.compensatedHolidayId || '',
       dayType: h.dayType === 'half' ? 'half' : 'full', reminderDays: h.reminderDays || 0,
       notifyFeeds: false, reprocessLeave: false,
@@ -511,34 +511,6 @@ export default function Holidays({ mode = 'holiday' }) {
               {!workingDay ? (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">Holiday Due to</label>
-                    <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} disabled={!!lastSaved}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500 disabled:bg-slate-50">
-                      <option value="">Select…</option>
-                      <option value="election">Election</option>
-                      <option value="no_workload">No Work Load</option>
-                      <option value="general_maintenance">General Maintenance</option>
-                      <option value="power_shutdown">Power Shutdown</option>
-                      <option value="festival">Festival</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">Future Compensation?</label>
-                    <div className="flex gap-3">
-                      {[
-                        { v: false, label: 'No',  desc: 'No make-up working day needed' },
-                        { v: true,  label: 'Yes', desc: 'An Exception Working Day will be declared later to compensate. This holiday will then appear in the "Select Compensated Holiday" dropdown.' },
-                      ].map(o => (
-                        <label key={String(o.v)} className={`flex-1 px-3 py-2 rounded-lg border text-sm cursor-pointer ${form.isCompensatory === o.v ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'} ${lastSaved ? 'opacity-60 pointer-events-none' : ''}`}>
-                          <input type="radio" name="iscomp" className="hidden" checked={form.isCompensatory === o.v} onChange={() => setForm({...form, isCompensatory: o.v})}/>
-                          <p className="font-semibold">{o.label}</p>
-                          <p className="text-[12px] mt-0.5 opacity-70">{o.desc}</p>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1">Mail Details <span className="text-slate-400 font-normal">(used by "Send Email" below)</span></label>
                     <textarea rows={3} value={form.mailBody} onChange={e => setForm({ ...form, mailBody: e.target.value })} disabled={!!lastSaved}
                       placeholder="e.g. Due to the Election the Company has declared a holiday for all employees on 23-Apr-2026. Please plan accordingly."
@@ -599,11 +571,10 @@ export default function Holidays({ mode = 'holiday' }) {
                       <select value={form.compensatedHolidayId} onChange={e => setForm({ ...form, compensatedHolidayId: e.target.value })}
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-base outline-none focus:border-blue-500">
                         <option value="">Select…</option>
-                        {allHolidays.filter(h => h.type !== 'working_day' && h.isCompensatory).map(h => (
+                        {allHolidays.filter(h => h.type !== 'working_day').map(h => (
                           <option key={h._id} value={h._id}>{fmtDate(h.date, { day: '2-digit', month: '2-digit', year: 'numeric' })} — {h.name}</option>
                         ))}
                       </select>
-                      <p className="text-[12px] text-slate-400 mt-1">Only shows holidays marked Compensatory.</p>
                     </div>
                   )}
                   <p className="text-[13px] text-amber-600">

@@ -82,7 +82,9 @@ export default function LeaveCalendar() {
         const hd = h.date?.split('T')[0];
         if (!hd) return;
         if (!newEvents[hd]) newEvents[hd] = [];
-        newEvents[hd].push({ type: 'holiday', text: `${h.name} (Holiday)` });
+        // working_day is the opposite of a holiday — a weekend the company is
+        // working — so it must never carry the "(Holiday)" suffix.
+        newEvents[hd].push({ type: 'holiday', text: h.type === 'working_day' ? h.name : `${h.name} (Holiday)` });
       });
 
       // 2. Process Leaves
