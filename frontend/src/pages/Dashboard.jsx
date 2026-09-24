@@ -1222,7 +1222,7 @@ export default function Dashboard() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[14px] font-bold text-slate-700">Reporting Person</p>
-                    <p className="text-[13px] text-blue-600 hover:underline truncate">
+                    <p className="text-[13px] font-bold text-slate-600 truncate">
                       {(manager || profileData?.manager).employeeId} - {(manager || profileData?.manager).firstName}
                     </p>
                     <PresenceLabel person={manager || profileData?.manager} />
@@ -1256,7 +1256,7 @@ export default function Dashboard() {
                            </div>
                          </div>
                          <div className="min-w-0 flex-1 pt-0.5">
-                           <p className="text-[14px] font-medium text-blue-600 hover:underline truncate">{member.employeeId} - {member.firstName}</p>
+                           <p className="text-[14px] font-bold text-slate-700 truncate">{member.employeeId} - {member.firstName}</p>
                            <PresenceLabel person={member} />
                          </div>
                        </div>
@@ -2311,7 +2311,7 @@ export default function Dashboard() {
                        </div>
                      </div>
                      <div className="min-w-0 flex-1 pt-0.5">
-                       <p className="text-[15px] font-medium text-blue-600 hover:underline truncate">{member.employeeId} - {member.firstName}</p>
+                       <p className="text-[15px] font-bold text-slate-700 truncate">{member.employeeId} - {member.firstName}</p>
                        <PresenceLabel person={member} />
                      </div>
                    </div>
