@@ -20,12 +20,19 @@ import { useLocaleFormat, formatTime } from '../../../utils/datetime';
  *  that state rather than setting it to absent.
  * ────────────────────────────────────────────────────────────────────────── */
 
-const today = () => new Date().toISOString().slice(0, 10);
+// Local calendar parts, not toISOString() — that converts to UTC first, and
+// for any timezone ahead of UTC (IST included) that silently lands on the
+// day before: shiftDate("2026-09-22", 1) would come back "2026-09-22", and
+// Next day looked like it did nothing. Same bug already fixed once in
+// utils/workingDays.js; this screen just never got the fix.
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const today = () => ymd(new Date());
 
 const shiftDate = (iso, delta) => {
   const d = new Date(`${iso}T00:00:00`);
   d.setDate(d.getDate() + delta);
-  return d.toISOString().slice(0, 10);
+  return ymd(d);
 };
 
 const pretty = (iso) =>
@@ -107,13 +114,15 @@ export default function MarkDay() {
 
         <button
           onClick={() => setDate(shiftDate(date, 1))}
-          disabled={date >= today()}
           className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent"
           title="Next day"
         ><ChevronRight size={18} /></button>
 
+        {/* Future days are visible — a manager may want to check who's
+            scheduled ahead — but never markable; the "future" flag below
+            already hides Present/Absent for a day that hasn't happened. */}
         <input
-          type="date" value={date} max={today()}
+          type="date" value={date}
           onChange={e => e.target.value && setDate(e.target.value)}
           className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400"
         />
