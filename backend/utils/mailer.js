@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { formatHoursDuration } = require('./formatHours');
 
 // Minimal HTML escape — used for every template variable that gets
 // interpolated into the email body. Without this, a candidate name
@@ -390,7 +391,7 @@ const sendLeaveApprovalEmail = async ({ to, cc, bcc, replyTo, employeeName, leav
         </div>
         <div class="detail-row">
           <span class="detail-label">Duration</span>
-          <span class="detail-value">${safeDateRange}${hours ? ` · ${escapeHtml(startTime)} – ${escapeHtml(endTime)} (${hours} hr${Number(hours) !== 1 ? 's' : ''})` : ` (${totalDays} day${totalDays !== 1 ? 's' : ''})`}</span>
+          <span class="detail-value">${safeDateRange}${hours ? ` · ${escapeHtml(startTime)} – ${escapeHtml(endTime)} (${formatHoursDuration(hours)})` : ` (${totalDays} day${totalDays !== 1 ? 's' : ''})`}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">Reason</span>
@@ -642,7 +643,7 @@ const sendLeaveStatusEmail = async ({ to, employeeName, leaveType, startDate, to
   const safeApprover     = escapeHtml(approverName || 'your approver');
   const safeReason       = escapeHtml(reason       || '');
   const trackLink        = safeUrl((process.env.FRONTEND_URL || 'https://ur.altiusnxt.tech') + '/leave-tracker/summary');
-  const durationLabel    = hours ? `${hours} hour${Number(hours) !== 1 ? 's' : ''}` : `${Number(totalDays) || 0} day${Number(totalDays) !== 1 ? 's' : ''}`;
+  const durationLabel    = hours ? formatHoursDuration(hours) : `${Number(totalDays) || 0} day${Number(totalDays) !== 1 ? 's' : ''}`;
 
   const cfg = {
     partial: {

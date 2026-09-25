@@ -8,7 +8,7 @@ import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
 import { useAuth } from '../../context/AuthContext';
 import { LEAVE_LABEL, to12 } from '../moreservices/shift/shiftGrid';
-import { useFormat } from '../../utils/datetime';
+import { useFormat, formatHoursDuration } from '../../utils/datetime';
 import {
   Avatar, DirectScopeNote, Spinner, Empty, fmtDay,
   useTeamScope, ScopeSwitch, withScope, useFilingPeople, addButtonClass,
@@ -41,9 +41,8 @@ const FILTERS = [
  * it. The same rule Approvals.jsx applies. */
 const amountLabel = (l, timeFormat) => {
   if (l.leaveType === 'permission') {
-    const hours = Number(l.hours) || 0;
     const window = l.startTime && l.endTime ? ` (${to12(l.startTime, timeFormat)}–${to12(l.endTime, timeFormat)})` : '';
-    return `${hours}h${window}`;
+    return `${formatHoursDuration(l.hours)}${window}`;
   }
   const days = Number(l.totalDays) || 0;
   const half = l.isHalfDay ? ` · ${l.halfDayType === 'second_half' ? '2nd' : '1st'} half` : '';

@@ -11,6 +11,7 @@ import BackButton from '../../components/BackButton';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../../components/LeaveDetailModal';
 import TimeInput from '../../components/TimeInput';
+import { formatHoursDuration } from '../../utils/datetime';
 
 /* ── helpers ────────────────────────────────────────────────────────── */
 function fmtDate(s) {
@@ -167,7 +168,7 @@ function ApplyLeaveModal({ cards, holidays, onClose, onSubmitted }) {
             >
               {cards.map(c => (
                 <option key={c.code} value={c.code}>
-                  {c.name}{c.code === 'permission' ? ` (${c.available ?? 0}h left this month)` : (c.available !== null ? ` (${c.available} available)` : '')}
+                  {c.name}{c.code === 'permission' ? ` (${formatHoursDuration(c.available ?? 0)} left this month)` : (c.available !== null ? ` (${c.available} available)` : '')}
                 </option>
               ))}
             </select>
@@ -179,7 +180,7 @@ function ApplyLeaveModal({ cards, holidays, onClose, onSubmitted }) {
               <AlertTriangle size={14} className="text-red-500 flex-shrink-0" />
               <p className="text-[14px] text-red-600 font-medium">
                 {isPermission
-                  ? `Over the monthly limit. ${selectedCard?.available ?? 0}h left this month, requested ${permHours.toFixed(2)}h.`
+                  ? `Over the monthly limit. ${formatHoursDuration(selectedCard?.available ?? 0)} left this month, requested ${formatHoursDuration(permHours)}.`
                   : `Insufficient balance. Available: ${selectedCard?.available} days, Requested: ${workingDays} days.`}
               </p>
             </div>
@@ -212,7 +213,7 @@ function ApplyLeaveModal({ cards, holidays, onClose, onSubmitted }) {
                 <div className={`flex items-center gap-2 rounded px-3 py-2 border ${permHours > 4 ? 'bg-red-50 border-red-200' : 'bg-purple-50 border-purple-200'}`}>
                   <Clock size={14} className={permHours > 4 ? 'text-red-500' : 'text-purple-500'} />
                   <p className={`text-[14px] font-semibold ${permHours > 4 ? 'text-red-700' : 'text-purple-700'}`}>
-                    {permHours.toFixed(2)} hour{permHours !== 1 ? 's' : ''}{permHours > 4 ? ' — exceeds the 4h limit' : ` · ${Math.max(0, (selectedCard?.available ?? 4) - permHours).toFixed(2)}h would remain this month`}
+                    {formatHoursDuration(permHours)}{permHours > 4 ? ' — exceeds the 4h limit' : ` · ${formatHoursDuration(Math.max(0, (selectedCard?.available ?? 4) - permHours))} would remain this month`}
                   </p>
                 </div>
               )}
@@ -505,9 +506,10 @@ export default function LeaveSummary() {
             {cards.filter(c => ['casual', 'comp_off', 'unpaid', 'permission'].includes(c.code)).map(card => {
               // Permission is hourly (4h/month); other leave types stay in days.
               const isPerm = card.code === 'permission';
-              const unit = isPerm ? 'h' : '';
               // Round to 2 dp so JS float math doesn't show 2.9699999999999998.
-              const fmt = (v) => (v === null || v === undefined) ? '—' : `${Math.round((v + Number.EPSILON) * 100) / 100}${unit}`;
+              const fmt = (v) => (v === null || v === undefined) ? '—'
+                : isPerm ? formatHoursDuration(v)
+                : `${Math.round((v + Number.EPSILON) * 100) / 100}`;
               return (
                 <div key={card.code} className={`bg-white rounded-lg border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow ${CARD_ACCENT[card.code] || ''}`}>
                   {/* Icon */}
@@ -593,7 +595,7 @@ export default function LeaveSummary() {
                       <span className="text-[13px] text-gray-400">
                         {u.leave.totalDays > 0
                           ? `${u.leave.totalDays} day${Number(u.leave.totalDays) !== 1 ? 's' : ''}`
-                          : `${u.leave.hours || 0}h`}
+                          : formatHoursDuration(u.leave.hours || 0)}
                       </span>
                     )}
                   </div>

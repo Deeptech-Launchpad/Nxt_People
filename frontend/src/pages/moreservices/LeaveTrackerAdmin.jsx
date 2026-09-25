@@ -10,7 +10,7 @@ import LeaveDetailModal from '../../components/LeaveDetailModal';
 import ApplyLeaveModal from '../../components/ApplyLeaveModal';
 import { useAuth } from '../../context/AuthContext';
 import SortableTh from '../../components/table/SortableTh';
-import { useFormat } from '../../utils/datetime';
+import { useFormat, formatHoursDuration } from '../../utils/datetime';
 
 /* ── Admin Leave Tracker (Super Admin / HR) ───────────────────────────────
  *  Zoho-People-style listing of ALL org leave requests. Read-only over the
@@ -273,7 +273,7 @@ export default function LeaveTrackerAdmin() {
                 </td>
                 <td className="px-6 py-4 text-[14px] font-semibold text-slate-700">
                   {l.leaveType === 'permission'
-                    ? `${l.hours ?? 0}h`
+                    ? formatHoursDuration(l.hours ?? 0)
                     : `${l.totalDays} Day${l.totalDays !== 1 ? 's' : ''}`}
                 </td>
                 <td className="px-6 py-4 text-[13px] text-slate-600">{fmt(l.createdAt)}</td>

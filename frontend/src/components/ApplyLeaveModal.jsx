@@ -4,6 +4,7 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import TimeInput from './TimeInput';
 import { MapPin, Clock, LogIn, LogOut, ChevronDown, Calendar, Star, DollarSign, Activity, Rss, FileText, X } from 'lucide-react';
+import { formatHoursDuration } from '../utils/datetime';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (s) => s?.toFixed ? s.toFixed(2) : s;
@@ -92,7 +93,7 @@ function ApplyLeaveModal({ onClose, onSuccess, leaveTypes }) {
         </div>
         <form onSubmit={submit} className="space-y-3">
           <select value={form.leaveType} onChange={e => set('leaveType', e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400">
-            {(leaveTypes || []).map(lt => <option key={lt.code} value={lt.code}>{lt.name}{lt.code === 'permission' ? ` (${lt.available ?? 0}h left this month)` : (lt.available != null ? ` (${lt.available} avail.)` : '')}</option>)}
+            {(leaveTypes || []).map(lt => <option key={lt.code} value={lt.code}>{lt.name}{lt.code === 'permission' ? ` (${formatHoursDuration(lt.available ?? 0)} left this month)` : (lt.available != null ? ` (${lt.available} avail.)` : '')}</option>)}
           </select>
           {isPermission ? (
             <>
@@ -101,7 +102,7 @@ function ApplyLeaveModal({ onClose, onSuccess, leaveTypes }) {
                 <div><label className="text-[13px] text-slate-500">Start time</label><TimeInput required value={form.startTime} onChange={v => set('startTime', v)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
                 <div><label className="text-[13px] text-slate-500">End time</label><TimeInput required assumePm value={form.endTime} onChange={v => set('endTime', v)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:border-blue-400"/></div>
               </div>
-              {permHours > 0 && <p className={`text-[14px] font-medium ${permHours > 4 ? 'text-red-600' : 'text-purple-600'}`}>{permHours.toFixed(2)}h{permHours > 4 ? ' — exceeds the 4h limit' : ''}</p>}
+              {permHours > 0 && <p className={`text-[14px] font-medium ${permHours > 4 ? 'text-red-600' : 'text-purple-600'}`}>{formatHoursDuration(permHours)}{permHours > 4 ? ' — exceeds the 4h limit' : ''}</p>}
             </>
           ) : (
             <>

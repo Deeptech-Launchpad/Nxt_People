@@ -2,6 +2,7 @@
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import api from '../utils/api';
 import { useWeekendRules } from '../context/WeekendRulesContext';
+import { formatHoursDuration } from '../utils/datetime';
 
 function getDaysInMonth(year, month) {
   return new Date(year, month + 1, 0).getDate();
@@ -101,7 +102,7 @@ export default function LeaveCalendar() {
           if (!newEvents[ds]) newEvents[ds] = [];
           const range = l.startTime && l.endTime
             ? `${fmtClock(l.startTime)} – ${fmtClock(l.endTime)}`
-            : (l.hours ? `${l.hours}h` : '');
+            : (l.hours ? formatHoursDuration(l.hours) : '');
           newEvents[ds].push({ type: 'permission', text: `Permission${range ? ` (${range})` : ''}` });
           return;
         }

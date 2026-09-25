@@ -5,6 +5,7 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
+import { formatHoursDuration } from '../../utils/datetime';
 
 /* ── Permission Usage (Super Admin / HR) ──────────────────────────────────
  *  Monthly view of each employee's PERMISSION hours — approved + pending +
@@ -82,8 +83,8 @@ export default function PermissionUsage() {
       {/* Summary strip */}
       <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/50 flex flex-wrap gap-6">
         <div><span className="text-[13px] text-slate-400 uppercase tracking-wide font-semibold">Employees with usage</span><p className="text-[17px] font-bold text-slate-800">{rows.length}</p></div>
-        <div><span className="text-[13px] text-slate-400 uppercase tracking-wide font-semibold">Approved hours</span><p className="text-[17px] font-bold text-emerald-600">{totalApproved.toFixed(2)}h</p></div>
-        <div><span className="text-[13px] text-slate-400 uppercase tracking-wide font-semibold">Pending hours</span><p className="text-[17px] font-bold text-amber-600">{totalPending.toFixed(2)}h</p></div>
+        <div><span className="text-[13px] text-slate-400 uppercase tracking-wide font-semibold">Approved hours</span><p className="text-[17px] font-bold text-emerald-600">{formatHoursDuration(totalApproved)}</p></div>
+        <div><span className="text-[13px] text-slate-400 uppercase tracking-wide font-semibold">Pending hours</span><p className="text-[17px] font-bold text-amber-600">{formatHoursDuration(totalPending)}</p></div>
       </div>
 
       {/* Table */}
@@ -122,9 +123,9 @@ export default function PermissionUsage() {
                   </td>
                   <td className="px-5 py-3.5 text-[14px] text-slate-600">{r.department || '—'}</td>
                   <td className="px-5 py-3.5 text-center text-[15px] text-slate-600">{r.requests}</td>
-                  <td className="px-5 py-3.5 text-center text-[15px] font-semibold text-emerald-600">{approved.toFixed(2)}h</td>
-                  <td className="px-5 py-3.5 text-center text-[15px] font-semibold text-amber-600">{pending.toFixed(2)}h</td>
-                  <td className="px-5 py-3.5 text-center text-[15px] font-semibold text-slate-700">{(parseFloat(r.remainingHours) || 0).toFixed(2)}h</td>
+                  <td className="px-5 py-3.5 text-center text-[15px] font-semibold text-emerald-600">{formatHoursDuration(approved)}</td>
+                  <td className="px-5 py-3.5 text-center text-[15px] font-semibold text-amber-600">{formatHoursDuration(pending)}</td>
+                  <td className="px-5 py-3.5 text-center text-[15px] font-semibold text-slate-700">{formatHoursDuration(parseFloat(r.remainingHours) || 0)}</td>
                   <td className="px-5 py-3.5">
                     <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
                       <div className={`h-full rounded-full ${used >= LIMIT ? 'bg-rose-500' : 'bg-purple-500'}`} style={{ width: `${pct}%` }} />

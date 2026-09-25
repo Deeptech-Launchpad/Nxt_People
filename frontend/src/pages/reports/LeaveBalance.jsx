@@ -10,6 +10,7 @@ import UnitToggle from './UnitToggle';
 import LeaveExportModal from './LeaveExportModal';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
+import { formatHoursDuration } from '../../utils/datetime';
 
 const now = new Date();
 
@@ -118,9 +119,9 @@ function SummaryModal({ employeeId, leaveType, label, year, onClose }) {
                     <td className="px-4 py-2.5 text-slate-700">{row.monthLabel}</td>
                     {/* Casual is granted once, in January — later months show
                         a dash rather than a fabricated 0, as in the reference. */}
-                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{dash(row.granted)}</td>
-                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{dash(unit === 'hours' ? row.bookedHours : row.bookedDays)}</td>
-                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance ?? '-'}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.granted ? (unit === 'hours' ? formatHoursDuration(row.granted) : row.granted) : dash(row.granted)}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{(unit === 'hours' ? row.bookedHours : row.bookedDays) ? (unit === 'hours' ? formatHoursDuration(row.bookedHours) : row.bookedDays) : dash(unit === 'hours' ? row.bookedHours : row.bookedDays)}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance != null ? (unit === 'hours' ? formatHoursDuration(row.balance) : row.balance) : '-'}</td>
                     {/* No lapse policy exists in this app, so this column is
                         structurally "-" rather than a computed zero. */}
                     <td className="px-4 py-2.5 text-slate-400">-</td>
@@ -148,16 +149,18 @@ const HISTORY_COLUMNS = [
 function HistoryModal({ employeeId, employeeCode, leaveType, label, year, onClose }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const [unit, setUnit] = useState('days');
   const [exportOpen, setExportOpen] = useState(false);
   const [from, setFrom] = useState(yearBounds(year).from);
   const [to, setTo] = useState(yearBounds(year).to);
 
   useEffect(() => {
     api.get(`/reports/leave/balance-user-history?employeeId=${employeeId}&leaveType=${leaveType}&year=${year}`)
-      .then(r => setRows(r.data.data || []))
+      .then(r => { setRows(r.data.data || []); setUnit(r.data.unit || 'days'); })
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
       .finally(() => setLoading(false));
   }, [employeeId, leaveType, year]);
+  const fmtAmt = v => (unit === 'hours' ? formatHoursDuration(v || 0) : v);
 
   const visible = rows.filter(r => r.date >= from && r.date <= to);
   const sort = useSortable(visible, {
@@ -193,9 +196,9 @@ function HistoryModal({ employeeId, employeeCode, leaveType, label, year, onClos
                   <tr key={`${row.date}-${i}`}>
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{fmtDate(row.date, { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
                     <td className="px-4 py-2.5 text-slate-700">{row.type}</td>
-                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{dash(row.added)}</td>
-                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{dash(row.booked)}</td>
-                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance ?? '-'}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.added ? fmtAmt(row.added) : dash(row.added)}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.booked ? fmtAmt(row.booked) : dash(row.booked)}</td>
+                    <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance ? fmtAmt(row.balance) : (row.balance ?? '-')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -484,7 +487,7 @@ export default function LeaveBalance() {
                     dataKey, so comparing against 'bookedVal' never matched and
                     both rows printed "Balance". The names are already correct
                     on the bars, so the value passes straight through. */}
-                <Tooltip cursor={{ fill: '#f8fafc' }} formatter={(v, name) => [v, name]} />
+                <Tooltip cursor={{ fill: '#f8fafc' }} formatter={(v, name) => [unit === 'hour' ? formatHoursDuration(v) : v, name]} />
                 {/* #d9d9d9 sat at 1.37:1 against the surface — below the 3:1
                     floor, which is why the remaining-balance segment was
                     unreadable. This pair clears every check: both above 3:1,
@@ -525,8 +528,8 @@ export default function LeaveBalance() {
                     Current Balance is 0 and the only number that says anything
                     is what was taken — which used to be reachable only by
                     opening the drilldown. */}
-                <td className="px-4 py-2.5 tabular-nums text-slate-700">{dash(row.booked)}</td>
-                <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance ?? '-'}</td>
+                <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.booked ? (unit === 'hour' ? formatHoursDuration(row.booked) : row.booked) : dash(row.booked)}</td>
+                <td className="px-4 py-2.5 tabular-nums text-slate-700">{row.balance != null ? (unit === 'hour' ? formatHoursDuration(row.balance) : row.balance) : '-'}</td>
               </tr>
             ))}
           </tbody>

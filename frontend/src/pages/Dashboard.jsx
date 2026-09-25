@@ -25,7 +25,7 @@ import RegularizeModal from '../components/requests/RegularizeModal';
 import OnDutyModal from '../components/requests/OnDutyModal';
 import ApplyLeaveModal from '../components/requests/ApplyLeaveModal';
 import LeaveRequestDialog from './moreservices/leavetracker/LeaveRequestDialog';
-import { formatTimeRange, useFormat, useLocaleFormat } from '../utils/datetime';
+import { formatTimeRange, useFormat, useLocaleFormat, formatHoursDuration } from '../utils/datetime';
 import { richTextToPlain } from '../utils/richText';
 import AnnouncementDetailModal from '../components/AnnouncementDetailModal';
 import toast from 'react-hot-toast';
@@ -1729,7 +1729,7 @@ export default function Dashboard() {
                               {approval._kind === 'compoff' ? `Comp-Off · ${approval.daysEarned} day(s)` :
                                approval._kind === 'regularization' ? 'Attendance Regularization' :
                                approval._kind === 'wfh' ? 'Work From Home' :
-                               approval.leaveType === 'permission' ? (() => { const m = Math.round(parseFloat(approval.hours || 0) * 60); return `Permission · ${m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`}`; })() :
+                               approval.leaveType === 'permission' ? `Permission · ${formatHoursDuration(approval.hours)}` :
                                `${approval.leaveType} Leave · ${approval.totalDays} Day(s)`}
                             </p>
                             <p className="text-[13px] text-slate-400 mt-0.5">

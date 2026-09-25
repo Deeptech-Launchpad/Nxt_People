@@ -223,7 +223,7 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                         <DetailRow icon={Clock} label="Time">
                           {fmt.time(leave.startTime) || '—'} <span className="text-slate-600">–</span> {fmt.time(leave.endTime) || '—'}
                         </DetailRow>
-                        <DetailRow icon={Clock} label="Duration">{leave.hours ? `${leave.hours} hour${Number(leave.hours) !== 1 ? 's' : ''}` : '—'}</DetailRow>
+                        <DetailRow icon={Clock} label="Duration">{leave.hours ? fmt.hours(leave.hours) : '—'}</DetailRow>
                       </>
                     ) : (
                       <DetailRow icon={Clock} label="Unit">Days</DetailRow>
@@ -241,7 +241,7 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                     <DetailRow icon={Clock} label="Time">
                       {fmt.time(leave.startTime) || '—'} <span className="text-slate-600">–</span> {fmt.time(leave.endTime) || '—'}
                     </DetailRow>
-                    <DetailRow icon={Clock} label="Duration">{leave.hours ? `${leave.hours} hour${Number(leave.hours) !== 1 ? 's' : ''}` : '—'}</DetailRow>
+                    <DetailRow icon={Clock} label="Duration">{leave.hours ? fmt.hours(leave.hours) : '—'}</DetailRow>
                   </>
                 ) : (
                   <>

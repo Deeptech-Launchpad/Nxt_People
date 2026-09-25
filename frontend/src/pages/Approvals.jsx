@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import usePolling from '../hooks/usePolling';
 import { LEAVE_APPROVALS_BASE, APPROVALS_TABS } from './moreservices/operationsWorkspaces';
 import { setWorkspaceBadges, clearWorkspaceBadges } from '../utils/workspaceBadges';
-import { useFormat, formatTime } from '../utils/datetime';
+import { useFormat, formatTime, formatHoursDuration } from '../utils/datetime';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -41,9 +41,8 @@ const fmtDay = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', ye
  */
 const amountLabel = (l, timeFormat) => {
   if (l.leaveType === 'permission') {
-    const hours = Number(l.hours) || 0;
     const window = l.startTime && l.endTime ? ` (${formatTime(l.startTime, timeFormat)}–${formatTime(l.endTime, timeFormat)})` : '';
-    return `${hours}h${window}`;
+    return `${formatHoursDuration(l.hours)}${window}`;
   }
   const days = Number(l.totalDays) || 0;
   return `${days} day${days === 1 ? '' : 's'}`;
@@ -537,7 +536,7 @@ export default function Approvals({ embedded = false }) {
                            <p className="text-[12.5px] text-amber-700 mt-0.5">{pendingBehalfNote(p.approvalLevels)}</p>
                          )}
                          <p className="text-base text-slate-500 mt-1 capitalize">
-                           Permission · {p.hours}h {p.startTime && p.endTime && `(${fmt.time(p.startTime)}–${fmt.time(p.endTime)})`}
+                           Permission · {formatHoursDuration(p.hours)} {p.startTime && p.endTime && `(${fmt.time(p.startTime)}–${fmt.time(p.endTime)})`}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
                           {fmtDay(p.startDate, { month: 'short', day: 'numeric', year: 'numeric' })}

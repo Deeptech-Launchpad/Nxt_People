@@ -9,6 +9,7 @@ import LeaveDetailModal from '../components/LeaveDetailModal';
 import CancelPartDialog from '../components/CancelPartDialog';
 import CompOffDetailModal from '../components/CompOffDetailModal';
 import TimeInput from '../components/TimeInput';
+import { formatHoursDuration } from '../utils/datetime';
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -203,7 +204,7 @@ export default function Leave() {
                               <span className="text-slate-400 ml-1.5">
                                 {l.startTime && l.endTime
                                   ? `(${fmtClock(l.startTime)} to ${fmtClock(l.endTime)})`
-                                  : l.hours ? `(${l.hours}h)` : ''}
+                                  : l.hours ? `(${formatHoursDuration(l.hours)})` : ''}
                               </span>
                             ) : (
                               <span className="text-slate-400 ml-1.5">({l.totalDays} day{l.totalDays !== 1 ? 's' : ''})</span>

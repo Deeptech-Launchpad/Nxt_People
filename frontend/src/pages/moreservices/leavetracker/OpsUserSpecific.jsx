@@ -11,7 +11,7 @@ import { isManager } from '../../../utils/roles';
 import useEmployeeList, { labelOf } from './useEmployeeList';
 import LeaveRequestDialog from './LeaveRequestDialog';
 import { LEAVE_LABEL, to12 } from '../shift/shiftGrid';
-import { useFormat } from '../../../utils/datetime';
+import { useFormat, formatHoursDuration } from '../../../utils/datetime';
 
 /* ── User-specific Operations ───────────────────────────────────────────────
  *  Zoho's first Leave Tracker tab, and the one that explains the whole
@@ -68,9 +68,8 @@ const todayYmd = () => {
  * a permission row would put the one number the row cannot be next to it. */
 const takenLabel = (l, timeFormat) => {
   if (l.leaveType === 'permission') {
-    const h = Number(l.hours) || 0;
     const window = l.startTime && l.endTime ? ` (${to12(l.startTime, timeFormat)}–${to12(l.endTime, timeFormat)})` : '';
-    return `${h} Hour${h === 1 ? '' : 's'}${window}`;
+    return `${formatHoursDuration(l.hours)}${window}`;
   }
   const d = Number(l.totalDays) || 0;
   const half = l.isHalfDay ? ` · ${l.halfDayType === 'second_half' ? '2nd' : '1st'} half` : '';

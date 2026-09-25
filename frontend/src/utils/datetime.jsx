@@ -105,6 +105,20 @@ export function formatTimeRange(from, to, timeFormat = '12') {
   return `${a} - ${b}`;
 }
 
+/* A permission request's duration is stored as decimal hours (1.1666... ->
+ * 1.17, for a 70-minute gap) because that is what the monthly-cap SUM/compare
+ * needs — but showing "1.17h" to a person reads as a typo of "1 hour 17",
+ * when it is actually 1 hour 10 minutes. This only reformats the display; the
+ * stored number, and every calculation against it, is untouched. */
+export function formatHoursDuration(decimalHours) {
+  const totalMinutes = Math.round((Number(decimalHours) || 0) * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 /* ── Hook versions, which read the org setting ───────────────────────────── */
 export function useFormat() {
   const { timeFormat, dateFormat } = useLocaleFormat();
@@ -113,6 +127,7 @@ export function useFormat() {
     instant: v => formatInstantTime(v, timeFormat),
     date: v => formatDate(v, dateFormat),
     range: (a, b) => formatTimeRange(a, b, timeFormat),
+    hours: formatHoursDuration,
     timeFormat, dateFormat,
   }), [timeFormat, dateFormat]);
 }

@@ -8,6 +8,7 @@ import EmployeePicker from './EmployeePicker';
 import LeaveRequestDialog from './LeaveRequestDialog';
 import RowMenu from './RowMenu';
 import { SortIcon } from '../../../components/table/SortableTh';
+import { formatHoursDuration } from '../../../utils/datetime';
 
 /* ── Operations → Leave Tracker → Leave Requests ────────────────────────────
  *  Zoho's table of EVERY leave request, whatever its status, with Add Request
@@ -43,8 +44,7 @@ const fmt = (d) => {
 
 const takenLabel = (r) => {
   if (r.leaveType === 'permission' || r.hours) {
-    const h = parseFloat(r.hours) || 0;
-    return `${h} Hour${h === 1 ? '' : 's'}`;
+    return formatHoursDuration(r.hours);
   }
   const d = parseFloat(r.totalDays) || 0;
   return `${d} Day${d === 1 ? '' : 's'}`;
