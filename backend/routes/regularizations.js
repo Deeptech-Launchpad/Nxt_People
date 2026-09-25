@@ -101,7 +101,7 @@ router.get('/my', async (req, res) => {
        * day somebody never checked in at all. */
       `SELECT r.id as "_id", to_char(r.date, 'YYYY-MM-DD') as date,
        r.check_in as "checkIn", r.check_out as "checkOut",
-       r.reason, r.status, r.rejection_reason as "rejectionReason", r.created_at as "createdAt",
+       r.reason, r.description, r.status, r.rejection_reason as "rejectionReason", r.created_at as "createdAt",
        a.working_hours as "oldHours", a.status as "oldStatus",
        json_build_object('firstName', m.first_name, 'lastName', m.last_name) as "approvedBy",
        ${REG_LEVELS_JSON} as "approvalLevels"
@@ -125,7 +125,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
     const below = teamScope(req) === 'all' ? ` OR ${subtreeClause('e', 1)}` : '';
     const result = await pool.query(
       `SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
-       r.reason, r.status, r.created_at as "createdAt",
+       r.reason, r.description, r.status, r.created_at as "createdAt",
        json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'employeeId', e.employee_id, 'department', e.department) as employee,
        -- What the day says NOW, so a queue can show the correction as the
        -- before-and-after it actually is rather than only the requested
@@ -156,13 +156,14 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
 router.post('/', requireRegularizationEnabled, uploadAttachment, [
   body('date').isISO8601().withMessage('Date must be YYYY-MM-DD'),
   body('reason').optional({ nullable: true }).isString().trim().isLength({ max: 500 }),
+  body('description').optional({ nullable: true }).isString().trim().isLength({ max: 500 }),
   body('checkIn').optional({ nullable: true }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('checkIn must be HH:MM'),
   body('checkOut').optional({ nullable: true }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('checkOut must be HH:MM'),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
   try {
-    const { date, checkIn, checkOut, reason } = req.body;
+    const { date, checkIn, checkOut, reason, description } = req.body;
 
     /* WHOSE request this is.
      *
@@ -244,6 +245,7 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
     }
 
     const reasonText = String(reason || '').trim();
+    const descriptionText = String(description || '').trim();
     if (cfg.reasonMandatory && !reasonText) {
       return res.status(400).json({ success: false, message: 'A reason is required for a regularization request' });
     }
@@ -289,12 +291,12 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
 
       const result = await client.query(
         `INSERT INTO attendance_regularizations
-           (employee_id, date, check_in, check_out, reason, attachment_path, attachment_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id as "_id", date, check_in as "checkIn", check_out as "checkOut", reason, status,
+           (employee_id, date, check_in, check_out, reason, description, attachment_path, attachment_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id as "_id", date, check_in as "checkIn", check_out as "checkOut", reason, description, status,
                    attachment_path as "attachmentPath", attachment_name as "attachmentName",
                    created_at as "createdAt"`,
-        [subjectId, date, checkIn || null, checkOut || null, reasonText || null,
+        [subjectId, date, checkIn || null, checkOut || null, reasonText || null, descriptionText || null,
          attachmentPath, attachmentName]
       );
       reg = result.rows[0];
@@ -372,7 +374,7 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
 
       const baseUrl = process.env.APP_URL || 'https://nxtpeople.altiusnxt.tech';
       const approvalLink = `${baseUrl}/approvals?tab=regularizations`;
-      const regReason = `${reason}${checkIn ? ` | Check-in: ${checkIn}` : ''}${checkOut ? ` | Check-out: ${checkOut}` : ''}`;
+      const regReason = `${[reasonText, descriptionText].filter(Boolean).join(' — ')}${checkIn ? ` | Check-in: ${checkIn}` : ''}${checkOut ? ` | Check-out: ${checkOut}` : ''}`;
       await Promise.all(allRecipients.filter(a => a.email).map(a => sendLeaveApprovalEmail({
         to: a.email,
         employeeName: empName,

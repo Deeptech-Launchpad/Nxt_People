@@ -117,6 +117,7 @@ export default function Regularization() {
                       {r.checkOut ? ` · Check-out: ${fmt.time(r.checkOut)}` : ''}
                     </p>
                     <p className="text-sm text-slate-400 mt-0.5 max-w-sm truncate">Reason: {r.reason}</p>
+                    {r.description && <p className="text-sm text-slate-400 mt-0.5 max-w-sm truncate">Description: {r.description}</p>}
                     {r.rejectionReason && <p className="text-sm text-red-500 mt-0.5">Rejected: {r.rejectionReason}</p>}
                   </div>
                 </div>

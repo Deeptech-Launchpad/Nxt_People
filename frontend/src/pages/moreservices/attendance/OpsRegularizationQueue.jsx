@@ -160,8 +160,9 @@ export default function OpsRegularizationQueue({ scopeKey = null }) {
                     <td className="px-4 py-3 font-mono text-slate-800 font-medium">{newHours === null ? '—' : fmtHM(newHours)}</td>
                     <td className="px-4 py-3 text-slate-500 border-l border-slate-100">{STATUS_WORD[r.oldStatus] || 'Absent'}</td>
                     <td className="px-4 py-3 text-slate-800 font-medium">Present</td>
-                    <td className="px-4 py-3 text-slate-500 max-w-[200px] truncate border-l border-slate-100" title={r.reason}>
+                    <td className="px-4 py-3 text-slate-500 max-w-[200px] truncate border-l border-slate-100" title={[r.reason, r.description].filter(Boolean).join(' — ')}>
                       {r.reason || '—'}
+                      {r.description && <span className="block text-[12.5px] text-slate-400 truncate">{r.description}</span>}
                       <span className="block text-[12.5px] text-slate-400">
                         In {fmtTime(r.checkIn, timeFormat)} · Out {fmtTime(r.checkOut, timeFormat)}
                       </span>

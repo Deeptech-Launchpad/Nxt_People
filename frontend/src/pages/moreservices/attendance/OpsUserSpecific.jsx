@@ -785,7 +785,10 @@ function RegularizationTab({ employee, canFile = true }) {
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap border-l border-slate-100">
                       {fmtTimeStr(r.checkIn, timeFormat)} – {fmtTimeStr(r.checkOut, timeFormat)}
                     </td>
-                    <td className="px-4 py-3 text-slate-500 max-w-[220px] truncate" title={r.reason}>{r.reason || '—'}</td>
+                    <td className="px-4 py-3 text-slate-500 max-w-[220px] truncate" title={[r.reason, r.description].filter(Boolean).join(' — ')}>
+                      {r.reason || '—'}
+                      {r.description && <span className="block text-[12px] text-slate-400 truncate">{r.description}</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full ${REQ_STATUS_CLS[r.status] || 'bg-slate-100 text-slate-500'}`}>
                         {titleCase(r.status)}

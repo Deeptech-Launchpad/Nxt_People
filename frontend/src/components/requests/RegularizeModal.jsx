@@ -126,7 +126,8 @@ export default function RegularizeModal({ date, employeeId, people = null, peopl
           fd.append('date', d);
           if (r.checkIn) fd.append('checkIn', r.checkIn);
           if (r.checkOut) fd.append('checkOut', r.checkOut);
-          fd.append('reason', [r.reason, r.description].filter(Boolean).join(' — '));
+          fd.append('reason', r.reason);
+          if (r.description) fd.append('description', r.description);
           fd.append('attachment', file);
           if (subject) fd.append('employeeId', subject);
           await api.post('/regularizations', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -135,7 +136,8 @@ export default function RegularizeModal({ date, employeeId, people = null, peopl
             date: d,
             checkIn: r.checkIn || undefined,
             checkOut: r.checkOut || undefined,
-            reason: [r.reason, r.description].filter(Boolean).join(' — '),
+            reason: r.reason,
+            description: r.description || undefined,
             ...(subject ? { employeeId: subject } : {}),
           });
         }
