@@ -7,7 +7,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
-import { startLocationCapture, capturePosition, getGeoPref } from '../utils/geoPermission';
+import { startLocationCapture, capturePosition, getGeoPref, getLastCaptureError } from '../utils/geoPermission';
 
 const AttendanceContext = createContext();
 
@@ -283,7 +283,15 @@ export const AttendanceProvider = ({ children }) => {
        * result too, tagged with the real permissionStatus, is what lets a
        * denial be told apart from a technical failure afterwards. */
       if (!coords) {
-        logLocation(type, null, permissionStatus);
+        /* permissionStatus alone said "always" or "once" for a failure that
+         * was really a dead GPS signal or a timeout — every miss with
+         * consent granted looked identical. Appending the browser's own
+         * reason (see geoPermission.js) turns that into something a report
+         * can actually explain without someone re-running a console test. */
+        const reason = (permissionStatus === 'always' || permissionStatus === 'once')
+          ? `${permissionStatus}:${getLastCaptureError() || 'unavailable'}`
+          : permissionStatus;
+        logLocation(type, null, reason);
         return;
       }
       /* accuracy travels with the fix: the server refuses to place a punch

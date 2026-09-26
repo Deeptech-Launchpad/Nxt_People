@@ -37,12 +37,30 @@ const WORK_MODE_PILL = {
 
 // Why a row has no coordinates — recorded alongside the punch since it can no
 // longer only ever be a silent gap (see AttendanceContext's captureLocationInBackground).
+// A granted-consent miss is stored as "always:no_signal" / "once:gps_timeout"
+// etc — the part after the colon is the browser's own reason (see
+// geoPermission.js's GPS_ERROR_NAME), not just "consent was fine, mystery
+// failure" every time.
+const GPS_FAILURE_REASON = {
+  no_signal: 'no usable signal — no WiFi/GPS to determine a position',
+  gps_timeout: 'the device took too long to respond',
+  permission_denied: 'the device refused the request after consent was already granted',
+  unsupported: "this browser doesn't support location",
+  unavailable: 'no fix was returned',
+};
 const MISS_REASON = {
   denied: 'Location was declined for this punch',
   browser_denied: 'Location is blocked in this browser',
-  always: 'Permission was granted, but no GPS fix could be obtained',
-  once: 'Permission was granted, but no GPS fix could be obtained',
 };
+function missReason(status) {
+  if (!status) return null;
+  if (MISS_REASON[status]) return MISS_REASON[status];
+  const [consent, gpsError] = status.split(':');
+  if (consent === 'always' || consent === 'once') {
+    return `Permission was granted, but ${GPS_FAILURE_REASON[gpsError] || 'no GPS fix could be obtained'}`;
+  }
+  return null;
+}
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const fmtTime = (d, timeFormat) => d ? formatInstantTime(d, timeFormat) : '—';
@@ -254,7 +272,7 @@ export default function AttendanceLocation() {
                         </span>
                       ) : !ck ? (
                         <span className="text-[14px] text-slate-400"
-                          title={MISS_REASON[l.permissionStatus] || 'This punch carried no coordinates'}>—</span>
+                          title={missReason(l.permissionStatus) || 'This punch carried no coordinates'}>—</span>
                       ) : (
                         /* The server classified and could not place it: either
                            geofencing is off, no location has coordinates, or

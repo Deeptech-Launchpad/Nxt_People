@@ -109,16 +109,28 @@ export async function startLocationCapture() {
  * enough to log, and which office-network IP detection can now place exactly
  * without needing accuracy at all. Something logged and possibly unplaced
  * beats nothing logged and definitely unplaced. */
+// The browser's own reason a fix failed, kept around for whoever logs the
+// miss afterward. GPS_ERROR_NAME turns the numeric code the spec defines
+// (1/2/3) into something a report can actually say instead of "unknown" —
+// PERMISSION_DENIED shouldn't reach here (consent already gates the call),
+// so seeing it anyway is itself informative.
+const GPS_ERROR_NAME = { 1: 'permission_denied', 2: 'no_signal', 3: 'gps_timeout' };
+let lastCaptureError = null;
+export const getLastCaptureError = () => lastCaptureError;
+
 function oneFix(enableHighAccuracy, timeout, maximumAge) {
   return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
+    if (!navigator.geolocation) { lastCaptureError = 'unsupported'; return resolve(null); }
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
-      }),
-      () => resolve(null),
+      (pos) => {
+        lastCaptureError = null;
+        resolve({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+      },
+      (err) => { lastCaptureError = GPS_ERROR_NAME[err.code] || 'unknown'; resolve(null); },
       { enableHighAccuracy, timeout, maximumAge }
     );
   });
