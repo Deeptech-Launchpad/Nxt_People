@@ -57,22 +57,25 @@ export async function startLocationCapture() {
   const pref = getGeoPref();
 
   if (pref === 'always') {
-    return { gpsPromise: capturePosition(), permissionStatus: 'always' };
+    return { gpsPromise: capturePositionCached(), permissionStatus: 'always' };
   }
 
   // The consent modal is a prompt the user may simply never answer. Cap the
   // wait so an ignored prompt can't leave a caller pending for the life of
   // the page — treat silence as "no location this time", never as consent.
-  const choice = askHandler ? await withTimeout(askHandler(), CONSENT_TIMEOUT_MS, 'deny') : 'once';
+  // Silence gets its OWN outcome ('timeout'), distinct from an actual click
+  // on Deny: a caller that blocks on an explicit refusal must not also block
+  // on someone who simply never saw the popup.
+  const choice = askHandler ? await withTimeout(askHandler(), CONSENT_TIMEOUT_MS, 'timeout') : 'once';
 
-  if (choice === 'deny') {
-    return { gpsPromise: Promise.resolve(null), permissionStatus: 'denied' };
+  if (choice === 'deny' || choice === 'timeout') {
+    return { gpsPromise: Promise.resolve(null), permissionStatus: choice === 'deny' ? 'denied' : 'timeout' };
   }
 
   if (choice === 'always') setGeoPref('always');
 
   return {
-    gpsPromise: capturePosition(),
+    gpsPromise: capturePositionCached(),
     permissionStatus: choice === 'always' ? 'always' : 'once',
   };
 }
@@ -121,10 +124,58 @@ function oneFix(enableHighAccuracy, timeout, maximumAge) {
   });
 }
 
+/* Whichever of several fixes answers first with a usable result, wins. Only
+ * falls through to "nothing" if every one of them does. Started concurrently
+ * rather than one-after-another: waiting for the high-accuracy attempt to
+ * fully time out before even starting the network-based one used to add both
+ * timeouts together in the worst case, when only the slower of the two ever
+ * needed to be waited on. */
+function firstFix(promises) {
+  return new Promise((resolve) => {
+    let remaining = promises.length;
+    let settled = false;
+    promises.forEach((p) => p.then((fix) => {
+      if (settled) return;
+      if (fix) { settled = true; resolve(fix); return; }
+      remaining -= 1;
+      if (remaining === 0) resolve(null);
+    }));
+  });
+}
+
+// The most recent successful fix, reused for a short window so a check-out
+// moments after a check-in (or a re-check-in) does not pay the full GPS
+// negotiation twice. Kept short on purpose — see capturePositionCached().
+const FIX_CACHE_MS = 120000;
+let cachedFix = null; // { latitude, longitude, accuracy, at }
+
+function rememberFix(fix) {
+  if (fix) cachedFix = { ...fix, at: Date.now() };
+  return fix;
+}
+
 export async function capturePosition() {
-  const precise = await oneFix(true, 12000, 0);
-  if (precise) return precise;
-  return oneFix(false, 8000, 300000);
+  // Accuracy still decides Office vs WFH, so the fix itself is not cached
+  // across capturePosition() calls — every call still asks the device fresh.
+  // What changes is that the two strategies now run side by side instead of
+  // in sequence, and the primary attempt no longer refuses a fix the device
+  // already had sitting from the last few tens of seconds.
+  const fix = await firstFix([oneFix(true, 12000, 45000), oneFix(false, 8000, 300000)]);
+  return rememberFix(fix);
+}
+
+/* A fix from the last two minutes is close enough for attendance purposes —
+ * see the freshness analysis this was built from: 2 minutes is roughly where
+ * a fix stops safely representing "where they still are" for someone who may
+ * now be walking to their car. Anything reusing this cache is choosing speed
+ * over asking the device again, which is the right trade for the common case
+ * (check-out moments after being seen active on the page) and a no-op for the
+ * rare one (cache empty or stale — falls straight through to a fresh ask). */
+export async function capturePositionCached() {
+  if (cachedFix && Date.now() - cachedFix.at <= FIX_CACHE_MS) {
+    return cachedFix;
+  }
+  return capturePosition();
 }
 
 /**

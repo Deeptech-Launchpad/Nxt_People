@@ -7,7 +7,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
-import { startLocationCapture } from '../utils/geoPermission';
+import { startLocationCapture, capturePosition, getGeoPref } from '../utils/geoPermission';
 
 const AttendanceContext = createContext();
 
@@ -238,6 +238,24 @@ export const AttendanceProvider = ({ children }) => {
     }).catch(() => { /* additive — ignore */ });
   };
 
+  /* ── Keep a fix warm while checked in ──────────────────────────────────
+     Check-out is where a location most often goes missing, because it is
+     the one punch where the fix has to be acquired in the handful of
+     seconds before the person actually leaves. Refreshing quietly every
+     couple of minutes while someone is checked in means capturePositionCached()
+     usually already has something on hand the moment Check-out is clicked,
+     instead of starting the whole GPS negotiation from zero at that exact
+     moment. Scoped to employees who already chose "Allow Always" — nobody
+     who has not made that choice gets asked or polled in the background. */
+  useEffect(() => {
+    if (!record?.checkIn || record?.checkOut) return;
+    if (getGeoPref() !== 'always') return;
+    const tick = () => { capturePosition().catch(() => {}); };
+    tick();
+    const id = setInterval(tick, 90000);
+    return () => clearInterval(id);
+  }, [record?.checkIn, record?.checkOut]);
+
   /* ── Location consent + GPS, entirely off the attendance critical path ──
      Consent is a modal the user may never answer, and awaiting it before
      the punch meant a pending (or invisible, or orphaned) prompt silently
@@ -247,43 +265,59 @@ export const AttendanceProvider = ({ children }) => {
      returned early and refused to record attendance at all, even though the
      backend happily accepts GPS-less punches unless require_gps is set.
 
-     Attendance is now recorded first; location is patched on afterwards if
-     and when consent and a fix arrive. Location is additive, so every
-     failure here stays silent rather than surfacing as an attendance error. */
-  const captureLocationInBackground = (type) => {
-    Promise.resolve()
-      .then(() => startLocationCapture())
-      .then(({ gpsPromise, permissionStatus }) => {
-        /* A failed or refused capture used to log nothing at all, which made
-         * every miss look identical — denied, ignored and "GPS just couldn't
-         * get a fix" all landed in the same silent gap. Logging the null
-         * result too, tagged with the real permissionStatus, is what lets a
-         * denial be told apart from a technical failure afterwards. */
-        if (permissionStatus === 'browser_denied') {
-          logLocation(type, null, permissionStatus);
-          return;
-        }
-        return gpsPromise.then(coords => {
-          if (!coords) {
-            logLocation(type, null, permissionStatus);
-            return;
-          }
-          /* accuracy travels with the fix: the server refuses to place a punch
-           * whose uncertainty is wider than the fence it is measured against,
-           * and it cannot judge that without being told. */
-          keepAliveRequest('PATCH', '/attendance/location', {
-            type, latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,
-          }).then(() => refresh()).catch(() => {});
-          logLocation(type, coords, permissionStatus);
-        });
-      })
-      .catch(() => { /* additive — never breaks the punch */ });
+     Attendance is still recorded first, unconditionally, exactly as before —
+     location is patched on afterwards if and when a fix arrives, and every
+     failure here stays silent rather than surfacing as an attendance error.
+     The one thing that now runs BEFORE the punch is the consent QUESTION
+     itself (never the GPS fix, and never a raw timeout): HR asked that an
+     employee who explicitly clicks Deny cannot check in or out. Silence
+     (nobody answers the popup) is deliberately NOT treated as a refusal —
+     only an actual click is — so this does not reopen the exact hang this
+     file's history describes above. */
+  const finishLocationCapture = (type, gate) => {
+    const { gpsPromise, permissionStatus } = gate;
+    gpsPromise.then(coords => {
+      /* A failed or refused capture used to log nothing at all, which made
+       * every miss look identical — denied, ignored and "GPS just couldn't
+       * get a fix" all landed in the same silent gap. Logging the null
+       * result too, tagged with the real permissionStatus, is what lets a
+       * denial be told apart from a technical failure afterwards. */
+      if (!coords) {
+        logLocation(type, null, permissionStatus);
+        return;
+      }
+      /* accuracy travels with the fix: the server refuses to place a punch
+       * whose uncertainty is wider than the fence it is measured against,
+       * and it cannot judge that without being told. */
+      keepAliveRequest('PATCH', '/attendance/location', {
+        type, latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,
+      }).then(() => refresh()).catch(() => {});
+      logLocation(type, coords, permissionStatus);
+    }).catch(() => { /* additive — never breaks the punch */ });
+  };
+
+  // An explicit refusal blocks the punch; anything else (granted, silence,
+  // a technical failure once granted) does not. Kept to exactly the two
+  // outcomes that mean "this person said no" — a denial typed into our own
+  // modal, or the browser itself reporting the site is blocked.
+  const isExplicitDenial = (status) => status === 'denied' || status === 'browser_denied';
+
+  const DENIAL_MESSAGE = {
+    denied: 'Location access is required to check in/out. Please allow location and try again.',
+    browser_denied: 'Location is blocked for this site in your browser. Click the lock icon in the address bar → Location → Allow, then try again.',
   };
 
   /* ── Check In ─────────────────────────────────────────────────── */
   const checkIn = async () => {
     setActionLoading(true);
     try {
+      const gate = await startLocationCapture();
+      if (isExplicitDenial(gate.permissionStatus)) {
+        logLocation('checkin', null, gate.permissionStatus);
+        toast.error(DENIAL_MESSAGE[gate.permissionStatus]);
+        return;
+      }
+
       const r = await api.post('/attendance/checkin', { location: 'Office', latitude: null, longitude: null });
       const rec = r.data.data;
       setRecord(rec);
@@ -291,7 +325,7 @@ export const AttendanceProvider = ({ children }) => {
       startTimer(rec);
       toast.success(r.data.lateMessage || 'Checked in successfully!');
 
-      captureLocationInBackground('checkin');
+      finishLocationCapture('checkin', gate);
       return rec;
     } catch (err) {
       toast.error(err.response?.data?.message || 'Check-in failed');
@@ -303,6 +337,13 @@ export const AttendanceProvider = ({ children }) => {
   const checkOut = async () => {
     setActionLoading(true);
     try {
+      const gate = await startLocationCapture();
+      if (isExplicitDenial(gate.permissionStatus)) {
+        logLocation('checkout', null, gate.permissionStatus);
+        toast.error(DENIAL_MESSAGE[gate.permissionStatus]);
+        return;
+      }
+
       const r = await api.post('/attendance/checkout', { location: 'Office', latitude: null, longitude: null });
       const rec = r.data.data;
       setRecord(rec);
@@ -310,7 +351,7 @@ export const AttendanceProvider = ({ children }) => {
       setElapsed(Math.round(parseFloat(rec.workingHours || 0) * 3600));
       toast.success('Checked out successfully!');
 
-      captureLocationInBackground('checkout');
+      finishLocationCapture('checkout', gate);
       return rec;
     } catch (err) {
       toast.error(err.response?.data?.message || 'Check-out failed');
