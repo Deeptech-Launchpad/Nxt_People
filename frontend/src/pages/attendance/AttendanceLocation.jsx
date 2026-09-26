@@ -35,6 +35,15 @@ const WORK_MODE_PILL = {
   wfh:    { label: 'Work From Home',     cls: 'bg-amber-50 text-amber-700 border-amber-200',       icon: <Home size={12} /> },
 };
 
+// Why a row has no coordinates — recorded alongside the punch since it can no
+// longer only ever be a silent gap (see AttendanceContext's captureLocationInBackground).
+const MISS_REASON = {
+  denied: 'Location was declined for this punch',
+  browser_denied: 'Location is blocked in this browser',
+  always: 'Permission was granted, but no GPS fix could be obtained',
+  once: 'Permission was granted, but no GPS fix could be obtained',
+};
+
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const fmtTime = (d, timeFormat) => d ? formatInstantTime(d, timeFormat) : '—';
 const coordStr = (v) => (v === null || v === undefined) ? null : Number(v).toFixed(5);
@@ -244,7 +253,8 @@ export default function AttendanceLocation() {
                           {wm.icon} {wm.label}
                         </span>
                       ) : !ck ? (
-                        <span className="text-[14px] text-slate-400" title="This punch carried no coordinates">—</span>
+                        <span className="text-[14px] text-slate-400"
+                          title={MISS_REASON[l.permissionStatus] || 'This punch carried no coordinates'}>—</span>
                       ) : (
                         /* The server classified and could not place it: either
                            geofencing is off, no location has coordinates, or

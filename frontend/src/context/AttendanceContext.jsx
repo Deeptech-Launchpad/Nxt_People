@@ -254,9 +254,20 @@ export const AttendanceProvider = ({ children }) => {
     Promise.resolve()
       .then(() => startLocationCapture())
       .then(({ gpsPromise, permissionStatus }) => {
-        if (permissionStatus === 'browser_denied') return;
+        /* A failed or refused capture used to log nothing at all, which made
+         * every miss look identical — denied, ignored and "GPS just couldn't
+         * get a fix" all landed in the same silent gap. Logging the null
+         * result too, tagged with the real permissionStatus, is what lets a
+         * denial be told apart from a technical failure afterwards. */
+        if (permissionStatus === 'browser_denied') {
+          logLocation(type, null, permissionStatus);
+          return;
+        }
         return gpsPromise.then(coords => {
-          if (!coords) return;
+          if (!coords) {
+            logLocation(type, null, permissionStatus);
+            return;
+          }
           /* accuracy travels with the fix: the server refuses to place a punch
            * whose uncertainty is wider than the fence it is measured against,
            * and it cannot judge that without being told. */
