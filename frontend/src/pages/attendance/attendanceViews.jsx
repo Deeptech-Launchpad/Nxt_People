@@ -582,8 +582,13 @@ export function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose
   const { timeFormat } = useLocaleFormat();
   const sessions = record?.sessions || [];
   // A record with no sessions array (older rows, HR-marked entries) still has
-  // a single check-in/check-out pair worth drawing as one session.
-  const punchSessions = sessions.length ? sessions : (record?.checkIn ? [{ checkIn: record.checkIn, checkOut: record.checkOut }] : []);
+  // a single check-in/check-out pair worth drawing as one session — falling
+  // back to the day-level location fields, the only ones such a record has.
+  const punchSessions = sessions.length ? sessions : (record?.checkIn ? [{
+    checkIn: record.checkIn, checkOut: record.checkOut,
+    checkInLocation: record.checkInLocation, checkInLat: record.checkInLat, checkInLng: record.checkInLng,
+    checkOutLocation: record.checkOutLocation, checkOutLat: record.checkOutLat, checkOutLng: record.checkOutLng,
+  }] : []);
   const firstIn  = sessions[0]?.checkIn || record?.checkIn || null;
   const lastOut  = sessions.length
     ? sessions[sessions.length - 1]?.checkOut || null
@@ -645,42 +650,37 @@ export function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose
               {/* One card per session, each its own Check-in ↔ Check-out bar —
                   a day with a lunch break out-and-back reads as two separate
                   stretches rather than one bar spanning the gap between them.
-                  Only two coordinate pairs are stored per day, so the very
-                  first check-in and the very last check-out carry a location;
-                  a middle punch (the mid-day out, the mid-day back-in) shows
-                  its time with no coordinates, same as any other unplaced
-                  punch — it still happened, it just was not the day's first
-                  or last. */}
-              {punchSessions.map((s, i) => {
-                const isFirst = i === 0;
-                const isLast = i === punchSessions.length - 1;
-                return (
-                  <div key={i} className="border border-slate-200 rounded-lg px-4 py-3.5">
-                    {punchSessions.length > 1 && (
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">
-                        Session {i + 1}
-                      </p>
-                    )}
-                    <PunchHeaderBar inTime={fmtT(s.checkIn, timeFormat)} outTime={fmtT(s.checkOut, timeFormat)} />
-                    <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-slate-100">
-                      <PunchLocation
-                        align="left"
-                        time={fmtT(s.checkIn, timeFormat)}
-                        locationLabel={isFirst ? record.checkInLocation : null}
-                        lat={isFirst ? record.checkInLat : null}
-                        lng={isFirst ? record.checkInLng : null}
-                      />
-                      <PunchLocation
-                        align="right"
-                        time={fmtT(s.checkOut, timeFormat)}
-                        locationLabel={isLast ? record.checkOutLocation : null}
-                        lat={isLast ? record.checkOutLat : null}
-                        lng={isLast ? record.checkOutLng : null}
-                      />
-                    </div>
+                  Each session now carries its own location (see
+                  migrate_session_location.js) rather than borrowing the
+                  day's shared check-in/check-out slots, so a re-check-in's
+                  own location shows on its own session instead of only the
+                  day's first check-in and last check-out ever having one. */}
+              {punchSessions.map((s, i) => (
+                <div key={i} className="border border-slate-200 rounded-lg px-4 py-3.5">
+                  {punchSessions.length > 1 && (
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">
+                      Session {i + 1}
+                    </p>
+                  )}
+                  <PunchHeaderBar inTime={fmtT(s.checkIn, timeFormat)} outTime={fmtT(s.checkOut, timeFormat)} />
+                  <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-slate-100">
+                    <PunchLocation
+                      align="left"
+                      time={fmtT(s.checkIn, timeFormat)}
+                      locationLabel={s.checkInLocation}
+                      lat={s.checkInLat}
+                      lng={s.checkInLng}
+                    />
+                    <PunchLocation
+                      align="right"
+                      time={fmtT(s.checkOut, timeFormat)}
+                      locationLabel={s.checkOutLocation}
+                      lat={s.checkOutLat}
+                      lng={s.checkOutLng}
+                    />
                   </div>
-                );
-              })}
+                </div>
+              ))}
 
               {record.lateMinutes > 0 && (
                 <p className="text-[13px] font-semibold" style={{ color: '#F5A623' }}>

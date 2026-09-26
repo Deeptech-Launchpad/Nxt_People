@@ -637,10 +637,33 @@ router.patch('/location', async (req, res) => {
          placement.distance ?? null, placement.accuracy ?? null,
          placement.source || null]
       );
+      /* The day's attendance row only ever has room for one check-in
+       * location, so a re-check-in later the same day would otherwise
+       * silently overwrite an earlier session's location with its own.
+       * attendance_sessions has one row per check-in/check-out pair
+       * already — this gives each of those its own place to keep it,
+       * matching whichever session this location arrived for: the most
+       * recently opened one. */
+      await pool.query(
+        `UPDATE attendance_sessions
+            SET check_in_location=$1, check_in_latitude=$2, check_in_longitude=$3
+          WHERE id = (SELECT id FROM attendance_sessions
+                       WHERE employee_id=$4 AND date=$5::date
+                       ORDER BY check_in DESC LIMIT 1)`,
+        [locLabel, latitude, longitude, req.user._id, today]
+      );
     } else {
       await pool.query(
         `UPDATE attendance SET check_out_location=$1, check_out_latitude=$2, check_out_longitude=$3, updated_at=NOW()
          WHERE employee_id=$4 AND date=$5::date`,
+        [locLabel, latitude, longitude, req.user._id, today]
+      );
+      await pool.query(
+        `UPDATE attendance_sessions
+            SET check_out_location=$1, check_out_latitude=$2, check_out_longitude=$3
+          WHERE id = (SELECT id FROM attendance_sessions
+                       WHERE employee_id=$4 AND date=$5::date AND check_out IS NOT NULL
+                       ORDER BY check_out DESC LIMIT 1)`,
         [locLabel, latitude, longitude, req.user._id, today]
       );
     }
@@ -768,28 +791,40 @@ router.get('/my', async (req, res) => {
       rows = r2.rows;
     }
 
-    // Fetch sessions for each attendance record in the date range
+    /* One migration created the coordinate columns as DOUBLE PRECISION and
+     * another as NUMERIC, and pg hands NUMERIC back as a string — so whether a
+     * caller receives a number or a string depends on which migration built
+     * the database it is talking to. Settled here, once. */
+    const coord = v => (v === null || v === undefined || v === '' ? null : Number(v));
+
+    // Fetch sessions for each attendance record in the date range. Each
+    // session carries its own location now — the day-level attendance row
+    // only ever has one check-in and one check-out slot, so a re-check-in
+    // later the same day used to silently overwrite an earlier session's
+    // location with its own. See migrate_session_location.js.
     const sessionsByAtt = {};
     try {
       const sessRes = await pool.query(
-        `SELECT attendance_id, id, check_in as "checkIn", check_out as "checkOut", session_hours as "sessionHours"
+        `SELECT attendance_id, id, check_in as "checkIn", check_out as "checkOut", session_hours as "sessionHours",
+                check_in_location as "checkInLocation", check_in_latitude as "checkInLat", check_in_longitude as "checkInLng",
+                check_out_location as "checkOutLocation", check_out_latitude as "checkOutLat", check_out_longitude as "checkOutLng"
          FROM attendance_sessions WHERE employee_id = $1 AND date >= $2 AND date <= $3 ORDER BY check_in ASC`,
         [empId, start, end]
       );
       sessRes.rows.forEach(s => {
         if (!sessionsByAtt[s.attendance_id]) sessionsByAtt[s.attendance_id] = [];
         const { attendance_id, ...sData } = s;
-        sessionsByAtt[s.attendance_id].push(sData);
+        sessionsByAtt[s.attendance_id].push({
+          ...sData,
+          checkInLat:  coord(sData.checkInLat),
+          checkInLng:  coord(sData.checkInLng),
+          checkOutLat: coord(sData.checkOutLat),
+          checkOutLng: coord(sData.checkOutLng),
+        });
       });
     } catch (err) {
       logger.error({ err: err.message, employeeId: empId }, '[attendance] sessions range query failed');
     }
-
-    /* One migration created the coordinate columns as DOUBLE PRECISION and
-     * another as NUMERIC, and pg hands NUMERIC back as a string — so whether a
-     * caller receives a number or a string depends on which migration built
-     * the database it is talking to. Settled here, once. */
-    const coord = v => (v === null || v === undefined || v === '' ? null : Number(v));
 
     const mapped = rows.map(r => {
       // Always compute lateness from the SQL-extracted check-in minutes

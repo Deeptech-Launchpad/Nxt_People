@@ -138,6 +138,7 @@ const ORDER = [
   'migrate_import_backup.js',
   'migrate_fix_encoding.js',
 
+  'migrate_session_location.js',         // attendance_sessions.check_in/out location + lat/lng
   'migrate_indexes.js',                  // perf indexes — run last
 ];
 
