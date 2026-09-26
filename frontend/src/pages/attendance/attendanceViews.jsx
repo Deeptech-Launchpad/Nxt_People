@@ -581,6 +581,9 @@ const SOURCE_NOTE = { manual: 'Entered manually', import: 'Imported from a file'
 export function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose }) {
   const { timeFormat } = useLocaleFormat();
   const sessions = record?.sessions || [];
+  // A record with no sessions array (older rows, HR-marked entries) still has
+  // a single check-in/check-out pair worth drawing as one session.
+  const punchSessions = sessions.length ? sessions : (record?.checkIn ? [{ checkIn: record.checkIn, checkOut: record.checkOut }] : []);
   const firstIn  = sessions[0]?.checkIn || record?.checkIn || null;
   const lastOut  = sessions.length
     ? sessions[sessions.length - 1]?.checkOut || null
@@ -639,45 +642,45 @@ export function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose
             <p className="text-[14px] text-slate-500">No attendance was recorded for this day.</p>
           ) : (
             <>
-              <div className="border border-slate-200 rounded-lg px-4 py-3.5">
-                <PunchHeaderBar inTime={fmtT(firstIn, timeFormat)} outTime={fmtT(lastOut, timeFormat)} />
-                <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-slate-100">
-                  <PunchLocation
-                    align="left"
-                    time={fmtT(firstIn, timeFormat)}
-                    locationLabel={record.checkInLocation}
-                    lat={record.checkInLat}
-                    lng={record.checkInLng}
-                  />
-                  <PunchLocation
-                    align="right"
-                    time={fmtT(lastOut, timeFormat)}
-                    locationLabel={record.checkOutLocation}
-                    lat={record.checkOutLat}
-                    lng={record.checkOutLng}
-                  />
-                </div>
-              </div>
-
-              {/* Only two coordinate pairs are stored per day, so with several
-                  sessions the map above belongs to the first in and the last
-                  out. The middle punches are still listed, rather than left
-                  looking like they never happened. */}
-              {sessions.length > 1 && (
-                <div className="border border-slate-200 rounded-lg px-3.5 py-3">
-                  <p className="text-[12px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-                    Sessions
-                  </p>
-                  {sessions.map((s, i) => (
-                    <div key={i} className="flex items-center justify-between text-[13.5px] text-slate-600 py-1">
-                      <span>Session {i + 1}</span>
-                      <span className="tabular-nums">
-                        {fmtT(s.checkIn, timeFormat) || '—'} – {fmtT(s.checkOut, timeFormat) || 'running'}
-                      </span>
+              {/* One card per session, each its own Check-in ↔ Check-out bar —
+                  a day with a lunch break out-and-back reads as two separate
+                  stretches rather than one bar spanning the gap between them.
+                  Only two coordinate pairs are stored per day, so the very
+                  first check-in and the very last check-out carry a location;
+                  a middle punch (the mid-day out, the mid-day back-in) shows
+                  its time with no coordinates, same as any other unplaced
+                  punch — it still happened, it just was not the day's first
+                  or last. */}
+              {punchSessions.map((s, i) => {
+                const isFirst = i === 0;
+                const isLast = i === punchSessions.length - 1;
+                return (
+                  <div key={i} className="border border-slate-200 rounded-lg px-4 py-3.5">
+                    {punchSessions.length > 1 && (
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">
+                        Session {i + 1}
+                      </p>
+                    )}
+                    <PunchHeaderBar inTime={fmtT(s.checkIn, timeFormat)} outTime={fmtT(s.checkOut, timeFormat)} />
+                    <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-slate-100">
+                      <PunchLocation
+                        align="left"
+                        time={fmtT(s.checkIn, timeFormat)}
+                        locationLabel={isFirst ? record.checkInLocation : null}
+                        lat={isFirst ? record.checkInLat : null}
+                        lng={isFirst ? record.checkInLng : null}
+                      />
+                      <PunchLocation
+                        align="right"
+                        time={fmtT(s.checkOut, timeFormat)}
+                        locationLabel={isLast ? record.checkOutLocation : null}
+                        lat={isLast ? record.checkOutLat : null}
+                        lng={isLast ? record.checkOutLng : null}
+                      />
                     </div>
-                  ))}
-                </div>
-              )}
+                  </div>
+                );
+              })}
 
               {record.lateMinutes > 0 && (
                 <p className="text-[13px] font-semibold" style={{ color: '#F5A623' }}>

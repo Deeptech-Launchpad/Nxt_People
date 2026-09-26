@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
-  Search, ChevronLeft, ChevronRight, ChevronDown, X, SlidersHorizontal,
+  Search, ChevronLeft, ChevronRight, ChevronDown, X,
   MoreHorizontal, Download, Upload, History, Plus,
 } from 'lucide-react';
 import api from '../../../utils/api';
@@ -347,8 +347,7 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
   const [anchor, setAnchor] = useState(() => new Date());
   const [rows, setRows] = useState(null);
   const [calendar, setCalendar] = useState([]);
-  const [view, setView] = useState('list');
-  const [showFilter, setShowFilter] = useState(false);
+  const [view, setView] = useState('timeline');
   const [request, setRequest] = useState(null);   // { type: 'regularization' | 'onduty', date }
   const [showAudit, setShowAudit] = useState(false);
   const [reload, setReload] = useState(0);
@@ -448,22 +447,17 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
               their own day. */}
           {canManage && <RequestMenu onPick={(type) => setRequest({ type, date: toYmd(new Date()) })} />}
 
-          <div className="relative">
-            <button onClick={() => setShowFilter(f => !f)} title="Filter"
-              className={`w-9 h-9 flex items-center justify-center rounded-lg border ${
-                showFilter ? 'border-brand-300 bg-brand-50 text-brand-600' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-              <SlidersHorizontal size={15} />
-            </button>
-            {showFilter && (
-              <div className="absolute right-0 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-lg p-3 z-30">
-                <p className="text-[13px] font-medium text-slate-600 mb-1.5">Period</p>
-                <select value={mode} onChange={e => { setMode(e.target.value); setShowFilter(false); }}
-                  className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-[14px] focus:outline-none focus:border-brand-400">
-                  <option value="monthly">Monthly</option>
-                  <option value="weekly">Weekly</option>
-                </select>
-              </div>
-            )}
+          {/* Month vs Week is which range the arrows step by and how much the
+              timeline draws at once — visible here rather than tucked behind
+              a filter icon, same treatment as the view toggle beside it. */}
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+            {[['monthly', 'Month'], ['weekly', 'Week']].map(([id, label]) => (
+              <button key={id} onClick={() => setMode(id)}
+                className={`px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                  mode === id ? 'bg-brand-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                {label}
+              </button>
+            ))}
           </div>
 
           <OverflowMenu onExport={exportCsv}
