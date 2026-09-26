@@ -124,25 +124,6 @@ function oneFix(enableHighAccuracy, timeout, maximumAge) {
   });
 }
 
-/* Whichever of several fixes answers first with a usable result, wins. Only
- * falls through to "nothing" if every one of them does. Started concurrently
- * rather than one-after-another: waiting for the high-accuracy attempt to
- * fully time out before even starting the network-based one used to add both
- * timeouts together in the worst case, when only the slower of the two ever
- * needed to be waited on. */
-function firstFix(promises) {
-  return new Promise((resolve) => {
-    let remaining = promises.length;
-    let settled = false;
-    promises.forEach((p) => p.then((fix) => {
-      if (settled) return;
-      if (fix) { settled = true; resolve(fix); return; }
-      remaining -= 1;
-      if (remaining === 0) resolve(null);
-    }));
-  });
-}
-
 // The most recent successful fix, reused for a short window so a check-out
 // moments after a check-in (or a re-check-in) does not pay the full GPS
 // negotiation twice. Kept short on purpose — see capturePositionCached().
@@ -154,14 +135,30 @@ function rememberFix(fix) {
   return fix;
 }
 
+/* Only one live GPS request is ever allowed in flight at a time. The
+ * background "keep a fix warm" refresh and an actual check-in/out click can
+ * land in the same instant, and firing two concurrent getCurrentPosition()
+ * calls turned out not to be safe here — both attempts came back with
+ * nothing on a normal, well-connected desktop the moment this shipped,
+ * immediately after check-in/out itself was made to wait on the earlier of
+ * the two. Whatever call is already running is handed to every other caller
+ * instead of starting a second one on top of it. */
+let inFlight = null;
+
 export async function capturePosition() {
-  // Accuracy still decides Office vs WFH, so the fix itself is not cached
-  // across capturePosition() calls — every call still asks the device fresh.
-  // What changes is that the two strategies now run side by side instead of
-  // in sequence, and the primary attempt no longer refuses a fix the device
-  // already had sitting from the last few tens of seconds.
-  const fix = await firstFix([oneFix(true, 12000, 45000), oneFix(false, 8000, 300000)]);
-  return rememberFix(fix);
+  if (inFlight) return inFlight;
+  inFlight = (async () => {
+    // The primary attempt no longer refuses a fix the device already had
+    // sitting from the last 45 seconds; the fallback still asks for a
+    // lower-accuracy, network-based answer if that one comes back empty.
+    const precise = await oneFix(true, 12000, 45000);
+    return rememberFix(precise || await oneFix(false, 8000, 300000));
+  })();
+  try {
+    return await inFlight;
+  } finally {
+    inFlight = null;
+  }
 }
 
 /* A fix from the last two minutes is close enough for attendance purposes —
