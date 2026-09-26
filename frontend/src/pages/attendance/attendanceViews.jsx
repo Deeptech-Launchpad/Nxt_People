@@ -494,11 +494,32 @@ export function AttendanceCalendarMonth({ year, month, days, onDayClick, title }
 const osmLink = (lat, lng) =>
   `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
 
-/* One column of a Check-in / Check-out pair, laid side by side in a single
- * card rather than as two stacked boxes — the punch and its own location sit
- * directly under one another, and the day reads left-to-right like a
- * timeline instead of top-to-bottom like a list. */
-function PunchDetail({ label, time, locationLabel, lat, lng }) {
+/* Check-in and Check-out as one line — the label and time at each end, a
+ * connector between them — the same "two ends of a stretch" reading the
+ * Timeline view's own row bar uses, rather than two boxes side by side. */
+function PunchHeaderBar({ inTime, outTime }) {
+  const color = inTime ? '#22c55e' : '#cbd5e1';
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex-shrink-0">
+        <div className="text-[12px] font-bold uppercase tracking-wider text-slate-400">Check-in</div>
+        <div className="text-[16px] font-bold text-slate-800 mt-0.5">{inTime || '—'}</div>
+      </div>
+      <div className="flex-1 relative h-2 min-w-[40px]">
+        <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px]" style={{ backgroundColor: color, opacity: inTime ? 1 : 0.4 }} />
+        <div className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-white border-2" style={{ borderColor: color }} />
+        <div className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-white border-2" style={{ borderColor: outTime ? color : '#cbd5e1' }} />
+      </div>
+      <div className="flex-shrink-0 text-right">
+        <div className="text-[12px] font-bold uppercase tracking-wider text-slate-400">Check-out</div>
+        <div className="text-[16px] font-bold text-slate-800 mt-0.5">{outTime || '—'}</div>
+      </div>
+    </div>
+  );
+}
+
+/* One side's location, under its own end of the header bar above. */
+function PunchLocation({ align, time, locationLabel, lat, lng }) {
   /* 0,0 is the Atlantic, and it is what a failed capture writes — the same
      guard LocationMapPicker makes for the office pin. */
   const hasCoords = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
@@ -515,47 +536,42 @@ function PunchDetail({ label, time, locationLabel, lat, lng }) {
     return () => { cancelled = true; };
   }, [lat, lng, hasCoords]);
 
-  return (
-    <div className="px-3.5 py-3 min-w-0">
-      <div className="text-[12px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
-      <div className="text-[15px] font-bold text-slate-800 mt-0.5">{time || '—'}</div>
+  const right = align === 'right';
 
-      {!time ? (
-        <p className="text-[13px] text-slate-400 mt-2">Not recorded.</p>
-      ) : (
-        <div className="mt-2.5 flex items-start gap-1.5">
-          <MapPin size={13} className="text-slate-400 mt-[3px] flex-shrink-0" />
-          <div className="min-w-0">
-            {hasCoords ? (
-              <>
-                <p className="text-[13.5px] text-slate-700 break-words">
-                  {resolving
-                    ? 'Resolving address…'
-                    : (address || 'Address could not be resolved for these coordinates')}
-                </p>
-                <p className="text-[11.5px] text-slate-400 mt-0.5">
-                  {lat.toFixed(5)}, {lng.toFixed(5)}
-                </p>
-                <a
-                  href={osmLink(lat, lng)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-blue-600 hover:text-blue-700 mt-1.5"
-                >
-                  View map <ExternalLink size={11} />
-                </a>
-              </>
-            ) : (
-              <>
-                {locationLabel && <p className="text-[13.5px] text-slate-600">{locationLabel}</p>}
-                <p className="text-[12px] text-slate-400 mt-0.5">
-                  No coordinates were captured for this punch, so there is no address and no map.
-                </p>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+  if (!time) return <p className={`text-[13px] text-slate-400 min-w-0 ${right ? 'text-right' : ''}`}>Not recorded.</p>;
+
+  return (
+    <div className={`min-w-0 flex items-start gap-1.5 ${right ? 'flex-row-reverse text-right' : ''}`}>
+      <MapPin size={13} className="text-slate-400 mt-[3px] flex-shrink-0" />
+      <div className="min-w-0">
+        {hasCoords ? (
+          <>
+            <p className="text-[13.5px] text-slate-700 break-words">
+              {resolving
+                ? 'Resolving address…'
+                : (address || 'Address could not be resolved for these coordinates')}
+            </p>
+            <p className="text-[11.5px] text-slate-400 mt-0.5">
+              {lat.toFixed(5)}, {lng.toFixed(5)}
+            </p>
+            <a
+              href={osmLink(lat, lng)}
+              target="_blank"
+              rel="noreferrer"
+              className={`inline-flex items-center gap-1 text-[12.5px] font-semibold text-blue-600 hover:text-blue-700 mt-1.5 ${right ? 'flex-row-reverse' : ''}`}
+            >
+              View map <ExternalLink size={11} />
+            </a>
+          </>
+        ) : (
+          <>
+            {locationLabel && <p className="text-[13.5px] text-slate-600">{locationLabel}</p>}
+            <p className="text-[12px] text-slate-400 mt-0.5">
+              No coordinates were captured for this punch, so there is no address and no map.
+            </p>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -580,7 +596,7 @@ export function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose
   return (
     <div className="fixed inset-0 z-40" onClick={onClose}>
       <div
-        className="absolute right-0 top-0 h-full w-[400px] max-w-full bg-white shadow-2xl border-l border-slate-200 flex flex-col"
+        className="absolute right-0 top-0 h-full w-[620px] max-w-full bg-white shadow-2xl border-l border-slate-200 flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100">
@@ -623,21 +639,24 @@ export function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose
             <p className="text-[14px] text-slate-500">No attendance was recorded for this day.</p>
           ) : (
             <>
-              <div className="border border-slate-200 rounded-lg grid grid-cols-2 divide-x divide-slate-200 overflow-hidden">
-                <PunchDetail
-                  label="Check-in"
-                  time={fmtT(firstIn, timeFormat)}
-                  locationLabel={record.checkInLocation}
-                  lat={record.checkInLat}
-                  lng={record.checkInLng}
-                />
-                <PunchDetail
-                  label="Check-out"
-                  time={fmtT(lastOut, timeFormat)}
-                  locationLabel={record.checkOutLocation}
-                  lat={record.checkOutLat}
-                  lng={record.checkOutLng}
-                />
+              <div className="border border-slate-200 rounded-lg px-4 py-3.5">
+                <PunchHeaderBar inTime={fmtT(firstIn, timeFormat)} outTime={fmtT(lastOut, timeFormat)} />
+                <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-slate-100">
+                  <PunchLocation
+                    align="left"
+                    time={fmtT(firstIn, timeFormat)}
+                    locationLabel={record.checkInLocation}
+                    lat={record.checkInLat}
+                    lng={record.checkInLng}
+                  />
+                  <PunchLocation
+                    align="right"
+                    time={fmtT(lastOut, timeFormat)}
+                    locationLabel={record.checkOutLocation}
+                    lat={record.checkOutLat}
+                    lng={record.checkOutLng}
+                  />
+                </div>
               </div>
 
               {/* Only two coordinate pairs are stored per day, so with several
