@@ -1602,13 +1602,21 @@ router.get('/balance', async (req, res) => {
 
     // Permission is hourly and capped per CURRENT calendar month with no
     // carry-forward, at whatever Leave Policy sets as its accrual.
-    // Used = approved permission hours dated in the current month.
+    //
+    // Pending counts as used, same reasoning as bookedRes above: applying
+    // is what actually takes the time (an employee filing "permission" has
+    // already left, approval or not — this card used to say 4h available
+    // with three pending requests sitting against it, which is exactly the
+    // gap that let somebody file a fourth that could never have fit). A
+    // rejected request stops counting the moment its status changes, since
+    // this SUMs live off current status rather than debiting a stored
+    // balance — no separate refund step needed.
     const permPolicy = (await getLeavePolicies()).get('permission');
     const permMonthly = ['monthly', 'annual'].includes(permPolicy.accrualMode) ? permPolicy.accrualAmount : 0;
     const permRes = await pool.query(
       `SELECT COALESCE(SUM(hours), 0) AS used FROM leaves
         WHERE employee_id = $1 AND leave_type = 'permission'
-          AND status = 'approved'
+          AND status IN ('pending', 'approved')
           AND date_trunc('month', start_date) = date_trunc('month', CURRENT_DATE)`,
       [targetId]
     );

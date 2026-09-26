@@ -2538,15 +2538,18 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
         // Non-working days have no shift to be early or late against.
         if (cls.kind === 'holiday' || cls.kind === 'weekend') continue;
 
-        // A permission is approved time off inside the working day, so it
-        // moves the boundary rather than being measured against it: an hour
-        // of permission buys an hour's later start and takes an hour off what
-        // the day owes. Without this, someone who cleared a late arrival in
-        // advance still read as late by the full amount.
+        // A permission taken that day reduces what the day owes — it comes
+        // off the expected hours below, same as it does everywhere else this
+        // report counts a day's shortfall. It must NOT move the entry-late
+        // boundary: this report's own job is the raw punch-versus-shift
+        // delta ("Entry and exit deltas against each employee's shift"), and
+        // a permission taken at 3pm has nothing to say about a 9:30 shift
+        // start — shifting the boundary by its hours regardless of when it
+        // fell used to turn a 64-minute-late arrival into "-00:04" the
+        // moment any permission existed that day, whatever time it was for.
         const permHours = dayLeaves
           .filter(l => l.leaveType === 'permission')
           .reduce((s, l) => s + (parseFloat(l.hours) || 0), 0);
-        const shiftStartMin = baseStartMin === null ? null : baseStartMin + Math.round(permHours * 60);
         const shiftHours = baseShiftHours - permHours;
 
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
@@ -2554,8 +2557,8 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
         const outMin = att?.checkOut ? clockMinutes(att.checkOut, tz) : null;
         const totalHours = workedHoursOf(att, cfg);
 
-        const entryEarly = inMin !== null && shiftStartMin !== null && inMin < shiftStartMin ? shiftStartMin - inMin : null;
-        const entryLate = inMin !== null && shiftStartMin !== null && inMin > shiftStartMin ? inMin - shiftStartMin : null;
+        const entryEarly = inMin !== null && baseStartMin !== null && inMin < baseStartMin ? baseStartMin - inMin : null;
+        const entryLate = inMin !== null && baseStartMin !== null && inMin > baseStartMin ? inMin - baseStartMin : null;
         const exitEarly = outMin !== null && shiftEndMin !== null && outMin < shiftEndMin ? shiftEndMin - outMin : null;
         const exitLate = outMin !== null && shiftEndMin !== null && outMin > shiftEndMin ? outMin - shiftEndMin : null;
 
@@ -2574,7 +2577,7 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
           // unknown amount so far, and reporting that as a full shift's
           // shortfall — everyone mid-morning showing -08:30 — states a
           // deficit that has not happened. Both punches, or nothing.
-          netMinutes: att?.checkIn && att?.checkOut && shiftStartMin !== null && shiftEndMin !== null
+          netMinutes: att?.checkIn && att?.checkOut && baseStartMin !== null && shiftEndMin !== null
             ? Math.round((totalHours - shiftHours) * 60)
             : null,
           shiftName: emp.shiftName || null,

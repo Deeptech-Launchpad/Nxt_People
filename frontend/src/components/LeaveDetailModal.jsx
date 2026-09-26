@@ -61,13 +61,11 @@ function BalanceCard({ leave, balanceCards }) {
    * 5 granted and 1 already approved read "available 3, booking 1, after 2"
    * where the person in fact had 4 and will have 3.
    *
-   * What counts as already-in differs by type, because the two stores answer
-   * different questions: a day leave debits on apply (pending counts), while
-   * permission's monthly figure counts approved hours only — so a pending
-   * permission genuinely still has to come off. */
-  const countedAlready = isPerm
-    ? leave.status === 'approved'
-    : ['pending', 'approved'].includes(leave.status);
+   * Permission's monthly figure counts pending the same way now — filing a
+   * permission is what actually takes the time, approval or not, so a
+   * pending request is already reflected in `avail` exactly like a pending
+   * day leave is (see routes/leaves.js's GET /balance). */
+  const countedAlready = ['pending', 'approved'].includes(leave.status);
   const before = unlimited ? null : r2(avail + (countedAlready ? booking : 0));
   const after = unlimited ? null : r2(before - booking);
   // Convert decimal hours to "Xh Ym" / "Ym" for permission leaves

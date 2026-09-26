@@ -243,10 +243,10 @@ function LeaveSummaryTab({ employee, canManage = true, canFile = true }) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {four.map(card => {
             const isPerm = card.code === 'permission';
-            const unit = isPerm ? 'h' : '';
             // Round to 2 dp so JS float math does not show 2.9699999999999998.
             const fmt = (v) => (v === null || v === undefined) ? '—'
-              : `${Math.round((Number(v) + Number.EPSILON) * 100) / 100}${unit}`;
+              : isPerm ? formatHoursDuration(v)
+              : `${Math.round((Number(v) + Number.EPSILON) * 100) / 100}`;
             return (
               <div key={card.code} className="bg-white rounded-2xl border border-slate-200 p-5">
                 <div className="flex items-center gap-2 mb-3">
