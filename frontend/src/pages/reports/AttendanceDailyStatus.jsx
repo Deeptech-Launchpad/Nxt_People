@@ -58,11 +58,13 @@ const PRESENCE = [
  * Unknown is drawn, never hidden. A punch the geofence could not place is not
  * evidence of anything, and folding it into either side would put a number on
  * screen that nobody could defend. */
-/* Punches that predate classification are NOT a slice.
+/* Punches with no location captured at all are NOT a slice.
  *
- * They were, for one afternoon, and they dominated the chart: 44 grey against
- * 1 real answer, for a reason that resolves itself at the next check-in. A
- * chart mostly made of "this does not apply yet" is not worth reading.
+ * Classification is resolved a second or two after the punch itself, once
+ * GPS consent and a fix arrive — so a row lands here whenever that never
+ * completes: consent denied, GPS unavailable, or (same as any check-in from
+ * before the fence feature existed) nobody ever asked. It is not only a
+ * one-time historical bucket that empties out after rollout day.
  *
  * They are still counted — as a line under the legend, and only while there
  * are any — because dropping them silently would leave "Office 2" on a day
@@ -86,7 +88,7 @@ const EXPORT_COLUMNS = [
     value: r => (!r.firstIn ? '' : r.workMode === 'office' ? 'Office'
       : r.workMode === 'wfh' ? 'WFH'
       : r.workMode ? 'Not placed (no usable location)'
-      : 'Not tracked (before location tracking)') },
+      : 'Not tracked (no location captured)') },
   /* Housekeeping and anyone else HR marks for cannot punch, so a blank First
      In on their row reads as a missed check-in rather than as a check-in that
      was never going to happen. They are kept out of the on-screen "Yet to
@@ -416,8 +418,8 @@ export default function AttendanceDailyStatus() {
                   ))}
                   {notClassified > 0 && (
                     <p className="text-[12px] text-slate-400 pt-1.5 leading-snug">
-                      {notClassified} earlier check-in{notClassified === 1 ? '' : 's'} not counted here
-                      — recorded before location tracking was switched on.
+                      {notClassified} check-in{notClassified === 1 ? '' : 's'} not counted here
+                      — no location was ever captured for the punch.
                     </p>
                   )}
                   {modePie[2].count > 0 && (
@@ -472,7 +474,7 @@ export default function AttendanceDailyStatus() {
                           ? <span className="text-[13px] font-medium text-amber-700">WFH</span>
                         : row.workMode
                           ? <span className="text-[13px] text-slate-400" title="The check-in had no usable location">Not placed</span>
-                          : <span className="text-[13px] text-slate-300" title="Recorded before location tracking was switched on">Not tracked</span>}
+                          : <span className="text-[13px] text-slate-300" title="No location was ever captured for this check-in">Not tracked</span>}
                     </td>
                   )}
                   <td className="px-4 py-2.5 text-slate-500">{row.shiftName || '—'}</td>
