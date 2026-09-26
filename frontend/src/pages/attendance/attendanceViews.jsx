@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { MapPin, ExternalLink } from 'lucide-react';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
-import { formatInstantTime } from '../../utils/datetime';
+import { formatInstantTime, useLocaleFormat } from '../../utils/datetime';
+import { reverseGeocode } from '../../utils/reverseGeocode';
 
 /* ── One rendering of a day's attendance, shared by My Attendance and every
  *  screen that opens someone else's (Team → a reportee, Operations →
@@ -479,6 +481,202 @@ export function AttendanceCalendarMonth({ year, month, days, onDayClick, title }
             </Wrapper>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/* ── One day, in full — the side panel opened from any row click ────────────
+ *  Same reuse rule as the rest of this file: My Attendance, Team → a
+ *  reportee, and Operations → User-specific all open the same panel on the
+ *  same shape of day, rather than three screens quietly drifting apart on
+ *  what a "day in full" shows. */
+const osmLink = (lat, lng) =>
+  `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
+
+function PunchDetail({ label, time, locationLabel, lat, lng }) {
+  /* 0,0 is the Atlantic, and it is what a failed capture writes — the same
+     guard LocationMapPicker makes for the office pin. */
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+  const [address, setAddress] = useState(null);
+  const [resolving, setResolving] = useState(false);
+
+  useEffect(() => {
+    if (!hasCoords) return;
+    let cancelled = false;
+    setResolving(true);
+    reverseGeocode(lat, lng)
+      .then(a => { if (!cancelled) { setAddress(a); setResolving(false); } })
+      .catch(() => { if (!cancelled) setResolving(false); });
+    return () => { cancelled = true; };
+  }, [lat, lng, hasCoords]);
+
+  return (
+    <div className="border border-slate-200 rounded-lg px-3.5 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
+        <span className="text-[15px] font-bold text-slate-800">{time || '—'}</span>
+      </div>
+
+      {!time ? (
+        <p className="text-[13px] text-slate-400 mt-2">Not recorded.</p>
+      ) : (
+        <div className="mt-2.5 flex items-start gap-2">
+          <MapPin size={14} className="text-slate-400 mt-[3px] flex-shrink-0" />
+          <div className="min-w-0">
+            {hasCoords ? (
+              <>
+                <p className="text-[14px] text-slate-700 break-words">
+                  {resolving
+                    ? 'Resolving address…'
+                    : (address || 'Address could not be resolved for these coordinates')}
+                </p>
+                <p className="text-[12px] text-slate-400 mt-0.5">
+                  {lat.toFixed(5)}, {lng.toFixed(5)}
+                </p>
+                <a
+                  href={osmLink(lat, lng)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[13px] font-semibold text-blue-600 hover:text-blue-700 mt-1.5"
+                >
+                  View map <ExternalLink size={12} />
+                </a>
+              </>
+            ) : (
+              <>
+                {locationLabel && <p className="text-[14px] text-slate-600">{locationLabel}</p>}
+                <p className="text-[13px] text-slate-400 mt-0.5">
+                  No coordinates were captured for this punch, so there is no address and no map.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SOURCE_NOTE = { manual: 'Entered manually', import: 'Imported from a file' };
+
+export function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose }) {
+  const { timeFormat } = useLocaleFormat();
+  const sessions = record?.sessions || [];
+  const firstIn  = sessions[0]?.checkIn || record?.checkIn || null;
+  const lastOut  = sessions.length
+    ? sessions[sessions.length - 1]?.checkOut || null
+    : record?.checkOut || null;
+  const sourceNote = record?.source && record.source !== 'punch'
+    ? (SOURCE_NOTE[record.source] || `Source: ${record.source}`)
+    : null;
+
+  const heading = date.toLocaleDateString('en-GB', {
+    weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+  });
+
+  return (
+    <div className="fixed inset-0 z-40" onClick={onClose}>
+      <div
+        className="absolute right-0 top-0 h-full w-[400px] max-w-full bg-white shadow-2xl border-l border-slate-200 flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-[17px] font-bold text-slate-800">{heading}</h3>
+            <p className="text-[13px] text-slate-500 mt-0.5">{shiftLabel}</p>
+          </div>
+          <button onClick={onClose}
+            className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400">
+            ✕
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          {kind?.kind === 'holiday' && (
+            <div className="text-[13px] font-semibold bg-cyan-50 border border-cyan-200 text-cyan-700 rounded-lg px-3 py-2">
+              {kind.label || 'Holiday'}
+            </div>
+          )}
+          {kind?.kind === 'weekend' && (
+            <div className="text-[13px] font-semibold bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-3 py-2">
+              Weekend
+            </div>
+          )}
+          {sourceNote && (
+            <div className="text-[13px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              {sourceNote}
+            </div>
+          )}
+
+          {/* A day we never fetched is not a day nobody worked — the same
+              distinction the rest of the page makes. */}
+          {!record && date > new Date(new Date().setHours(23, 59, 59, 999)) ? (
+            <p className="text-[14px] text-slate-500">This day hasn’t happened yet.</p>
+          ) : !record && !loaded ? (
+            <p className="text-[14px] text-slate-500">
+              This day is outside the range that was loaded, so there is nothing to show yet.
+            </p>
+          ) : !record ? (
+            <p className="text-[14px] text-slate-500">No attendance was recorded for this day.</p>
+          ) : (
+            <>
+              <PunchDetail
+                label="Check-in"
+                time={fmtT(firstIn, timeFormat)}
+                locationLabel={record.checkInLocation}
+                lat={record.checkInLat}
+                lng={record.checkInLng}
+              />
+              <PunchDetail
+                label="Check-out"
+                time={fmtT(lastOut, timeFormat)}
+                locationLabel={record.checkOutLocation}
+                lat={record.checkOutLat}
+                lng={record.checkOutLng}
+              />
+
+              {/* Only two coordinate pairs are stored per day, so with several
+                  sessions the map above belongs to the first in and the last
+                  out. The middle punches are still listed, rather than left
+                  looking like they never happened. */}
+              {sessions.length > 1 && (
+                <div className="border border-slate-200 rounded-lg px-3.5 py-3">
+                  <p className="text-[12px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                    Sessions
+                  </p>
+                  {sessions.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between text-[13.5px] text-slate-600 py-1">
+                      <span>Session {i + 1}</span>
+                      <span className="tabular-nums">
+                        {fmtT(s.checkIn, timeFormat) || '—'} – {fmtT(s.checkOut, timeFormat) || 'running'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {record.lateMinutes > 0 && (
+                <p className="text-[13px] font-semibold" style={{ color: '#F5A623' }}>
+                  Late by {fmtHM(record.lateMinutes / 60)}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="border-t border-slate-100 grid grid-cols-3 divide-x divide-slate-100">
+          {[
+            { label: 'First Check-In',  val: fmtT(firstIn, timeFormat) || '—' },
+            { label: 'Last Check-Out',  val: fmtT(lastOut, timeFormat) || '—' },
+            { label: 'Total Hours',     val: record?.workingHours ? fmtHM(record.workingHours) : '—' },
+          ].map(({ label, val }) => (
+            <div key={label} className="px-3 py-3 text-center">
+              <p className="text-[12px] text-slate-400">{label}</p>
+              <p className="text-[14px] font-bold text-slate-700 mt-0.5">{val}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

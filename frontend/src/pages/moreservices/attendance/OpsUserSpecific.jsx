@@ -11,7 +11,7 @@ import OnDutyModal from '../../../components/requests/OnDutyModal';
 import useSortable from '../../../components/table/useSortable';
 import SortableTh from '../../../components/table/SortableTh';
 import { useLocaleFormat, formatTime, formatInstantTime } from '../../../utils/datetime';
-import { AttendanceTimelineList, AttendanceListTable, AttendanceCalendarMonth } from '../../attendance/attendanceViews';
+import { AttendanceTimelineList, AttendanceListTable, AttendanceCalendarMonth, DayDetailPanel } from '../../attendance/attendanceViews';
 
 /* ── User-specific Operations ─────────────────────────────────────────────
  *  Zoho's first Attendance tab: search an employee, then act on THEIR
@@ -352,6 +352,7 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
   const [request, setRequest] = useState(null);   // { type: 'regularization' | 'onduty', date }
   const [showAudit, setShowAudit] = useState(false);
   const [reload, setReload] = useState(0);
+  const [detailDay, setDetailDay] = useState(null);
 
   const period = useMemo(() => periodOf(mode, anchor), [mode, anchor]);
 
@@ -393,6 +394,10 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
       checkIn: d.att.checkIn, checkOut: d.att.checkOut, sessions: d.att.sessions,
       workingHours: d.att.workingHours, lateMinutes: d.att.lateMinutes,
       sessionStartedAt: d.att.sessionStartedAt, status: d.att.status,
+      checkInLocation: d.att.checkInLocation, checkOutLocation: d.att.checkOutLocation,
+      checkInLat: d.att.checkInLat, checkInLng: d.att.checkInLng,
+      checkOutLat: d.att.checkOutLat, checkOutLng: d.att.checkOutLng,
+      source: d.att.source,
     } : null,
   })), [days, todayYmd]);
 
@@ -473,12 +478,27 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
         <>
           {view === 'timeline'
             ? <AttendanceTimelineList days={sharedDays} timeFormat={timeFormat}
+                onRowClick={(date) => setDetailDay(date)}
                 onAddRequest={canManage ? (date, buttonRect) => setRowRequest({ date, buttonRect }) : undefined} />
             : view === 'calendar'
               ? <AttendanceCalendarMonth year={period.year} month={period.month} days={sharedDays} />
               : <AttendanceListTable days={sharedDays} timeFormat={timeFormat} sortId="user-attendance-summary"
+                  onRowClick={(date) => setDetailDay(date)}
                   onQuickRegularize={canManage ? (date) => setRequest({ type: 'regularization', date }) : undefined} />}
           <SummaryFooter days={days} shiftLabel={shiftLabel} />
+
+          {/* One day's detail, opened from a Timeline or List row — the same
+              panel My Attendance opens on the viewer's own day. */}
+          {detailDay && (
+            <DayDetailPanel
+              date={new Date(`${detailDay}T00:00:00`)}
+              record={sharedDays.find(d => d.date === detailDay)?.record || null}
+              shiftLabel={shiftLabel}
+              kind={sharedDays.find(d => d.date === detailDay)?.off || null}
+              loaded={sharedDays.find(d => d.date === detailDay)?.isLoaded ?? true}
+              onClose={() => setDetailDay(null)}
+            />
+          )}
         </>
       )}
 

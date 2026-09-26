@@ -201,11 +201,34 @@ export const AttendanceProvider = ({ children }) => {
     };
   }, [refresh, stopTimer]);
 
+  /* ── A request that survives the tab closing right underneath it ─────────
+     Check-out is the one punch where the user routinely closes the tab or
+     browser within a second or two of seeing "Checked out successfully" —
+     they are leaving for the day, not staying to browse. The consent modal
+     and GPS fix below can together take several seconds, and an ordinary
+     axios/XHR call gets silently aborted the moment the page unloads mid-
+     flight: the punch itself is safe (already written before any of this
+     starts), but the coordinate PATCH that was on its way never lands, and
+     that day's checkout is left with a location label and no coordinates —
+     "Office" with no map, no address. fetch's `keepalive` flag is the
+     browser's own answer to exactly this: the request is hand off to the
+     browser to finish sending even after the page is gone. axios (built on
+     XHR here) has no equivalent, so this bypasses it for just this call. */
+  const keepAliveRequest = (method, path, body) => {
+    const token = localStorage.getItem('nxt_token');
+    return fetch(`/api${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+      keepalive: true,
+    });
+  };
+
   /* ── Additive location log ──────────────────────────────────────────
      Records where the check-in/out happened to the location-history table.
      Fire-and-forget: a failure here must NEVER break the attendance flow. */
   const logLocation = (type, coords, permissionStatus) => {
-    api.post('/attendance/location', {
+    keepAliveRequest('POST', '/attendance/location', {
       type,
       latitude:  coords?.latitude  ?? null,
       longitude: coords?.longitude ?? null,
@@ -237,7 +260,7 @@ export const AttendanceProvider = ({ children }) => {
           /* accuracy travels with the fix: the server refuses to place a punch
            * whose uncertainty is wider than the fence it is measured against,
            * and it cannot judge that without being told. */
-          api.patch('/attendance/location', {
+          keepAliveRequest('PATCH', '/attendance/location', {
             type, latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,
           }).then(() => refresh()).catch(() => {});
           logLocation(type, coords, permissionStatus);
