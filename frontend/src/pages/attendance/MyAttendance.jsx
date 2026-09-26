@@ -785,6 +785,7 @@ export default function MyAttendance() {
             <AttendanceTimelineList
               days={sharedDays}
               timeFormat={fmt.timeFormat}
+              onRowClick={(ds) => setDetailDay(ds)}
               onAddRequest={(ds, buttonRect) => {
                 /* Not gated on a record existing. Requiring one hid Regularize
                  * on days with no punch at all — the days it exists for — and

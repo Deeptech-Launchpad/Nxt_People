@@ -203,7 +203,7 @@ function TimelineHours({ day }) {
  * `onAddRequest(date, buttonRect)` is optional — omit it on a read-only
  * screen and the hover button never appears.
  */
-export function AttendanceTimelineList({ days, timeFormat, onAddRequest }) {
+export function AttendanceTimelineList({ days, timeFormat, onAddRequest, onRowClick }) {
   const [hovered, setHovered] = useState(null);
   const nowMins = istMinutesOfInstant(new Date().toISOString());
   const periodHasToday = days.some(d => d.isToday);
@@ -219,9 +219,10 @@ export function AttendanceTimelineList({ days, timeFormat, onAddRequest }) {
 
         return (
           <div key={day.date} data-testid="attendance-timeline-row" data-date={day.date}
-            className={`flex items-center gap-4 px-5 py-3.5 border-b border-slate-100 last:border-0 min-h-[56px] transition-colors relative ${day.isToday ? 'bg-blue-50/30' : 'hover:bg-slate-50/80'}`}
+            className={`flex items-center gap-4 px-5 py-3.5 border-b border-slate-100 last:border-0 min-h-[56px] transition-colors relative ${onRowClick ? 'cursor-pointer' : ''} ${day.isToday ? 'bg-blue-50/30' : 'hover:bg-slate-50/80'}`}
             onMouseEnter={() => setHovered(day.date)}
-            onMouseLeave={() => setHovered(null)}>
+            onMouseLeave={() => setHovered(null)}
+            onClick={() => onRowClick && onRowClick(day.date)}>
             <div className="w-[64px] flex-shrink-0 flex items-center gap-2">
               {day.isToday ? (
                 <div className="flex flex-col items-center">
