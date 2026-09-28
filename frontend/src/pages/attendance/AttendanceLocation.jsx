@@ -51,6 +51,7 @@ const GPS_FAILURE_REASON = {
 const MISS_REASON = {
   denied: 'Location was declined for this punch',
   browser_denied: 'Location is blocked in this browser',
+  interrupted: 'The page was closed or navigated away from before location could be found',
 };
 function missReason(status) {
   if (!status) return null;

@@ -238,17 +238,21 @@ export const AttendanceProvider = ({ children }) => {
     }).catch(() => { /* additive — ignore */ });
   };
 
-  /* ── Keep a fix warm while checked in ──────────────────────────────────
-     Check-out is where a location most often goes missing, because it is
-     the one punch where the fix has to be acquired in the handful of
-     seconds before the person actually leaves. Refreshing quietly every
-     couple of minutes while someone is checked in means capturePositionCached()
-     usually already has something on hand the moment Check-out is clicked,
-     instead of starting the whole GPS negotiation from zero at that exact
-     moment. Scoped to employees who already chose "Allow Always" — nobody
-     who has not made that choice gets asked or polled in the background. */
+  /* ── Keep a fix warm all day, not just after check-in ────────────────────
+     Check-out used to be where a location most often went missing, because
+     it was the one punch that had to acquire a fix cold, in the handful of
+     seconds before the person actually left. Check-in has the identical
+     problem for the opposite reason — it's the FIRST thing that happens,
+     so there is nothing earlier in the day to have already warmed the
+     cache. Running this whenever the day isn't already closed out (not
+     "only once checked in") covers both: refreshing quietly every couple
+     of minutes means capturePositionCached() usually already has something
+     on hand the moment either button is clicked, instead of starting the
+     whole GPS negotiation from zero at that exact moment. Scoped to
+     employees who already chose "Allow Always" — nobody who has not made
+     that choice gets asked or polled in the background. */
   useEffect(() => {
-    if (!record?.checkIn || record?.checkOut) return;
+    if (record?.checkOut) return;
     if (getGeoPref() !== 'always') return;
     const tick = () => { capturePosition().catch(() => {}); };
     tick();
@@ -276,7 +280,27 @@ export const AttendanceProvider = ({ children }) => {
      file's history describes above. */
   const finishLocationCapture = (type, gate) => {
     const { gpsPromise, permissionStatus } = gate;
+
+    /* A search that gets cut off mid-flight — the page closed or navigated
+     * away before the browser ever answered success or failure — used to
+     * log NOTHING at all, which looked identical to a request that simply
+     * never fired. pagehide (not visibilitychange: switching tabs doesn't
+     * kill a desktop search, only actually leaving the page does) is the
+     * one reliable signal that this specific attempt is never coming back.
+     * Firing the log from there, rather than waiting on a promise that will
+     * now never settle, is exactly what fetch's keepalive flag exists for. */
+    let settled = false;
+    const onPageHide = () => {
+      if (settled) return;
+      settled = true;
+      logLocation(type, null, 'interrupted');
+    };
+    window.addEventListener('pagehide', onPageHide);
+
     gpsPromise.then(coords => {
+      if (settled) return; // already logged as interrupted — don't double-log
+      settled = true;
+      window.removeEventListener('pagehide', onPageHide);
       /* A failed or refused capture used to log nothing at all, which made
        * every miss look identical — denied, ignored and "GPS just couldn't
        * get a fix" all landed in the same silent gap. Logging the null
@@ -301,7 +325,10 @@ export const AttendanceProvider = ({ children }) => {
         type, latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,
       }).then(() => refresh()).catch(() => {});
       logLocation(type, coords, permissionStatus);
-    }).catch(() => { /* additive — never breaks the punch */ });
+    }).catch(() => {
+      if (!settled) { settled = true; window.removeEventListener('pagehide', onPageHide); }
+      /* additive — never breaks the punch */
+    });
   };
 
   // An explicit refusal blocks the punch; anything else (granted, silence,
