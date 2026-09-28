@@ -26,8 +26,17 @@ const { approvalLevelsJson } = require('../utils/leaveApproval');
 const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
 const logger = require('../logger');
 const { serverError } = require('../utils/serverError');
+const { DEFAULT_TZ } = require('../utils/timezone');
 
 router.use(protect);
+
+// `CURRENT_DATE` is the Postgres SESSION's date, which runs UTC in Docker —
+// disagreeing with the org's IST calendar day for the first 5.5 hours of
+// every day (00:00-05:30 IST). A check-in written moments after midnight IST
+// landed on today's date; a presence query joining on bare CURRENT_DATE was
+// still looking at yesterday, so an already-checked-in early shift read
+// "Yet to check-in" until Postgres's own day caught up.
+const TODAY_TZ = `(NOW() AT TIME ZONE '${DEFAULT_TZ}')::date`;
 
 // Same guard shape the other approver queues use (regularizations, on-duty,
 // comp-off) and the same set Topbar gates /team/approvals with, so a role that
@@ -110,8 +119,8 @@ router.get('/space', async (req, res) => {
             SUM(CASE WHEN a.check_in IS NULL AND lv.employee_id IS NOT NULL THEN 1 ELSE 0 END)::int AS "onLeave",
             SUM(CASE WHEN a.check_in IS NULL AND lv.employee_id IS NULL THEN 1 ELSE 0 END)::int     AS "yetToCheckIn"
            FROM employees e
-      LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
-      ${LEAVE_TODAY('CURRENT_DATE')}
+      LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = ${TODAY_TZ}
+      ${LEAVE_TODAY(TODAY_TZ)}
           WHERE e.status = 'active' AND e.deleted_at IS NULL ${dept ? 'AND LOWER(TRIM(e.department)) = LOWER(TRIM($1))' : ''}`,
         dept ? [dept] : []
       ),
@@ -132,7 +141,7 @@ router.get('/space', async (req, res) => {
                 e.photo_url AS "photoUrl", e.work_location AS "workLocation",
                 a.check_in AS "checkIn"
            FROM attendance a JOIN employees e ON e.id = a.employee_id
-          WHERE a.date = CURRENT_DATE AND a.check_in IS NOT NULL
+          WHERE a.date = ${TODAY_TZ} AND a.check_in IS NOT NULL
             AND e.status = 'active' AND e.deleted_at IS NULL ${dept ? 'AND LOWER(TRIM(e.department)) = LOWER(TRIM($1))' : ''}
        ORDER BY a.check_in DESC LIMIT 5`,
         dept ? [dept] : []

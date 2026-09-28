@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { protect } = require('../middleware/auth');
 const { mergeRows } = require('../utils/mergeRows');
 const { serverError } = require('../utils/serverError');
+const { DEFAULT_TZ } = require('../utils/timezone');
 const { orgPolicy, mayUpdatePhoto, applyPrivacy } = require('../utils/orgPolicy');
 const { saveProfilePhoto, deleteProfilePhoto } = require('../utils/profilePhoto');
 router.use(protect);
@@ -117,8 +118,8 @@ router.get('/', async (req, res) => {
        LEFT JOIN shifts s ON e.shift_id = s.id
        LEFT JOIN employees m ON e.reporting_manager_id = m.id
        LEFT JOIN employees aa ON e.approving_authority_id = aa.id
-       LEFT JOIN attendance a_m ON a_m.employee_id = m.id AND a_m.date = CURRENT_DATE
-       LEFT JOIN attendance a_aa ON a_aa.employee_id = aa.id AND a_aa.date = CURRENT_DATE
+       LEFT JOIN attendance a_m ON a_m.employee_id = m.id AND a_m.date = (NOW() AT TIME ZONE '${DEFAULT_TZ}')::date
+       LEFT JOIN attendance a_aa ON a_aa.employee_id = aa.id AND a_aa.date = (NOW() AT TIME ZONE '${DEFAULT_TZ}')::date
        WHERE e.id = $1`,
       [req.user._id]
     );

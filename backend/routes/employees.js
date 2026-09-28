@@ -11,6 +11,7 @@ const { logAudit } = require('../utils/audit');
 const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
 const { hiddenFieldsFor } = require('./employee-info-permissions');
 const { shouldHold, queueChange } = require('./record-approvals');
+const { DEFAULT_TZ } = require('../utils/timezone');
 
 /* What the Employees list tab may filter and sort on. The SQL always uses
  * `column` from here, never anything from the request, because neither a
@@ -252,7 +253,7 @@ router.get('/', async (req, res) => {
        FROM employees e
        LEFT JOIN shifts s ON e.shift_id = s.id
        LEFT JOIN employees m ON e.reporting_manager_id = m.id
-       LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
+       LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = (NOW() AT TIME ZONE '${DEFAULT_TZ}')::date
        ${query}
        ORDER BY ${buildOrder(EMPLOYEE_FIELDS, req.query.sortBy, req.query.sortDir, 'e.created_at')}
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
@@ -516,7 +517,7 @@ router.get('/:id', async (req, res) => {
          LEFT JOIN employees sm ON e.secondary_manager_id = sm.id
          LEFT JOIN employees cb ON e.created_by = cb.id
          LEFT JOIN employees ub ON e.updated_by = ub.id
-         LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
+         LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = (NOW() AT TIME ZONE '${DEFAULT_TZ}')::date
         WHERE e.id = $1`,
       [req.params.id]
     );

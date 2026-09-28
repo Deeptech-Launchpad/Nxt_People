@@ -9,6 +9,7 @@ const { protect } = require('../middleware/auth');
 const { serverError } = require('../utils/serverError');
 const { requireFunction, optionsFor } = require('../utils/functionAccess');
 const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
+const { DEFAULT_TZ } = require('../utils/timezone');
 
 router.use(protect);
 
@@ -206,7 +207,7 @@ router.get('/directory', async (req, res) => {
               lv.half_day_type AS "halfDayType", lv.hours,
               lv.start_time::text AS "startTime", lv.end_time::text AS "endTime"
          FROM employees e
-         LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
+         LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = (NOW() AT TIME ZONE '${DEFAULT_TZ}')::date
          -- A full or half-day leave outranks a permission on the same day, so the
          -- presence above still sees the leave when both exist.
          LEFT JOIN LATERAL (
