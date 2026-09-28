@@ -7,7 +7,7 @@ import {
   Database, FileText, Image, Lock, Mail, Map, Phone, Server, Star, Tag,
 } from 'lucide-react';
 
-const DATA_TYPES = ['employees', 'attendance', 'leaves', 'timesheets'];
+const DATA_TYPES = ['employees', 'employees:exited', 'attendance', 'leaves', 'timesheets'];
 
 // Icons the admin can pick for a user-facing app (shows in the launcher).
 const APP_ICONS = {

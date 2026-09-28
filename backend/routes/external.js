@@ -65,6 +65,15 @@ function hasScope(conn, resource, mode /* 'read' | 'write' */) {
   return list.includes(`${resource}:write`);
 }
 
+// A scope that isn't a read/write mode of a resource, granted on its own —
+// "this connection may also see people who no longer work here", separate
+// from ordinary employees:read. Existing connections keep seeing only
+// active/notice_period unless this is deliberately added to their record.
+function hasExactScope(conn, scope) {
+  const list = Array.isArray(conn.allowed_data_types) ? conn.allowed_data_types : [];
+  return list.includes(scope);
+}
+
 // Hard cap on bulk-upsert array size. One sync call should not be able to
 // kick off thousands of sequential queries from one HTTP request.
 const MAX_BULK_RECORDS = 500;
@@ -98,23 +107,75 @@ router.get('/employees', async (req, res) => {
     if (!hasScope(req.apiConnection, 'employees', 'read')) {
       return res.status(403).json({ success: false, message: 'This connection does not have read access to employees data.' });
     }
+
+    // ?includeInactive=true asks for everyone who has ever left, not just
+    // Active/Notice Period. That's the same PAN/UAN/bank data a leaked or
+    // over-scoped key could otherwise only see for current staff, extended
+    // to every former employee — so it needs its own scope, granted on
+    // purpose, not folded into plain employees:read. A connection that asks
+    // for it without that scope gets a 403, not a silent fallback to the
+    // narrower list: a wrong assumption about what was granted should fail
+    // loudly, not look like "it worked" while quietly returning less.
+    const includeInactive = req.query.includeInactive === 'true';
+    if (includeInactive && !hasExactScope(req.apiConnection, 'employees:exited')) {
+      return res.status(403).json({
+        success: false,
+        message: 'This connection is not scoped to see exited employees. Required scope: "employees:exited".',
+      });
+    }
+
     // Notice Period employees retain access (same as Active) per the status
     // model in Employees.jsx — connected apps like User Report Tool must see
     // them too, or they get incorrectly locked out during their notice period.
-    let query = `WHERE registration_status = 'active' AND status IN ('active', 'notice_period')`;
+    let query = includeInactive
+      ? `WHERE registration_status = 'active'`
+      : `WHERE registration_status = 'active' AND status IN ('active', 'notice_period')`;
     let params = [];
     if (req.apiConnection.company) {
-      query += ' AND company = $1';
+      query += ` AND company = $${params.length + 1}`;
       params.push(req.apiConnection.company);
     }
-    // status/exit_date/pan_number/uan_number/bank_* were added to this table
-    // for other features long before this route, and simply never selected
-    // here — a connected payroll system had no way to tell an active
-    // employee from an exited one, or read the statutory/bank fields it
-    // needs, even though every column already existed.
-    const result = await pool.query(`SELECT employee_id as "employeeId", first_name as "firstName", last_name as "lastName", email, phone, designation, division, company, department, joining_date as "joiningDate", status, exit_date as "exitDate", pan_number as "pan", uan_number as "uan", bank_name as "bankName", bank_account as "bankAccountNumber", bank_ifsc as "bankIfsc" FROM employees ${query}`, params);
-    auditExternal(req, 'READ', 'employees', { count: result.rows.length, filter: { company: req.apiConnection.company || null } });
-    res.json({ success: true, source: req.apiConnection.name, count: result.rows.length, data: result.rows });
+    // status/exit_date/notice_period_end_date/pan_number/uan_number/bank_*/
+    // photo_url were added to this table for other features long before this
+    // route, and simply never selected here — a connected payroll system had
+    // no way to tell an active employee from an exited one, read the
+    // statutory/bank fields it needs, or show a photo, even though every
+    // column already existed.
+    const result = await pool.query(
+      `SELECT employee_id as "employeeId", first_name as "firstName", last_name as "lastName", email, phone,
+              designation, division, company, department, joining_date as "joiningDate", status,
+              exit_date as "exitDate", notice_period_end_date as "noticeEndDate",
+              pan_number as "pan", uan_number as "uan",
+              bank_name as "bankName", bank_account as "bankAccountNumber", bank_ifsc as "bankIfsc",
+              photo_url as "photoPath"
+         FROM employees ${query}`,
+      params
+    );
+
+    const FRONTEND_URL = process.env.FRONTEND_URL || 'https://nxtpeople.altiusnxt.tech';
+    // Bank details on a record this old serve no purpose but sitting there as
+    // a bigger breach if this key is ever compromised — a final settlement
+    // clears well within a year, so past that the account number and IFSC
+    // are dropped rather than kept indefinitely for someone who no longer
+    // has an open balance with the company. PAN/UAN stay: those are needed
+    // for statutory filings (Form 16, PF) for as long as the filing covers.
+    const SETTLEMENT_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const data = result.rows.map(({ photoPath, ...row }) => {
+      const longExited = (row.status === 'resigned' || row.status === 'terminated')
+        && row.exitDate && (now - new Date(row.exitDate).getTime() > SETTLEMENT_WINDOW_MS);
+      return {
+        ...row,
+        bankAccountNumber: longExited ? null : row.bankAccountNumber,
+        bankIfsc: longExited ? null : row.bankIfsc,
+        photoUrl: photoPath ? `${FRONTEND_URL}${photoPath}` : null,
+      };
+    });
+
+    auditExternal(req, 'READ', 'employees', {
+      count: data.length, includeInactive, filter: { company: req.apiConnection.company || null },
+    });
+    res.json({ success: true, source: req.apiConnection.name, count: data.length, data });
   } catch (err) { serverError(res, err); }
 });
 
