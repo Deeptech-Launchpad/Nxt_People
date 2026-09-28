@@ -148,7 +148,8 @@ export default function Peers() {
                   className="w-14 h-14 mx-auto mb-3 border-2 border-white shadow"
                   textClassName="text-base"
                 />
-                <p className="text-[14px] font-semibold text-slate-800 truncate">{e.firstName} {e.lastName}</p>
+                <p onClick={() => navigate(`/employees/${e._id}`)}
+                  className="text-[14px] font-bold text-slate-800 truncate cursor-pointer">{e.firstName} {e.lastName}</p>
                 <p className="text-[13px] text-slate-500 truncate mt-0.5">{e.designation || '—'}</p>
                 <p className="text-[12px] text-blue-500 truncate">{e.department || '—'}</p>
                 <div className="flex items-center justify-center gap-3 mt-3">
