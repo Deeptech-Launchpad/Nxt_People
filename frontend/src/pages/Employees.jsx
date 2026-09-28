@@ -547,7 +547,7 @@ export default function Employees() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead><tr className="bg-slate-50">{[['firstName','Employee'],['employeeId','ID'],['department','Department'],['role','Role'],['designation','Designation'], statusFilter === 'inactive' ? ['exitDate','Left On'] : [null,'Joining Date'],[null,'Actions']].map(([k,h])=><SortableTh key={h} sort={k ? sort : null} k={k} className="px-5 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>)}</tr></thead>
+                <thead><tr className="bg-slate-50">{[['firstName','Employee'],['employeeId','ID'],['department','Department'],['role','Role'],['designation','Designation'], statusFilter === 'inactive' ? ['exitDate','Exit Date'] : [null,'Joining Date'],[null,'Actions']].map(([k,h])=><SortableTh key={h} sort={k ? sort : null} k={k} className="px-5 py-3 text-left text-sm font-semibold text-slate-500 uppercase tracking-wider">{h}</SortableTh>)}</tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {employees.length === 0 ? <tr><td colSpan={7} className="text-center py-12">
                     {loadError
