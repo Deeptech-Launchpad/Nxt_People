@@ -2874,6 +2874,23 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
 
     const paidOff = paidOffKinds(cfg);
 
+    // "Expected Payable Days" can be pinned to a fixed number per calendar
+    // month (Settings -> Attendance Policy -> Pay days / hours calculation)
+    // instead of following the calendar — some orgs plan around a flat
+    // "26-day month" regardless of how many weekends/holidays it actually
+    // has. Only takes effect when the range IS exactly one calendar month;
+    // a custom or multi-month range has no single "standard month" to apply
+    // it to, so it falls back to the real calendar count either way. This
+    // changes only what THIS REPORT shows — Payroll Run's own proration
+    // still runs on the real working days in the month, untouched by it.
+    const isFullMonthRange = (() => {
+      const s = new Date(`${start}T00:00:00`);
+      const monthEnd = new Date(s.getFullYear(), s.getMonth() + 1, 0).toLocaleDateString('en-CA');
+      return s.getDate() === 1 && end === monthEnd;
+    })();
+    const payableDaysOverride = isFullMonthRange ? Number(cfg.policy?.payDays?.expectedPayableDaysOverride) : NaN;
+    const hasPayableDaysOverride = Number.isFinite(payableDaysOverride) && payableDaysOverride > 0;
+
     const data = ctx.employees.map(emp => {
       const shiftHours = expectedDayHours(emp, cfg);
       const c = { present: 0, onDuty: 0, paidLeave: 0, holiday: 0, weekend: 0, absent: 0, unpaidLeave: 0 };
@@ -2885,9 +2902,11 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
       // whenever a day had not been settled yet.
       let expectedPayableDays = 0;
       let expectedWorkingDays = 0;
+      let onRollsCount = 0;
 
       for (const d of ctx.days) {
         if (!ctx.onRolls(emp, d)) continue;
+        onRollsCount += 1;
         const ymd = d.toLocaleDateString('en-CA');
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
         const cls = classifyAttendanceDay({
@@ -2911,6 +2930,14 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
         const pending = ymd >= todayYmd && cls.kind === 'absent';
         if (!pending) c[cls.kind] = (c[cls.kind] || 0) + 1;
         totalWorkedHours += workedHoursOf(att, cfg);
+      }
+
+      // Someone who joined or left partway through the month was never going
+      // to be worth the full standard figure — scaled by how much of the
+      // range they were actually on rolls for, the same way a partial
+      // month's pay is scaled everywhere else in this system.
+      if (hasPayableDaysOverride && ctx.days.length > 0) {
+        expectedPayableDays = round2(payableDaysOverride * onRollsCount / ctx.days.length);
       }
 
       // Each column is headed "paid", so a kind the policy does not pay for

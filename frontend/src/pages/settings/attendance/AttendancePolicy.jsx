@@ -537,6 +537,31 @@ export default function AttendancePolicy() {
           Unticking one stops those days counting as payable in Attendance data for payroll, Presence hours
           break-up and Expected vs worked hours.
         </p>
+
+        <div className="mt-5 pt-5 border-t border-slate-100">
+          <p className="text-[13.5px] font-medium text-slate-700 mb-1.5">Expected Payable Days per month</p>
+          <div className="flex items-center gap-2.5">
+            <input
+              type="number" min={1} max={31} step={0.5}
+              placeholder="Calendar days"
+              value={pay.expectedPayableDaysOverride ?? ''}
+              onChange={e => setIn('payDays', {
+                expectedPayableDaysOverride: e.target.value === '' ? null : Number(e.target.value),
+              })}
+              className="w-[110px] text-[14px] rounded-md border border-slate-300 px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            />
+            <span className="text-[13px] text-slate-500">
+              days a standard month is worth. Leave blank to use the actual number of calendar days.
+            </span>
+          </div>
+          <p className="text-[12px] text-slate-500 mt-1.5 max-w-[620px]">
+            Only applies when a report is viewed for exactly one calendar month, and only to
+            Attendance data for payroll's "Expected Payable Days" column — this does not change
+            how Payroll Run itself prorates pay, which is still based on the real working days in
+            that month. Someone who joined or left partway through the month still gets a
+            proportionally smaller figure than this.
+          </p>
+        </div>
       </Card>
 
       <Card title="Late-night work hours" description="Define a time range for late-night work. Hours within this period are tracked separately for pay calculations.">
