@@ -45,7 +45,7 @@ const FALLBACKS = {
     notifyOnReporteeEdit: { enabled: false, email: '' },
   },
   regularization: {
-    entryMode: 'create', reasons: [], reasonMandatory: false,
+    entryMode: 'create', reasons: [], reasonMandatory: false, deadlinePeriod: 'week',
     deadlineIgnoresOnDutyTypes: ['Work from home'], deadlineEffectiveFrom: null,
     fields: { description: { show: true, mandatory: false }, document: { show: true, mandatory: false } },
     restrictions: {

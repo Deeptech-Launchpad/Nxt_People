@@ -303,6 +303,11 @@ const SECTIONS = {
         entryMode: b.entryMode,
         reasons,
         reasonMandatory,
+        // 'week' (the Monday after the absence's week) or 'month' (the end of
+        // the month after it) — see utils/regularizationWindow.js. Whichever
+        // this section doesn't explicitly carry through gets dropped on every
+        // save, since the column is replaced whole rather than merged.
+        deadlinePeriod: b.deadlinePeriod === 'month' ? 'month' : 'week',
         fields: { description: showMandatory(f.description), document: showMandatory(f.document) },
         restrictions: {
           // "Within N days" is gone. How long somebody has is now the weekly
