@@ -518,8 +518,15 @@ function PunchHeaderBar({ inTime, outTime }) {
   );
 }
 
+/* Above this, a fix is standing on real GPS. Below it, the browser fell back
+   to Wi-Fi/cell-tower positioning — the only kind that usually works indoors,
+   where satellites can't be seen. That fallback can legitimately place the
+   same physical spot several hundred metres apart between one punch and the
+   next, which otherwise looks exactly like a broken capture. */
+const LOW_ACCURACY_METERS = 150;
+
 /* One side's location, under its own end of the header bar above. */
-function PunchLocation({ align, time, locationLabel, lat, lng }) {
+function PunchLocation({ align, time, locationLabel, lat, lng, accuracy }) {
   /* 0,0 is the Atlantic, and it is what a failed capture writes — the same
      guard LocationMapPicker makes for the office pin. */
   const hasCoords = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
@@ -537,6 +544,8 @@ function PunchLocation({ align, time, locationLabel, lat, lng }) {
   }, [lat, lng, hasCoords]);
 
   const right = align === 'right';
+  const acc = Number.isFinite(accuracy) ? Math.round(accuracy) : null;
+  const lowAccuracy = acc !== null && acc > LOW_ACCURACY_METERS;
 
   if (!time) return <p className={`text-[13px] text-slate-400 min-w-0 ${right ? 'text-right' : ''}`}>Not recorded.</p>;
 
@@ -552,8 +561,14 @@ function PunchLocation({ align, time, locationLabel, lat, lng }) {
                 : (address || 'Address could not be resolved for these coordinates')}
             </p>
             <p className="text-[11.5px] text-slate-400 mt-0.5">
-              {lat.toFixed(5)}, {lng.toFixed(5)}
+              {lat.toFixed(5)}, {lng.toFixed(5)}{acc !== null && ` · accurate to ±${acc} m`}
             </p>
+            {lowAccuracy && (
+              <p className="text-[11.5px] text-amber-600 mt-0.5">
+                Low-confidence network location, not real GPS — common indoors, and can
+                land a few hundred metres from the actual spot.
+              </p>
+            )}
             <a
               href={osmLink(lat, lng)}
               target="_blank"
@@ -587,6 +602,7 @@ export function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose
   const punchSessions = sessions.length ? sessions : (record?.checkIn ? [{
     checkIn: record.checkIn, checkOut: record.checkOut,
     checkInLocation: record.checkInLocation, checkInLat: record.checkInLat, checkInLng: record.checkInLng,
+    checkInAccuracy: record.checkInAccuracy,
     checkOutLocation: record.checkOutLocation, checkOutLat: record.checkOutLat, checkOutLng: record.checkOutLng,
   }] : []);
   const firstIn  = sessions[0]?.checkIn || record?.checkIn || null;
@@ -670,6 +686,7 @@ export function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose
                       locationLabel={s.checkInLocation}
                       lat={s.checkInLat}
                       lng={s.checkInLng}
+                      accuracy={s.checkInAccuracy}
                     />
                     <PunchLocation
                       align="right"
@@ -677,6 +694,7 @@ export function DayDetailPanel({ date, record, shiftLabel, kind, loaded, onClose
                       locationLabel={s.checkOutLocation}
                       lat={s.checkOutLat}
                       lng={s.checkOutLng}
+                      accuracy={s.checkOutAccuracy}
                     />
                   </div>
                 </div>

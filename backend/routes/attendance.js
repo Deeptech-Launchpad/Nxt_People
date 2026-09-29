@@ -656,11 +656,11 @@ router.patch('/location', async (req, res) => {
        * recently opened one. */
       await pool.query(
         `UPDATE attendance_sessions
-            SET check_in_location=$1, check_in_latitude=$2, check_in_longitude=$3
+            SET check_in_location=$1, check_in_latitude=$2, check_in_longitude=$3, check_in_accuracy_meters=$6
           WHERE id = (SELECT id FROM attendance_sessions
                        WHERE employee_id=$4 AND date=$5::date
                        ORDER BY check_in DESC LIMIT 1)`,
-        [locLabel, latitude, longitude, req.user._id, today]
+        [locLabel, latitude, longitude, req.user._id, today, accuracy ?? null]
       );
     } else {
       await pool.query(
@@ -670,11 +670,11 @@ router.patch('/location', async (req, res) => {
       );
       await pool.query(
         `UPDATE attendance_sessions
-            SET check_out_location=$1, check_out_latitude=$2, check_out_longitude=$3
+            SET check_out_location=$1, check_out_latitude=$2, check_out_longitude=$3, check_out_accuracy_meters=$6
           WHERE id = (SELECT id FROM attendance_sessions
                        WHERE employee_id=$4 AND date=$5::date AND check_out IS NOT NULL
                        ORDER BY check_out DESC LIMIT 1)`,
-        [locLabel, latitude, longitude, req.user._id, today]
+        [locLabel, latitude, longitude, req.user._id, today, accuracy ?? null]
       );
     }
     res.json({ success: true });
@@ -735,6 +735,7 @@ router.get('/my', async (req, res) => {
                 -- resolved to one or opened on a map.
                 check_in_latitude  as "checkInLat",  check_in_longitude  as "checkInLng",
                 check_out_latitude as "checkOutLat", check_out_longitude as "checkOutLng",
+                location_accuracy_meters as "checkInAccuracy",
                 source,
                 -- Compute minutes-past-midnight in IST (default; overridden
                 -- below if settings.timezone differs). PG's AT TIME ZONE on
@@ -788,6 +789,7 @@ router.get('/my', async (req, res) => {
                 check_out_location as "checkOutLocation",
                 check_in_latitude  as "checkInLat",  check_in_longitude  as "checkInLng",
                 check_out_latitude as "checkOutLat", check_out_longitude as "checkOutLng",
+                location_accuracy_meters as "checkInAccuracy",
                 source,
                 CASE WHEN check_in IS NULL THEN NULL ELSE
                   (EXTRACT(HOUR   FROM check_in AT TIME ZONE $4::text) * 60 +
@@ -817,7 +819,9 @@ router.get('/my', async (req, res) => {
       const sessRes = await pool.query(
         `SELECT attendance_id, id, check_in as "checkIn", check_out as "checkOut", session_hours as "sessionHours",
                 check_in_location as "checkInLocation", check_in_latitude as "checkInLat", check_in_longitude as "checkInLng",
-                check_out_location as "checkOutLocation", check_out_latitude as "checkOutLat", check_out_longitude as "checkOutLng"
+                check_in_accuracy_meters as "checkInAccuracy",
+                check_out_location as "checkOutLocation", check_out_latitude as "checkOutLat", check_out_longitude as "checkOutLng",
+                check_out_accuracy_meters as "checkOutAccuracy"
          FROM attendance_sessions WHERE employee_id = $1 AND date >= $2 AND date <= $3 ORDER BY check_in ASC`,
         [empId, start, end]
       );
@@ -828,8 +832,10 @@ router.get('/my', async (req, res) => {
           ...sData,
           checkInLat:  coord(sData.checkInLat),
           checkInLng:  coord(sData.checkInLng),
+          checkInAccuracy: coord(sData.checkInAccuracy),
           checkOutLat: coord(sData.checkOutLat),
           checkOutLng: coord(sData.checkOutLng),
+          checkOutAccuracy: coord(sData.checkOutAccuracy),
         });
       });
     } catch (err) {
@@ -853,6 +859,7 @@ router.get('/my', async (req, res) => {
         lateMinutes,
         checkInLat:  coord(rest.checkInLat),
         checkInLng:  coord(rest.checkInLng),
+        checkInAccuracy: coord(rest.checkInAccuracy),
         checkOutLat: coord(rest.checkOutLat),
         checkOutLng: coord(rest.checkOutLng),
         sessions: sessionsByAtt[r._id] || [],
