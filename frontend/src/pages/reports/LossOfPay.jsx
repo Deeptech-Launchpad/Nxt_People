@@ -46,6 +46,34 @@ const EXPORT_COLUMNS = [
 ];
 const EXPORT_EXTRA = [{ key: 'department', header: 'Department' }];
 
+// "20-09-2026", matching how the request described the range — the header
+// nav beside it uses slashes, this uses hyphens; both read the same date.
+const fmtDateHyphen = d => new Date(d).toLocaleDateString('en-GB').split('/').join('-');
+
+const DETAIL_COLUMNS = [
+  { key: 'employeeCode', header: 'Employee Id' },
+  { key: 'employeeName', header: 'Employee Name' },
+  { key: 'department', header: 'Department' },
+  { key: 'dateRange', header: 'Date(s)' },
+  { key: 'days', header: 'No. of Days' },
+];
+
+// One row per continuous run of dates — an employee with a 5-day stretch
+// gets one row ("20-09-2026 to 25-09-2026", 5), not five. LOP's ranges come
+// straight from the leave applications themselves; Absent's are walked day
+// by day and collapsed the same way, since no single record spans them.
+function detailRows(rows, field) {
+  return rows.flatMap(r => (r[field] || []).map(range => ({
+    employeeCode: r.employeeCode,
+    employeeName: `${r.firstName || ''} ${r.lastName || ''}`.trim(),
+    department: r.department,
+    dateRange: range.start === range.end
+      ? fmtDateHyphen(range.start)
+      : `${fmtDateHyphen(range.start)} to ${fmtDateHyphen(range.end)}`,
+    days: range.days,
+  })));
+}
+
 export default function LossOfPay() {
   const [startDate, setStartDate] = useState(monthStartCA());
   const [endDate, setEndDate] = useState(todayCA());
@@ -276,6 +304,10 @@ export default function LossOfPay() {
         withIdentity identityVariant="leave" columns={EXPORT_COLUMNS}
         sheetName="Leave"
         fileStub={`lop-details_${startDate}_to_${endDate}`}
+        extraSheets={[
+          { name: 'LOP', columns: DETAIL_COLUMNS, rows: detailRows(rows, 'lopRanges') },
+          { name: 'Absent', columns: DETAIL_COLUMNS, rows: detailRows(rows, 'absentRanges') },
+        ]}
       />
     </ReportShell>
   );

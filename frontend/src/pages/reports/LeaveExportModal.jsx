@@ -23,12 +23,18 @@ const ATTENDANCE_FORMATS = ['XLS', 'XLSX', 'CSV'];
 //                 these columns, matching the reference's dual-sheet exports
 //   extraControls render-prop for page-specific options (LOP's DataDetails,
 //                 Presence hours' entry toggles)
+//   extraSheets   [{ name, columns, rows, meta }] — additional sheets with
+//                 their OWN row shape, appended after the main sheet(s). For
+//                 a detail breakdown the main table doesn't carry (LOP's own
+//                 sheet of date ranges beside the per-employee totals), not
+//                 another view of the same `rows`. `meta` defaults to the
+//                 top-level one if the sheet doesn't supply its own.
 export default function LeaveExportModal({
   open, onClose, rows, baseColumns, columns, extraColumns = [], fileStub,
   withIdentity = false, identityVariant, stackIdentity = false, stackedHeader = null,
   meta = [], legend = [], groups = null,
   sheetName = 'Report', hourColumns = null, hourSheetName = null,
-  formats = LEAVE_FORMATS, extraControls = null, kv = null,
+  formats = LEAVE_FORMATS, extraControls = null, kv = null, extraSheets = null,
 }) {
   const [format, setFormat] = useState('XLS');
   const [includeExtra, setIncludeExtra] = useState(false);
@@ -73,6 +79,9 @@ export default function LeaveExportModal({
         ws: buildSheet({ meta, legend, groups: groupSpec, columns: resolveColumns(hourColumns), rows, stackedIdentity: stackIdentity ? identityWidth : 0, stackedHeader }),
       });
     }
+    (extraSheets || []).forEach(s => {
+      sheets.push({ name: s.name, ws: buildSheet({ meta: s.meta || meta, columns: s.columns, rows: s.rows }) });
+    });
     downloadWorkbook(sheets, format, fileStub);
     onClose();
   };

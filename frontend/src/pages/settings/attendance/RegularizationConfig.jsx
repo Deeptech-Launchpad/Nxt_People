@@ -143,7 +143,9 @@ export default function RegularizationConfig() {
 
       <Card
         title="Regularization deadline"
-        description="Unmarked absences close on the Monday after the week they fall in. This is when people are reminded, and from when the rule applies."
+        description={config.deadlinePeriod === 'month'
+          ? 'Unmarked absences close at the end of the month after the one they fall in.'
+          : 'Unmarked absences close on the Monday after the week they fall in.'}
       >
           <Note>
             The deadline moves on its own when it needs to: past a public holiday for
@@ -154,6 +156,23 @@ export default function RegularizationConfig() {
           </Note>
 
           <div className="mt-4 space-y-4">
+            <div>
+              <p className="text-[13.5px] font-medium text-slate-700 mb-1.5">Employees may regularize an absence until</p>
+              <select
+                value={config.deadlinePeriod === 'month' ? 'month' : 'week'}
+                onChange={e => set({ deadlinePeriod: e.target.value })}
+                className={selectClass}
+              >
+                <option value="week">The Monday after the week it falls in</option>
+                <option value="month">The end of the month after it falls in</option>
+              </select>
+              <p className="text-[12px] text-slate-500 mt-1.5 max-w-[560px]">
+                Week is a tight, weekly rhythm — most absences are chased down within
+                days. Month gives the whole current month, useful if regularization is
+                reviewed less often than weekly.
+              </p>
+            </div>
+
             <div className="flex flex-wrap items-center gap-2.5">
               <Check
                 checked={reminders.enabled}

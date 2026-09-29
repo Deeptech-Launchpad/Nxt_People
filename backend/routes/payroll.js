@@ -515,6 +515,53 @@ async function absentDaysForRange(employeeId, startDate, endDate, holMap, rules,
   return absent;
 }
 
+// The individual dates absentDaysForRange() counts, for a report that needs
+// to show which days rather than only how many. Same rule, same queries —
+// kept as its own function rather than having absentDaysForRange return both,
+// so the payroll-facing count keeps its original, already-verified shape.
+async function absentDatesForRange(employeeId, startDate, endDate, holMap, rules, queryRunner = pool) {
+  const workingDates = listWorkingDays(
+    startDate, endDate, holMap, rules, await holidayScopeFor(employeeId, queryRunner));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const past = workingDates.filter(d => d < today);
+  if (past.length === 0) return [];
+
+  const start = startDate instanceof Date ? startDate.toLocaleDateString('en-CA') : startDate;
+  const end = endDate instanceof Date ? endDate.toLocaleDateString('en-CA') : endDate;
+
+  const att = await queryRunner.query(
+    `SELECT date::text AS d FROM attendance
+      WHERE employee_id = $1 AND date BETWEEN $2::date AND $3::date
+        AND ((check_in IS NOT NULL AND check_out IS NOT NULL) OR status = 'on_duty')`,
+    [employeeId, start, end]
+  );
+  const punched = new Set(att.rows.map(r => r.d));
+
+  const lv = await queryRunner.query(
+    `SELECT start_date::text AS s, end_date::text AS e FROM leaves
+      WHERE employee_id = $1 AND status = 'approved' AND leave_type <> 'permission'
+        AND start_date <= $3::date AND end_date >= $2::date`,
+    [employeeId, start, end]
+  );
+  const od = await queryRunner.query(
+    `SELECT start_date::text AS s, end_date::text AS e FROM on_duty_requests
+      WHERE employee_id = $1 AND status = 'approved'
+        AND start_date <= $3::date AND end_date >= $2::date`,
+    [employeeId, start, end]
+  ).catch(() => ({ rows: [] }));
+  const covered = [...lv.rows, ...od.rows];
+
+  const dates = [];
+  for (const day of past) {
+    const ymd = day.toLocaleDateString('en-CA');
+    if (punched.has(ymd)) continue;
+    if (covered.some(c => ymd >= c.s && ymd <= c.e)) continue;
+    dates.push(ymd);
+  }
+  return dates;
+}
+
 /** Indian FY for a given (month, year). Apr-Mar boundary. Returns "2026-27". */
 function fyForMonth(month, year) {
   const fy = month >= 4 ? year : year - 1;
@@ -1782,6 +1829,7 @@ module.exports.runMonthlyPayroll = runMonthlyPayroll;
 // implementation, not a second copy that could drift.
 module.exports.lopDaysForRange = lopDaysForRange;
 module.exports.absentDaysForRange = absentDaysForRange;
+module.exports.absentDatesForRange = absentDatesForRange;
 module.exports.listWorkingDays = listWorkingDays;
 module.exports.loadHolidaysAndRules = loadHolidaysAndRules;
 module.exports.workingDaysInRange = workingDaysInRange;

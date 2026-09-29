@@ -57,21 +57,41 @@ function mondayOnOrAfter(date) {
 }
 
 /**
- * The base deadline for an absence: the Monday of the FOLLOWING week, then
- * pushed past any public holiday. Org-wide, identical for everybody.
+ * The base deadline for an absence — the Monday of the FOLLOWING week in
+ * 'week' mode (the default), or the last day of the FOLLOWING month in
+ * 'month' mode — then pushed past any public holiday either way. Org-wide,
+ * identical for everybody; deadlinePeriod() is the one setting that decides
+ * which of the two this computes.
  */
 async function baseDeadline(absenceDate) {
-  // The Monday that starts the week containing the absence, then a week on.
+  const period = await deadlinePeriod();
   const d = parse(absenceDate);
-  const backToMonday = (d.getDay() + 6) % 7;          // days since Monday
-  const weekStart = addDays(absenceDate, -backToMonday);
-  let deadline = addDays(weekStart, 7);
+  let deadline;
+  if (period === 'month') {
+    // Day 0 of (month + 2) is the last day of (month + 1) — the month
+    // after the one the absence fell in, however many days that has.
+    deadline = ymd(new Date(d.getFullYear(), d.getMonth() + 2, 0));
+  } else {
+    // The Monday that starts the week containing the absence, then a week on.
+    const backToMonday = (d.getDay() + 6) % 7;          // days since Monday
+    const weekStart = addDays(absenceDate, -backToMonday);
+    deadline = addDays(weekStart, 7);
+  }
 
   for (let i = 0; i < MAX_WALK; i++) {
     if (!(await isNonWorkingDay(parse(deadline)))) return deadline;
     deadline = addDays(deadline, 1);
   }
   return deadline;
+}
+
+/** 'week' (default) or 'month' — how far the deadline reaches before the base
+ * Monday-after-the-week calculation, or its monthly equivalent, applies. */
+async function deadlinePeriod() {
+  try {
+    const r = await pool.query(`SELECT regularization_config AS c FROM settings LIMIT 1`);
+    return r.rows[0]?.c?.deadlinePeriod === 'month' ? 'month' : 'week';
+  } catch (_) { return 'week'; }
 }
 
 /** Which on-duty request types leave somebody able to regularize anyway. */

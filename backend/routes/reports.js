@@ -6,7 +6,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
 const { countWorkingDays, ruleMatchesDate, holidayClosesOffice, holidayTypeFor } = require('../utils/workingDays');
 const { unregularizedDaysForRange } = require('../utils/unregularizedAbsence');
-const { lopDaysForRange, absentDaysForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
+const { lopDaysForRange, absentDaysForRange, absentDatesForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
 const { lopForPeriod, activePayPeriod } = require('../utils/lopCarryOver');
 const { cycleFor } = require('../utils/payPeriodCycle');
 const { getLeavePolicies, getJoiningRule, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
@@ -1734,6 +1734,27 @@ router.get('/leave/encashment', authorize('admin', 'director', 'hr_admin', 'mana
   } catch (err) { serverError(res, err); }
 });
 
+// Consecutive calendar dates collapsed into ranges — "20-09-2026 to
+// 25-09-2026, 5 days" instead of five separate rows. Dates are deduplicated
+// and sorted first since callers hand this whatever order a query returned.
+function collapseDateRuns(dates) {
+  const sorted = [...new Set(dates)].sort();
+  const runs = [];
+  for (const d of sorted) {
+    const prev = runs[runs.length - 1];
+    if (prev) {
+      const nextDay = new Date(`${prev.end}T00:00:00`);
+      nextDay.setDate(nextDay.getDate() + 1);
+      if (nextDay.toLocaleDateString('en-CA') === d) { prev.end = d; continue; }
+    }
+    runs.push({ start: d, end: d });
+  }
+  return runs.map(r => ({
+    ...r,
+    days: Math.round((new Date(`${r.end}T00:00:00`) - new Date(`${r.start}T00:00:00`)) / 86400000) + 1,
+  }));
+}
+
 // Reuses the exact same lopDaysForRange() Payroll Run computes with, so
 // this report can never disagree with what actually gets deducted.
 // previousPeriodBalance/waivedOff/carryOver/reason are always 0/blank —
@@ -1777,6 +1798,27 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
       // shut. A subset of absentDays, never added to it — the same day shown
       // twice in a total is how a figure gets double counted downstream.
       const unregularizedDays = await unregularizedDaysForRange(emp._id, startDate, endDate);
+
+      // The actual applications behind rawLop, and the actual dates behind
+      // absentDays — for the export's LOP/Absent detail sheets, which exist
+      // because the totals above answer "how many" but not "which days".
+      // LOP is read straight from the leave applications themselves (their
+      // own stored start/end/total_days) rather than reconstructed day by
+      // day, so a range shown here can never disagree with what total_days
+      // already says. Absence has no single application to read from, so
+      // its dates are walked the same way absentDaysForRange() counts them,
+      // then collapsed into runs the same way LOP's ranges already are.
+      const lopLeaveRes = await pool.query(
+        `SELECT start_date::text AS s, end_date::text AS e, total_days AS d
+           FROM leaves
+          WHERE employee_id = $1 AND status = 'approved' AND leave_type = 'unpaid'
+            AND start_date <= $3::date AND end_date >= $2::date
+          ORDER BY start_date`,
+        [emp._id, startDate.toLocaleDateString('en-CA'), endDate.toLocaleDateString('en-CA')]
+      );
+      const lopRanges = lopLeaveRes.rows.map(r => ({ start: r.s, end: r.e, days: Number(r.d) || 0 }));
+      const absentRanges = collapseDateRuns(await absentDatesForRange(emp._id, startDate, endDate, holMap, rules, pool));
+
       // "The maximum number of LOP allowed per pay period". Blank means no cap
       // — which is not the same as a cap of zero, so the check is on null
       // rather than on falsiness.
@@ -1815,7 +1857,10 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
         // Deliberately excludes unregularizedDays: it is part of absentDays
         // already, and nothing here deducts pay for it. The column is for
         // seeing who is letting the window close, not for charging them.
-        totalUnpayable: round2(lopDays + absentDays) });
+        totalUnpayable: round2(lopDays + absentDays),
+        // Not shown in the on-screen table — only consumed by the export's
+        // LOP/Absent detail sheets.
+        lopRanges, absentRanges });
     }
     res.json({ success: true, data });
   } catch (err) { serverError(res, err); }
