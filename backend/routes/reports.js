@@ -1781,7 +1781,7 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
 
     const filters = standardEmployeeFilters(req, 'e', 1);
     const empRes = await pool.query(
-      `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", department, employee_id AS "employeeCode", exit_date AS "exitDate"
+      `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", department, employee_id AS "employeeCode", exit_date AS "exitDate", email
          FROM employees e WHERE 1=1${filters.clause} ORDER BY first_name`,
       filters.params
     );
@@ -1809,14 +1809,21 @@ router.get('/leave/lop', authorize('admin', 'director', 'hr_admin', 'manager'), 
       // its dates are walked the same way absentDaysForRange() counts them,
       // then collapsed into runs the same way LOP's ranges already are.
       const lopLeaveRes = await pool.query(
-        `SELECT start_date::text AS s, end_date::text AS e, total_days AS d
+        `SELECT start_date::text AS s, end_date::text AS e, total_days AS d,
+                is_half_day AS half, half_day_type AS half_type
            FROM leaves
           WHERE employee_id = $1 AND status = 'approved' AND leave_type = 'unpaid'
             AND start_date <= $3::date AND end_date >= $2::date
           ORDER BY start_date`,
         [emp._id, startDate.toLocaleDateString('en-CA'), endDate.toLocaleDateString('en-CA')]
       );
-      const lopRanges = lopLeaveRes.rows.map(r => ({ start: r.s, end: r.e, days: Number(r.d) || 0 }));
+      // Half-day only means anything for a single-day application — the flag
+      // never applies to a multi-day range, so a run's "day 1 of 5" can't
+      // secretly be half of anything.
+      const lopRanges = lopLeaveRes.rows.map(r => ({
+        start: r.s, end: r.e, days: Number(r.d) || 0,
+        isHalfDay: !!r.half && r.s === r.e, halfDayType: r.half_type || null,
+      }));
       const absentRanges = collapseDateRuns(await absentDatesForRange(emp._id, startDate, endDate, holMap, rules, pool));
 
       // "The maximum number of LOP allowed per pay period". Blank means no cap

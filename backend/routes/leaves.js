@@ -268,6 +268,22 @@ async function payrollLockFor(date) {
   return date.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 }
 
+// Two applications on the same single date don't conflict when each is a
+// half day covering the OTHER half — a first-half LOP and a second-half CL
+// on 26-09 are two different halves of the day, not a double-booking. Any
+// other combination (a full day on either side, a multi-day range, or the
+// same half twice) is a genuine clash.
+function overlapsBlockingly(existingRows, incoming) {
+  const incomingIsHalfSingleDay = !!incoming.isHalfDay && incoming.startDate === incoming.endDate;
+  return existingRows.some(row => {
+    const rowIsHalfSingleDay = row.is_half_day && row.start_date === row.end_date;
+    if (incomingIsHalfSingleDay && rowIsHalfSingleDay && row.start_date === incoming.startDate) {
+      return row.half_day_type === incoming.halfDayType;
+    }
+    return true;
+  });
+}
+
 async function resolveLeaveSubject(user, employeeId) {
   return resolveFilingSubject(pool, user, employeeId);
 }
@@ -428,14 +444,14 @@ router.post('/', [
       }
     } else {
       const overlap = await pool.query(
-        `SELECT id, start_date, end_date FROM leaves
+        `SELECT start_date::text AS start_date, end_date::text AS end_date, is_half_day, half_day_type
+           FROM leaves
           WHERE employee_id = $1
             AND status IN ('pending', 'pending_approval', 'approved')
-            AND start_date <= $3::date AND end_date >= $2::date
-          LIMIT 1`,
+            AND start_date <= $3::date AND end_date >= $2::date`,
         [subjectId, startDate, endDate]
       );
-      if (overlap.rows.length > 0) {
+      if (overlapsBlockingly(overlap.rows, { startDate, endDate, isHalfDay, halfDayType })) {
         return res.status(400).json({
           success: false,
           message: 'You already have a leave request covering one or more of these dates.'
@@ -502,14 +518,14 @@ router.post('/', [
         }
       } else {
         const recheck = await client.query(
-          `SELECT id FROM leaves
+          `SELECT start_date::text AS start_date, end_date::text AS end_date, is_half_day, half_day_type
+             FROM leaves
             WHERE employee_id = $1
               AND status IN ('pending', 'pending_approval', 'approved')
-              AND start_date <= $3::date AND end_date >= $2::date
-            LIMIT 1`,
+              AND start_date <= $3::date AND end_date >= $2::date`,
           [subjectId, startDate, endDate]
         );
-        if (recheck.rows.length > 0) {
+        if (overlapsBlockingly(recheck.rows, { startDate, endDate, isHalfDay, halfDayType })) {
           await client.query('ROLLBACK');
           return res.status(400).json({ success: false, message: 'You already have a leave request covering one or more of these dates.' });
         }
@@ -1145,14 +1161,14 @@ router.put('/:id', async (req, res) => {
 
       // Its own row cannot be the overlap it is refused for.
       const clash = await client.query(
-        `SELECT id, start_date, end_date FROM leaves
+        `SELECT start_date::text AS start_date, end_date::text AS end_date, is_half_day, half_day_type
+           FROM leaves
           WHERE employee_id = $1 AND id <> $2
             AND status IN ('pending', 'pending_approval', 'approved')
-            AND start_date <= $4::date AND end_date >= $3::date
-          LIMIT 1`,
+            AND start_date <= $4::date AND end_date >= $3::date`,
         [cur.employee_id, cur.id, startDate, endDate]
       );
-      if (clash.rows.length > 0) {
+      if (overlapsBlockingly(clash.rows, { startDate, endDate, isHalfDay, halfDayType })) {
         await client.query('ROLLBACK');
         return res.status(400).json({
           success: false,

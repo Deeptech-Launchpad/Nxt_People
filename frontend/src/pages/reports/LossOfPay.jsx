@@ -23,10 +23,15 @@ import usePersistedOpen from './usePersistedOpen';
 const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
 
+// Null means "not applicable" (the range isn't a pay period, or carry-over
+// is off) — a different fact from "zero carried in", so it prints as "-"
+// rather than a blank cell that reads as a missing value.
+const fmtBalance = v => (v === null ? '-' : v);
+
 const EXPORT_COLUMNS = [
   // The reference's order and wording: Taken rather than Booked, Adjustment
   // rather than Waived Off, and Carry Over carries its trailing space.
-  { key: 'previousPeriodBalance', header: 'Previous Pay Period Balance' },
+  { key: 'previousPeriodBalance', header: 'Previous Pay Period Balance', value: r => fmtBalance(r.previousPeriodBalance) },
   { key: 'booked', header: 'Taken' },
   { key: 'total', header: 'Total' },
   { key: 'waivedOff', header: 'Adjustment' },
@@ -57,6 +62,16 @@ const DETAIL_COLUMNS = [
   { key: 'dateRange', header: 'Date(s)' },
   { key: 'days', header: 'No. of Days' },
 ];
+// LOP applications carry a full/half-day flag that a missing-punch Absent
+// date has no equivalent for, so only the LOP sheet gets the extra column.
+const LOP_DETAIL_COLUMNS = [...DETAIL_COLUMNS, { key: 'halfDay', header: 'Full / Half Day' }];
+
+const halfDayLabel = range => {
+  if (!range.isHalfDay) return 'Full Day';
+  if (range.halfDayType === 'first_half') return 'Half Day (First Half)';
+  if (range.halfDayType === 'second_half') return 'Half Day (Second Half)';
+  return 'Half Day';
+};
 
 // One row per continuous run of dates — an employee with a 5-day stretch
 // gets one row ("20-09-2026 to 25-09-2026", 5), not five. LOP's ranges come
@@ -71,6 +86,7 @@ function detailRows(rows, field) {
       ? fmtDateHyphen(range.start)
       : `${fmtDateHyphen(range.start)} to ${fmtDateHyphen(range.end)}`,
     days: range.days,
+    ...(field === 'lopRanges' ? { halfDay: halfDayLabel(range) } : {}),
   })));
 }
 
@@ -276,7 +292,7 @@ export default function LossOfPay() {
               {sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.previousPeriodBalance}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtBalance(row.previousPeriodBalance)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.booked}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.absentDays}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.total}</td>
@@ -305,7 +321,7 @@ export default function LossOfPay() {
         sheetName="Leave"
         fileStub={`lop-details_${startDate}_to_${endDate}`}
         extraSheets={[
-          { name: 'LOP', columns: DETAIL_COLUMNS, rows: detailRows(rows, 'lopRanges') },
+          { name: 'LOP', columns: LOP_DETAIL_COLUMNS, rows: detailRows(rows, 'lopRanges') },
           { name: 'Absent', columns: DETAIL_COLUMNS, rows: detailRows(rows, 'absentRanges') },
         ]}
       />
