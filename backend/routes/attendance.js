@@ -326,11 +326,16 @@ router.post('/checkin', async (req, res) => {
     });
 
     // Insert a session row for this check-in (soft-fail — must not break the response)
+    // Carries the same locLabel/latitude/longitude just written to the day-level
+    // row above — leaving these out meant a session's OWN location stayed NULL
+    // until a GPS fix later patched it in, so anyone whose GPS never resolved
+    // saw no location at all here even though the day row already said "Office"
+    // (from the IP-network fallback) or "Work From Home".
     try {
       await pool.query(
-        `INSERT INTO attendance_sessions (attendance_id, employee_id, date, check_in)
-         VALUES ($1, $2, $3, $4)`,
-        [record._id, req.user._id, today, now]
+        `INSERT INTO attendance_sessions (attendance_id, employee_id, date, check_in, check_in_location, check_in_latitude, check_in_longitude)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [record._id, req.user._id, today, now, locLabel, latitude || null, longitude || null]
       );
     } catch (err) {
       logger.error({ err: err.message, attendanceId: record._id }, '[attendance] session insert failed');
@@ -547,11 +552,16 @@ router.post('/checkout', async (req, res) => {
     });
 
     // Update the open session with checkout time and hours (soft-fail)
+    // Carries the same location/latitude/longitude just written to the
+    // day-level row above, for the same reason the check-in session insert
+    // now does too — otherwise a session with no GPS fix never got any
+    // location at all, even though the day row already had one.
     try {
       await pool.query(
-        `UPDATE attendance_sessions SET check_out = $1, session_hours = $2
-         WHERE id = (SELECT id FROM attendance_sessions WHERE attendance_id = $3 AND check_out IS NULL ORDER BY check_in DESC LIMIT 1)`,
-        [now, sessionHours, up.rows[0]._id]
+        `UPDATE attendance_sessions SET check_out = $1, session_hours = $2,
+                check_out_location = $3, check_out_latitude = $4, check_out_longitude = $5
+         WHERE id = (SELECT id FROM attendance_sessions WHERE attendance_id = $6 AND check_out IS NULL ORDER BY check_in DESC LIMIT 1)`,
+        [now, sessionHours, location, latitude || null, longitude || null, up.rows[0]._id]
       );
     } catch (err) {
       logger.error({ err: err.message, attendanceId: up.rows[0]._id }, '[attendance] session checkout update failed');

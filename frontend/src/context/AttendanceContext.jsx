@@ -7,7 +7,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
-import { startLocationCapture, capturePosition, getGeoPref, getLastCaptureError } from '../utils/geoPermission';
+import { startLocationCapture, capturePosition, getGeoPref, getLastCaptureError, isGeoGranted } from '../utils/geoPermission';
 
 const AttendanceContext = createContext();
 
@@ -249,15 +249,25 @@ export const AttendanceProvider = ({ children }) => {
      of minutes means capturePositionCached() usually already has something
      on hand the moment either button is clicked, instead of starting the
      whole GPS negotiation from zero at that exact moment. Scoped to
-     employees who already chose "Allow Always" — nobody who has not made
-     that choice gets asked or polled in the background. */
+     employees who already chose "Allow Always", OR whose browser has
+     already granted geolocation permanently regardless of that choice
+     (isGeoGranted) — someone who keeps picking "Allow This Time" still
+     gets no popup from a background poll once the browser itself
+     remembers the grant, so there is nothing to ask by running it for
+     them too. Nobody who has never granted the browser permission at all
+     gets asked or polled in the background. */
   useEffect(() => {
     if (record?.checkOut) return;
-    if (getGeoPref() !== 'always') return;
-    const tick = () => { capturePosition().catch(() => {}); };
-    tick();
-    const id = setInterval(tick, 90000);
-    return () => clearInterval(id);
+    let cancelled = false;
+    let id;
+    (async () => {
+      const canWarm = getGeoPref() === 'always' || await isGeoGranted();
+      if (cancelled || !canWarm) return;
+      const tick = () => { capturePosition().catch(() => {}); };
+      tick();
+      id = setInterval(tick, 90000);
+    })();
+    return () => { cancelled = true; if (id) clearInterval(id); };
   }, [record?.checkIn, record?.checkOut]);
 
   /* ── Location consent + GPS, entirely off the attendance critical path ──

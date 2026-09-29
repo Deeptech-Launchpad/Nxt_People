@@ -38,6 +38,20 @@ function withTimeout(p, ms, fallback) {
   });
 }
 
+/** Whether the BROWSER itself has already granted geolocation permanently —
+ * distinct from getGeoPref(), which only tracks whether OUR OWN modal should
+ * ask again. Someone who picked "Allow This Time" still has this as 'granted'
+ * after their first click, since the browser's own permission persists at
+ * the origin level regardless of what our modal remembers; no popup would
+ * show either way, so it is safe to warm the cache for them too. */
+export async function isGeoGranted() {
+  if (!navigator.permissions) return false;
+  try {
+    const perm = await navigator.permissions.query({ name: 'geolocation' });
+    return perm.state === 'granted';
+  } catch (_) { return false; }
+}
+
 /**
  * Handle consent only — start GPS capture immediately after, return the
  * running promise without awaiting it. Lets callers fire the API call in
