@@ -31,6 +31,14 @@ const KIND_META = {
   comp_off:       { icon: Gift,      bg: 'bg-emerald-50', text: 'text-emerald-600', label: 'Comp-Off',                  endpoint: 'comp-off' },
 };
 
+// "Half Day" alone doesn't say which half, and the two read very differently
+// at approval time (a first-half absence vs. a second-half one). Falls back
+// to the plain label only if halfDayType itself is missing from the record.
+const halfDayLabel = (halfDayType) =>
+  halfDayType === 'first_half' ? 'Half Day (First Half)'
+    : halfDayType === 'second_half' ? 'Half Day (Second Half)'
+    : 'Half Day';
+
 // Safe date-only formatter — never renders "Invalid Date" for a blank value.
 const fmtDay = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) => {
   if (!d) return '—';
@@ -559,7 +567,7 @@ export default function Approvals({ embedded = false }) {
                          )}
                          <p className="text-base text-slate-700 mt-1 capitalize">
                            {l.leaveType} Leave · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
-                           {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
+                           {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">{halfDayLabel(l.halfDayType)}</span>}
                          </p>
                         <p className="text-base text-slate-600 mt-0.5">
                           {fmtDay(l.startDate, { month: 'short', day: 'numeric' })} – {fmtDay(l.endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -671,7 +679,7 @@ export default function Approvals({ embedded = false }) {
                          </div>
                          <p className="text-base text-slate-700 mt-1">
                            {meta ? meta.label : (<>{LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l, fmt.timeFormat)}</>)}
-                           {!meta && l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
+                           {!meta && l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">{halfDayLabel(l.halfDayType)}</span>}
                          </p>
                         {l.kind === 'regularization' ? (
                           <>
@@ -747,7 +755,7 @@ export default function Approvals({ embedded = false }) {
                          </div>
                          <p className="text-base text-slate-700 mt-1">
                            {meta ? meta.label : (<>{LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l, fmt.timeFormat)}</>)}
-                           {!meta && l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
+                           {!meta && l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">{halfDayLabel(l.halfDayType)}</span>}
                          </p>
                         {l.kind === 'regularization' ? (
                           <>

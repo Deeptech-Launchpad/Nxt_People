@@ -23,6 +23,13 @@ import { useFormat } from '../utils/datetime';
 
 const TYPE_LABEL = { casual: 'Casual Leave', comp_off: 'Compensatory Off', unpaid: 'Leave Without Pay', permission: 'Permission', sick: 'Sick Leave', earned: 'Earned Leave' };
 
+// "Half Day" alone doesn't say which half, and a first-half absence reads
+// very differently from a second-half one when deciding whether to approve.
+const halfDayLabel = (halfDayType) =>
+  halfDayType === 'first_half' ? 'Half Day (First Half)'
+    : halfDayType === 'second_half' ? 'Half Day (Second Half)'
+    : 'Half Day';
+
 const STATUS_PILL = {
   approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   rejected: 'bg-rose-50 text-rose-700 border-rose-200',
@@ -207,7 +214,7 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                 <DetailRow icon={FileText} label="Request Type">
                   {typeLabel}
                   {isOnDuty && leave.requestType && <span className="ml-2 text-[13px] text-slate-600">{leave.requestType}</span>}
-                  {!isReg && !isWfh && !isOnDuty && !isCompOff && leave.isHalfDay && <span className="ml-2 text-[13px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">Half Day</span>}
+                  {!isReg && !isWfh && !isOnDuty && !isCompOff && leave.isHalfDay && <span className="ml-2 text-[13px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">{halfDayLabel(leave.halfDayType)}</span>}
                 </DetailRow>
 
                 {isWfh ? (

@@ -73,7 +73,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       pool.query(`
         SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate", l.end_date as "endDate",
                l.total_days as "totalDays", l.hours, l.start_time as "startTime", l.end_time as "endTime",
-               l.reason, l.status, l.is_half_day as "isHalfDay", l.created_at as "createdAt",
+               l.reason, l.status, l.is_half_day as "isHalfDay", l.half_day_type as "halfDayType", l.created_at as "createdAt",
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee,
                ${LEAVE_LEVELS_JSON} as "approvalLevels",
@@ -179,7 +179,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       pool.query(`
         SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate", l.end_date as "endDate",
                l.total_days as "totalDays", l.hours, l.start_time as "startTime", l.end_time as "endTime",
-               l.reason, l.status, l.is_half_day as "isHalfDay", l.created_at as "createdAt",
+               l.reason, l.status, l.is_half_day as "isHalfDay", l.half_day_type as "halfDayType", l.created_at as "createdAt",
                l.rejection_reason as "rejectionReason",
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee,
