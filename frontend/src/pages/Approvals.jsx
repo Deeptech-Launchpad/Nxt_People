@@ -21,6 +21,16 @@ const LEAVE_TYPE_LABELS = {
   permission: 'Permission'
 };
 
+// Icon/colour/label for every non-leave kind that can appear in the merged
+// Approved/Rejected Requests list — leave (and permission, which lives in the
+// same table) keeps its own per-leaveType badge instead, handled separately.
+const KIND_META = {
+  regularization: { icon: Clock,     bg: 'bg-purple-50',  text: 'text-purple-600',  label: 'Attendance Regularization', endpoint: 'regularizations' },
+  wfh:            { icon: Home,      bg: 'bg-indigo-50',  text: 'text-indigo-600',  label: 'Work From Home',            endpoint: 'wfh' },
+  on_duty:        { icon: Briefcase, bg: 'bg-violet-50',  text: 'text-violet-600',  label: 'On Duty',                   endpoint: 'on-duty' },
+  comp_off:       { icon: Gift,      bg: 'bg-emerald-50', text: 'text-emerald-600', label: 'Comp-Off',                  endpoint: 'comp-off' },
+};
+
 // Safe date-only formatter — never renders "Invalid Date" for a blank value.
 const fmtDay = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) => {
   if (!d) return '—';
@@ -134,6 +144,8 @@ export default function Approvals({ embedded = false }) {
   const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
   const [detailBalance, setDetailBalance] = useState(null); // balance cards for the detail modal
   const [detailWfh, setDetailWfh] = useState(null);
+  const [detailCompOff, setDetailCompOff] = useState(null);
+  const [detailOnDuty, setDetailOnDuty] = useState(null);
   const [editing, setEditing] = useState(null);
   const [actionLoading, setActionLoading] = useState('');
   const [rejectModal, setRejectModal] = useState(null);
@@ -159,16 +171,31 @@ export default function Approvals({ embedded = false }) {
       .then(res => {
         const d = res.data.data || {};
         const allLeaves = d.leaves || [];
-        /* The API returns approved and rejected together in one list, already
-         * scoped to this month, and the two tabs are that list split by status. */
-        const approved = (d.approvedLeaves || []).filter(l => l.status === 'approved');
-        const rejected = (d.approvedLeaves || []).filter(l => l.status === 'rejected');
         const permissions = allLeaves.filter(l => l.leaveType === 'permission');
         const leaves = allLeaves.filter(l => l.leaveType !== 'permission');
         const regularizations = d.regularizations || [];
         const wfhRequests = d.wfhRequests || [];
         const compOffs = d.compOffs || [];
         const onDuty = d.onDuty || [];
+
+        /* The API returns approved and rejected together in one list per
+         * request type, already scoped to this month, and the two history
+         * tabs are the union of all five types split by status. Each item is
+         * tagged with its own kind so the card and the "View" popup both know
+         * what they're looking at — this used to be leaves-only, so a
+         * Regularization/WFH/Comp-Off/On-Duty approval never showed up here
+         * at all once it was decided. */
+        const settledByType = [
+          ...(d.approvedLeaves || []).map(x => ({ ...x, kind: 'leave' })),
+          ...(d.approvedRegularizations || []).map(x => ({ ...x, kind: 'regularization' })),
+          ...(d.approvedWfh || []).map(x => ({ ...x, kind: 'wfh' })),
+          ...(d.approvedOnDuty || []).map(x => ({ ...x, kind: 'on_duty' })),
+          ...(d.approvedCompOffs || []).map(x => ({ ...x, kind: 'comp_off' })),
+        ];
+        const byCreatedDesc = (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        const approved = settledByType.filter(x => x.status === 'approved').sort(byCreatedDesc);
+        const rejected = settledByType.filter(x => x.status === 'rejected').sort(byCreatedDesc);
+
         setData({
           leaves,
           permissions,
@@ -293,11 +320,17 @@ export default function Approvals({ embedded = false }) {
   };
   const TABS = APPROVALS_TABS.map(t => [t.id, t.label, tabCounts[t.id]]);
 
+  // History tabs never need action — everything in them is already decided —
+  // so a badge there would read as "this needs you" when nothing does. The
+  // "unseen" badge is for the queues that are actually waiting on somebody.
+  const NO_BADGE_TABS = new Set(['approvedLeaves', 'rejectedLeaves']);
+
   // Show the badge only if there's at least one item the user hasn't seen
   // yet — i.e. the current count is bigger than what they last viewed. After
   // a hard refresh the seenCounts come back from localStorage, so the badge
   // stays cleared until new items actually arrive.
   const unseenCount = (id) => {
+    if (NO_BADGE_TABS.has(id)) return 0;
     const currentCount = tabCounts[id] || 0;
     return currentCount > 0 && currentCount > (seenCounts[id] || 0) ? currentCount : 0;
   };
@@ -319,6 +352,18 @@ export default function Approvals({ embedded = false }) {
     if (!inWorkspace) return;
     return () => clearWorkspaceBadges(LEAVE_APPROVALS_BASE);
   }, [inWorkspace]);
+
+  // Routes a card in the merged Approved/Rejected Requests list to the popup
+  // built for its actual kind. 'leave' and 'regularization' already share
+  // detailLeave/LeaveDetailModal's own isReg inference (a regularization has
+  // no leaveType, a leave always does) — the other three kinds get their own
+  // modal instance, the same way WFH already did before this list existed.
+  const openSettledDetail = (item) => {
+    if (item.kind === 'wfh') setDetailWfh(item);
+    else if (item.kind === 'comp_off') setDetailCompOff(item);
+    else if (item.kind === 'on_duty') setDetailOnDuty(item);
+    else setDetailLeave(item);
+  };
 
   const ActionBtns = ({ endpoint, id, type, canActLeave, status }) => {
     let canAct = false;
@@ -562,18 +607,27 @@ export default function Approvals({ embedded = false }) {
                 </>
             )}
 
-            {/* Approved Leaves */}
+            {/* Approved Requests — every type whose approval chain can settle:
+                Leave/Permission, Regularization, WFH, On-Duty, Comp-Off. */}
             {tab === 'approvedLeaves' && (() => {
               const list = data.approvedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())) || [];
               return list.length === 0
-                ? <EmptyState icon={CheckCircle} message="No approved leave requests found" />
+                ? <EmptyState icon={CheckCircle} message="No approved requests found" />
                 : <>
-                {getVisible('approvedLeaves', list).map(l => (
+                {getVisible('approvedLeaves', list).map(l => {
+                  const meta = KIND_META[l.kind];
+                  return (
                   <div key={l._id} className="p-5 flex items-start justify-between gap-4 overflow-hidden">
                     <div className="flex items-start gap-4 min-w-0">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
-                        {l.leaveType?.[0]?.toUpperCase()}
-                      </div>
+                      {meta ? (
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${meta.bg} ${meta.text}`}>
+                          <meta.icon size={18} />
+                        </div>
+                      ) : (
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
+                          {l.leaveType?.[0]?.toUpperCase()}
+                        </div>
+                      )}
                        <div>
                          <div className="flex items-center gap-2 flex-wrap">
                            <p className="font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
@@ -581,42 +635,74 @@ export default function Approvals({ embedded = false }) {
                            <span className="text-sm bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                          </div>
                          <p className="text-base text-slate-700 mt-1">
-                           {LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l, fmt.timeFormat)}
-                           {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
+                           {meta ? meta.label : (<>{LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l, fmt.timeFormat)}</>)}
+                           {!meta && l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
-                        <p className="text-base text-slate-600 mt-0.5">
-                          {fmtDay(l.startDate, { month: 'short', day: 'numeric' })} – {fmtDay(l.endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </p>
+                        {l.kind === 'regularization' ? (
+                          <>
+                            <p className="text-base text-slate-600 mt-0.5">{fmtDay(l.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                            <p className="text-sm text-slate-600 mt-0.5">
+                              {l.checkIn ? `In: ${fmt.time(l.checkIn)}` : ''}{l.checkIn && l.checkOut ? ' · ' : ''}{l.checkOut ? `Out: ${fmt.time(l.checkOut)}` : ''}
+                            </p>
+                          </>
+                        ) : l.kind === 'wfh' ? (
+                          <p className="text-base text-slate-600 mt-0.5">{fmtDay(l.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                        ) : l.kind === 'on_duty' ? (
+                          <p className="text-base text-slate-600 mt-0.5">
+                            {l.startDate === l.endDate
+                              ? fmtDay(l.startDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                              : `${fmtDay(l.startDate)} – ${fmtDay(l.endDate)}`}
+                            {l.unit === 'hours' && l.startTime && <span className="text-slate-400"> · {fmt.time(l.startTime)} – {fmt.time(l.endTime)}</span>}
+                          </p>
+                        ) : l.kind === 'comp_off' ? (
+                          <>
+                            <p className="text-base text-slate-600 mt-0.5">Worked on: {fmtDay(l.workedDate)}</p>
+                            {l.compOffDate && <p className="text-base text-slate-600 mt-0.5">Comp-off requested for: <span className="font-medium text-slate-700">{fmtDay(l.compOffDate)}</span></p>}
+                          </>
+                        ) : (
+                          <p className="text-base text-slate-600 mt-0.5">
+                            {fmtDay(l.startDate, { month: 'short', day: 'numeric' })} – {fmtDay(l.endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        )}
                         <p className="text-sm text-slate-600 mt-1">{l.reason}</p>
                       </div>
                      </div>
                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                        <div className="flex items-center gap-2">
-                         <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
+                         <button onClick={() => openSettledDetail(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                            <Eye size={13} /> View
                          </button>
-                         <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                         <ActionBtns endpoint={meta?.endpoint || 'leaves'} id={l._id} type={meta?.label || 'Leave'} canActLeave={false} status={l.status} />
                        </div>
                        {decisionLabel(l) && <p className="text-xs text-slate-500 text-right">{decisionLabel(l)}</p>}
                      </div>
                    </div>
-                ))}
+                  );
+                })}
                 <ShowMoreFooter tabId="approvedLeaves" total={list.length} shown={getVisible('approvedLeaves', list).length} />
                 </>;
             })()}
 
-            {/* Rejected Leaves */}
+            {/* Rejected Requests — same merge as Approved, across all five types. */}
             {tab === 'rejectedLeaves' && (() => {
               const list = data.rejectedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())) || [];
               return list.length === 0
-                ? <EmptyState icon={XCircle} message="No rejected leave requests found" />
+                ? <EmptyState icon={XCircle} message="No rejected requests found" />
                 : <>
-                {getVisible('rejectedLeaves', list).map(l => (
+                {getVisible('rejectedLeaves', list).map(l => {
+                  const meta = KIND_META[l.kind];
+                  return (
                   <div key={l._id} className="p-5 flex items-start justify-between gap-4 overflow-hidden">
                     <div className="flex items-start gap-4 min-w-0">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
-                        {l.leaveType?.[0]?.toUpperCase()}
-                         </div>
+                      {meta ? (
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${meta.bg} ${meta.text}`}>
+                          <meta.icon size={18} />
+                        </div>
+                      ) : (
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
+                          {l.leaveType?.[0]?.toUpperCase()}
+                        </div>
+                      )}
                        <div>
                          <div className="flex items-center gap-2 flex-wrap">
                            <p className="font-semibold text-slate-700">{l.employee?.firstName} {l.employee?.lastName}</p>
@@ -624,12 +710,35 @@ export default function Approvals({ embedded = false }) {
                            <span className="text-sm bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{l.employee?.department}</span>
                          </div>
                          <p className="text-base text-slate-700 mt-1">
-                           {LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l, fmt.timeFormat)}
-                           {l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
+                           {meta ? meta.label : (<>{LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType} · {amountLabel(l, fmt.timeFormat)}</>)}
+                           {!meta && l.isHalfDay && <span className="ml-1 text-sm bg-amber-50 text-amber-700 px-1.5 rounded-full">Half Day</span>}
                          </p>
-                        <p className="text-base text-slate-600 mt-0.5">
-                          {fmtDay(l.startDate, { month: 'short', day: 'numeric' })} – {fmtDay(l.endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </p>
+                        {l.kind === 'regularization' ? (
+                          <>
+                            <p className="text-base text-slate-600 mt-0.5">{fmtDay(l.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                            <p className="text-sm text-slate-600 mt-0.5">
+                              {l.checkIn ? `In: ${fmt.time(l.checkIn)}` : ''}{l.checkIn && l.checkOut ? ' · ' : ''}{l.checkOut ? `Out: ${fmt.time(l.checkOut)}` : ''}
+                            </p>
+                          </>
+                        ) : l.kind === 'wfh' ? (
+                          <p className="text-base text-slate-600 mt-0.5">{fmtDay(l.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                        ) : l.kind === 'on_duty' ? (
+                          <p className="text-base text-slate-600 mt-0.5">
+                            {l.startDate === l.endDate
+                              ? fmtDay(l.startDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                              : `${fmtDay(l.startDate)} – ${fmtDay(l.endDate)}`}
+                            {l.unit === 'hours' && l.startTime && <span className="text-slate-400"> · {fmt.time(l.startTime)} – {fmt.time(l.endTime)}</span>}
+                          </p>
+                        ) : l.kind === 'comp_off' ? (
+                          <>
+                            <p className="text-base text-slate-600 mt-0.5">Worked on: {fmtDay(l.workedDate)}</p>
+                            {l.compOffDate && <p className="text-base text-slate-600 mt-0.5">Comp-off requested for: <span className="font-medium text-slate-700">{fmtDay(l.compOffDate)}</span></p>}
+                          </>
+                        ) : (
+                          <p className="text-base text-slate-600 mt-0.5">
+                            {fmtDay(l.startDate, { month: 'short', day: 'numeric' })} – {fmtDay(l.endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        )}
                         <p className="text-sm text-slate-600 mt-1">{l.reason}</p>
                         {l.rejectionReason && (
                           <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-2.5 py-1.5 mt-2 font-medium w-fit">
@@ -640,15 +749,16 @@ export default function Approvals({ embedded = false }) {
                      </div>
                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                        <div className="flex items-center gap-2">
-                         <button onClick={() => setDetailLeave(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
+                         <button onClick={() => openSettledDetail(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                            <Eye size={13} /> View
                          </button>
-                         <ActionBtns endpoint="leaves" id={l._id} type="Leave" canActLeave={l.canAct} status={l.status} />
+                         <ActionBtns endpoint={meta?.endpoint || 'leaves'} id={l._id} type={meta?.label || 'Leave'} canActLeave={false} status={l.status} />
                        </div>
                        {decisionLabel(l) && <p className="text-xs text-slate-500 text-right">{decisionLabel(l)}</p>}
                      </div>
                    </div>
-                ))}
+                  );
+                })}
                 <ShowMoreFooter tabId="rejectedLeaves" total={list.length} shown={getVisible('rejectedLeaves', list).length} />
                 </>;
             })()}
@@ -837,6 +947,27 @@ export default function Approvals({ embedded = false }) {
             ? (x, comment) => { if (confirm('Approve all remaining levels for this request? This skips any other pending approvers.')) { setDetailWfh(null); action('wfh', x._id, 'approved', comment, true); } }
             : undefined}
           onReject={(x, comment) => { setDetailWfh(null); action('wfh', x._id, 'rejected', comment); }}
+        />
+      )}
+
+      {/* Comp-Off and On-Duty only ever appear here already settled (their own
+          Pending tabs have no View popup yet), so these two are read-only —
+          there is nothing left to approve or reject. */}
+      {detailCompOff && (
+        <LeaveDetailModal
+          leave={detailCompOff}
+          kind="comp_off"
+          onClose={() => setDetailCompOff(null)}
+          canAct={false}
+        />
+      )}
+
+      {detailOnDuty && (
+        <LeaveDetailModal
+          leave={detailOnDuty}
+          kind="on_duty"
+          onClose={() => setDetailOnDuty(null)}
+          canAct={false}
         />
       )}
 

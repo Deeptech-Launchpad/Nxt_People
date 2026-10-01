@@ -46,7 +46,8 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
      * report, and last year's leave for people who have gone does not
      * belong on this month's. */
     // Order here must match the order of the queries below, exactly.
-    const [leavesRes, regRes, wfhRes, onDutyRes, compOffRes, approvedLeavesRes] = await Promise.all([
+    const [leavesRes, regRes, wfhRes, onDutyRes, compOffRes, approvedLeavesRes,
+           approvedRegRes, approvedWfhRes, approvedOnDutyRes, approvedCompOffRes] = await Promise.all([
       pool.query(`
         SELECT l.id as "_id", l.leave_type as "leaveType", l.start_date as "startDate", l.end_date as "endDate",
                l.total_days as "totalDays", l.hours, l.start_time as "startTime", l.end_time as "endTime",
@@ -215,6 +216,84 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
           )
         ORDER BY l.start_date DESC LIMIT 500
       `, [userId]),
+
+      // Approved/Rejected Regularizations — same "this month" and visibility
+      // rules as the leaves query above. Regularization/WFH/On-Duty/Comp-Off
+      // only ever had a PENDING query here; nothing fed an Approved/Rejected
+      // history for any of them, so Approved Leaves was really "Approved
+      // Leaves (and nothing else)".
+      pool.query(`
+        SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
+               r.reason, r.status, r.rejection_reason as "rejectionReason", r.created_at as "createdAt",
+               json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
+                 'department', e.department, 'employeeId', e.employee_id) as employee,
+               ${REG_LEVELS_JSON} as "approvalLevels"
+        FROM attendance_regularizations r JOIN employees e ON r.employee_id = e.id
+        WHERE r.status IN ('approved', 'rejected')
+          AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'regularization' AND x.request_id = r.id AND x.approver_id = $1)
+               OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
+          AND r.date >= date_trunc('month', CURRENT_DATE)::date
+          AND r.date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
+          AND e.deleted_at IS NULL
+          AND (e.status = 'active' OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date)
+        ORDER BY r.date DESC LIMIT 500
+      `, [userId, full]),
+
+      // Approved/Rejected WFH
+      pool.query(`
+        SELECT w.id as "_id", w.date, w.reason, w.status, w.rejection_reason as "rejectionReason", w.created_at as "createdAt",
+               json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
+                 'department', e.department, 'employeeId', e.employee_id) as employee,
+               ${WFH_LEVELS_JSON} as "approvalLevels"
+        FROM wfh_requests w JOIN employees e ON w.employee_id = e.id
+        WHERE w.status IN ('approved', 'rejected')
+          AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'wfh' AND x.request_id = w.id AND x.approver_id = $1)
+               OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
+          AND w.date >= date_trunc('month', CURRENT_DATE)::date
+          AND w.date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
+          AND e.deleted_at IS NULL
+          AND (e.status = 'active' OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date)
+        ORDER BY w.date DESC LIMIT 500
+      `, [userId, full]),
+
+      // Approved/Rejected On-Duty
+      pool.query(`
+        SELECT o.id as "_id", o.start_date::text as "startDate", o.end_date::text as "endDate",
+               o.unit, o.start_time as "startTime", o.end_time as "endTime", o.hours,
+               o.request_type as "requestType", o.reason, o.status,
+               o.rejection_reason as "rejectionReason", o.created_at as "createdAt",
+               json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
+                 'department', e.department, 'employeeId', e.employee_id) as employee,
+               ${OD_LEVELS_JSON} as "approvalLevels"
+        FROM on_duty_requests o JOIN employees e ON o.employee_id = e.id
+        WHERE o.status IN ('approved', 'rejected')
+          AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'on_duty' AND x.request_id = o.id AND x.approver_id = $1)
+               OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
+          AND o.start_date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
+          AND o.end_date   >= date_trunc('month', CURRENT_DATE)::date
+          AND e.deleted_at IS NULL
+          AND (e.status = 'active' OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date)
+        ORDER BY o.start_date DESC LIMIT 500
+      `, [userId, full]),
+
+      // Approved/Rejected Comp-Off
+      pool.query(`
+        SELECT c.id as "_id", c.worked_date as "workedDate", c.comp_off_date as "compOffDate",
+               c.reason, c.days_earned as "daysEarned", c.expires_at as "expiresAt",
+               c.status, c.rejection_reason as "rejectionReason", c.created_at as "createdAt",
+               json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
+                 'department', e.department, 'employeeId', e.employee_id) as employee,
+               ${COMPOFF_LEVELS_JSON} as "approvalLevels"
+        FROM comp_offs c JOIN employees e ON c.employee_id = e.id
+        WHERE c.status IN ('approved', 'rejected')
+          AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'comp_off' AND x.request_id = c.id AND x.approver_id = $1)
+               OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
+          AND c.worked_date >= date_trunc('month', CURRENT_DATE)::date
+          AND c.worked_date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
+          AND e.deleted_at IS NULL
+          AND (e.status = 'active' OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date)
+        ORDER BY c.worked_date DESC LIMIT 500
+      `, [userId, full]),
     ]);
 
     const leaves = leavesRes.rows;
@@ -223,11 +302,18 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
     const compOffs = compOffRes.rows;
     const onDuty = onDutyRes.rows;
     const approvedLeaves = approvedLeavesRes.rows;
+    const approvedRegularizations = approvedRegRes.rows;
+    const approvedWfh = approvedWfhRes.rows;
+    const approvedOnDuty = approvedOnDutyRes.rows;
+    const approvedCompOffs = approvedCompOffRes.rows;
     const total = leaves.length + regularizations.length + wfhRequests.length + compOffs.length + onDuty.length;
 
     res.json({
       success: true,
-      data: { leaves, regularizations, wfhRequests, compOffs, onDuty, approvedLeaves, total }
+      data: {
+        leaves, regularizations, wfhRequests, compOffs, onDuty, approvedLeaves,
+        approvedRegularizations, approvedWfh, approvedOnDuty, approvedCompOffs, total,
+      }
     });
   } catch (err) { serverError(res, err); }
 });

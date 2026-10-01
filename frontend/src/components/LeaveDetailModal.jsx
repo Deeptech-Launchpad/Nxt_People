@@ -14,7 +14,7 @@
  *   onApproveAll(comment)                   — Super-Admin only: approve every remaining level at once.
  *   onCancel()                              — owner cancels their own pending request.
  *   balance                                 — array of {code,name,available,booked}.
- *   kind                                    — 'leave' (default) | 'regularization' | 'wfh' | 'on_duty'.
+ *   kind                                    — 'leave' (default) | 'regularization' | 'wfh' | 'on_duty' | 'comp_off'.
  */
 import React, { useState } from 'react';
 import { X, CheckCircle, CheckCheck, XCircle, Calendar, Clock, FileText, User, Hash, LogIn, LogOut, Eye, ArrowLeft, MessageSquare, Scissors, Pencil } from 'lucide-react';
@@ -125,10 +125,11 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
   const status = leave.status === 'pending' ? 'pending' : leave.status;
   const isWfh = kind === 'wfh';
   const isOnDuty = kind === 'on_duty';
-  const isReg = !isWfh && ((kind === 'regularization') || (!kind && !leave.leaveType && (leave.checkIn !== undefined || leave.checkOut !== undefined || (leave.date && !leave.startDate))));
-  const typeLabel = isWfh ? 'WFH Request' : isOnDuty ? 'On Duty Request' : isReg ? 'Attendance Regularization' : (TYPE_LABEL[leave.leaveType] || `${(leave.leaveType || '').replace(/_/g, ' ')}`);
+  const isCompOff = kind === 'comp_off';
+  const isReg = !isWfh && !isCompOff && ((kind === 'regularization') || (!kind && !leave.leaveType && (leave.checkIn !== undefined || leave.checkOut !== undefined || (leave.date && !leave.startDate))));
+  const typeLabel = isWfh ? 'WFH Request' : isOnDuty ? 'On Duty Request' : isCompOff ? 'Comp-Off Request' : isReg ? 'Attendance Regularization' : (TYPE_LABEL[leave.leaveType] || `${(leave.leaveType || '').replace(/_/g, ' ')}`);
   const empName = emp ? `${emp.firstName} ${emp.lastName}` : null;
-  const showBalance = !!balanceCards && status === 'pending' && !isReg && !isOnDuty;
+  const showBalance = !!balanceCards && status === 'pending' && !isReg && !isOnDuty && !isCompOff;
   const noteText = leave.rejectionReason;                    // doubles as approver comment
   const noteLabel = status === 'rejected' ? 'Rejection Reason' : 'Comment';
   const showActions = canAct && (onApprove || onReject);
@@ -140,12 +141,13 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
   const showCancel = typeof onCancel === 'function' && ['pending', 'approved'].includes(status);
   /* Editing is offered on the same states cancelling is, and for the same
    * reason: a live request can still be corrected, a resolved one is history.
-   * Regularizations and WFH have their own shapes and are not edited here. */
-  const showEdit = typeof onEdit === 'function' && ['pending', 'approved'].includes(status) && !isReg && !isWfh && !isOnDuty;
+   * Regularizations, WFH and Comp-Off have their own shapes and are not
+   * edited here. */
+  const showEdit = typeof onEdit === 'function' && ['pending', 'approved'].includes(status) && !isReg && !isWfh && !isOnDuty && !isCompOff;
   // Only offered on a range: cancelling "part" of a single day is just
   // cancelling it, and offering both would be two buttons for one outcome.
   const isRange = String(leave.startDate || '').slice(0, 10) !== String(leave.endDate || '').slice(0, 10);
-  const showCancelPart = typeof onCancelPart === 'function' && showCancel && isRange && !isReg && !isWfh && !isOnDuty;
+  const showCancelPart = typeof onCancelPart === 'function' && showCancel && isRange && !isReg && !isWfh && !isOnDuty && !isCompOff;
   const c = () => comment.trim() || undefined;
 
   return (
@@ -194,7 +196,7 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
             <div className={`grid grid-cols-1 ${showBalance ? 'md:grid-cols-2' : ''} gap-0`}>
               {/* Details */}
               <div className={`p-6 ${showBalance ? 'md:border-r border-slate-100' : ''}`}>
-                <h4 className="text-[15px] font-bold text-slate-700 mb-3">{isOnDuty ? 'On Duty Details' : isReg ? 'Regularization Details' : 'Leave Details'}</h4>
+                <h4 className="text-[15px] font-bold text-slate-700 mb-3">{isOnDuty ? 'On Duty Details' : isCompOff ? 'Comp-Off Details' : isReg ? 'Regularization Details' : 'Leave Details'}</h4>
 
                 {emp?.employeeId && <DetailRow icon={Hash} label="Employee ID">{emp.employeeId}</DetailRow>}
                 {empName && (
@@ -205,11 +207,17 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                 <DetailRow icon={FileText} label="Request Type">
                   {typeLabel}
                   {isOnDuty && leave.requestType && <span className="ml-2 text-[13px] text-slate-600">{leave.requestType}</span>}
-                  {!isReg && !isWfh && !isOnDuty && leave.isHalfDay && <span className="ml-2 text-[13px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">Half Day</span>}
+                  {!isReg && !isWfh && !isOnDuty && !isCompOff && leave.isHalfDay && <span className="ml-2 text-[13px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">Half Day</span>}
                 </DetailRow>
 
                 {isWfh ? (
                   <DetailRow icon={Calendar} label="Date">{fmtDate(leave.date)}</DetailRow>
+                ) : isCompOff ? (
+                  <>
+                    <DetailRow icon={Calendar} label="Worked On">{fmtDate(leave.workedDate)}</DetailRow>
+                    {leave.compOffDate && <DetailRow icon={Calendar} label="Comp-Off Date">{fmtDate(leave.compOffDate)}</DetailRow>}
+                    <DetailRow icon={Clock} label="Days Earned">{leave.daysEarned} day{Number(leave.daysEarned) !== 1 ? 's' : ''}</DetailRow>
+                  </>
                 ) : isOnDuty ? (
                   <>
                     <DetailRow icon={Calendar} label="Dates">

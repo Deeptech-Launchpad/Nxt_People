@@ -34,8 +34,8 @@ export const ATTENDANCE_TABS = [
 export const APPROVALS_TABS = [
   { id: 'leaves', label: 'Leave Requests' },
   { id: 'permissions', label: 'Permissions' },
-  { id: 'approvedLeaves', label: 'Approved Leaves' },
-  { id: 'rejectedLeaves', label: 'Rejected Leaves' },
+  { id: 'approvedLeaves', label: 'Approved Requests' },
+  { id: 'rejectedLeaves', label: 'Rejected Requests' },
   { id: 'regularizations', label: 'Regularizations' },
   { id: 'wfh', label: 'WFH Requests' },
   { id: 'compoff', label: 'Comp-Off' },
