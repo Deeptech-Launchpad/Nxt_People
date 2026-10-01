@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye, Briefcase, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye, Briefcase, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -141,6 +141,13 @@ export default function Approvals({ embedded = false }) {
   // re-appears with the delta.
   const [seenCounts, setSeenCounts] = useState(() => loadSeen());
   const [searchFilter, setSearchFilter] = useState('');
+  // Set only by clicking a summary tile ({ kind, leaveType?, label }) — narrows
+  // the Approved Requests list to just what that tile counted. Cleared
+  // whenever the active tab moves away from Approved Requests, so navigating
+  // back to it later (via the tab strip, not another tile click) always
+  // starts unfiltered rather than silently keeping a stale narrowing.
+  const [approvedFilter, setApprovedFilter] = useState(null);
+  useEffect(() => { if (tab !== 'approvedLeaves') setApprovedFilter(null); }, [tab]);
   const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
   const [detailBalance, setDetailBalance] = useState(null); // balance cards for the detail modal
   const [detailWfh, setDetailWfh] = useState(null);
@@ -441,21 +448,29 @@ export default function Approvals({ embedded = false }) {
         <button onClick={() => shiftMonth(1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><ChevronRight size={15} /></button>
       </div>
 
-      {/* Summary cards. The approved counts open no tab: every tab below is a
-          pending queue or a list bounded by leave dates, and none of them is
-          the set the number counts. */}
+      {/* Summary cards. Total Pending opens no tab — it is the live queue
+          (see the comment on `load`), not a slice of the Approved Requests
+          history below, so there is nothing for it to filter into. The seven
+          Approved counts now mean exactly the same thing Approved Requests
+          does below them (same approved_at + month scoping, same visibility
+          rules), so clicking one jumps there pre-filtered to just that type. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
         {[
-          ['Total Pending',           loading ? null : data.total,  'bg-amber-50 text-amber-700'],
-          ['Casual Leave Approved',   summary?.casual,              'bg-blue-50 text-blue-700'],
-          ['Permissions Approved',    summary?.permissions,         'bg-purple-50 text-purple-700'],
-          ['Regularization Approved', summary?.regularizations,     'bg-slate-50 text-slate-600'],
-          ['LOP Approved',            summary?.lop,                 'bg-brand-50 text-brand-700'],
-          ['WFH Approved',            summary?.wfh,                 'bg-green-50 text-green-700'],
-          ['Comp-Off Approved',       summary?.compOff,             'bg-orange-50 text-orange-700'],
-          ['On Duty Approved',        summary?.onDuty,              'bg-violet-50 text-violet-700'],
-        ].map(([l, v, c]) => (
-          <div key={l} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm transition-colors">
+          ['Total Pending',           loading ? null : data.total,  'bg-amber-50 text-amber-700',  null],
+          ['Casual Leave Approved',   summary?.casual,              'bg-blue-50 text-blue-700',    { kind: 'leave', leaveType: 'casual' }],
+          ['Permissions Approved',    summary?.permissions,         'bg-purple-50 text-purple-700',{ kind: 'leave', leaveType: 'permission' }],
+          ['Regularization Approved', summary?.regularizations,     'bg-slate-50 text-slate-600',  { kind: 'regularization' }],
+          ['LOP Approved',            summary?.lop,                 'bg-brand-50 text-brand-700',  { kind: 'leave', leaveType: 'unpaid' }],
+          ['WFH Approved',            summary?.wfh,                 'bg-green-50 text-green-700',  { kind: 'wfh' }],
+          ['Comp-Off Approved',       summary?.compOff,             'bg-orange-50 text-orange-700',{ kind: 'comp_off' }],
+          ['On Duty Approved',        summary?.onDuty,              'bg-violet-50 text-violet-700',{ kind: 'on_duty' }],
+        ].map(([l, v, c, f]) => (
+          <div key={l}
+            onClick={f ? () => {
+              setApprovedFilter({ ...f, label: l });
+              setTab('approvedLeaves'); markTabSeen('approvedLeaves', tabCounts.approvedLeaves || 0); setSearchFilter('');
+            } : undefined}
+            className={`bg-white rounded-2xl p-4 border border-slate-100 shadow-sm transition-colors ${f ? 'cursor-pointer hover:border-slate-300 hover:shadow-md' : ''}`}>
             <p className="text-sm text-slate-500 mb-2">{l}</p>
             <p className={`text-4xl font-display font-bold px-3 py-1 rounded-lg w-fit ${c}`}>{v ?? '—'}</p>
           </div>
@@ -490,7 +505,7 @@ export default function Approvals({ embedded = false }) {
         )}
 
         {['approvedLeaves', 'rejectedLeaves'].includes(tab) && (
-          <div className="px-5 py-3 border-b border-slate-100">
+          <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap">
             <div className="relative w-64">
               <input
                 type="text"
@@ -501,6 +516,14 @@ export default function Approvals({ embedded = false }) {
               />
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
             </div>
+            {tab === 'approvedLeaves' && approvedFilter && (
+              <span className="flex items-center gap-1.5 bg-brand-50 text-brand-700 text-[13.5px] font-medium px-3 py-1.5 rounded-full">
+                {approvedFilter.label}
+                <button onClick={() => setApprovedFilter(null)} className="hover:text-brand-900" aria-label="Clear filter">
+                  <X size={13} />
+                </button>
+              </span>
+            )}
           </div>
         )}
 
@@ -617,7 +640,11 @@ export default function Approvals({ embedded = false }) {
             {/* Approved Requests — every type whose approval chain can settle:
                 Leave/Permission, Regularization, WFH, On-Duty, Comp-Off. */}
             {tab === 'approvedLeaves' && (() => {
-              const list = data.approvedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())) || [];
+              const list = data.approvedLeaves?.filter(l => {
+                if (approvedFilter && l.kind !== approvedFilter.kind) return false;
+                if (approvedFilter?.leaveType && l.leaveType !== approvedFilter.leaveType) return false;
+                return !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
+              }) || [];
               return list.length === 0
                 ? <EmptyState icon={CheckCircle} message="No approved requests found" />
                 : <>
