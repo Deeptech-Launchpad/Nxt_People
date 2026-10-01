@@ -167,7 +167,11 @@ export default function Approvals({ embedded = false }) {
 
   const load = (silent = false) => {
     if (!silent) setLoading(true);
-    api.get('/approvals/pending')
+    // The Approved/Rejected history follows the same month switcher as the
+    // summary tiles above it. The five pending queues ignore these params
+    // server-side (see approvals.js) — a request that's still pending is
+    // live work no matter what month happens to be showing beside it.
+    api.get(`/approvals/pending?month=${sumMonth}&year=${sumYear}`)
       .then(res => {
         const d = res.data.data || {};
         const allLeaves = d.leaves || [];
@@ -229,7 +233,10 @@ export default function Approvals({ embedded = false }) {
       .finally(() => { if (!silent) setLoading(false); });
   };
 
-  useEffect(load, []);
+  // Re-fetches whenever the month switcher moves, same as the summary tiles
+  // below — otherwise the stat tiles say September while the list underneath
+  // keeps showing whatever month the page happened to load on.
+  useEffect(load, [sumMonth, sumYear]);
 
 
   // Picks up newly submitted / approved requests without a manual refresh.
@@ -617,7 +624,8 @@ export default function Approvals({ embedded = false }) {
                 {getVisible('approvedLeaves', list).map(l => {
                   const meta = KIND_META[l.kind];
                   return (
-                  <div key={l._id} className="p-5 flex items-start justify-between gap-4 overflow-hidden">
+                  <div key={l._id} onClick={() => openSettledDetail(l)}
+                    className="p-5 flex items-start justify-between gap-4 overflow-hidden cursor-pointer hover:bg-slate-50 transition-colors">
                     <div className="flex items-start gap-4 min-w-0">
                       {meta ? (
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${meta.bg} ${meta.text}`}>
@@ -669,7 +677,7 @@ export default function Approvals({ embedded = false }) {
                      </div>
                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                        <div className="flex items-center gap-2">
-                         <button onClick={() => openSettledDetail(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
+                         <button onClick={e => { e.stopPropagation(); openSettledDetail(l); }} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                            <Eye size={13} /> View
                          </button>
                          <ActionBtns endpoint={meta?.endpoint || 'leaves'} id={l._id} type={meta?.label || 'Leave'} canActLeave={false} status={l.status} />
@@ -692,7 +700,8 @@ export default function Approvals({ embedded = false }) {
                 {getVisible('rejectedLeaves', list).map(l => {
                   const meta = KIND_META[l.kind];
                   return (
-                  <div key={l._id} className="p-5 flex items-start justify-between gap-4 overflow-hidden">
+                  <div key={l._id} onClick={() => openSettledDetail(l)}
+                    className="p-5 flex items-start justify-between gap-4 overflow-hidden cursor-pointer hover:bg-slate-50 transition-colors">
                     <div className="flex items-start gap-4 min-w-0">
                       {meta ? (
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${meta.bg} ${meta.text}`}>
@@ -749,7 +758,7 @@ export default function Approvals({ embedded = false }) {
                      </div>
                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                        <div className="flex items-center gap-2">
-                         <button onClick={() => openSettledDetail(l)} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
+                         <button onClick={e => { e.stopPropagation(); openSettledDetail(l); }} className="flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors">
                            <Eye size={13} /> View
                          </button>
                          <ActionBtns endpoint={meta?.endpoint || 'leaves'} id={l._id} type={meta?.label || 'Leave'} canActLeave={false} status={l.status} />

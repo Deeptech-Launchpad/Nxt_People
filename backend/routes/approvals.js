@@ -37,6 +37,20 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
     // "top not first" gate is enforced at action time).
     const full = isFullAccess(req.user.role);
 
+    /* The Approved/Rejected history respects the month switcher in the UI;
+     * the five pending queues below never do (see the comment there) — a
+     * request that's still pending is live work regardless of what month
+     * happens to be showing in the history tabs beside it. Defaults to the
+     * current month so a plain GET with no params behaves exactly as it
+     * always has. */
+    const now = new Date();
+    const qMonth = parseInt(req.query.month, 10);
+    const qYear = parseInt(req.query.year, 10);
+    const histMonth = Number.isInteger(qMonth) && qMonth >= 1 && qMonth <= 12 ? qMonth : now.getMonth() + 1;
+    const histYear = Number.isInteger(qYear) ? qYear : now.getFullYear();
+    const histStart = `${histYear}-${String(histMonth).padStart(2, '0')}-01`;
+    const histEnd = new Date(histYear, histMonth, 0).toLocaleDateString('en-CA');
+
     /* Every one of these joins employees and none of them excluded a
      * soft-deleted one, so `e.deleted_at IS NULL` now appears on all of them.
      *
@@ -195,14 +209,15 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         WHERE ${full ? 'TRUE' : `(EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))`}
           AND l.status IN ('approved', 'rejected')
-          /* This month only. It had no date bound at all, so the Approved and
+          /* The selected month only (defaults to current — see histStart/
+           * histEnd above). It had no date bound at all, so the Approved and
            * Rejected tabs were showing 2024 alongside today and the 500-row cap
            * was being spent on history nobody was looking for.
            *
            * Overlap rather than start date, so a leave running from the 30th
            * into next month still belongs to this month too. */
-          AND l.start_date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
-          AND l.end_date   >= date_trunc('month', CURRENT_DATE)::date
+          AND l.start_date <= $3::date
+          AND l.end_date   >= $2::date
           /* People, not records. Deleted rows were never excluded here at all.
            *
            * Somebody whose last working day falls inside this month is still
@@ -212,10 +227,10 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
           AND e.deleted_at IS NULL
           AND (
             e.status = 'active'
-            OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date
+            OR e.exit_date >= $2::date
           )
         ORDER BY l.start_date DESC LIMIT 500
-      `, [userId]),
+      `, [userId, histStart, histEnd]),
 
       // Approved/Rejected Regularizations — same "this month" and visibility
       // rules as the leaves query above. Regularization/WFH/On-Duty/Comp-Off
@@ -232,12 +247,12 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         WHERE r.status IN ('approved', 'rejected')
           AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'regularization' AND x.request_id = r.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
-          AND r.date >= date_trunc('month', CURRENT_DATE)::date
-          AND r.date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
+          AND r.date >= $3::date
+          AND r.date <= $4::date
           AND e.deleted_at IS NULL
-          AND (e.status = 'active' OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date)
+          AND (e.status = 'active' OR e.exit_date >= $3::date)
         ORDER BY r.date DESC LIMIT 500
-      `, [userId, full]),
+      `, [userId, full, histStart, histEnd]),
 
       // Approved/Rejected WFH
       pool.query(`
@@ -249,12 +264,12 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         WHERE w.status IN ('approved', 'rejected')
           AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'wfh' AND x.request_id = w.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
-          AND w.date >= date_trunc('month', CURRENT_DATE)::date
-          AND w.date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
+          AND w.date >= $3::date
+          AND w.date <= $4::date
           AND e.deleted_at IS NULL
-          AND (e.status = 'active' OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date)
+          AND (e.status = 'active' OR e.exit_date >= $3::date)
         ORDER BY w.date DESC LIMIT 500
-      `, [userId, full]),
+      `, [userId, full, histStart, histEnd]),
 
       // Approved/Rejected On-Duty
       pool.query(`
@@ -269,12 +284,12 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         WHERE o.status IN ('approved', 'rejected')
           AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'on_duty' AND x.request_id = o.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
-          AND o.start_date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
-          AND o.end_date   >= date_trunc('month', CURRENT_DATE)::date
+          AND o.start_date <= $4::date
+          AND o.end_date   >= $3::date
           AND e.deleted_at IS NULL
-          AND (e.status = 'active' OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date)
+          AND (e.status = 'active' OR e.exit_date >= $3::date)
         ORDER BY o.start_date DESC LIMIT 500
-      `, [userId, full]),
+      `, [userId, full, histStart, histEnd]),
 
       // Approved/Rejected Comp-Off
       pool.query(`
@@ -288,12 +303,12 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         WHERE c.status IN ('approved', 'rejected')
           AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'comp_off' AND x.request_id = c.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
-          AND c.worked_date >= date_trunc('month', CURRENT_DATE)::date
-          AND c.worked_date <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
+          AND c.worked_date >= $3::date
+          AND c.worked_date <= $4::date
           AND e.deleted_at IS NULL
-          AND (e.status = 'active' OR e.exit_date >= date_trunc('month', CURRENT_DATE)::date)
+          AND (e.status = 'active' OR e.exit_date >= $3::date)
         ORDER BY c.worked_date DESC LIMIT 500
-      `, [userId, full]),
+      `, [userId, full, histStart, histEnd]),
     ]);
 
     const leaves = leavesRes.rows;
