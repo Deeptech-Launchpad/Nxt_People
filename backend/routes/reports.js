@@ -2046,6 +2046,22 @@ function shiftMinutes(t) {
   return Number.isNaN(h) ? null : h * 60 + (m || 0);
 }
 
+// Picks the day's governing leave — the same rule classifyAttendanceDay's
+// callers have always used, first non-permission approved row for the day —
+// plus, when that leave is a half day, whichever OTHER approved leave covers
+// the opposite half. Two complementary half-day leaves of different types
+// (a paid first half + an unpaid second half) is a normal way to split a
+// day; without this, the governing leave is the only one any caller ever
+// saw, and the second one disappeared before classifyAttendanceDay could
+// read it.
+function resolveDayLeave(dayLeaves) {
+  const leave = dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0];
+  const complementLeave = leave?.isHalfDay
+    ? dayLeaves.find(l => l !== leave && l.leaveType !== 'permission' && l.isHalfDay && l.halfDayType && l.halfDayType !== leave.halfDayType)
+    : undefined;
+  return { leave, complementLeave };
+}
+
 // Single source of truth for "what happened on this day for this employee",
 // shared by every calendar/summary attendance report so Muster Roll, Present/
 // Absent Status, Presence Hours Break-up and Attendance Data for Payroll can
@@ -2054,7 +2070,7 @@ function shiftMinutes(t) {
 // On Duty is work done elsewhere — a client visit, or a day worked from home —
 // so it outranks a plain absence but never a holiday, a weekend or approved
 // leave: those say the day was not worked at all.
-function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, isFuture, isToday, employee }) {
+function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, complementLeave, onDuty, isFuture, isToday, employee }) {
   // Holiday, weekend, and approved leave are all known ahead of time, so a
   // future date still shows them — only Present/Absent is a verdict about
   // what actually happened, which cannot be known before the day is over.
@@ -2064,17 +2080,25 @@ function classifyAttendanceDay({ date, holMap, rules, attStatus, leave, onDuty, 
   if (onDuty) return { code: 'OD', kind: 'onDuty' };
   if (leave) {
     const code = ATT_LEAVE_CODE[leave.leaveType] || 'L';
-    // Half a day of leave says nothing about the other half. This used to
-    // render every half-day leave as "0.5CL/0.5P" from the leave record alone,
-    // so somebody who took the morning off and then did not come in at all was
-    // credited half a day present they never worked. The reference does not do
-    // that — Zoho's own status for such a day reads
-    // "Casual Leave(Second Half), 0.5 day Absent" — and it took eight months of
-    // real data to surface, because seeded data always has somebody working the
-    // other half.
-    const workedOtherHalf = attStatus === 'present' || attStatus === 'late' || attStatus === 'half-day';
+    // Half a day of leave says nothing about the other half on its own. This
+    // used to render every half-day leave as "0.5CL/0.5P" from the leave
+    // record alone, so somebody who took the morning off and then did not
+    // come in at all was credited half a day present they never worked —
+    // fixed by falling back to Absent when nothing says otherwise.
+    //
+    // But a second approved half-day leave of a DIFFERENT type on the OTHER
+    // half (a paid first-half + an unpaid second-half is a normal way to
+    // split a day) is not "nothing" — it is the most direct answer there is
+    // for what the other half was, more direct than attendance status, which
+    // is why complementLeave is checked before falling back to it. Without
+    // this, the second leave was invisible to this function entirely (the
+    // caller only ever passed the single governing leave) and a fully-leave
+    // day read as half Absent.
+    const otherCode = complementLeave
+      ? (ATT_LEAVE_CODE[complementLeave.leaveType] || 'L')
+      : ((attStatus === 'present' || attStatus === 'late' || attStatus === 'half-day') ? 'P' : 'A');
     return {
-      code: leave.isHalfDay ? `0.5${code}/0.5${workedOtherHalf ? 'P' : 'A'}` : code,
+      code: leave.isHalfDay ? `0.5${code}/0.5${otherCode}` : code,
       kind: leave.leaveType === 'unpaid' ? 'unpaidLeave' : 'paidLeave',
       fraction: leave.isHalfDay ? 0.5 : 1,
     };
@@ -2420,13 +2444,14 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
       // Only consulted where an approved leave has not already answered — an
       // approved record always names the day ahead of an application for it.
       const pendingLeaves = dayLeaves.length ? [] : ctx.pendingLeavesOn(emp._id, day);
+      const { leave: dayLeave, complementLeave } = resolveDayLeave(dayLeaves);
       const cls = classifyAttendanceDay({
         date: day, holMap: ctx.holMap, rules: ctx.rules,
         employee: emp,
         // A permission is hours off inside a working day, so when it sits
         // alongside a real leave the leave is what classifies the day.
         attStatus: att?.status,
-        leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+        leave: dayLeave, complementLeave,
         onDuty: ctx.onDutyOn(emp._id, day),
         isFuture,
       });
@@ -2579,11 +2604,12 @@ router.get('/attendance/early-late', authorize('admin', 'director', 'hr_admin', 
         if (d > ctx.today || !ctx.onRolls(emp, d)) continue;
         const ymd = d.toLocaleDateString('en-CA');
         const dayLeaves = ctx.leavesOn(emp._id, d);
+        const { leave: dayLeave, complementLeave } = resolveDayLeave(dayLeaves);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           employee: emp,
           attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
-          leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          leave: dayLeave, complementLeave,
           onDuty: ctx.onDutyOn(emp._id, d),
           isFuture: false,
         });
@@ -2671,11 +2697,12 @@ router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admi
         const ymd = d.toLocaleDateString('en-CA');
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
         const dayLeaves = ctx.leavesOn(emp._id, d);
+        const { leave: dayLeave, complementLeave } = resolveDayLeave(dayLeaves);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           employee: emp,
           attStatus: att?.status,
-          leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          leave: dayLeave, complementLeave,
           onDuty: ctx.onDutyOn(emp._id, d),
           isFuture: ymd > todayYmd,
         });
@@ -2800,6 +2827,7 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
       const ymd = day.toLocaleDateString('en-CA');
       const att = attByDate.get(ymd);
       const dayLeaves = leavesOnDay(ymd);
+      const { leave: dayLeave, complementLeave } = resolveDayLeave(dayLeaves);
       // Classify the day on its own terms first. A holiday or a weekend is
       // known in advance and is paid whether or not it has happened yet, so
       // "future" is not asked here — it only decides what an ordinary working
@@ -2808,7 +2836,7 @@ router.get('/attendance/hours-breakup', authorize('admin', 'director', 'hr_admin
         date: day, holMap: cal.holMap, rules: cal.rules,
         employee: emp,
         attStatus: att?.status,
-        leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+        leave: dayLeave, complementLeave,
         onDuty: onDutyOnDay(ymd),
         isFuture: false,
       });
@@ -2916,10 +2944,11 @@ router.get('/attendance/payroll-export', authorize('admin', 'director', 'hr_admi
         onRollsCount += 1;
         const ymd = d.toLocaleDateString('en-CA');
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
+        const { leave: dayLeave, complementLeave } = resolveDayLeave(ctx.leavesOn(emp._id, d));
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           employee: emp,
-          attStatus: att?.status, leave: ctx.leaveOn(emp._id, d),
+          attStatus: att?.status, leave: dayLeave, complementLeave,
           onDuty: ctx.onDutyOn(emp._id, d), isFuture: false,
         });
 
@@ -3006,11 +3035,12 @@ router.get('/attendance/muster-roll', authorize('admin', 'director', 'hr_admin',
           const ymd = d.toLocaleDateString('en-CA');
           const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
           const dayLeaves = ctx.leavesOn(emp._id, d);
+          const { leave: dayLeave, complementLeave } = resolveDayLeave(dayLeaves);
           const cls = classifyAttendanceDay({
             date: d, holMap: ctx.holMap, rules: ctx.rules,
             employee: emp,
             attStatus: att?.status,
-            leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+            leave: dayLeave, complementLeave,
             onDuty: ctx.onDutyOn(emp._id, d),
             isFuture: ymd > todayYmd,
             isToday: ymd === todayYmd,
@@ -3089,11 +3119,12 @@ router.get('/attendance/consecutive-absences', authorize('admin', 'director', 'h
         const ymd = d.toLocaleDateString('en-CA');
         if (!ctx.onRolls(emp, d)) { close(); continue; }
         const dayLeaves = ctx.leavesOn(emp._id, d);
+        const { leave: dayLeave, complementLeave } = resolveDayLeave(dayLeaves);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           employee: emp,
           attStatus: ctx.attByKey.get(`${emp._id}|${ymd}`)?.status,
-          leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          leave: dayLeave, complementLeave,
           onDuty: ctx.onDutyOn(emp._id, d),
           isFuture: false,
         });
@@ -3195,11 +3226,12 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
         if (ymd > todayYmd) continue;
         const att = ctx.attByKey.get(`${emp._id}|${ymd}`);
         const dayLeaves = ctx.leavesOn(emp._id, d);
+        const { leave: dayLeave, complementLeave } = resolveDayLeave(dayLeaves);
         const cls = classifyAttendanceDay({
           date: d, holMap: ctx.holMap, rules: ctx.rules,
           employee: emp,
           attStatus: att?.status,
-          leave: dayLeaves.find(l => l.leaveType !== 'permission') || dayLeaves[0],
+          leave: dayLeave, complementLeave,
           onDuty: ctx.onDutyOn(emp._id, d),
           isFuture: false,
         });
