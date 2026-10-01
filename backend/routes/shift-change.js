@@ -163,13 +163,36 @@ router.post('/', audit('CREATE', 'shift_change_request'), async (req, res) => {
     const full = (await client.query(`SELECT ${ROW} ${FROM} WHERE r.id = $1`, [id])).rows[0];
     // The approval chain is derived from the rule for this form, exactly as it
     // is for leave. An auto-approve rule settles it inside createLevels.
-    await createLevels(client, 'shift_change', id, req.user._id, contextOf(full));
+    const levels = await createLevels(client, 'shift_change', id, req.user._id, contextOf(full));
     await client.query('COMMIT');
 
     // An auto rule may already have settled it, in which case the change has
     // to be applied now rather than waiting for an approval that never comes.
     const settled = (await pool.query(`SELECT status FROM shift_change_requests WHERE id = $1`, [id])).rows[0];
     if (settled.status === 'approved') await applyChange(id);
+
+    // Still pending (not auto-settled) — tell the approvers. Best-effort: a
+    // notification failure must never undo an already-committed request.
+    // Mirrors regularizations.js/on-duty.js — this was one of the request
+    // types whose approval chain never told its approvers anything was
+    // waiting.
+    if (settled.status === 'pending') {
+      try {
+        const empName = `${req.user.firstName} ${req.user.lastName}`;
+        const label = b.endDate ? `${b.startDate} to ${b.endDate}` : b.startDate;
+        const approverIds = levels.map(l => l.approverId).filter(Boolean);
+        const approvers = approverIds.length
+          ? (await pool.query(`SELECT id FROM employees WHERE id = ANY($1::uuid[])`, [approverIds])).rows
+          : (await pool.query(
+              `SELECT id FROM employees WHERE role IN ('admin','hr_admin') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+            )).rows;
+        await Promise.all(approvers.map(a => createNotification(
+          a.id, 'approval', 'Shift Change Approval Required',
+          `${empName} requested a ${changeType} shift change starting ${label}.`,
+          '/shift-change'
+        ).catch(err => logger.warn({ err: err.message }, '[shift-change] notify approver failed'))));
+      } catch (e) { logger.error({ err: e.message }, '[shift-change] notify soft-fail'); }
+    }
 
     fire('shift_change', 'created', { recordId: id, actorId: req.user._id });
     const out = (await pool.query(`SELECT ${ROW} ${FROM} WHERE r.id = $1`, [id])).rows[0];

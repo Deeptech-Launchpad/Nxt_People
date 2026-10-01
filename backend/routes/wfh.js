@@ -8,6 +8,7 @@ const { audit } = require('../middleware/audit');
 const { createNotification } = require('./notifications');
 const { createLevels, canUserAct, applyApproval, applyApproveAll, applyRejection, approvalLevelsJson } = require('../utils/leaveApproval');
 const { serverError } = require('../utils/serverError');
+const logger = require('../logger');
 router.use(protect);
 
 const WFH_LEVELS_JSON = approvalLevelsJson('wfh', 'w');
@@ -54,6 +55,7 @@ router.post('/', audit('CREATE', 'wfh_request'), async (req, res) => {
     if (!date || !reason) return res.status(400).json({ success: false, message: 'Date and reason are required' });
 
     const client = await pool.connect();
+    let wfh, levels;
     try {
       await client.query('BEGIN');
       const conflict = await client.query('SELECT id FROM wfh_requests WHERE employee_id=$1 AND date=$2', [req.user._id, date]);
@@ -75,16 +77,36 @@ router.post('/', audit('CREATE', 'wfh_request'), async (req, res) => {
          RETURNING id as "_id", date, reason, status, created_at as "createdAt"`,
         [req.user._id, date, reason]
       );
-      const wfh = result.rows[0];
-      await createLevels(client, 'wfh', wfh._id, req.user._id);
+      wfh = result.rows[0];
+      levels = await createLevels(client, 'wfh', wfh._id, req.user._id);
       await client.query('COMMIT');
-      res.status(201).json({ success: true, data: wfh });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
     } finally {
       client.release();
     }
+
+    // Best-effort: a notification failure must never undo an already-committed
+    // request. Mirrors regularizations.js/on-duty.js — this was the one request
+    // type whose approval chain never told its approvers anything was waiting.
+    try {
+      const empName = `${req.user.firstName} ${req.user.lastName}`;
+      const dateLabel = new Date(wfh.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const approverIds = levels.map(l => l.approverId).filter(Boolean);
+      const approvers = approverIds.length
+        ? (await pool.query(`SELECT id FROM employees WHERE id = ANY($1::uuid[])`, [approverIds])).rows
+        : (await pool.query(
+            `SELECT id FROM employees WHERE role IN ('admin','hr_admin') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+          )).rows;
+      await Promise.all(approvers.map(a => createNotification(
+        a.id, 'approval', 'WFH Approval Required',
+        `${empName} requested to work from home on ${dateLabel}.`,
+        '/approvals?tab=wfh'
+      ).catch(err => logger.warn({ err: err.message }, '[wfh] notify approver failed'))));
+    } catch (e) { logger.error({ err: e.message }, '[wfh] notify soft-fail'); }
+
+    res.status(201).json({ success: true, data: wfh });
   } catch (err) { serverError(res, err); }
 });
 

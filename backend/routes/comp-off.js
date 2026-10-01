@@ -14,6 +14,7 @@ const {
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { ruleMatchesDate, holidayClosesOffice } = require('../utils/workingDays');
 const { serverError } = require('../utils/serverError');
+const logger = require('../logger');
 router.use(protect);
 
 // Comp-Off approval chain as JSON for the shared ApprovalTimeline (same engine
@@ -440,7 +441,7 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
      * approval timeline, and can only be actioned by somebody with full access
      * who happens to notice it. Failing here rolls the request back and tells
      * the person why, which is the version that gets fixed. */
-    await createLevels(client, 'comp_off', created._id, subject.id);
+    const levels = await createLevels(client, 'comp_off', created._id, subject.id);
     await client.query('COMMIT');
 
     if (subject.onBehalf) {
@@ -451,6 +452,25 @@ router.post('/', audit('CREATE', 'comp_off'), async (req, res) => {
         changes: { employee: subject.name || subject.id, workedDate, compOffDate: compOffDate || null, daysEarned },
       });
     }
+
+    // Best-effort: a notification failure must never undo an already-committed
+    // request. Mirrors regularizations.js/on-duty.js — this was one of the
+    // request types whose approval chain never told its approvers anything
+    // was waiting.
+    try {
+      const empName = subject.onBehalf ? subject.name : `${req.user.firstName} ${req.user.lastName}`;
+      const approverIds = levels.map(l => l.approverId).filter(Boolean);
+      const approvers = approverIds.length
+        ? (await pool.query(`SELECT id FROM employees WHERE id = ANY($1::uuid[])`, [approverIds])).rows
+        : (await pool.query(
+            `SELECT id FROM employees WHERE role IN ('admin','hr_admin') AND COALESCE(status,'active')='active' AND deleted_at IS NULL`
+          )).rows;
+      await Promise.all(approvers.map(a => createNotification(
+        a.id, 'approval', 'Comp-Off Approval Required',
+        `${empName} earned a comp-off for working ${workedDate}${compOffDate ? `, to be taken on ${compOffDate}` : ''}.`,
+        '/approvals?tab=compoff'
+      ).catch(err => logger.warn({ err: err.message }, '[comp-off] notify approver failed'))));
+    } catch (e) { logger.error({ err: e.message }, '[comp-off] notify soft-fail'); }
 
     res.status(201).json({ success: true, data: created });
   } catch (err) {
