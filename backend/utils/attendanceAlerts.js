@@ -19,6 +19,7 @@
 const pool = require('../db');
 const logger = require('../logger');
 const attendanceConfig = require('./attendanceConfig');
+const { createNotification } = require('../routes/notifications');
 
 const hhmmToMinutes = (t) => {
   if (!t) return null;
@@ -137,15 +138,28 @@ async function sweepAttendanceAlerts({ now = new Date(), tz = 'Asia/Kolkata' } =
     return hhmmToMinutes(t);
   })();
 
-  // Everyone on rolls, with their shift and today's row if there is one.
+  // Everyone on rolls, with their shift, today's row if there is one, both
+  // supervisory relationships an employee can have (reporting manager and
+  // the separate secondary-reporting field — the second approver the rest
+  // of the app already treats as a co-equal supervisor, see reportsScope()),
+  // and whether today is already covered by an approved leave or permission.
+  // A pending-but-not-yet-approved application does NOT count here — only an
+  // approved one is a real, sanctioned reason to be missing.
   const rows = await pool.query(
     `SELECT e.id, TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS name, e.email,
-            m.email AS "managerEmail", TRIM(CONCAT(m.first_name, ' ', m.last_name)) AS "managerName",
+            m.id AS "managerId", m.email AS "managerEmail", TRIM(CONCAT(m.first_name, ' ', m.last_name)) AS "managerName",
+            ti.id AS "secondaryId", ti.email AS "secondaryEmail", TRIM(CONCAT(ti.first_name, ' ', ti.last_name)) AS "secondaryName",
             s.start_time AS "shiftStart", s.end_time AS "shiftEnd",
-            a.check_in AS "checkIn", a.working_hours AS "workingHours"
+            a.check_in AS "checkIn", a.working_hours AS "workingHours",
+            EXISTS (
+              SELECT 1 FROM leaves l
+               WHERE l.employee_id = e.id AND l.status = 'approved'
+                 AND l.start_date <= $1::date AND l.end_date >= $1::date
+            ) AS "onApprovedLeave"
        FROM employees e
        LEFT JOIN shifts s ON s.id = e.shift_id
        LEFT JOIN employees m ON m.id = e.reporting_manager_id AND m.deleted_at IS NULL AND m.status = 'active'
+       LEFT JOIN employees ti ON ti.id = e.approving_authority_id AND ti.deleted_at IS NULL AND ti.status = 'active' AND ti.id <> m.id
        LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = $1::date
       WHERE e.deleted_at IS NULL AND e.status = 'active' AND e.exit_date IS NULL`,
     [today]
@@ -155,18 +169,34 @@ async function sweepAttendanceAlerts({ now = new Date(), tz = 'Asia/Kolkata' } =
     const startMin = hhmmToMinutes(r.shiftStart);
     const endMin = hhmmToMinutes(r.shiftEnd);
 
-    if (missed.enabled && startMin !== null && !r.checkIn) {
+    if (missed.enabled && startMin !== null && !r.checkIn && !r.onApprovedLeave) {
       const window = hhmmToMinutes(missed.hoursAfterShiftStart) || 0;
       // Exactly on the minute it becomes due — the sweep runs every minute, so
       // a range would re-send for the rest of the day.
       if (nowMin === startMin + window) {
-        await send({
-          to: [r.managerEmail],
-          subject: `Missed check-in: ${r.name}`,
-          lines: [`Hi ${r.managerName || 'there'},`,
-                  `${r.name} has not checked in today, ${today}.`],
-        }).then(x => { summary.missedCheckIn += x.sent ? 1 : 0; })
-          .catch(err => logger.warn({ err: err.message }, 'missed check-in alert failed'));
+        const recipients = [
+          r.managerId ? { id: r.managerId, email: r.managerEmail } : null,
+          r.secondaryId ? { id: r.secondaryId, email: r.secondaryEmail } : null,
+        ].filter(Boolean);
+
+        // In-app is the default channel now — email used to be the only
+        // one, which meant nothing showed up anywhere inside the app
+        // itself. It's a separate, off-by-default opt-in on top of this.
+        await Promise.all(recipients.map(p => createNotification(
+          p.id, 'info', `Missed check-in: ${r.name}`,
+          `${r.name} has not checked in today, ${today}, and has no approved leave or permission for the day.`,
+          '/attendance/team'
+        ).catch(err => logger.warn({ err: err.message }, 'missed check-in notification failed'))));
+
+        if (recipients.length) summary.missedCheckIn += 1;
+
+        if (missed.alsoEmail && recipients.length) {
+          await send({
+            to: recipients.map(p => p.email),
+            subject: `Missed check-in: ${r.name}`,
+            lines: [`${r.name} has not checked in today, ${today}, and has no approved leave or permission for the day.`],
+          }).catch(err => logger.warn({ err: err.message }, 'missed check-in email failed'));
+        }
       }
     }
 

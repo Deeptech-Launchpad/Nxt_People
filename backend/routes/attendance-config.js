@@ -269,6 +269,12 @@ const SECTIONS = {
           missedCheckIn: {
             enabled: bool(missed.enabled),
             hoursAfterShiftStart: hhmm(missed.hoursAfterShiftStart, 'Missed check-in window'),
+            // The in-app notification to the manager/team-incharge is what
+            // "enabled" turns on; email is a separate opt-in on top of it,
+            // off by default — this alert used to be email-only, and
+            // switching it to notification-first should not quietly start
+            // sending mail nobody asked for.
+            alsoEmail: bool(missed.alsoEmail),
           },
           insufficientHours: {
             enabled: bool(insuf.enabled),

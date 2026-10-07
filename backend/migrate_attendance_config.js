@@ -59,7 +59,7 @@ const DEFAULTS = {
     deviationAlerts: {
       lateCheckIn: false,
       earlyCheckOut: false,
-      missedCheckIn: { enabled: false, hoursAfterShiftStart: '02:00' },
+      missedCheckIn: { enabled: false, hoursAfterShiftStart: '02:00', alsoEmail: false },
       insufficientHours: { enabled: false, hours: '08:30', notifyManager: true, notifyEmployee: false },
     },
   },

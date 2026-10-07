@@ -147,12 +147,20 @@ export default function CheckInOutConfig() {
               label="Missed check-in"
             />
             {missed.enabled && (
-              <div className="ml-6 mt-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3.5 inline-flex items-center gap-2.5 flex-wrap">
-                <span className="text-[13.5px] text-slate-600">Notify reporting manager if reportees not checked in within</span>
-                <TimeBox
-                  value={missed.hoursAfterShiftStart}
-                  onChange={v => setAlert({ missedCheckIn: { ...missed, hoursAfterShiftStart: v } })}
-                  hint="Hrs after shift start time"
+              <div className="ml-6 mt-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3.5 space-y-3">
+                <div className="inline-flex items-center gap-2.5 flex-wrap">
+                  <span className="text-[13.5px] text-slate-600">Notify reporting manager and secondary reporting person if reportees not checked in within</span>
+                  <TimeBox
+                    value={missed.hoursAfterShiftStart}
+                    onChange={v => setAlert({ missedCheckIn: { ...missed, hoursAfterShiftStart: v } })}
+                    hint="Hrs after shift start time"
+                  />
+                </div>
+                <Check
+                  checked={missed.alsoEmail}
+                  onChange={v => setAlert({ missedCheckIn: { ...missed, alsoEmail: v } })}
+                  label="Also send an email"
+                  hint="Always shows as an in-app notification. This sends the same alert by email too."
                 />
               </div>
             )}
