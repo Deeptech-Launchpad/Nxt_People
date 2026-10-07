@@ -3,7 +3,18 @@ const router = express.Router();
 const pool = require('../db');
 const logger = require('../logger');
 const { protect, authorize } = require('../middleware/auth');
-const { isFullAccess, isManager, reportsScope } = require('../utils/roles');
+const { isFullAccess, isManager, reportsScope: reportsScopeDirect } = require('../utils/roles');
+// Every report in this file scopes a manager to their WHOLE reporting
+// subtree — direct and indirect reports — not just the handful who report
+// to them personally. A manager should see their team's full picture here,
+// the same depth the Employee Tree shows them. Full-access roles are
+// unaffected either way (reportsScope() never restricts them). Shadowing
+// the imported name means every existing reportsScope(...) call in this
+// file picks this up automatically, with nothing to change at the call
+// site. Scoped to reports.js on purpose — approval-authority visibility
+// elsewhere (Approvals, Regularizations, …) is a different question and
+// stays on its existing direct-reports-only behavior.
+const reportsScope = (user, alias, paramIndex) => reportsScopeDirect(user, alias, paramIndex, 'all');
 const { countWorkingDays, ruleMatchesDate, holidayClosesOffice, holidayTypeFor } = require('../utils/workingDays');
 const { unregularizedDaysForRange } = require('../utils/unregularizedAbsence');
 const { lopDaysForRange, absentDaysForRange, absentDatesForRange, listWorkingDays, loadHolidaysAndRules } = require('./payroll');
