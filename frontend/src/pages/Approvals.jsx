@@ -316,8 +316,13 @@ export default function Approvals({ embedded = false }) {
   const action = async (endpoint, id, act, reason, approveAll = false) => {
     setActionLoading(id);
     try {
-      await api.put(`/${endpoint}/${id}/action`, { action: act, rejectionReason: reason, approveAll });
-      toast.success(approveAll ? 'All levels approved' : `${act.charAt(0).toUpperCase() + act.slice(1)} successfully`);
+      // Regularizations (and any other multi-level type) return their own
+      // message distinguishing a final approval from one that only cleared
+      // this approver's level — read it when present instead of always
+      // claiming the generic "successfully", which implied the request was
+      // fully settled even when another approver was still pending.
+      const res = await api.put(`/${endpoint}/${id}/action`, { action: act, rejectionReason: reason, approveAll });
+      toast.success(res.data?.message || (approveAll ? 'All levels approved' : `${act.charAt(0).toUpperCase() + act.slice(1)} successfully`));
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setActionLoading(''); }
@@ -685,7 +690,7 @@ export default function Approvals({ embedded = false }) {
                           <>
                             <p className="text-base text-slate-600 mt-0.5">{fmtDay(l.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
                             <p className="text-sm text-slate-600 mt-0.5">
-                              {l.checkIn ? `In: ${fmt.time(l.checkIn)}` : ''}{l.checkIn && l.checkOut ? ' · ' : ''}{l.checkOut ? `Out: ${fmt.time(l.checkOut)}` : ''}
+                              {l.checkIn ? `In: ${fmt.time(l.checkIn)}` : ''}{l.checkIn && l.checkOut ? ' · ' : ''}{l.checkOut ? `Out: ${fmt.time(l.checkOut)}` : ''}{l.requestedHours != null ? ` · ${fmt.hours(l.requestedHours)}` : ''}
                             </p>
                           </>
                         ) : l.kind === 'wfh' ? (
@@ -761,7 +766,7 @@ export default function Approvals({ embedded = false }) {
                           <>
                             <p className="text-base text-slate-600 mt-0.5">{fmtDay(l.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
                             <p className="text-sm text-slate-600 mt-0.5">
-                              {l.checkIn ? `In: ${fmt.time(l.checkIn)}` : ''}{l.checkIn && l.checkOut ? ' · ' : ''}{l.checkOut ? `Out: ${fmt.time(l.checkOut)}` : ''}
+                              {l.checkIn ? `In: ${fmt.time(l.checkIn)}` : ''}{l.checkIn && l.checkOut ? ' · ' : ''}{l.checkOut ? `Out: ${fmt.time(l.checkOut)}` : ''}{l.requestedHours != null ? ` · ${fmt.hours(l.requestedHours)}` : ''}
                             </p>
                           </>
                         ) : l.kind === 'wfh' ? (
@@ -828,7 +833,7 @@ export default function Approvals({ embedded = false }) {
                           {fmtDay(r.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
                         <p className="text-sm text-slate-600 mt-0.5">
-                          {r.checkIn ? `In: ${fmt.time(r.checkIn)}` : ''}{r.checkIn && r.checkOut ? ' · ' : ''}{r.checkOut ? `Out: ${fmt.time(r.checkOut)}` : ''}
+                          {r.checkIn ? `In: ${fmt.time(r.checkIn)}` : ''}{r.checkIn && r.checkOut ? ' · ' : ''}{r.checkOut ? `Out: ${fmt.time(r.checkOut)}` : ''}{r.requestedHours != null ? ` · ${fmt.hours(r.requestedHours)}` : ''}
                         </p>
                         <p className="text-sm text-slate-600 mt-0.5 max-w-xs">{r.reason}</p>
                       </div>

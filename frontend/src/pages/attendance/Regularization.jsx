@@ -60,8 +60,12 @@ export default function Regularization() {
   const handleAction = async (id, action, reason) => {
     setActionLoading(id);
     try {
-      await api.put(`/regularizations/${id}/action`, { action, rejectionReason: reason });
-      toast.success(`Request ${action}`);
+      // The backend's own message distinguishes a final approval from one
+      // that only cleared this approver's level — "Request approved" for
+      // both left a manager who had just cleared level 1 of 2 believing the
+      // request was fully settled when a second approver was still pending.
+      const res = await api.put(`/regularizations/${id}/action`, { action, rejectionReason: reason });
+      toast.success(res.data?.message || `Request ${action}`);
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setActionLoading(''); }
@@ -115,6 +119,7 @@ export default function Regularization() {
                     <p className="text-sm text-slate-500 mt-0.5">
                       {r.checkIn ? `Check-in: ${fmt.time(r.checkIn)}` : 'No check-in specified'}
                       {r.checkOut ? ` · Check-out: ${fmt.time(r.checkOut)}` : ''}
+                      {r.requestedHours != null ? ` · ${fmt.hours(r.requestedHours)}` : ''}
                     </p>
                     <p className="text-sm text-slate-400 mt-0.5 max-w-sm truncate">Reason: {r.reason}</p>
                     {r.description && <p className="text-sm text-slate-400 mt-0.5 max-w-sm truncate">Description: {r.description}</p>}
