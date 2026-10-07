@@ -247,6 +247,9 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
                     <DetailRow icon={Calendar} label="Date">{fmtDate(leave.date)}</DetailRow>
                     <DetailRow icon={LogIn} label="Check-in">{fmt.time(leave.checkIn) || '—'}</DetailRow>
                     <DetailRow icon={LogOut} label="Check-out">{fmt.time(leave.checkOut) || '—'}</DetailRow>
+                    {leave.requestedHours != null && (
+                      <DetailRow icon={Clock} label="Duration">{fmt.hours(leave.requestedHours)}</DetailRow>
+                    )}
                   </>
                 ) : leave.leaveType === 'permission' ? (
                   <>

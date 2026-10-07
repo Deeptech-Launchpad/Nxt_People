@@ -95,6 +95,9 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       // Regularizations now flow through the same hierarchy engine as leaves.
       pool.query(`
         SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
+               CASE WHEN r.check_in IS NOT NULL AND r.check_out IS NOT NULL AND r.check_out > r.check_in
+                    THEN ROUND(EXTRACT(EPOCH FROM (r.check_out - r.check_in)) / 3600.0, 2)
+                    ELSE NULL END AS "requestedHours",
                r.reason, r.status, r.created_at as "createdAt",
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee,
@@ -246,6 +249,9 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
       // Leaves (and nothing else)".
       pool.query(`
         SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
+               CASE WHEN r.check_in IS NOT NULL AND r.check_out IS NOT NULL AND r.check_out > r.check_in
+                    THEN ROUND(EXTRACT(EPOCH FROM (r.check_out - r.check_in)) / 3600.0, 2)
+                    ELSE NULL END AS "requestedHours",
                r.reason, r.status, r.rejection_reason as "rejectionReason", r.created_at as "createdAt",
                json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
                  'department', e.department, 'employeeId', e.employee_id) as employee,

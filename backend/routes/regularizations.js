@@ -101,6 +101,14 @@ router.get('/my', async (req, res) => {
        * day somebody never checked in at all. */
       `SELECT r.id as "_id", to_char(r.date, 'YYYY-MM-DD') as date,
        r.check_in as "checkIn", r.check_out as "checkOut",
+       -- The hours the requested check-in/check-out would total, once
+       -- approved — shown beside the two times themselves, which on their
+       -- own say nothing about how long a day that actually is. Null
+       -- whenever either side is missing (a request that only corrects one
+       -- punch) rather than a fabricated number.
+       CASE WHEN r.check_in IS NOT NULL AND r.check_out IS NOT NULL AND r.check_out > r.check_in
+            THEN ROUND(EXTRACT(EPOCH FROM (r.check_out - r.check_in)) / 3600.0, 2)
+            ELSE NULL END AS "requestedHours",
        r.reason, r.description, r.status, r.rejection_reason as "rejectionReason", r.created_at as "createdAt",
        a.working_hours as "oldHours", a.status as "oldStatus",
        json_build_object('firstName', m.first_name, 'lastName', m.last_name) as "approvedBy",
@@ -125,6 +133,9 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
     const below = teamScope(req) === 'all' ? ` OR ${subtreeClause('e', 1)}` : '';
     const result = await pool.query(
       `SELECT r.id as "_id", r.date, r.check_in as "checkIn", r.check_out as "checkOut",
+       CASE WHEN r.check_in IS NOT NULL AND r.check_out IS NOT NULL AND r.check_out > r.check_in
+            THEN ROUND(EXTRACT(EPOCH FROM (r.check_out - r.check_in)) / 3600.0, 2)
+            ELSE NULL END AS "requestedHours",
        r.reason, r.description, r.status, r.created_at as "createdAt",
        json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name, 'employeeId', e.employee_id, 'department', e.department) as employee,
        -- What the day says NOW, so a queue can show the correction as the
