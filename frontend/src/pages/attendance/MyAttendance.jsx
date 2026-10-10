@@ -49,6 +49,16 @@ function buildWeek(weekStart) {
   });
 }
 
+/* Every day of the month weekStart falls in — what Calendar view and the
+   Monthly filter both actually need on screen, instead of the 7-day strip
+   buildWeek() gives everything else. */
+function buildMonth(weekStart) {
+  const y = weekStart.getFullYear();
+  const m = weekStart.getMonth();
+  const days = new Date(y, m + 1, 0).getDate();
+  return Array.from({ length: days }, (_, i) => new Date(y, m, i + 1));
+}
+
 /* ── Add Request Dropdown Menu ────────────────────────────────────────── */
 // Same positioning model as the Dashboard variant — caller hands in the
 // button's bounding rect, the menu measures its own real height in a
@@ -137,10 +147,10 @@ export default function MyAttendance() {
   const { isCheckedIn, isCheckedOut, timerDisplay, checkIn, checkOut, actionLoading: attLoading, elapsed } = useAttendance();
   const { isWeekend: isWeekendByRule } = useWeekendRules();
   const [view, setView] = useState('timeline');
-  // Filter period: 'weekly' (the default 7-day strip) or 'monthly'
-  // (full-month aggregation). Affects which date range we send to
-  // /attendance/summary so the footer counts always reflect the visible
-  // window — never the whole month when the user is in week-view.
+  // Filter period: 'weekly' (the default 7-day strip) or 'monthly' (the
+  // whole month). Combined with `view` below into `byMonth`, which is what
+  // actually drives the header, the row list, the calendar and the footer —
+  // so Weekly/Monthly moves the whole page together, not just the footer.
   const [filterPeriod, setFilterPeriod] = useState('weekly');
   const [showFilter, setShowFilter] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -227,6 +237,13 @@ export default function MyAttendance() {
   const weekEndDate = new Date(weekStart);
   weekEndDate.setDate(weekStart.getDate() + 6);
 
+  /* Whether the page is showing a month or a week — the one flag everything
+   * below reads, instead of the header/arrows/calendar going by `view` while
+   * the row list and the footer summary went by `filterPeriod`. Calendar view
+   * IS a month by definition, so it counts the same as picking "Monthly" from
+   * the Period filter; either one puts the whole page into month mode. */
+  const byMonth = view === 'calendar' || filterPeriod === 'monthly';
+
   /* ── fetch for the visible range ───────────────────────────────────────
    *  Summary is now scoped to the EXACT date range the user is viewing —
    *  Weekly view → 7 days, Monthly view → ~30 days. Previously the summary
@@ -249,7 +266,7 @@ export default function MyAttendance() {
     const y = weekStart.getFullYear();
 
     let rangeStart, rangeEnd;
-    if (filterPeriod === 'monthly') {
+    if (byMonth) {
       rangeStart = isoDate(new Date(y, m, 1));
       rangeEnd   = isoDate(new Date(y, m + 1, 0));
     } else {
@@ -289,7 +306,7 @@ export default function MyAttendance() {
       setLoadedRange({ start: rangeStart, end: rangeEnd });
     }).catch(() => {}).finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStart.getMonth(), weekStart.getFullYear(), weekStart.getDate(), filterPeriod, reloadKey]);
+  }, [weekStart.getMonth(), weekStart.getFullYear(), weekStart.getDate(), byMonth, reloadKey]);
 
   /* ── map records by date ── */
   const recordMap = {};
@@ -306,16 +323,15 @@ export default function MyAttendance() {
    * outside the loaded range now says nothing rather than the wrong thing. */
   const isLoaded = (ds) => !loadedRange || (ds >= loadedRange.start && ds <= loadedRange.end);
 
-  /* ── navigation ── */
-  /* The calendar shows a month, so in that view the arrows step a month.
-   * Stepping a week at a time meant four or five clicks to reach the previous
-   * month, and every click but the last appeared to do nothing at all — the
-   * grid only redraws when the week lands in a different month.
+  /* ── navigation ──
+   * In month mode (Calendar view, or the Monthly filter) the arrows step a
+   * month. Stepping a week at a time meant four or five clicks to reach the
+   * previous month, and every click but the last appeared to do nothing at
+   * all — the grid only redraws when the week lands in a different month.
    *
    * The 15th is the anchor deliberately: weekOf() walks back at most six days,
    * so a week starting from mid-month can never fall out of the month we
    * meant to show, which is what the whole page reads its month from. */
-  const byMonth = view === 'calendar';
   const step = (n) => {
     const d = byMonth
       ? new Date(weekStart.getFullYear(), weekStart.getMonth() + n, 15)
@@ -351,10 +367,12 @@ export default function MyAttendance() {
     }
   }, [showRequestMenu]);
 
-  /* The shape attendanceViews.jsx draws. Built from the same week,
-   * recordMap and dayInfo the rest of this page already computes, so this
-   * is a relabelling, not a second source of truth. */
-  const sharedDays = week.map(day => {
+  /* The shape attendanceViews.jsx draws — every view (Timeline, List,
+   * Calendar) reads the same array, so whichever range is actually in force
+   * (the week, or the whole month in byMonth) is what all three show. Built
+   * from the same recordMap and dayInfo the rest of this page already
+   * computes, so this is a relabelling, not a second source of truth. */
+  const sharedDays = (byMonth ? buildMonth(weekStart) : week).map(day => {
     const ds = isoDate(day);
     const r = recordMap[ds] || null;
     const kind = dayInfo(day);
@@ -460,9 +478,9 @@ export default function MyAttendance() {
             ))}
            </div>
 
-           {/* Filter — Weekly vs Monthly period. Drives the date range we
-               send to /attendance/summary so the footer counts reflect the
-               visible window. */}
+           {/* Filter — Weekly vs Monthly period. Feeds into `byMonth`, which
+               is what the header, row list, calendar and footer all key off,
+               so this actually switches the whole page's range. */}
            <div className="relative">
              <button
                onClick={() => { setShowFilter(s => !s); setShowMoreMenu(false); }}
@@ -520,10 +538,10 @@ export default function MyAttendance() {
                  <button
                    onClick={() => {
                      setShowMoreMenu(false);
-                     const start = isoDate(filterPeriod === 'monthly'
+                     const start = isoDate(byMonth
                        ? new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)
                        : weekStart);
-                     const end = isoDate(filterPeriod === 'monthly'
+                     const end = isoDate(byMonth
                        ? new Date(weekStart.getFullYear(), weekStart.getMonth() + 1, 0)
                        : weekEndDate);
                      // Programmatic anchor click → forces the browser to use
