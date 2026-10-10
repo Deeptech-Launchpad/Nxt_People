@@ -9,7 +9,7 @@ const { resolveEmployeeId } = require('../utils/employeeScope');
 const { sendCheckOutReminderEmail } = require('../utils/mailer');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { classifyDay } = require('../utils/attendanceRule');
-const { loadWeekendResolver } = require('../utils/workingDays');
+const { loadWeekendResolver, holidayTypeFor, holidayClosesOffice } = require('../utils/workingDays');
 const { classifyPunch, classifyMany, config: geofenceConfig } = require('../utils/geofence');
 const attendanceAlerts = require('../utils/attendanceAlerts');
 const { serverError } = require('../utils/serverError');
@@ -879,26 +879,46 @@ router.get('/my', async (req, res) => {
      * exactly what they were, so every existing caller is unaffected. */
     let calendar = [];
     try {
-      const [weekend, holRes] = await Promise.all([
+      const [weekend, holRes, empScopeRes] = await Promise.all([
         loadWeekendResolver(),
+        // Scoped the same way sandwichLeave.js reads holidays: one row per
+        // date can carry several holidays.holiday_scopes entries, because a
+        // holiday (or an Exception Working Day override) can be limited to a
+        // location and/or a shift rather than applying company-wide.
         pool.query(
-          `SELECT to_char(date, 'YYYY-MM-DD') AS date, name, type
-             FROM holidays WHERE date >= $1::date AND date <= $2::date`,
+          `SELECT h.date::text AS ymd, h.name, h.type, h.preference,
+                  COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'location'), '{}') AS location_ids,
+                  COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'shift'), '{}') AS shift_ids
+             FROM holidays h
+             LEFT JOIN holiday_scopes s ON s.holiday_id = h.id
+            WHERE h.date >= $1::date AND h.date <= $2::date
+            GROUP BY h.id, h.date, h.name, h.type, h.preference`,
           [start, end]),
+        pool.query(
+          `SELECT work_location_id AS "workLocationId", shift_id AS "shiftId" FROM employees WHERE id = $1`,
+          [empId]),
       ]);
-      const holidays = new Map(holRes.rows.map(h => [h.date, h]));
+      const employee = empScopeRes.rows[0] || {};
+      const holMap = new Map();
+      for (const h of holRes.rows) {
+        if (!holMap.has(h.ymd)) holMap.set(h.ymd, []);
+        holMap.get(h.ymd).push({ name: h.name, type: h.type, preference: h.preference, locationIds: h.location_ids || [], shiftIds: h.shift_ids || [] });
+      }
       const last = new Date(y, m + 1, 0).getDate();
       for (let d = 1; d <= last; d++) {
         const ymd = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const hol = holidays.get(ymd);
-        // working_day is the opposite of a holiday — a weekend the company is
-        // working — so it must read as an ordinary working day here too.
-        const closes = hol && hol.type !== 'working_day';
-        calendar.push({
-          date: ymd,
-          kind: closes ? 'holiday' : (weekend.isWeekend(new Date(y, m, d)) ? 'weekend' : 'working'),
-          holidayName: closes ? hol.name : null,
-        });
+        // The type actually in force for THIS employee on this date — a
+        // working_day exception scoped to a different location/shift must
+        // not touch somebody it was never meant for.
+        const type = holidayTypeFor(holMap, ymd, employee);
+        const closes = holidayClosesOffice(type);
+        // An explicit working-day override beats the weekend rules; it must
+        // read as an ordinary working day even on a day they'd otherwise be off.
+        const kind = closes ? 'holiday'
+          : type === 'working_day' ? 'working'
+          : (weekend.isWeekend(new Date(y, m, d)) ? 'weekend' : 'working');
+        const holidayRow = closes ? (holMap.get(ymd) || []).find(h => h.type === type) : null;
+        calendar.push({ date: ymd, kind, holidayName: holidayRow?.name || null });
       }
     } catch (err) {
       /* Additive. A month still lists its punches if the calendar cannot be
@@ -1030,13 +1050,22 @@ router.get('/summary', async (req, res) => {
     // Pull attendance + holidays + settings + weekend_rules in parallel.
     // settings.working_days is the simplest weekend source; if weekend_rules
     // is populated we prefer that (richer recurrence patterns).
-    const [attRes, hRes, weekend, leavesRes] = await Promise.all([
+    const [attRes, hRes, weekend, leavesRes, empScopeRes] = await Promise.all([
       pool.query(
         'SELECT date, status, working_hours, late_minutes, check_in, check_out FROM attendance WHERE employee_id=$1 AND date>=$2::date AND date<=$3::date',
         [empId, start, end]
       ),
+      // Scoped the same way /my reads holidays — a working_day exception (or
+      // a closing holiday) can be limited to a location and/or shift rather
+      // than applying to everybody.
       pool.query(
-        `SELECT date, type FROM holidays WHERE date >= $1::date AND date <= $2::date`,
+        `SELECT h.date::text AS ymd, h.type, h.preference,
+                COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'location'), '{}') AS location_ids,
+                COALESCE(ARRAY_AGG(s.ref_id::text) FILTER (WHERE s.kind = 'shift'), '{}') AS shift_ids
+           FROM holidays h
+           LEFT JOIN holiday_scopes s ON s.holiday_id = h.id
+          WHERE h.date >= $1::date AND h.date <= $2::date
+          GROUP BY h.id, h.date, h.type, h.preference`,
         [start, end]
       ),
       loadWeekendResolver(),
@@ -1060,6 +1089,10 @@ router.get('/summary', async (req, res) => {
           GROUP BY l.leave_type`,
         [empId, start, end]
       ),
+      pool.query(
+        `SELECT work_location_id AS "workLocationId", shift_id AS "shiftId" FROM employees WHERE id = $1`,
+        [empId]
+      ),
     ]);
 
     // weekend_rules takes precedence; with none configured this falls back to
@@ -1067,12 +1100,12 @@ router.get('/summary', async (req, res) => {
     // was counting every Saturday as a weekend in a Mon-Sat organisation.
     const isWeekend = d => weekend.isWeekend(d);
 
-    // Iterate every day in the range to compute weekend/holiday/payable counts.
-    // working_day is the opposite of a holiday — a weekend the company is
-    // working — so it must never inflate this count.
-    const holidayDates = new Set(
-      hRes.rows.filter(r => r.type !== 'working_day').map(r => toDateStr(new Date(r.date)))
-    );
+    const employee = empScopeRes.rows[0] || {};
+    const holMap = new Map();
+    for (const h of hRes.rows) {
+      if (!holMap.has(h.ymd)) holMap.set(h.ymd, []);
+      holMap.get(h.ymd).push({ type: h.type, preference: h.preference, locationIds: h.location_ids || [], shiftIds: h.shift_ids || [] });
+    }
     const attByDate    = new Map(attRes.rows.map(r => [toDateStr(new Date(r.date)), r]));
 
     const today = toDateStr(now);
@@ -1082,8 +1115,12 @@ router.get('/summary', async (req, res) => {
     const stop = new Date(end);
     while (cur <= stop) {
       const dStr = toDateStr(cur);
-      const wknd = isWeekend(cur);
-      const hol  = holidayDates.has(dStr);
+      // The type actually in force for THIS employee on this date — see /my
+      // for why this has to be scope-aware. An explicit working-day override
+      // beats the weekend rules, so it must never inflate the weekend count.
+      const type = holidayTypeFor(holMap, dStr, employee);
+      const wknd = type === 'working_day' ? false : isWeekend(cur);
+      const hol  = holidayClosesOffice(type);
       if (wknd) weekendDays++;
       if (hol)  holidayDays++;
 
