@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, X, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
 import { useLocaleFormat, formatTime } from '../../utils/datetime';
-import TimeInput from '../../components/TimeInput';
+import OnDutyModal from '../../components/requests/OnDutyModal';
 
 const TYPES = [
   { key: 'client_visit', label: 'Client visit' },
@@ -29,7 +29,6 @@ const STATUS_STYLE = {
   rejected: 'bg-rose-100 text-rose-700',
 };
 
-const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthLabel = d => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 const fmt = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -180,193 +179,11 @@ export default function OnDuty() {
 
       <p className="text-[13px] text-slate-500">Total Record Count : <span className="text-blue-600 font-medium">{rows.length}</span></p>
 
-      {formOpen && <RequestForm date={formDate} onClose={() => setFormOpen(false)} onSaved={() => { setFormOpen(false); load(); }} />}
-    </div>
-  );
-}
-
-function RequestForm({ onClose, onSaved, date = null }) {
-  const [startDate, setStartDate] = useState(date || todayCA());
-  const [endDate, setEndDate] = useState(date || todayCA());
-  const [unit, setUnit] = useState('days');
-  const [requestType, setRequestType] = useState('');
-  const [startTime, setStartTime] = useState('09:30');
-  const [endTime, setEndTime] = useState('13:30');
-  const [reason, setReason] = useState('');
-  const [file, setFile] = useState(null);
-  const [saving, setSaving] = useState(false);
-  // Which durations, types and fields this org allows. The form cannot draw
-  // itself correctly until it knows, so it waits rather than guessing and then
-  // rearranging under the person filling it in.
-  const [cfg, setCfg] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.get('/on-duty/config')
-      .then(r => {
-        if (cancelled) return;
-        const c = r.data.data;
-        setCfg(c);
-        if (!c.durations?.fullDay && c.durations?.hourly) setUnit('hours');
-        setRequestType(c.types?.[0]?.key || '');
-      })
-      .catch(() => {
-        if (!cancelled) setCfg({ durations: { fullDay: true, hourly: true }, types: TYPES, fields: {} });
-      });
-    return () => { cancelled = true; };
-  }, []);
-
-  const fields = cfg?.fields || {};
-  const showAttachment = !!fields.attachment?.show;
-  const reasonRequired = !!fields.description?.mandatory;
-  const attachmentRequired = showAttachment && !!fields.attachment?.mandatory;
-  const maxMb = cfg?.attachmentMaxMb || 5;
-  const maxStartDate = cfg?.restrictFutureDates ? todayCA() : undefined;
-
-  const submit = async () => {
-    if (reasonRequired && !reason.trim()) return toast.error('A description is required');
-    if (attachmentRequired && !file) return toast.error('An attachment is required');
-    setSaving(true);
-    try {
-      const payload = {
-        startDate,
-        // An hours request is a slice of one day, so the end follows the start.
-        endDate: unit === 'hours' ? startDate : endDate,
-        unit, requestType, reason: reason.trim(),
-        ...(unit === 'hours' ? { startTime, endTime } : {}),
-      };
-      // Multipart only when there is a file to carry, since a JSON body cannot
-      // hold one. The route accepts either shape.
-      if (file) {
-        const form = new FormData();
-        Object.entries(payload).forEach(([k, v]) => form.append(k, v));
-        form.append('attachment', file);
-        await api.post('/on-duty', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-      } else {
-        await api.post('/on-duty', { ...payload, reason: payload.reason || null });
-      }
-      toast.success('On duty request submitted');
-      onSaved();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not submit request');
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 px-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-          <p className="text-[17px] font-semibold text-slate-800">Request On Duty</p>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
-        </div>
-
-        <div className="px-6 py-5 space-y-5 overflow-y-auto">
-          <div>
-            <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Period</label>
-            <div className="flex items-center gap-3">
-              <input
-                type="date" value={startDate} max={maxStartDate}
-                onChange={e => { setStartDate(e.target.value); if (e.target.value > endDate) setEndDate(e.target.value); }}
-                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400"
-              />
-              <input
-                type="date" value={unit === 'hours' ? startDate : endDate} min={startDate} max={maxStartDate}
-                disabled={unit === 'hours'}
-                onChange={e => setEndDate(e.target.value)}
-                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400 disabled:bg-slate-50 disabled:text-slate-400"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Units</label>
-            <select
-              value={unit} onChange={e => setUnit(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] bg-white focus:outline-none focus:border-blue-400"
-            >
-              {cfg?.durations?.fullDay !== false && <option value="days">Days</option>}
-              {cfg?.durations?.hourly !== false && <option value="hours">Hours</option>}
-            </select>
-          </div>
-
-          {unit === 'hours' && (
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <label className="block text-[13px] font-medium text-slate-700 mb-1.5">From</label>
-                <TimeInput value={startTime} onChange={setStartTime}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400" />
-              </div>
-              <div className="flex-1">
-                <label className="block text-[13px] font-medium text-slate-700 mb-1.5">To</label>
-                <TimeInput value={endTime} onChange={setEndTime} assumePm
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400" />
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Type</label>
-            <select
-              value={requestType} onChange={e => setRequestType(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] bg-white focus:outline-none focus:border-blue-400"
-            >
-              {(cfg?.types || TYPES).map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
-            </select>
-          </div>
-
-          {fields.description?.show !== false && (
-            <div>
-              <label className="block text-[13px] font-medium text-slate-700 mb-1.5">
-                Reason{reasonRequired && <span className="text-red-500 ml-0.5">*</span>}
-              </label>
-              <textarea
-                value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={500}
-                placeholder="Where you'll be and why"
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:border-blue-400"
-              />
-            </div>
-          )}
-
-          {showAttachment && (
-            <div>
-              <label className="block text-[13px] font-medium text-slate-700 mb-1.5">
-                Attachment{attachmentRequired && <span className="text-red-500 ml-0.5">*</span>}
-              </label>
-              <input
-                type="file"
-                accept={(cfg?.attachmentTypes || []).join(',')}
-                onChange={e => {
-                  const f = e.target.files?.[0] || null;
-                  // Checked here as well as on the server, so the person finds
-                  // out before filling in the rest of the form.
-                  if (f && f.size > maxMb * 1024 * 1024) {
-                    toast.error(`The attachment must be ${maxMb} MB or smaller`);
-                    e.target.value = '';
-                    return setFile(null);
-                  }
-                  setFile(f);
-                }}
-                className="w-full text-[13.5px] text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[13px] file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-              <p className="text-[12.5px] text-slate-500 mt-1.5">
-                PDF, Word, Excel or an image, up to {maxMb} MB.
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 py-4 border-t border-slate-200 flex items-center gap-3">
-          <button
-            onClick={submit} disabled={saving}
-            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white px-5 py-2 rounded text-[14px] font-medium transition-colors"
-          >
-            {saving ? 'Submitting…' : 'Submit'}
-          </button>
-          <button onClick={onClose} className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-5 py-2 rounded text-[14px] font-medium transition-colors">
-            Cancel
-          </button>
-        </div>
-      </div>
+      {formOpen && (
+        <OnDutyModal date={formDate}
+          onClose={() => setFormOpen(false)}
+          onDone={() => { setFormOpen(false); load(); }} />
+      )}
     </div>
   );
 }

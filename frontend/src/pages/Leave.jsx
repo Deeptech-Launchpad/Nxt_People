@@ -8,7 +8,7 @@ import BackButton from '../components/BackButton';
 import LeaveDetailModal from '../components/LeaveDetailModal';
 import CancelPartDialog from '../components/CancelPartDialog';
 import CompOffDetailModal from '../components/CompOffDetailModal';
-import TimeInput from '../components/TimeInput';
+import ApplyLeaveModal from '../components/requests/ApplyLeaveModal';
 import { formatHoursDuration } from '../utils/datetime';
 
 const STATUS_STYLE = {
@@ -35,8 +35,6 @@ const LEAVE_TYPE_LABELS = {
   unpaid: 'Leave Without Pay',
   permission: 'Permission'
 };
-const initForm = { leaveType: 'casual', startDate: '', endDate: '', reason: '', isHalfDay: false, halfDayType: 'first_half', startTime: '', endTime: '' };
-
 // Bug #24 fix: parse date-only strings as LOCAL time to avoid off-by-one in IST
 function parseLocalDate(dateStr) {
   if (!dateStr) return null;
@@ -51,8 +49,6 @@ export default function Leave() {
   const [balanceCards, setBalanceCards] = useState(null);  // raw cards for the detail modal's balance panel
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState(initForm);
-  const [saving, setSaving] = useState(false);
   const [detailLeave, setDetailLeave] = useState(null);
   const [partLeave, setPartLeave] = useState(null);
   // Whether a reason is required is a setting, and the dialog needs to know
@@ -81,24 +77,6 @@ export default function Leave() {
 
   useEffect(load, []);
 
-  const handleApply = async (e) => {
-    e.preventDefault(); setSaving(true);
-    try {
-      const isPerm = form.leaveType === 'permission';
-      if (isPerm && (!form.startTime || !form.endTime)) {
-        setSaving(false);
-        return toast.error('Please select start and end time');
-      }
-      const payload = isPerm
-        ? { leaveType: 'permission', startDate: form.startDate, endDate: form.startDate, reason: form.reason, startTime: form.startTime, endTime: form.endTime }
-        : form;
-      await api.post('/leaves', payload);
-      toast.success(isPerm ? 'Permission applied successfully!' : 'Leave applied successfully!');
-      setModal(false); setForm(initForm); load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
-    finally { setSaving(false); }
-  };
-
   const handleCancel = async (id) => {
     const { ok, reason, empty } = await confirmCancel('Cancel this leave request?');
     if (empty) return toast.error('A reason for cancelling is required');
@@ -106,9 +84,6 @@ export default function Leave() {
     try { await api.delete(`/leaves/${id}`, { data: { reason } }); toast.success('Leave cancelled'); load(); }
     catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
   };
-
-  const availableForSelected = form.leaveType === 'permission' ? (balance?.permission ?? 0) : (balance?.[form.leaveType] ?? 0);
-  const insufficientBalance = !!balance && form.leaveType !== 'unpaid' && availableForSelected <= 0;
 
   const leaveTypeColors = {
     casual: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -151,7 +126,7 @@ export default function Leave() {
             <div className="w-px h-4 bg-slate-200" />
             <h3 className="font-display font-semibold text-slate-800">My Leave Requests</h3>
           </div>
-          <button onClick={() => { setForm(initForm); setModal(true); }}
+          <button onClick={() => setModal(true)}
             className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-base font-medium transition-colors shadow-sm shadow-brand-500/25">
             <Plus size={16} /> Apply Leave
           </button>
@@ -269,90 +244,11 @@ export default function Leave() {
       </div>
 
       {modal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <h3 className="font-display font-semibold text-slate-800 text-xl">Apply Leave</h3>
-              <button onClick={() => setModal(false)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"><X size={16} /></button>
-            </div>
-            <form onSubmit={handleApply} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">Leave Type</label>
-                <select value={form.leaveType} onChange={e => setForm({ ...form, leaveType: e.target.value })} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400">
-                  {LEAVE_TYPES.map(t => <option key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</option>)}
-                </select>
-              </div>
-              {/* Show available balance for selected leave type */}
-              {balance && form.leaveType !== 'unpaid' && (
-                <p className={`text-sm -mt-2 ${insufficientBalance ? 'text-red-600 font-medium' : 'text-slate-500'}`}>
-                  {form.leaveType === 'permission'
-                    ? <>Remaining this month: <span className="font-semibold">{availableForSelected}h</span> of 4h</>
-                    : <>Available: <span className="font-semibold">{availableForSelected} day(s)</span></>}
-                  {insufficientBalance && ' — no balance remaining'}
-                </p>
-              )}
-              {form.leaveType === 'permission' ? (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Date</label>
-                    <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-600 mb-1.5">Start Time</label>
-                      <TimeInput value={form.startTime} onChange={v => setForm({ ...form, startTime: v })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-600 mb-1.5">End Time</label>
-                      <TimeInput value={form.endTime} onChange={v => setForm({ ...form, endTime: v })} required assumePm className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
-                    </div>
-                  </div>
-                  <p className="text-[13px] text-purple-600 -mt-1">
-                    Permission is hourly — up to {balanceCards.find(c => c.code === 'permission')?.monthlyLimit ?? 4} hours per month, no carry-forward.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={form.isHalfDay} onChange={e => setForm({ ...form, isHalfDay: e.target.checked, endDate: e.target.checked ? form.startDate : form.endDate })} className="w-4 h-4 rounded accent-brand-600" />
-                      <span className="text-base text-slate-600">Half Day</span>
-                    </label>
-                    {form.isHalfDay && (
-                      <select value={form.halfDayType} onChange={e => setForm({ ...form, halfDayType: e.target.value })} className="border border-slate-200 rounded-lg px-2 py-1.5 text-base focus:outline-none focus:border-brand-400">
-                        <option value="first_half">First Half</option><option value="second_half">Second Half</option>
-                      </select>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-600 mb-1.5">From</label>
-                      {/* A past day is somebody recording what already happened,
-                          which routes/leaves.js allows for your own record; only
-                          a finalised payroll month refuses it, with its own
-                          message. This input used to forbid it silently. */}
-                      <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: form.isHalfDay ? e.target.value : (e.target.value > form.endDate ? e.target.value : form.endDate) })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-600 mb-1.5">To</label>
-                      <input type="date" value={form.endDate} min={form.startDate || undefined} disabled={form.isHalfDay} onChange={e => setForm({ ...form, endDate: e.target.value })} required className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 disabled:bg-slate-50 disabled:text-slate-400" />
-                    </div>
-                  </div>
-                </>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">Reason</label>
-                <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} required rows={3} placeholder="Reason for leave..." className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400 resize-none" />
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50 transition-colors">Cancel</button>
-                <button type="submit" disabled={saving || insufficientBalance} title={insufficientBalance ? 'No balance remaining for this leave type' : ''} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60">
-                  {saving ? 'Submitting...' : 'Submit Request'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ApplyLeaveModal
+          mode="leave"
+          onClose={() => setModal(false)}
+          onDone={() => { setModal(false); load(); }}
+        />
       )}
 
       {detailLeave && (

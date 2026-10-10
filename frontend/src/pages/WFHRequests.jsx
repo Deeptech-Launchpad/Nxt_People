@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, CheckCircle, CheckCheck, XCircle, Home, Send, Eye } from 'lucide-react';
+import { Plus, CheckCircle, CheckCheck, XCircle, Home, Eye } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { isApprover } from '../utils/roles';
 import LeaveDetailModal from '../components/LeaveDetailModal';
+import RequestShell, { Field, inputClass } from '../components/requests/RequestShell';
 
 const STATUS_STYLE = {
   pending: 'bg-amber-100 text-amber-700',
@@ -39,8 +40,10 @@ export default function WFHRequests() {
   useEffect(() => { if (user !== undefined) load(); }, [user?.role]);
   useEffect(() => { if (user?.role === 'team_member') setTab('my'); }, [user?.role]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault(); setSaving(true);
+  const handleSubmit = async () => {
+    if (!form.date) return toast.error('Pick a date');
+    if (!form.reason.trim()) return toast.error('Reason is required');
+    setSaving(true);
     try {
       await api.post('/wfh', form);
       toast.success('WFH request submitted!');
@@ -151,33 +154,20 @@ export default function WFHRequests() {
       )}
 
       {modal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <h3 className="font-display font-semibold text-slate-800 text-xl">Apply for WFH</h3>
-              <button onClick={() => setModal(false)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"><X size={16} /></button>
-            </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">Date *</label>
-                <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1.5">Reason *</label>
-                <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} required rows={3}
-                  placeholder="Why do you need to work from home?"
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none" />
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-                  <Send size={14} />{saving ? 'Submitting...' : 'Submit'}
-                </button>
-              </div>
-            </form>
+        <RequestShell title="Apply for WFH" onClose={() => setModal(false)} onSubmit={handleSubmit}
+          submitting={saving} submitLabel="Submit">
+          <div className="space-y-4 max-w-2xl">
+            <Field label="Date" required>
+              <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
+                className={inputClass} />
+            </Field>
+            <Field label="Reason" required>
+              <textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} rows={3}
+                placeholder="Why do you need to work from home?"
+                className={`${inputClass} resize-none`} />
+            </Field>
           </div>
-        </div>
+        </RequestShell>
       )}
 
       {rejectModal && (
