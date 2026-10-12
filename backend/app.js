@@ -146,11 +146,19 @@ app.use('/uploads/covers', express.static(path.join(__dirname, 'uploads', 'cover
 // the sign-in page, which nobody has a token on yet.
 app.use('/uploads/logos', express.static(path.join(__dirname, 'uploads', 'logos')));
 // Profile photos kept in the employee folders. Only the exact
-// <ID>_Profile-Photo.<ext> name is served without a token; every other file in
-// those folders falls through to the token check below.
+// <ID>_Profile-Photo.<ext> name is served without a token; servePublicPhoto
+// answers 404 to everything else in those folders — it never falls through
+// to the generic mount below, which has no ownership check to catch it.
 app.use('/uploads/employees', require('./utils/profilePhoto').servePublicPhoto);
 const jwt = require('jsonwebtoken');
 app.use('/uploads', (req, res, next) => {
+  // Backstop, in case something new ever mounts ahead of this one without
+  // knowing the rule: employee documents have exactly one authorized door,
+  // GET /api/documents/:employeeId/:docId/file, which checks that the
+  // caller owns the file, not just that they're signed in. This generic
+  // static mount only ever checked the latter, so a colleague's Aadhaar was
+  // one guessed filename away from anyone holding any valid token.
+  if (req.path.startsWith('/employees/')) return res.status(404).end();
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : req.query.t;
   if (!token) return res.status(401).json({ success: false, message: 'Not authorized' });

@@ -120,17 +120,31 @@ chatWs.attach(server);
  * four-character passphrase encrypts perfectly and every screen reports the
  * documents as protected. Said at boot because that is the one place nobody
  * has to go looking, and while it is still cheap: once files are encrypted,
- * changing the key means re-encrypting all of them. */
+ * changing the key means re-encrypting all of them.
+ *
+ * Production refuses to start over this one. A warning nobody reads is how
+ * the key stayed unset the whole time the previous version of this check
+ * existed — silently falling back to writing every document in plain text.
+ * Development only warns, so a laptop with no key in .env still runs. */
 try {
   const { encryptionStrength } = require('./utils/documentStore');
   const s = encryptionStrength();
+  if (!s.ok && process.env.NODE_ENV === 'production') {
+    logger.error({ key: s.detail },
+      'DOCUMENT_ENCRYPTION_KEY is missing or too weak for production (needs 32+ characters) — set it with `openssl rand -hex 32`. Refusing to start.');
+    process.exit(1);
+  }
   if (s.kind === 'weak') {
     logger.warn({ key: s.detail },
       'DOCUMENT_ENCRYPTION_KEY is too short to protect anything — replace it with `openssl rand -hex 32` before documents are uploaded');
   } else if (s.kind === 'none') {
     logger.info('DOCUMENT_ENCRYPTION_KEY is not set — employee documents are stored unencrypted');
   }
-} catch { /* never let a warning stop the server starting */ }
+} catch (err) {
+  // A crash IN this check must never be what takes the server down — only
+  // the explicit production refusal above is allowed to do that.
+  logger.error({ err: err.message }, 'Could not check DOCUMENT_ENCRYPTION_KEY strength');
+}
 
 server.listen(PORT, () => logger.info({ port: PORT }, 'Server listening (HTTP + WebSocket)'));
 

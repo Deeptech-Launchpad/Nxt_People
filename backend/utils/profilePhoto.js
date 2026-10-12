@@ -104,19 +104,27 @@ async function deleteProfilePhoto(db, employeeUuid) {
 }
 
 /* GET /uploads/employees/<folder>/<ID>_Profile-Photo.<ext>, without a token.
- * Anything that is not exactly that shape falls through to the token-checked
- * /uploads handler, so no document in the folder becomes public. The file's
- * id must also match the folder's id, so one person's folder cannot be used
- * to serve a photo named for somebody else. */
-function servePublicPhoto(req, res, next) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+ *
+ * This is the ONLY file this mount ever serves. Anything that is not exactly
+ * that shape answers 404 here and now — it used to call next() and fall
+ * through to the generic, token-only /uploads handler below, which checks
+ * that a caller is signed in but never that they own the file being asked
+ * for. That let any authenticated employee read a colleague's documents by
+ * guessing the predictable folder/file name (see documentStore.js's naming
+ * scheme). Employee documents have exactly one authorized door now:
+ * GET /api/documents/:employeeId/:docId/file, which checks ownership.
+ *
+ * The file's id must also match the folder's id, so one person's folder
+ * cannot be used to serve a photo named for somebody else. */
+function servePublicPhoto(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(404).end();
   let parts;
-  try { parts = decodeURIComponent(req.path).split('/').filter(Boolean); } catch { return next(); }
-  if (parts.length !== 2) return next();
+  try { parts = decodeURIComponent(req.path).split('/').filter(Boolean); } catch { return res.status(404).end(); }
+  if (parts.length !== 2) return res.status(404).end();
   const [folder, file] = parts;
-  if (!isPhotoName(file) || folder.startsWith('.')) return next();
+  if (!isPhotoName(file) || folder.startsWith('.')) return res.status(404).end();
   const id = file.slice(0, file.indexOf('_'));
-  if (folder !== id && !folder.startsWith(`${id}_`)) return next();
+  if (folder !== id && !folder.startsWith(`${id}_`)) return res.status(404).end();
 
   res.sendFile(`${folder}/${file}`, {
     root: EMPLOYEE_ROOT,
