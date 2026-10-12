@@ -16,6 +16,7 @@
 
 const express = require('express');
 const router = express.Router();
+const path = require('path');
 const pool = require('../db');
 const multer = require('multer');
 const xlsx = require('xlsx');
@@ -26,7 +27,17 @@ const { runsOn } = require('../utils/manualAttendance');
 const { classifyImportedDay } = require('../utils/attendanceImportClassify');
 const { DEFAULT_TZ } = require('../utils/timezone');
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+// A spreadsheet import (xlsx.read() below), same as /export can itself
+// produce (xlsx/xls/csv, see the format check above) — never meant to
+// accept anything else.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.xlsx', '.xls', '.csv'];
+    cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
+  },
+});
 const MAX_IMPORT_ROWS = 500;
 const MAX_EXPORT_DAYS = 366;
 
@@ -194,7 +205,12 @@ const parseTime = (raw) => {
 
 router.post('/import', audit('IMPORT', 'attendance'), upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file was accepted. Excel (.xlsx, .xls) or CSV files up to 5 MB.',
+      });
+    }
 
     const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
     const ws = wb.Sheets[wb.SheetNames[0]];

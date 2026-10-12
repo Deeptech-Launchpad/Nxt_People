@@ -11,6 +11,7 @@
  */
 const express = require('express');
 const router = express.Router();
+const path = require('path');
 const pool = require('../db');
 const logger = require('../logger');
 const xlsx = require('xlsx');
@@ -1433,11 +1434,25 @@ router.get('/admin/structure-template', authorize(...PAYROLL_ADMIN), (req, res) 
   res.send(buf);
 });
 
-const bulkUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+// A spreadsheet import (xlsx.read() below) — never meant to accept anything
+// else, but nothing stopped it before.
+const bulkUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.xlsx', '.xls', '.csv'];
+    cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
+  },
+});
 
 router.post('/admin/bulk-upload', authorize(...PAYROLL_ADMIN), logAuditWrapper('BULK_UPLOAD', 'salary_structure'), bulkUpload.single('file'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file was accepted. Excel (.xlsx, .xls) or CSV files up to 5 MB.',
+      });
+    }
     const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = xlsx.utils.sheet_to_json(sheet);

@@ -1,5 +1,6 @@
 ﻿const express = require('express');
 const router = express.Router();
+const path = require('path');
 const pool = require('../db');
 const multer = require('multer');
 const xlsx = require('xlsx');
@@ -8,7 +9,17 @@ const { audit } = require('../middleware/audit');
 const { serverError } = require('../utils/serverError');
 const { notifyHolidayViaFeeds, reprocessLeaveForHoliday } = require('../utils/holidayActions');
 
-const upload = multer({ storage: multer.memoryStorage() });
+// This is a spreadsheet import (xlsx.read() below) — never meant to accept
+// anything else, but nothing stopped it before. 5 MB comfortably covers the
+// 500-row cap already enforced further down.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.xlsx', '.xls', '.csv'];
+    cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
+  },
+});
 
 router.use(protect);
 
@@ -36,8 +47,13 @@ router.get('/template', authorize('admin', 'director', 'hr_admin'), (req, res) =
 
 router.post('/import', authorize('admin', 'director', 'hr_admin'), audit('IMPORT', 'holiday'), upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-    
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file was accepted. Excel (.xlsx, .xls) or CSV files up to 5 MB.',
+      });
+    }
+
     const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const data = xlsx.utils.sheet_to_json(ws);

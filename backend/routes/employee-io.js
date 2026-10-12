@@ -45,9 +45,15 @@ const gate = (kind) => async (req, res, next) => {
   } catch { next(); }   // an unreadable table must not block an administrator
 };
 
+// A spreadsheet import (xlsx.read() below) — never meant to accept anything
+// else, but nothing stopped it before.
 const sheetUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.xlsx', '.xls', '.csv'];
+    cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
+  },
 });
 
 /* ── Import ──────────────────────────────────────────────────────────────── */
@@ -209,7 +215,7 @@ router.post('/import/:module', gate('import'), (req, res, next) => {
 }, async (req, res) => {
   const spec = IMPORTS[req.params.module];
   if (!spec) return res.status(404).json({ success: false, message: 'Unknown module' });
-  if (!req.file) return res.status(400).json({ success: false, message: 'Attach a .xlsx or .csv file' });
+  if (!req.file) return res.status(400).json({ success: false, message: 'Attach a .xlsx, .xls or .csv file' });
 
   // Default is a DRY RUN. Committing has to be asked for, so the first press
   // always shows what would happen rather than doing it.
