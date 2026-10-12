@@ -5,7 +5,7 @@ const { fire } = require('../utils/workflowEngine');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { protect, authorize } = require('../middleware/auth');
-const { isFullAccess, isManager, canActOnEmployee } = require('../utils/roles');
+const { isFullAccess, isManager, canActOnEmployee, ROLES } = require('../utils/roles');
 const { sendOnboardingEmail } = require('../utils/mailer');
 const { logAudit } = require('../utils/audit');
 const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery');
@@ -566,21 +566,33 @@ router.get('/:id', async (req, res) => {
       return res.json({ success: true, viewLevel, data: toManagerView(empData) });
     }
 
-    // employee_documents was migrated from (document_type, file_path,
-    // original_name, mime_type, size) to (type, file_url, name, file_size).
-    // Fresh deploys only have the new columns — alias them to the legacy
-    // names the frontend's profile view expects so we don't churn the UI.
-    const docsRes = await pool.query(
-      `SELECT id,
-              type      AS "documentType",
-              file_url  AS "filePath",
-              name      AS "originalName",
-              NULL      AS "mimeType",
-              file_size AS "size"
-         FROM employee_documents WHERE employee_id = $1`,
-      [req.params.id]
-    );
-    empData.documents = docsRes.rows;
+    // team_incharge is excluded here specifically, even though it otherwise
+    // reaches 'approver' level for a direct report: documents.js's
+    // isPrivilegedFor() gives team_incharge no access to anyone's documents
+    // but their own, and this metadata would leak the same file_url path
+    // that route now refuses to serve. Everything else 'approver' sees
+    // (education, personal info, leave-approval-relevant fields) is
+    // untouched — this is a documents-only carve-out, not a demotion of
+    // the whole view level.
+    if (req.user.role === ROLES.TEAM_INCHARGE) {
+      empData.documents = [];
+    } else {
+      // employee_documents was migrated from (document_type, file_path,
+      // original_name, mime_type, size) to (type, file_url, name, file_size).
+      // Fresh deploys only have the new columns — alias them to the legacy
+      // names the frontend's profile view expects so we don't churn the UI.
+      const docsRes = await pool.query(
+        `SELECT id,
+                type      AS "documentType",
+                file_url  AS "filePath",
+                name      AS "originalName",
+                NULL      AS "mimeType",
+                file_size AS "size"
+           FROM employee_documents WHERE employee_id = $1`,
+        [req.params.id]
+      );
+      empData.documents = docsRes.rows;
+    }
 
     if (viewLevel === 'approver') {
       return res.json({ success: true, viewLevel, data: toApproverView(empData) });

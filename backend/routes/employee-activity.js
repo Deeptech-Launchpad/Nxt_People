@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
-const { isFullAccess, isManager } = require('../utils/roles');
+const { isFullAccess, isManager, ROLES } = require('../utils/roles');
 const { serverError } = require('../utils/serverError');
 
 /* Everything that has happened to one person's record, in one list.
@@ -89,18 +89,26 @@ router.get('/:employeeId', async (req, res) => {
     }
 
     /* ── documents ────────────────────────────────────────────────────── */
-    const docs = await pool.query(
-      `SELECT d.name, d.type, d.created_at AS at, d.file_missing AS "missing",
-              a.first_name AS "actorFirst", a.last_name AS "actorLast"
-         FROM employee_documents d
-         LEFT JOIN employees a ON a.id = d.uploaded_by
-        WHERE d.employee_id = $1 ORDER BY d.created_at DESC LIMIT 100`, [id]);
-    docs.rows.forEach(r => push({
-      at: r.at, kind: 'document', icon: 'file',
-      title: `Document submitted — ${r.name}`,
-      detail: r.missing ? 'The file is no longer on the server' : null,
-      actor: who(r),
-    }));
+    // team_incharge sees the rest of this timeline for a direct report but
+    // not this section: documents.js's isPrivilegedFor() gives team_incharge
+    // no document access at all, and this file's own header says why that
+    // matters here — "everything in this feed is already visible to the
+    // reader somewhere else." A document entry would no longer be true to
+    // that once team_incharge lost the only route that actually shows one.
+    if (req.user.role !== ROLES.TEAM_INCHARGE) {
+      const docs = await pool.query(
+        `SELECT d.name, d.type, d.created_at AS at, d.file_missing AS "missing",
+                a.first_name AS "actorFirst", a.last_name AS "actorLast"
+           FROM employee_documents d
+           LEFT JOIN employees a ON a.id = d.uploaded_by
+          WHERE d.employee_id = $1 ORDER BY d.created_at DESC LIMIT 100`, [id]);
+      docs.rows.forEach(r => push({
+        at: r.at, kind: 'document', icon: 'file',
+        title: `Document submitted — ${r.name}`,
+        detail: r.missing ? 'The file is no longer on the server' : null,
+        actor: who(r),
+      }));
+    }
 
     /* ── leave ────────────────────────────────────────────────────────── */
     const leaves = await pool.query(

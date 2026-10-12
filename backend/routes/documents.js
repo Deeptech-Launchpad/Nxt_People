@@ -4,7 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const pool = require('../db');
 const { protect } = require('../middleware/auth');
-const { isFullAccess, isManager } = require('../utils/roles');
+const { isFullAccess, isManager, subtreeClause, ROLES } = require('../utils/roles');
 const { serverError } = require('../utils/serverError');
 const { logAudit } = require('../utils/audit');
 const store = require('../utils/documentStore');
@@ -43,14 +43,30 @@ const MIME = {
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
 
-// Full-access (Super Admin / HR) can act on anyone's documents; a manager only
-// on their direct reports'; employees only on their own.
+// Full-access (admin/director/hr_admin) can act on anyone's documents.
+//
+// A manager (role: 'manager') reaches their ENTIRE reporting chain below
+// them — direct reports and everyone who reports up through those reports,
+// recursively — via the same subtreeClause() the Team pages' "All" view
+// already uses for attendance/leave. Widened deliberately from the old
+// direct-reports-only rule, so a manager isn't walled off two levels down
+// their own chain.
+//
+// team_incharge is carved out ON PURPOSE, even though it holds the same
+// people.viewReports permission as manager everywhere else in this app:
+// team_incharge gets NO access to anyone else's documents, full stop — only
+// their own, exactly like a plain team_member. Do not fold this back into
+// the isManager() check below — that would silently restore access this
+// policy deliberately removed.
+//
+// Everyone else (team_member, and any other role without people.viewReports)
+// reaches only their own folder, via ownsFolder() below.
 const ownsFolder = (req) => req.user._id === req.params.employeeId;
 async function isPrivilegedFor(req, employeeId) {
   if (isFullAccess(req.user.role)) return true;
-  if (isManager(req.user.role)) {
+  if (isManager(req.user.role) && req.user.role !== ROLES.TEAM_INCHARGE) {
     const r = await pool.query(
-      `SELECT 1 FROM employees WHERE id = $1 AND (reporting_manager_id = $2 OR approving_authority_id = $2)`,
+      `SELECT 1 FROM employees e WHERE e.id = $1 AND ${subtreeClause('e', 2)}`,
       [employeeId, req.user._id]
     );
     return r.rows.length > 0;
