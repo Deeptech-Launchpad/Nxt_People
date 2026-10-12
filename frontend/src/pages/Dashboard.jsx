@@ -1552,8 +1552,12 @@ export default function Dashboard() {
                       {(() => {
                         const today = new Date();
                         today.setHours(0, 0, 0, 0);
-                        const upcoming = holidays.filter(h => new Date(h.date) >= today);
-                        
+                        // An Exception Working Day (type='working_day') is the
+                        // opposite of a holiday — a day off that was turned into
+                        // a mandatory working day — so it does not belong in a
+                        // list meant to tell people when they're next off.
+                        const upcoming = holidays.filter(h => h.type !== 'working_day' && new Date(h.date) >= today);
+
                         if (upcoming.length === 0) {
                           return <p className="text-[15px] text-slate-400 italic py-2">No upcoming holidays</p>;
                         }

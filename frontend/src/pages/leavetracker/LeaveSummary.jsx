@@ -143,7 +143,10 @@ export default function LeaveSummary() {
    * seeing that the thing you applied for is actually going to happen. */
   const upcoming = [
     ...holidays
-      .filter(h => new Date(h.date) >= today)
+      // An Exception Working Day (type='working_day') is the opposite of a
+      // holiday — a day off turned into a mandatory working day — so it does
+      // not belong in a panel about when leaves and holidays are coming up.
+      .filter(h => h.type !== 'working_day' && new Date(h.date) >= today)
       .map(h => ({ kind: 'holiday', date: h.date, title: h.name, note: h.description || `${h.name} Holiday` })),
     ...leaves
       .filter(l => l.status !== 'cancelled' && l.status !== 'rejected')

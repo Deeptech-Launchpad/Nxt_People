@@ -303,8 +303,11 @@ export const WIDGETS = [
     sources: ['holidays'],
     render: ({ data, status, err }) => gate(status, err, ['holidays'], () => {
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      // An Exception Working Day (type='working_day') is the opposite of a
+      // holiday — a day off turned into a mandatory working day — so it does
+      // not belong in a widget meant to tell people when they're next off.
       const list = (data.holidays || [])
-        .filter(h => h.date && new Date(String(h.date).slice(0, 10) + 'T00:00:00') >= todayStart)
+        .filter(h => h.type !== 'working_day' && h.date && new Date(String(h.date).slice(0, 10) + 'T00:00:00') >= todayStart)
         .slice(0, 6);
       if (list.length === 0) return <EmptyState text="No upcoming holidays" />;
       return (
