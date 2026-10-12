@@ -534,6 +534,32 @@ cron.schedule('30 2 * * *', async () => {
   }
 }, cronOpts);
 
+// 8b. Nightly backup: pg_dump + the uploads/ tree (where every encrypted
+//     employee document lives), both shipped to S3, old ones pruned after.
+//     Runs at 03:00 — after the Zoho sync (02:30) so the two aren't
+//     fighting over DB connections, still well inside quiet hours.
+//     Logs the same way every other cron here does: one INFO line with a
+//     summary on success, one ERROR with the reason on failure — never
+//     silent, which is exactly the gap this cron exists to close.
+cron.schedule('0 3 * * *', async () => {
+  try {
+    logger.info('Running nightly backup');
+    const { runBackup } = require('./utils/backup');
+    const summary = await runBackup();
+    logger.info(summary, 'Nightly backup complete');
+  } catch (err) {
+    logger.error({ err: err.message }, 'Nightly backup failed');
+    try {
+      const { createNotification } = require('./routes/notifications');
+      const admins = await pool.query(`SELECT id FROM employees WHERE role IN ('admin','director') AND status='active'`);
+      for (const a of admins.rows) {
+        await createNotification(a.id, 'system', 'Nightly Backup Failed',
+          `Last night's backup did not complete: ${err.message}`, '/settings');
+      }
+    } catch (_) {}
+  }
+}, cronOpts);
+
 // 9. Auto-mark Absent for forgotten check-outs (runs daily at 00:10).
 //    An open attendance session (checked in, never checked out) must not be
 //    allowed to bleed into a new day — anything computing "hours since

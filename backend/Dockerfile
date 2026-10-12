@@ -17,8 +17,11 @@ RUN npm ci --omit=dev
 FROM node:18-alpine AS runtime
 WORKDIR /app
 
-# wget is used by the docker healthcheck below.
-RUN apk add --no-cache dumb-init wget
+# wget is used by the docker healthcheck below. postgresql15-client provides
+# pg_dump for the nightly backup cron (utils/backup.js) — matched to the
+# db service's own major version (postgres:15-alpine) so the dump format is
+# never a version mismatch away from failing to restore.
+RUN apk add --no-cache dumb-init wget postgresql15-client
 
 # Run as an unprivileged user. The `node` user (uid 1000) ships with the
 # official node:alpine image. /app/uploads must be writable by it.
