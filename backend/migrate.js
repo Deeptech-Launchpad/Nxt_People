@@ -140,6 +140,17 @@ const ORDER = [
 
   'migrate_session_location.js',         // attendance_sessions.check_in/out location + lat/lng
   'migrate_session_accuracy.js',         // attendance_sessions.check_in/out accuracy_meters
+
+  /* On disk since before this ORDER list existed, but never added to it —
+   * a fresh install was missing leaves.team_email, employees.is_remote,
+   * and attendance.work_mode/location_accuracy_meters even though the
+   * route code already reads them, so every request those routes handle
+   * 500'd on a fresh database. Placed last because migrate_location_
+   * geofence.js references work_locations(id) and employees(id), both of
+   * which only exist by this point in the order above. */
+  'migrate_leave_team_email.js',         // leaves.team_email
+  'migrate_location_geofence.js',        // work_locations lat/lng/radius, employees.is_remote, attendance.work_mode/location_*
+
   'migrate_indexes.js',                  // perf indexes — run last
 ];
 
