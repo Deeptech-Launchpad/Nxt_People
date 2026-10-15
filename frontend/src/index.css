@@ -516,3 +516,62 @@ html.dark .bg-white.p-8          { background-color: #1f2937 !important; }
   outline-offset: 2px;
   border-radius: 2px;
 }
+
+/* ── Dashboard quick-action / stat grids ──────────────────────────────────
+   Two separate container-query contexts, because the quick-action row and
+   the stat-card row live at different widths in the layout: quick actions
+   span the full area right of the profile column (center + schedule
+   columns combined), while the stat cards sit only in the narrower center
+   sub-column beside the schedule column. Neither width is derivable from
+   the viewport directly (both depend on sibling column widths — profile
+   ~280px, schedule ~300px), so a viewport-width Tailwind breakpoint
+   (sm:/lg:) lands at a different actual container width depending on
+   monitor size — at some widths 6 cards fit, at others the same
+   breakpoint leaves one short and it wraps alone. A container query fixes
+   the column count to each grid's own ancestor's measured width instead,
+   so both are deterministic regardless of viewport. */
+.dash-outer-col {
+  container-type: inline-size;
+  container-name: dash-outer;
+}
+.dash-center-col {
+  container-type: inline-size;
+  container-name: dash-center;
+}
+
+.qa-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container dash-outer (min-width: 420px) {
+  .qa-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container dash-outer (min-width: 720px) {
+  .qa-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container dash-center (min-width: 460px) {
+  .stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Slim scrollbar for the Overview page's tabs-card content area, so a long
+   tab (e.g. Attendance's weekly list) scrolls in place instead of growing
+   the card past the height the left/right columns set. */
+.tab-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.tab-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.tab-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tab-scroll::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}

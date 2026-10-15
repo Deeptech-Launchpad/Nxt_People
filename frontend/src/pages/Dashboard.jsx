@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { isFullAccess } from '../utils/roles';
+import { isFullAccess, isApprover } from '../utils/roles';
 import { useAttendance } from '../context/AttendanceContext';
 import { useWeekendRules } from '../context/WeekendRulesContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -42,6 +42,69 @@ const LEAVE_TYPE_LABELS = {
   comp_off: 'Compensatory Off',
   unpaid: 'Leave Without Pay',
 };
+
+/* Purely decorative — which icon a Leave Balance card shows for its type.
+ * Falls back to the purple "person" badge for any code without a closer
+ * match; does not affect which leave types are fetched or featured. */
+const LEAVE_CODE_ICON = {
+  casual: '/icons/dashboard/15-leaf-green.svg',
+  earned: '/icons/dashboard/15-leaf-green.svg',
+  sick: '/icons/dashboard/16-heart-red.svg',
+  permission: '/icons/dashboard/17-user-purple.svg',
+  comp_off: '/icons/dashboard/18-stopwatch-blue.svg',
+  unpaid: '/icons/dashboard/16-heart-red.svg',
+};
+
+/* Short, positive lines for the greeting banner's subtitle — purely
+ * decorative copy, same spirit as the "Have a productive day!" line it
+ * sits beside, not application data, so no API/DB field for this. */
+const MOTIVATIONAL_QUOTES = [
+  'Small steps today, a stronger tomorrow.',
+  'Progress happens when people grow together.',
+  'Every task done well moves the whole team forward.',
+  'Consistency beats intensity — keep showing up.',
+  'Great work is built one focused hour at a time.',
+  'Your effort today is tomorrow’s momentum.',
+  'Clarity first, speed follows.',
+  'A calm mind gets more done than a rushed one.',
+  'Small wins, counted daily, become big ones.',
+  'Teamwork turns good ideas into real results.',
+  'Done is better than perfect — ship it, then improve it.',
+  'Start where you are, use what you have.',
+  'Good habits, repeated daily, build great careers.',
+  'Ask questions early; it saves time later.',
+  'Celebrate progress, not just the finish line.',
+  'Focus on what you can control today.',
+  'A short break now can mean sharper work later.',
+  'Helping a colleague today pays forward tomorrow.',
+  'Plans change — purpose doesn’t have to.',
+  'Keep it simple; simple scales.',
+  'Every expert was once a beginner who kept going.',
+  'Patience and persistence beat raw talent.',
+  'The best time to start was earlier; the next best time is now.',
+  'Quality is remembered long after speed is forgotten.',
+  'Learning never stops paying off.',
+  'A tidy plan makes for a calm day.',
+  'Small kindnesses make a big workplace.',
+  'Trust the process, track the progress.',
+];
+
+// One quote per page load, kept stable for the life of the component
+// (no re-roll on re-render), and nudged away from repeating whatever
+// showed on the previous load.
+function pickQuote() {
+  const n = MOTIVATIONAL_QUOTES.length;
+  let idx = Math.floor(Math.random() * n);
+  try {
+    const lastRaw = sessionStorage.getItem('nxt_last_quote_idx');
+    const last = lastRaw === null ? null : Number(lastRaw);
+    if (last !== null && n > 1 && idx === last) {
+      idx = (idx + 1 + Math.floor(Math.random() * (n - 1))) % n;
+    }
+    sessionStorage.setItem('nxt_last_quote_idx', String(idx));
+  } catch { /* private window / storage blocked — a random quote is fine */ }
+  return MOTIVATIONAL_QUOTES[idx];
+}
 
 /* ─ Greeting helper ─ */
 function getGreeting() {
@@ -327,9 +390,9 @@ const PresenceLabel = ({ person }) => {
 const Tab = ({ active, onClick, children }) => (
   <button
     onClick={onClick}
-    className={`py-3.5 px-1 text-[15px] font-medium border-b-[2.5px] transition-all whitespace-nowrap mt-[2px] cursor-pointer
+    className={`py-2.5 px-1 text-[13px] font-medium border-b-[2.5px] transition-all whitespace-nowrap mt-[2px] cursor-pointer
       ${active
-        ? 'border-[#3b82f6] text-[#1a1d35] font-semibold'
+        ? 'border-[#5c9636] text-[#12142e] font-semibold'
         : 'border-transparent text-[#777] hover:text-[#333]'
       }`}
   >
@@ -339,9 +402,9 @@ const Tab = ({ active, onClick, children }) => (
 
 /* ─ Feed card ─ */
 const FeedCard = ({ icon, children }) => (
-  <div className="bg-white rounded border border-slate-200 p-4 flex items-start gap-3.5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] hover:shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-shadow">
+  <div className="bg-white rounded border border-slate-200 p-3 flex items-start gap-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)] hover:shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-shadow">
     {icon && (
-      <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-slate-50 border border-slate-100 text-slate-400">
+      <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-slate-50 border border-slate-100 text-slate-400">
         {icon}
       </div>
     )}
@@ -421,10 +484,10 @@ const RequestMenu = ({ buttonRect, onClose, canRegularize = false, onPick }) => 
           <button
             key={idx}
             onClick={() => { onPick(opt.kind); onClose(); }}
-            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50/50 transition-colors text-left group"
+            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#f2f8ec]/50 transition-colors text-left group"
           >
-            <span className="text-base bg-slate-50 group-hover:bg-blue-100/50 w-7 h-7 flex items-center justify-center rounded-lg border border-slate-100 group-hover:border-blue-200 transition-colors">{opt.icon}</span>
-            <span className="text-[15px] font-semibold text-slate-700 group-hover:text-blue-700 transition-colors">{opt.label}</span>
+            <span className="text-base bg-slate-50 group-hover:bg-[#e1efd2]/50 w-7 h-7 flex items-center justify-center rounded-lg border border-slate-100 group-hover:border-[#c5e0a8] transition-colors">{opt.icon}</span>
+            <span className="text-[15px] font-semibold text-slate-700 group-hover:text-[#3b6122] transition-colors">{opt.label}</span>
           </button>
         ))}
       </div>
@@ -470,7 +533,9 @@ export default function Dashboard() {
     api.get('/org-details/details').then(r => setOrgLogo(r.data.data?.logoUrl || null)).catch(() => {});
   }, []);
 
-  const [activeTab, setActiveTab] = useState('activities');
+  const [activeTab, setActiveTab] = useState('announcements');
+  // Picked once per mount (i.e. once per page load/refresh) — see pickQuote().
+  const [greetingQuote] = useState(pickQuote);
   const [feedTab, setFeedTab] = useState('all');
 
   /* can() answers true while permissions load, which would flash Marking to
@@ -667,6 +732,36 @@ export default function Dashboard() {
     const [pendingApprovals, setPendingApprovals] = useState([]);
     const [loadingApprovals, setLoadingApprovals] = useState(false);
     const [actingApproval, setActingApproval] = useState('');
+
+    /* ─ Dashboard stat cards (Total Team Members / Present Today / On Leave)
+     *  — same /team/space endpoint TeamSpace.jsx already uses, department-
+     *  scoped server-side. Only fetched for approver roles since that's the
+     *  only audience the cards render for. */
+    const [teamSpace, setTeamSpace] = useState(null);
+    useEffect(() => {
+      if (!isApprover(user)) return;
+      api.get('/team/space').then(r => setTeamSpace(r.data.data)).catch(() => {});
+    }, [user?._id]);
+
+    /* Open Requests stat card needs pending-approvals count available on
+     * mount, not only once the Approvals tab is clicked — the count fetch
+     * below is the same /approvals/pending call the tab effect already
+     * makes; this just also fires it once up front for approver roles. */
+    useEffect(() => {
+      if (!isApprover(user) || activeTab === 'approvals') return;
+      api.get('/approvals/pending')
+        .then(r => {
+          const d = r.data.data || {};
+          const tag = (rows, endpoint, kind) => (rows || []).map(row => ({ ...row, _endpoint: endpoint, _kind: kind }));
+          setPendingApprovals([
+            ...tag(d.leaves, 'leaves', 'leave'),
+            ...tag(d.regularizations, 'regularizations', 'regularization'),
+            ...tag(d.wfhRequests, 'wfh', 'wfh'),
+            ...tag(d.compOffs, 'comp-off', 'compoff'),
+          ]);
+        })
+        .catch(() => {});
+    }, [user?._id]);
 
     /**
      * Approve or reject from the Home page, without the trip to Operations.
@@ -1024,9 +1119,72 @@ export default function Dashboard() {
   // The 7-day rows shown in the Attendance tab for the navigated week.
   const attWeek = getCurrentWeek(user?.shift?.workingDays, holidays, isWeekendByRule, attWeekOffset);
 
+  /* ─ My Schedule (current week) — same per-day status rules the old
+   * horizontal Work Schedule widget used (Present/Half-day/Absent/Holiday/
+   * Weekend/leave label), just computed once into a plain array so the
+   * sidebar card below can render it as a vertical list instead of a
+   * 7-column grid. No new business logic — identical conditions. */
+  const scheduleDays = getCurrentWeek(user?.shift?.workingDays, holidays, isWeekendByRule).map((day) => {
+    const rec = weeklyAttendance.find(r => {
+      const rDate = new Date(r.date);
+      const y = rDate.getFullYear();
+      const m = String(rDate.getMonth() + 1).padStart(2, '0');
+      const d = String(rDate.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}` === day.dateStr;
+    });
+    const leave = !rec && weeklyLeaves.find(l => {
+      if (l.leaveType === 'permission') return false;
+      const s = (l.startDate || '').slice(0, 10);
+      const e = (l.endDate || '').slice(0, 10);
+      return day.dateStr >= s && day.dateStr <= e;
+    });
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isToday = day.dateStr === todayStr;
+    const isFuture = day.dateStr > todayStr;
+    const isPast = day.dateStr < todayStr;
+    const isWeekend = day.isWeekend;
+
+    let label = null;
+    let labelColor = '';
+    if (day.isHoliday) {
+      label = day.holidayName ? `${day.holidayName} (Holiday)` : 'Holiday'; labelColor = 'text-teal-500';
+    } else if (isWeekend) {
+      label = 'Weekend'; labelColor = 'text-orange-500';
+    } else if (leave) {
+      label = LEAVE_TYPE_LABELS[leave.leaveType] || leave.leaveType;
+      labelColor = 'text-amber-600';
+    } else if (isDatePending(day.dateStr)) {
+      // left unlabelled on purpose — see isDatePending above
+    } else if (isPast || (isToday && isCheckedOut)) {
+      const wh = Number(rec?.workingHours) || 0;
+      if (!rec || (wh < 4 && rec?.status !== 'half-day')) {
+        label = 'Absent'; labelColor = 'text-red-500';
+      } else if (rec?.status === 'half-day' || (wh >= 4 && wh < 7.5)) {
+        label = 'Half-day'; labelColor = 'text-blue-500';
+      } else {
+        label = 'Present'; labelColor = 'text-emerald-600';
+      }
+    } else if (isToday && !isCheckedIn) {
+      label = 'Work day'; labelColor = 'text-slate-500';
+    }
+
+    let hoursText = null;
+    if (!isWeekend && !isFuture) {
+      hoursText = isToday && isCheckedIn
+        ? `${timerDisplay} Hrs`
+        : isToday && isCheckedOut
+          ? `${hrs}:${mins} Hrs`
+          : rec?.workingHours !== undefined
+            ? `${fmtHHMM(rec.workingHours)} Hrs`
+            : null;
+    }
+
+    return { day, isToday, label, labelColor, hoursText };
+  });
+
   /* ─ tabs ─ */
   // Payslips only appears when payroll is live — see config/features.
-  const TABS = ['Activities', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance',
+  const TABS = ['Announcements', 'Feeds', 'Profile', 'Approvals', 'Leave', 'Attendance',
     ...(canMark ? ['Marking Present/Absent'] : []),
     ...(TIME_TRACKER_ENABLED ? ['Time Logs'] : []),
     ...(PAYROLL_ENABLED ? ['Payslips'] : [])];
@@ -1041,11 +1199,55 @@ export default function Dashboard() {
           settings on Organization Policy governed nothing. It now comes from
           whatever this person, or the organization, chose. */}
       <div
-        className="w-full h-[200px] relative flex-shrink-0 bg-slate-700"
-        style={coverStyle(cover?.cover, covers)}
+        className="w-full relative flex-shrink-0 bg-slate-700"
+        style={{
+          height: 'clamp(130px, 10vw, 170px)',
+          ...((cover?.own || cover?.orgCover)
+            ? coverStyle(cover.own || cover.orgCover, covers)
+            : { backgroundImage: 'url("/cover-bg-greeting.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }),
+        }}
       >
-        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/10" />
-        <div className="absolute top-4 right-6 flex items-center gap-2">
+        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/10" />
+
+        {/* "People Progress Together" is baked into the default banner
+            photo (public/cover-bg-greeting.png) itself, so it is not
+            rendered again here as a separate overlay. */}
+
+        {/* Greeting — overlaid directly on the cover photo. Anchored below
+            the top-right controls and above the overlap the content below
+            has with the banner, so neither covers it. */}
+        <div className="absolute left-5 top-4 flex items-start gap-3 max-w-[65%]">
+          {orgLogo && (
+            <>
+              <img src={orgLogo} alt="" className="h-8 w-auto object-contain drop-shadow-sm mt-1" />
+              <div className="h-8 w-[1px] bg-slate-800/15 mt-1"></div>
+            </>
+          )}
+          <div>
+            <p className="text-[17px] font-semibold text-slate-800 leading-tight [text-shadow:0_1px_10px_rgba(255,255,255,0.6)]">
+              {getGreeting()},
+            </p>
+            <h1 className="text-[32px] font-extrabold text-slate-900 tracking-tight leading-tight [text-shadow:0_1px_12px_rgba(255,255,255,0.6)]">
+              {user?.firstName || 'User'} <span aria-hidden="true">👋</span>
+            </h1>
+            <p className="text-[15px] text-slate-500 italic font-medium mt-1 [text-shadow:0_1px_8px_rgba(255,255,255,0.6)]">
+              “{greetingQuote}”
+            </p>
+          </div>
+        </div>
+
+        {/* Date / weather card */}
+        <div className="absolute right-[4%] top-11 bg-white/90 backdrop-blur-sm rounded-lg pl-4 pr-5 py-3 shadow-sm flex items-center gap-2">
+          <AnimatedTimeOfDayIcon size={26} />
+          <div>
+            <p className="text-[15px] font-bold text-slate-800 leading-tight whitespace-nowrap">
+              {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+            </p>
+            <p className="text-[12.5px] text-slate-500 leading-tight whitespace-nowrap">Have a productive day!</p>
+          </div>
+        </div>
+
+        <div className="absolute top-2.5 right-5 flex items-center gap-2">
           {/* Access My Payroll — only while payroll is live. */}
           {PAYROLL_ENABLED && (
             <button
@@ -1100,52 +1302,78 @@ export default function Dashboard() {
 
       <CoverImageDialog open={showCover} onClose={() => setShowCover(false)} onChanged={loadCover} />
 
-      {/* ─ Main content (overlaps banner by ~80px) ─ */}
-      <div className="relative z-10 w-full px-6 -mt-[80px] pb-12">
+      {/* ─ Main content — quick-action cards slightly overlap the banner's
+          bottom edge. ─ */}
+      <div className="relative z-10 w-full px-6 -mt-[20px] pb-5">
         {/* Removed the 1200px cap — on wide monitors the right side was
             sitting empty. Let the row stretch with the parent so the
             activity panel fills available width. */}
-        <div className="flex items-start gap-5 w-full">
+        <div className="flex items-stretch gap-5 w-full">
 
           {/* ══ LEFT COLUMN ═══════════════════════════════════════════ */}
-          <div className="w-[280px] flex-shrink-0 space-y-4">
+          <div className="w-[280px] flex-shrink-0 flex flex-col gap-3">
 
             {/* Profile card */}
-            <div className="bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] border border-slate-200 overflow-visible text-center pb-5">
-              {/* Avatar — larger, passport style. Clickable: opens a Zoho-
-                  style modal showing the full photo plus a "Change Image"
-                  button that navigates to the Profile page. */}
+            <div className="bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] border border-slate-200 text-center pb-3">
+              {/* Avatar — passport style. Clickable: opens a Zoho-style modal
+                  showing the full photo plus a "Change Image" button that
+                  navigates to the Profile page. Sits fully inside the card
+                  (no negative margin pulling it up over the top border) so
+                  it never overlaps the hero banner's hill shape behind it. */}
               <div className="flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => setAvatarOpen(true)}
-                  title="View profile photo"
-                  className="w-[110px] h-[110px] rounded-xl bg-slate-50 border-4 border-white flex items-center justify-center text-slate-300 -mt-[55px] shadow-xl relative z-10 overflow-hidden hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer transition-colors"
-                >
-                  <ImgWithFallback src={user?.photoUrl} alt="avatar" className="w-full h-full object-cover"
-                    fallback={<UserIcon size={60} strokeWidth={1} className="opacity-30" />} />
-                </button>
+                <div className="relative w-24 mt-3.5">
+                  <button
+                    type="button"
+                    onClick={() => setAvatarOpen(true)}
+                    title="View profile photo"
+                    className="w-24 h-24 rounded-full bg-slate-50 border-4 border-white flex items-center justify-center text-slate-300 shadow-xl relative z-10 overflow-hidden hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer transition-colors"
+                  >
+                    <ImgWithFallback src={user?.photoUrl} alt="avatar" className="w-full h-full object-cover"
+                      fallback={<UserIcon size={48} strokeWidth={1} className="opacity-30" />} />
+                  </button>
+                  {/* Presence dot — same isCheckedIn state the status badge
+                      and timer below already use. */}
+                  <span className={`absolute z-20 bottom-1 right-1 w-3.5 h-3.5 rounded-full border-[3px] border-white ${isCheckedIn ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                </div>
               </div>
 
-              <div className="mt-2 px-4">
-                {/* Employee ID on top */}
-                <p className="text-[13px] font-semibold text-slate-500 tracking-wider">
-                  {user?.employeeId || '—'}
-                </p>
+              <div className="mt-1.5 px-4">
                 {/* Full name */}
-                <h2 className="text-[17px] font-bold text-slate-800 tracking-tight mt-0.5">
+                <h2 className="text-[15px] font-bold text-slate-900 tracking-tight">
                   {user?.firstName} {user?.lastName}
                 </h2>
                 {/* Designation */}
-                <p className="text-[14px] text-slate-500 mt-0.5">
+                <p className="text-[12.5px] text-slate-500 mt-0.5">
                   {user?.designation || 'Employee'}
                 </p>
+
+                {/* Employee ID / Department / Work Location — same fields
+                    the Profile tab already shows (profileData, fetched on
+                    mount), laid out as a compact label/value table. */}
+                <div className="mt-2 pt-2 border-t border-slate-100 text-left space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[14px] text-slate-400">Employee ID</span>
+                    <span className="text-[14.5px] font-semibold text-slate-800">{user?.employeeId || '—'}</span>
+                  </div>
+                  {profileData?.department && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[14px] text-slate-400">Department</span>
+                      <span className="text-[14.5px] font-semibold text-slate-800 truncate max-w-[150px]" title={profileData.department}>{profileData.department}</span>
+                    </div>
+                  )}
+                  {profileData?.workLocation && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[14px] text-slate-400">Location</span>
+                      <span className="text-[14.5px] font-semibold text-slate-800 truncate max-w-[150px]" title={profileData.workLocation}>{profileData.workLocation}</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Status + timer – Zoho clean style */}
-              <div className="mt-4 flex flex-col items-center gap-2">
+              <div className="mt-2 flex flex-col items-center gap-1.5">
                 {/* Status badge */}
-                <span className={`text-[14px] font-bold px-3 py-0.5 rounded ${
+                <span className={`text-[12px] font-bold px-3 py-0.5 rounded ${
                   isCheckedOut
                     ? 'text-rose-600'
                     : isCheckedIn
@@ -1158,46 +1386,46 @@ export default function Dashboard() {
                 {/* Zoho-style timer: each two-digit segment in its own
                     rounded gray pill, separated by colons.
                     HH : MM : SS */}
-                <div className="flex items-center gap-2 font-mono">
-                  <span className="text-[20px] font-bold text-slate-800 tracking-tighter bg-slate-100 rounded-md px-2.5 py-1 min-w-[44px] text-center leading-none">{hrs}</span>
-                  <span className="text-[18px] font-bold text-slate-400">:</span>
-                  <span className="text-[20px] font-bold text-slate-800 tracking-tighter bg-slate-100 rounded-md px-2.5 py-1 min-w-[44px] text-center leading-none">{mins}</span>
-                  <span className="text-[18px] font-bold text-slate-400">:</span>
-                  <span className="text-[20px] font-bold text-slate-800 tracking-tighter bg-slate-100 rounded-md px-2.5 py-1 min-w-[44px] text-center leading-none">{secs}</span>
+                <div className="flex items-center gap-1.5 font-mono">
+                  <span className="text-[15px] font-bold text-slate-800 tracking-tighter bg-slate-100 rounded-md px-2 py-0.5 min-w-[36px] text-center leading-none">{hrs}</span>
+                  <span className="text-[14px] font-bold text-slate-400">:</span>
+                  <span className="text-[15px] font-bold text-slate-800 tracking-tighter bg-slate-100 rounded-md px-2 py-0.5 min-w-[36px] text-center leading-none">{mins}</span>
+                  <span className="text-[14px] font-bold text-slate-400">:</span>
+                  <span className="text-[15px] font-bold text-slate-800 tracking-tighter bg-slate-100 rounded-md px-2 py-0.5 min-w-[36px] text-center leading-none">{secs}</span>
                 </div>
               </div>
 
               {/* Check-in / out button */}
-              <div className="mt-4 px-6" data-tour="checkin-btn">
+              <div className="mt-2 px-6" data-tour="checkin-btn">
                 {!isCheckedIn && !isCheckedOut && (
                   <button
                     onClick={handleCheckIn}
                     disabled={attActionLoading}
-                    className="w-full bg-slate-700 hover:bg-slate-800 text-white text-[15px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
+                    className="w-full bg-slate-700 hover:bg-slate-800 text-white text-[13px] font-bold py-1.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
                   >
-                    <LogIn size={15} /> Check-in
+                    <LogIn size={13} /> Check-in
                   </button>
                 )}
                 {isCheckedIn && (
                   <button
                     onClick={handleCheckOut}
                     disabled={attActionLoading}
-                    className="w-full border-2 border-rose-500 text-rose-500 hover:bg-rose-50 text-[15px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                    className="w-full border-2 border-rose-500 text-rose-500 hover:bg-rose-50 text-[13px] font-bold py-1.5 rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
                   >
-                    <LogOut size={15} /> Check-out
+                    <LogOut size={13} /> Check-out
                   </button>
                 )}
                 {isCheckedOut && record?.checkOut && (
-                  <div className="space-y-2">
-                    <p className="text-[13px] text-slate-400 font-medium">
+                  <div className="space-y-1.5">
+                    <p className="text-[11.5px] text-slate-400 font-medium">
                       Checked out at <span className="text-slate-600 font-bold">{fmt.instant(record.checkOut)}</span>
                     </p>
                     <button
                       onClick={handleCheckIn}
                       disabled={attActionLoading}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[15px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold py-1.5 rounded-lg transition-all flex items-center justify-center gap-2"
                     >
-                      <LogIn size={15} /> Re-check-in
+                      <LogIn size={13} /> Re-check-in
                     </button>
                   </div>
                 )}
@@ -1205,82 +1433,238 @@ export default function Dashboard() {
             </div>
 
             {/* Reporting Manager Card */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-              <h3 className="text-[13px] font-bold text-slate-500 uppercase tracking-wider mb-3">Reporting Person</h3>
-              {(manager || profileData?.manager) ? (
-                <div
-                  className="flex items-center gap-3 -m-1 p-1 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors"
-                  onClick={() => navigate(`/employees/${(manager || profileData?.manager).id || (manager || profileData?.manager)._id}`)}
-                >
-                  <div className="relative flex-shrink-0">
-                    <img
-                      src={`https://ui-avatars.com/api/?name=${(manager || profileData?.manager).firstName}+${(manager || profileData?.manager).lastName}&background=e0e7ff&color=4f46e5&size=44`}
-                      className="w-12 h-12 rounded-lg border border-slate-100"
-                      alt="manager"
-                    />
-                    <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-white rounded-full ${PRESENCE_DOT[presenceOf(manager || profileData?.manager)] || 'bg-slate-300'}`} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[14px] font-bold text-slate-700">Reporting Person</p>
-                    <p className="text-[15px] font-bold text-slate-700 truncate">
-                      {(manager || profileData?.manager).employeeId} - {(manager || profileData?.manager).firstName}
-                    </p>
-                    <PresenceLabel person={manager || profileData?.manager} />
-                  </div>
-                </div>
-              ) : (
+            <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow">
+              <h3 className="text-[13px] font-bold text-slate-500 uppercase tracking-wider mb-2.5">Reporting Manager</h3>
+              {(manager || profileData?.manager) ? (() => {
+                const mgr = manager || profileData?.manager;
+                return (
+                  <>
+                    <div
+                      className="flex items-center gap-3 -m-1 p-1 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors"
+                      onClick={() => navigate(`/employees/${mgr.id || mgr._id}`)}
+                    >
+                      <div className="relative flex-shrink-0">
+                        <img
+                          src={`https://ui-avatars.com/api/?name=${mgr.firstName}+${mgr.lastName}&background=e0e7ff&color=4f46e5&size=44`}
+                          className="w-12 h-12 rounded-full border border-slate-100"
+                          alt="manager"
+                        />
+                        <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-white rounded-full ${PRESENCE_DOT[presenceOf(mgr)] || 'bg-slate-300'}`} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[15px] font-bold text-slate-700 truncate">
+                          {mgr.employeeId} - {mgr.firstName}
+                        </p>
+                        <p className="text-[12.5px] text-slate-500 truncate">{mgr.designation || <PresenceLabel person={mgr} />}</p>
+                      </div>
+                    </div>
+                    {/* Reuses the real /chat page — same feature the top-bar
+                        chat icon opens, not a new messaging system. */}
+                    <button
+                      onClick={() => navigate('/chat')}
+                      className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-[12.5px] font-bold text-slate-600 border border-slate-200 rounded-lg py-1.5 hover:bg-slate-50 transition-colors"
+                    >
+                      <MessageSquare size={13} /> Message
+                    </button>
+                  </>
+                );
+              })() : (
                 <p className="text-[14px] text-slate-400 italic">No manager assigned</p>
               )}
             </div>
 
-             {/* Department Members */}
-             <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-               <h3 className="text-[14px] font-bold text-slate-800 mb-4">Department Members</h3>
-               <div className="flex flex-col overflow-hidden">
-                 {loadingDeptMembers ? (
-                   <div className="flex items-center gap-2">
-                     <div className="w-6 h-6 border-[3px] border-blue-500 border-t-transparent rounded-full animate-spin" />
-                     <span className="text-[12px] text-slate-500">Loading...</span>
-                   </div>
-                 ) : deptMembers.length === 0 ? (
-                   <span className="text-[12px] text-slate-500 italic">No team members found</span>
-                 ) : (
-                   <>
-                     {deptMembers.slice(0, 3).map((member, idx) => (
-                       <div key={member._id} onClick={() => navigate(`/employees/${member._id}`)}
-                         className="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 -mx-1 px-1 rounded transition-colors">
-                         <div className="relative flex-shrink-0">
-                           <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-300 overflow-hidden">
-                             <ImgWithFallback src={member.photoUrl} alt="avatar" className="w-full h-full object-cover"
-                               fallback={<User size={24} />} />
-                           </div>
-                         </div>
-                         <div className="min-w-0 flex-1 pt-0.5">
-                           <p className="text-[14px] font-bold text-slate-700 truncate">{member.employeeId} - {member.firstName}</p>
-                           <PresenceLabel person={member} />
-                         </div>
-                       </div>
-                     ))}
-                     {deptMembers.length > 3 && (
-                       <button
-                         onClick={() => setMembersModalOpen(true)}
-                         className="text-[14px] font-bold text-blue-600 hover:text-blue-700 mt-2 text-left transition-colors"
-                       >
-                         +{deptMembers.length - 3} More
-                       </button>
-                     )}
-                   </>
+             {/* Department Members — compact avatar strip; full names/
+                 presence/search are still one click away via the "+N More"
+                 modal below. */}
+             <div className="flex-1 bg-white rounded-xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow">
+               <div className="flex items-center justify-between mb-3">
+                 <h3 className="text-[14px] font-bold text-slate-800">
+                   Department Members{deptMembers.length > 0 ? ` (${deptMembers.length})` : ''}
+                 </h3>
+                 {deptMembers.length > 4 && (
+                   <button onClick={() => setMembersModalOpen(true)}
+                     className="text-[12.5px] font-bold text-[#4a7a2c] hover:text-[#3b6122] transition-colors">
+                     View all
+                   </button>
                  )}
                </div>
+               {loadingDeptMembers ? (
+                 <div className="flex items-center gap-2">
+                   <div className="w-6 h-6 border-[3px] border-[#5c9636] border-t-transparent rounded-full animate-spin" />
+                   <span className="text-[12px] text-slate-500">Loading...</span>
+                 </div>
+               ) : deptMembers.length === 0 ? (
+                 <span className="text-[12px] text-slate-500 italic">No team members found</span>
+               ) : (
+                 <div className="flex items-center -space-x-2">
+                   {deptMembers.slice(0, 4).map((member) => (
+                     <button key={member._id} type="button" onClick={() => navigate(`/employees/${member._id}`)}
+                       title={`${member.employeeId} - ${member.firstName}${member.firstName ? ' · ' : ''}${PRESENCE_LABEL[presenceOf(member)] || ''}`}
+                       className="relative w-10 h-10 rounded-full border-2 border-white bg-slate-100 overflow-hidden hover:z-10 hover:ring-2 hover:ring-[#c5e0a8] transition-all shrink-0">
+                       <ImgWithFallback src={member.photoUrl} alt={member.firstName} className="w-full h-full object-cover"
+                         fallback={<User size={18} className="m-auto mt-2.5 text-slate-300" />} />
+                       <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-[1.5px] border-white ${PRESENCE_DOT[presenceOf(member)] || 'bg-slate-300'}`} />
+                     </button>
+                   ))}
+                   {deptMembers.length > 4 && (
+                     <button onClick={() => setMembersModalOpen(true)}
+                       className="w-10 h-10 rounded-full border-2 border-white bg-slate-100 text-slate-600 text-[12px] font-bold flex items-center justify-center hover:bg-slate-200 transition-colors shrink-0">
+                       +{deptMembers.length - 4}
+                     </button>
+                   )}
+                 </div>
+               )}
              </div>
           </div>
 
-          {/* ══ RIGHT COLUMN ══════════════════════════════════════════ */}
-          <div className="flex-1 min-w-0 bg-white rounded-xl shadow-[0_4px_25px_rgba(0,0,0,0.05)] border border-slate-200 flex flex-col overflow-hidden min-h-[600px]">
+          {/* ══ RIGHT OF PROFILE — quick actions span the full width of
+              the center+schedule area, then split into the center/schedule
+              sub-columns below that row. dash-outer-col gives the quick
+              actions grid a container-query context sized to that full
+              combined width; dash-center-col (on the narrower sub-column
+              below) gives the stat-cards grid its own, smaller one. */}
+          <div className="dash-outer-col flex-1 min-w-0 flex flex-col gap-3">
+
+            {/* Quick Actions row — always exactly 6 cards, so a fixed
+                column count that shrinks per-card (via the container
+                query breakpoints in index.css) is used instead of
+                auto-fit/auto-fill, which can leave one card short of
+                fitting and silently wrap it alone onto its own row. */}
+            <div className="qa-grid gap-2">
+              {[
+                { label: 'Apply Leave', sub: 'Take time off', img: '/icons/dashboard/01-calendar-green.svg', onClick: () => setRequestModal({ kind: 'leave', date: null }) },
+                { label: 'Mark Attendance', sub: 'Check in now', img: '/icons/dashboard/02-fingerprint-blue.svg', onClick: () => navigate('/attendance/checkin') },
+                // Payroll is built but not switched on for employees yet
+                // (PAYROLL_ENABLED in config/features.js) — the card still
+                // shows, but stays a "Coming soon" tile like Learning Portal
+                // until that flag flips, same as every other payroll entry
+                // point in the app.
+                PAYROLL_ENABLED
+                  ? { label: 'View Payslip', sub: 'Salary details', img: '/icons/dashboard/03-document-orange.svg', onClick: () => navigate('/payroll/my') }
+                  : { label: 'View Payslip', sub: 'Salary details', img: '/icons/dashboard/03-document-orange.svg', disabled: true },
+                { label: 'My Requests', sub: 'Track requests', img: '/icons/dashboard/04-clipboard-purple.svg', onClick: () => navigate('/leave-tracker/requests') },
+                { label: 'Learning Portal', sub: 'Grow your skills', img: '/icons/dashboard/05-graduation-cap-green.svg', disabled: true },
+                { label: 'Directory', sub: 'Find colleagues', img: '/icons/dashboard/06-users-blue.svg', onClick: () => navigate('/directory') },
+              ].map((qa) => (
+                qa.disabled ? (
+                  <div key={qa.label} title="Coming soon"
+                    className="h-[112px] bg-white rounded-xl border border-slate-200 p-2.5 flex flex-col justify-between gap-1.5 cursor-not-allowed">
+                    <img src={qa.img} alt="" className="w-9 h-9" />
+                    <div>
+                      <p className="text-[12px] font-bold text-slate-700 leading-tight">{qa.label}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">{qa.sub}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <button key={qa.label} onClick={qa.onClick}
+                    className="h-[112px] bg-white rounded-xl border border-slate-200 p-2.5 flex flex-col justify-between gap-1.5 text-left shadow-sm hover:shadow-md hover:border-slate-300 transition-all group">
+                    <div className="flex items-center justify-between">
+                      <img src={qa.img} alt="" className="w-9 h-9" />
+                      <ChevronRight size={15} className="text-slate-300 group-hover:text-slate-400 transition-colors" />
+                    </div>
+                    <div>
+                      <p className="text-[12px] font-bold text-slate-700 leading-tight">{qa.label}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">{qa.sub}</p>
+                    </div>
+                  </button>
+                )
+              ))}
+            </div>
+
+            {/* ── Sub-row below quick actions: center (stats + tabs) next
+                to the schedule column. ── */}
+            <div className="flex items-stretch gap-5 w-full">
+            <div className="dash-center-col flex-1 min-w-0 min-h-0 flex flex-col gap-3">
+
+            {/* Stat cards row — visible only to approver roles, same
+                audience TeamSpace.jsx already serves /team/space to. */}
+            {isApprover(user) && teamSpace && (
+              <div className="stat-grid gap-2">
+                <div className="bg-white rounded-xl border border-slate-200 p-2.5 flex items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <img src="/icons/dashboard/07-users-blue-alt.svg" alt="" className="w-8 h-8 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[17px] font-extrabold text-slate-800 leading-none">{teamSpace.teamStrength ?? 0}</p>
+                      <p className="text-[11px] text-slate-500 mt-1">Total Team Members</p>
+                    </div>
+                  </div>
+                  {/* Cropped to just its bar-chart half — the badge half
+                      carried a hardcoded "↑12%" that doesn't reflect real
+                      data, so only the bars (decorative) are shown. */}
+                  <div className="relative h-7 w-8 overflow-hidden flex-shrink-0" aria-hidden="true">
+                    <img src="/icons/dashboard/08-growth-badge-12pct.svg" alt=""
+                      className="absolute h-7 w-auto max-w-none -left-[47px]" />
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl border border-slate-200 p-2.5 flex items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle size={16} strokeWidth={2.25} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[17px] font-extrabold text-slate-800 leading-none">{teamSpace.teamAvailability?.in ?? 0}</p>
+                      <p className="text-[11px] text-slate-500 mt-1">Present Today</p>
+                    </div>
+                  </div>
+                  {/* Present / total team strength — derived from the same
+                      two numbers already shown on this row, not a separate
+                      fetch. */}
+                  {(() => {
+                    const totalStrength = teamSpace.teamStrength || 0;
+                    const presentCount = teamSpace.teamAvailability?.in ?? 0;
+                    const pct = totalStrength > 0 ? Math.round((presentCount / totalStrength) * 100) : 0;
+                    const radius = 13, circumference = 2 * Math.PI * radius;
+                    return (
+                      <div className="relative w-8 h-8 flex-shrink-0">
+                        <svg width="32" height="32" viewBox="0 0 32 32" className="-rotate-90">
+                          <circle cx="16" cy="16" r={radius} fill="none" stroke="#D5F0DC" strokeWidth="4" />
+                          <circle cx="16" cy="16" r={radius} fill="none" stroke="#16B84A" strokeWidth="4"
+                            strokeLinecap="round" strokeDasharray={`${(pct / 100) * circumference} ${circumference}`} />
+                        </svg>
+                        <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-slate-800">{pct}%</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div className="bg-white rounded-xl border border-slate-200 p-2.5 flex items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <img src="/icons/dashboard/10-airplane-orange.svg" alt="" className="w-8 h-8 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[17px] font-extrabold text-slate-800 leading-none">{teamSpace.teamAvailability?.onLeave ?? 0}</p>
+                      <p className="text-[11px] text-slate-500 mt-1">On Leave</p>
+                    </div>
+                  </div>
+                  <img src="/icons/dashboard/11-bars-orange.svg" alt="" className="h-6 w-auto flex-shrink-0" />
+                </div>
+                <div className="bg-white rounded-xl border border-slate-200 p-2.5 flex items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <img src="/icons/dashboard/12-document-red.svg" alt="" className="w-8 h-8 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[17px] font-extrabold text-slate-800 leading-none">{pendingApprovals.length}</p>
+                      <p className="text-[11px] text-slate-500 mt-1">Open Requests</p>
+                    </div>
+                  </div>
+                  <img src="/icons/dashboard/13-bars-red.svg" alt="" className="h-6 w-auto flex-shrink-0" />
+                </div>
+              </div>
+            )}
+
+          {/* ══ TABS CARD ═════════════════════════════════════════════
+              Wrapped in a `relative` placeholder that carries the flex-1 +
+              min-height instead of the card itself, with the card absolutely
+              positioned (`inset-0`) inside it. An absolutely positioned
+              element contributes nothing to its container's content-based
+              (auto) sizing — without this, the card's own content (e.g. the
+              Attendance tab's full weekly list) would count toward how tall
+              this column "wants" to be before the schedule column ever gets
+              a chance to stretch it, growing the whole page with whichever
+              tab happens to be open instead of scrolling inside the card. */}
+          <div className="relative flex-1 min-h-[280px] lg:min-h-[480px]">
+          <div className="absolute inset-0 min-w-0 bg-white rounded-xl shadow-[0_4px_25px_rgba(0,0,0,0.05)] border border-slate-200 flex flex-col overflow-hidden">
 
             {/* Tabs row */}
             <div className="flex items-center border-b border-slate-100 bg-white sticky top-0 z-20">
-              <div className="flex items-center gap-6 px-6 overflow-x-auto scrollbar-none flex-1">
+              <div className="flex items-center gap-5 px-4 overflow-x-auto scrollbar-none flex-1">
                 {TABS.map(tab => (
                   <Tab
                     key={tab}
@@ -1293,11 +1677,61 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Tab body */}
-            <div className="flex-1 bg-[#f8f9fc] overflow-y-auto p-6 space-y-4">
+            {/* Tab body — min-h-0 lets this actually shrink to the space the
+                stretched card gives it (instead of growing to fit whatever
+                the active tab's content is) so overflow-y-auto can clip and
+                scroll long content, like the Attendance tab's weekly list,
+                in place, keeping the page's height independent of which
+                tab is open. */}
+            <div key={activeTab} className="flex-1 min-h-0 bg-[#f8f9fc] overflow-y-auto tab-scroll p-4 pr-5 space-y-3">
 
-              {/* ─ Activities tab ─ */}
-              {/* ─ Activities tab ─ */}
+              {/* ─ Announcements tab — the default tab. Reuses the same
+                  `feeds` data and card markup Feeds' own "Announcements"
+                  filter shows, just promoted to its own top-level tab (no
+                  composer, no filter chips — those stay on Feeds). */}
+              {activeTab === 'announcements' && (
+                <div className="space-y-3">
+                  {(() => {
+                    const shown = feeds.filter(f => f.tab === 'announcements');
+                    return shown.length > 0 ? (
+                      shown.map((f, i) => (
+                        <FeedCard key={i}>
+                          <div className="flex items-center gap-2.5 mb-2">
+                            <img
+                              src={f.type === 'urgent'
+                                ? '/icons/dashboard/28-mandatory-announcement-shield-green.svg'
+                                : '/icons/dashboard/27-announcement-megaphone-red.svg'}
+                              alt="" className="w-8 h-8 flex-shrink-0"
+                            />
+                            <div>
+                              <p className="text-[12.5px] font-bold text-slate-800">{f.title}</p>
+                              <p className="text-[11.5px] text-slate-400 font-medium">
+                                {fmt.instant(f.createdAt)} • {f.type?.toUpperCase() || 'UPDATE'}
+                              </p>
+                            </div>
+                          </div>
+                          {f.body && (
+                            <p className="text-[12.5px] text-slate-600 leading-relaxed">
+                              {f.body}
+                            </p>
+                          )}
+                        </FeedCard>
+                      ))
+                    ) : (
+                      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center shadow-sm">
+                        <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <Megaphone size={22} className="text-slate-200" />
+                        </div>
+                        <p className="text-[12.5px] font-bold text-slate-400">No announcements yet</p>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* ─ Activities tab — hidden from navigation (no TABS entry
+                  points to this key anymore), kept fully intact so nothing
+                  that reads from it elsewhere breaks. ─ */}
               {activeTab === 'activities' && (
                 <div className="flex flex-col gap-4">
                   {/* Good Morning Banner */}
@@ -1614,7 +2048,7 @@ export default function Dashboard() {
 
                   {/* Feed Filters — mirror the notification bell, grouped into tabs */}
                   <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1">
-                    {[['All', 'all'], ['Announcements', 'announcements'], ['Approvals', 'approvals'], ['Shifts', 'shifts']].map(([label, key]) => (
+                    {[['All', 'all'], ['Shifts', 'shifts']].map(([label, key]) => (
                       <button
                         key={key}
                         onClick={() => setFeedTab(key)}
@@ -2223,7 +2657,145 @@ export default function Dashboard() {
               {/* ─ end of payslips tab */}
             </div>
           </div>
+          </div>
+          </div>
+
+          {/* ══ RIGHT SIDEBAR — My Schedule / Leave Balance ══ */}
+          <div className="w-[300px] flex-shrink-0 space-y-3">
+
+            {/* My Schedule — current-week data (weeklyAttendance/weeklyLeaves/
+                holidays via scheduleDays above), shown as a vertical list. */}
+            <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <img src="/icons/dashboard/14-calendar-navy.svg" alt="" className="w-6 h-6" />
+                  <h4 className="text-[14px] font-bold text-slate-800">My Schedule</h4>
+                </div>
+                <button onClick={() => navigate('/calendar')} className="text-[12.5px] font-bold text-blue-600 hover:text-blue-700 transition-colors">
+                  View Calendar
+                </button>
+              </div>
+              {scheduleDays.length > 0 && (
+                <p className="text-[12px] text-slate-400 mb-2">
+                  {scheduleDays[0].day.dateObj.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })} - {scheduleDays[6].day.dateObj.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })}
+                </p>
+              )}
+              <div className="divide-y divide-slate-100">
+                {scheduleDays.map((sd, i) => (
+                  <div key={i} className={`flex items-center justify-between py-1.5 ${sd.isToday ? '-mx-2 px-2 bg-[#f2f8ec] rounded-lg border-l-[3px] border-[#4a7a2c]' : ''}`}>
+                    <div className="flex items-center gap-2.5">
+                      <div className="text-center w-9">
+                        <p className="text-[11px] text-slate-400 uppercase leading-none">{sd.day.day}</p>
+                        <p className={`text-[13px] font-bold mt-0.5 ${sd.isToday ? 'text-[#4a7a2c]' : 'text-slate-700'}`}>{sd.day.dateNum}</p>
+                      </div>
+                      <p className={`text-[13px] font-semibold ${sd.labelColor || 'text-slate-600'}`}>
+                        {sd.label || 'Work day'}
+                      </p>
+                    </div>
+                    <p className="text-[12.5px] text-slate-500">{sd.hoursText || '—'}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Leave Balance — same /leaves/balance data already loaded for
+                the Leave tab (leaveCards). */}
+            <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <img src="/icons/dashboard/14-calendar-navy.svg" alt="" className="w-6 h-6" />
+                  <h4 className="text-[14px] font-bold text-slate-800">Leave Balance</h4>
+                </div>
+                <button onClick={() => navigate('/leave-tracker/balance')} className="text-[12.5px] font-bold text-[#4a7a2c] hover:text-[#3b6122] transition-colors">
+                  View Details
+                </button>
+              </div>
+              {leaveCards.length === 0 ? (
+                <p className="text-[13px] text-slate-400 italic">No leave types configured</p>
+              ) : (() => {
+                // Only Casual Leave + Permission shown here — Comp Off and
+                // Leave Without Pay are still fetched in leaveCards and
+                // remain one click away via "View Details".
+                const featured = leaveCards.filter(c => c.code === 'casual' || c.code === 'permission');
+                const shown = featured.length > 0 ? featured : leaveCards.slice(0, 2);
+                return (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {shown.map(c => {
+                      const isUnlimited = c.available === null && c.code === 'unpaid';
+                      return (
+                        <div key={c.code} className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                          <img src={LEAVE_CODE_ICON[c.code] || '/icons/dashboard/17-user-purple.svg'} alt="" className="w-6 h-6 mb-1.5" />
+                          <p className="text-[16px] font-extrabold text-slate-800 leading-none">{isUnlimited ? '0' : (c.available ?? '—')}</p>
+                          <p className="text-[11.5px] text-slate-500 mt-1 truncate" title={c.name || LEAVE_TYPE_LABELS[c.code] || c.code}>
+                            {c.name || LEAVE_TYPE_LABELS[c.code] || c.code}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
         </div>
+        </div>
+      </div>
+
+      {/* ── Bottom row: banner (left) + Quick Links (center) + quote (right) ── */}
+      <div className="mt-4 grid grid-cols-1 lg:grid-cols-[1.4fr_1.5fr_1fr] gap-5 items-stretch">
+
+        {/* Promo banner image. Non-interactive: nothing on the other side of
+            "Explore Learning" exists yet (Learning Portal is still a "Coming
+            soon" tile elsewhere on this page), so the button in the image
+            is decorative, not a dead link. */}
+        <div className="h-[120px] rounded-xl overflow-hidden shadow-sm">
+          <img
+            src="/plant-growth-banner.png"
+            alt="A better you builds a brighter tomorrow. Learn, Grow, Belong."
+            className="w-full h-full object-cover object-left block"
+          />
+        </div>
+
+        {/* Quick Links — one row across the wider center column. */}
+        <div className="min-w-0 h-[120px] bg-white rounded-xl border border-slate-200 px-4 py-3 shadow-sm flex flex-col justify-center">
+          <h4 className="text-[13px] font-bold text-slate-800 mb-2">Quick Links</h4>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-x-2 gap-y-2">
+            {[
+              { label: 'HR Policies', img: '/icons/dashboard/26-document-photo-navy.svg', to: '/policies' },
+              { label: 'IT Support', img: '/icons/dashboard/25-monitor-navy.svg' },
+              { label: 'Expense Claims', img: '/icons/dashboard/24-overlap-squares-navy.svg' },
+              { label: 'Documents', img: '/icons/dashboard/23-document-navy.svg', to: '/documents' },
+              { label: 'Internal Jobs', img: '/icons/dashboard/22-briefcase-navy.svg' },
+              { label: 'Feedback', img: '/icons/dashboard/21-chat-bubbles-navy.svg' },
+            ].map(link => (
+              link.to ? (
+                <button key={link.label} onClick={() => navigate(link.to)}
+                  className="flex flex-col items-center gap-1 py-1 rounded-lg hover:bg-slate-50 transition-colors">
+                  <img src={link.img} alt="" className="w-6 h-6" />
+                  <span className="text-[10.5px] font-semibold text-slate-600 text-center leading-tight">{link.label}</span>
+                </button>
+              ) : (
+                <div key={link.label} title="Coming soon"
+                  className="flex flex-col items-center gap-1 py-1 rounded-lg cursor-not-allowed">
+                  <img src={link.img} alt="" className="w-6 h-6" />
+                  <span className="text-[10.5px] font-semibold text-slate-600 text-center leading-tight">{link.label}</span>
+                </div>
+              )
+            ))}
+          </div>
+        </div>
+
+        {/* Motivational quote */}
+        <div className="min-w-0 h-[120px] bg-gradient-to-br from-emerald-50 to-sky-50 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center px-6">
+          <p className="text-[15px] font-semibold text-slate-800 leading-snug">
+            “Progress happens<br />when people grow together.”
+          </p>
+          <p className="text-[12px] text-slate-400 mt-2">— AltiusNxt</p>
+          <svg width="36" height="9" viewBox="0 0 40 10" className="mt-1.5 text-[#4a7a2c]" aria-hidden="true">
+            <path d="M2 7 Q 10 1, 20 5 T 38 4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </div>
+      </div>
       </div>
 
       {applyLeaveType && (

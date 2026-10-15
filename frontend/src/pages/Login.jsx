@@ -4,18 +4,15 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import GoogleSignInButton from '../components/GoogleSignInButton';
-import { ArrowLeft, ArrowRight, Eye, EyeOff, Check, Clock, XCircle, CheckCircle2, Mail } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Eye, EyeOff, Check, Clock, XCircle, CheckCircle2, Mail, CalendarCheck, Users } from 'lucide-react';
 import './Login.css';
 
 /* ── Branding config (left panel) ─────────────────────────────────────────
    Pure presentation — does not affect any auth logic. */
-const APP_NAME  = 'Nxt People';
-const APP_SHORT = 'NP';
 const SUPPORT_EMAIL = 'it@altiusnxt.com';
 const FEATURES = [
-  'Attendance & Time Tracking',
-  'Leave & Holiday Management',
-  'HR Reports & Analytics',
+  { icon: CalendarCheck, title: 'Attendance & Time Tracking', desc: 'Be on time. Stay in sync with your work.' },
+  { icon: Users,          title: 'Leave & Holiday Management', desc: 'Plan, apply, approve and manage effortlessly.' },
 ];
 const SUITE = [
   { name: 'HR',         active: true },
@@ -34,17 +31,22 @@ const LeftPanel = () => (
     <div className="geo" aria-hidden="true">
       <div className="geo-1" /><div className="geo-2" /><div className="geo-3" />
     </div>
-    <div className="logo-wrap"><img src="/logo.png" alt="AltiusNxt Technologies" /></div>
+    {/* The AltiusNxt logo is already part of the shared background photo
+        (top-left) — see the note to the user about item 1 (logo position/
+        brightness) for why this isn't a separate, independently movable
+        element right now. */}
     <div className="left-body">
-      <div className="left-divider" />
       <p className="access-label">Secure Workspace Access</p>
-      <h2 className="app-name">{APP_NAME}</h2>
-      <div className="red-rule" />
+      <h2 className="app-name">Empowering People.<br/>Enabling <span className="app-name-accent">Progress.</span></h2>
+      <p className="app-subtext">A smarter workplace for attendance, leave, people management and insights — all in one place.</p>
       <ul className="feature-list">
         {FEATURES.map(f => (
-          <li className="feature-item" key={f}>
-            <span className="feat-icon"><Check size={14} strokeWidth={2.5} /></span>
-            <span>{f}</span>
+          <li className="feature-item" key={f.title}>
+            <span className="feat-icon"><f.icon size={24} strokeWidth={2.2} /></span>
+            <span className="feat-text">
+              <span className="feat-title">{f.title}</span>
+              {f.desc && <span className="feat-desc">{f.desc}</span>}
+            </span>
           </li>
         ))}
       </ul>
@@ -61,7 +63,6 @@ const LeftPanel = () => (
               : <span className="suite-chip" key={s.name}>{s.name}</span>
         )}
       </div>
-      <p className="left-foot">© {new Date().getFullYear()} AltiusNxt Technologies Pvt. Ltd.</p>
     </div>
   </div>
 );
@@ -96,8 +97,8 @@ function StepEmail({ onNext, onGoogleMfaRequired }) {
 
   return (
     <>
-      <h1 className="step-title">Sign in</h1>
-      <p className="step-sub">Enter your work email to get started.</p>
+      <h1 className="step-title">Welcome</h1>
+      <p className="step-sub">Sign in to your AltiusNxt workspace</p>
 
       <form className="form" onSubmit={handleSubmit} noValidate>
         <div className="field">
@@ -117,22 +118,6 @@ function StepEmail({ onNext, onGoogleMfaRequired }) {
       {/* Google Sign-In — GIS token flow (unchanged). Renders nothing when
           VITE_GOOGLE_CLIENT_ID is not configured. */}
       <GoogleSignInButton onMfaRequired={onGoogleMfaRequired} />
-
-      {/* Demo shortcuts — dev/test only (stripped from production bundles). */}
-      {!import.meta.env.PROD && (
-        <div className="demo-wrap">
-          <p className="demo-label">Quick Access (Demo)</p>
-          <div className="demo-grid">
-            {[
-              { l: 'Admin',     e: 'admin@nxtpeople.com' },
-              { l: 'Team Lead', e: 'sarah@nxtpeople.com' },
-              { l: 'Employee',  e: 'michael@nxtpeople.com' },
-            ].map(({ l, e }) => (
-              <button key={l} type="button" className="demo-btn" onClick={() => setEmail(e)}>{l}</button>
-            ))}
-          </div>
-        </div>
-      )}
     </>
   );
 }
@@ -504,9 +489,13 @@ export default function Login() {
       <div className="page">
         <LeftPanel />
         <div className="right">
+          {/* Decorative pull-quote, purely presentational. */}
+          <div className="right-quote" aria-hidden="true">
+            <p>&ldquo;People are the<br/>power behind progress.&rdquo;</p>
+            <div className="right-quote-rule" />
+            <span className="right-quote-attr">– AltiusNxt</span>
+          </div>
           <div className="right-content">
-            <div className="app-badge"><span className="app-badge-short">{APP_SHORT}</span></div>
-
             {step === 'email' && <StepEmail onNext={handleEmailNext} onGoogleMfaRequired={handleGoogleMfaRequired} />}
             {step === 'pending' && <StepPending email={emailData.email} firstName={emailData.firstName} onBack={reset} />}
             {step === 'rejected' && <StepRejected email={emailData.email} onBack={reset} />}
@@ -523,6 +512,16 @@ export default function Login() {
             {step === 'reset' && <StepResetPassword token={resetToken} onBack={() => setStep('forgot')} />}
 
             <div className="right-foot">Need help? <a href={`mailto:${SUPPORT_EMAIL}`}>Contact IT Support</a></div>
+          </div>
+          {/* Legal labels, presentational only — no Privacy Policy / Terms of
+              Use pages exist in this app yet, so these are plain text rather
+              than links to nowhere. */}
+          <div className="right-legal">
+            <span>© {new Date().getFullYear()} AltiusNxt Technologies Pvt. Ltd.</span>
+            <span className="right-legal-sep">|</span>
+            <span>Privacy Policy</span>
+            <span className="right-legal-sep">|</span>
+            <span>Terms of Use</span>
           </div>
         </div>
       </div>

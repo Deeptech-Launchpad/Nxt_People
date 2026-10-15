@@ -239,6 +239,12 @@ export const WIDGETS = [
         <div className="space-y-5 -mt-2">
           {list.map(ann => (
             <div key={ann._id} className="flex items-start gap-3">
+              <img
+                src={ann.type === 'urgent'
+                  ? '/icons/dashboard/28-mandatory-announcement-shield-green.svg'
+                  : '/icons/dashboard/27-announcement-megaphone-red.svg'}
+                alt="" className="w-8 h-8 flex-shrink-0"
+              />
               <div className="flex-1 min-w-0">
                 <p className="text-[14px] font-medium text-slate-700 leading-snug">{ann.title}</p>
                 <p className="text-[12px] text-slate-400 mt-0.5">
