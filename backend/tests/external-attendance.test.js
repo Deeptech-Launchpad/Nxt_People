@@ -21,9 +21,12 @@ let leaveId = '';
 
 beforeAll(async () => {
   const conn = await pool.query(
+    // allowed_data_types is JSONB (see routes/api-connections.js) — a JS
+    // array has to be JSON-stringified and cast ::jsonb, not ::text[],
+    // which is a different Postgres type and fails with a column-type error.
     `INSERT INTO api_connections (name, api_key_hash, is_active, allowed_data_types)
-     VALUES ($1, $2, true, $3::text[]) RETURNING id`,
-    ['Test Payroll Connector', KEY_HASH, ['employees:read', 'attendance:read']]
+     VALUES ($1, $2, true, $3::jsonb) RETURNING id`,
+    ['Test Payroll Connector', KEY_HASH, JSON.stringify(['employees:read', 'attendance:read'])]
   );
   connectionId = conn.rows[0].id;
 
@@ -77,7 +80,7 @@ describe('GET /api/external/employees — extended fields', () => {
   it('rejects a connection with no employees scope', async () => {
     const scoped = await pool.query(
       `INSERT INTO api_connections (name, api_key_hash, is_active, allowed_data_types)
-       VALUES ('No scope', $1, true, '{attendance:read}'::text[]) RETURNING id`,
+       VALUES ('No scope', $1, true, '["attendance:read"]'::jsonb) RETURNING id`,
       [crypto.createHash('sha256').update('no-scope-key').digest('hex')]
     );
     const res = await request(app)
@@ -97,7 +100,7 @@ describe('GET /api/external/attendance-summary', () => {
   it('rejects a connection with no attendance scope', async () => {
     const scoped = await pool.query(
       `INSERT INTO api_connections (name, api_key_hash, is_active, allowed_data_types)
-       VALUES ('Employees only', $1, true, '{employees:read}'::text[]) RETURNING id`,
+       VALUES ('Employees only', $1, true, '["employees:read"]'::jsonb) RETURNING id`,
       [crypto.createHash('sha256').update('employees-only-key').digest('hex')]
     );
     const res = await request(app)

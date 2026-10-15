@@ -151,6 +151,15 @@ const ORDER = [
   'migrate_leave_team_email.js',         // leaves.team_email
   'migrate_location_geofence.js',        // work_locations lat/lng/radius, employees.is_remote, attendance.work_mode/location_*
 
+  /* Same gap, same cause, found the same way: POST /api/attendance/checkin's
+   * INSERT writes attendance.work_mode_source and attendance.check_in_ip
+   * (routes/attendance.js), both created only by this file — which was also
+   * never added to ORDER. On a fresh database the INSERT threw "column ...
+   * does not exist", caught by the route's generic error handler and
+   * returned as a 500. Depends on work_locations (ip_ranges) and attendance,
+   * both already created above by migrate_location_geofence.js and earlier. */
+  'migrate_location_ip_ranges.js',       // work_locations.ip_ranges, attendance.work_mode_source/check_in_ip
+
   'migrate_indexes.js',                  // perf indexes — run last
 ];
 
