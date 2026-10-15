@@ -140,6 +140,26 @@ const ORDER = [
 
   'migrate_session_location.js',         // attendance_sessions.check_in/out location + lat/lng
   'migrate_session_accuracy.js',         // attendance_sessions.check_in/out accuracy_meters
+
+  /* On disk since before this ORDER list existed, but never added to it —
+   * a fresh install was missing leaves.team_email, employees.is_remote,
+   * and attendance.work_mode/location_accuracy_meters even though the
+   * route code already reads them, so every request those routes handle
+   * 500'd on a fresh database. Placed last because migrate_location_
+   * geofence.js references work_locations(id) and employees(id), both of
+   * which only exist by this point in the order above. */
+  'migrate_leave_team_email.js',         // leaves.team_email
+  'migrate_location_geofence.js',        // work_locations lat/lng/radius, employees.is_remote, attendance.work_mode/location_*
+
+  /* Same gap, same cause, found the same way: POST /api/attendance/checkin's
+   * INSERT writes attendance.work_mode_source and attendance.check_in_ip
+   * (routes/attendance.js), both created only by this file — which was also
+   * never added to ORDER. On a fresh database the INSERT threw "column ...
+   * does not exist", caught by the route's generic error handler and
+   * returned as a 500. Depends on work_locations (ip_ranges) and attendance,
+   * both already created above by migrate_location_geofence.js and earlier. */
+  'migrate_location_ip_ranges.js',       // work_locations.ip_ranges, attendance.work_mode_source/check_in_ip
+
   'migrate_indexes.js',                  // perf indexes — run last
 ];
 

@@ -11,6 +11,8 @@
     "migrate": "node migrate.js",
     "migrate:legacy-all": "node migrate_all.js",
     "migrate:indexes": "node migrate_indexes.js",
+    "seed": "node utils/seed.js",
+    "test:setup": "node utils/ensure-test-users.js",
     "test": "jest --runInBand --forceExit",
     "test:watch": "jest --watch --runInBand",
     "test:coverage": "jest --coverage --runInBand --forceExit"

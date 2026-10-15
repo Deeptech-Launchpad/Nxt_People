@@ -4,8 +4,9 @@ VALUES ('11111111-0000-0000-0000-000000000000', 'Nxt People Corp', 'NXT', 'Main 
 ON CONFLICT DO NOTHING;
 
 -- Default Settings
-INSERT INTO settings (company_name, company_email, work_start_time, work_end_time) 
-VALUES ('Nxt People Corp', 'hr@nxtpeople.com', '09:00', '18:00');
+INSERT INTO settings (company_name, company_email, work_start_time, work_end_time)
+VALUES ('Nxt People Corp', 'hr@nxtpeople.com', '09:00', '18:00')
+ON CONFLICT DO NOTHING;
 
 -- Default Shifts
 INSERT INTO shifts (id, name, start_time, end_time, is_default, color) 
