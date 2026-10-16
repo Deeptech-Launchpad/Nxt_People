@@ -52,18 +52,9 @@ export const coverStyle = (cover, covers) => {
 
 /** Whether this person has any reason to see the cover control at all. */
 export function useCanChangeCover() {
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const [allowed, setAllowed] = useState(false);
   useEffect(() => {
-    // AuthContext starts with user=null until /auth/me resolves, then swaps
-    // in the real user — a second, later render of this same effect. Decide
-    // from that first null user and call the role wrong; let both renders
-    // race their own /cover-image call and whichever resolves last wins —
-    // either way, the button could show on one refresh and not the next,
-    // with nothing to explain why to whoever is looking at it. Waiting for
-    // the auth bootstrap to actually finish first makes this one decision,
-    // once, off the real user — same outcome on every refresh.
-    if (loading) return;
     let cancelled = false;
     if (isFullAccess(user)) { setAllowed(true); return () => { cancelled = true; }; }
     api.get('/cover-image')
@@ -74,7 +65,7 @@ export function useCanChangeCover() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [user, loading]);
+  }, [user]);
   return allowed;
 }
 
