@@ -94,6 +94,7 @@ export default function LeaveSummary() {
   const [holidays, setHolidays]     = useState([]);
   const [loading, setLoading]       = useState(true);
   const [showApply, setShowApply]   = useState(false);
+  const [editingLeave, setEditingLeave] = useState(null); // leave object being edited
   const [showReject, setShowReject] = useState(null); // leave object
   const [section, setSection]       = useState('upcoming'); // 'upcoming' | 'past'
   const [dateRange, setDateRange]   = useState(() => {
@@ -389,6 +390,8 @@ export default function LeaveSummary() {
           onClose={() => setDetailLeave(null)}
           onCancel={(x) => { setDetailLeave(null); handleCancel(x._id); }}
           onCancelPart={(x) => { setDetailLeave(null); setPartLeave(x); }}
+          onEdit={(x) => { setDetailLeave(null); setEditingLeave(x); }}
+          editableStatuses={['pending']}
         />
       )}
 
@@ -398,6 +401,14 @@ export default function LeaveSummary() {
           mode="leave"
           onClose={() => setShowApply(false)}
           onDone={() => { setShowApply(false); load(); }}
+        />
+      )}
+      {editingLeave && (
+        <ApplyLeaveModal
+          mode="leave"
+          existing={editingLeave}
+          onClose={() => setEditingLeave(null)}
+          onDone={() => { setEditingLeave(null); load(); }}
         />
       )}
       {showReject && (

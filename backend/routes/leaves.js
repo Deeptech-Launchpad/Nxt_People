@@ -63,6 +63,13 @@ router.use(protect);
 
 const VALID_LEAVE_TYPES = ['casual', 'unpaid', 'permission', 'comp_off'];
 
+// A single permission request is capped tighter than the monthly allowance
+// itself (Leave Policy's accrualAmount, 4h by default) — nobody may spend the
+// whole month's balance in one sitting. Independent of that policy figure on
+// purpose: raising the monthly cap should never silently raise how much of it
+// can go out the door at once.
+const PERMISSION_SINGLE_REQUEST_CAP_HOURS = 2;
+
 // A date column comes back as a Date object. toISOString() would render it
 // in UTC, which in IST is the previous day — the shift this project has been
 // bitten by four times. Local parts only.
@@ -405,6 +412,12 @@ router.post('/', [
         return res.status(400).json({ success: false, message: 'Permission end time must be after the start time.' });
       }
       permHours = Math.round((diffMin / 60) * 100) / 100;
+      if (permHours > PERMISSION_SINGLE_REQUEST_CAP_HOURS) {
+        return res.status(400).json({
+          success: false,
+          message: `A single permission request cannot exceed ${PERMISSION_SINGLE_REQUEST_CAP_HOURS} hours, even if more remains for the month. Split it across separate days.`,
+        });
+      }
       if (permHours > permMonthlyCap) {
         return res.status(400).json({ success: false, message: `A single permission cannot exceed ${permMonthlyCap} hours.` });
       }
@@ -1125,6 +1138,14 @@ router.put('/:id', async (req, res) => {
       }
       newHours = Math.round((diff / 60) * 100) / 100;
       newDays = 0;
+
+      if (newHours > PERMISSION_SINGLE_REQUEST_CAP_HOURS) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: `A single permission request cannot exceed ${PERMISSION_SINGLE_REQUEST_CAP_HOURS} hours, even if more remains for the month. Split it across separate days.`,
+        });
+      }
 
       /* The monthly cap is a sum over the leaves table, so this row must be
        * left out of it — otherwise reducing two hours to one is measured

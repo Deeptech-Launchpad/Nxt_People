@@ -19,25 +19,36 @@ import RequestShell, { Field, inputClass } from './RequestShell';
  * `mode` picks which door this opened from: 'leave' offers every type,
  * 'compoff' opens straight on Compensatory Off, matching the two separate
  * entries in the Add Request menu.
+ *
+ * `existing` turns this into an edit of that leave instead of a new one — same
+ * form, pre-filled, PUT instead of POST. The leave type is locked once set:
+ * routes/leaves.js's PUT /:id refuses to change it (a type change is honestly
+ * a different request), so there's nothing to gain from leaving it editable.
+ * Only ever passed for a leave the caller already knows is still editable —
+ * this component doesn't re-check status, the server does.
  */
 const iso = d => d.toLocaleDateString('en-CA');
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 
 const DURATIONS = ['Full Day', 'First Half', 'Second Half'];
 
-export default function ApplyLeaveModal({ date, mode = 'leave', onClose, onDone }) {
+export default function ApplyLeaveModal({ date, mode = 'leave', existing = null, onClose, onDone }) {
   const fmt = useFormat();
   const [types, setTypes] = useState([]);
   const [typeQuery, setTypeQuery] = useState('');
-  const [type, setType] = useState('');
+  const [type, setType] = useState(existing?.leaveType || '');
   const [balances, setBalances] = useState(null);
-  const [from, setFrom] = useState(date || iso(new Date()));
-  const [to, setTo] = useState(date || iso(new Date()));
-  const [teamEmail, setTeamEmail] = useState('');
-  const [reason, setReason] = useState('');
-  const [durations, setDurations] = useState({});
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
+  const [from, setFrom] = useState(existing ? String(existing.startDate).slice(0, 10) : (date || iso(new Date())));
+  const [to, setTo] = useState(existing ? String(existing.endDate).slice(0, 10) : (date || iso(new Date())));
+  const [teamEmail, setTeamEmail] = useState(existing?.teamEmail || '');
+  const [reason, setReason] = useState(existing?.reason || '');
+  const [durations, setDurations] = useState(() => {
+    if (!existing?.isHalfDay) return {};
+    const d = String(existing.startDate).slice(0, 10);
+    return { [d]: existing.halfDayType === 'second_half' ? 'Second Half' : 'First Half' };
+  });
+  const [startTime, setStartTime] = useState(existing?.startTime || '');
+  const [endTime, setEndTime] = useState(existing?.endTime || '');
   const [compDays, setCompDays] = useState(null);   // null = not loaded
   const [compWith, setCompWith] = useState('');
   const [saving, setSaving] = useState(false);
@@ -112,8 +123,7 @@ export default function ApplyLeaveModal({ date, mode = 'leave', onClose, onDone 
     setSaving(true);
     try {
       const half = days.length === 1 && (durations[days[0]] || 'Full Day') !== 'Full Day';
-      await api.post('/leaves', {
-        leaveType: type,
+      const common = {
         startDate: from,
         endDate: to,
         reason: reason.trim(),
@@ -124,17 +134,26 @@ export default function ApplyLeaveModal({ date, mode = 'leave', onClose, onDone 
           : null,
         ...(isPermission ? { startTime, endTime } : {}),
         ...(isCompOff && compWith ? { compensatedWith: compWith } : {}),
-      });
-      toast.success('Leave applied');
+      };
+      if (existing) {
+        // Type is locked and never sent — the server refuses a type change
+        // outright, and there's nothing here for it to disagree with anyway.
+        await api.put(`/leaves/${existing._id}`, common);
+        toast.success('Request updated');
+      } else {
+        await api.post('/leaves', { leaveType: type, ...common });
+        toast.success('Leave applied');
+      }
       onDone();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not apply that leave');
+      toast.error(err.response?.data?.message || `Could not ${existing ? 'update' : 'apply'} that leave`);
     } finally { setSaving(false); }
   };
 
   return (
     <RequestShell
-      title={mode === 'compoff' ? 'Apply Compensatory Off' : 'Apply Leave'}
+      title={existing ? 'Edit Leave' : (mode === 'compoff' ? 'Apply Compensatory Off' : 'Apply Leave')}
+      submitLabel={existing ? 'Save Changes' : 'Submit'}
       onClose={onClose} onSubmit={submit} submitting={saving}>
       <div className="space-y-4 max-w-2xl">
         <Field label="Leave type" required>
@@ -149,7 +168,7 @@ export default function ApplyLeaveModal({ date, mode = 'leave', onClose, onDone 
             </div>
           )}
           <select className={inputClass} value={type} onChange={e => setType(e.target.value)}
-            disabled={mode === 'compoff'}>
+            disabled={mode === 'compoff' || !!existing}>
             <option value="">Select</option>
             {shownTypes.map(t => <option key={t.code} value={t.code}>{t.name}</option>)}
           </select>

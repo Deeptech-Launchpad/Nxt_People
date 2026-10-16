@@ -50,6 +50,7 @@ export default function Leave() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [detailLeave, setDetailLeave] = useState(null);
+  const [editingLeave, setEditingLeave] = useState(null);
   const [partLeave, setPartLeave] = useState(null);
   // Whether a reason is required is a setting, and the dialog needs to know
   // before the user types rather than after the server refuses.
@@ -250,6 +251,14 @@ export default function Leave() {
           onDone={() => { setModal(false); load(); }}
         />
       )}
+      {editingLeave && (
+        <ApplyLeaveModal
+          mode="leave"
+          existing={editingLeave}
+          onClose={() => setEditingLeave(null)}
+          onDone={() => { setEditingLeave(null); load(); }}
+        />
+      )}
 
       {detailLeave && (
         <LeaveDetailModal
@@ -258,6 +267,8 @@ export default function Leave() {
           onClose={() => setDetailLeave(null)}
           onCancel={(x) => { setDetailLeave(null); handleCancel(x._id); }}
           onCancelPart={(x) => { setDetailLeave(null); setPartLeave(x); }}
+          onEdit={(x) => { setDetailLeave(null); setEditingLeave(x); }}
+          editableStatuses={['pending']}
         />
       )}
 

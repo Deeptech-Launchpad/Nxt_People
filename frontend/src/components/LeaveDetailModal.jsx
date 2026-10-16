@@ -108,7 +108,7 @@ function BalanceCard({ leave, balanceCards }) {
   );
 }
 
-export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct = false, onApprove, onApproveAll, onReject, onCancel, onCancelPart, onEdit, defaultView = 'details' }) {
+export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct = false, onApprove, onApproveAll, onReject, onCancel, onCancelPart, onEdit, editableStatuses = ['pending', 'approved'], defaultView = 'details' }) {
   const [view, setView] = useState(defaultView);   // 'details' | 'timeline'
   const [comment, setComment] = useState('');
   const [acting, setActing] = useState(false);
@@ -149,8 +149,16 @@ export default function LeaveDetailModal({ leave, kind, balance, onClose, canAct
   /* Editing is offered on the same states cancelling is, and for the same
    * reason: a live request can still be corrected, a resolved one is history.
    * Regularizations, WFH and Comp-Off have their own shapes and are not
-   * edited here. */
-  const showEdit = typeof onEdit === 'function' && ['pending', 'approved'].includes(status) && !isReg && !isWfh && !isOnDuty && !isCompOff;
+   * edited here.
+   *
+   * editableStatuses narrows which of those states actually offers the
+   * button — defaults to both, matching every existing caller (Approvals,
+   * where an admin may still correct an already-approved request). The
+   * employee's own Leave Summary/Leave Requests pages pass ['pending'] only:
+   * once approved, the request is no longer theirs to change — see
+   * routes/leaves.js's PUT /:id, which enforces exactly that boundary
+   * server-side regardless of what this button shows. */
+  const showEdit = typeof onEdit === 'function' && editableStatuses.includes(status) && !isReg && !isWfh && !isOnDuty && !isCompOff;
   // Only offered on a range: cancelling "part" of a single day is just
   // cancelling it, and offering both would be two buttons for one outcome.
   const isRange = String(leave.startDate || '').slice(0, 10) !== String(leave.endDate || '').slice(0, 10);
