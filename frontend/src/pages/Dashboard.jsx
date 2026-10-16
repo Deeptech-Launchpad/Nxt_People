@@ -1213,11 +1213,10 @@ export default function Dashboard() {
                   onClick={() => navigate(`/employees/${(manager || profileData?.manager).id || (manager || profileData?.manager)._id}`)}
                 >
                   <div className="relative flex-shrink-0">
-                    <img
-                      src={`https://ui-avatars.com/api/?name=${(manager || profileData?.manager).firstName}+${(manager || profileData?.manager).lastName}&background=e0e7ff&color=4f46e5&size=44`}
-                      className="w-12 h-12 rounded-lg border border-slate-100"
-                      alt="manager"
-                    />
+                    <div className="w-12 h-12 bg-slate-100 rounded-lg border border-slate-100 flex items-center justify-center text-slate-300 overflow-hidden">
+                      <ImgWithFallback src={(manager || profileData?.manager).photoUrl} alt="manager" className="w-full h-full object-cover"
+                        fallback={<User size={24} />} />
+                    </div>
                     <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-white rounded-full ${PRESENCE_DOT[presenceOf(manager || profileData?.manager)] || 'bg-slate-300'}`} />
                   </div>
                   <div className="min-w-0 flex-1">

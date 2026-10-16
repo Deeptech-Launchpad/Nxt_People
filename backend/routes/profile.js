@@ -94,7 +94,7 @@ router.get('/', async (req, res) => {
        CASE WHEN s.id IS NOT NULL THEN json_build_object('id', s.id, 'name', s.name, 'startTime', s.start_time, 'endTime', s.end_time) ELSE null END as shift,
        CASE WHEN m.id IS NOT NULL THEN json_build_object(
          'id', m.id, 'employeeId', m.employee_id, 'firstName', m.first_name, 'lastName', m.last_name,
-         'email', m.email, 'designation', m.designation,
+         'email', m.email, 'designation', m.designation, 'photoUrl', m.photo_url,
          'isCheckedIn', (a_m.check_in IS NOT NULL AND a_m.check_out IS NULL),
          'presence', CASE
            WHEN a_m.check_in IS NOT NULL AND a_m.check_out IS NULL THEN 'in'
