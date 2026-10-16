@@ -5,6 +5,7 @@ const { protect, authorize } = require('../middleware/auth');
 const logger = require('../logger');
 const { serverError } = require('../utils/serverError');
 const { requireFunction, allows, optionsFor } = require('../utils/functionAccess');
+const { sendMail, renderTemplateEmail } = require('../utils/mailer');
 
 router.use(protect);
 
@@ -144,6 +145,36 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), canManage, async (r
     } catch (err) {
       logger.warn({ err: err.message }, '[announcements] bulk notification insert failed');
     }
+
+    // Email every other active employee. Fire-and-forget: headcount has no
+    // realistic upper bound and each send is a real SMTP round-trip, so
+    // awaiting this would make the admin's "post announcement" click hang —
+    // same reasoning as the notification insert above, just one level slower.
+    const announcementId = result.rows[0]._id;
+    (async () => {
+      try {
+        const recipients = await pool.query(
+          `SELECT email, first_name AS "firstName" FROM employees
+            WHERE status = 'active' AND id != $1 AND email IS NOT NULL AND email <> ''`,
+          [req.user._id]
+        );
+        const link = `${process.env.FRONTEND_URL || 'https://nxtpeople.altiusnxt.tech'}/announcements?open=${announcementId}`;
+        for (const r of recipients.rows) {
+          try {
+            await sendMail({
+              to: r.email,
+              subject: `📢 New Announcement: ${title}`,
+              text: body,
+              html: renderTemplateEmail({ title, bodyText: body, linkLabel: 'View Announcement', linkUrl: link }),
+            });
+          } catch (err) {
+            logger.warn({ err: err.message, to: r.email }, '[announcements] email failed for one recipient');
+          }
+        }
+      } catch (err) {
+        logger.warn({ err: err.message }, '[announcements] bulk email send failed');
+      }
+    })();
 
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
