@@ -163,7 +163,7 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), canManage, async (r
           try {
             await sendMail({
               to: r.email,
-              subject: `📢 New Announcement: ${title}`,
+              subject: title,
               text: body,
               html: renderTemplateEmail({ title, bodyText: body, linkLabel: 'View Announcement', linkUrl: link }),
             });
