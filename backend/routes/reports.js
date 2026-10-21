@@ -2756,6 +2756,126 @@ router.get('/attendance/present-absent', authorize('admin', 'director', 'hr_admi
   } catch (err) { serverError(res, err); }
 });
 
+/* One cell of the Present/Absent grid, explained.
+ *
+ * The grid has room for a code or a duration and nothing else, so a cell
+ * reading "0.15PM/0.85P" can say a permission happened but never when it ran
+ * or why. This answers that for a single employee-day: the punches, each
+ * session, every leave record on the day with its own clock times, and the
+ * on-duty hours if there were any.
+ *
+ * Deliberately a separate request rather than more fields on the grid: the
+ * grid is employees × days, and hanging this much on every cell would carry a
+ * month of detail nobody has asked to see yet. */
+router.get('/attendance/present-absent/cell', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const { employeeId, date } = req.query;
+    if (!employeeId || !/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) {
+      return res.status(400).json({ success: false, message: 'employeeId and a yyyy-mm-dd date are required' });
+    }
+
+    const empRes = await pool.query(
+      `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName",
+              e.employee_id AS "employeeCode", e.department,
+              s.name AS "shiftName", s.start_time AS "shiftStart", s.end_time AS "shiftEnd"
+         FROM employees e LEFT JOIN shifts s ON e.shift_id = s.id
+        WHERE e.id = $1`,
+      [employeeId]
+    );
+    const emp = empRes.rows[0];
+    if (!emp) return res.status(404).json({ success: false, message: 'Employee not found' });
+
+    const [attRes, sessRes, leaveRes, odRes, holRes, cal, cfg] = await Promise.all([
+      pool.query(
+        `SELECT check_in AS "checkIn", check_out AS "checkOut", working_hours AS "workingHours",
+                status, late_minutes AS "lateMinutes", work_mode AS "workMode",
+                check_in_location AS "checkInLocation"
+           FROM attendance WHERE employee_id = $1 AND date = $2::date`,
+        [employeeId, date]
+      ),
+      // Every stretch of the day, not just first-in/last-out — a day broken by
+      // a permission is exactly the day this view exists to explain.
+      pool.query(
+        `SELECT check_in AS "checkIn", check_out AS "checkOut", session_hours AS "sessionHours"
+           FROM attendance_sessions WHERE employee_id = $1 AND date = $2::date
+          ORDER BY check_in`,
+        [employeeId, date]
+      ),
+      // Pending records come too, flagged by their own status — a day can be
+      // explained by an application nobody has approved yet, and hiding that
+      // makes the cell look unexplained.
+      pool.query(
+        `SELECT leave_type AS "leaveType", status, is_half_day AS "isHalfDay",
+                half_day_type AS "halfDayType", hours, reason,
+                start_time AS "startTime", end_time AS "endTime",
+                start_date::text AS "startYmd", end_date::text AS "endYmd"
+           FROM leaves
+          WHERE employee_id = $1 AND status IN ('approved', 'pending')
+            AND start_date <= $2::date AND end_date >= $2::date
+          ORDER BY (status <> 'approved'), leave_type`,
+        [employeeId, date]
+      ),
+      pool.query(
+        `SELECT request_type AS "requestType", unit, hours, reason,
+                start_time AS "startTime", end_time AS "endTime"
+           FROM on_duty_requests
+          WHERE employee_id = $1 AND status = 'approved'
+            AND start_date <= $2::date AND end_date >= $2::date`,
+        [employeeId, date]
+      ),
+      pool.query(`SELECT name FROM holidays WHERE date = $1::date LIMIT 1`, [date]),
+      loadHolidaysAndRulesRange(new Date(date), new Date(date)),
+      orgConfig(),
+    ]);
+
+    const att = attRes.rows[0] || null;
+    const approved = leaveRes.rows.filter(l => l.status === 'approved');
+    const pending = leaveRes.rows.filter(l => l.status !== 'approved');
+    const { leave: dayLeave, complementLeave } = resolveDayLeave(approved);
+    const day = new Date(`${date}T00:00:00`);
+    const todayYmd = new Date().toLocaleDateString('en-CA');
+
+    // Same classifier the grid itself uses, so the detail can never name a
+    // different day than the cell that opened it.
+    const cls = classifyAttendanceDay({
+      date: day, holMap: cal.holMap, rules: cal.rules,
+      employee: emp,
+      attStatus: att?.status,
+      leave: dayLeave, complementLeave,
+      onDuty: odRes.rows.find(o => o.unit !== 'hours') || null,
+      isFuture: date > todayYmd,
+    });
+
+    const worked = workedHoursOf(att, cfg);
+    const permissionHours = approved
+      .filter(l => l.leaveType === 'permission')
+      .reduce((s, l) => s + (parseFloat(l.hours) || 0), 0);
+
+    res.json({
+      success: true,
+      data: {
+        date,
+        employee: {
+          _id: emp._id, firstName: emp.firstName, lastName: emp.lastName,
+          employeeCode: emp.employeeCode, department: emp.department,
+          shiftName: emp.shiftName, shiftStart: emp.shiftStart, shiftEnd: emp.shiftEnd,
+        },
+        code: cls.code,
+        kind: cls.kind,
+        holidayName: holRes.rows[0]?.name || null,
+        attendance: att,
+        sessions: sessRes.rows,
+        leaves: approved,
+        pendingLeaves: pending,
+        onDuty: odRes.rows,
+        workedHours: worked,
+        permissionHours,
+        shiftHours: shiftHoursOf(emp.shiftStart, emp.shiftEnd),
+      },
+    });
+  } catch (err) { serverError(res, err); }
+});
+
 // Per-employee day-by-day presence ledger + a Day/Hour summary — Zoho's
 // Presence Hours Break-up is a single-employee drilldown, not an
 // all-employees aggregate. Payable hours = the shift length on any day the

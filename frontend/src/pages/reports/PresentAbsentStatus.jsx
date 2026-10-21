@@ -15,6 +15,7 @@ import usePersistedOpen from './usePersistedOpen';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
 import useFitToViewport from '../../hooks/useFitToViewport';
+import PresentAbsentCellModal from './PresentAbsentCellModal';
 
 const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
@@ -93,7 +94,13 @@ export default function PresentAbsentStatus() {
   const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
-  const [unit, setUnit] = useState('day');
+  // Hour by default: the day codes compress a permission into "0.15PM/0.85P",
+  // which is the same day expressed as a fraction of a shift and reads as a
+  // decimal nobody can convert at a glance. The clock times are the figures
+  // people actually check. The Day toggle is still there for the code view.
+  const [unit, setUnit] = useState('hour');
+  // Which cell is open in the day-detail panel.
+  const [cell, setCell] = useState(null);
 
   // The grid ends exactly above the legend, which ends exactly above the app's
   // fixed bottom bar — measured, not guessed. Shared with Muster Roll.
@@ -233,9 +240,15 @@ export default function PresentAbsentStatus() {
                     const code = emp.displayDays?.[i] ?? realCode;
                     const hours = emp.hours?.[i];
                     const shown = unit === 'hour' ? hours : code;
+                    // '-' is a day the person was not on rolls — there is no
+                    // day there to explain, so it stays inert.
+                    const openable = realCode && realCode !== '-';
+                    const ymd = data?.dayLabels?.[i];
                     return (
                       <td key={i} style={weekendCols.has(i) ? WEEKEND_HATCH : undefined}
-                        className="px-1 py-2 text-center border-r border-slate-200">
+                        onClick={openable && ymd ? () => setCell({ employeeId: emp._id, date: ymd }) : undefined}
+                        title={openable ? 'Click for the full day' : undefined}
+                        className={`px-1 py-2 text-center border-r border-slate-200 ${openable ? 'cursor-pointer hover:bg-blue-50/70 transition-colors' : ''}`}>
                         {shown && shown !== '-'
                           ? unit === 'hour'
                             ? <span className="text-[11px] tabular-nums text-slate-700 whitespace-nowrap">{shown}</span>
@@ -253,6 +266,12 @@ export default function PresentAbsentStatus() {
         </>
       )}
       {statusOpen && <StatusPanel onClose={() => setStatusOpen(false)} />}
+      {cell && (
+        <PresentAbsentCellModal
+          employeeId={cell.employeeId} date={cell.date}
+          onClose={() => setCell(null)}
+        />
+      )}
       <LeaveExportModal
         open={exportOpen} onClose={() => setExportOpen(false)} rows={data?.data || []}
         withIdentity columns={dayColumns(data?.dayLabels || [])}
