@@ -12,6 +12,7 @@ import useReportFilters from '../../hooks/useReportFilters';
 import { codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
 import { LegendBar, StatusPanel } from './AttendanceLegend';
 import usePersistedOpen from './usePersistedOpen';
+import usePersistedChoice from './usePersistedChoice';
 import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
 import useFitToViewport from '../../hooks/useFitToViewport';
@@ -94,11 +95,15 @@ export default function PresentAbsentStatus() {
   const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
-  // Hour by default: the day codes compress a permission into "0.15PM/0.85P",
-  // which is the same day expressed as a fraction of a shift and reads as a
-  // decimal nobody can convert at a glance. The clock times are the figures
-  // people actually check. The Day toggle is still there for the code view.
-  const [unit, setUnit] = useState('hour');
+  // Hour on a first visit: the day codes compress a permission into
+  // "0.15PM/0.85P", the same day expressed as a fraction of a shift, which
+  // reads as a decimal nobody can convert at a glance. The clock times are
+  // the figures people actually check.
+  //
+  // Only the FIRST visit, though — after that the last choice wins. The
+  // default reasserting itself over a toggle somebody had just clicked is
+  // the page arguing with them.
+  const [unit, setUnit] = usePersistedChoice('pa-unit', 'hour', ['day', 'hour']);
   // Which cell is open in the day-detail panel.
   const [cell, setCell] = useState(null);
 
