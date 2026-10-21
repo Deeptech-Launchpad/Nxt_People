@@ -237,7 +237,7 @@ export default function PresenceHoursBreakup() {
   // it is the subject of the page, not a way of narrowing it. It also has to
   // stay reachable while the filter panel is shut, which is how the page now
   // opens; buried in the panel there was no way to pick anyone at all.
-  const breadcrumbChip = <EmployeeFilter value={employee} onChange={setEmployee} multiple={false} compact />;
+  const breadcrumbChip = <EmployeeFilter value={employee} onChange={setEmployee} multiple={false} compact categoryFilter />;
 
   const filters = filtersOpen ? (
     <>

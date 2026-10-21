@@ -20,10 +20,18 @@ import api from '../../utils/api';
 // It is for the breadcrumb, where the full label grew wide enough to run into
 // the centred period navigator; the id is what identifies the row anyway, and
 // the full name is one hover away.
-export default function EmployeeFilter({ value, onChange, multiple = true, compact = false }) {
+//
+// `categoryFilter`, opt-in and off by default: adds an Active Employees / Ex-
+// Employees toggle above the search box, for Presence Hours Break-up only —
+// every other caller omits it and searches across all statuses exactly as
+// before. "Ex-Employees" reuses GET /employees?status=inactive, the same
+// "not currently active" umbrella the Employee Master status tabs already use
+// (notice period / resigned / terminated / inactive), not a new status value.
+export default function EmployeeFilter({ value, onChange, multiple = true, compact = false, categoryFilter = false }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
+  const [category, setCategory] = useState('active');
   const boxRef = useRef(null);
 
   const selected = Array.isArray(value) ? value : value ? [value] : [];
@@ -32,13 +40,14 @@ export default function EmployeeFilter({ value, onChange, multiple = true, compa
     // An empty query lists the first page rather than nothing — the reference
     // opens straight to a browsable list, and requiring a search term first
     // hides the filter from anyone who does not know a name to type.
+    const statusParam = categoryFilter ? `&status=${category === 'ex' ? 'inactive' : 'active'}` : '';
     const t = setTimeout(() => {
-      api.get(`/employees?limit=25${query.trim() ? `&search=${encodeURIComponent(query.trim())}` : ''}`)
+      api.get(`/employees?limit=25${statusParam}${query.trim() ? `&search=${encodeURIComponent(query.trim())}` : ''}`)
         .then(r => setResults(r.data.data || []))
         .catch(() => setResults([]));
     }, query.trim() ? 250 : 0);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, categoryFilter, category]);
 
   useEffect(() => {
     const onClick = e => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
@@ -88,6 +97,20 @@ export default function EmployeeFilter({ value, onChange, multiple = true, compa
 
       {open && (
         <div className="absolute z-50 mt-1 w-72 bg-white border border-slate-200 rounded-lg shadow-lg">
+          {categoryFilter && (
+            <div className="flex gap-1 p-2 pb-0">
+              {[['active', 'Active Employees'], ['ex', 'Ex-Employees']].map(([k, l]) => (
+                <button
+                  key={k} type="button" onClick={() => setCategory(k)}
+                  className={`flex-1 text-[12px] px-2 py-1.5 rounded transition-colors ${
+                    category === k ? 'bg-blue-600 text-white font-medium' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="p-2">
             <input
               value={query} onChange={e => setQuery(e.target.value)} placeholder="Search" autoFocus
