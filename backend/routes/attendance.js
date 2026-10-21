@@ -13,6 +13,7 @@ const { loadWeekendResolver, holidayTypeFor, holidayClosesOffice } = require('..
 const { classifyPunch, classifyMany, config: geofenceConfig } = require('../utils/geofence');
 const attendanceAlerts = require('../utils/attendanceAlerts');
 const { serverError } = require('../utils/serverError');
+const { dueInMinutes, lateMinutesFor } = require('../utils/lateness');
 
 router.use(protect);
 
@@ -212,17 +213,35 @@ router.post('/checkin', async (req, res) => {
     let lateMinutes = 0;
     let status = 'present';
 
+    /* Approved permission covering the start of the shift moves the deadline
+     * — being away on time the company has already granted is not lateness.
+     * Wrapped, because failing to read it must never cost somebody a punch;
+     * the fallback is the old shift-start-only answer. */
+    let dayPermissions = [];
+    try {
+      dayPermissions = (await pool.query(
+        `SELECT start_time AS "startTime", end_time AS "endTime"
+           FROM leaves
+          WHERE employee_id = $1 AND leave_type = 'permission' AND status = 'approved'
+            AND start_date <= $2::date AND end_date >= $2::date`,
+        [req.user._id, today]
+      )).rows;
+    } catch (err) {
+      logger.warn({ err: err.message }, '[attendance] permission lookup for lateness skipped');
+    }
+
     if (shift && shift.start_time) {
       const [shiftH, shiftM] = shift.start_time.split(':').map(Number);
       const shiftStartMins = shiftH * 60 + (shiftM || 0);
+      const dueMins = dueInMinutes(shiftStartMins, dayPermissions);
       const graceMins = 15;
-      if (checkInMins > shiftStartMins) {
-        lateMinutes = checkInMins - shiftStartMins;
-        if (checkInMins > shiftStartMins + graceMins) status = 'late';
+      if (checkInMins > dueMins) {
+        lateMinutes = checkInMins - dueMins;
+        if (checkInMins > dueMins + graceMins) status = 'late';
       }
     } else {
       // Fall back to settings.late_after_minutes
-      const lateAfter = settings.late_after_minutes || 570; // 9:30 AM default
+      const lateAfter = dueInMinutes(settings.late_after_minutes || 570, dayPermissions); // 9:30 AM default
       if (checkInMins > lateAfter) {
         lateMinutes = checkInMins - lateAfter;
         status = 'late';
@@ -842,16 +861,43 @@ router.get('/my', async (req, res) => {
       logger.error({ err: err.message, employeeId: empId }, '[attendance] sessions range query failed');
     }
 
+    /* Approved permission covering the start of the shift moves the deadline
+     * a punch is judged against — see utils/lateness.js. Read for the whole
+     * range in one query and bucketed by date, so this stays one round trip
+     * however long the month is. */
+    const permsByDate = {};
+    try {
+      const permRes = await pool.query(
+        `SELECT to_char(start_date, 'YYYY-MM-DD') AS date,
+                start_time AS "startTime", end_time AS "endTime"
+           FROM leaves
+          WHERE employee_id = $1 AND leave_type = 'permission' AND status = 'approved'
+            AND start_date >= $2::date AND start_date <= $3::date`,
+        [empId, start, end]
+      );
+      permRes.rows.forEach(p => {
+        (permsByDate[p.date] = permsByDate[p.date] || []).push(p);
+      });
+    } catch (err) {
+      logger.error({ err: err.message, employeeId: empId }, '[attendance] permission range query failed');
+    }
+
     const mapped = rows.map(r => {
-      // Always compute lateness from the SQL-extracted check-in minutes
-      // (timezone-correct). Take the max of stored vs computed so we never
-      // under-report, but the SQL value is the canonical one.
-      let computed = 0;
-      if (r.checkInMins != null) {
-        const diff = r.checkInMins - shiftStartMins;
-        if (diff > 0) computed = diff;
-      }
-      const lateMinutes = Math.max(Number(r.lateMinutes) || 0, computed);
+      /* Compute lateness from the SQL-extracted check-in minutes
+       * (timezone-correct), against the deadline approved permission leaves
+       * them with rather than the bare shift start.
+       *
+       * The stored value is no longer max()'d in. It was written by an older
+       * check-in that measured from shift start and knew nothing about
+       * permission, so taking the larger of the two would reinstate exactly
+       * the figure this is correcting — "never under-report" and "do not
+       * count approved time off as lateness" point opposite ways, and the
+       * approval is the stronger claim. */
+      const lateMinutes = lateMinutesFor({
+        checkInMins: r.checkInMins,
+        shiftStartMins,
+        permissions: permsByDate[r.date] || [],
+      });
       const { checkInMins, ...rest } = r; // drop the helper column from response
       return {
         ...rest,

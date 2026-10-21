@@ -22,6 +22,7 @@ const { lopForPeriod, activePayPeriod } = require('../utils/lopCarryOver');
 const { cycleFor } = require('../utils/payPeriodCycle');
 const { getLeavePolicies, getJoiningRule, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
 const { DEFAULT_TZ } = require('../utils/timezone');
+const { toMinutes, lateMinutesFor } = require('../utils/lateness');
 const attendanceConfig = require('../utils/attendanceConfig');
 const { roundHours, lateNightMinutes } = require('../utils/hoursPolicy');
 const { serverError } = require('../utils/serverError');
@@ -2847,9 +2848,24 @@ router.get('/attendance/present-absent/cell', authorize('admin', 'director', 'hr
     });
 
     const worked = workedHoursOf(att, cfg);
-    const permissionHours = approved
-      .filter(l => l.leaveType === 'permission')
+    const permissions = approved.filter(l => l.leaveType === 'permission');
+    const permissionHours = permissions
       .reduce((s, l) => s + (parseFloat(l.hours) || 0), 0);
+
+    /* Lateness against the deadline approved permission actually leaves, not
+     * the bare shift start — the stored late_minutes may predate that rule.
+     * See utils/lateness.js. Only recomputed when both the shift start and
+     * the punch are known; otherwise the stored figure stands. */
+    const checkInMins = att?.checkIn
+      ? (() => {
+          const t = new Date(att.checkIn).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: DEFAULT_TZ });
+          return toMinutes(t);
+        })()
+      : null;
+    const shiftStartMins = toMinutes(emp.shiftStart);
+    const lateMinutes = (checkInMins !== null && shiftStartMins !== null)
+      ? lateMinutesFor({ checkInMins, shiftStartMins, permissions })
+      : (att?.lateMinutes ?? null);
 
     res.json({
       success: true,
@@ -2863,7 +2879,7 @@ router.get('/attendance/present-absent/cell', authorize('admin', 'director', 'hr
         code: cls.code,
         kind: cls.kind,
         holidayName: holRes.rows[0]?.name || null,
-        attendance: att,
+        attendance: att ? { ...att, lateMinutes } : null,
         sessions: sessRes.rows,
         leaves: approved,
         pendingLeaves: pending,
