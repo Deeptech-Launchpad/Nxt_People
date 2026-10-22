@@ -314,6 +314,7 @@ app.use('/api/shift-config',     require('./routes/shift-config'));
 app.use('/api/approvals',        require('./routes/approvals'));
 app.use('/api/settings',         require('./routes/settings'));
 app.use('/api/dashboard',        require('./routes/dashboard'));
+app.use('/api/hr-attendance-dashboard', require('./routes/hr-attendance-dashboard'));
 app.use('/api/registrations',    require('./routes/registrations'));
 app.use('/api/companies',        require('./routes/companies'));
 app.use('/api/api-connections',  require('./routes/api-connections'));

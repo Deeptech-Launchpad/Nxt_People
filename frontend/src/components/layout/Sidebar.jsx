@@ -5,7 +5,7 @@ import { isApprover, isFullAccess } from '../../utils/roles';
 import { PAYROLL_ADMIN_ENABLED, TIME_TRACKER_ENABLED, PERFORMANCE_ENABLED } from '../../config/features';
 import {
   Home, CalendarCheck, Clock, CalendarDays, Trophy,
-  LayoutGrid, PieChart, Users, AppWindow, Briefcase, Wallet
+  LayoutGrid, PieChart, Users, AppWindow, Briefcase, Wallet, BarChart3
 } from 'lucide-react';
 
 // Roles that see Operations in the sidebar — for them, NXT Apps now lives
@@ -19,6 +19,12 @@ const OPERATIONS_ROLES = ['admin', 'director', 'hr_admin'];
 // separately from OPERATIONS_ROLES so changing who administers payroll does
 // not silently change who sees Operations.
 const PAYROLL_ADMIN_ROLES = ['admin', 'director', 'hr_admin'];
+
+// Literal allow-list, matching the backend's own check in
+// routes/hr-attendance-dashboard.js exactly — this page is Admin + Manager
+// only, not the broader "full access" (admin/director/hr_admin) set used
+// elsewhere in this file.
+const HR_DASHBOARD_ROLES = ['admin', 'manager'];
 
 const NAV_ITEMS = [
   { to: '/',                         icon: Home,         label: 'Home',         end: true,
@@ -108,6 +114,8 @@ export default function Sidebar() {
   // Employee management (the admin Employees page) is HR / Super Admin only —
   // Team Leads view their team via Team Space / Org Chart, not this page.
   const canManageEmployees = isFullAccess(user);
+  const canSeeHrDashboard = HR_DASHBOARD_ROLES.includes(user?.role);
+  const isHrDashboardActive = location.pathname.startsWith('/hr-dashboard');
 
   // Reports icon should also highlight on /daily-attendance,
   // /shifts, /shift-roster — they all live under the Reports section.
@@ -132,7 +140,7 @@ export default function Sidebar() {
 
         {/* Admin sections appended to the scrolling nav. Employees = HR/Super
             Admin only; Reports = any approver (incl. Team Leads). */}
-        {(canManageEmployees || canSeeReports) && (
+        {(canManageEmployees || canSeeReports || canSeeHrDashboard) && (
           <div className="flex flex-col border-t border-white/10 mt-1 pt-1">
             {canManageEmployees && (
             <NavLink to="/employees"
@@ -162,6 +170,17 @@ export default function Sidebar() {
                 <PieChart size={18} strokeWidth={isReportsActive ? 2 : 1.6}/>
               </div>
               <span style={labelStyle} className={isReportsActive ? 'text-white' : 'text-white/70 group-hover:text-white'}>Reports</span>
+            </NavLink>
+            )}
+
+            {canSeeHrDashboard && (
+            <NavLink to="/hr-dashboard"
+              className="group relative flex flex-col items-center justify-center gap-1 w-full py-2 transition-all duration-150"
+            >
+              <div className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isHrDashboardActive ? 'bg-[#1a73e8] text-white shadow-lg' : 'text-white/70 group-hover:text-white group-hover:bg-white/10'}`}>
+                <BarChart3 size={18} strokeWidth={isHrDashboardActive ? 2 : 1.6}/>
+              </div>
+              <span style={labelStyle} className={isHrDashboardActive ? 'text-white' : 'text-white/70 group-hover:text-white'}>{'HR\nDashboard'}</span>
             </NavLink>
             )}
         </div>

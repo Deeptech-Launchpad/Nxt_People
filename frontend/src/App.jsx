@@ -29,6 +29,7 @@ const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'));
 const Approvals       = lazy(() => import('./pages/Approvals'));
 const Registrations   = lazy(() => import('./pages/Registrations'));
 const AuditLog        = lazy(() => import('./pages/AuditLog'));
+const HrAttendanceDashboard = lazy(() => import('./pages/HrAttendanceDashboard'));
 const Companies       = lazy(() => import('./pages/Companies'));
 const ApiConnections  = lazy(() => import('./pages/ApiConnections'));
 const MyApps          = lazy(() => import('./pages/MyApps'));
@@ -361,6 +362,10 @@ const AppRoutes = () => {
           {/* Change history. Same roles as the configuration screens it records —
               anyone who can read who changed a policy can already change it. */}
           <Route path="audit"        element={<ProtectedRoute roles={['admin','director','hr_admin']}><AuditLog/></ProtectedRoute>}/>
+          {/* HR Attendance Dashboard — read-only, Admin + Manager only (matches
+              the backend's own literal role check in routes/hr-attendance-dashboard.js,
+              not the broader admin/director/hr_admin "full access" set used above). */}
+          <Route path="hr-dashboard" element={<ProtectedRoute roles={['admin','manager']}><HrAttendanceDashboard/></ProtectedRoute>}/>
           <Route path="shifts"       element={<ProtectedRoute roles={['admin','director','hr_admin']}><Shifts/></ProtectedRoute>}/>
           {/* Anybody can ask to change their own shift; the route itself
               scopes who may approve one. */}
