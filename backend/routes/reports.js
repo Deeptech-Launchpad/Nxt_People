@@ -1412,17 +1412,31 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
       // Casual/Unpaid/Comp-Off columns entirely rather than mixing units.
       // Permission's real rule is 4h per CALENDAR MONTH with no carry-over
       // (see leaves.js), so the allocation for an arbitrary range is
-      // 4h x (number of distinct calendar months the range touches).
-      const monthsTouched = (() => {
+      // 4h x (number of distinct calendar months the range touches) —
+      // "touches" kept exactly as before (any day of the month inside the
+      // range counts the whole month, not clipped to the day the range
+      // starts/ends on). What this used to leave out is the OTHER side of
+      // "touches": a month the employee had not joined yet. Every month was
+      // counted for every employee regardless of when they joined, so a
+      // March joiner was credited allocation for January and February too.
+      // Fixed by intersecting the touched months with the policy's own
+      // accrualEvents() for each employee — the same monthly-accrual engine
+      // Casual Leave's allocation already goes through below, so a month
+      // before joining (or short-month-skipped, if that rule is ever turned
+      // on) correctly contributes nothing.
+      const monthsTouchedSet = (() => {
         const s = new Date(start), e = new Date(end);
         const set = new Set();
         for (const d = new Date(s.getFullYear(), s.getMonth(), 1); d <= e; d.setMonth(d.getMonth() + 1)) {
-          set.add(`${d.getFullYear()}-${d.getMonth()}`);
+          set.add(`${d.getFullYear()}-${d.getMonth()}`); // 0-based month
         }
-        return set.size;
+        return set;
       })();
+      const touchedYears = [...new Set([...monthsTouchedSet].map(k => Number(k.split('-')[0])))];
+
       const r = await pool.query(
         `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId",
+                COALESCE(e.date_of_joining, e.joining_date)::text AS "joiningDate",
                 COALESCE(perm.hours, 0) AS "permissionBooked"
            FROM employees e
            LEFT JOIN (SELECT employee_id, SUM(hours) AS hours FROM leaves WHERE status='approved' AND leave_type='permission' AND start_date <= $2::date AND end_date >= $1::date GROUP BY employee_id) perm ON perm.employee_id = e.id
@@ -1430,17 +1444,38 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
           ORDER BY e.employee_id`,
         [start, end, ...filters.params]
       );
+      const [policies, joiningRule] = await Promise.all([getLeavePolicies(), getJoiningRule()]);
+      const permissionPolicy = policies.get('permission');
+
       const data = r.rows.map(row => {
         const permissionBooked = parseFloat(row.permissionBooked) || 0;
-        const permissionAllocated = monthsTouched * 4;
-        return { ...row, permissionBooked, permissionAllocated, permissionBalance: Math.max(0, permissionAllocated - permissionBooked) };
+        let permissionAllocated = 0;
+        if (['monthly', 'annual'].includes(permissionPolicy.accrualMode)) {
+          for (const y of touchedYears) {
+            for (const ev of accrualEvents(permissionPolicy, { year: y, joiningDate: row.joiningDate, joiningRule })) {
+              const [ey, em] = ev.date.split('-').map(Number); // em is 1-based
+              if (monthsTouchedSet.has(`${ey}-${em - 1}`)) permissionAllocated += ev.amount;
+            }
+          }
+        }
+        permissionAllocated = round2(permissionAllocated);
+        return { ...row, permissionBooked, permissionAllocated, permissionBalance: Math.max(0, round2(permissionAllocated - permissionBooked)) };
       });
       return res.json({ success: true, data, unit, startDate: start, endDate: end });
     }
 
+    // joiningDate prefers date_of_joining (what the bulk employee importer
+    // writes) over joining_date (a separate column that defaults to the
+    // row's creation time when nothing sets it, and has since been touched
+    // by something else for most of this org — it now reads "today" for
+    // 54 of 59 active employees). Reading the raw column alone was feeding
+    // grantedToDate() a near-future "joining date" for almost everyone,
+    // producing a tiny prorated entitlement instead of the real one. Same
+    // precedence hr-attendance-dashboard.js's getScope() already uses for
+    // exactly this reason.
     const r = await pool.query(
       `SELECT e.id AS "_id", e.first_name AS "firstName", e.last_name AS "lastName", e.department, e.employee_id AS "employeeCode", e.exit_date AS "exitDate", e.work_location_id AS "workLocationId", e.shift_id AS "shiftId",
-              e.joining_date::text AS "joiningDate",
+              COALESCE(e.date_of_joining, e.joining_date)::text AS "joiningDate",
               COALESCE(casual.days, 0) AS "casualBooked",
               COALESCE(absent.cnt, 0) AS "absentBooked",
               COALESCE(lwp.days, 0) AS "lwpBooked",
@@ -1527,6 +1562,54 @@ router.get('/leave/booked-balance', authorize('admin', 'director', 'hr_admin', '
       };
     });
     res.json({ success: true, data, unit, startDate: start, endDate: end });
+  } catch (err) { serverError(res, err); }
+});
+
+// Per-request detail for Leave Booked and Balance's export — one row per
+// individual leave/permission application in range, with its own stored
+// reason, rather than the main table's per-employee totals. The main table
+// intentionally stays request-less (it answers "how many days", not "which
+// requests"); this is only pulled when the export dialog needs it, so the
+// normal page load carries none of this extra weight.
+//
+// Same employee scope and date-overlap convention as the main endpoint
+// above (approved only — matches what that endpoint counts as "Booked").
+// `reason` is an optional case-insensitive substring filter — requirement 4
+// — applied in SQL so the export only contains the matching rows, not the
+// unfiltered set.
+router.get('/leave/booked-balance/detail', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const start = req.query.startDate || new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
+    const end = req.query.endDate || new Date().toLocaleDateString('en-CA');
+    const filters = standardEmployeeFilters(req, 'e', 3, { trackedOnly: true });
+    const reason = (req.query.reason || '').trim();
+    const reasonClause = reason ? ` AND l.reason ILIKE $${3 + filters.params.length}` : '';
+
+    const r = await pool.query(
+      `SELECT e.employee_id AS "employeeCode", e.first_name AS "firstName", e.last_name AS "lastName",
+              l.leave_type AS "leaveType", l.start_date::text AS "startDate", l.end_date::text AS "endDate",
+              l.total_days AS "totalDays", l.hours, l.status, l.reason
+         FROM leaves l
+         JOIN employees e ON e.id = l.employee_id
+        WHERE l.status = 'approved' AND l.start_date <= $2::date AND l.end_date >= $1::date
+          ${filters.clause}${reasonClause}
+        ORDER BY e.employee_id, l.start_date`,
+      reason ? [start, end, ...filters.params, `%${reason}%`] : [start, end, ...filters.params]
+    );
+
+    const LEAVE_TYPE_LABEL = { casual: 'Casual Leave', unpaid: 'Leave Without Pay', permission: 'Permission', comp_off: 'Compensatory Off' };
+    const data = r.rows.map(row => ({
+      employeeCode: row.employeeCode,
+      employeeName: `${row.firstName || ''} ${row.lastName || ''}`.trim(),
+      leaveType: LEAVE_TYPE_LABEL[row.leaveType] || row.leaveType,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      amount: row.leaveType === 'permission' ? parseFloat(row.hours) || 0 : parseFloat(row.totalDays) || 0,
+      unit: row.leaveType === 'permission' ? 'hours' : 'days',
+      status: row.status,
+      reason: row.reason || '',
+    }));
+    res.json({ success: true, data });
   } catch (err) { serverError(res, err); }
 });
 
