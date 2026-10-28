@@ -212,8 +212,14 @@ export default function Approvals({ embedded = false }) {
           ...(d.approvedCompOffs || []).map(x => ({ ...x, kind: 'comp_off' })),
         ];
         const byCreatedDesc = (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-        const approved = settledByType.filter(x => x.status === 'approved').sort(byCreatedDesc);
-        const rejected = settledByType.filter(x => x.status === 'rejected').sort(byCreatedDesc);
+        // A leave's own request status (x.status) can still be 'pending' while
+        // the viewer's own level (x.myLevelStatus, leave rows only — see
+        // routes/approvals.js) is already decided, when a later level hasn't
+        // acted yet. Falls back to x.status for every other kind, and for a
+        // leave that's already fully settled, so this changes nothing there.
+        const effectiveStatus = (x) => (x.status === 'approved' || x.status === 'rejected') ? x.status : x.myLevelStatus;
+        const approved = settledByType.filter(x => effectiveStatus(x) === 'approved').sort(byCreatedDesc);
+        const rejected = settledByType.filter(x => effectiveStatus(x) === 'rejected').sort(byCreatedDesc);
 
         setData({
           leaves,

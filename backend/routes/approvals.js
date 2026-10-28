@@ -197,7 +197,8 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
                  ORDER BY bl.level LIMIT 1) as "behalfByName",
                COALESCE(lv.your_level_acted, false) as "yourLevelActed",
                COALESCE(dcd.acted_by = $1, false) as "decidedByYou",
-               CASE WHEN lv.level_count = 0 AND l.approved_by IS NULL THEN 'zoho' ELSE 'app' END as source
+               CASE WHEN lv.level_count = 0 AND l.approved_by IS NULL THEN 'zoho' ELSE 'app' END as source,
+               ml.status as "myLevelStatus"
         FROM leaves l
         JOIN employees e ON l.employee_id = e.id
         LEFT JOIN employees ab ON l.approved_by = ab.id
@@ -217,17 +218,45 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
              AND al.status IN ('approved', 'rejected')
            ORDER BY al.level DESC LIMIT 1
         ) dcd ON TRUE
+        -- The viewer's own level in THIS request's chain, if they have one —
+        -- distinct from the "lv" join above (which aggregates across every level).
+        -- Lets a designated approver whose own level is already decided show
+        -- up here even while the request as a whole is still pending one or
+        -- more levels above them (see the WHERE clause below).
+        LEFT JOIN LATERAL (
+          SELECT al.status, al.acted_at
+            FROM approval_levels al
+           WHERE al.request_type = 'leave' AND al.request_id = l.id AND al.approver_id = $1
+           LIMIT 1
+        ) ml ON TRUE
         WHERE ${full ? 'TRUE' : `(EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))`}
-          AND l.status IN ('approved', 'rejected')
           /* The selected month only (defaults to current), scoped by WHEN IT
            * WAS DECIDED — the same definition the summary tile above this
            * list uses. It had no date bound at all originally, so the
            * Approved and Rejected tabs were showing 2024 alongside today and
            * the 500-row cap was being spent on history nobody was looking
-           * for. */
-          AND l.approved_at >= (make_date($2::int, $3::int, 1)::timestamp AT TIME ZONE $4::text)
-          AND l.approved_at <  ((make_date($2::int, $3::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $4::text)
+           * for.
+           *
+           * Two ways a row can count as "decided this month": the whole
+           * request settled (l.status + l.approved_at, as before), OR the
+           * viewer's own level settled even though the request is still
+           * pending higher up (ml.status + ml.acted_at) — otherwise a
+           * designated approver whose level was approved on their behalf
+           * never sees it until every level above them also clears, which is
+           * a different request's decision, not theirs. A rejection always
+           * rejects the whole request immediately (applyRejection in
+           * utils/leaveApproval.js), so l.status already covers every
+           * rejected case; this only ever adds mid-chain APPROVED rows. */
+          AND (
+            (l.status IN ('approved', 'rejected')
+              AND l.approved_at >= (make_date($2::int, $3::int, 1)::timestamp AT TIME ZONE $4::text)
+              AND l.approved_at <  ((make_date($2::int, $3::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $4::text))
+            OR
+            (ml.status IN ('approved', 'rejected')
+              AND ml.acted_at >= (make_date($2::int, $3::int, 1)::timestamp AT TIME ZONE $4::text)
+              AND ml.acted_at <  ((make_date($2::int, $3::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $4::text))
+          )
           /* People, not records. Deleted rows were never excluded here at all.
            *
            * Somebody whose last working day falls inside this month is still
@@ -239,7 +268,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
             e.status = 'active'
             OR e.exit_date >= make_date($2::int, $3::int, 1)
           )
-        ORDER BY l.approved_at DESC LIMIT 500
+        ORDER BY COALESCE(l.approved_at, ml.acted_at) DESC LIMIT 500
       `, [userId, histYear, histMonth, histTz]),
 
       // Approved/Rejected Regularizations — same "this month" and visibility
