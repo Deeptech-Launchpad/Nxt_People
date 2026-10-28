@@ -437,7 +437,24 @@ router.get('/leave-requests', approvers, async (req, res) => {
     const params = [req.user._id, isFullAccess(req.user.role)];
     const scope = scopeInto(req.user, 'e', params, teamScope(req));
 
-    let where = `e.deleted_at IS NULL ${scope}`;
+    // reportsScope() alone only covers direct-report visibility, but a Level
+    // 2/3 approver is reached by walking further up the reporting chain
+    // (deriveLevels in utils/leaveApproval.js) and isn't necessarily anyone's
+    // direct reporting_manager_id/approving_authority_id — so a request they
+    // legitimately approved (personally, or on behalf of an earlier level via
+    // "Approve All") could be outside reportsScope()'s direct-report check
+    // and silently missing from their own Approved/Rejected history here,
+    // even though approval_levels correctly records them as an approver.
+    // approval_levels.approver_id is the ORIGINAL designated approver for
+    // that level and is never overwritten by an on-behalf action (only
+    // status/acted_by/on_behalf change — see utils/leaveApproval.js), so this
+    // check keeps working for the full lifetime of the request. Same EXISTS
+    // pattern already used by routes/approvals.js for the identical reason;
+    // $1 is req.user._id, already the first param above.
+    let where = `e.deleted_at IS NULL AND (
+      EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1)
+      OR (TRUE${scope})
+    )`;
     const status = String(req.query.status || '').trim();
     if (['pending', 'approved', 'rejected', 'cancelled'].includes(status)) {
       params.push(status);
