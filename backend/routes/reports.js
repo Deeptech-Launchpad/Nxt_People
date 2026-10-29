@@ -21,6 +21,7 @@ const { lopDaysForRange, absentDaysForRange, absentDatesForRange, listWorkingDay
 const { lopForPeriod, activePayPeriod } = require('../utils/lopCarryOver');
 const { cycleFor } = require('../utils/payPeriodCycle');
 const { getLeavePolicies, getJoiningRule, accrualEvents, grantedToDate, entitlementStart, round2 } = require('../utils/leavePolicy');
+const { eligibleForYear } = require('../utils/employeeEligibility');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { toMinutes, lateMinutesFor } = require('../utils/lateness');
 const attendanceConfig = require('../utils/attendanceConfig');
@@ -1120,11 +1121,20 @@ router.get('/leave/balance-user', authorize('admin', 'director', 'hr_admin', 'ma
     const year = parseInt(req.query.year, 10) || new Date().getFullYear();
 
     const empRes = await pool.query(
-      `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", employee_id AS "employeeCode", department, exit_date AS "exitDate", joining_date::text AS "joiningDate", COALESCE(casual_leave,0) AS "casualAllocated"
+      // joiningDate prefers date_of_joining over joining_date — see the
+      // booked-balance report above for why: joining_date defaults to
+      // row-creation time for most existing employees and reads as
+      // "joined today" for them, which would make both the accrual
+      // calculation below and the eligibility check wrongly reject every
+      // historical year for anyone whose join predates that column.
+      `SELECT id AS "_id", first_name AS "firstName", last_name AS "lastName", employee_id AS "employeeCode", department, exit_date::text AS "exitDate", COALESCE(date_of_joining, joining_date)::text AS "joiningDate", COALESCE(casual_leave,0) AS "casualAllocated"
          FROM employees WHERE id = $1`, [employeeId]
     );
     const emp = empRes.rows[0];
     if (!emp) return res.status(404).json({ success: false, message: 'Employee not found' });
+    if (!eligibleForYear(emp, year)) {
+      return res.status(400).json({ success: false, message: `${emp.firstName} ${emp.lastName} was not employed during ${year}.` });
+    }
 
     const [leaveRes, compRes, absentRes] = await Promise.all([
       pool.query(
@@ -1229,8 +1239,11 @@ router.get('/leave/balance-user-detail', authorize('admin', 'director', 'hr_admi
     // rows will not add up to the balance on the chart above it.
     const monthsCount = 12;
 
-    const empRes = await pool.query('SELECT joining_date::text AS "joiningDate", COALESCE(casual_leave,0) AS "casualAllocated" FROM employees WHERE id = $1', [employeeId]);
+    const empRes = await pool.query('SELECT COALESCE(date_of_joining, joining_date)::text AS "joiningDate", exit_date::text AS "exitDate", COALESCE(casual_leave,0) AS "casualAllocated" FROM employees WHERE id = $1', [employeeId]);
     if (!empRes.rows[0]) return res.status(404).json({ success: false, message: 'Employee not found' });
+    if (!eligibleForYear(empRes.rows[0], year)) {
+      return res.status(400).json({ success: false, message: `Employee was not employed during ${year}.` });
+    }
     const { joiningDate } = empRes.rows[0];
     const casualAllocated = parseFloat(empRes.rows[0].casualAllocated) || 0;
     const startIso = entitlementStart(year, joiningDate);
@@ -1329,7 +1342,7 @@ router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_adm
     const isHours = leaveType === 'permission';
 
     const [empRes, takenRes, compRes] = await Promise.all([
-      pool.query('SELECT joining_date::text AS "joiningDate", COALESCE(casual_leave,0) AS "casualAllocated" FROM employees WHERE id = $1', [employeeId]),
+      pool.query('SELECT COALESCE(date_of_joining, joining_date)::text AS "joiningDate", exit_date::text AS "exitDate", COALESCE(casual_leave,0) AS "casualAllocated" FROM employees WHERE id = $1', [employeeId]),
       leaveType === 'absent'
         ? pool.query(
             `SELECT date::text AS date, 1 AS days, 0 AS hours
@@ -1355,6 +1368,9 @@ router.get('/leave/balance-user-history', authorize('admin', 'director', 'hr_adm
         : Promise.resolve({ rows: [] }),
     ]);
     if (!empRes.rows[0]) return res.status(404).json({ success: false, message: 'Employee not found' });
+    if (!eligibleForYear(empRes.rows[0], year)) {
+      return res.status(400).json({ success: false, message: `Employee was not employed during ${year}.` });
+    }
 
     const policy = (await getLeavePolicies()).get(leaveType);
     const events = [];
