@@ -263,12 +263,25 @@ export default function Approvals({ embedded = false }) {
   // Picks up newly submitted / approved requests without a manual refresh.
   usePolling(() => load(true), 5000);
 
-  // Month-bound history, so it is fetched when the month changes, not polled.
-  useEffect(() => {
-    setSummary(null);
+  /* Shared by the month-switch effect below and every successful approve /
+   * reject / approve-all action (see `action()`) — previously only the month
+   * switcher re-fetched this, so an approved-count card stayed stale after
+   * settling a request until something else (a full page reload) happened to
+   * trigger this same effect again. No local increment on success: the
+   * backend only counts a request once its status is 'approved', which for a
+   * multi-level request means every level is done — a number this page
+   * can't reliably compute itself from one action's response, so it asks the
+   * backend again instead of guessing. */
+  const loadSummary = () => {
     api.get(`/approvals/summary?month=${sumMonth}&year=${sumYear}`)
       .then(res => setSummary(res.data.data || null))
       .catch(err => toast.error(err.response?.data?.message || 'Failed to load approval summary'));
+  };
+
+  // Month-bound history, so it is fetched when the month changes, not polled.
+  useEffect(() => {
+    setSummary(null);
+    loadSummary();
   }, [sumMonth, sumYear]);
 
   const shiftMonth = (delta) => {
@@ -330,6 +343,7 @@ export default function Approvals({ embedded = false }) {
       const res = await api.put(`/${endpoint}/${id}/action`, { action: act, rejectionReason: reason, approveAll });
       toast.success(res.data?.message || (approveAll ? 'All levels approved' : `${act.charAt(0).toUpperCase() + act.slice(1)} successfully`));
       load();
+      loadSummary();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setActionLoading(''); }
   };
