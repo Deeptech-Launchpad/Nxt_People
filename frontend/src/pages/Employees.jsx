@@ -22,6 +22,9 @@ const initForm = {
   nickName:'', dateOfBirth:'', gender:'', maritalStatus:'', bloodGroup:'', nationality:'',
   // Contact
   personalEmail:'', workPhone:'', address:'', permanentAddress:'',
+  addressLine1:'', addressLine2:'', addressCity:'', addressDistrict:'', addressState:'', addressPincode:'', addressCountry:'',
+  permanentAddressLine1:'', permanentAddressLine2:'', permanentAddressCity:'', permanentAddressDistrict:'',
+  permanentAddressState:'', permanentAddressPincode:'', permanentAddressCountry:'',
   // Identity (PII)
   panNumber:'', aadhaarNumber:'', uanNumber:'',
   // Bank
@@ -36,6 +39,23 @@ const initForm = {
   // of login — defaults on, same as every existing employee.
   attendanceTracked: true,
 };
+
+/* Structured address (Update 3), joined into a readable multi-line block —
+ * one line per logical group rather than the old single run-on string, so
+ * nothing gets cut off or crammed together. Falls back to the legacy
+ * flat-text column when none of the structured parts are filled in, which
+ * covers every record from before this change without guessing at how to
+ * split old free-text into parts. */
+function formatAddress(parts, legacyText) {
+  const lines = [
+    [parts.line1, parts.line2].filter(Boolean).join(', '),
+    [parts.city, parts.district].filter(Boolean).join(', '),
+    [parts.state, parts.pincode].filter(Boolean).join(' - '),
+    parts.country,
+  ].filter(Boolean);
+  if (lines.length === 0) return legacyText || '—';
+  return lines.map((l, i) => <span key={i} className="block">{l}</span>);
+}
 
 // Company list must match the backend COMPANY_PREFIXES in
 // backend/utils/employeeId.js — keeps the per-company ID sequence working.
@@ -296,8 +316,28 @@ export default function Employees() {
       // Contact
       personalEmail:    get('personalEmail',    'personal_email'),
       workPhone:        get('workPhone',        'work_phone'),
-      address:          get('address',          'address'),
-      permanentAddress: get('permanentAddress', 'permanent_address'),
+      // address / permanentAddress (the old flat-text columns) are
+      // deliberately NOT populated here any more — this form no longer has
+      // inputs for them (replaced by the structured fields below), and the
+      // whole `form` object is sent on save; keeping them would mean
+      // silently resending/overwriting legacy data nobody can see or edit
+      // here. Leaving them undefined means they're dropped from the save
+      // payload entirely, matching the Operations -> Employee Information
+      // edit modal's identical change.
+      addressLine1:     get('addressLine1',     'address_line1'),
+      addressLine2:     get('addressLine2',     'address_line2'),
+      addressCity:      get('addressCity',      'address_city'),
+      addressDistrict:  get('addressDistrict',  'address_district'),
+      addressState:     get('addressState',     'address_state'),
+      addressPincode:   get('addressPincode',   'address_pincode'),
+      addressCountry:   get('addressCountry',   'address_country'),
+      permanentAddressLine1:    get('permanentAddressLine1',    'permanent_address_line1'),
+      permanentAddressLine2:    get('permanentAddressLine2',    'permanent_address_line2'),
+      permanentAddressCity:     get('permanentAddressCity',     'permanent_address_city'),
+      permanentAddressDistrict: get('permanentAddressDistrict', 'permanent_address_district'),
+      permanentAddressState:    get('permanentAddressState',    'permanent_address_state'),
+      permanentAddressPincode:  get('permanentAddressPincode',  'permanent_address_pincode'),
+      permanentAddressCountry:  get('permanentAddressCountry',  'permanent_address_country'),
       // Identity
       panNumber:     get('panNumber',     'pan_number'),
       aadhaarNumber: get('aadhaarNumber', 'aadhaar_number'),
@@ -833,13 +873,68 @@ export default function Employees() {
                     <label className="block text-sm font-medium text-slate-600 mb-1.5">Work Phone</label>
                     <input value={form.workPhone} onChange={e=>setForm({...form,workPhone:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
                   </div>
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Current Address</label>
-                    <textarea rows={2} value={form.address} onChange={e=>setForm({...form,address:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none"/>
+                  <div className="col-span-2 pt-2">
+                    <p className="text-sm font-semibold text-slate-500">Present Address</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Address Line 1 / House or Door Number</label>
+                    <input value={form.addressLine1} onChange={e=>setForm({...form,addressLine1:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Address Line 2 / Street or Area</label>
+                    <input value={form.addressLine2} onChange={e=>setForm({...form,addressLine2:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Village / City</label>
+                    <input value={form.addressCity} onChange={e=>setForm({...form,addressCity:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">District</label>
+                    <input value={form.addressDistrict} onChange={e=>setForm({...form,addressDistrict:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">State</label>
+                    <input value={form.addressState} onChange={e=>setForm({...form,addressState:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Postal Code / PIN Code</label>
+                    <input value={form.addressPincode} onChange={e=>setForm({...form,addressPincode:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Permanent Address</label>
-                    <textarea rows={2} value={form.permanentAddress} onChange={e=>setForm({...form,permanentAddress:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400 resize-none"/>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Country</label>
+                    <input value={form.addressCountry} onChange={e=>setForm({...form,addressCountry:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+
+                  <div className="col-span-2 pt-2">
+                    <p className="text-sm font-semibold text-slate-500">Permanent Address</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Address Line 1 / House or Door Number</label>
+                    <input value={form.permanentAddressLine1} onChange={e=>setForm({...form,permanentAddressLine1:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Address Line 2 / Street or Area</label>
+                    <input value={form.permanentAddressLine2} onChange={e=>setForm({...form,permanentAddressLine2:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Village / City</label>
+                    <input value={form.permanentAddressCity} onChange={e=>setForm({...form,permanentAddressCity:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">District</label>
+                    <input value={form.permanentAddressDistrict} onChange={e=>setForm({...form,permanentAddressDistrict:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">State</label>
+                    <input value={form.permanentAddressState} onChange={e=>setForm({...form,permanentAddressState:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Postal Code / PIN Code</label>
+                    <input value={form.permanentAddressPincode} onChange={e=>setForm({...form,permanentAddressPincode:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-slate-600 mb-1.5">Country</label>
+                    <input value={form.permanentAddressCountry} onChange={e=>setForm({...form,permanentAddressCountry:e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-brand-400"/>
                   </div>
                 </div>
               </div>
@@ -1137,11 +1232,25 @@ export default function Employees() {
                       <div><span className="block text-slate-400 text-sm font-medium mb-0.5">PAN Number</span><span className="text-slate-800 font-mono">{viewEmpData.panNumber || '—'}</span></div>
                       <div><span className="block text-slate-400 text-sm font-medium mb-0.5">UAN Number</span><span className="text-slate-800 font-mono">{viewEmpData.uanNumber || '—'}</span></div>
                       <div className="md:col-span-4 mt-2">
-                        <span className="block text-slate-400 text-sm font-medium mb-0.5">Current Address</span>
+                        <span className="block text-slate-400 text-sm font-medium mb-0.5">Present Address</span>
                         <span className="text-slate-800">
-                          {(viewEmpData.current_address || viewEmpData.currentAddress)
-                            ? `${viewEmpData.current_address || viewEmpData.currentAddress}, ${viewEmpData.city || ''}, ${viewEmpData.state || ''}, ${viewEmpData.country || ''} - ${viewEmpData.pin_code || viewEmpData.pinCode || ''}`
-                            : '—'}
+                          {formatAddress({
+                            line1: viewEmpData.address_line1, line2: viewEmpData.address_line2,
+                            city: viewEmpData.address_city, district: viewEmpData.address_district,
+                            state: viewEmpData.address_state, pincode: viewEmpData.address_pincode,
+                            country: viewEmpData.address_country,
+                          }, viewEmpData.current_address || viewEmpData.currentAddress)}
+                        </span>
+                      </div>
+                      <div className="md:col-span-4 mt-2">
+                        <span className="block text-slate-400 text-sm font-medium mb-0.5">Permanent Address</span>
+                        <span className="text-slate-800">
+                          {formatAddress({
+                            line1: viewEmpData.permanent_address_line1, line2: viewEmpData.permanent_address_line2,
+                            city: viewEmpData.permanent_address_city, district: viewEmpData.permanent_address_district,
+                            state: viewEmpData.permanent_address_state, pincode: viewEmpData.permanent_address_pincode,
+                            country: viewEmpData.permanent_address_country,
+                          }, viewEmpData.permanentAddress)}
                         </span>
                       </div>
                     </div>
