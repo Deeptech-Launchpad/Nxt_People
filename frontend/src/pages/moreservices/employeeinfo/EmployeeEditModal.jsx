@@ -269,7 +269,18 @@ export default function EmployeeEditModal({ employeeId, onClose, onSaved }) {
           workPhone: e.workPhone || '', extension: e.extension || '', phone: e.phone || '',
           seatingLocation: e.seatingLocation || '', tags: e.tags || '',
           isRemote: !!e.isRemote,
-          address: e.currentAddress || e.address || '', permanentAddress: e.permanentAddress || '',
+          // Structured address (Update 3) — replaces the old single
+          // free-text Present/Permanent Address boxes. e.* on the GET
+          // response carries these as their raw snake_case column names
+          // (no camelCase alias exists for them), so that's what's read here.
+          addressLine1: e.address_line1 || '', addressLine2: e.address_line2 || '',
+          addressCity: e.address_city || '', addressDistrict: e.address_district || '',
+          addressState: e.address_state || '', addressPincode: e.address_pincode || '',
+          addressCountry: e.address_country || '',
+          permanentAddressLine1: e.permanent_address_line1 || '', permanentAddressLine2: e.permanent_address_line2 || '',
+          permanentAddressCity: e.permanent_address_city || '', permanentAddressDistrict: e.permanent_address_district || '',
+          permanentAddressState: e.permanent_address_state || '', permanentAddressPincode: e.permanent_address_pincode || '',
+          permanentAddressCountry: e.permanent_address_country || '',
           exitDate: (e.exitDate || '').toString().slice(0, 10),
           onboardingStatus: e.onboardingStatus || '',
         });
@@ -492,15 +503,71 @@ export default function EmployeeEditModal({ employeeId, onClose, onSaved }) {
                   <input className={input} value={form.tags} onChange={e => set('tags', e.target.value)} />
                 </div>
                 <div />
-                <div className="md:col-span-2">
-                  <label className={label}>Present Address</label>
-                  <textarea className={`${input} h-20 resize-none`} value={form.address}
-                    onChange={e => set('address', e.target.value)} />
+                {/* Structured address (Update 3) — replaces the old single
+                    free-text box with the same separate fields on both
+                    Present and Permanent Address. */}
+                <div className="md:col-span-2 pt-2">
+                  <p className="text-[13.5px] font-semibold text-slate-700 mb-0.5">Present Address</p>
+                </div>
+                <div>
+                  <label className={label}>Address Line 1 / House or Door Number</label>
+                  <input className={input} value={form.addressLine1} onChange={e => set('addressLine1', e.target.value)} />
+                </div>
+                <div>
+                  <label className={label}>Address Line 2 / Street or Area</label>
+                  <input className={input} value={form.addressLine2} onChange={e => set('addressLine2', e.target.value)} />
+                </div>
+                <div>
+                  <label className={label}>Village / City</label>
+                  <input className={input} value={form.addressCity} onChange={e => set('addressCity', e.target.value)} />
+                </div>
+                <div>
+                  <label className={label}>District</label>
+                  <input className={input} value={form.addressDistrict} onChange={e => set('addressDistrict', e.target.value)} />
+                </div>
+                <div>
+                  <label className={label}>State</label>
+                  <input className={input} value={form.addressState} onChange={e => set('addressState', e.target.value)} />
+                </div>
+                <div>
+                  <label className={label}>Postal Code / PIN Code</label>
+                  <input className={input} value={form.addressPincode} onChange={e => set('addressPincode', e.target.value)} />
                 </div>
                 <div className="md:col-span-2">
-                  <label className={label}>Permanent Address</label>
-                  <textarea className={`${input} h-20 resize-none`} value={form.permanentAddress}
-                    onChange={e => set('permanentAddress', e.target.value)} />
+                  <label className={label}>Country</label>
+                  <input className={input} value={form.addressCountry} onChange={e => set('addressCountry', e.target.value)} />
+                </div>
+
+                <div className="md:col-span-2 pt-2">
+                  <p className="text-[13.5px] font-semibold text-slate-700 mb-0.5">Permanent Address</p>
+                </div>
+                <div>
+                  <label className={label}>Address Line 1 / House or Door Number</label>
+                  <input className={input} value={form.permanentAddressLine1} onChange={e => set('permanentAddressLine1', e.target.value)} />
+                </div>
+                <div>
+                  <label className={label}>Address Line 2 / Street or Area</label>
+                  <input className={input} value={form.permanentAddressLine2} onChange={e => set('permanentAddressLine2', e.target.value)} />
+                </div>
+                <div>
+                  <label className={label}>Village / City</label>
+                  <input className={input} value={form.permanentAddressCity} onChange={e => set('permanentAddressCity', e.target.value)} />
+                </div>
+                <div>
+                  <label className={label}>District</label>
+                  <input className={input} value={form.permanentAddressDistrict} onChange={e => set('permanentAddressDistrict', e.target.value)} />
+                </div>
+                <div>
+                  <label className={label}>State</label>
+                  <input className={input} value={form.permanentAddressState} onChange={e => set('permanentAddressState', e.target.value)} />
+                </div>
+                <div>
+                  <label className={label}>Postal Code / PIN Code</label>
+                  <input className={input} value={form.permanentAddressPincode} onChange={e => set('permanentAddressPincode', e.target.value)} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className={label}>Country</label>
+                  <input className={input} value={form.permanentAddressCountry} onChange={e => set('permanentAddressCountry', e.target.value)} />
                 </div>
               </Section>
 
