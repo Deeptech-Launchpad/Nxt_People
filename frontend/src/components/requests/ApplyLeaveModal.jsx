@@ -52,6 +52,7 @@ export default function ApplyLeaveModal({ date, mode = 'leave', existing = null,
   const [compDays, setCompDays] = useState(null);   // null = not loaded
   const [compWith, setCompWith] = useState('');
   const [saving, setSaving] = useState(false);
+  const [permAvail, setPermAvail] = useState(null);  // hours remaining for the selected month
 
   useEffect(() => {
     api.get('/leave-types').then(r => {
@@ -69,6 +70,29 @@ export default function ApplyLeaveModal({ date, mode = 'leave', existing = null,
     () => /comp/i.test(type) || /comp/i.test(types.find(t => t.code === type)?.name || ''),
     [type, types]);
   const isPermission = /permission/i.test(type);
+
+  /* Permission is capped per calendar month (not year, like the other
+   * types), so its remaining-hours figure has to follow whichever month
+   * `from` falls in rather than the single /leaves/balance snapshot taken
+   * on mount — applying for a future month must show that month's
+   * availability, not the current one's.
+   *
+   * `cancelled` guards against an older request resolving after a newer
+   * one: if `from` changes twice in quick succession, the first request's
+   * response must not overwrite the second's once it lands late. It also
+   * covers switching away from Permission entirely — the stale flip to
+   * `!isPermission` below already clears the value synchronously, but this
+   * stops an in-flight Permission request from writing a value back in
+   * after that. */
+  useEffect(() => {
+    if (!isPermission) { setPermAvail(null); return; }
+    let cancelled = false;
+    const leaveId = existing?._id;
+    api.get('/leaves/permission-availability', { params: { date: from, ...(leaveId ? { leaveId } : {}) } })
+      .then(r => { if (!cancelled) setPermAvail(r.data.data || null); })
+      .catch(() => { if (!cancelled) setPermAvail(null); });
+    return () => { cancelled = true; };
+  }, [isPermission, from, existing?._id]);
 
   useEffect(() => {
     if (!isCompOff) { setCompDays(null); return; }
@@ -172,7 +196,15 @@ export default function ApplyLeaveModal({ date, mode = 'leave', existing = null,
             <option value="">Select</option>
             {shownTypes.map(t => <option key={t.code} value={t.code}>{t.name}</option>)}
           </select>
-          {type && (
+          {type && isPermission && (
+            <p className="text-[14px] text-slate-600 mt-1.5">
+              Available Permission{' '}
+              <span className="text-brand-600 font-medium">
+                {permAvail === null ? '—' : `${permAvail.available} Hours`}
+              </span>
+            </p>
+          )}
+          {type && !isPermission && (
             <p className="text-[14px] text-slate-600 mt-1.5">
               Available Leave{' '}
               <span className="text-brand-600 font-medium">

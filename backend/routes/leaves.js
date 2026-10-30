@@ -1820,6 +1820,65 @@ router.get('/balance', async (req, res) => {
   }
 });
 
+// A real calendar date, not just YYYY-MM-DD shaped — '2026-13-45' matches
+// the shape but isn't a date, and reaching Postgres with it throws
+// "date/time field value out of range", which only ever surfaces as a bare
+// 500. Checked in JS so the bad-input case never touches the database.
+function isValidCalendarDate(str) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+  const [y, m, d] = str.split('-').map(Number);
+  if (m < 1 || m > 12) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+// ── GET permission hours availability for a given month ───────────────────────
+// Hours remaining this calendar month out of the Leave Policy's permission
+// accrual. GET /balance above reports this too, but always for the CURRENT
+// month — the Apply Leave modal needs it for whichever month the selected
+// date falls in, which may be a future month. Same cap source
+// (getLeavePolicies) and the same pending+approved usage rule the POST /
+// monthly-cap check (around line 426) and /balance's permission card already
+// use — no new approval or status rule introduced.
+router.get('/permission-availability', async (req, res) => {
+  try {
+    const targetId = await resolveEmployeeId(req, res, req.query.employeeId);
+    if (!targetId) return;
+
+    const rawDate = typeof req.query.date === 'string' ? req.query.date : '';
+    if (rawDate && !isValidCalendarDate(rawDate)) {
+      return res.status(400).json({ success: false, message: 'Invalid date. Expected a real calendar date in YYYY-MM-DD format.' });
+    }
+    const dateParam = rawDate || null;
+
+    // Editing an existing permission request: that row's own hours must be
+    // left out of its own usage total, same reasoning and same `id <> $N`
+    // shape as the PUT /:id monthly-cap recheck (around line 1159) — a
+    // half-reduced request shouldn't be measured against a total that still
+    // contains the pre-edit hours. Absent for a new request.
+    const leaveId = typeof req.query.leaveId === 'string' && req.query.leaveId ? req.query.leaveId : null;
+
+    const policy = (await getLeavePolicies()).get('permission');
+    const monthlyLimit = ['monthly', 'annual'].includes(policy.accrualMode) ? policy.accrualAmount : 0;
+
+    const usedRes = await pool.query(
+      `SELECT COALESCE(SUM(hours), 0) AS used FROM leaves
+        WHERE employee_id = $1 AND leave_type = 'permission'
+          AND status IN ('pending', 'approved')
+          AND date_trunc('month', start_date) = date_trunc('month', COALESCE($2::date, CURRENT_DATE))
+          AND ($3::uuid IS NULL OR id <> $3::uuid)`,
+      [targetId, dateParam, leaveId]
+    );
+    const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const used = round2(parseFloat(usedRes.rows[0].used) || 0);
+    const available = round2(Math.max(0, monthlyLimit - used));
+
+    res.json({ success: true, data: { unit: 'hours', monthlyLimit, used, available } });
+  } catch (err) {
+    serverError(res, err);
+  }
+});
+
 // ── GET permission usage (HR/Admin monthly tracker) ───────────────────────────
 // Per-employee permission hours for a given month: approved + pending + remaining
 // out of the 4h monthly allowance. Full-access only (Super Admin / HR).
