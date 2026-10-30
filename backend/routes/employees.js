@@ -12,6 +12,7 @@ const { buildCriteria, buildOrder, buildPaging } = require('../utils/listQuery')
 const { hiddenFieldsFor } = require('./employee-info-permissions');
 const { shouldHold, queueChange } = require('./record-approvals');
 const { DEFAULT_TZ } = require('../utils/timezone');
+const { eligibleForYearClause } = require('../utils/employeeEligibility');
 
 /* What the Employees list tab may filter and sort on. The SQL always uses
  * `column` from here, never anything from the request, because neither a
@@ -189,6 +190,15 @@ router.get('/', async (req, res) => {
     // a literal status value. Any other status is matched exactly.
     if (status === 'inactive') { query += ` AND e.status <> 'active'`; }
     else if (status)           { query += ` AND e.status = $${paramIndex++}`; params.push(status); }
+    // Year-scoped report pickers (e.g. Employee Leave Balance) pass this to
+    // narrow the list to employees actually employed at some point during
+    // that year, rather than everyone who happens to be `status = 'active'`
+    // today — see utils/employeeEligibility.js.
+    const eligibleYear = parseInt(req.query.eligibleYear, 10);
+    if (Number.isInteger(eligibleYear)) {
+      const elig = eligibleForYearClause('e', eligibleYear, paramIndex);
+      query += elig.clause; params.push(...elig.params); paramIndex += elig.params.length;
+    }
     if (search && search.trim()) {
       // Untrimmed input used to build the wildcard pattern directly — a
       // search of " Balaji " (stray leading/trailing space, easy to type

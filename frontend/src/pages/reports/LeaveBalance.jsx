@@ -220,7 +220,7 @@ function HistoryModal({ employeeId, employeeCode, leaveType, label, year, onClos
 // employee, so making you guess a name before anything appears would hide the
 // one control the whole page depends on. The search box narrows that list
 // server-side, so it still works past the 500-row fetch.
-function EmployeePicker({ value, onChange }) {
+function EmployeePicker({ value, onChange, year }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [list, setList] = useState([]);
@@ -238,13 +238,18 @@ function EmployeePicker({ value, onChange }) {
     setLoading(true);
     const t = setTimeout(() => {
       const q = query.trim() ? `search=${encodeURIComponent(query.trim())}&` : '';
-      api.get(`/employees?${q}limit=500`)
+      // Only employees actually employed at some point during the selected
+      // year — someone relieved before it, or not yet joined by the end of
+      // it, isn't a valid pick for that year's report (see backend's
+      // utils/employeeEligibility.js, enforced again server-side on the
+      // balance endpoints themselves, not just here).
+      api.get(`/employees?${q}eligibleYear=${year}&limit=500`)
         .then(r => setList([...(r.data.data || [])].sort((a, b) => String(a.employeeId).localeCompare(String(b.employeeId)))))
         .catch(() => setList([]))
         .finally(() => setLoading(false));
     }, query ? 250 : 0);
     return () => clearTimeout(t);
-  }, [open, query]);
+  }, [open, query, year]);
 
   return (
     <div className="relative" ref={ref}>
@@ -372,7 +377,13 @@ export default function LeaveBalance() {
     setLoading(true);
     api.get(`/reports/leave/balance-user?employeeId=${emp._id}&year=${yr}`)
       .then(r => { setDayData(r.data.dayData || []); setHourData(r.data.hourData || []); })
-      .catch(err => toast.error(err.response?.data?.message || 'Failed to load report'))
+      .catch(err => {
+        toast.error(err.response?.data?.message || 'Failed to load report');
+        // A year switch can land on a year the picked employee wasn't
+        // employed in (backend rejects it) — clear the stale figures rather
+        // than leaving the previous year's data displayed under this one.
+        setDayData([]); setHourData([]);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -452,13 +463,15 @@ export default function LeaveBalance() {
       <div>
         <label className="block text-[13px] font-medium text-slate-600 mb-1">Year</label>
         <select value={year} onChange={e => changeYear(Number(e.target.value))} className="border border-slate-200 rounded-lg px-3 py-1.5 text-[14px] focus:outline-none focus:border-blue-400">
-          {[now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2].map(y => <option key={y} value={y}>{y}</option>)}
+          {/* 2021 through the current year — historical reporting needs the
+              whole span, not just the last three. */}
+          {Array.from({ length: now.getFullYear() - 2021 + 1 }, (_, i) => now.getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
     </>
   );
 
-  const employeeChip = <EmployeePicker value={employee} onChange={selectEmployee} />;
+  const employeeChip = <EmployeePicker value={employee} onChange={selectEmployee} year={year} />;
 
   return (
     <ReportShell title="Employee Leave Balance" subtitle="Casual, comp-off, unpaid, and permission balances for the selected employee and year"
