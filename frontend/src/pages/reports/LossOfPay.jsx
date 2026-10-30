@@ -20,8 +20,20 @@ import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
-const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
+/* The month's last day, not today.
+ *
+ * Ending the default range at today used to be honest, because LOP refused to
+ * judge a day that had not finished — the rest of the month would have read
+ * zero whatever it contained. Now that approved unpaid leave counts from the
+ * day it is approved, stopping at today silently drops leave already granted
+ * for the rest of the month: a 26–31 Oct application showed as 5 days on the
+ * 30th and 6 the next morning, against one unchanged approval. A monthly LOP
+ * figure is read to settle a month, so it covers the month. */
+const monthEndCA = () => {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).toLocaleDateString('en-CA');
+};
 
 // Null means "not applicable" (the range isn't a pay period, or carry-over
 // is off) — a different fact from "zero carried in", so it prints as "-"
@@ -92,7 +104,7 @@ function detailRows(rows, field) {
 
 export default function LossOfPay() {
   const [startDate, setStartDate] = useState(monthStartCA());
-  const [endDate, setEndDate] = useState(todayCA());
+  const [endDate, setEndDate] = useState(monthEndCA());
   const [unit, setUnit] = useState('day');
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
@@ -174,7 +186,7 @@ export default function LossOfPay() {
 
   const reset = () => {
     setPayPeriod(null);
-    setStartDate(monthStartCA()); setEndDate(todayCA()); setEmployee([]);
+    setStartDate(monthStartCA()); setEndDate(monthEndCA()); setEmployee([]);
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 

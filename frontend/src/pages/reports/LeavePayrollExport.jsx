@@ -19,8 +19,17 @@ import useSortable from '../../components/table/useSortable';
 import SortableTh from '../../components/table/SortableTh';
 
 import usePersistedOpen from './usePersistedOpen';
-const todayCA = () => new Date().toLocaleDateString('en-CA');
 const monthStartCA = () => new Date(new Date().setDate(1)).toLocaleDateString('en-CA');
+/* The month's last day, not today — the same reasoning as the Loss of Pay
+ * report this one sits beside. Both are read to settle a month's pay, and
+ * approved unpaid leave now counts from approval rather than from the day
+ * elapsing, so a range ending at today drops leave already granted for the
+ * rest of the month. Two payroll-facing reports defaulting to different
+ * windows is how they come to disagree over the same employee. */
+const monthEndCA = () => {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).toLocaleDateString('en-CA');
+};
 
 function ReportTypeDropdown({ value, onChange }) {
   const [open, setOpen] = useState(false);
@@ -93,7 +102,7 @@ const exportColumns = (reportType, unit, payable = {}) => {
 
 export default function LeavePayrollExport() {
   const [startDate, setStartDate] = useState(monthStartCA());
-  const [endDate, setEndDate] = useState(todayCA());
+  const [endDate, setEndDate] = useState(monthEndCA());
   const [payPeriod, setPayPeriod] = useState(null);
 
   // Picking a pay period drives the range from its dates; clearing it hands
@@ -155,7 +164,7 @@ export default function LeavePayrollExport() {
 
   const reset = () => {
     setPayPeriod(null);
-    setStartDate(monthStartCA()); setEndDate(todayCA()); setReportType('default'); setEmployee([]);
+    setStartDate(monthStartCA()); setEndDate(monthEndCA()); setReportType('default'); setEmployee([]);
     setEmployeeStatus('all'); setDirectReportsOnly(false); setDimFilters({});
   };
 
