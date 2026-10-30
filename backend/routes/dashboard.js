@@ -4,13 +4,15 @@ const pool = require('../db');
 const { protect } = require('../middleware/auth');
 const { allows, optionsFor } = require('../utils/functionAccess');
 const { serverError } = require('../utils/serverError');
+const { DEFAULT_TZ } = require('../utils/timezone');
 router.use(protect);
 
 /* Birthdays in the next 30 days, wrapping across the year end.
  *
- * Shared with /my-space below rather than copied: the Admin dashboard and My
- * Space → Dashboard show the same faces, and two copies of this MM-DD wrap
- * would be two places to get the December-to-January case wrong. */
+ * Feeds only /stats (the Org Overview page) now — My Space → Dashboard's
+ * Birthday card below has its own exact-day query; it was built on this one
+ * until that lookahead was found to be the wrong match for what that card is
+ * meant to show, see TODAY_BIRTHDAYS_SQL just below. */
 const UPCOMING_BIRTHDAYS_SQL = `
   SELECT first_name as "firstName", last_name as "lastName", department, designation,
          employee_id as "employeeId", date_of_birth as "dateOfBirth",
@@ -23,6 +25,27 @@ const UPCOMING_BIRTHDAYS_SQL = `
            AND (TO_CHAR(date_of_birth,'MM-DD') >= TO_CHAR(CURRENT_DATE,'MM-DD') OR TO_CHAR(date_of_birth,'MM-DD') <= TO_CHAR(CURRENT_DATE + INTERVAL '30 days','MM-DD')))
      )
    ORDER BY TO_CHAR(date_of_birth,'MM-DD') LIMIT $1`;
+
+/* My Space → Dashboard's Birthday card, unlike the lookahead above: it shows
+ * only employees whose birthday is TODAY, not anyone coming up in the next
+ * 30 days. A separate query rather than reusing UPCOMING_BIRTHDAYS_SQL — that
+ * one also feeds /stats (the Org Overview page), which still wants its
+ * lookahead behavior and was not asked to change.
+ *
+ * "Today" is computed in JS against the org's own timezone (DEFAULT_TZ) and
+ * passed in as MM-DD, rather than trusting the database connection's
+ * CURRENT_DATE — the Postgres session's timezone setting is environment
+ * config, not something this feature should depend on to pick the right
+ * calendar day. date_of_birth itself is a plain DATE column (no time or
+ * timezone component), so TO_CHAR on it is unaffected either way; the only
+ * thing that needed pinning down was "today". */
+const TODAY_BIRTHDAYS_SQL = `
+  SELECT first_name as "firstName", last_name as "lastName", department, designation,
+         employee_id as "employeeId", date_of_birth as "dateOfBirth"
+    FROM employees
+   WHERE date_of_birth IS NOT NULL AND status = 'active' AND deleted_at IS NULL
+     AND TO_CHAR(date_of_birth, 'MM-DD') = $1
+   ORDER BY first_name`;
 
 router.get('/stats', async (req, res) => {
   try {
@@ -209,9 +232,11 @@ router.get('/stats', async (req, res) => {
 router.get('/my-space', async (req, res) => {
   try {
     const showBirthdays = await allows(req, 'birthday_buddy');
+    // 'en-CA' gives YYYY-MM-DD; the last 5 characters are MM-DD.
+    const todayMMDD = new Date().toLocaleDateString('en-CA', { timeZone: DEFAULT_TZ }).slice(5);
 
     const [birthdaysRes, newHiresRes] = await Promise.all([
-      showBirthdays ? pool.query(UPCOMING_BIRTHDAYS_SQL, [8]) : Promise.resolve({ rows: [] }),
+      showBirthdays ? pool.query(TODAY_BIRTHDAYS_SQL, [todayMMDD]) : Promise.resolve({ rows: [] }),
       pool.query(
         `SELECT id as "_id", first_name as "firstName", last_name as "lastName",
                 employee_id as "employeeId", designation, department,

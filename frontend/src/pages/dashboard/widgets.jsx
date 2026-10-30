@@ -1,12 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import {
-  User, Star, Link2, Megaphone, CalendarDays, Target,
-  ClipboardCheck, CheckSquare, FileText, Users, TrendingDown,
+  User, Link2, Megaphone, CalendarDays,
+  ClipboardCheck, Users,
   ExternalLink, Pin
 } from 'lucide-react';
 import api from '../../utils/api';
-import { REPORT_CATALOG } from '../reports/catalogData';
 
 export const Card = ({ title, children, icon: Icon, className = "" }) => (
   <div className={`bg-white rounded border border-slate-200 shadow-sm flex flex-col ${className}`}>
@@ -49,13 +48,6 @@ const Avatar = ({ first, last }) => (
 );
 
 const dmy = v => v ? new Date(String(v).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB') : '—';
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const rupees = n => `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
-
-const REPORT_LABELS = REPORT_CATALOG.reduce((acc, group) => {
-  group.reports.forEach(r => { acc[r.to] = r.label; });
-  return acc;
-}, {});
 
 /* ── Data sources ──────────────────────────────────────────────────────────
  *
@@ -140,7 +132,7 @@ export const WIDGETS = [
     render: ({ data, status, err }) => gate(status, err, ['people'], () => {
       const list = data.people?.birthdays || [];
       if (list.length === 0) {
-        return <div className="p-5 flex flex-1"><EmptyState text="No birthdays in the next 30 days." /></div>;
+        return <div className="p-5 flex flex-1"><EmptyState text="No birthdays today." /></div>;
       }
       return (
         <div className="flex-1 overflow-y-auto max-h-[240px]">
@@ -158,36 +150,6 @@ export const WIDGETS = [
                 <p className="text-[13px] text-slate-400 mt-1 truncate">{e.department || 'Unassigned'}</p>
               </div>
             </div>
-          ))}
-        </div>
-      );
-    }),
-  },
-
-  {
-    key: 'favorites',
-    title: 'Favorites',
-    icon: Star,
-    defaultVisible: true,
-    colSpan: 1,
-    minHeight: 'min-h-[220px]',
-    sources: ['favorites'],
-    render: ({ data, status, err }) => gate(status, err, ['favorites'], () => {
-      const keys = data.favorites || [];
-      if (keys.length === 0) {
-        return <NotWired text="Nothing starred yet. Star a report from Reports and it appears here." />;
-      }
-      return (
-        <div className="space-y-0 -m-5">
-          {/* draggable={false} throughout: an anchor drags itself by default,
-              which would start a link drag instead of the card reorder the
-              wrapper is listening for. */}
-          {keys.map(k => (
-            <Link key={k} to={k} draggable={false}
-              className="flex items-center gap-2.5 px-5 py-3 border-b border-slate-100 last:border-b-0 hover:bg-slate-50">
-              <Star size={13} className="text-amber-400 fill-amber-400 flex-shrink-0" />
-              <p className="text-[14px] font-medium text-slate-700 truncate">{REPORT_LABELS[k] || k}</p>
-            </Link>
           ))}
         </div>
       );
@@ -330,45 +292,6 @@ export const WIDGETS = [
   },
 
   {
-    key: 'myGoals',
-    title: 'My Goals',
-    icon: Target,
-    defaultVisible: true,
-    colSpan: 2,
-    minHeight: 'min-h-[220px]',
-    sources: ['goals'],
-    render: ({ data, status, err }) => gate(status, err, ['goals'], () => {
-      const goals = data.goals || [];
-      if (goals.length === 0) {
-        return <NotWired text="No goals set. Add one from Performance and it appears here." />;
-      }
-      const STATUS_STYLE = {
-        not_started: 'bg-slate-100 text-slate-600',
-        in_progress: 'bg-blue-100 text-blue-700',
-        completed:   'bg-emerald-100 text-emerald-700',
-      };
-      return (
-        <div className="space-y-0 -m-5">
-          {goals.slice(0, 5).map(g => (
-            <div key={g._id} className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 last:border-b-0">
-              <div className="min-w-0">
-                <p className="text-[14px] font-semibold text-slate-800 truncate">{g.title}</p>
-                {g.target && <p className="text-[12px] text-slate-400 truncate">Target: {g.target}</p>}
-              </div>
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <span className={`text-[12px] px-2 py-0.5 rounded-full font-medium capitalize ${STATUS_STYLE[g.status] || STATUS_STYLE.not_started}`}>
-                  {String(g.status || 'not started').replace('_', ' ')}
-                </span>
-                <p className="text-[12px] text-slate-400 w-[80px] text-right">{g.dueDate ? dmy(g.dueDate) : 'No due date'}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    }),
-  },
-
-  {
     key: 'appraisals',
     title: 'Appraisal Pending Approval',
     icon: ClipboardCheck,
@@ -399,69 +322,6 @@ export const WIDGETS = [
   },
 
   {
-    key: 'pendingTasks',
-    title: 'My Pending Tasks',
-    icon: CheckSquare,
-    defaultVisible: true,
-    colSpan: 1,
-    minHeight: 'min-h-[220px]',
-    sources: ['tasks'],
-    render: ({ data, status, err }) => gate(status, err, ['tasks'], () => {
-      const open = (data.tasks || []).filter(t => t.status !== 'done');
-      if (open.length === 0) return <EmptyState text="No open tasks assigned to you." />;
-      const PRIORITY = {
-        urgent: 'text-rose-500', high: 'text-orange-500',
-        medium: 'text-amber-500', low: 'text-slate-400',
-      };
-      return (
-        <div className="space-y-0 -m-5">
-          {open.slice(0, 5).map(t => (
-            <div key={t._id} className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 last:border-b-0">
-              <div className="min-w-0">
-                <p className="text-[14px] font-semibold text-slate-800 truncate">{t.title}</p>
-                <p className="text-[12px] text-slate-400 truncate">{t.project?.name || 'No project'}</p>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <p className={`text-[12px] font-bold capitalize ${PRIORITY[t.priority] || PRIORITY.low}`}>{t.priority || 'low'}</p>
-                <p className="text-[12px] text-slate-400">{t.dueDate ? dmy(t.dueDate) : 'No due date'}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    }),
-  },
-
-  {
-    key: 'myFiles',
-    title: 'My Files',
-    icon: FileText,
-    defaultVisible: true,
-    colSpan: 1,
-    minHeight: 'min-h-[220px]',
-    sources: ['documents'],
-    render: ({ data, status, err }) => gate(status, err, ['documents'], () => {
-      const docs = data.documents || [];
-      if (docs.length === 0) return <EmptyState text="No documents in your folder yet." />;
-      return (
-        <div className="space-y-0 -m-5">
-          {docs.slice(0, 5).map(d => (
-            <div key={d._id} className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 last:border-b-0">
-              <div className="min-w-0">
-                <p className="text-[14px] font-semibold text-slate-800 truncate">{d.name}</p>
-                <p className="text-[12px] text-slate-400 truncate">
-                  {d.type || 'Document'}{d.fileMissing ? ' · file missing' : ''}
-                </p>
-              </div>
-              <p className="text-[12px] text-slate-400 flex-shrink-0">{d.createdAt ? dmy(d.createdAt) : ''}</p>
-            </div>
-          ))}
-        </div>
-      );
-    }),
-  },
-
-  {
     key: 'engagement',
     title: 'Employee Engagement',
     icon: Users,
@@ -473,42 +333,6 @@ export const WIDGETS = [
      * engagement-score table anywhere in the backend. Off by default, and says
      * what is missing rather than showing a zero that looks like a measurement. */
     render: () => <NotWired text="NxtPeople has no survey or engagement module, so there is nothing to score yet." />,
-  },
-
-  {
-    key: 'lopSummary',
-    title: 'LOP Summary',
-    icon: TrendingDown,
-    defaultVisible: true,
-    colSpan: 1,
-    minHeight: 'min-h-[220px]',
-    sources: ['lop'],
-    render: ({ data, status, err }) => gate(status, err, ['lop'], () => {
-      const periods = data.lop?.periods || [];
-      if (periods.length === 0) {
-        return <NotWired text="Loss of pay is read off your payslips. None has been issued to you yet." />;
-      }
-      return (
-        <>
-          <div className="flex items-baseline gap-2 mb-3">
-            <p className="text-[22px] font-bold text-slate-800">{data.lop.totalDays}</p>
-            <p className="text-[13px] text-slate-500 font-medium">
-              LOP day(s) across {periods.length} payslip(s) · {rupees(data.lop.totalAmount)}
-            </p>
-          </div>
-          <div className="space-y-0 -mx-5 -mb-5">
-            {periods.map(p => (
-              <div key={`${p.payYear}-${p.payMonth}`} className="flex items-center justify-between px-5 py-2.5 border-t border-slate-100">
-                <p className="text-[13px] font-semibold text-slate-700">{MONTHS[(p.payMonth || 1) - 1]} {p.payYear}</p>
-                <p className={`text-[13px] font-bold ${p.lopDays > 0 ? 'text-rose-500' : 'text-slate-400'}`}>
-                  {p.lopDays} day(s){p.lopAmount > 0 ? ` · ${rupees(p.lopAmount)}` : ''}
-                </p>
-              </div>
-            ))}
-          </div>
-        </>
-      );
-    }),
   },
 ];
 
