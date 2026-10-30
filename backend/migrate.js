@@ -160,6 +160,12 @@ const ORDER = [
    * both already created above by migrate_location_geofence.js and earlier. */
   'migrate_location_ip_ranges.js',       // work_locations.ip_ranges, attendance.work_mode_source/check_in_ip
 
+  // On disk since Update 3 but never added to this list — employees.
+  // address_district / permanent_address_district (Employees -> Edit
+  // Employee's District field) would never get created on a fresh install
+  // or an automatic deploy that only runs this list.
+  'migrate_structured_address_district.js', // employees.address_district / permanent_address_district
+
   'migrate_indexes.js',                  // perf indexes — run last
 ];
 
