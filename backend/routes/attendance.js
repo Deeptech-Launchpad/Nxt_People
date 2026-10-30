@@ -14,6 +14,7 @@ const { classifyPunch, classifyMany, config: geofenceConfig } = require('../util
 const attendanceAlerts = require('../utils/attendanceAlerts');
 const { serverError } = require('../utils/serverError');
 const { dueInMinutes, lateMinutesFor } = require('../utils/lateness');
+const { evaluateCheckoutGate } = require('../utils/checkoutMinHours');
 
 router.use(protect);
 
@@ -433,7 +434,7 @@ router.post('/checkout', async (req, res) => {
     // Without those, someone on half-day leave or two hours of permission is
     // measured against a full eight hours and marked short for time off that
     // was granted.
-    const [settingsRes, dayRes] = await Promise.all([
+    const [settingsRes, dayRes, minHoursRes] = await Promise.all([
       pool.query(
         `SELECT expected_hours_mode AS "expectedMode",
                 expected_hours_per_day AS "expectedFullDay",
@@ -464,9 +465,33 @@ router.post('/checkout', async (req, res) => {
                    FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
                   WHERE e.id = $1) AS grace`,
         [req.user._id, today]),
+      // Minimum-working-hours check-out gate (General Shift / UK Shift only).
+      // Deliberately separate from dayRes above: that query only counts
+      // APPROVED leave/permission (feeds day classification/payroll, must
+      // stay exactly as-is). This one counts anything not yet REJECTED,
+      // because the gate's own rule is "don't wait for approval or
+      // rejection to calculate the required attendance."
+      pool.query(
+        `SELECT
+                (SELECT s.name FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
+                  WHERE e.id = $1) AS shift_name,
+                COALESCE((
+                  SELECT SUM(COALESCE(l.hours, 0))
+                    FROM leaves l
+                   WHERE l.employee_id = $1 AND l.status <> 'rejected'
+                     AND l.leave_type = 'permission'
+                     AND $2::date BETWEEN l.start_date AND l.end_date), 0) AS permission_hours_pending_or_approved,
+                (SELECT l.half_day_type
+                   FROM leaves l
+                  WHERE l.employee_id = $1 AND l.status <> 'rejected'
+                    AND l.leave_type <> 'permission' AND l.is_half_day = true
+                    AND $2::date BETWEEN l.start_date AND l.end_date
+                  ORDER BY l.created_at DESC LIMIT 1) AS half_day_type_pending_or_approved`,
+        [req.user._id, today]),
     ]);
     const cfgRow = settingsRes.rows[0] || {};
     const dayFacts = dayRes.rows[0] || {};
+    const minHoursFacts = minHoursRes.rows[0] || {};
     const ruleCfg = {
       ...(cfgRow.policy || {}),
       expectedMode: cfgRow.expectedMode || 'manual',
@@ -512,6 +537,28 @@ router.post('/checkout', async (req, res) => {
     const prevHoursRaw = parseFloat(record.working_hours);
     const safePrev = isFinite(prevHoursRaw) ? prevHoursRaw : 0;
     const workingHours = parseFloat((safePrev + sessionHours).toFixed(8));
+
+    // Minimum-working-hours check-out gate — General Shift / UK Shift only.
+    // Blocks before anything is written, so a rejected check-out leaves the
+    // open session untouched and can simply be retried later the same day.
+    const gate = evaluateCheckoutGate({
+      shiftName: minHoursFacts.shift_name,
+      workedMinutes: workingHours * 60,
+      permissionHours: Number(minHoursFacts.permission_hours_pending_or_approved) || 0,
+      halfDayType: minHoursFacts.half_day_type_pending_or_approved || null,
+    });
+    if (gate.blocked) {
+      return res.status(400).json({
+        success: false,
+        code: 'MIN_HOURS_NOT_MET',
+        message: gate.message,
+        data: {
+          requiredMinutes: gate.requiredMinutes,
+          workedMinutes: gate.workedMinutes,
+          shortfallMinutes: gate.shortfallMinutes,
+        },
+      });
+    }
 
     // One engine decides this, the same one the reports and the "update older
     // entries" sweep use. Three separate implementations of "was this a full
