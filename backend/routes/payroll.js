@@ -383,15 +383,26 @@ async function holidayScopeFor(employeeId, queryRunner) {
 // leave retroactively. Pending leave applications also protect the day
 // from being counted as LOP, since the employee has already acted.
 //
-// Only days strictly before today are judged — an in-progress or future day
-// has no verdict yet, so it's never counted as LOP.
+// Today and future days ARE judged here, which is the opposite of what this
+// function used to do. The "no verdict until the day is over" rule is real,
+// but it belongs to absence, not to this: absentDaysForRange() infers a day
+// from a MISSING punch, and a day still running has not missed anything yet.
+// This function reads only APPROVED unpaid leave — somebody applied, somebody
+// approved, and the day is unpaid whether or not the clock has passed six.
+//
+// Leaving the rule in here had a cost that showed up as two numbers
+// disagreeing. A single-day leave ending today was pushed into the day-by-day
+// branch below (lEnd >= today), and that branch then skipped today, so the
+// leave contributed NOTHING: a full day of approved LWP vanished from LOP
+// while leaveUnpaid, a plain SUM(total_days) beside it in the same API
+// response, still counted it. The figures healed themselves the next morning,
+// which is exactly what made it look like a one-off rather than a rule. Worse,
+// a payroll run executed on the last working day of a period silently dropped
+// that day's LWP and overpaid.
 async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, queryRunner = pool) {
   const workingDates = listWorkingDays(
     startDate, endDate, holMap, rules, await holidayScopeFor(employeeId, queryRunner));
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const pastWorkingDates = workingDates.filter(d => d < today);
-  if (pastWorkingDates.length === 0) return 0;
+  if (workingDates.length === 0) return 0;
 
   const start = startDate instanceof Date ? startDate.toLocaleDateString('en-CA') : startDate;
   const end = endDate instanceof Date ? endDate.toLocaleDateString('en-CA') : endDate;
@@ -416,13 +427,15 @@ async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, qu
    * not what Payroll, Zoho, or the employee's own application said.
    *
    * So a leave gets its stored total directly, UNCHANGED, whenever the whole
-   * thing sits inside both boundaries: inside [start, end], and entirely in
-   * the past (today or later is never judged, same rule as before). Only a
-   * leave that is actually clipped by one of those — spans past the query
-   * window, or runs into today or the future — falls back to the day-by-day
-   * count, because the stored total describes the WHOLE leave and there is
-   * no honest way to slice a half-day out of a total that was never split
-   * per day to begin with. */
+   * thing sits inside [start, end]. Only a leave genuinely clipped by the
+   * query window — one that starts before it or ends after it — falls back to
+   * the day-by-day count, because the stored total describes the WHOLE leave
+   * and there is no honest way to slice a half-day out of a total that was
+   * never split per day to begin with.
+   *
+   * Where the leave sits relative to TODAY is no longer part of this test:
+   * see the note above the function. A leave ending today is not clipped by
+   * anything, so it takes its stored total like any other. */
   const rangeStart = new Date(start);
   const rangeEnd = new Date(end);
 
@@ -430,13 +443,13 @@ async function lopDaysForRange(employeeId, startDate, endDate, holMap, rules, qu
   for (const r of leaveRes.rows) {
     const lStart = new Date(r.start_date);
     const lEnd = new Date(r.end_date);
-    const clipped = lStart < rangeStart || lEnd > rangeEnd || lEnd >= today;
+    const clipped = lStart < rangeStart || lEnd > rangeEnd;
 
     if (!clipped) {
       lop += parseFloat(r.total_days) || 0;
       continue;
     }
-    for (const day of pastWorkingDates) {
+    for (const day of workingDates) {
       if (day < lStart || day > lEnd) continue;
       lop += r.is_half_day ? 0.5 : 1;
     }
