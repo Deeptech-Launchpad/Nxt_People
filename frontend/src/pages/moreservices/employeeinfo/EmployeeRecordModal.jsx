@@ -37,6 +37,27 @@ function ageOf(dob) {
   return `${years} year(s) ${months} month(s)`;
 }
 
+/* Structured address (Update 3), joined into a readable multi-line block —
+ * one line per logical group rather than the old single run-on string, so
+ * nothing gets cut off or crammed together. Falls back to the legacy
+ * flat-text column when none of the structured parts are filled in, which
+ * covers every record from before this change without guessing at how to
+ * split old free-text into parts. */
+function formatAddress(parts, legacyText) {
+  const lines = [
+    [parts.line1, parts.line2].filter(Boolean).join(', '),
+    [parts.city, parts.district].filter(Boolean).join(', '),
+    [parts.state, parts.pincode].filter(Boolean).join(' - '),
+    parts.country,
+  ].filter(Boolean);
+  if (lines.length === 0) return legacyText || null;
+  return (
+    <span className="flex flex-col items-end gap-0.5">
+      {lines.map((l, i) => <span key={i}>{l}</span>)}
+    </span>
+  );
+}
+
 const Row = ({ label, value, action }) => (
   <div className="flex items-start justify-between gap-4 border-b border-slate-100 py-2.5 last:border-0">
     <span className="text-[14px] text-slate-500 flex-shrink-0">{label}</span>
@@ -293,8 +314,16 @@ export default function EmployeeRecordModal({ employeeId, onClose, onEdit, onCha
                 <Row label="Personal Email Address" value={emp.personalEmail} />
                 <Row label="Seating Location" value={emp.seatingLocation} />
                 <Row label="Tags" value={emp.tags} />
-                <Row label="Present Address" value={emp.currentAddress || emp.address} />
-                <Row label="Permanent Address" value={emp.permanentAddress} />
+                <Row label="Present Address" value={formatAddress({
+                  line1: emp.address_line1, line2: emp.address_line2, city: emp.address_city,
+                  district: emp.address_district, state: emp.address_state,
+                  pincode: emp.address_pincode, country: emp.address_country,
+                }, emp.currentAddress || emp.address)} />
+                <Row label="Permanent Address" value={formatAddress({
+                  line1: emp.permanent_address_line1, line2: emp.permanent_address_line2, city: emp.permanent_address_city,
+                  district: emp.permanent_address_district, state: emp.permanent_address_state,
+                  pincode: emp.permanent_address_pincode, country: emp.permanent_address_country,
+                }, emp.permanentAddress)} />
               </Section>
 
               <Section title="Separation Information">

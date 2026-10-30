@@ -706,6 +706,14 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
       // Personal / identity (added so admin can edit everything Zoho-imported)
       nickName, dateOfBirth, gender, maritalStatus, bloodGroup, nationality,
       personalEmail, workPhone, address, permanentAddress,
+      // Structured address components (Update 3) — these are the fields
+      // Employees -> Edit Employee actually shows now; `address` and
+      // `permanentAddress` above are the legacy flat-text columns, left
+      // alone here so existing data isn't disturbed by a save that doesn't
+      // send them (this route's own "not sent = not touched" convention).
+      addressLine1, addressLine2, addressCity, addressDistrict, addressState, addressPincode, addressCountry,
+      permanentAddressLine1, permanentAddressLine2, permanentAddressCity, permanentAddressDistrict,
+      permanentAddressState, permanentAddressPincode, permanentAddressCountry,
       panNumber, aadhaarNumber, uanNumber,
       bankName, bankAccount, bankIfsc,
       emergencyContactName, emergencyContactPhone, emergencyContactRelation,
@@ -784,6 +792,21 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     if (workPhone !== undefined)                { updates.push(`work_phone = $${i++}`);                params.push(workPhone || null); }
     if (address !== undefined)                  { updates.push(`address = $${i++}`);                   params.push(address || null); }
     if (permanentAddress !== undefined)         { updates.push(`permanent_address = $${i++}`);         params.push(permanentAddress || null); }
+    // Structured address components (Update 3).
+    if (addressLine1 !== undefined)             { updates.push(`address_line1 = $${i++}`);             params.push(addressLine1 || null); }
+    if (addressLine2 !== undefined)             { updates.push(`address_line2 = $${i++}`);             params.push(addressLine2 || null); }
+    if (addressCity !== undefined)              { updates.push(`address_city = $${i++}`);              params.push(addressCity || null); }
+    if (addressDistrict !== undefined)          { updates.push(`address_district = $${i++}`);          params.push(addressDistrict || null); }
+    if (addressState !== undefined)             { updates.push(`address_state = $${i++}`);             params.push(addressState || null); }
+    if (addressPincode !== undefined)           { updates.push(`address_pincode = $${i++}`);           params.push(addressPincode || null); }
+    if (addressCountry !== undefined)           { updates.push(`address_country = $${i++}`);           params.push(addressCountry || null); }
+    if (permanentAddressLine1 !== undefined)    { updates.push(`permanent_address_line1 = $${i++}`);   params.push(permanentAddressLine1 || null); }
+    if (permanentAddressLine2 !== undefined)    { updates.push(`permanent_address_line2 = $${i++}`);   params.push(permanentAddressLine2 || null); }
+    if (permanentAddressCity !== undefined)     { updates.push(`permanent_address_city = $${i++}`);    params.push(permanentAddressCity || null); }
+    if (permanentAddressDistrict !== undefined) { updates.push(`permanent_address_district = $${i++}`); params.push(permanentAddressDistrict || null); }
+    if (permanentAddressState !== undefined)    { updates.push(`permanent_address_state = $${i++}`);   params.push(permanentAddressState || null); }
+    if (permanentAddressPincode !== undefined)  { updates.push(`permanent_address_pincode = $${i++}`); params.push(permanentAddressPincode || null); }
+    if (permanentAddressCountry !== undefined)  { updates.push(`permanent_address_country = $${i++}`); params.push(permanentAddressCountry || null); }
     if (panNumber !== undefined)                { updates.push(`pan_number = $${i++}`);                params.push(panNumber || null); }
     if (aadhaarNumber !== undefined)            { updates.push(`aadhaar_number = $${i++}`);            params.push(aadhaarNumber || null); }
     if (uanNumber !== undefined)                { updates.push(`uan_number = $${i++}`);                params.push(uanNumber || null); }
