@@ -12,6 +12,7 @@ const { serverError } = require('../utils/serverError');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { orgPolicy, mayUpdatePhoto, applyPrivacy } = require('../utils/orgPolicy');
 const { saveProfilePhoto, deleteProfilePhoto } = require('../utils/profilePhoto');
+const { formatExperience } = require('../utils/experience');
 router.use(protect);
 
 // Identity of one real entry — used to collapse the partial duplicate rows the
@@ -78,7 +79,21 @@ router.get('/', async (req, res) => {
        e.permanent_address_country as "permanentAddressCountry",
        e.work_location as "workLocation", e.employment_type as "employmentType",
        e.source_of_hire as "sourceOfHire",
-       e.exit_date as "exitDate", e.total_experience as "totalExperience",
+       e.exit_date as "exitDate",
+       -- Total Experience, calculated live from Date of Joining (and Exit
+       -- Date, if set) rather than read from the stored total_experience
+       -- column — that column is free text carried over from the Zoho
+       -- import (see routes/team.js's ex-employees query, which already
+       -- established this same "compute from the dates" precedent) and
+       -- goes stale the moment it isn't manually re-entered. age() gives a
+       -- real calendar year/month/day breakdown, not a 30-day-month
+       -- approximation, and (NOW() AT TIME ZONE '${DEFAULT_TZ}')::date
+       -- matches this file's own existing pattern (lines above) for
+       -- "today" so it can't land a day off from the org's IST calendar
+       -- day the way bare CURRENT_DATE can in a UTC container.
+       EXTRACT(YEAR  FROM age(COALESCE(e.exit_date, (NOW() AT TIME ZONE '${DEFAULT_TZ}')::date), e.joining_date::date))::int AS "experienceYears",
+       EXTRACT(MONTH FROM age(COALESCE(e.exit_date, (NOW() AT TIME ZONE '${DEFAULT_TZ}')::date), e.joining_date::date))::int AS "experienceMonths",
+       EXTRACT(DAY   FROM age(COALESCE(e.exit_date, (NOW() AT TIME ZONE '${DEFAULT_TZ}')::date), e.joining_date::date))::int AS "experienceDays",
        e.expertise,
        e.emergency_contact_name as "emergencyContactName",
        e.emergency_contact_phone as "emergencyContactPhone",
@@ -125,6 +140,12 @@ router.get('/', async (req, res) => {
     );
     const profile = result.rows[0];
     if (profile) {
+      profile.totalExperience = formatExperience(
+        profile.experienceYears, profile.experienceMonths, profile.experienceDays
+      );
+      delete profile.experienceYears;
+      delete profile.experienceMonths;
+      delete profile.experienceDays;
       // Education + previous employment live in their own tables. Tag them
       // on so the Profile page can render them inline without an extra
       // round-trip. Tables are owned by the Zoho sync (admin-zoho.js) which
