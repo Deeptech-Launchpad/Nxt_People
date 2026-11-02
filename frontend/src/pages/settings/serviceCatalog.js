@@ -172,6 +172,7 @@ export const SERVICES = [
         { key: 'pay-periods', label: 'Pay Period' },
         { key: 'reports', label: 'Reports' },
         { key: 'additional-options', label: 'Additional Options' },
+        { key: 'late-checkin-compensate', label: 'Compensate Working Hours' },
       ],
       approvals: [
         { key: 'approvals', label: 'Approvals' },

@@ -159,16 +159,23 @@ export default function ApplyLeaveModal({ date, mode = 'leave', existing = null,
         ...(isPermission ? { startTime, endTime } : {}),
         ...(isCompOff && compWith ? { compensatedWith: compWith } : {}),
       };
+      let created = null;
       if (existing) {
         // Type is locked and never sent — the server refuses a type change
         // outright, and there's nothing here for it to disagree with anyway.
         await api.put(`/leaves/${existing._id}`, common);
         toast.success('Request updated');
       } else {
-        await api.post('/leaves', { leaveType: type, ...common });
+        const r = await api.post('/leaves', { leaveType: type, ...common });
+        created = r.data?.data || null;
         toast.success('Leave applied');
       }
-      onDone();
+      // Callers that don't care (every existing one) simply ignore this —
+      // onDone() was always called with no arguments before, so this is
+      // additive. The late-check-in flow (AttendanceContext.jsx) is the one
+      // caller that reads it, to confirm a real Permission application now
+      // exists before it will complete check-in.
+      onDone(created);
     } catch (err) {
       toast.error(err.response?.data?.message || `Could not ${existing ? 'update' : 'apply'} that leave`);
     } finally { setSaving(false); }

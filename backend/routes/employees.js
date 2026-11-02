@@ -13,6 +13,7 @@ const { hiddenFieldsFor } = require('./employee-info-permissions');
 const { shouldHold, queueChange } = require('./record-approvals');
 const { DEFAULT_TZ } = require('../utils/timezone');
 const { eligibleForYearClause } = require('../utils/employeeEligibility');
+const { canModifyCheckoutExemption } = require('../utils/checkoutMinHours');
 
 /* What the Employees list tab may filter and sort on. The SQL always uses
  * `column` from here, never anything from the request, because neither a
@@ -482,6 +483,7 @@ router.get('/:id', async (req, res) => {
               e.exit_date              AS "exitDate",
               e.total_experience       AS "totalExperience",
               e.attendance_tracked     AS "attendanceTracked",
+              e.checkout_min_hours_exempt AS "checkoutMinHoursExempt",
               e.about_me               AS "aboutMe",
               e.seating_location       AS "seatingLocation",
               e.is_remote              AS "isRemote",
@@ -729,7 +731,25 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
       // Whether attendance applies to this person at all — independent of
       // login. See migrate_attendance_tracked.js.
       attendanceTracked,
+      // Permanent, per-employee exemption from the checkout minimum-hours
+      // restriction (General/UK Shift's 8h30m gate). See
+      // migrate_checkout_exemption.js and utils/checkoutMinHours.js.
+      checkoutMinHoursExempt,
     } = req.body;
+
+    // Narrower than this whole route's own authorize('admin','director',
+    // 'hr_admin') guard above: a director can edit every other field on
+    // this form, exactly as before, but may not touch this one setting —
+    // only admin (Super Admin) and hr_admin may. Checked only when the
+    // field is actually present in the payload, so a director saving the
+    // rest of an employee's record (the field simply absent/unchecked in
+    // their view) is completely unaffected.
+    if (checkoutMinHoursExempt !== undefined && !canModifyCheckoutExemption(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only Super Admin or HR can change the checkout minimum-hours exemption.',
+      });
+    }
 
     // Nothing prevented setting someone as their own reporting manager —
     // trivial to do via this endpoint even though there's no UI path to it
@@ -846,6 +866,7 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), async (req, res) 
     // someone punches a clock. Independent of login: is_user/login_enabled
     // are untouched here.
     if (attendanceTracked !== undefined)        { updates.push(`attendance_tracked = $${i++}`);        params.push(!!attendanceTracked); }
+    if (checkoutMinHoursExempt !== undefined)   { updates.push(`checkout_min_hours_exempt = $${i++}`); params.push(!!checkoutMinHoursExempt); }
 
     if (updates.length === 0) return res.json({ success: true, message: 'Nothing to update' });
 

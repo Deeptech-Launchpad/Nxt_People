@@ -14,7 +14,8 @@ const { classifyPunch, classifyMany, config: geofenceConfig } = require('../util
 const attendanceAlerts = require('../utils/attendanceAlerts');
 const { serverError } = require('../utils/serverError');
 const { dueInMinutes, lateMinutesFor } = require('../utils/lateness');
-const { evaluateCheckoutGate } = require('../utils/checkoutMinHours');
+const { evaluateCheckoutGate, isGeneralShift } = require('../utils/checkoutMinHours');
+const { isLateCheckinEligible, validateLateCheckinDecision, LATE_CHECKIN_CUTOFF_MINS, isEmployeeRole } = require('../utils/lateCheckinCompensate');
 
 router.use(protect);
 
@@ -40,6 +41,8 @@ router.get('/today', async (req, res) => {
         `SELECT id as "_id", check_in as "checkIn", check_out as "checkOut",
          session_started_at as "sessionStartedAt",
          working_hours as "workingHours", status, late_minutes as "lateMinutes",
+         late_checkin_action as "lateCheckinAction", late_checkin_reason as "lateCheckinReason",
+         late_checkin_leave_id as "lateCheckinLeaveId",
          check_in_location as "checkInLocation", check_out_location as "checkOutLocation",
          work_mode as "workMode", location_distance_meters as "locationDistance",
          location_accuracy_meters as "locationAccuracy",
@@ -122,6 +125,12 @@ router.post('/checkin', async (req, res) => {
       pool.query(
         `SELECT COALESCE(rs.id, s.id) AS id,
                 COALESCE(rs.start_time, s.start_time) AS start_time,
+                -- The shift's actual NAME, resolved the same rostered-wins-
+                -- over-standing way as id/start_time above — never guessed
+                -- from the employee's name or any other text. Used only to
+                -- decide whether the late-check-in / Compensate Working
+                -- Hours workflow applies (General Shift only).
+                COALESCE(rs.name, s.name) AS "shiftName",
                 rs.id AS "rosteredId",
                 -- Whether this person is expected at an office at all. Read
                 -- here rather than in a query of its own: the row is already
@@ -137,6 +146,10 @@ router.post('/checkin', async (req, res) => {
     const existing = existingRes.rows[0];
     const settings = settingsRes.rows[0] || {};
     let shift = shiftRes.rows[0];
+    // Tracked separately from `shift` (which auto-assignment below replaces
+    // wholesale without a name) — the one thing the late-check-in gate
+    // further down needs from this resolution.
+    let effectiveShiftName = shiftRes.rows[0]?.shiftName;
 
     // Auto shift assignment. Only when it is switched on, only when nothing
     // has already decided — a rostered shift, or one a pattern generated, is
@@ -147,7 +160,7 @@ router.post('/checkin', async (req, res) => {
       const rostered = shiftRes.rows[0]?.rosteredId;
       if (!rostered && await autoAssignEnabled()) {
         const picked = await shiftForCheckIn(settings.check_in_mins ?? 0);
-        if (picked) shift = { id: picked.id, start_time: shift?.start_time };
+        if (picked) { shift = { id: picked.id, start_time: shift?.start_time }; effectiveShiftName = picked.name; }
       }
     } catch (err) {
       logger.warn({ err: err.message }, '[attendance] auto shift assignment skipped');
@@ -155,6 +168,95 @@ router.post('/checkin', async (req, res) => {
 
     if (existing && existing.check_in && !existing.check_out) {
       return res.status(400).json({ success: false, message: 'Already checked in today' });
+    }
+
+    // ── Employee-only Late Check-in: Permission vs. Compensate Working Hours ──
+    // Applies only when ALL of: this is the day's FIRST check-in (no
+    // `existing` row at all — a re-check-in later in the day never re-asks
+    // this), the caller's role is Employee (`team_member` — see
+    // utils/roles.js's single-source-of-truth role model), their resolved
+    // shift (never guessed from a name or any other text — always the
+    // actual joined shifts.name, rostered-first, same as id/start_time
+    // above) is General Shift specifically, the check-in clock time is 9:46
+    // AM or later, AND there is no valid First-Half Leave for today (see
+    // below). Validated here, before anything is written, so the decision
+    // requirement (Permission vs. Compensate) can't be bypassed by a direct
+    // API call that skips the frontend's choice screen — the reason for
+    // Compensate itself is optional, not required, and is simply stored
+    // as-given (or null) either way.
+    const nowForLateGate = new Date();
+    const checkInMinsForLateGate = Number(settings.check_in_mins)
+      || (nowForLateGate.getHours() * 60 + nowForLateGate.getMinutes());
+
+    // A valid First-Half Leave (is_half_day + half_day_type='first_half',
+    // status pending-or-approved — rejected/cancelled never qualifies, per
+    // spec) for today fully explains the late arrival and bypasses the
+    // whole decision: no popup, no reason, no record. Checked only when the
+    // cheap, DB-free prerequisites already hold, so this query never runs
+    // for the overwhelming majority of check-ins (on time, wrong role,
+    // wrong shift, or a same-day re-check-in).
+    let hasValidFirstHalfLeaveToday = false;
+    const mightNeedFirstHalfLeaveCheck = !existing
+      && isEmployeeRole(req.user.role)
+      && isGeneralShift(effectiveShiftName)
+      && checkInMinsForLateGate > LATE_CHECKIN_CUTOFF_MINS;
+    if (mightNeedFirstHalfLeaveCheck) {
+      try {
+        const fhl = await pool.query(
+          `SELECT 1 FROM leaves
+            WHERE employee_id = $1 AND is_half_day = true AND half_day_type = 'first_half'
+              AND status IN ('pending', 'pending_approval', 'approved')
+              AND $2::date BETWEEN start_date AND end_date
+            LIMIT 1`,
+          [req.user._id, today]
+        );
+        hasValidFirstHalfLeaveToday = fhl.rows.length > 0;
+      } catch (err) {
+        /* Failing to read it must never cost somebody their punch — falls
+         * back to the normal late-check-in decision, same "wrapped, must
+         * never fail a check-in" convention this route already uses for
+         * the permission-lookup and auto-shift-assignment reads above. */
+        logger.warn({ err: err.message }, '[attendance] first-half-leave check skipped');
+      }
+    }
+
+    let lateCheckinAction = null;
+    let lateCheckinReason = null;
+    let lateCheckinLeaveId = null;
+    if (isLateCheckinEligible({
+      role: req.user.role, shiftName: effectiveShiftName,
+      checkInMins: checkInMinsForLateGate, isFirstCheckin: !existing,
+      hasValidFirstHalfLeaveToday,
+    })) {
+      const decision = validateLateCheckinDecision({
+        action: req.body.lateCheckinAction, reason: req.body.lateReason, leaveId: req.body.lateCheckinLeaveId,
+      });
+      if (!decision.ok) {
+        return res.status(400).json({ success: false, code: decision.code, message: decision.message });
+      }
+      // The Permission link is more than "was something sent" (already
+      // checked above) — it has to be a REAL leave that belongs to this
+      // employee and is actually a Permission request, or a direct API call
+      // could claim the link with someone else's id, or with an id that
+      // isn't a Permission application at all (e.g. an unrelated casual
+      // leave). This is the actual proof the application was submitted —
+      // without it, 'permission' is refused the same as if nothing had been
+      // chosen at all.
+      if (decision.action === 'permission') {
+        const leaveCheck = await pool.query(
+          `SELECT id FROM leaves WHERE id = $1 AND employee_id = $2 AND leave_type = 'permission'`,
+          [decision.leaveId, req.user._id]
+        );
+        if (leaveCheck.rows.length === 0) {
+          return res.status(400).json({
+            success: false, code: 'LATE_CHECKIN_PERMISSION_INVALID',
+            message: 'The referenced Permission application could not be verified.',
+          });
+        }
+        lateCheckinLeaveId = decision.leaveId;
+      }
+      lateCheckinAction = decision.action;
+      lateCheckinReason = decision.reason;
     }
 
     /* ── Where this punch happened ────────────────────────────────────────
@@ -276,8 +378,8 @@ router.post('/checkin', async (req, res) => {
          (employee_id, date, check_in, session_started_at, status, late_minutes,
           check_in_location, check_in_latitude, check_in_longitude, shift_id,
           work_mode, work_location_resolved_id, location_distance_meters, location_accuracy_meters,
-          work_mode_source, check_in_ip)
-       VALUES ($1, $2::date, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          work_mode_source, check_in_ip, late_checkin_action, late_checkin_reason, late_checkin_leave_id)
+       VALUES ($1, $2::date, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        ON CONFLICT (employee_id, date) DO UPDATE
          -- check_in stays the day's arrival, which is what lateness is
          -- measured from. session_started_at moves to NOW, because the stretch
@@ -315,6 +417,12 @@ router.post('/checkin', async (req, res) => {
              check_in_ip               = COALESCE(EXCLUDED.check_in_ip, attendance.check_in_ip),
              location_distance_meters  = EXCLUDED.location_distance_meters,
              location_accuracy_meters  = EXCLUDED.location_accuracy_meters,
+             -- late_checkin_action / late_checkin_reason / late_checkin_leave_id
+             -- are deliberately NOT listed here, on either side: the
+             -- late-check-in decision belongs to the day's first arrival,
+             -- settled once above (same as late_minutes), and a re-check-in
+             -- later in the day must neither re-ask it nor overwrite it
+             -- with NULL.
              updated_at         = NOW()
          WHERE attendance.check_out IS NOT NULL
        RETURNING id as "_id", check_in as "checkIn", check_out as "checkOut",
@@ -330,7 +438,8 @@ router.post('/checkin', async (req, res) => {
        placement.unknown ? null : (placement.mode || null),
        placement.locationId || null,
        placement.distance ?? null, placement.accuracy ?? null,
-       placement.source || null, req.ip || null]
+       placement.source || null, req.ip || null,
+       lateCheckinAction, lateCheckinReason, lateCheckinLeaveId]
     );
     if (upRes.rows.length === 0) {
       // Conflict + WHERE rejected = someone else just checked in for this
@@ -475,6 +584,9 @@ router.post('/checkout', async (req, res) => {
         `SELECT
                 (SELECT s.name FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
                   WHERE e.id = $1) AS shift_name,
+                -- Permanent, admin-set exemption from this whole gate
+                -- (Update 1 — see migrate_checkout_exemption.js).
+                (SELECT e.checkout_min_hours_exempt FROM employees e WHERE e.id = $1) AS exempt,
                 COALESCE((
                   SELECT SUM(COALESCE(l.hours, 0))
                     FROM leaves l
@@ -538,7 +650,10 @@ router.post('/checkout', async (req, res) => {
     const safePrev = isFinite(prevHoursRaw) ? prevHoursRaw : 0;
     const workingHours = parseFloat((safePrev + sessionHours).toFixed(8));
 
-    // Minimum-working-hours check-out gate — General Shift / UK Shift only.
+    // Minimum-working-hours check-out gate — General Shift / UK Shift only,
+    // unless this employee is permanently exempt (Update 1) or today is a
+    // Compensate Working Hours day (Update 2 — late_checkin_action set at
+    // check-in, read straight off `record`, no extra query needed).
     // Blocks before anything is written, so a rejected check-out leaves the
     // open session untouched and can simply be retried later the same day.
     const gate = evaluateCheckoutGate({
@@ -546,6 +661,8 @@ router.post('/checkout', async (req, res) => {
       workedMinutes: workingHours * 60,
       permissionHours: Number(minHoursFacts.permission_hours_pending_or_approved) || 0,
       halfDayType: minHoursFacts.half_day_type_pending_or_approved || null,
+      exempt: minHoursFacts.exempt === true,
+      compensateMode: record.late_checkin_action === 'compensate',
     });
     if (gate.blocked) {
       return res.status(400).json({
@@ -556,6 +673,7 @@ router.post('/checkout', async (req, res) => {
           requiredMinutes: gate.requiredMinutes,
           workedMinutes: gate.workedMinutes,
           shortfallMinutes: gate.shortfallMinutes,
+          compensateMode: !!gate.compensateMode,
         },
       });
     }
@@ -1567,6 +1685,50 @@ router.post('/reminder/checkout-self', async (req, res) => {
   } catch (err) {
     logger.error({ err: err.message }, '[attendance] self checkout reminder failed');
     res.status(500).json({ success: false, message: 'Failed to send reminder' });
+  }
+});
+
+// ── GET late check-in / Compensate Working Hours records (Admin/HR) ────────
+// A deliberately separate, additive read endpoint — not folded into any
+// existing attendance report — so Admin/HR can audit the late-check-in
+// decision (Permission vs. Compensate) and whether a Compensate day actually
+// reached 8h30m, without touching the queries any existing report runs.
+// Optional ?startDate/?endDate (YYYY-MM-DD, inclusive); defaults to the
+// current calendar month, same convention routes/reports.js uses elsewhere.
+router.get('/late-checkin-records', authorize('admin', 'director', 'hr_admin'), async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const todayISO = todayStr();
+    const defaultStart = `${todayISO.slice(0, 8)}01`; // first of this month, same date string this file uses everywhere
+    const start = /^\d{4}-\d{2}-\d{2}$/.test(startDate || '') ? startDate : defaultStart;
+    const end = /^\d{4}-\d{2}-\d{2}$/.test(endDate || '') ? endDate : todayISO;
+
+    const r = await pool.query(
+      `SELECT e.employee_id AS "employeeId",
+              e.first_name || ' ' || e.last_name AS "employeeName",
+              a.date::text AS "date",
+              a.check_in AS "checkIn",
+              a.late_checkin_action AS "action",
+              a.late_checkin_reason AS "reason",
+              a.late_checkin_leave_id AS "permissionLeaveId",
+              -- Genuinely linked only when a real leaves row backs it —
+              -- see migrate_late_checkin_leave_link.js. Historical rows
+              -- written before that fix shipped have action='permission'
+              -- but no link; this tells the two apart without rewriting
+              -- those old rows (they are left exactly as they were).
+              (a.late_checkin_action = 'permission' AND a.late_checkin_leave_id IS NOT NULL) AS "permissionLinked",
+              COALESCE(a.working_hours, 0)::float AS "workingHours",
+              (COALESCE(a.working_hours, 0) * 60 >= 510) AS "requirementMet"
+         FROM attendance a
+         JOIN employees e ON e.id = a.employee_id
+        WHERE a.late_checkin_action IS NOT NULL
+          AND a.date BETWEEN $1::date AND $2::date
+        ORDER BY a.date DESC, e.first_name ASC`,
+      [start, end]
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) {
+    serverError(res, err);
   }
 });
 

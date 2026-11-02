@@ -8,6 +8,8 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
 import { startLocationCapture, capturePosition, getGeoPref, getLastCaptureError, isGeoGranted } from '../utils/geoPermission';
+import LateCheckinChoiceModal from '../components/LateCheckinChoiceModal';
+import ApplyLeaveModal from '../components/requests/ApplyLeaveModal';
 
 const AttendanceContext = createContext();
 
@@ -37,6 +39,17 @@ export const AttendanceProvider = ({ children }) => {
   const [forgotCheckout, setForgotCheckout] = useState(false);
   const timerRef = useRef(null);
   const currentDateRef = useRef(todayStr());
+
+  /* ── Employee-only late check-in: Permission vs. Compensate Working Hours ──
+   * Self-contained here — not exposed through the context value — so the
+   * entire feature lives in this one file. `/attendance/checkin` is the sole
+   * authority on whether a decision is required (role + General Shift + the
+   * 9:45 AM cutoff, see routes/attendance.js); this just reacts to its
+   * LATE_CHECKIN_DECISION_REQUIRED response by showing the choice instead of
+   * a generic "Check-in failed" toast. */
+  const [showLateChoice, setShowLateChoice] = useState(false);
+  const [lateChoiceSubmitting, setLateChoiceSubmitting] = useState(false);
+  const [showPermissionAfterLateCheckin, setShowPermissionAfterLateCheckin] = useState(false);
 
   /* ── Start/restart the live timer ─────────────────────────────── */
   /* Takes the whole record and works out both halves itself.
@@ -353,7 +366,13 @@ export const AttendanceProvider = ({ children }) => {
   };
 
   /* ── Check In ─────────────────────────────────────────────────── */
-  const checkIn = async () => {
+  // `decision` is only ever passed internally — either by chooseLateAction
+  // (the Compensate path) or by handlePermissionSubmitted below (the
+  // Permission path, only once a real application exists): { action:
+  // 'permission' | 'compensate', reason?, leaveId? }. A plain call with no
+  // argument behaves exactly as before for every check-in the server
+  // doesn't flag.
+  const checkIn = async (decision) => {
     setActionLoading(true);
     try {
       const gate = await startLocationCapture();
@@ -363,7 +382,14 @@ export const AttendanceProvider = ({ children }) => {
         return;
       }
 
-      const r = await api.post('/attendance/checkin', { location: 'Office', latitude: null, longitude: null });
+      const body = { location: 'Office', latitude: null, longitude: null };
+      if (decision?.action) {
+        body.lateCheckinAction = decision.action;
+        if (decision.reason) body.lateReason = decision.reason;
+        if (decision.leaveId) body.lateCheckinLeaveId = decision.leaveId;
+      }
+
+      const r = await api.post('/attendance/checkin', body);
       const rec = r.data.data;
       setRecord(rec);
 
@@ -373,9 +399,70 @@ export const AttendanceProvider = ({ children }) => {
       finishLocationCapture('checkin', gate);
       return rec;
     } catch (err) {
+      const code = err.response?.data?.code;
+      // The server is asking for a decision we haven't made yet — show the
+      // choice instead of a bare failure toast. No punch was written.
+      if (code === 'LATE_CHECKIN_DECISION_REQUIRED') {
+        setShowLateChoice(true);
+        return;
+      }
       toast.error(err.response?.data?.message || 'Check-in failed');
       throw err;
     } finally { setActionLoading(false); }
+  };
+
+  /* ── Resolve the late check-in choice: Compensate Working Hours ──────
+   * The only path still handled here directly. Reason is optional —
+   * passed through as-is (empty string or undefined both just mean "no
+   * reason given"). The Permission path is handled separately below: it
+   * must not check in at all until a real application has been submitted,
+   * so it can't share this "check in immediately" shape. */
+  const chooseLateAction = async (action, reason) => {
+    setLateChoiceSubmitting(true);
+    try {
+      const rec = await checkIn({ action, reason });
+      if (!rec) return; // e.g. explicit location denial — stay as-is, already toasted
+      setShowLateChoice(false);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Check-in failed');
+    } finally {
+      setLateChoiceSubmitting(false);
+    }
+  };
+
+  /* ── Resolve the late check-in choice: Apply Permission ───────────────
+   * Picking this option does NOT check in — it only opens the existing
+   * Apply Leave modal (closing the choice popup). Nothing is written to
+   * attendance yet. */
+  const openPermissionApplication = () => {
+    setShowLateChoice(false);
+    setShowPermissionAfterLateCheckin(true);
+  };
+
+  /* Called from ApplyLeaveModal's onDone, so only once POST /leaves has
+   * actually succeeded (onDone is never called on cancel/close or a failed
+   * submission — see ApplyLeaveModal.jsx). `leave` is the created row,
+   * `leave._id` the proof check-in needs to supply the server. If it's
+   * somehow missing, this refuses to check in rather than silently
+   * completing it on the strength of the choice alone — the exact bug this
+   * whole flow exists to close. */
+  const handlePermissionSubmitted = async (leave) => {
+    setShowPermissionAfterLateCheckin(false);
+    if (!leave?._id) {
+      toast.error('Could not confirm the Permission application. Please try checking in again.');
+      return;
+    }
+    try {
+      await checkIn({ action: 'permission', leaveId: leave._id });
+    } catch (err) {
+      // The Permission request itself is real and already submitted — only
+      // the check-in call failed. Told explicitly, rather than left to look
+      // like nothing happened, so the employee doesn't re-apply by mistake.
+      toast.error(
+        err.response?.data?.message
+        || 'Your Permission request was submitted, but check-in could not be completed. Please try checking in again.'
+      );
+    }
   };
 
   /* ── Check Out ────────────────────────────────────────────────── */
@@ -420,6 +507,22 @@ export const AttendanceProvider = ({ children }) => {
       checkIn, checkOut, setRecord,
     }}>
       {children}
+
+      {showLateChoice && (
+        <LateCheckinChoiceModal
+          submitting={lateChoiceSubmitting}
+          onChoosePermission={openPermissionApplication}
+          onChooseCompensate={(reason) => chooseLateAction('compensate', reason)}
+          onClose={() => setShowLateChoice(false)}
+        />
+      )}
+
+      {showPermissionAfterLateCheckin && (
+        <ApplyLeaveModal
+          onClose={() => setShowPermissionAfterLateCheckin(false)}
+          onDone={handlePermissionSubmitted}
+        />
+      )}
     </AttendanceContext.Provider>
   );
 };

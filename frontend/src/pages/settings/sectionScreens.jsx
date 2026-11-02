@@ -45,6 +45,7 @@ import EmailTemplates from './attendance/EmailTemplates';
 import EmailAlerts from './attendance/EmailAlerts';
 import AbsentScheduler from './attendance/AbsentScheduler';
 import ScheduledReportEmails from './attendance/ScheduledReportEmails';
+import LateCheckinCompensate from './attendance/LateCheckinCompensate';
 
 import ShiftsGeneral from './shifts/ShiftsGeneral';
 // Manage Shifts is the existing Shifts screen, not a copy: there is one set of
@@ -151,6 +152,7 @@ const SECTION_SCREENS = {
   'attendance.configuration.on-duty': OnDutyConfig,
   'attendance.configuration.pay-periods': PayPeriods,
   'attendance.configuration.reports': AttendanceReportsConfig,
+  'attendance.configuration.late-checkin-compensate': LateCheckinCompensate,
   'attendance.configuration.additional-options': AttendanceAdditionalOptions,
   'attendance.permissions.geo-restriction': GeoRestriction,
   // Explicit, because the component's default became "every form" for the

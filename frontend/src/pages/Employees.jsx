@@ -38,6 +38,9 @@ const initForm = {
   // Whether attendance/Yet-to-check-in applies to this person. Independent
   // of login — defaults on, same as every existing employee.
   attendanceTracked: true,
+  // Permanent exemption from the General/UK Shift checkout minimum-hours
+  // restriction. Off for everyone until an admin switches it on by name.
+  checkoutMinHoursExempt: false,
 };
 
 /* Structured address (Update 3), joined into a readable multi-line block —
@@ -306,6 +309,7 @@ export default function Employees() {
       // ?? rather than || : a genuine `false` (attendance switched off for
       // this person) must survive, only a missing value should default on.
       attendanceTracked: full.attendanceTracked ?? full.attendance_tracked ?? true,
+      checkoutMinHoursExempt: full.checkoutMinHoursExempt ?? full.checkout_min_hours_exempt ?? false,
       // Personal
       nickName:      get('nickName',      'nick_name'),
       dateOfBirth:  (get('dateOfBirth',   'date_of_birth') || '').split?.('T')[0] || '',
@@ -399,6 +403,14 @@ export default function Employees() {
     try {
       const payload = { ...form };
       if (!payload.password) delete payload.password;
+      // Only admin/hr_admin may touch this field (enforced server-side too —
+      // see routes/employees.js's canModifyCheckoutExemption check). Every
+      // save sends the whole form object, so for anyone else this has to be
+      // stripped out here, not just hidden below — otherwise a director's
+      // routine, unrelated save (the field simply along for the ride,
+      // unchanged) would hit that 403 and fail outright.
+      const canEditCheckoutExemption = user?.role === 'admin' || user?.role === 'hr_admin';
+      if (!canEditCheckoutExemption) delete payload.checkoutMinHoursExempt;
 
       // Save the employee fields first — that's the primary operation.
       let employeeId = editEmp?._id;
@@ -1085,6 +1097,35 @@ export default function Employees() {
                       </p>
                     </div>
                   </label>
+
+                  {/* Checkout minimum-hours exemption. A separate, per-person
+                      switch from attendance tracking above — this one only
+                      touches whether the 8h30m General/UK Shift checkout gate
+                      applies to them; everything else about their attendance
+                      (lateness, reports, payroll) is unaffected.
+                      Super Admin / HR only — a director can edit every other
+                      field on this form, exactly as before, but this one
+                      setting is hidden rather than shown-then-rejected (the
+                      real enforcement is server-side; see handleSave above
+                      and routes/employees.js). */}
+                  {(user?.role === 'admin' || user?.role === 'hr_admin') && (
+                    <label className="flex items-center gap-3 cursor-pointer mt-4">
+                      <input
+                        type="checkbox"
+                        checked={form.checkoutMinHoursExempt}
+                        onChange={e => setForm({ ...form, checkoutMinHoursExempt: e.target.checked })}
+                        className="w-4 h-4 accent-brand-600"
+                      />
+                      <div>
+                        <p className="text-base font-medium text-slate-700">Exempt from minimum checkout hours</p>
+                        <p className="text-[13px] text-slate-400">
+                          On General or UK Shift, checkout is normally blocked until 8h 30m (minus
+                          approved permission/half-day leave) is completed. On means this employee can
+                          check out at any time regardless of hours worked.
+                        </p>
+                      </div>
+                    </label>
+                  )}
                 </div>
               )}
 

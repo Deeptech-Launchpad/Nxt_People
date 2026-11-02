@@ -166,6 +166,12 @@ const ORDER = [
   // or an automatic deploy that only runs this list.
   'migrate_structured_address_district.js', // employees.address_district / permanent_address_district
 
+  // Employee-wise checkout minimum-hours exemption, and the late-check-in /
+  // Compensate Working Hours workflow — see each file's own header.
+  'migrate_checkout_exemption.js',       // employees.checkout_min_hours_exempt
+  'migrate_late_checkin_compensate.js',  // attendance.late_checkin_action / late_checkin_reason
+  'migrate_late_checkin_leave_link.js',  // attendance.late_checkin_leave_id -> leaves(id)
+
   'migrate_indexes.js',                  // perf indexes — run last
 ];
 
