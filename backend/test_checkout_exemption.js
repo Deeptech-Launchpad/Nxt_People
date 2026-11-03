@@ -29,8 +29,6 @@ check('exempt result reports exempt: true for the caller to label it, if wanted'
   evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 0, exempt: true }).exempt === true);
 check('non-exempt General Shift employee with 0 minutes worked is still blocked (regression)',
   evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 0, exempt: false }).blocked === true);
-check('exempt + compensateMode together: exempt wins, never blocked',
-  evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 0, exempt: true, compensateMode: true }).blocked === false);
 check('exempt employee on Housekeeping (already ungated) also unaffected, no crash',
   evaluateCheckoutGate({ shiftName: 'Housekeeping Shift', workedMinutes: 0, exempt: true }).blocked === false);
 check('non-exempt Housekeeping employee remains ungated (regression, unrelated to this feature)',

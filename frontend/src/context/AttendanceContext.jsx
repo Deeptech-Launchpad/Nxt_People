@@ -40,7 +40,7 @@ export const AttendanceProvider = ({ children }) => {
   const timerRef = useRef(null);
   const currentDateRef = useRef(todayStr());
 
-  /* ── Employee-only late check-in: Permission vs. Compensate Working Hours ──
+  /* ── Employee-only late check-in: Apply Permission ──────────────────────
    * Self-contained here — not exposed through the context value — so the
    * entire feature lives in this one file. `/attendance/checkin` is the sole
    * authority on whether a decision is required (role + General Shift + the
@@ -48,7 +48,6 @@ export const AttendanceProvider = ({ children }) => {
    * LATE_CHECKIN_DECISION_REQUIRED response by showing the choice instead of
    * a generic "Check-in failed" toast. */
   const [showLateChoice, setShowLateChoice] = useState(false);
-  const [lateChoiceSubmitting, setLateChoiceSubmitting] = useState(false);
   const [showPermissionAfterLateCheckin, setShowPermissionAfterLateCheckin] = useState(false);
 
   /* ── Start/restart the live timer ─────────────────────────────── */
@@ -366,12 +365,10 @@ export const AttendanceProvider = ({ children }) => {
   };
 
   /* ── Check In ─────────────────────────────────────────────────── */
-  // `decision` is only ever passed internally — either by chooseLateAction
-  // (the Compensate path) or by handlePermissionSubmitted below (the
-  // Permission path, only once a real application exists): { action:
-  // 'permission' | 'compensate', reason?, leaveId? }. A plain call with no
-  // argument behaves exactly as before for every check-in the server
-  // doesn't flag.
+  // `decision` is only ever passed internally, by handlePermissionSubmitted
+  // below — only once a real Permission application exists: { action:
+  // 'permission', leaveId }. A plain call with no argument behaves exactly
+  // as before for every check-in the server doesn't flag.
   const checkIn = async (decision) => {
     setActionLoading(true);
     try {
@@ -409,25 +406,6 @@ export const AttendanceProvider = ({ children }) => {
       toast.error(err.response?.data?.message || 'Check-in failed');
       throw err;
     } finally { setActionLoading(false); }
-  };
-
-  /* ── Resolve the late check-in choice: Compensate Working Hours ──────
-   * The only path still handled here directly. Reason is optional —
-   * passed through as-is (empty string or undefined both just mean "no
-   * reason given"). The Permission path is handled separately below: it
-   * must not check in at all until a real application has been submitted,
-   * so it can't share this "check in immediately" shape. */
-  const chooseLateAction = async (action, reason) => {
-    setLateChoiceSubmitting(true);
-    try {
-      const rec = await checkIn({ action, reason });
-      if (!rec) return; // e.g. explicit location denial — stay as-is, already toasted
-      setShowLateChoice(false);
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Check-in failed');
-    } finally {
-      setLateChoiceSubmitting(false);
-    }
   };
 
   /* ── Resolve the late check-in choice: Apply Permission ───────────────
@@ -510,9 +488,7 @@ export const AttendanceProvider = ({ children }) => {
 
       {showLateChoice && (
         <LateCheckinChoiceModal
-          submitting={lateChoiceSubmitting}
           onChoosePermission={openPermissionApplication}
-          onChooseCompensate={(reason) => chooseLateAction('compensate', reason)}
           onClose={() => setShowLateChoice(false)}
         />
       )}

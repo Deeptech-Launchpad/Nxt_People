@@ -128,8 +128,8 @@ router.post('/checkin', async (req, res) => {
                 -- The shift's actual NAME, resolved the same rostered-wins-
                 -- over-standing way as id/start_time above — never guessed
                 -- from the employee's name or any other text. Used only to
-                -- decide whether the late-check-in / Compensate Working
-                -- Hours workflow applies (General Shift only).
+                -- decide whether the late-check-in / Apply Permission
+                -- workflow applies (General Shift only).
                 COALESCE(rs.name, s.name) AS "shiftName",
                 rs.id AS "rosteredId",
                 -- Whether this person is expected at an office at all. Read
@@ -170,7 +170,7 @@ router.post('/checkin', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Already checked in today' });
     }
 
-    // ── Employee-only Late Check-in: Permission vs. Compensate Working Hours ──
+    // ── Employee-only Late Check-in: Apply Permission ──────────────────────
     // Applies only when ALL of: this is the day's FIRST check-in (no
     // `existing` row at all — a re-check-in later in the day never re-asks
     // this), the caller's role is Employee (`team_member` — see
@@ -179,11 +179,9 @@ router.post('/checkin', async (req, res) => {
     // actual joined shifts.name, rostered-first, same as id/start_time
     // above) is General Shift specifically, the check-in clock time is 9:46
     // AM or later, AND there is no valid First-Half Leave for today (see
-    // below). Validated here, before anything is written, so the decision
-    // requirement (Permission vs. Compensate) can't be bypassed by a direct
-    // API call that skips the frontend's choice screen — the reason for
-    // Compensate itself is optional, not required, and is simply stored
-    // as-given (or null) either way.
+    // below). Validated here, before anything is written, so the requirement
+    // to submit a Permission application can't be bypassed by a direct API
+    // call that skips the frontend's choice screen.
     const nowForLateGate = new Date();
     const checkInMinsForLateGate = Number(settings.check_in_mins)
       || (nowForLateGate.getHours() * 60 + nowForLateGate.getMinutes());
@@ -651,18 +649,15 @@ router.post('/checkout', async (req, res) => {
     const workingHours = parseFloat((safePrev + sessionHours).toFixed(8));
 
     // Minimum-working-hours check-out gate — General Shift / UK Shift only,
-    // unless this employee is permanently exempt (Update 1) or today is a
-    // Compensate Working Hours day (Update 2 — late_checkin_action set at
-    // check-in, read straight off `record`, no extra query needed).
-    // Blocks before anything is written, so a rejected check-out leaves the
-    // open session untouched and can simply be retried later the same day.
+    // unless this employee is permanently exempt (Update 1). Blocks before
+    // anything is written, so a rejected check-out leaves the open session
+    // untouched and can simply be retried later the same day.
     const gate = evaluateCheckoutGate({
       shiftName: minHoursFacts.shift_name,
       workedMinutes: workingHours * 60,
       permissionHours: Number(minHoursFacts.permission_hours_pending_or_approved) || 0,
       halfDayType: minHoursFacts.half_day_type_pending_or_approved || null,
       exempt: minHoursFacts.exempt === true,
-      compensateMode: record.late_checkin_action === 'compensate',
     });
     if (gate.blocked) {
       return res.status(400).json({
@@ -673,7 +668,6 @@ router.post('/checkout', async (req, res) => {
           requiredMinutes: gate.requiredMinutes,
           workedMinutes: gate.workedMinutes,
           shortfallMinutes: gate.shortfallMinutes,
-          compensateMode: !!gate.compensateMode,
         },
       });
     }

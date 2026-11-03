@@ -1,4 +1,4 @@
-// Employee-only late check-in: Permission vs. Compensate Working Hours.
+// Employee-only late check-in: Apply Permission.
 //
 // Pure calculation, no DB access — routes/attendance.js's /checkin handler
 // supplies the facts this needs (the caller's role, their resolved shift
@@ -35,7 +35,7 @@ function isEmployeeRole(role) {
 // own cutoff, not the existing late-detection logic further down the route.
 const LATE_CHECKIN_CUTOFF_MINS = 9 * 60 + 45;
 
-const VALID_ACTIONS = new Set(['permission', 'compensate']);
+const VALID_ACTIONS = new Set(['permission']);
 
 // role: req.user.role. shiftName: the employee's resolved shift name today
 //   (rostered-first, same resolution as id/start_time — never guessed).
@@ -69,38 +69,26 @@ function isLateCheckinEligible({ role, shiftName, checkInMins, isFirstCheckin, h
 // happen in the route (this file stays DB-free) — this only confirms one
 // was supplied at all.
 //
-// The reason for Compensate Working Hours is OPTIONAL: an employee may
-// proceed with it blank. When one is given it is trimmed and saved/shown
-// normally; when it isn't, `reason` comes back null, same as it already did
-// for the Permission path. Nothing about the 8h30m requirement, the
-// checkout gate, or any other validation is affected by this — only
-// whether a reason is mandatory to proceed.
-//
-// leaveId is REQUIRED for 'permission': check-in must only complete after a
-// real Permission application has actually been submitted (its leaves.id is
-// the proof), never from the bare choice alone. The frontend now only ever
-// calls /checkin with action:'permission' from ApplyLeaveModal's onDone —
-// i.e. after a successful POST /leaves — so this also closes off a direct
-// API call that tries to claim "permission" without ever applying for one.
-function validateLateCheckinDecision({ action, reason, leaveId } = {}) {
+// leaveId is REQUIRED: check-in must only complete after a real Permission
+// application has actually been submitted (its leaves.id is the proof),
+// never from the bare choice alone. The frontend only ever calls /checkin
+// with action:'permission' from ApplyLeaveModal's onDone — i.e. after a
+// successful POST /leaves — so this also closes off a direct API call that
+// tries to claim "permission" without ever applying for one.
+function validateLateCheckinDecision({ action, leaveId } = {}) {
   if (!VALID_ACTIONS.has(action)) {
     return {
       ok: false, code: 'LATE_CHECKIN_DECISION_REQUIRED',
-      message: 'Check-in after 9:45 AM requires choosing Apply Permission or Compensate Working Hours.',
+      message: 'Check-in after 9:45 AM requires submitting a Permission application.',
     };
   }
-  if (action === 'permission' && !String(leaveId || '').trim()) {
+  if (!String(leaveId || '').trim()) {
     return {
       ok: false, code: 'LATE_CHECKIN_PERMISSION_NOT_LINKED',
       message: 'Check-in can only complete after the Permission application has been submitted.',
     };
   }
-  const trimmedReason = String(reason || '').trim();
-  return {
-    ok: true, action,
-    reason: action === 'compensate' && trimmedReason ? trimmedReason : null,
-    leaveId: action === 'permission' ? String(leaveId).trim() : null,
-  };
+  return { ok: true, action, reason: null, leaveId: String(leaveId).trim() };
 }
 
 module.exports = {

@@ -1,7 +1,6 @@
-// Update 2 — Employee-only Late Check-in and Compensate Working Hours.
+// Update 2 — Employee-only Late Check-in: Apply Permission.
 // Part A: isLateCheckinEligible() + validateLateCheckinDecision(), pure, no DB.
-// Part B: evaluateCheckoutGate()'s compensateMode, pure, no DB.
-// Part C: live, synthetic-data checks against the real schema (multi-session
+// Part B: live, synthetic-data checks against the real schema (multi-session
 // accumulation, late_checkin_action persisted vs. not re-asked on re-checkin).
 require('dotenv').config();
 process.env.EMAIL_DISABLED = 'true';
@@ -86,23 +85,13 @@ check('garbage action value -> LATE_CHECKIN_DECISION_REQUIRED',
 check('"permission" with no reason is fine (given a leaveId) — Permission needs no reason of its own',
   validateLateCheckinDecision({ action: 'permission', leaveId: 'abc-123' }).ok === true);
 
-// Reason is OPTIONAL for Compensate Working Hours — proceeding with none
-// must succeed (ok: true), not be rejected.
-check('"compensate" with NO reason is accepted (ok: true) — reason is optional',
-  validateLateCheckinDecision({ action: 'compensate' }).ok === true);
-check('"compensate" with no reason stores null, not an error',
-  validateLateCheckinDecision({ action: 'compensate' }).reason === null);
-check('"compensate" with a whitespace-only reason is also accepted and normalised to null',
-  validateLateCheckinDecision({ action: 'compensate', reason: '   ' }).ok === true
-  && validateLateCheckinDecision({ action: 'compensate', reason: '   ' }).reason === null);
-check('"compensate" with undefined reason (field omitted entirely) is accepted',
-  validateLateCheckinDecision({ action: 'compensate', reason: undefined }).ok === true);
-check('"compensate" with a real reason is still accepted and trimmed — entering one still works normally',
-  validateLateCheckinDecision({ action: 'compensate', reason: '  Traffic  ' }).ok === true
-  && validateLateCheckinDecision({ action: 'compensate', reason: '  Traffic  ' }).reason === 'Traffic');
+// Compensate Working Hours has been removed — 'compensate' must now be
+// rejected exactly like any other invalid action, even with a leaveId.
+check('"compensate" is no longer a valid action — rejected with LATE_CHECKIN_DECISION_REQUIRED',
+  validateLateCheckinDecision({ action: 'compensate', leaveId: 'abc-123' }).code === 'LATE_CHECKIN_DECISION_REQUIRED');
 check('"permission" decision carries no reason even if one was sent (not stored for that path, regression)',
   validateLateCheckinDecision({ action: 'permission', leaveId: 'abc-123', reason: 'ignored' }).reason === null);
-check('an invalid action is still rejected — only the reason requirement was removed, not the action check',
+check('an invalid action is still rejected',
   validateLateCheckinDecision({ action: 'nonsense', reason: 'Traffic' }).code === 'LATE_CHECKIN_DECISION_REQUIRED');
 
 // Permission now requires proof a real application exists: the submitted
@@ -115,29 +104,10 @@ check('"permission" with a blank leaveId is treated the same as missing (cannot 
 check('"permission" WITH a leaveId is accepted and the id is trimmed through',
   validateLateCheckinDecision({ action: 'permission', leaveId: '  abc-123  ' }).ok === true
   && validateLateCheckinDecision({ action: 'permission', leaveId: '  abc-123  ' }).leaveId === 'abc-123');
-check('"compensate" never requires a leaveId (unaffected by this change, regression)',
-  validateLateCheckinDecision({ action: 'compensate' }).ok === true
-  && validateLateCheckinDecision({ action: 'compensate' }).leaveId === null);
 check('"permission" ok result never carries a reason, even alongside a leaveId',
   validateLateCheckinDecision({ action: 'permission', leaveId: 'abc-123', reason: 'ignored' }).reason === null);
 
-// ───────────────────────── Part B: checkout gate, compensateMode ──────────
-console.log('\n════ evaluateCheckoutGate: compensateMode (pure) ════\n');
-
-check('compensate day at exactly 8h30m (510min) worked is NOT blocked',
-  evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 510, compensateMode: true }).blocked === false);
-check('compensate day at 8h29m is blocked (1 minute short)',
-  evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 509, compensateMode: true }).blocked === true);
-check('compensate day IGNORES permission hours entirely — still needs the full flat 8h30m',
-  evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 390, permissionHours: 2, compensateMode: true }).blocked === true); // would pass at 390 under the normal rule, must NOT here
-check('compensate day IGNORES half-day leave entirely — still needs the full flat 8h30m',
-  evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 240, halfDayType: 'second_half', compensateMode: true }).blocked === true); // would pass at 240 under the normal rule, must NOT here
-check('a non-compensate day on the same shift is completely unaffected by this change (regression)',
-  evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 390, permissionHours: 2, compensateMode: false }).blocked === false);
-check('compensate blocked response is labelled compensateMode: true for the caller',
-  evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 0, compensateMode: true }).compensateMode === true);
-
-// ───────────────────────── Part C: live, synthetic data ───────────────────
+// ───────────────────────── Part B: live, synthetic data ───────────────────
 (async () => {
   console.log('\n════ Live multi-session + persistence checks ════\n');
   const client = await pool.connect();
@@ -159,47 +129,9 @@ check('compensate blocked response is labelled compensateMode: true for the call
     const empId = empRes.rows[0].id;
     const today = '2026-10-31';
 
-    // First check-in: late, chose Compensate, with a reason -> row created
-    // with late_checkin_action/reason set (mirrors what the route's INSERT
-    // branch would write).
-    const attRes = await client.query(
-      `INSERT INTO attendance (employee_id, date, check_in, session_started_at, status, late_minutes, late_checkin_action, late_checkin_reason)
-       VALUES ($1, $2::date, $3, $3, 'late', 61, 'compensate', 'Traffic jam')
-       RETURNING id`,
-      [empId, today, `${today} 10:46:00`]
-    );
-    const attId = attRes.rows[0].id;
-
-    // Session 1: 5 hours worked, then checked out (simulated directly on
-    // the row, same as the checkout route would leave it).
-    await client.query(
-      `UPDATE attendance SET working_hours = 5, check_out = $2 WHERE id = $1`,
-      [attId, `${today} 15:46:00`]
-    );
-    let gate = evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 5 * 60, compensateMode: true });
-    check('after session 1 (5h), compensate day is still blocked (3h30m short)', gate.blocked === true && gate.shortfallMinutes === 210);
-
-    // Re-check-in (re-opens the day) — late_checkin_action/reason must be
-    // PRESERVED, not re-asked, not cleared, matching the UPSERT's ON
-    // CONFLICT clause which deliberately omits those two columns.
-    await client.query(
-      `UPDATE attendance SET check_out = NULL, session_started_at = $2 WHERE id = $1`,
-      [attId, `${today} 16:30:00`]
-    );
-    let row = (await client.query(`SELECT late_checkin_action, late_checkin_reason, working_hours FROM attendance WHERE id = $1`, [attId])).rows[0];
-    check('re-check-in preserves late_checkin_action unchanged', row.late_checkin_action === 'compensate');
-    check('re-check-in preserves late_checkin_reason unchanged', row.late_checkin_reason === 'Traffic jam');
-    check('re-check-in preserves the hours already banked (5h), not reset to 0', parseFloat(row.working_hours) === 5);
-
-    // Session 2: +3h40m -> total 8h40m, now past the flat 8h30m requirement.
-    const session2Hours = 5 + (3 + 40 / 60);
-    await client.query(`UPDATE attendance SET working_hours = $2 WHERE id = $1`, [attId, session2Hours]);
-    gate = evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: Math.round(session2Hours * 60), compensateMode: true });
-    check('after session 2 (5h + 3h40m = 8h40m), compensate requirement is met, checkout allowed', gate.blocked === false);
-
-    // A second, separate employee: late, chose Permission instead — no
-    // reason stored for that path, and their checkout is NOT held to the
-    // flat 8h30m compensate rule (normal General-Shift rule applies).
+    // A second, separate employee: late, chose Permission — no reason
+    // stored for that path, and their checkout is held to the normal
+    // General-Shift minimum-hours rule.
     const empRes2 = await client.query(
       `INSERT INTO employees (employee_id, first_name, last_name, email, role, status, joining_date, shift_id)
        VALUES ('TESTLATECI02', 'Test', 'Permission', 'test.late.permission@example.invalid', 'team_member', 'active', '2024-01-01', $1)
@@ -217,8 +149,8 @@ check('compensate blocked response is labelled compensateMode: true for the call
       [emp2Id, today]
     )).rows[0];
     check('Permission path stores action but no reason', row2.late_checkin_action === 'permission' && row2.late_checkin_reason === null);
-    gate = evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 390, permissionHours: 2, compensateMode: row2.late_checkin_action === 'compensate' });
-    check('Permission-path checkout uses the normal deduction rule, not the flat compensate rule', gate.blocked === false);
+    let gate = evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 390, permissionHours: 2 });
+    check('Permission-path checkout uses the normal deduction rule', gate.blocked === false);
 
     // ── Permission linkage (the actual fix) ─────────────────────────────
     // Mirrors routes/attendance.js's own ownership/type check exactly, for
@@ -336,33 +268,6 @@ check('compensate blocked response is labelled compensateMode: true for the call
     );
     const afterReopen = (await client.query(`SELECT late_checkin_leave_id FROM attendance WHERE id = $1`, [beforeReopen.rows[0].id])).rows[0];
     check('re-check-in preserves late_checkin_leave_id unchanged, same as action/reason', afterReopen.late_checkin_leave_id === realPermissionId);
-
-    // A third employee: Compensate Working Hours chosen with NO reason
-    // given at all — must persist cleanly as NULL (not an error, not a
-    // placeholder string), and the 8h30m requirement itself must be
-    // completely unaffected by whether a reason was given.
-    const empRes3f = await client.query(
-      `INSERT INTO employees (employee_id, first_name, last_name, email, role, status, joining_date, shift_id)
-       VALUES ('TESTLATECI03F', 'Test', 'CompensateNoReason', 'test.compensate.no.reason@example.invalid', 'team_member', 'active', '2024-01-01', $1)
-       RETURNING id`,
-      [generalShiftId]
-    );
-    const emp3fId = empRes3f.rows[0].id;
-    await client.query(
-      `INSERT INTO attendance (employee_id, date, check_in, session_started_at, status, late_minutes, late_checkin_action, late_checkin_reason)
-       VALUES ($1, $2::date, $3, $3, 'late', 61, 'compensate', NULL)`,
-      [emp3fId, today, `${today} 10:46:00`]
-    );
-    const row3f = (await client.query(
-      `SELECT late_checkin_action, late_checkin_reason FROM attendance WHERE employee_id = $1 AND date = $2::date`,
-      [emp3fId, today]
-    )).rows[0];
-    check('Compensate with no reason persists as NULL, not rejected or defaulted to a placeholder',
-      row3f.late_checkin_action === 'compensate' && row3f.late_checkin_reason === null, row3f);
-    // Same flat 8h30m requirement applies whether or not a reason was given.
-    gate = evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 390, compensateMode: true });
-    check('the 8h30m compensate requirement is identical with or without a reason (unaffected by this change)',
-      gate.blocked === true && gate.requiredMinutes === 510);
 
     // First-Half Leave exception — live, against the real leaves schema.
     // Mirrors routes/attendance.js's own query (copied, not imported, for

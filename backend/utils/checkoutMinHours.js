@@ -11,8 +11,8 @@
 // migrate_manual_attendance.js) is completely unaffected.
 const GATED_SHIFT_NAMES = new Set(['general shift', 'uk shift']);
 
-// The late-check-in / Compensate Working Hours workflow (separate feature,
-// see routes/attendance.js's /checkin) applies to General Shift only — UK
+// The late-check-in / Apply Permission workflow (separate feature, see
+// routes/attendance.js's /checkin) applies to General Shift only — UK
 // Shift and Housekeeping are explicitly excluded from it even though UK
 // Shift shares the same checkout-gate requirement above.
 const GENERAL_SHIFT_NAME = 'general shift';
@@ -74,25 +74,15 @@ function requiredMinutesFor({ permissionHours, halfDayType } = {}) {
 // workedMinutes: today's accumulated working_hours as of this checkout,
 // expressed in minutes (same value the route is about to persist).
 // exempt: this employee's permanent, admin-set exemption from the minimum
-//   checkout-hours restriction — bypasses everything below unconditionally,
-//   including compensateMode, since the restriction it exempts from is the
-//   same one compensateMode exists to enforce more strictly for one day.
-// compensateMode: today's row chose "Compensate Working Hours" at check-in
-//   (a late General-Shift check-in). Requires a FLAT 8h30m of raw worked
-//   minutes — no permission/half-day deduction applies on a compensate day,
-//   per spec — and applies regardless of shift (though in practice this is
-//   only ever set for General Shift, since that's the only shift the late-
-//   check-in workflow runs for).
+//   checkout-hours restriction — bypasses everything below unconditionally.
 // Returns { blocked: false } for a non-gated shift or once the requirement
 // is met; otherwise { blocked: true, requiredMinutes, workedMinutes,
 // shortfallMinutes, message }.
-function evaluateCheckoutGate({ shiftName, workedMinutes, permissionHours, halfDayType, exempt, compensateMode } = {}) {
+function evaluateCheckoutGate({ shiftName, workedMinutes, permissionHours, halfDayType, exempt } = {}) {
   if (exempt) return { blocked: false, exempt: true };
-  if (!isGatedShift(shiftName) && !compensateMode) return { blocked: false };
+  if (!isGatedShift(shiftName)) return { blocked: false };
 
-  const requiredMinutes = compensateMode
-    ? MIN_REQUIRED_MINUTES
-    : requiredMinutesFor({ permissionHours, halfDayType });
+  const requiredMinutes = requiredMinutesFor({ permissionHours, halfDayType });
   const workedRounded = Math.round(Number(workedMinutes) || 0);
   const shortfallMinutes = requiredMinutes - workedRounded;
 
@@ -103,12 +93,8 @@ function evaluateCheckoutGate({ shiftName, workedMinutes, permissionHours, halfD
     requiredMinutes,
     workedMinutes: workedRounded,
     shortfallMinutes,
-    compensateMode: !!compensateMode,
-    message: compensateMode
-      ? `Compensate Working Hours needs ${fmtHm(shortfallMinutes)} more to reach the full `
-        + `${fmtHm(requiredMinutes)} for today (completed ${fmtHm(workedRounded)}). Permission and leave do not count toward this.`
-      : `You still need ${fmtHm(shortfallMinutes)} more to reach the required `
-        + `${fmtHm(requiredMinutes)} for today (completed ${fmtHm(workedRounded)}).`,
+    message: `You still need ${fmtHm(shortfallMinutes)} more to reach the required `
+      + `${fmtHm(requiredMinutes)} for today (completed ${fmtHm(workedRounded)}).`,
   };
 }
 
