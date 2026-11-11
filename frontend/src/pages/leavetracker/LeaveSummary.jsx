@@ -365,7 +365,9 @@ export default function LeaveSummary() {
                           </span>
                         </div>
                         <p className="text-[14px] text-gray-500 mt-0.5">
-                          {fmtDate(l.startDate)} · {l.totalDays} day{l.totalDays !== 1 ? 's' : ''}
+                          {fmtDate(l.startDate)} · {l.totalDays > 0
+                            ? `${l.totalDays} day${l.totalDays !== 1 ? 's' : ''}`
+                            : formatHoursDuration(l.hours || 0)}
                         </p>
                         {l.rejectionReason && (
                           <p className="text-[13px] text-red-500 mt-1">Reason: {l.rejectionReason}</p>
