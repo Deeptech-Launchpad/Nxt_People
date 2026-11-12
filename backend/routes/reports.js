@@ -2402,7 +2402,14 @@ const orgTimezone = async () => (await orgConfig()).tz;
 //
 // Anything without both punches is zero — measuring from a check-in alone is
 // what once reported everyone still at work as -08:30.
-function workedHoursOf(att, cfg) {
+//
+// `cap` defaults on for every existing caller (Payable, the ledger, Early/Late
+// exports — all of them want the policy's ceiling applied). Expected vs
+// Worked's own Worked Hours column passes `cap: false`: that figure is defined
+// as the literal logged duration on a Present day, uncapped, so a 9-hour day
+// reports as 9 and a 7-hour day as 7 rather than being clipped to the policy's
+// maximum full-day figure.
+function workedHoursOf(att, cfg, { cap = true } = {}) {
   const policy = cfg?.policy || {};
   let worked;
   if (policy.calculateHoursFrom === 'first_last') {
@@ -2413,11 +2420,11 @@ function workedHoursOf(att, cfg) {
     worked = parseFloat(att?.workingHours) || 0;
   }
   const max = policy.maxHours;
-  if (max?.enabled && Number.isFinite(Number(max.fullDay))) worked = Math.min(worked, Number(max.fullDay));
+  if (cap && max?.enabled && Number.isFinite(Number(max.fullDay))) worked = Math.min(worked, Number(max.fullDay));
   // Capping first, then rounding: rounding up past a configured maximum would
   // report more hours than the cap the same screen sets.
   worked = roundHours(worked, policy);
-  if (max?.enabled && Number.isFinite(Number(max.fullDay))) worked = Math.min(worked, Number(max.fullDay));
+  if (cap && max?.enabled && Number.isFinite(Number(max.fullDay))) worked = Math.min(worked, Number(max.fullDay));
   return Math.round(worked * 100) / 100;
 }
 
@@ -3454,6 +3461,14 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
       // zero, so the ledger opens at the period itself.
       const since = firstSeen.get(emp._id) || start;
       let expected = 0, payable = 0;
+      // The report's own "Worked Hours" column: the literal logged duration on
+      // Present days only, uncapped. Kept apart from `payable` above, which
+      // still feeds Paid/Balance/Previous Balance for the per-employee ledger
+      // view (Ops → employee → Expected vs Worked) — that figure means "hours
+      // the org owes pay for", on purpose including a flat shift credit for a
+      // paid weekly off or holiday even though nothing was clocked, and that
+      // meaning must not change here.
+      let actualWorked = 0;
       /* Everything before this period, kept PER MONTH rather than as one
        * total. The opening balance is a running figure that is floored at
        * each month's close (see below), and a floor cannot be applied to a
@@ -3511,6 +3526,10 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
             deficit += Math.max(0, shiftHours - dayPayable);
           }
           payable += dayPayable;
+          // Present only — a weekly off/holiday/paid leave day is 0 here even
+          // when `payable` above counts it, and a long day is counted in full
+          // rather than clipped to the configured maximum.
+          if (cls.kind === 'present') actualWorked += workedHoursOf(att, cfg, { cap: false });
         }
       }
 
@@ -3555,6 +3574,7 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
         previousBalance,
         expectedHours: round(expected),
         payableHours: round(payable),
+        actualWorkedHours: round(actualWorked),
         paidHours: round(paidHours),
         /* No manual adjustment facility exists, so this is always zero. It is
          * reported rather than omitted because the column is part of the

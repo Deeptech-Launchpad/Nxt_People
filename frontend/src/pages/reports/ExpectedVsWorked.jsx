@@ -62,11 +62,14 @@ const shiftRange = ({ start, end }, n) => {
 // appear when the organization measures them — see "Allow overtime and
 // deviation" on the Attendance Policy screen.
 // Previous Balance and Balance Hours are no longer shown here — Expected
-// Hours and Worked Hours (the stored payableHours figure, relabeled) are the
-// only two figures this table reports now.
+// Hours and Worked Hours are the only two figures this table reports now.
+// Worked Hours reads actualWorkedHours: the literal logged duration summed
+// over Present days only, uncapped — not payableHours, which also credits a
+// paid weekly off/holiday/leave day a flat shift's worth even though nothing
+// was clocked, and still drives the ledger view elsewhere (Ops → employee).
 const BASE_COLUMNS = [
   ['expectedHours', 'Expected Hours'],
-  ['payableHours', 'Worked Hours'],
+  ['actualWorkedHours', 'Worked Hours'],
 ];
 const DEVIATION_COLUMNS = [
   ['overtimeHours', 'Extra Time'],
