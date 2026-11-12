@@ -3493,18 +3493,24 @@ router.get('/attendance/expected-vs-worked', authorize('admin', 'director', 'hr_
         const worked = workedHoursOf(att, cfg);
         const credit = PAID_OFF.has(cls.kind) ? shiftHours : 0;
         const dayPayable = Math.max(worked, credit);
+        // Expected Hours counts working days only. A weekly off or public
+        // holiday is not owed, even on the kind this org still pays for —
+        // that credit lands in payable, not in what was expected of the day.
+        const isWorkingDay = cls.kind !== 'holiday' && cls.kind !== 'weekend';
 
         if (ymd < start) {
           const key = ymd.slice(0, 7);
           const bucket = priorMonths.get(key) || { expected: 0, payable: 0 };
-          bucket.expected += shiftHours;
+          if (isWorkingDay) bucket.expected += shiftHours;
           bucket.payable += dayPayable;
           priorMonths.set(key, bucket);
         } else {
-          expected += shiftHours;
+          if (isWorkingDay) {
+            expected += shiftHours;
+            overtime += Math.max(0, dayPayable - shiftHours);
+            deficit += Math.max(0, shiftHours - dayPayable);
+          }
           payable += dayPayable;
-          overtime += Math.max(0, dayPayable - shiftHours);
-          deficit += Math.max(0, shiftHours - dayPayable);
         }
       }
 

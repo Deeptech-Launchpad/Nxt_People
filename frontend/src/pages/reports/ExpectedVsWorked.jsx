@@ -7,6 +7,7 @@ import ReportShell from './ReportShell';
 import FilterToggleButton from './FilterToggleButton';
 import StandardFilterRows from './StandardFilterRows';
 import PeriodFilter from './PeriodFilter';
+import DateChip from './DateChip';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import useFitToViewport from '../../hooks/useFitToViewport';
@@ -19,10 +20,15 @@ const now = new Date();
 const y = now.getFullYear(), m = now.getMonth();
 const range = (s, e) => ({ start: s.toLocaleDateString('en-CA'), end: e.toLocaleDateString('en-CA') });
 
+// 'custom' has no value of its own — picking it leaves whatever range is
+// already showing untouched, same as PeriodPresetChip elsewhere in Reports,
+// so the two date fields it reveals start from the range already on screen
+// rather than snapping to some other default the person didn't ask for.
 const PERIOD_OPTIONS = [
   { key: 'thisMonth', label: 'This Month', value: range(new Date(y, m, 1), new Date(y, m + 1, 0)) },
   { key: 'lastMonth', label: 'Last Month', value: range(new Date(y, m - 1, 1), new Date(y, m, 0)) },
   { key: 'thisYear', label: 'This Year', value: range(new Date(y, 0, 1), new Date(y, 11, 31)) },
+  { key: 'custom', label: 'Custom Date Range', value: null },
 ];
 
 const fmtDate = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -55,11 +61,12 @@ const shiftRange = ({ start, end }, n) => {
 // zero, and that pattern is exactly what somebody would want to see. They only
 // appear when the organization measures them — see "Allow overtime and
 // deviation" on the Attendance Policy screen.
+// Previous Balance and Balance Hours are no longer shown here — Expected
+// Hours and Worked Hours (the stored payableHours figure, relabeled) are the
+// only two figures this table reports now.
 const BASE_COLUMNS = [
-  ['previousBalance', 'Previous Balance'],
   ['expectedHours', 'Expected Hours'],
-  ['payableHours', 'Payable Hours'],
-  ['balanceHours', 'Balance Hours'],
+  ['payableHours', 'Worked Hours'],
 ];
 const DEVIATION_COLUMNS = [
   ['overtimeHours', 'Extra Time'],
@@ -129,7 +136,19 @@ export default function ExpectedVsWorked() {
   const step = n => {
     const next = shiftRange(dateRange, n);
     setDateRange(next);
-    setPeriodKey(PERIOD_OPTIONS.find(o => o.value.start === next.start && o.value.end === next.end)?.key || 'custom');
+    setPeriodKey(PERIOD_OPTIONS.find(o => o.value && o.value.start === next.start && o.value.end === next.end)?.key || 'custom');
+  };
+
+  // Custom Date Range's two fields edit dateRange directly. A To before
+  // From is rejected outright rather than silently swapped or clamped —
+  // the report would otherwise run backwards with no indication why.
+  const setCustomDate = (field, value) => {
+    const next = { ...dateRange, [field]: value };
+    if (next.end < next.start) {
+      toast.error('To Date cannot be earlier than From Date');
+      return;
+    }
+    setDateRange(next);
   };
 
   const periodNav = (
@@ -142,7 +161,13 @@ export default function ExpectedVsWorked() {
 
   const filters = filtersOpen ? (
     <>
-      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
+      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); if (v) setDateRange(v); }} />
+      {periodKey === 'custom' && (
+        <div className="flex items-center gap-2">
+          <DateChip label="From Date" value={dateRange.start} onChange={v => setCustomDate('start', v)} />
+          <DateChip label="To Date" value={dateRange.end} onChange={v => setCustomDate('end', v)} />
+        </div>
+      )}
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={load} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">
           <Filter size={14} /> Submit
@@ -156,7 +181,7 @@ export default function ExpectedVsWorked() {
   ) : null;
 
   return (
-    <ReportShell menuItems={menuItems} title="Expected vs Worked Hours" periodNav={periodNav} subtitle="Hours owed, hours payable, and the balance carried in and out" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
+    <ReportShell menuItems={menuItems} title="Expected vs Worked Hours" periodNav={periodNav} subtitle="Hours owed against hours worked for the selected period" actions={actions} filters={filters} loading={loading} switcherCategory="Attendance">
       {rows.length === 0 ? (
         <div className="text-center py-16 text-slate-400">No data for this period</div>
       ) : (
@@ -175,9 +200,7 @@ export default function ExpectedVsWorked() {
                 <tr key={row._id} className="border-b border-slate-200">
                   <td className="px-4 py-2.5 border-r border-slate-200"><EmployeeCell row={row} /></td>
                   {COLUMNS.map(([key]) => (
-                    // A negative balance is the one figure worth colouring —
-                    // it means hours owed, not banked.
-                    <td key={key} className={`px-4 py-2.5 tabular-nums border-r border-slate-200 last:border-r-0 ${key === 'balanceHours' && row[key] < 0 ? 'text-red-600' : 'text-slate-700'}`}>
+                    <td key={key} className="px-4 py-2.5 tabular-nums border-r border-slate-200 last:border-r-0 text-slate-700">
                       {row[key] === null || row[key] === undefined ? '—' : hhmm(row[key])}
                     </td>
                   ))}
