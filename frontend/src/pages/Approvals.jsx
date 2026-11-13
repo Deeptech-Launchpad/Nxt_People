@@ -72,11 +72,13 @@ const decisionLabel = (l) => {
   return `${l.status === 'rejected' ? 'Rejected' : 'Approved'} by ${l.behalfByName} on your behalf`;
 };
 
-/* Export support for the Approved Requests tab. The merged list mixes five
- * record shapes (leave/permission, regularization, WFH, on-duty, comp-off),
- * so each exported field is resolved per-kind rather than assuming one shape
- * fits all — the same branching the on-screen cards above already do, just
- * flattened into one row instead of five different card layouts. */
+/* Export support. The combined export spans all four request-bearing tabs —
+ * Leave Requests, Permissions, Approved Requests, Rejected Requests — not
+ * just the merged Approved/Rejected list, which mixes five record shapes
+ * (leave/permission, regularization, WFH, on-duty, comp-off). Each exported
+ * field is resolved per-kind rather than assuming one shape fits all — the
+ * same branching the on-screen cards above already do, just flattened into
+ * one row instead of five different card layouts. */
 const exportRequestType = (l) => KIND_META[l.kind]?.label || (l.leaveType === 'permission' ? 'Permission' : 'Leave');
 const exportCategory = (l) => {
   if (l.kind === 'leave') return LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType || '';
@@ -96,25 +98,103 @@ const exportAmount = (l, timeFormat) => {
 // Every kind's approvalLevels carries actedAt/actedByName per level (see
 // utils/leaveApproval.js approvalLevelsJson) — the last decided level is the
 // one that actually settled the request, so Approved Date and Approver are
-// read from there rather than needing a backend change to add them.
+// read from there rather than needing a backend change to add them. A still-
+// pending request has no decided level, so both come back blank.
 const exportApprovalInfo = (levels) => {
   const decided = (levels || []).filter(a => a.status === 'approved' || a.status === 'rejected');
   if (!decided.length) return { approvedDate: null, approver: '' };
   const last = decided.reduce((a, b) => (new Date(b.actedAt || 0) > new Date(a.actedAt || 0) ? b : a));
   return { approvedDate: last.actedAt || null, approver: last.actedByName || last.approverName || '' };
 };
+// /approvals/pending's five pending queues are deliberately NOT scoped by
+// month (see the file-level comment on that route) — a request that's still
+// open is live work no matter what month the history tabs beside it happen
+// to be showing. The export, unlike the on-screen Leave Requests/Permissions
+// tabs, is a monthly record, so pending rows are narrowed here to the
+// request's own date range overlapping the selected month — the "request's
+// relevant date field" a pending item actually has, since it has no decided
+// date yet.
+const overlapsMonth = (l, month, year) => {
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 0);
+  const s = l.startDate ? new Date(String(l.startDate).slice(0, 10) + 'T00:00:00') : null;
+  if (!s) return false;
+  const e = l.endDate ? new Date(String(l.endDate).slice(0, 10) + 'T00:00:00') : s;
+  return s <= monthEnd && e >= monthStart;
+};
+/* Builds the one combined, deduplicated export list for the selected month.
+ *
+ * Approved/Rejected are already scoped server-side by decided date (see
+ * routes/approvals.js) and are mutually exclusive by construction — a
+ * rejection always settles the whole request immediately, so the same id
+ * can never land in both. Leave Requests/Permissions are the org's full
+ * pending backlog (see overlapsMonth above) and are narrowed to the month
+ * here.
+ *
+ * One genuine overlap exists: a multi-level leave/permission request still
+ * pending overall can also appear in the Approved bucket when THIS viewer's
+ * own level was decided this month (routes/approvals.js's `ml`-scoped OR
+ * clause) — the same underlying row, counted once for "what's still open"
+ * and once for "what I personally signed off on this month". Exporting both
+ * would duplicate the request id, so the pending copy (its true, still-open
+ * status) wins and the approved-bucket copy is dropped; Map insertion order
+ * below enforces that by seeding pending entries first.
+ */
+const buildExportRows = (data, sumMonth, sumYear, timeFormat) => {
+  const byId = new Map();
+  const add = (list, exportStatus) => {
+    (list || []).forEach(l => {
+      const id = `leave:${l._id}`;
+      if (byId.has(id)) return;
+      byId.set(id, { ...l, kind: 'leave', _exportStatus: exportStatus });
+    });
+  };
+  // Pending first: a request still open claims its id before any
+  // mid-chain-approved duplicate of the same id can.
+  add((data.leaves || []).filter(l => overlapsMonth(l, sumMonth, sumYear)), 'Pending');
+  add((data.permissions || []).filter(l => overlapsMonth(l, sumMonth, sumYear)), 'Pending');
+  (data.approvedLeaves || []).forEach(l => {
+    const id = `${l.kind}:${l._id}`;
+    if (!byId.has(id)) byId.set(id, { ...l, _exportStatus: 'Approved' });
+  });
+  (data.rejectedLeaves || []).forEach(l => {
+    const id = `${l.kind}:${l._id}`;
+    if (!byId.has(id)) byId.set(id, { ...l, _exportStatus: 'Rejected' });
+  });
+  return [...byId.values()].map(l => {
+    const { approvedDate, approver } = exportApprovalInfo(l.approvalLevels);
+    return {
+      requestId: l._id || '',
+      employeeId: l.employee?.employeeId || '',
+      employeeName: `${l.employee?.firstName || ''} ${l.employee?.lastName || ''}`.trim(),
+      department: l.employee?.department || '',
+      requestType: exportRequestType(l),
+      category: exportCategory(l),
+      fromDate: fmtDay(exportFromDateRaw(l), { day: '2-digit', month: 'short', year: 'numeric' }),
+      toDate: fmtDay(exportToDateRaw(l), { day: '2-digit', month: 'short', year: 'numeric' }),
+      amount: exportAmount(l, timeFormat),
+      reason: l.reason || '',
+      status: l._exportStatus,
+      submittedDate: fmtDay(l.createdAt, { day: '2-digit', month: 'short', year: 'numeric' }),
+      approvedDate: approvedDate ? fmtDay(approvedDate, { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+      approver,
+    };
+  });
+};
 const EXPORT_COLUMNS = [
   { key: 'employeeId', header: 'Employee ID' },
   { key: 'employeeName', header: 'Employee Name' },
   { key: 'department', header: 'Department' },
+  { key: 'requestId', header: 'Request ID' },
   { key: 'requestType', header: 'Request Type' },
-  { key: 'category', header: 'Leave / Request Category' },
+  { key: 'category', header: 'Leave / Permission Category' },
   { key: 'fromDate', header: 'From Date' },
   { key: 'toDate', header: 'To Date' },
-  { key: 'amount', header: 'Days / Hours' },
+  { key: 'amount', header: 'Number of Days / Permission Hours' },
+  { key: 'reason', header: 'Request Reason' },
   { key: 'status', header: 'Approval Status' },
   { key: 'submittedDate', header: 'Submitted Date' },
-  { key: 'approvedDate', header: 'Approved Date' },
+  { key: 'approvedDate', header: 'Approved / Rejected Date' },
   { key: 'approver', header: 'Approver' },
 ];
 
@@ -521,10 +601,11 @@ export default function Approvals({ embedded = false }) {
 
   return (
     <div className="p-5 space-y-5">
-      {/* Month switcher — governs the approved counts only; Total Pending is
-          the live queue and has no month. Export sits beside it: it reads the
-          same month's Approved Requests the tab below shows, never anything
-          the month switcher isn't already scoping. */}
+      {/* Month switcher — governs the approved/rejected counts only; Total
+          Pending is the live queue and has no month. Export sits beside it:
+          it covers all four request-bearing tabs for the selected month —
+          Leave Requests, Permissions, Approved Requests, Rejected Requests —
+          not just whichever tab happens to be open. */}
       <div className="flex items-center justify-end gap-2">
         <button onClick={() => setExportOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors">
           <Download size={14} /> Export
@@ -1149,36 +1230,20 @@ export default function Approvals({ embedded = false }) {
         />
       )}
 
-      {/* Export — the whole month's Approved Requests (every kind: Leave,
-          Permission, Regularization, WFH, On-Duty, Comp-Off), independent of
-          whichever tab or in-page filter happens to be active, so it always
-          matches what the month switcher above it says. Built from the same
-          data.approvedLeaves the Approved Requests tab renders — no separate
-          fetch, so nothing here can drift from what's on screen. */}
+      {/* Export — Leave Requests, Permissions, Approved Requests and Rejected
+          Requests for the selected month, combined and deduplicated by
+          request id (see buildExportRows above), independent of whichever
+          tab or in-page filter happens to be active. Built entirely from
+          `data`, already loaded for the tabs below — no separate fetch, so
+          nothing here can drift from what's on screen. */}
       <LeaveExportModal
         open={exportOpen} onClose={() => setExportOpen(false)}
-        rows={(data.approvedLeaves || []).map(l => {
-          const { approvedDate, approver } = exportApprovalInfo(l.approvalLevels);
-          return {
-            employeeId: l.employee?.employeeId || '',
-            employeeName: `${l.employee?.firstName || ''} ${l.employee?.lastName || ''}`.trim(),
-            department: l.employee?.department || '',
-            requestType: exportRequestType(l),
-            category: exportCategory(l),
-            fromDate: fmtDay(exportFromDateRaw(l), { day: '2-digit', month: 'short', year: 'numeric' }),
-            toDate: fmtDay(exportToDateRaw(l), { day: '2-digit', month: 'short', year: 'numeric' }),
-            amount: exportAmount(l, fmt.timeFormat),
-            status: l.status === 'approved' ? 'Approved' : (l.status || ''),
-            submittedDate: fmtDay(l.createdAt, { day: '2-digit', month: 'short', year: 'numeric' }),
-            approvedDate: approvedDate ? fmtDay(approvedDate, { day: '2-digit', month: 'short', year: 'numeric' }) : '',
-            approver,
-          };
-        })}
+        rows={buildExportRows(data, sumMonth, sumYear, fmt.timeFormat)}
         columns={EXPORT_COLUMNS}
-        sheetName="Approved Requests"
+        sheetName="Team Approvals"
         meta={[['Month', `${MONTHS[sumMonth - 1]} ${sumYear}`]]}
         formats={['XLS', 'XLSX', 'CSV']}
-        fileStub={`Team_Approved_Requests_${MONTHS[sumMonth - 1]}_${sumYear}`}
+        fileStub={`Team_Approvals_${MONTHS[sumMonth - 1]}_${sumYear}`}
       />
     </div>
   );
