@@ -1,11 +1,12 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye, Briefcase, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye, Briefcase, ChevronLeft, ChevronRight, X, Download } from 'lucide-react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import LeaveDetailModal from '../components/LeaveDetailModal';
 import { actionNote } from '../components/ApprovalTimeline';
 import LeaveRequestDialog from './moreservices/leavetracker/LeaveRequestDialog';
+import LeaveExportModal from './reports/LeaveExportModal';
 import { useAuth } from '../context/AuthContext';
 import usePolling from '../hooks/usePolling';
 import { LEAVE_APPROVALS_BASE, APPROVALS_TABS } from './moreservices/operationsWorkspaces';
@@ -70,6 +71,52 @@ const decisionLabel = (l) => {
   if (!l.onYourBehalf || !l.behalfByName) return null;
   return `${l.status === 'rejected' ? 'Rejected' : 'Approved'} by ${l.behalfByName} on your behalf`;
 };
+
+/* Export support for the Approved Requests tab. The merged list mixes five
+ * record shapes (leave/permission, regularization, WFH, on-duty, comp-off),
+ * so each exported field is resolved per-kind rather than assuming one shape
+ * fits all — the same branching the on-screen cards above already do, just
+ * flattened into one row instead of five different card layouts. */
+const exportRequestType = (l) => KIND_META[l.kind]?.label || (l.leaveType === 'permission' ? 'Permission' : 'Leave');
+const exportCategory = (l) => {
+  if (l.kind === 'leave') return LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType || '';
+  if (l.kind === 'on_duty') return l.requestType === 'work_from_home' ? 'Work From Home' : (l.requestType || '');
+  return '';
+};
+const exportFromDateRaw = (l) => (l.kind === 'comp_off' ? l.workedDate : (l.kind === 'regularization' || l.kind === 'wfh') ? l.date : l.startDate);
+const exportToDateRaw = (l) => (l.kind === 'comp_off' ? l.compOffDate : (l.kind === 'regularization' || l.kind === 'wfh') ? l.date : l.endDate);
+const exportAmount = (l, timeFormat) => {
+  if (l.kind === 'leave') return amountLabel(l, timeFormat);
+  if (l.kind === 'regularization') return l.requestedHours != null ? formatHoursDuration(l.requestedHours) : '';
+  if (l.kind === 'wfh') return '1 day';
+  if (l.kind === 'on_duty') return l.unit === 'hours' && l.hours != null ? formatHoursDuration(l.hours) : '1 day';
+  if (l.kind === 'comp_off') return l.daysEarned != null ? `${Number(l.daysEarned)} day${Number(l.daysEarned) === 1 ? '' : 's'}` : '';
+  return '';
+};
+// Every kind's approvalLevels carries actedAt/actedByName per level (see
+// utils/leaveApproval.js approvalLevelsJson) — the last decided level is the
+// one that actually settled the request, so Approved Date and Approver are
+// read from there rather than needing a backend change to add them.
+const exportApprovalInfo = (levels) => {
+  const decided = (levels || []).filter(a => a.status === 'approved' || a.status === 'rejected');
+  if (!decided.length) return { approvedDate: null, approver: '' };
+  const last = decided.reduce((a, b) => (new Date(b.actedAt || 0) > new Date(a.actedAt || 0) ? b : a));
+  return { approvedDate: last.actedAt || null, approver: last.actedByName || last.approverName || '' };
+};
+const EXPORT_COLUMNS = [
+  { key: 'employeeId', header: 'Employee ID' },
+  { key: 'employeeName', header: 'Employee Name' },
+  { key: 'department', header: 'Department' },
+  { key: 'requestType', header: 'Request Type' },
+  { key: 'category', header: 'Leave / Request Category' },
+  { key: 'fromDate', header: 'From Date' },
+  { key: 'toDate', header: 'To Date' },
+  { key: 'amount', header: 'Days / Hours' },
+  { key: 'status', header: 'Approval Status' },
+  { key: 'submittedDate', header: 'Submitted Date' },
+  { key: 'approvedDate', header: 'Approved Date' },
+  { key: 'approver', header: 'Approver' },
+];
 
 /* The "N of M levels approved" pill said HOW MANY had signed off but never
  * HOW — a level someone approved on another approver's behalf read exactly
@@ -162,6 +209,7 @@ export default function Approvals({ embedded = false }) {
   const [detailCompOff, setDetailCompOff] = useState(null);
   const [detailOnDuty, setDetailOnDuty] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -474,8 +522,13 @@ export default function Approvals({ embedded = false }) {
   return (
     <div className="p-5 space-y-5">
       {/* Month switcher — governs the approved counts only; Total Pending is
-          the live queue and has no month. */}
+          the live queue and has no month. Export sits beside it: it reads the
+          same month's Approved Requests the tab below shows, never anything
+          the month switcher isn't already scoping. */}
       <div className="flex items-center justify-end gap-2">
+        <button onClick={() => setExportOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors">
+          <Download size={14} /> Export
+        </button>
         <button onClick={() => shiftMonth(-1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><ChevronLeft size={15} /></button>
         <span className="text-[15px] font-semibold text-slate-700 w-36 text-center">{MONTHS[sumMonth - 1]} {sumYear}</span>
         <button onClick={() => shiftMonth(1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><ChevronRight size={15} /></button>
@@ -1095,6 +1148,38 @@ export default function Approvals({ embedded = false }) {
           onSaved={() => { setEditing(null); load(); }}
         />
       )}
+
+      {/* Export — the whole month's Approved Requests (every kind: Leave,
+          Permission, Regularization, WFH, On-Duty, Comp-Off), independent of
+          whichever tab or in-page filter happens to be active, so it always
+          matches what the month switcher above it says. Built from the same
+          data.approvedLeaves the Approved Requests tab renders — no separate
+          fetch, so nothing here can drift from what's on screen. */}
+      <LeaveExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)}
+        rows={(data.approvedLeaves || []).map(l => {
+          const { approvedDate, approver } = exportApprovalInfo(l.approvalLevels);
+          return {
+            employeeId: l.employee?.employeeId || '',
+            employeeName: `${l.employee?.firstName || ''} ${l.employee?.lastName || ''}`.trim(),
+            department: l.employee?.department || '',
+            requestType: exportRequestType(l),
+            category: exportCategory(l),
+            fromDate: fmtDay(exportFromDateRaw(l), { day: '2-digit', month: 'short', year: 'numeric' }),
+            toDate: fmtDay(exportToDateRaw(l), { day: '2-digit', month: 'short', year: 'numeric' }),
+            amount: exportAmount(l, fmt.timeFormat),
+            status: l.status === 'approved' ? 'Approved' : (l.status || ''),
+            submittedDate: fmtDay(l.createdAt, { day: '2-digit', month: 'short', year: 'numeric' }),
+            approvedDate: approvedDate ? fmtDay(approvedDate, { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+            approver,
+          };
+        })}
+        columns={EXPORT_COLUMNS}
+        sheetName="Approved Requests"
+        meta={[['Month', `${MONTHS[sumMonth - 1]} ${sumYear}`]]}
+        formats={['XLS', 'XLSX', 'CSV']}
+        fileStub={`Team_Approved_Requests_${MONTHS[sumMonth - 1]}_${sumYear}`}
+      />
     </div>
   );
 }
