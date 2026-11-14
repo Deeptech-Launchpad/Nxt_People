@@ -8,7 +8,7 @@ require('dotenv').config();
 process.env.EMAIL_DISABLED = 'true';
 process.env.LOG_LEVEL = 'error';
 const { Pool } = require('pg');
-const { evaluateCheckoutGate, isGatedShift, canModifyCheckoutExemption } = require('./utils/checkoutMinHours');
+const { evaluateCheckoutGate, isGatedShift, canModifyCheckoutExemption, requiredMinutesFor } = require('./utils/checkoutMinHours');
 const pool = new Pool({
   host: process.env.DB_HOST, port: process.env.DB_PORT,
   user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME,
@@ -49,6 +49,24 @@ check('non-exempt: permission deduction still reduces the requirement (regressio
 check('non-exempt: half-day deduction still reduces the requirement (regression)',
   evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 240, halfDayType: 'second_half', exempt: false }).blocked === false); // second_half requires exactly 4h = 240min
 check('isGatedShift unaffected by this change (regression)', isGatedShift('UK Shift') === true && isGatedShift('Housekeeping Shift') === false);
+
+console.log('\n════ evaluateCheckoutGate: fullDayLeaveSubmitted (pure) ════\n');
+// A submitted (pending or approved) full-day leave request covering today
+// lets checkout through even with 0 minutes worked and no permission/half-day
+// deduction -- "submitted", not "approved": the business rule is explicitly
+// "do not wait for approval" (see routes/attendance.js's /checkout).
+check('General Shift, 0 minutes worked, full-day leave submitted (pending): checkout is allowed',
+  evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 0, fullDayLeaveSubmitted: true }).blocked === false);
+check('fullDayLeaveExemption: true is reported for the caller to label it, if wanted',
+  evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 0, fullDayLeaveSubmitted: true }).fullDayLeaveExemption === true);
+check('UK Shift, 0 minutes worked, full-day leave submitted: checkout is allowed (shift-agnostic, same as the permanent exemption)',
+  evaluateCheckoutGate({ shiftName: 'UK Shift', workedMinutes: 0, fullDayLeaveSubmitted: true }).blocked === false);
+check('without fullDayLeaveSubmitted, the same General Shift / 0 minutes is still blocked (regression -- the exact scenario from the spec)',
+  evaluateCheckoutGate({ shiftName: 'General Shift', workedMinutes: 0, fullDayLeaveSubmitted: false }).blocked === true);
+check('an employee on an UNGATED shift (Housekeeping) with no full-day leave at all is still unaffected (regression)',
+  evaluateCheckoutGate({ shiftName: 'Housekeeping Shift', workedMinutes: 0, fullDayLeaveSubmitted: false }).blocked === false);
+check('fullDayLeaveSubmitted does not alter requiredMinutesFor -- the arithmetic for a NON-exempt, non-full-day-leave checkout is untouched (regression)',
+  requiredMinutesFor({ permissionHours: 2 }) === 390); // 8h30m - 2h = 6h30m = 390min, same as before this change
 
 console.log('\n════ canModifyCheckoutExemption: who may change the setting (pure) ════\n');
 
@@ -96,8 +114,60 @@ check('undefined/missing role CANNOT modify the exemption', canModifyCheckoutExe
     );
     check('a new employee defaults to NOT exempt', def.rows[0].exempt === false);
 
+    // ── Update 2: full_day_leave_submitted_today -- the EXACT SQL condition
+    // routes/attendance.js's /checkout now runs, against synthetic rows in
+    // this same rolled-back transaction (nothing persists).
+    console.log('\n════ full_day_leave_submitted_today SQL fact (DB round-trip, rolled back) ════\n');
+    const fdEmp = await client.query(
+      `INSERT INTO employees (employee_id, first_name, last_name, email, role, status, joining_date)
+       VALUES ('TESTFULLDAY01', 'Test', 'FullDayLeave', 'test.fullday.checkout@example.invalid', 'team_member', 'active', '2024-01-01')
+       RETURNING id`
+    );
+    const fdEmpId = fdEmp.rows[0].id;
+    const checkFullDayFact = async (date) => {
+      const r = await client.query(
+        `SELECT EXISTS (
+            SELECT 1 FROM leaves l
+             WHERE l.employee_id = $1 AND l.status <> 'rejected'
+               AND l.leave_type <> 'permission'
+               AND (l.is_half_day IS NOT TRUE)
+               AND $2::date BETWEEN l.start_date AND l.end_date
+         ) AS fact`,
+        [fdEmpId, date]
+      );
+      return r.rows[0].fact;
+    };
+    const insertLeave = (date, { leaveType = 'casual', status = 'pending', isHalfDay = false, halfDayType = null } = {}) =>
+      client.query(
+        `INSERT INTO leaves (employee_id, leave_type, start_date, end_date, status, is_half_day, half_day_type, total_days, reason)
+         VALUES ($1, $2, $3::date, $3::date, $4, $5, $6, 1, 'Test fixture for full_day_leave_submitted_today')`,
+        [fdEmpId, leaveType, date, status, isHalfDay, halfDayType]
+      );
+
+    check('no leave at all for this date: fact is false', (await checkFullDayFact('2026-01-10')) === false);
+
+    await insertLeave('2026-01-11', { status: 'pending' });
+    check('a PENDING full-day casual leave covering this date: fact is true (checkout must not wait for approval)',
+      (await checkFullDayFact('2026-01-11')) === true);
+
+    await insertLeave('2026-01-12', { status: 'approved' });
+    check('an APPROVED full-day leave covering this date: fact is true',
+      (await checkFullDayFact('2026-01-12')) === true);
+
+    await insertLeave('2026-01-13', { status: 'rejected' });
+    check('a REJECTED full-day leave covering this date: fact is false (must fall back to the normal 8h30m restriction)',
+      (await checkFullDayFact('2026-01-13')) === false);
+
+    await insertLeave('2026-01-14', { leaveType: 'permission', status: 'pending' });
+    check('a pending PERMISSION request (not a full-day leave) covering this date: fact is false',
+      (await checkFullDayFact('2026-01-14')) === false);
+
+    await insertLeave('2026-01-15', { status: 'pending', isHalfDay: true, halfDayType: 'first_half' });
+    check('a pending HALF-DAY leave covering this date: fact is false (half-day keeps its own, separate deduction, not the full-day exemption)',
+      (await checkFullDayFact('2026-01-15')) === false);
+
     await client.query('ROLLBACK');
-    const gone = await pool.query(`SELECT id FROM employees WHERE employee_id LIKE 'TESTEXEMPT%'`);
+    const gone = await pool.query(`SELECT id FROM employees WHERE employee_id LIKE 'TESTEXEMPT%' OR employee_id LIKE 'TESTFULLDAY%'`);
     check('rollback confirmed - no synthetic employees persisted', gone.rows.length === 0);
 
     // ── Access control ──────────────────────────────────────────────────
