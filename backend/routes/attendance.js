@@ -596,7 +596,19 @@ router.post('/checkout', async (req, res) => {
                   WHERE l.employee_id = $1 AND l.status <> 'rejected'
                     AND l.leave_type <> 'permission' AND l.is_half_day = true
                     AND $2::date BETWEEN l.start_date AND l.end_date
-                  ORDER BY l.created_at DESC LIMIT 1) AS half_day_type_pending_or_approved`,
+                  ORDER BY l.created_at DESC LIMIT 1) AS half_day_type_pending_or_approved,
+                -- A full-day (not permission, not half-day) leave request
+                -- covering today, submitted but not yet rejected (pending
+                -- OR approved) -- Update 2's checkout exception. Same
+                -- not-rejected rule as the two facts above, so "submitted"
+                -- means the same thing everywhere on this route.
+                EXISTS (
+                  SELECT 1 FROM leaves l
+                   WHERE l.employee_id = $1 AND l.status <> 'rejected'
+                     AND l.leave_type <> 'permission'
+                     AND (l.is_half_day IS NOT TRUE)
+                     AND $2::date BETWEEN l.start_date AND l.end_date
+                ) AS full_day_leave_submitted_today`,
         [req.user._id, today]),
     ]);
     const cfgRow = settingsRes.rows[0] || {};
@@ -649,15 +661,18 @@ router.post('/checkout', async (req, res) => {
     const workingHours = parseFloat((safePrev + sessionHours).toFixed(8));
 
     // Minimum-working-hours check-out gate — General Shift / UK Shift only,
-    // unless this employee is permanently exempt (Update 1). Blocks before
-    // anything is written, so a rejected check-out leaves the open session
-    // untouched and can simply be retried later the same day.
+    // unless this employee is permanently exempt (Update 1) or has a
+    // full-day leave request submitted for today, pending or approved
+    // (Update 2). Blocks before anything is written, so a rejected
+    // check-out leaves the open session untouched and can simply be
+    // retried later the same day.
     const gate = evaluateCheckoutGate({
       shiftName: minHoursFacts.shift_name,
       workedMinutes: workingHours * 60,
       permissionHours: Number(minHoursFacts.permission_hours_pending_or_approved) || 0,
       halfDayType: minHoursFacts.half_day_type_pending_or_approved || null,
       exempt: minHoursFacts.exempt === true,
+      fullDayLeaveSubmitted: minHoursFacts.full_day_leave_submitted_today === true,
     });
     if (gate.blocked) {
       return res.status(400).json({

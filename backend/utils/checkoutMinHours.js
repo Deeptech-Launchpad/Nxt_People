@@ -75,11 +75,21 @@ function requiredMinutesFor({ permissionHours, halfDayType } = {}) {
 // expressed in minutes (same value the route is about to persist).
 // exempt: this employee's permanent, admin-set exemption from the minimum
 //   checkout-hours restriction — bypasses everything below unconditionally.
+// fullDayLeaveSubmitted: a full-day (not permission, not half-day) leave
+//   request covering today exists with a non-rejected status (pending OR
+//   approved) — "submitted", not "approved": checkout must not wait for a
+//   manager to act on it. Bypasses the gate for today only, same as
+//   `exempt` but scoped to this one date rather than permanent. Does not
+//   touch requiredMinutesFor/the arithmetic below at all, and does not
+//   change what status this checkout ends up recording — classifyDay()
+//   downstream still only counts APPROVED leave, so a pending request
+//   grants the checkout exception without pre-empting the approval.
 // Returns { blocked: false } for a non-gated shift or once the requirement
 // is met; otherwise { blocked: true, requiredMinutes, workedMinutes,
 // shortfallMinutes, message }.
-function evaluateCheckoutGate({ shiftName, workedMinutes, permissionHours, halfDayType, exempt } = {}) {
+function evaluateCheckoutGate({ shiftName, workedMinutes, permissionHours, halfDayType, exempt, fullDayLeaveSubmitted } = {}) {
   if (exempt) return { blocked: false, exempt: true };
+  if (fullDayLeaveSubmitted) return { blocked: false, fullDayLeaveExemption: true };
   if (!isGatedShift(shiftName)) return { blocked: false };
 
   const requiredMinutes = requiredMinutesFor({ permissionHours, halfDayType });
