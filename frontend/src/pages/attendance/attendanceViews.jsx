@@ -28,6 +28,11 @@ import { reverseGeocode } from '../../utils/reverseGeocode';
  *        sessions,                 // [{checkIn, checkOut}], multi check-in/out
  *        workingHours, lateMinutes, sessionStartedAt, status,
  *      },
+ *      // Both optional, supplied only by MyAttendance.jsx's Calendar view
+ *      // today (AttendanceCalendarMonth) -- absent for any other caller,
+ *      // which renders exactly as it did before these existed.
+ *      leave: null | { type: string, label: string },
+ *      permission: null | { text: string },
  *    }
  * ────────────────────────────────────────────────────────────────────────── */
 
@@ -439,33 +444,63 @@ export function AttendanceCalendarMonth({ year, month, days, onDayClick, title }
           const d = byDate.get(ymd);
           const { hours } = d ? hoursOfRecord(d.record) : { hours: 0 };
 
-          let pill = null;
+          // An approved leave or permission covering this date, if any --
+          // present only when the caller (MyAttendance.jsx) supplies it, so
+          // every other consumer of this component (Operations -> User
+          // Specific) renders exactly as before.
+          const leavePill = d?.leave ? (
+            <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-orange-50 text-orange-700 border border-orange-200 truncate">
+              {d.leave.label}
+            </div>
+          ) : null;
+          const permissionPill = d?.permission ? (
+            <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-orange-50 text-orange-700 border border-orange-200 truncate">
+              {d.permission.text}
+            </div>
+          ) : null;
+
+          let statusPill = null;
           if (d?.off?.kind === 'holiday') {
-            pill = (
+            statusPill = (
               <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-cyan-50 text-cyan-700 border border-cyan-200">
                 <div>Holiday</div>
                 {d.off.label && d.off.label !== 'Holiday' && <div className="text-[12px] opacity-80 truncate">{d.off.label}</div>}
               </div>
             );
           } else if (d?.off?.kind === 'weekend') {
-            pill = <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-slate-100 text-slate-500 border border-slate-200">Weekend</div>;
+            statusPill = <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-slate-100 text-slate-500 border border-slate-200">Weekend</div>;
           } else if (d?.record) {
-            const isLate = d.record.status === 'late';
-            const label = STATUS_PILL[pillKeyFor(d.record.status)]?.label || d.record.status;
             const isAbsent = d.record.status === 'absent';
-            pill = (
-              <div className={`text-[13px] font-medium px-2 py-1 rounded leading-tight ${
-                isAbsent ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
-                <div>{label}</div>
-                {hours > 0 && <div className="text-[12px] opacity-80">{fmtHM(hours)} Hrs</div>}
-                {isLate && d.record.lateMinutes > 0 && (
-                  <div className="text-[11px] font-semibold mt-0.5" style={{ color: '#F5A623' }}>Late {fmtHM(d.record.lateMinutes / 60)}</div>
-                )}
-              </div>
-            );
-          } else if (d && !d.off && !d.isFuture && d.isLoaded) {
-            pill = <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-rose-50 text-rose-700 border border-rose-200">Absent</div>;
+            // A leave or permission entry means the day is accounted for --
+            // it must not sit next to an Absent pill on the same cell, same
+            // rule LeaveCalendar.jsx (My Space -> Calendar) already applies.
+            // Present/Late/Half-day are unaffected: they still show exactly
+            // as before, leave/permission or not.
+            if (!(isAbsent && (d.leave || d.permission))) {
+              const isLate = d.record.status === 'late';
+              const label = STATUS_PILL[pillKeyFor(d.record.status)]?.label || d.record.status;
+              statusPill = (
+                <div className={`text-[13px] font-medium px-2 py-1 rounded leading-tight ${
+                  isAbsent ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                  <div>{label}</div>
+                  {hours > 0 && <div className="text-[12px] opacity-80">{fmtHM(hours)} Hrs</div>}
+                  {isLate && d.record.lateMinutes > 0 && (
+                    <div className="text-[11px] font-semibold mt-0.5" style={{ color: '#F5A623' }}>Late {fmtHM(d.record.lateMinutes / 60)}</div>
+                  )}
+                </div>
+              );
+            }
+          } else if (d && !d.off && !d.leave && !d.permission && !d.isFuture && d.isLoaded) {
+            statusPill = <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-rose-50 text-rose-700 border border-rose-200">Absent</div>;
           }
+
+          const pill = (leavePill || permissionPill || statusPill) ? (
+            <div className="space-y-1">
+              {leavePill}
+              {permissionPill}
+              {statusPill}
+            </div>
+          ) : null;
 
           const Wrapper = onDayClick ? 'button' : 'div';
           return (

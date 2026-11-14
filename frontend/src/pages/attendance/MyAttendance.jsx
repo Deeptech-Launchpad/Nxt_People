@@ -31,6 +31,17 @@ function fmtHHMM(hours) {
 
 function isoDate(d) { return d.toLocaleDateString('en-CA'); }
 
+/* Same labels LeaveCalendar.jsx (My Space -> Calendar) uses for its own
+ * leave-type names, so an approved Casual Leave reads as "Casual Leave"
+ * here too rather than a generic "Leave" pill the two calendars disagree
+ * on. Permission is deliberately absent — it is handled as its own event
+ * below, not folded into this map, same as LeaveCalendar.jsx. */
+const LEAVE_TYPE_LABELS = {
+  casual: 'Casual Leave',
+  comp_off: 'Compensatory Off',
+  unpaid: 'Leave Without Pay',
+};
+
 /* Get week start (Sunday) — matches Zoho's calendar layout. */
 function weekOf(d) {
   const date = new Date(d);
@@ -159,6 +170,12 @@ export default function MyAttendance() {
   const [summary, setSummary] = useState(null);
   const [holidays, setHolidays] = useState([]);
   const [calendarMap, setCalendarMap] = useState({});
+  // Approved leave/permission, by date -- same source and the same
+  // per-day expansion LeaveCalendar.jsx (My Space -> Calendar) already uses,
+  // so a date that reads "Casual Leave" there reads the same way here
+  // instead of falling back to Absent. { [date]: { leave: {type,label}|null,
+  // permission: {text}|null } }
+  const [leaveEventsByDate, setLeaveEventsByDate] = useState({});
   const [loadedRange, setLoadedRange] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showReport, setShowReport] = useState(false);
@@ -292,13 +309,50 @@ export default function MyAttendance() {
       api.get(`/attendance/summary?startDate=${rangeStart}&endDate=${rangeEnd}`),
       Promise.all(years.map(yy =>
         api.get(`/holidays?year=${yy}`).then(r => r.data.data || []).catch(() => []))),
-    ]).then(([attArrs, r2, holArrs]) => {
+      // Same endpoint and status filter LeaveCalendar.jsx (My Space ->
+      // Calendar) uses — the one actually scoped to the person looking at
+      // the page, not /leaves (admin/manager list-all, 403s for an
+      // Employee). Fetched per year, same as holidays above, since a leave
+      // spanning New Year needs both years' rows.
+      Promise.all(years.map(yy =>
+        api.get(`/leaves/my?year=${yy}&status=approved&limit=500`).then(r => r.data?.data || []).catch(() => []))),
+    ]).then(([attArrs, r2, holArrs, leaveArrs]) => {
       setRecords(attArrs.flatMap(a => a.rows));
       setSummary(r2.data.data || {});
       setHolidays(holArrs.flat());
       const cal = {};
       attArrs.forEach(a => a.calendar.forEach(c => { cal[c.date] = c; }));
       setCalendarMap(cal);
+
+      /* Same per-day expansion LeaveCalendar.jsx already does: Permission is
+       * hours within a day otherwise worked, not a day off, so it gets its
+       * own event and never consumes a date the way a real leave does; a
+       * multi-day leave skips weekends within its range; everything else
+       * becomes a 'leave' event labelled from LEAVE_TYPE_LABELS. */
+      const leaveMap = {};
+      leaveArrs.flat().forEach(l => {
+        if (l.leaveType === 'permission') {
+          const ds = (l.startDate || '').slice(0, 10);
+          if (!ds) return;
+          if (!leaveMap[ds]) leaveMap[ds] = {};
+          leaveMap[ds].permission = { text: 'Permission' };
+          return;
+        }
+        const start = new Date((l.startDate || '').slice(0, 10) + 'T00:00:00');
+        const end = new Date((l.endDate || '').slice(0, 10) + 'T00:00:00');
+        if (!isFinite(start) || !isFinite(end)) return;
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const isWknd = typeof isWeekendByRule === 'function'
+            ? isWeekendByRule(d)
+            : (d.getDay() === 0 || d.getDay() === 6);
+          if (isWknd) continue; // a multi-day leave doesn't consume weekend days
+          const ds = d.toLocaleDateString('en-CA');
+          if (!leaveMap[ds]) leaveMap[ds] = {};
+          leaveMap[ds].leave = { type: l.leaveType, label: LEAVE_TYPE_LABELS[l.leaveType] || l.leaveType || 'Leave' };
+        }
+      });
+      setLeaveEventsByDate(leaveMap);
+
       /* What was actually asked for. A day outside this is one we have no
        * information about, which is not the same as a day nobody worked —
        * and telling them apart is what stops a fetch gap wearing the costume
@@ -376,6 +430,7 @@ export default function MyAttendance() {
     const ds = isoDate(day);
     const r = recordMap[ds] || null;
     const kind = dayInfo(day);
+    const leaveEvents = leaveEventsByDate[ds] || null;
     return {
       date: ds,
       isToday: ds === todayStr,
@@ -385,6 +440,8 @@ export default function MyAttendance() {
          : kind.weekend ? { kind: 'weekend', label: 'Weekend' }
          : null,
       record: r,
+      leave: leaveEvents?.leave || null,
+      permission: leaveEvents?.permission || null,
     };
   });
 
