@@ -52,6 +52,17 @@ export const STATUS_PILL = {
  * separate "Late" colour competing with it. */
 const pillKeyFor = (status) => (status === 'late' ? 'present' : status);
 
+/* Shared by the Timeline and List views below -- whether this day's Absent
+ * (literal or implied by an empty row) should give way to its leave or
+ * permission entry instead. Present/Late/Half-day are never affected: this
+ * only ever fires when the day's own attendance signal would otherwise read
+ * as Absent, same rule LeaveCalendar.jsx (My Space -> Calendar) and the
+ * Calendar view below already use. */
+function leaveSuppressesAbsent(day) {
+  const status = day?.record?.status || 'absent';
+  return status === 'absent' && !!(day?.leave || day?.permission);
+}
+
 export function StatusPill({ status, title }) {
   const s = STATUS_PILL[pillKeyFor(status)] || { label: status || '—', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
   return <span title={title} className={`text-[12px] font-semibold px-2 py-0.5 rounded-full border ${s.cls}`}>{s.label}</span>;
@@ -246,10 +257,15 @@ export function AttendanceTimelineList({ days, timeFormat, onAddRequest, onRowCl
 
             <div className="w-[80px] flex-shrink-0">
               <span className="text-[14px] text-slate-700 font-medium">
-                {checkInStr || (day.off ? <span className="text-slate-300 text-[13px]">{day.off.label}</span> : '')}
+                {checkInStr || (day.off ? <span className="text-slate-300 text-[13px]">{day.off.label}</span>
+                  : (leaveSuppressesAbsent(day) && day.leave) ? <span className="text-orange-600 text-[13px] font-semibold">{day.leave.label}</span>
+                  : '')}
               </span>
               {day.record?.lateMinutes > 0 && (
                 <div className="text-[12px] font-semibold" style={{ color: '#F5A623' }}>Late by {fmtHM(day.record.lateMinutes / 60)}</div>
+              )}
+              {day.permission && (
+                <div className="text-[11px] font-semibold text-orange-600 mt-0.5">Permission</div>
               )}
             </div>
 
@@ -264,11 +280,20 @@ export function AttendanceTimelineList({ days, timeFormat, onAddRequest, onRowCl
                     {day.off.label}
                   </div>
                 </div>
+              ) : (leaveSuppressesAbsent(day) && day.leave) ? (
+                <div className="flex-1 flex items-center relative h-6">
+                  <div className="absolute left-[3%] right-[3%] h-[2px] bg-orange-300" style={{ top: '50%', transform: 'translateY(-50%)' }} />
+                  <div className="absolute left-[3%] w-2.5 h-2.5 rounded-full bg-orange-300" style={{ top: '50%', transform: 'translate(-50%,-50%)' }} />
+                  <div className="absolute right-[3%] w-2.5 h-2.5 rounded-full bg-orange-300" style={{ top: '50%', transform: 'translate(50%,-50%)' }} />
+                  <div className="absolute left-1/2 -translate-x-1/2 border rounded px-2 py-0.5 text-[12px] font-semibold z-10 bg-orange-50 border-orange-200 text-orange-700">
+                    {day.leave.label}
+                  </div>
+                </div>
               ) : <TimelineRowBar day={day} timeFormat={timeFormat} />}
             </div>
 
             <div className="w-[100px] flex-shrink-0 text-right">
-              {!day.off && <TimelineHours day={day} />}
+              {!day.off && !(leaveSuppressesAbsent(day) && day.leave) && <TimelineHours day={day} />}
             </div>
 
             <div className="w-[104px] flex-shrink-0 flex justify-end">
@@ -390,7 +415,17 @@ export function AttendanceListTable({ days, timeFormat, sortId, onRowClick, onQu
                     ? (<div><StatusPill status={d.off.kind} />{d.off.kind === 'holiday' && d.off.label !== 'Holiday' && <div className="text-[12px] text-slate-500 mt-0.5">{d.off.label}</div>}</div>)
                     : (d.isFuture || !d.isLoaded)
                       ? <span className="text-slate-400 text-[13px]">—</span>
-                      : <StatusPill status={d.record?.status || 'absent'} />}
+                      : (
+                        <div className="flex flex-col items-start gap-1">
+                          {d.leave && (
+                            <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full border bg-orange-100 text-orange-700 border-orange-200">{d.leave.label}</span>
+                          )}
+                          {d.permission && (
+                            <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full border bg-orange-100 text-orange-700 border-orange-200">Permission</span>
+                          )}
+                          {!leaveSuppressesAbsent(d) && <StatusPill status={d.record?.status || 'absent'} />}
+                        </div>
+                      )}
                 </td>
                 {onQuickRegularize && (
                   <td className="px-5 py-3 text-right">
