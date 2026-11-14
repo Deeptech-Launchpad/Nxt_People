@@ -95,20 +95,36 @@ const TICK_HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
 export const pctOfDay = (mins) =>
   Math.max(0, Math.min(100, ((mins - SHIFT_START_MIN) / (SHIFT_END_MIN - SHIFT_START_MIN)) * 100));
 
-// A thin orange segment marking a sub-interval of the day -- a permission's
-// actual time window, or a half-day leave's (only when its session is
-// known). Purely additive: sits alongside whatever TimelineRowBar already
-// draws for the day, on the same pctOfDay axis, never replacing it or
-// touching its layout.
-function IntervalIndicator({ startMinutes, endMinutes, title }) {
-  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) return null;
-  const left = pctOfDay(startMinutes);
-  const width = Math.max(0.6, pctOfDay(endMinutes) - left);
+// Permission's actual time window, or a half-day leave's (only when its
+// session is known) -- as minutes-of-day, or null if there's nothing to
+// show a position for. At most one of these ever applies to a given day.
+function orangeIntervalOf(day) {
+  if (day?.permission?.startTime && day?.permission?.endTime) {
+    const startMinutes = minutesOfTimeStr(day.permission.startTime);
+    const endMinutes = minutesOfTimeStr(day.permission.endTime);
+    if (Number.isFinite(startMinutes) && Number.isFinite(endMinutes)) return { startMinutes, endMinutes };
+    return null;
+  }
+  if (day?.halfDayLeave?.interval) return day.halfDayLeave.interval;
+  return null;
+}
+
+// The orange bar segment for that interval -- same top/height/shape as the
+// green session bar in TimelineRowBar below, so it reads as part of the
+// SAME horizontal line rather than a second line of its own. Rendered
+// after the green bar(s) in DOM order, so it visually wins wherever the
+// two overlap (a permission carved out of an otherwise-green session);
+// where it doesn't overlap any session (a half-day leave adjacent to the
+// worked half), it simply occupies that stretch of the same line on its
+// own.
+function OrangeIntervalBar({ interval }) {
+  if (!interval || !Number.isFinite(interval.startMinutes) || !Number.isFinite(interval.endMinutes)) return null;
+  const left = pctOfDay(interval.startMinutes);
+  const width = Math.max(0.6, pctOfDay(interval.endMinutes) - left);
   return (
     <div
-      title={title}
-      className="absolute rounded-full bg-orange-400"
-      style={{ left: `${left}%`, width: `${width}%`, bottom: '3px', height: '3px' }}
+      className="absolute h-1 rounded-full bg-orange-400"
+      style={{ left: `${left}%`, width: `${width}%`, top: '50%', transform: 'translateY(-50%)' }}
     />
   );
 }
@@ -180,12 +196,17 @@ function TimelineRowBar({ day, timeFormat }) {
   const sessions = record?.sessions?.length ? record.sessions : (record?.checkIn
     ? [{ checkIn: record.checkIn, checkOut: record.checkOut }] : []);
 
+  // At most one of permission/half-day-leave ever applies to a day; this is
+  // its exact stored (never guessed) time interval, or null.
+  const orange = orangeIntervalOf(day);
+
   if (!sessions.length) {
     return (
       <div className="flex-1 flex items-center relative h-12">
         <div className="absolute left-[3%] right-[3%] h-[1px] border-t border-dashed border-slate-200" style={{ top: '50%' }} />
         <div className="absolute left-[3%] w-2 h-2 rounded-full border-2 border-slate-300 bg-white" style={{ top: '50%', transform: 'translate(-50%,-50%)' }} />
         <div className="absolute right-[3%] w-2 h-2 rounded-full border-2 border-slate-300 bg-white" style={{ top: '50%', transform: 'translate(50%,-50%)' }} />
+        <OrangeIntervalBar interval={orange} />
         {showNowLine && <div className="absolute top-0 bottom-0 border-l border-dashed border-blue-400 z-20" style={{ left: `${nowPct}%` }} />}
       </div>
     );
@@ -214,6 +235,12 @@ function TimelineRowBar({ day, timeFormat }) {
           </React.Fragment>
         );
       })}
+      {/* Painted after the green session bar(s) above, at the identical
+          top/height -- it wins wherever the two overlap (a permission
+          carved out of the green) and simply occupies its own stretch of
+          the same line where they don't (a half-day leave adjacent to the
+          worked half). Never a second line above or below this one. */}
+      <OrangeIntervalBar interval={orange} />
       {showNowLine && <div className="absolute top-0 bottom-0 border-l border-dashed border-blue-400 z-20" style={{ left: `${nowPct}%` }} />}
     </div>
   );
@@ -321,20 +348,6 @@ export function AttendanceTimelineList({ days, timeFormat, onAddRequest, onRowCl
                   </div>
                 </div>
               ) : <TimelineRowBar day={day} timeFormat={timeFormat} />}
-              {!day.off && day.permission && (
-                <IntervalIndicator
-                  startMinutes={minutesOfTimeStr(day.permission.startTime)}
-                  endMinutes={minutesOfTimeStr(day.permission.endTime)}
-                  title={`Permission: ${day.permission.startTime || ''}–${day.permission.endTime || ''}`}
-                />
-              )}
-              {!day.off && day.halfDayLeave?.interval && (
-                <IntervalIndicator
-                  startMinutes={day.halfDayLeave.interval.startMinutes}
-                  endMinutes={day.halfDayLeave.interval.endMinutes}
-                  title="Half Day Leave"
-                />
-              )}
             </div>
 
             <div className="w-[100px] flex-shrink-0 text-right">
