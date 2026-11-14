@@ -36,6 +36,22 @@ function isoDate(d) { return d.toLocaleDateString('en-CA'); }
  * here too rather than a generic "Leave" pill the two calendars disagree
  * on. Permission is deliberately absent — it is handled as its own event
  * below, not folded into this map, same as LeaveCalendar.jsx. */
+// Same fixed durations the checkout gate already uses for a half-day leave
+// (backend/utils/checkoutMinHours.js's HALF_DAY_LEAVE_MINUTES) — reused
+// here, not redefined, so a half-day's displayed interval can never drift
+// from what the checkout rule actually grants for it.
+const HALF_DAY_LEAVE_MINUTES = { first_half: 4 * 60, second_half: 4 * 60 + 30 };
+
+// "09:30" or "09:30:00" -> 570. Used for both the employee's shift times and
+// a permission's stored start_time/end_time -- both plain TIME values, no
+// timezone conversion needed (unlike check_in/check_out, which are real
+// timestamps).
+function minutesOfTimeStr(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
 const LEAVE_TYPE_LABELS = {
   casual: 'Casual Leave',
   comp_off: 'Compensatory Off',
@@ -328,14 +344,40 @@ export default function MyAttendance() {
        * hours within a day otherwise worked, not a day off, so it gets its
        * own event and never consumes a date the way a real leave does; a
        * multi-day leave skips weekends within its range; everything else
-       * becomes a 'leave' event labelled from LEAVE_TYPE_LABELS. */
+       * becomes a 'leave' event labelled from LEAVE_TYPE_LABELS.
+       *
+       * A half-day leave (l.isHalfDay) is pulled out into its own
+       * 'halfDayLeave' event rather than folded into 'leave' -- it is never
+       * a full day off (the person is still expected in for the other
+       * half), so it must never read as one. It is always a single day
+       * (ApplyLeaveModal only ever lets someone pick one date for it), so
+       * no weekend-spanning loop is needed. The exact clock interval is
+       * only ever set when the session (first_half/second_half) is
+       * actually known -- never guessed -- anchored to the employee's own
+       * shift span using the same fixed durations the checkout gate uses. */
+      const shiftStartMinutes = minutesOfTimeStr(user?.shift?.start_time) ?? minutesOfTimeStr('09:30');
+      const shiftEndMinutes = minutesOfTimeStr(user?.shift?.end_time) ?? minutesOfTimeStr('18:00');
       const leaveMap = {};
       leaveArrs.flat().forEach(l => {
         if (l.leaveType === 'permission') {
           const ds = (l.startDate || '').slice(0, 10);
           if (!ds) return;
           if (!leaveMap[ds]) leaveMap[ds] = {};
-          leaveMap[ds].permission = { text: 'Permission' };
+          leaveMap[ds].permission = { text: 'Permission', startTime: l.startTime || null, endTime: l.endTime || null };
+          return;
+        }
+        if (l.isHalfDay) {
+          const ds = (l.startDate || '').slice(0, 10);
+          if (!ds) return;
+          if (!leaveMap[ds]) leaveMap[ds] = {};
+          let interval = null;
+          if (l.halfDayType === 'first_half' || l.halfDayType === 'second_half') {
+            const dur = HALF_DAY_LEAVE_MINUTES[l.halfDayType];
+            interval = l.halfDayType === 'first_half'
+              ? { startMinutes: shiftStartMinutes, endMinutes: shiftStartMinutes + dur }
+              : { startMinutes: shiftEndMinutes - dur, endMinutes: shiftEndMinutes };
+          }
+          leaveMap[ds].halfDayLeave = { label: 'Half Day Leave', halfDayType: l.halfDayType || null, interval };
           return;
         }
         const start = new Date((l.startDate || '').slice(0, 10) + 'T00:00:00');
@@ -442,6 +484,7 @@ export default function MyAttendance() {
       record: r,
       leave: leaveEvents?.leave || null,
       permission: leaveEvents?.permission || null,
+      halfDayLeave: leaveEvents?.halfDayLeave || null,
     };
   });
 

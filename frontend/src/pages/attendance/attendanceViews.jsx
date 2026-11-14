@@ -28,11 +28,13 @@ import { reverseGeocode } from '../../utils/reverseGeocode';
  *        sessions,                 // [{checkIn, checkOut}], multi check-in/out
  *        workingHours, lateMinutes, sessionStartedAt, status,
  *      },
- *      // Both optional, supplied only by MyAttendance.jsx's Calendar view
- *      // today (AttendanceCalendarMonth) -- absent for any other caller,
- *      // which renders exactly as it did before these existed.
- *      leave: null | { type: string, label: string },
- *      permission: null | { text: string },
+ *      // All three optional, supplied only by MyAttendance.jsx -- absent
+ *      // for any other caller, which renders exactly as it did before
+ *      // these existed.
+ *      leave: null | { type: string, label: string },         // full-day only
+ *      permission: null | { text: string, startTime, endTime },  // TIME strings, e.g. "09:30:00"
+ *      halfDayLeave: null | { label: string, halfDayType: 'first_half'|'second_half'|null,
+ *                              interval: null | { startMinutes: number, endMinutes: number } },
  *    }
  * ────────────────────────────────────────────────────────────────────────── */
 
@@ -60,7 +62,15 @@ const pillKeyFor = (status) => (status === 'late' ? 'present' : status);
  * Calendar view below already use. */
 function leaveSuppressesAbsent(day) {
   const status = day?.record?.status || 'absent';
-  return status === 'absent' && !!(day?.leave || day?.permission);
+  return status === 'absent' && !!(day?.leave || day?.permission || day?.halfDayLeave);
+}
+
+// "09:30:00" -> 570. Permission's start_time/end_time are plain TIME
+// columns, not timestamps -- no timezone conversion needed, unlike
+// istMinutesOfInstant below.
+function minutesOfTimeStr(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
 export function StatusPill({ status, title }) {
@@ -84,6 +94,24 @@ export const SHIFT_END_MIN   = 20 * 60;  // 20:00 → its rightmost
 const TICK_HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
 export const pctOfDay = (mins) =>
   Math.max(0, Math.min(100, ((mins - SHIFT_START_MIN) / (SHIFT_END_MIN - SHIFT_START_MIN)) * 100));
+
+// A thin orange segment marking a sub-interval of the day -- a permission's
+// actual time window, or a half-day leave's (only when its session is
+// known). Purely additive: sits alongside whatever TimelineRowBar already
+// draws for the day, on the same pctOfDay axis, never replacing it or
+// touching its layout.
+function IntervalIndicator({ startMinutes, endMinutes, title }) {
+  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) return null;
+  const left = pctOfDay(startMinutes);
+  const width = Math.max(0.6, pctOfDay(endMinutes) - left);
+  return (
+    <div
+      title={title}
+      className="absolute rounded-full bg-orange-400"
+      style={{ left: `${left}%`, width: `${width}%`, bottom: '3px', height: '3px' }}
+    />
+  );
+}
 
 /* Re-renders once a second only while at least one row needs it — a day
  * that is checked in right now, still open. Everyone else's row is static. */
@@ -267,9 +295,12 @@ export function AttendanceTimelineList({ days, timeFormat, onAddRequest, onRowCl
               {day.permission && (
                 <div className="text-[11px] font-semibold text-orange-600 mt-0.5">Permission</div>
               )}
+              {day.halfDayLeave && (
+                <div className="text-[11px] font-semibold text-orange-600 mt-0.5">Half Day Leave</div>
+              )}
             </div>
 
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 relative">
               {day.off ? (
                 <div className="flex-1 flex items-center relative h-6">
                   <div className={`absolute left-[3%] right-[3%] h-[2px] ${day.off.kind === 'holiday' ? 'bg-cyan-300' : 'bg-amber-300'}`} style={{ top: '50%', transform: 'translateY(-50%)' }} />
@@ -290,6 +321,20 @@ export function AttendanceTimelineList({ days, timeFormat, onAddRequest, onRowCl
                   </div>
                 </div>
               ) : <TimelineRowBar day={day} timeFormat={timeFormat} />}
+              {!day.off && day.permission && (
+                <IntervalIndicator
+                  startMinutes={minutesOfTimeStr(day.permission.startTime)}
+                  endMinutes={minutesOfTimeStr(day.permission.endTime)}
+                  title={`Permission: ${day.permission.startTime || ''}–${day.permission.endTime || ''}`}
+                />
+              )}
+              {!day.off && day.halfDayLeave?.interval && (
+                <IntervalIndicator
+                  startMinutes={day.halfDayLeave.interval.startMinutes}
+                  endMinutes={day.halfDayLeave.interval.endMinutes}
+                  title="Half Day Leave"
+                />
+              )}
             </div>
 
             <div className="w-[100px] flex-shrink-0 text-right">
@@ -423,6 +468,9 @@ export function AttendanceListTable({ days, timeFormat, sortId, onRowClick, onQu
                           {d.permission && (
                             <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full border bg-orange-100 text-orange-700 border-orange-200">Permission</span>
                           )}
+                          {d.halfDayLeave && (
+                            <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full border bg-orange-100 text-orange-700 border-orange-200">Half Day Leave</span>
+                          )}
                           {!leaveSuppressesAbsent(d) && <StatusPill status={d.record?.status || 'absent'} />}
                         </div>
                       )}
@@ -493,6 +541,11 @@ export function AttendanceCalendarMonth({ year, month, days, onDayClick, title }
               {d.permission.text}
             </div>
           ) : null;
+          const halfDayLeavePill = d?.halfDayLeave ? (
+            <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-orange-50 text-orange-700 border border-orange-200 truncate">
+              {d.halfDayLeave.label}
+            </div>
+          ) : null;
 
           let statusPill = null;
           if (d?.off?.kind === 'holiday') {
@@ -511,7 +564,7 @@ export function AttendanceCalendarMonth({ year, month, days, onDayClick, title }
             // rule LeaveCalendar.jsx (My Space -> Calendar) already applies.
             // Present/Late/Half-day are unaffected: they still show exactly
             // as before, leave/permission or not.
-            if (!(isAbsent && (d.leave || d.permission))) {
+            if (!(isAbsent && (d.leave || d.permission || d.halfDayLeave))) {
               const isLate = d.record.status === 'late';
               const label = STATUS_PILL[pillKeyFor(d.record.status)]?.label || d.record.status;
               statusPill = (
@@ -525,14 +578,15 @@ export function AttendanceCalendarMonth({ year, month, days, onDayClick, title }
                 </div>
               );
             }
-          } else if (d && !d.off && !d.leave && !d.permission && !d.isFuture && d.isLoaded) {
+          } else if (d && !d.off && !d.leave && !d.permission && !d.halfDayLeave && !d.isFuture && d.isLoaded) {
             statusPill = <div className="text-[13px] font-medium px-2 py-1 rounded leading-tight bg-rose-50 text-rose-700 border border-rose-200">Absent</div>;
           }
 
-          const pill = (leavePill || permissionPill || statusPill) ? (
+          const pill = (leavePill || permissionPill || halfDayLeavePill || statusPill) ? (
             <div className="space-y-1">
               {leavePill}
               {permissionPill}
+              {halfDayLeavePill}
               {statusPill}
             </div>
           ) : null;
