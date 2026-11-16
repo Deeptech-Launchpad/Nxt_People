@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CheckCircle, CheckCheck, XCircle, Clock, Home, RefreshCw, Gift, Search, Eye, Briefcase, ChevronLeft, ChevronRight, X, Download } from 'lucide-react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
@@ -45,6 +45,26 @@ const fmtDay = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', ye
   if (!d) return '—';
   const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
   return Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-IN', opts);
+};
+
+/* Approved Requests' date filter matches the request's own leave period, not
+ * when it was submitted or decided — a multi-day leave counts if the chosen
+ * date (or any day of the chosen range) falls between its startDate and
+ * endDate. Only 'leave' kind rows (leave + permission) carry that period;
+ * the other kinds merged into this same list (regularization/WFH/on-duty/
+ * comp-off) aren't "leave requests" in the sense this filter means, so they
+ * simply stop matching once a date is chosen, same as an unrelated
+ * department would. */
+const matchesLeaveDate = (l, { from, to }) => {
+  if (l.kind !== 'leave') return false;
+  const s = l.startDate ? new Date(String(l.startDate).slice(0, 10) + 'T00:00:00') : null;
+  if (!s) return false;
+  const e = l.endDate ? new Date(String(l.endDate).slice(0, 10) + 'T00:00:00') : s;
+  const filterFrom = from ? new Date(`${from}T00:00:00`) : null;
+  const filterTo = to ? new Date(`${to}T00:00:00`) : filterFrom;
+  if (filterFrom && e < filterFrom) return false;
+  if (filterTo && s > filterTo) return false;
+  return true;
 };
 
 /**
@@ -283,6 +303,23 @@ export default function Approvals({ embedded = false }) {
   // starts unfiltered rather than silently keeping a stale narrowing.
   const [approvedFilter, setApprovedFilter] = useState(null);
   useEffect(() => { if (tab !== 'approvedLeaves') setApprovedFilter(null); }, [tab]);
+  // Department + approved-leave-date filters — scoped to the Approved/
+  // Rejected Requests tabs, same bar as the existing name search. Cleared
+  // wherever searchFilter already is, below, so the three behave as one set.
+  const [deptFilter, setDeptFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
+  const clearApprovalsFilters = () => { setSearchFilter(''); setDeptFilter(''); setDateFilter({ from: '', to: '' }); };
+  useEffect(() => { if (tab !== 'approvedLeaves') setDateFilter({ from: '', to: '' }); }, [tab]);
+  // Dynamic, from whichever employees already have an Approved/Rejected
+  // record loaded on this page — no separate departments fetch, and nothing
+  // to hardcode.
+  const approvalDepartments = useMemo(() => {
+    const set = new Set();
+    [...(data.approvedLeaves || []), ...(data.rejectedLeaves || [])].forEach(l => {
+      if (l.employee?.department) set.add(l.employee.department);
+    });
+    return [...set].sort();
+  }, [data.approvedLeaves, data.rejectedLeaves]);
   const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
   const [detailBalance, setDetailBalance] = useState(null); // balance cards for the detail modal
   const [detailWfh, setDetailWfh] = useState(null);
@@ -635,7 +672,7 @@ export default function Approvals({ embedded = false }) {
           <div key={l}
             onClick={f ? () => {
               setApprovedFilter({ ...f, label: l });
-              setTab('approvedLeaves'); markTabSeen('approvedLeaves', tabCounts.approvedLeaves || 0); setSearchFilter('');
+              setTab('approvedLeaves'); markTabSeen('approvedLeaves', tabCounts.approvedLeaves || 0); clearApprovalsFilters();
             } : undefined}
             className={`bg-white rounded-2xl p-4 border border-slate-100 shadow-sm transition-colors ${f ? 'cursor-pointer hover:border-slate-300 hover:shadow-md' : ''}`}>
             <p className="text-sm text-slate-500 mb-2">{l}</p>
@@ -652,7 +689,7 @@ export default function Approvals({ embedded = false }) {
             const currentCount = count || 0;
             const showBadge   = unseenCount(id) > 0;
             return (
-              <button key={id} onClick={() => { setTab(id); markTabSeen(id, currentCount); setSearchFilter(''); }}
+              <button key={id} onClick={() => { setTab(id); markTabSeen(id, currentCount); clearApprovalsFilters(); }}
                 className={`flex items-center gap-2 px-5 py-4 text-base font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                 {label}
                 {showBadge && (
@@ -683,6 +720,50 @@ export default function Approvals({ embedded = false }) {
               />
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
             </div>
+
+            {/* Department — narrows this same merged list to one department;
+                list is built from whichever employees already have a record
+                loaded here, so nothing is hardcoded and no extra fetch runs. */}
+            <select
+              value={deptFilter}
+              onChange={e => setDeptFilter(e.target.value)}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[15px] text-slate-600 outline-none focus:border-brand-400"
+            >
+              <option value="">All Departments</option>
+              {approvalDepartments.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+
+            {/* Approved leave date — Approved Requests only, matched against
+                the request's own leave period (see matchesLeaveDate), not
+                when it was submitted or decided. A single date leaves "to"
+                blank; filling both makes it a range. */}
+            {tab === 'approvedLeaves' && (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={dateFilter.from}
+                  onChange={e => setDateFilter(f => ({ ...f, from: e.target.value }))}
+                  className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[15px] text-slate-600 outline-none focus:border-brand-400"
+                  aria-label="Approved leave date from"
+                />
+                <span className="text-slate-600 text-[13px]">to</span>
+                <input
+                  type="date"
+                  value={dateFilter.to}
+                  min={dateFilter.from || undefined}
+                  onChange={e => setDateFilter(f => ({ ...f, to: e.target.value }))}
+                  className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[15px] text-slate-600 outline-none focus:border-brand-400"
+                  aria-label="Approved leave date to"
+                />
+              </div>
+            )}
+
+            {(searchFilter || deptFilter || dateFilter.from || dateFilter.to) && (
+              <button onClick={clearApprovalsFilters} className="flex items-center gap-1 text-slate-600 hover:text-slate-700 text-[13.5px] font-medium">
+                <X size={13} /> Clear filters
+              </button>
+            )}
+
             {tab === 'approvedLeaves' && approvedFilter && (
               <span className="flex items-center gap-1.5 bg-brand-50 text-brand-700 text-[13.5px] font-medium px-3 py-1.5 rounded-full">
                 {approvedFilter.label}
@@ -810,6 +891,8 @@ export default function Approvals({ embedded = false }) {
               const list = data.approvedLeaves?.filter(l => {
                 if (approvedFilter && l.kind !== approvedFilter.kind) return false;
                 if (approvedFilter?.leaveType && l.leaveType !== approvedFilter.leaveType) return false;
+                if (deptFilter && l.employee?.department !== deptFilter) return false;
+                if ((dateFilter.from || dateFilter.to) && !matchesLeaveDate(l, dateFilter)) return false;
                 return !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
               }) || [];
               return list.length === 0
@@ -887,7 +970,10 @@ export default function Approvals({ embedded = false }) {
 
             {/* Rejected Requests — same merge as Approved, across all five types. */}
             {tab === 'rejectedLeaves' && (() => {
-              const list = data.rejectedLeaves?.filter(l => !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase())) || [];
+              const list = data.rejectedLeaves?.filter(l => {
+                if (deptFilter && l.employee?.department !== deptFilter) return false;
+                return !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
+              }) || [];
               return list.length === 0
                 ? <EmptyState icon={XCircle} message="No rejected requests found" />
                 : <>
