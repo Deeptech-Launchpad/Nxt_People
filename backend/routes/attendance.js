@@ -226,9 +226,41 @@ router.post('/checkin', async (req, res) => {
       checkInMins: checkInMinsForLateGate, isFirstCheckin: !existing,
       hasValidFirstHalfLeaveToday,
     })) {
-      const decision = validateLateCheckinDecision({
-        action: req.body.lateCheckinAction, reason: req.body.lateReason, leaveId: req.body.lateCheckinLeaveId,
-      });
+      // A Permission request already submitted for today (pending OR
+      // approved — never rejected/cancelled) settles this decision on its
+      // own, without asking again. This covers two cases: the employee
+      // already went through this exact flow moments ago and the
+      // check-in call that was meant to follow automatically never
+      // landed (so this is really a retry, not a fresh decision — a
+      // second Permission application would be a duplicate, not a fix),
+      // or they applied for today's Permission independently, outside
+      // this flow, before trying to check in. Either way the request
+      // body's own lateCheckinAction/lateCheckinLeaveId are ignored in
+      // favour of what's actually on file, so nothing here can be
+      // spoofed by a direct API call either.
+      let existingPermission = null;
+      try {
+        const existingPerm = await pool.query(
+          `SELECT id FROM leaves
+            WHERE employee_id = $1 AND leave_type = 'permission'
+              AND status IN ('pending', 'pending_approval', 'approved')
+              AND $2::date BETWEEN start_date AND end_date
+            ORDER BY created_at DESC LIMIT 1`,
+          [req.user._id, today]
+        );
+        existingPermission = existingPerm.rows[0] || null;
+      } catch (err) {
+        // Failing to read it must never cost somebody their punch — falls
+        // back to requiring a fresh decision, same "wrapped" convention
+        // the first-half-leave check above already uses.
+        logger.warn({ err: err.message }, '[attendance] existing-permission check skipped');
+      }
+
+      const decision = existingPermission
+        ? { ok: true, action: 'permission', reason: null, leaveId: existingPermission.id }
+        : validateLateCheckinDecision({
+            action: req.body.lateCheckinAction, reason: req.body.lateReason, leaveId: req.body.lateCheckinLeaveId,
+          });
       if (!decision.ok) {
         return res.status(400).json({ success: false, code: decision.code, message: decision.message });
       }

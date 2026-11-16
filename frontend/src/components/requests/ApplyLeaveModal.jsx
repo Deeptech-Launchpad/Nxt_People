@@ -18,7 +18,11 @@ import RequestShell, { Field, inputClass } from './RequestShell';
  *
  * `mode` picks which door this opened from: 'leave' offers every type,
  * 'compoff' opens straight on Compensatory Off, matching the two separate
- * entries in the Add Request menu.
+ * entries in the Add Request menu. 'permission' opens straight on
+ * Permission the same way, for AttendanceContext.jsx's late-check-in flow
+ * -- that flow's auto-check-in only succeeds for an actual Permission
+ * application, so the type is locked rather than left for the employee to
+ * (possibly wrongly) choose.
  *
  * `existing` turns this into an edit of that leave instead of a new one — same
  * form, pre-filled, PUT instead of POST. The leave type is locked once set:
@@ -61,6 +65,16 @@ export default function ApplyLeaveModal({ date, mode = 'leave', existing = null,
       if (mode === 'compoff') {
         const c = list.find(t => /comp/i.test(t.code) || /compensat/i.test(t.name));
         if (c) setType(c.code);
+      }
+      if (mode === 'permission') {
+        // The late-check-in flow (AttendanceContext.jsx) only ever reads
+        // back a Permission application's id — if the employee were free
+        // to pick a different type here, the leave would be created, but
+        // check-in would then reject it as unverified. Locking the type
+        // the same way 'compoff' already locks Compensatory Off closes
+        // that off at the source.
+        const p = list.find(t => /permission/i.test(t.code) || /permission/i.test(t.name));
+        if (p) setType(p.code);
       }
     }).catch(() => {});
     api.get('/leaves/balance').then(r => setBalances(r.data.data || null)).catch(() => {});
@@ -183,7 +197,7 @@ export default function ApplyLeaveModal({ date, mode = 'leave', existing = null,
 
   return (
     <RequestShell
-      title={existing ? 'Edit Leave' : (mode === 'compoff' ? 'Apply Compensatory Off' : 'Apply Leave')}
+      title={existing ? 'Edit Leave' : (mode === 'compoff' ? 'Apply Compensatory Off' : mode === 'permission' ? 'Apply Permission' : 'Apply Leave')}
       submitLabel={existing ? 'Save Changes' : 'Submit'}
       onClose={onClose} onSubmit={submit} submitting={saving}>
       <div className="space-y-4 max-w-2xl">
@@ -199,7 +213,7 @@ export default function ApplyLeaveModal({ date, mode = 'leave', existing = null,
             </div>
           )}
           <select className={inputClass} value={type} onChange={e => setType(e.target.value)}
-            disabled={mode === 'compoff' || !!existing}>
+            disabled={mode === 'compoff' || mode === 'permission' || !!existing}>
             <option value="">Select</option>
             {shownTypes.map(t => <option key={t.code} value={t.code}>{t.name}</option>)}
           </select>
