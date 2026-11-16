@@ -495,6 +495,7 @@ export const AttendanceProvider = ({ children }) => {
 
       {showPermissionAfterLateCheckin && (
         <ApplyLeaveModal
+          mode="permission"
           onClose={() => setShowPermissionAfterLateCheckin(false)}
           onDone={handlePermissionSubmitted}
         />
