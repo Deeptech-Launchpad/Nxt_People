@@ -47,24 +47,33 @@ const fmtDay = (d, opts = { weekday: 'short', day: 'numeric', month: 'short', ye
   return Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-IN', opts);
 };
 
-/* Approved Requests' date filter matches the request's own leave period, not
- * when it was submitted or decided — a multi-day leave counts if the chosen
- * date (or any day of the chosen range) falls between its startDate and
- * endDate. Only 'leave' kind rows (leave + permission) carry that period;
- * the other kinds merged into this same list (regularization/WFH/on-duty/
- * comp-off) aren't "leave requests" in the sense this filter means, so they
- * simply stop matching once a date is chosen, same as an unrelated
- * department would. */
-const matchesLeaveDate = (l, { from, to }) => {
-  if (l.kind !== 'leave') return false;
-  const s = l.startDate ? new Date(String(l.startDate).slice(0, 10) + 'T00:00:00') : null;
+/* The From Date / To Date filter, shared by every tab — matches the
+ * request's OWN date (never when it was submitted or decided; see the
+ * matching fix to the month selector in routes/approvals.js). A multi-day
+ * request counts if ANY day of it falls inside the chosen range — a single
+ * date leaves `to` blank and behaves as "on this day". `start`/`end` are the
+ * same value for a single-date request (a regularization/WFH day, a
+ * comp-off's worked day), so one function covers both shapes. */
+const matchesDateRange = (startStr, endStr, { from, to }) => {
+  if (!from && !to) return true;
+  const s = startStr ? new Date(String(startStr).slice(0, 10) + 'T00:00:00') : null;
   if (!s) return false;
-  const e = l.endDate ? new Date(String(l.endDate).slice(0, 10) + 'T00:00:00') : s;
+  const e = endStr ? new Date(String(endStr).slice(0, 10) + 'T00:00:00') : s;
   const filterFrom = from ? new Date(`${from}T00:00:00`) : null;
   const filterTo = to ? new Date(`${to}T00:00:00`) : filterFrom;
   if (filterFrom && e < filterFrom) return false;
   if (filterTo && s > filterTo) return false;
   return true;
+};
+// Dispatches to the right date field per kind, for the merged Approved/
+// Rejected list — leave/permission use their start/end range; regularization
+// and WFH are single-day; on-duty is a range; comp-off uses the day actually
+// worked (compOffDate can be null — not yet redeemed).
+const matchesItemDate = (l, range) => {
+  if (!range.from && !range.to) return true;
+  if (l.kind === 'regularization' || l.kind === 'wfh') return matchesDateRange(l.date, l.date, range);
+  if (l.kind === 'comp_off') return matchesDateRange(l.workedDate, l.workedDate, range);
+  return matchesDateRange(l.startDate, l.endDate, range); // 'leave' and 'on_duty'
 };
 
 /**
@@ -303,23 +312,40 @@ export default function Approvals({ embedded = false }) {
   // starts unfiltered rather than silently keeping a stale narrowing.
   const [approvedFilter, setApprovedFilter] = useState(null);
   useEffect(() => { if (tab !== 'approvedLeaves') setApprovedFilter(null); }, [tab]);
-  // Department + approved-leave-date filters — scoped to the Approved/
-  // Rejected Requests tabs, same bar as the existing name search. Cleared
-  // wherever searchFilter already is, below, so the three behave as one set.
+  // Department + From/To Date filters — available on every tab, same bar as
+  // the existing name search. Deliberately NOT cleared on a tab switch (see
+  // the tab-button/tile-click handlers below) — a department or date range
+  // chosen on one tab stays set when moving to another, and is only cleared
+  // by the explicit Clear filters button.
   const [deptFilter, setDeptFilter] = useState('');
   const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
   const clearApprovalsFilters = () => { setSearchFilter(''); setDeptFilter(''); setDateFilter({ from: '', to: '' }); };
-  useEffect(() => { if (tab !== 'approvedLeaves') setDateFilter({ from: '', to: '' }); }, [tab]);
-  // Dynamic, from whichever employees already have an Approved/Rejected
-  // record loaded on this page — no separate departments fetch, and nothing
-  // to hardcode.
+  // Dynamic, from whichever employees already have a record loaded on this
+  // page (any tab) — no separate departments fetch, and nothing to hardcode.
   const approvalDepartments = useMemo(() => {
     const set = new Set();
-    [...(data.approvedLeaves || []), ...(data.rejectedLeaves || [])].forEach(l => {
-      if (l.employee?.department) set.add(l.employee.department);
-    });
+    [
+      ...(data.leaves || []), ...(data.permissions || []),
+      ...(data.approvedLeaves || []), ...(data.rejectedLeaves || []),
+      ...(data.regularizations || []), ...(data.wfhRequests || []),
+      ...(data.compOffs || []), ...(data.onDuty || []),
+    ].forEach(l => { if (l.employee?.department) set.add(l.employee.department); });
     return [...set].sort();
-  }, [data.approvedLeaves, data.rejectedLeaves]);
+  }, [data]);
+  // Approved/Rejected are the only two tabs the global month switcher
+  // already scopes server-side — the From/To Date filter on those two tabs
+  // is a narrower filter WITHIN that month, so its inputs are clamped to the
+  // month's own bounds (requirement: a chosen date can't silently claim to
+  // show records outside the selected month). The other six tabs show the
+  // org's full backlog with no month bound of their own, so their date
+  // inputs are unconstrained.
+  const monthBounds = useMemo(() => {
+    const pad = (n) => String(n).padStart(2, '0');
+    const start = `${sumYear}-${pad(sumMonth)}-01`;
+    const lastDay = new Date(sumYear, sumMonth, 0).getDate();
+    const end = `${sumYear}-${pad(sumMonth)}-${pad(lastDay)}`;
+    return { start, end };
+  }, [sumMonth, sumYear]);
   const [detailLeave, setDetailLeave] = useState(null);  // leave shown in the detail/timeline modal
   const [detailBalance, setDetailBalance] = useState(null); // balance cards for the detail modal
   const [detailWfh, setDetailWfh] = useState(null);
@@ -672,7 +698,7 @@ export default function Approvals({ embedded = false }) {
           <div key={l}
             onClick={f ? () => {
               setApprovedFilter({ ...f, label: l });
-              setTab('approvedLeaves'); markTabSeen('approvedLeaves', tabCounts.approvedLeaves || 0); clearApprovalsFilters();
+              setTab('approvedLeaves'); markTabSeen('approvedLeaves', tabCounts.approvedLeaves || 0);
             } : undefined}
             className={`bg-white rounded-2xl p-4 border border-slate-100 shadow-sm transition-colors ${f ? 'cursor-pointer hover:border-slate-300 hover:shadow-md' : ''}`}>
             <p className="text-sm text-slate-500 mb-2">{l}</p>
@@ -689,7 +715,7 @@ export default function Approvals({ embedded = false }) {
             const currentCount = count || 0;
             const showBadge   = unseenCount(id) > 0;
             return (
-              <button key={id} onClick={() => { setTab(id); markTabSeen(id, currentCount); clearApprovalsFilters(); }}
+              <button key={id} onClick={() => { setTab(id); markTabSeen(id, currentCount); }}
                 className={`flex items-center gap-2 px-5 py-4 text-base font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${tab === id ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                 {label}
                 {showBadge && (
@@ -708,7 +734,15 @@ export default function Approvals({ embedded = false }) {
         </div>
         )}
 
-        {['approvedLeaves', 'rejectedLeaves'].includes(tab) && (
+        {(() => {
+          // Approved/Rejected are already scoped to the selected month
+          // server-side, so their own From/To Date inputs are clamped to
+          // that month's bounds — a date outside it would otherwise look
+          // like it's showing something it structurally cannot. The other
+          // six tabs are the org's full backlog with no month bound, so
+          // their inputs allow any date.
+          const monthScoped = ['approvedLeaves', 'rejectedLeaves'].includes(tab);
+          return (
           <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap">
             <div className="relative w-64">
               <input
@@ -721,7 +755,7 @@ export default function Approvals({ embedded = false }) {
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
             </div>
 
-            {/* Department — narrows this same merged list to one department;
+            {/* Department — narrows whichever tab is open to one department;
                 list is built from whichever employees already have a record
                 loaded here, so nothing is hardcoded and no extra fetch runs. */}
             <select
@@ -733,30 +767,31 @@ export default function Approvals({ embedded = false }) {
               {approvalDepartments.map(d => <option key={d} value={d}>{d}</option>)}
             </select>
 
-            {/* Approved leave date — Approved Requests only, matched against
-                the request's own leave period (see matchesLeaveDate), not
-                when it was submitted or decided. A single date leaves "to"
-                blank; filling both makes it a range. */}
-            {tab === 'approvedLeaves' && (
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="date"
-                  value={dateFilter.from}
-                  onChange={e => setDateFilter(f => ({ ...f, from: e.target.value }))}
-                  className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[15px] text-slate-600 outline-none focus:border-brand-400"
-                  aria-label="Approved leave date from"
-                />
-                <span className="text-slate-600 text-[13px]">to</span>
-                <input
-                  type="date"
-                  value={dateFilter.to}
-                  min={dateFilter.from || undefined}
-                  onChange={e => setDateFilter(f => ({ ...f, to: e.target.value }))}
-                  className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[15px] text-slate-600 outline-none focus:border-brand-400"
-                  aria-label="Approved leave date to"
-                />
-              </div>
-            )}
+            {/* From/To Date — every tab, matched against each request's own
+                date (see matchesDateRange/matchesItemDate), never when it
+                was submitted or decided. A single date leaves "to" blank;
+                filling both makes it a range. */}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={dateFilter.from}
+                min={monthScoped ? monthBounds.start : undefined}
+                max={monthScoped ? monthBounds.end : undefined}
+                onChange={e => setDateFilter(f => ({ ...f, from: e.target.value }))}
+                className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[15px] text-slate-600 outline-none focus:border-brand-400"
+                aria-label="Date from"
+              />
+              <span className="text-slate-600 text-[13px]">to</span>
+              <input
+                type="date"
+                value={dateFilter.to}
+                min={monthScoped ? monthBounds.start : (dateFilter.from || undefined)}
+                max={monthScoped ? monthBounds.end : undefined}
+                onChange={e => setDateFilter(f => ({ ...f, to: e.target.value }))}
+                className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-[15px] text-slate-600 outline-none focus:border-brand-400"
+                aria-label="Date to"
+              />
+            </div>
 
             {(searchFilter || deptFilter || dateFilter.from || dateFilter.to) && (
               <button onClick={clearApprovalsFilters} className="flex items-center gap-1 text-slate-600 hover:text-slate-700 text-[13.5px] font-medium">
@@ -773,7 +808,8 @@ export default function Approvals({ embedded = false }) {
               </span>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {loading ? (
           <div className="flex justify-center py-12"><div className="w-6 h-6 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
@@ -781,11 +817,16 @@ export default function Approvals({ embedded = false }) {
           <div className="divide-y divide-slate-50">
 
             {/* Leave Requests */}
-            {tab === 'leaves' && (
-              data.leaves?.length === 0
+            {tab === 'leaves' && (() => {
+              const list = (data.leaves || []).filter(l => {
+                if (deptFilter && l.employee?.department !== deptFilter) return false;
+                if (!matchesDateRange(l.startDate, l.endDate, dateFilter)) return false;
+                return !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
+              });
+              return list.length === 0
                 ? <EmptyState icon={CheckCircle} message="No pending leave requests" />
                 : <>
-                {getVisible('leaves', data.leaves).map(l => (
+                {getVisible('leaves', list).map(l => (
                   <div key={l._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[l.leaveType] || 'bg-slate-50 text-slate-600'}`}>
@@ -829,16 +870,21 @@ export default function Approvals({ embedded = false }) {
                      </div>
                    </div>
                 ))}
-                <ShowMoreFooter tabId="leaves" total={data.leaves.length} shown={getVisible('leaves', data.leaves).length} />
-                </>
-            )}
+                <ShowMoreFooter tabId="leaves" total={list.length} shown={getVisible('leaves', list).length} />
+                </>;
+            })()}
 
             {/* Permissions */}
-            {tab === 'permissions' && (
-              data.permissions?.length === 0
+            {tab === 'permissions' && (() => {
+              const list = (data.permissions || []).filter(p => {
+                if (deptFilter && p.employee?.department !== deptFilter) return false;
+                if (!matchesDateRange(p.startDate, p.endDate, dateFilter)) return false;
+                return !searchFilter || `${p.employee?.firstName} ${p.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
+              });
+              return list.length === 0
                 ? <EmptyState icon={CheckCircle} message="No pending permission requests" />
                 : <>
-                {getVisible('permissions', data.permissions).map(p => (
+                {getVisible('permissions', list).map(p => (
                   <div key={p._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ${leaveTypeColors[p.leaveType] || 'bg-slate-50 text-slate-600'}`}>
@@ -881,9 +927,9 @@ export default function Approvals({ embedded = false }) {
                      </div>
                    </div>
                 ))}
-                <ShowMoreFooter tabId="permissions" total={data.permissions.length} shown={getVisible('permissions', data.permissions).length} />
-                </>
-            )}
+                <ShowMoreFooter tabId="permissions" total={list.length} shown={getVisible('permissions', list).length} />
+                </>;
+            })()}
 
             {/* Approved Requests — every type whose approval chain can settle:
                 Leave/Permission, Regularization, WFH, On-Duty, Comp-Off. */}
@@ -892,7 +938,7 @@ export default function Approvals({ embedded = false }) {
                 if (approvedFilter && l.kind !== approvedFilter.kind) return false;
                 if (approvedFilter?.leaveType && l.leaveType !== approvedFilter.leaveType) return false;
                 if (deptFilter && l.employee?.department !== deptFilter) return false;
-                if ((dateFilter.from || dateFilter.to) && !matchesLeaveDate(l, dateFilter)) return false;
+                if (!matchesItemDate(l, dateFilter)) return false;
                 return !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
               }) || [];
               return list.length === 0
@@ -972,6 +1018,7 @@ export default function Approvals({ embedded = false }) {
             {tab === 'rejectedLeaves' && (() => {
               const list = data.rejectedLeaves?.filter(l => {
                 if (deptFilter && l.employee?.department !== deptFilter) return false;
+                if (!matchesItemDate(l, dateFilter)) return false;
                 return !searchFilter || `${l.employee?.firstName} ${l.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
               }) || [];
               return list.length === 0
@@ -1053,11 +1100,16 @@ export default function Approvals({ embedded = false }) {
             })()}
 
             {/* Regularizations */}
-            {tab === 'regularizations' && (
-              data.regularizations?.length === 0
+            {tab === 'regularizations' && (() => {
+              const list = (data.regularizations || []).filter(r => {
+                if (deptFilter && r.employee?.department !== deptFilter) return false;
+                if (!matchesDateRange(r.date, r.date, dateFilter)) return false;
+                return !searchFilter || `${r.employee?.firstName} ${r.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
+              });
+              return list.length === 0
                 ? <EmptyState icon={Clock} message="No pending regularizations" />
                 : <>
-                {getVisible('regularizations', data.regularizations).map(r => (
+                {getVisible('regularizations', list).map(r => (
                   <div key={r._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600 flex-shrink-0">
@@ -1086,16 +1138,21 @@ export default function Approvals({ embedded = false }) {
                     </div>
                   </div>
                 ))}
-                <ShowMoreFooter tabId="regularizations" total={data.regularizations.length} shown={getVisible('regularizations', data.regularizations).length} />
-                </>
-            )}
+                <ShowMoreFooter tabId="regularizations" total={list.length} shown={getVisible('regularizations', list).length} />
+                </>;
+            })()}
 
             {/* WFH Requests */}
-            {tab === 'wfh' && (
-              data.wfhRequests?.length === 0
+            {tab === 'wfh' && (() => {
+              const list = (data.wfhRequests || []).filter(w => {
+                if (deptFilter && w.employee?.department !== deptFilter) return false;
+                if (!matchesDateRange(w.date, w.date, dateFilter)) return false;
+                return !searchFilter || `${w.employee?.firstName} ${w.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
+              });
+              return list.length === 0
                 ? <EmptyState icon={Home} message="No pending WFH requests" />
                 : <>
-                {getVisible('wfh', data.wfhRequests).map(w => (
+                {getVisible('wfh', list).map(w => (
                   <div key={w._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 flex-shrink-0">
@@ -1129,17 +1186,22 @@ export default function Approvals({ embedded = false }) {
                     </div>
                   </div>
                 ))}
-                <ShowMoreFooter tabId="wfh" total={data.wfhRequests.length} shown={getVisible('wfh', data.wfhRequests).length} />
-                </>
-            )}
+                <ShowMoreFooter tabId="wfh" total={list.length} shown={getVisible('wfh', list).length} />
+                </>;
+            })()}
 
             {/* On Duty — work done away from the usual place of work. Not
                 leave: the day is payable and counts as worked. */}
-            {tab === 'onduty' && (
-              data.onDuty?.length === 0
+            {tab === 'onduty' && (() => {
+              const list = (data.onDuty || []).filter(o => {
+                if (deptFilter && o.employee?.department !== deptFilter) return false;
+                if (!matchesDateRange(o.startDate, o.endDate, dateFilter)) return false;
+                return !searchFilter || `${o.employee?.firstName} ${o.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
+              });
+              return list.length === 0
                 ? <EmptyState icon={Briefcase} message="No pending on duty requests" />
                 : <>
-                {getVisible('onduty', data.onDuty).map(o => (
+                {getVisible('onduty', list).map(o => (
                   <div key={o._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center text-violet-600 flex-shrink-0">
@@ -1176,16 +1238,21 @@ export default function Approvals({ embedded = false }) {
                     <ActionBtns endpoint="on-duty" id={o._id} type="On Duty" canActLeave={o.canAct && o.employee?._id !== user?._id} status={o.status} />
                   </div>
                 ))}
-                <ShowMoreFooter tabId="onduty" total={data.onDuty.length} shown={getVisible('onduty', data.onDuty).length} />
-                </>
-            )}
+                <ShowMoreFooter tabId="onduty" total={list.length} shown={getVisible('onduty', list).length} />
+                </>;
+            })()}
 
             {/* Comp-Off Requests */}
-            {tab === 'compoff' && (
-              data.compOffs?.length === 0
+            {tab === 'compoff' && (() => {
+              const list = (data.compOffs || []).filter(c => {
+                if (deptFilter && c.employee?.department !== deptFilter) return false;
+                if (!matchesDateRange(c.workedDate, c.workedDate, dateFilter)) return false;
+                return !searchFilter || `${c.employee?.firstName} ${c.employee?.lastName}`.toLowerCase().includes(searchFilter.toLowerCase());
+              });
+              return list.length === 0
                 ? <EmptyState icon={Gift} message="No pending comp-off requests" />
                 : <>
-                {getVisible('compoff', data.compOffs).map(c => (
+                {getVisible('compoff', list).map(c => (
                   <div key={c._id} className="p-5 flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 flex-shrink-0">
@@ -1215,9 +1282,9 @@ export default function Approvals({ embedded = false }) {
                     <ActionBtns endpoint="comp-off" id={c._id} type="Comp-Off" canActLeave={c.canAct && c.employee?._id !== user?._id} status={c.status} />
                   </div>
                 ))}
-                <ShowMoreFooter tabId="compoff" total={data.compOffs.length} shown={getVisible('compoff', data.compOffs).length} />
-                </>
-            )}
+                <ShowMoreFooter tabId="compoff" total={list.length} shown={getVisible('compoff', list).length} />
+                </>;
+            })()}
 
 
           </div>

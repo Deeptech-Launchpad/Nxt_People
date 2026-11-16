@@ -44,20 +44,19 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
      * current month so a plain GET with no params behaves exactly as it
      * always has.
      *
-     * Scoped by approved_at, not by the request's own date — the same
-     * definition /approvals/summary already uses for "N Approved this
-     * month". Scoping by the leave's own date instead (what this used to do)
-     * put a different set of rows behind the list than the number on the
-     * tile above it: a request applied for a date in one month can easily be
-     * decided in another, and the tile was always counting the decision,
-     * not the date on the request. */
+     * Scoped by each request's OWN date (confirmed business rule), the same
+     * definition /approvals/summary uses for its tiles, so the two always
+     * agree. This page briefly scoped Approved/Rejected by approved_at
+     * instead (when it was decided, not what it was for) — that read as a
+     * bug from the list side: a request for one month, decided in another,
+     * showed up under the wrong month's history. Reverted back to the
+     * request's own date, which is what both the tile and the list below it
+     * use again now. */
     const now = new Date();
     const qMonth = parseInt(req.query.month, 10);
     const qYear = parseInt(req.query.year, 10);
     const histMonth = Number.isInteger(qMonth) && qMonth >= 1 && qMonth <= 12 ? qMonth : now.getMonth() + 1;
     const histYear = Number.isInteger(qYear) ? qYear : now.getFullYear();
-    const histTzRow = await pool.query(`SELECT timezone FROM settings LIMIT 1`).catch(() => ({ rows: [] }));
-    const histTz = histTzRow.rows[0]?.timezone || DEFAULT_TZ;
 
     /* Every one of these joins employees and none of them excluded a
      * soft-deleted one, so `e.deleted_at IS NULL` now appears on all of them.
@@ -231,32 +230,24 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         ) ml ON TRUE
         WHERE ${full ? 'TRUE' : `(EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'leave' AND x.request_id = l.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))`}
-          /* The selected month only (defaults to current), scoped by WHEN IT
-           * WAS DECIDED — the same definition the summary tile above this
-           * list uses. It had no date bound at all originally, so the
-           * Approved and Rejected tabs were showing 2024 alongside today and
-           * the 500-row cap was being spent on history nobody was looking
-           * for.
+          /* The selected month only (defaults to current), scoped by the
+           * LEAVE'S OWN DATE RANGE overlapping the month — confirmed
+           * business rule: a request belongs to the month it is actually
+           * FOR, never the month it was applied for or decided in. A
+           * multi-day leave crossing a month boundary (e.g. Aug 30 - Sep 2)
+           * correctly appears under both August and September.
            *
-           * Two ways a row can count as "decided this month": the whole
-           * request settled (l.status + l.approved_at, as before), OR the
-           * viewer's own level settled even though the request is still
-           * pending higher up (ml.status + ml.acted_at) — otherwise a
-           * designated approver whose level was approved on their behalf
-           * never sees it until every level above them also clears, which is
-           * a different request's decision, not theirs. A rejection always
-           * rejects the whole request immediately (applyRejection in
-           * utils/leaveApproval.js), so l.status already covers every
-           * rejected case; this only ever adds mid-chain APPROVED rows. */
-          AND (
-            (l.status IN ('approved', 'rejected')
-              AND l.approved_at >= (make_date($2::int, $3::int, 1)::timestamp AT TIME ZONE $4::text)
-              AND l.approved_at <  ((make_date($2::int, $3::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $4::text))
-            OR
-            (ml.status IN ('approved', 'rejected')
-              AND ml.acted_at >= (make_date($2::int, $3::int, 1)::timestamp AT TIME ZONE $4::text)
-              AND ml.acted_at <  ((make_date($2::int, $3::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $4::text))
-          )
+           * "Decided" (which rows count as Approved/Rejected at all) still
+           * comes from either the whole request (l.status) or the viewer's
+           * own already-acted level (ml.status) — that visibility rule is
+           * unchanged, just no longer tied to a date of its own. A
+           * rejection always rejects the whole request immediately
+           * (applyRejection in utils/leaveApproval.js), so l.status already
+           * covers every rejected case; ml.status only ever adds mid-chain
+           * APPROVED rows. */
+          AND (l.status IN ('approved', 'rejected') OR ml.status IN ('approved', 'rejected'))
+          AND l.start_date <= (make_date($2::int, $3::int, 1) + INTERVAL '1 month - 1 day')::date
+          AND l.end_date   >= make_date($2::int, $3::int, 1)
           /* People, not records. Deleted rows were never excluded here at all.
            *
            * Somebody whose last working day falls inside this month is still
@@ -269,7 +260,7 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
             OR e.exit_date >= make_date($2::int, $3::int, 1)
           )
         ORDER BY COALESCE(l.approved_at, ml.acted_at) DESC LIMIT 500
-      `, [userId, histYear, histMonth, histTz]),
+      `, [userId, histYear, histMonth]),
 
       // Approved/Rejected Regularizations — same "this month" and visibility
       // rules as the leaves query above. Regularization/WFH/On-Duty/Comp-Off
@@ -289,12 +280,12 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         WHERE r.status IN ('approved', 'rejected')
           AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'regularization' AND x.request_id = r.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
-          AND r.approved_at >= (make_date($3::int, $4::int, 1)::timestamp AT TIME ZONE $5::text)
-          AND r.approved_at <  ((make_date($3::int, $4::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $5::text)
+          -- Scoped by the regularization's own date, not when it was decided (confirmed business rule).
+          AND r.date BETWEEN make_date($3::int, $4::int, 1) AND (make_date($3::int, $4::int, 1) + INTERVAL '1 month - 1 day')::date
           AND e.deleted_at IS NULL
           AND (e.status = 'active' OR e.exit_date >= make_date($3::int, $4::int, 1))
         ORDER BY r.approved_at DESC LIMIT 500
-      `, [userId, full, histYear, histMonth, histTz]),
+      `, [userId, full, histYear, histMonth]),
 
       // Approved/Rejected WFH
       pool.query(`
@@ -306,12 +297,12 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         WHERE w.status IN ('approved', 'rejected')
           AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'wfh' AND x.request_id = w.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
-          AND w.approved_at >= (make_date($3::int, $4::int, 1)::timestamp AT TIME ZONE $5::text)
-          AND w.approved_at <  ((make_date($3::int, $4::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $5::text)
+          -- Scoped by the WFH day itself, not when it was decided (confirmed business rule).
+          AND w.date BETWEEN make_date($3::int, $4::int, 1) AND (make_date($3::int, $4::int, 1) + INTERVAL '1 month - 1 day')::date
           AND e.deleted_at IS NULL
           AND (e.status = 'active' OR e.exit_date >= make_date($3::int, $4::int, 1))
         ORDER BY w.approved_at DESC LIMIT 500
-      `, [userId, full, histYear, histMonth, histTz]),
+      `, [userId, full, histYear, histMonth]),
 
       // Approved/Rejected On-Duty
       pool.query(`
@@ -326,12 +317,16 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         WHERE o.status IN ('approved', 'rejected')
           AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'on_duty' AND x.request_id = o.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
-          AND o.approved_at >= (make_date($3::int, $4::int, 1)::timestamp AT TIME ZONE $5::text)
-          AND o.approved_at <  ((make_date($3::int, $4::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $5::text)
+          -- Scoped by the on-duty request's own date range overlapping the
+          -- month, not when it was decided (confirmed business rule) —
+          -- a multi-day on-duty request crossing a month boundary correctly
+          -- appears under both months.
+          AND o.start_date <= (make_date($3::int, $4::int, 1) + INTERVAL '1 month - 1 day')::date
+          AND o.end_date   >= make_date($3::int, $4::int, 1)
           AND e.deleted_at IS NULL
           AND (e.status = 'active' OR e.exit_date >= make_date($3::int, $4::int, 1))
         ORDER BY o.approved_at DESC LIMIT 500
-      `, [userId, full, histYear, histMonth, histTz]),
+      `, [userId, full, histYear, histMonth]),
 
       // Approved/Rejected Comp-Off
       pool.query(`
@@ -345,12 +340,13 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
         WHERE c.status IN ('approved', 'rejected')
           AND ($2::boolean OR EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = 'comp_off' AND x.request_id = c.id AND x.approver_id = $1)
                OR (TRUE${reportsScope(req.user, 'e', 1).clause}))
-          AND c.approved_at >= (make_date($3::int, $4::int, 1)::timestamp AT TIME ZONE $5::text)
-          AND c.approved_at <  ((make_date($3::int, $4::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $5::text)
+          -- Scoped by the day actually worked (comp_off_date can be null —
+          -- not yet redeemed), not when it was decided (confirmed business rule).
+          AND c.worked_date BETWEEN make_date($3::int, $4::int, 1) AND (make_date($3::int, $4::int, 1) + INTERVAL '1 month - 1 day')::date
           AND e.deleted_at IS NULL
           AND (e.status = 'active' OR e.exit_date >= make_date($3::int, $4::int, 1))
         ORDER BY c.approved_at DESC LIMIT 500
-      `, [userId, full, histYear, histMonth, histTz]),
+      `, [userId, full, histYear, histMonth]),
     ]);
 
     const leaves = leavesRes.rows;
@@ -376,17 +372,20 @@ router.get('/pending', authorize('admin', 'director', 'hr_admin', 'manager', 'te
 });
 
 /* ── Approvals done in a month ─────────────────────────────────────────────
- *  Counted by approved_at, which every one of these action handlers sets only
- *  on FINAL approval — a request with one level of three signed is still
- *  pending and is not counted.
+ *  Only ever counts status = 'approved' rows (this card is "___ Approved",
+ *  not a combined approved+rejected count) — unchanged.
  *
- *  Scoped the way the Approved Leaves list above is: full access sees the org,
- *  everyone else sees requests they were an approver on at any level. The
- *  pending queries' "still-pending level" test cannot apply to finished work.
+ *  Scoped the way the Approved Requests list above is: by each request's OWN
+ *  date (overlapping the month for a range — leaves, on-duty — or falling in
+ *  it for a single date), never by when it was decided (confirmed business
+ *  rule, same change as GET /pending above, so the tile and the list below
+ *  it always agree). Date columns here are plain DATE, not TIMESTAMP[TZ],
+ *  so no org-timezone conversion is needed for this comparison.
  *
- *  Month boundaries are midnight in the org's timezone, built as timestamptz so
- *  the comparison is right whether a given approved_at column is TIMESTAMP or
- *  TIMESTAMPTZ (the migrations created both).
+ *  Scoped the way the Approved Requests list above is otherwise too: full
+ *  access sees the org, everyone else sees requests they were an approver on
+ *  at any level. The pending queries' "still-pending level" test cannot
+ *  apply to finished work.
  * ───────────────────────────────────────────────────────────────────────── */
 router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager', 'team_incharge'), async (req, res) => {
   try {
@@ -406,25 +405,32 @@ router.get('/summary', authorize('admin', 'director', 'hr_admin', 'manager', 'te
     const full = isFullAccess(req.user.role);
     const scope = (type, alias) => full
       ? 'TRUE'
-      : `EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = '${type}' AND x.request_id = ${alias}.id AND x.approver_id = $4)`;
+      : `EXISTS (SELECT 1 FROM approval_levels x WHERE x.request_type = '${type}' AND x.request_id = ${alias}.id AND x.approver_id = $3)`;
     const people = `e.deleted_at IS NULL AND (e.status = 'active' OR e.exit_date >= make_date($1::int, $2::int, 1))`;
-    const inMonth = (alias) => `${alias}.status = 'approved'
-          AND ${alias}.approved_at >= (make_date($1::int, $2::int, 1)::timestamp AT TIME ZONE $3::text)
-          AND ${alias}.approved_at <  ((make_date($1::int, $2::int, 1) + INTERVAL '1 month')::timestamp AT TIME ZONE $3::text)`;
+    // Scoped by each request's OWN date, not when it was approved (confirmed
+    // business rule — same change as GET /pending above). A range table
+    // (leaves, on-duty) overlaps the month; a single-date table falls inside it.
+    const monthStart = `make_date($1::int, $2::int, 1)`;
+    const monthEnd = `(make_date($1::int, $2::int, 1) + INTERVAL '1 month - 1 day')::date`;
+    const inMonthRange = (alias, startCol, endCol) => `${alias}.status = 'approved'
+          AND ${alias}.${startCol} <= ${monthEnd} AND ${alias}.${endCol} >= ${monthStart}`;
+    const inMonthSingle = (alias, col) => `${alias}.status = 'approved' AND ${alias}.${col} BETWEEN ${monthStart} AND ${monthEnd}`;
     const leaveCount = (leaveType) => `(SELECT COUNT(*)::int FROM leaves l JOIN employees e ON l.employee_id = e.id
-        WHERE l.leave_type = '${leaveType}' AND ${inMonth('l')} AND ${people} AND ${scope('leave', 'l')})`;
-    const tableCount = (table, alias, type) => `(SELECT COUNT(*)::int FROM ${table} ${alias} JOIN employees e ON ${alias}.employee_id = e.id
-        WHERE ${inMonth(alias)} AND ${people} AND ${scope(type, alias)})`;
+        WHERE l.leave_type = '${leaveType}' AND ${inMonthRange('l', 'start_date', 'end_date')} AND ${people} AND ${scope('leave', 'l')})`;
+    const tableCountSingle = (table, alias, type, col) => `(SELECT COUNT(*)::int FROM ${table} ${alias} JOIN employees e ON ${alias}.employee_id = e.id
+        WHERE ${inMonthSingle(alias, col)} AND ${people} AND ${scope(type, alias)})`;
+    const tableCountRange = (table, alias, type, startCol, endCol) => `(SELECT COUNT(*)::int FROM ${table} ${alias} JOIN employees e ON ${alias}.employee_id = e.id
+        WHERE ${inMonthRange(alias, startCol, endCol)} AND ${people} AND ${scope(type, alias)})`;
 
     const r = await pool.query(`
       SELECT ${leaveCount('casual')} AS casual,
              ${leaveCount('permission')} AS permissions,
              ${leaveCount('unpaid')} AS lop,
-             ${tableCount('attendance_regularizations', 'r', 'regularization')} AS regularizations,
-             ${tableCount('wfh_requests', 'w', 'wfh')} AS wfh,
-             ${tableCount('comp_offs', 'c', 'comp_off')} AS "compOff",
-             ${tableCount('on_duty_requests', 'o', 'on_duty')} AS "onDuty"
-    `, full ? [year, month, tz] : [year, month, tz, req.user._id]);
+             ${tableCountSingle('attendance_regularizations', 'r', 'regularization', 'date')} AS regularizations,
+             ${tableCountSingle('wfh_requests', 'w', 'wfh', 'date')} AS wfh,
+             ${tableCountSingle('comp_offs', 'c', 'comp_off', 'worked_date')} AS "compOff",
+             ${tableCountRange('on_duty_requests', 'o', 'on_duty', 'start_date', 'end_date')} AS "onDuty"
+    `, full ? [year, month] : [year, month, req.user._id]);
 
     res.json({ success: true, data: { month, year, ...r.rows[0] } });
   } catch (err) { serverError(res, err); }
