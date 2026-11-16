@@ -10,8 +10,9 @@ import RegularizeModal from '../../../components/requests/RegularizeModal';
 import OnDutyModal from '../../../components/requests/OnDutyModal';
 import useSortable from '../../../components/table/useSortable';
 import SortableTh from '../../../components/table/SortableTh';
-import { useLocaleFormat, formatTime, formatInstantTime } from '../../../utils/datetime';
+import { useLocaleFormat, formatTime } from '../../../utils/datetime';
 import { AttendanceTimelineList, AttendanceListTable, AttendanceCalendarMonth, DayDetailPanel } from '../../attendance/attendanceViews';
+import { buildSheet, downloadWorkbook } from '../../../utils/reportExport';
 
 /* ── User-specific Operations ─────────────────────────────────────────────
  *  Zoho's first Attendance tab: search an employee, then act on THEIR
@@ -47,8 +48,6 @@ const StatusPill = ({ status, title }) => {
   const s = STATUS_LABEL[status] || { label: status || '—', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
   return <span title={title} className={`text-[12px] font-semibold px-2 py-0.5 rounded-full border ${s.cls}`}>{s.label}</span>;
 };
-
-const fmtTime = (iso, timeFormat) => (iso ? formatInstantTime(iso, timeFormat) : '—');
 
 /* Hours as HH:MM.
  *
@@ -93,18 +92,20 @@ const fmtShiftLabel = (shift, timeFormat) => {
 
 const titleCase = (s) => String(s || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-/* The export is built here from rows already on screen — there is no server
- * endpoint for one employee's month, and asking for one would mean the file
- * could disagree with the table it came from. utils/downloadFile fetches FROM
- * the server, so it is the wrong tool for a blob we already hold. */
-const saveCsv = (rows, filename) => {
-  const csv = rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+/* An ISO check-in/check-out instant -> a fraction of a day (0-1) in IST, the
+ * same conversion formatInstantTime/istMinutesOfInstant already use for this
+ * screen's own on-screen clock times. A real Excel TIME value, not pre-
+ * formatted text, is what lets the exported "First In"/"Last Out" cells
+ * carry an actual h:mm AM/PM format rather than a string the user (or
+ * Excel's own CSV-open heuristics) has to make sense of. '' (never a dash)
+ * for a missing punch, so the cell is genuinely blank, not a placeholder
+ * character that can end up mis-encoded. */
+const dayFractionOf = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const ist = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  return (ist.getHours() * 60 + ist.getMinutes()) / 1440;
 };
 
 const REG_STATUS = [['all', 'All'], ['approved', 'Approved'], ['pending', 'Pending'], ['rejected', 'Rejected'], ['cancelled', 'Cancelled']];
@@ -402,17 +403,49 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
 
   const [rowRequest, setRowRequest] = useState(null); // { date, buttonRect } -- the hover Add Request popup
 
-  const exportCsv = () => {
-    const head = ['Date', 'Day type', 'First In', 'Last Out', 'Total Hours', 'Status', 'Late By'];
-    const lines = days.map(d => [
-      d.date,
-      d.kind === 'holiday' ? (d.holidayName || 'Holiday') : titleCase(d.kind),
-      fmtTime(d.att?.checkIn), fmtTime(d.att?.checkOut),
-      fmtHM(hoursOf(d.att)),
-      d.derivedStatus ? (STATUS_LABEL[d.derivedStatus]?.label || d.derivedStatus) : '',
-      d.att?.lateMinutes > 0 ? fmtHM(d.att.lateMinutes / 60) : '',
-    ]);
-    saveCsv([head, ...lines], `attendance-${employee.employeeId || employee._id}-${period.start}.csv`);
+  /* A real .xlsx, built through the same reportExport.js machinery every
+   * other admin export in the app already uses — not a hand-rolled CSV
+   * blob. A plain CSV has no cell types, no column widths and no number
+   * formats at all, which is exactly what was going wrong: Excel guessing
+   * at a bare "2026-11-02" string (and sometimes showing it as #### once
+   * the column was too narrow for its own guess), and the UTF-8 "—"
+   * placeholder for a missing punch turning into "â€”" because a plain-
+   * text CSV with no BOM is read back in whatever codepage Excel's locale
+   * defaults to, not UTF-8. Real date/time number formats and an explicit
+   * column width (buildSheet already floors every column at 12 characters)
+   * both come from writing a real workbook instead. */
+  const exportXlsx = () => {
+    const columns = [
+      // The dots have to be escaped (\.) -- Excel's number-format grammar
+      // treats a bare "." specially, and 'dd.mm.yyyy' unescaped is rejected
+      // outright rather than merely rendering wrong.
+      { key: 'date', header: 'Date', value: r => new Date(`${r.date}T00:00:00`), numFmt: 'dd\\.mm\\.yyyy' },
+      {
+        key: 'dayType', header: 'Day Type',
+        value: r => (r.kind === 'holiday' ? (r.holidayName || 'Holiday') : r.kind === 'weekend' ? 'Weekend' : 'Working Day'),
+      },
+      { key: 'firstIn', header: 'First In', value: r => dayFractionOf(r.att?.checkIn), numFmt: 'h:mm AM/PM' },
+      { key: 'lastOut', header: 'Last Out', value: r => dayFractionOf(r.att?.checkOut), numFmt: 'h:mm AM/PM' },
+      // hoursOf() is the exact same figure the screen's own footer/timeline
+      // already show for this day -- only divided by 24 here because Excel's
+      // time-duration formats read the stored number as a fraction of a day.
+      { key: 'totalHours', header: 'Total Hours', value: r => hoursOf(r.att) / 24, numFmt: '[hh]:mm' },
+      {
+        key: 'status', header: 'Status',
+        value: r => (r.derivedStatus ? (STATUS_LABEL[r.derivedStatus]?.label || r.derivedStatus) : ''),
+      },
+      {
+        key: 'lateBy', header: 'Late By',
+        value: r => (r.att?.lateMinutes > 0 ? (r.att.lateMinutes / 60) / 24 : ''),
+        numFmt: '[hh]:mm',
+      },
+    ];
+    const ws = buildSheet({ columns, rows: days });
+    downloadWorkbook(
+      [{ name: 'Attendance Summary', ws }],
+      'xlsx',
+      `attendance-${employee.employeeId || employee._id}-${period.start}`
+    );
   };
 
   return (
@@ -460,7 +493,7 @@ function AttendanceSummaryTab({ employee, onGoTo, canManage = true }) {
             ))}
           </div>
 
-          <OverflowMenu onExport={exportCsv}
+          <OverflowMenu onExport={exportXlsx}
             onAudit={canManage ? () => setShowAudit(true) : undefined}
             onImport={canManage ? () => onGoTo('import') : undefined} />
         </div>
