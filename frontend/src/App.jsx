@@ -414,15 +414,59 @@ export default function App() {
           <WeekendRulesProvider>
             <AttendanceProvider>
               <ChatProvider>
+                {/* Single global Toaster — every toast.success/error/() call
+                    across the app renders through this one instance, so this
+                    is the one place that controls position/styling for all
+                    of them.
+                    Top-centre, not viewport-centre: a prior pass pinned the
+                    container to the exact middle of the screen, which sat on
+                    top of page content. `top` here is max(150px, 16%) of the
+                    viewport — 150px clears the tallest header+sub-nav bar
+                    measured in this app (~138px) with margin, and 16% keeps
+                    it from drifting too far down on very tall screens. z-index
+                    stays above every modal/overlay in the app (highest found:
+                    GuidedTour's 10000), so a toast is never hidden behind one. */}
                 <Toaster
-                  position="bottom-right"
+                  position="top-center"
+                  containerStyle={{
+                    top: 'max(150px, 16%)',
+                    left: '50%',
+                    right: 'auto',
+                    bottom: 'auto',
+                    transform: 'translateX(-50%)',
+                    zIndex: 10010,
+                  }}
                   toastOptions={{
                     duration: 4000,
-                    style: { fontSize: '13px', fontWeight: 600 },
+                    style: {
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      lineHeight: 1.5,
+                      minWidth: '280px',
+                      maxWidth: 'min(420px, 92vw)',
+                      padding: '14px 18px',
+                      borderRadius: '16px',
+                      background: '#ffffff',
+                      border: '1px solid #e8edf4',
+                      // Three soft, layered shadows (contact + lift + ambient)
+                      // read as "floating" without a single heavy blur.
+                      boxShadow:
+                        '0 1px 2px rgba(15, 23, 42, 0.06), ' +
+                        '0 8px 16px -4px rgba(15, 23, 42, 0.12), ' +
+                        '0 20px 32px -12px rgba(15, 23, 42, 0.14)',
+                    },
                     // Errors deserve more dwell time — 4s isn't enough to read
                     // a stack-trace-style message before it disappears.
-                    error: { duration: 7000 },
-                    success: { duration: 3500 },
+                    error: {
+                      duration: 7000,
+                      style: { border: '1px solid #fecaca', background: '#fef7f7', color: '#991b1b' },
+                      iconTheme: { primary: '#dc2626', secondary: '#fef7f7' },
+                    },
+                    success: {
+                      duration: 3500,
+                      style: { border: '1px solid #bbf7d0', background: '#f6fdf9', color: '#166534' },
+                      iconTheme: { primary: '#16a34a', secondary: '#f6fdf9' },
+                    },
                   }}
                 />
                 <AppRoutes/>
