@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { protect } = require('../middleware/auth');
+const { isFullAccess } = require('../utils/roles');
 const { mergeRows } = require('../utils/mergeRows');
 const { serverError } = require('../utils/serverError');
 const { DEFAULT_TZ } = require('../utils/timezone');
