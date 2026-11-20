@@ -1,5 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const multer = require('multer');
 const pool = require('../db');
 const { protect, authorize } = require('../middleware/auth');
 const logger = require('../logger');
@@ -8,6 +12,59 @@ const { requireFunction, allows, optionsFor } = require('../utils/functionAccess
 const { sendMail, renderTemplateEmail } = require('../utils/mailer');
 
 router.use(protect);
+
+// Optional image on an announcement — same allowlist-and-random-filename
+// discipline as the cover image upload (routes/cover-image.js): the
+// extension written to disk comes from the allowlist, never from the
+// uploaded name, and the stored filename is unguessable.
+const ANNOUNCEMENT_IMAGE_MAX_MB = 8;
+const announcementsDir = path.join(__dirname, '..', 'uploads', 'announcements');
+if (!fs.existsSync(announcementsDir)) fs.mkdirSync(announcementsDir, { recursive: true });
+const ALLOWED_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, announcementsDir),
+    filename: (req, file, cb) => {
+      const raw = path.extname(file.originalname).toLowerCase();
+      const ext = ALLOWED_IMAGE_EXTS.has(raw) ? raw : '.jpg';
+      cb(null, `${req.user._id}-${crypto.randomBytes(8).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: ANNOUNCEMENT_IMAGE_MAX_MB * 1024 * 1024 },
+  // cb(null, false) would silently drop a rejected file instead of erroring —
+  // the announcement would then just post without an image and no one would
+  // know their upload was ignored. An Error here instead propagates to
+  // handleImageUpload's `err` branch below, which reports it cleanly.
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_IMAGE_EXTS.has(path.extname(file.originalname).toLowerCase())) {
+      return cb(new Error('INVALID_IMAGE_TYPE'));
+    }
+    cb(null, true);
+  },
+});
+
+// Wraps multer so a rejected file (bad type / too large) comes back as a
+// clean 4xx with a message the toast can show, instead of a generic 500.
+function handleImageUpload(req, res, next) {
+  imageUpload.single('image')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({
+        success: false,
+        message: err.code === 'LIMIT_FILE_SIZE'
+          ? `That image is larger than ${ANNOUNCEMENT_IMAGE_MAX_MB}MB` : 'That file could not be accepted',
+      });
+    }
+    if (err) return res.status(400).json({ success: false, message: 'Only JPG, PNG or WEBP images are allowed' });
+    next();
+  });
+}
+
+const isAnnouncementUpload = (v) => typeof v === 'string' && v.startsWith('/uploads/announcements/');
+const deleteAnnouncementImage = (url) => {
+  if (!isAnnouncementUpload(url)) return;
+  fs.unlink(path.join(announcementsDir, path.basename(url)), () => {});
+};
 
 // Shared projection — every read endpoint returns the same shape.
 // Note: `isPinned` is `is_pinned`, NOT `is_active`. They used to be conflated;
@@ -21,6 +78,7 @@ const SELECT_FIELDS = `
   a.is_pinned       AS "isPinned",
   a.pinned_until    AS "pinnedUntil",
   a.expires_at      AS "expiresAt",
+  a.image_url       AS "imageUrl",
   a.created_at      AS "createdAt",
   json_build_object(
     'id',        e.id,
@@ -106,22 +164,31 @@ router.get('/', requireFunction('announcements'), async (req, res) => {
 });
 
 // POST /api/announcements — create announcement (admin only)
-router.post('/', authorize('admin', 'director', 'hr_admin'), canManage, async (req, res) => {
+// multipart/form-data when an image is attached, same as every other plain
+// field either way: handleImageUpload only ever populates req.file, and
+// still parses req.body normally when the request has no file at all.
+router.post('/', authorize('admin', 'director', 'hr_admin'), canManage, handleImageUpload, async (req, res) => {
   try {
-    const { title, body, type = 'general', isPinned = true, pinnedUntil, expiresAt } = req.body;
-    if (!title || !body) return res.status(400).json({ success: false, message: 'Title and body are required' });
+    const { title, body, type = 'general', pinnedUntil, expiresAt } = req.body;
+    // multipart fields arrive as strings ('true'/'false'), not booleans.
+    const isPinned = req.body.isPinned === undefined ? true : req.body.isPinned === true || req.body.isPinned === 'true';
+    if (!title || !body) {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ success: false, message: 'Title and body are required' });
+    }
 
     // pinnedUntil only makes sense when the announcement is actually pinned.
     const pinExpiry = isPinned ? (pinnedUntil || null) : null;
+    const imageUrl = req.file ? `/uploads/announcements/${req.file.filename}` : null;
 
     const result = await pool.query(
       `INSERT INTO announcements
-         (title, content, body, priority, type, is_active, is_pinned, pinned_until, expires_at, created_by, posted_by)
-       VALUES ($1, $2, $2, $3, $3, TRUE, $4, $5, $6, $7, $7)
+         (title, content, body, priority, type, is_active, is_pinned, pinned_until, expires_at, image_url, created_by, posted_by)
+       VALUES ($1, $2, $2, $3, $3, TRUE, $4, $5, $6, $7, $8, $8)
        RETURNING id AS "_id", title, content AS body, priority AS type,
                  is_pinned AS "isPinned", pinned_until AS "pinnedUntil",
-                 expires_at AS "expiresAt", created_at AS "createdAt"`,
-      [title, body, type, isPinned, pinExpiry, expiresAt || null, req.user._id]
+                 expires_at AS "expiresAt", image_url AS "imageUrl", created_at AS "createdAt"`,
+      [title, body, type, isPinned, pinExpiry, expiresAt || null, imageUrl, req.user._id]
     );
 
     // Notify every other active employee in a single set-based INSERT.
@@ -184,16 +251,38 @@ router.post('/', authorize('admin', 'director', 'hr_admin'), canManage, async (r
 
 // PUT /api/announcements/:id — update an announcement (admin only).
 // Each of title/body/type/isActive/isPinned/pinnedUntil/expiresAt is optional;
-// omitted fields keep their current value (COALESCE).
-router.put('/:id', authorize('admin', 'director', 'hr_admin'), canManage, async (req, res) => {
+// omitted fields keep their current value (COALESCE). Same for the image:
+// a new file replaces it, `removeImage: true` clears it, neither leaves it
+// exactly as it was — handleImageUpload makes this multipart-capable without
+// changing how the non-file fields already behaved.
+router.put('/:id', authorize('admin', 'director', 'hr_admin'), canManage, handleImageUpload, async (req, res) => {
   try {
-    const { title, body, type, isActive, isPinned, pinnedUntil, expiresAt } = req.body;
+    const { title, body, type, pinnedUntil, expiresAt } = req.body;
     /* A plain COALESCE cannot tell "leave this alone" from "clear it": both
      * arrive as null. That made the two dates one-way — unpinning sent
      * pinnedUntil: null and the old date stayed, so the nightly unpin cron
      * could re-fire on an announcement nobody had pinned. Sending the key at
      * all now means "set it to exactly this", including null. */
     const sent = k => Object.prototype.hasOwnProperty.call(req.body, k);
+    // multipart fields arrive as strings ('true'/'false'), not booleans —
+    // same conversion POST / needs for isPinned.
+    const boolOrNull = (key) => sent(key) ? (req.body[key] === true || req.body[key] === 'true') : null;
+    const isActive = boolOrNull('isActive');
+    const isPinned = boolOrNull('isPinned');
+    const removeImage = req.body.removeImage === true || req.body.removeImage === 'true';
+
+    // undefined = leave the image exactly as it is; null = clear it; a
+    // string = replace it with this new upload.
+    let imageUrlUpdate;
+    if (req.file) imageUrlUpdate = `/uploads/announcements/${req.file.filename}`;
+    else if (removeImage) imageUrlUpdate = null;
+
+    let priorImageUrl = null;
+    if (imageUrlUpdate !== undefined) {
+      const prior = await pool.query(`SELECT image_url FROM announcements WHERE id = $1`, [req.params.id]);
+      priorImageUrl = prior.rows[0]?.image_url || null;
+    }
+
     const result = await pool.query(
       `UPDATE announcements
          SET title        = COALESCE($1, title),
@@ -205,26 +294,37 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), canManage, async 
              is_pinned    = COALESCE($5, is_pinned),
              pinned_until = CASE WHEN $6::boolean THEN $7::timestamptz ELSE pinned_until END,
              expires_at   = CASE WHEN $8::boolean THEN $9::date        ELSE expires_at   END,
+             image_url    = CASE WHEN $10::boolean THEN $11::varchar   ELSE image_url    END,
              updated_at   = NOW()
-       WHERE id = $10
+       WHERE id = $12
        RETURNING id AS "_id", title, content AS body, priority AS type,
                  is_active AS "isActive", is_pinned AS "isPinned",
                  pinned_until AS "pinnedUntil", expires_at AS "expiresAt",
-                 created_at AS "createdAt"`,
+                 image_url AS "imageUrl", created_at AS "createdAt"`,
       [
         title  || null,
         body   || null,
         type   || null,
-        isActive ?? null,
-        isPinned ?? null,
+        isActive,
+        isPinned,
         sent('pinnedUntil'), pinnedUntil || null,
         sent('expiresAt'),   expiresAt   || null,
+        imageUrlUpdate !== undefined, imageUrlUpdate || null,
         req.params.id,
       ]
     );
-    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Announcement not found' });
+    if (result.rows.length === 0) {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      return res.status(404).json({ success: false, message: 'Announcement not found' });
+    }
+    // The image it replaces (or clears) is no longer reachable, so its file
+    // is removed rather than left behind — same reasoning as cover-image.js.
+    if (imageUrlUpdate !== undefined && priorImageUrl && priorImageUrl !== imageUrlUpdate) {
+      deleteAnnouncementImage(priorImageUrl);
+    }
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
+    if (req.file) fs.unlink(req.file.path, () => {});
     serverError(res, err);
   }
 });
@@ -232,7 +332,9 @@ router.put('/:id', authorize('admin', 'director', 'hr_admin'), canManage, async 
 // DELETE /api/announcements/:id — delete (admin only)
 router.delete('/:id', authorize('admin', 'director', 'hr_admin'), canManage, async (req, res) => {
   try {
+    const prior = await pool.query('SELECT image_url FROM announcements WHERE id = $1', [req.params.id]);
     await pool.query('DELETE FROM announcements WHERE id = $1', [req.params.id]);
+    if (prior.rows[0]?.image_url) deleteAnnouncementImage(prior.rows[0].image_url);
     res.json({ success: true, message: 'Deleted' });
   } catch (err) {
     serverError(res, err);

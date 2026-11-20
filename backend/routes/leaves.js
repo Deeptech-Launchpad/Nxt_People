@@ -732,6 +732,12 @@ router.post('/', [
               to: address,
               employeeName: empName,
               leaveType: leaveTypeDisplay,
+              // Drives the email's heading/accent colour — resolved live
+              // from leave_types.color (Settings → Leave Tracker →
+              // Configuration → Leave Policy), see resolveRequestTheme() in
+              // utils/mailer.js. leaveType itself (above) still carries the
+              // human-readable label shown in the body/detail row.
+              requestType: leaveType,
               startDate,
               endDate,
               totalDays,

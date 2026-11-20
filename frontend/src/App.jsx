@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster, ToastBar } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LocaleProvider } from './utils/datetime';
 import { AttendanceProvider } from './context/AttendanceContext';
@@ -442,12 +442,15 @@ export default function App() {
                       fontSize: '14px',
                       fontWeight: 600,
                       lineHeight: 1.5,
-                      minWidth: '280px',
-                      maxWidth: 'min(420px, 92vw)',
-                      padding: '14px 18px',
+                      // Widened on both sides (was 280/420) and extra right
+                      // padding so the close button never overlaps the text.
+                      minWidth: '360px',
+                      maxWidth: 'min(540px, 92vw)',
+                      padding: '14px 40px 14px 18px',
                       borderRadius: '16px',
                       background: '#ffffff',
                       border: '1px solid #e8edf4',
+                      position: 'relative', // contains the close button's absolute positioning
                       // Three soft, layered shadows (contact + lift + ambient)
                       // read as "floating" without a single heavy blur.
                       boxShadow:
@@ -468,7 +471,38 @@ export default function App() {
                       iconTheme: { primary: '#16a34a', secondary: '#f6fdf9' },
                     },
                   }}
-                />
+                >
+                  {/* react-hot-toast's documented recipe for a per-toast close
+                      button: render ToastBar ourselves so we can add one more
+                      flex child after the message, inside the same card —
+                      `position: relative` on the card (above) is what keeps
+                      this button's `absolute` contained inside it, instead of
+                      escaping into the outer toast container. */}
+                  {(t) => (
+                    <ToastBar toast={t}>
+                      {({ icon, message }) => (
+                        <>
+                          {icon}
+                          {message}
+                          {t.type !== 'loading' && (
+                            <button
+                              onClick={() => toast.dismiss(t.id)}
+                              aria-label="Dismiss notification"
+                              style={{
+                                position: 'absolute', top: 8, right: 8,
+                                width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer',
+                                borderRadius: 6, lineHeight: 1, fontSize: 16, padding: 0,
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </ToastBar>
+                  )}
+                </Toaster>
                 <AppRoutes/>
               </ChatProvider>
             </AttendanceProvider>
