@@ -707,50 +707,37 @@ router.post('/', [
           },
         });
 
-        if (mail.html) {
-          // A chosen template replaces the whole email, so the built-in layout
-          // is not rendered underneath it.
-          //
-          // One message per approver rather than one to all of them: the
-          // templates open "Hi ${approverName}," and a single render shared
-          // across the list can only leave that blank. It also stops every
-          // approver seeing who else is on the request.
-          const byEmail = new Map(allRecipients
-            .filter(a => a.email)
-            .map(a => [a.email.toLowerCase(), a.firstName || null]));
-          await Promise.all(mail.to.map(async address => {
-            const html = await mail.htmlFor(byEmail.get(String(address).toLowerCase()) || null);
-            return sendMail({
-              to: address, cc: mail.cc, bcc: mail.bcc, replyTo: mail.replyTo,
-              subject: mail.subject || 'A request is waiting for your approval',
-              html: html || mail.html,
-            }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'));
-          }));
-        } else {
-          await Promise.all(mail.to.map(address =>
-            sendLeaveApprovalEmail({
-              to: address,
-              employeeName: empName,
-              leaveType: leaveTypeDisplay,
-              // Drives the email's heading/accent colour — resolved live
-              // from leave_types.color (Settings → Leave Tracker →
-              // Configuration → Leave Policy), see resolveRequestTheme() in
-              // utils/mailer.js. leaveType itself (above) still carries the
-              // human-readable label shown in the body/detail row.
-              requestType: leaveType,
-              startDate,
-              endDate,
-              totalDays,
-              reason,
-              approvalLink,
-              customSubject: mail.subject || undefined,
-              cc: mail.cc, bcc: mail.bcc, replyTo: mail.replyTo,
-              hours: isPermission ? permHours : null,
-              startTime: isPermission ? permStartTime : null,
-              endTime: isPermission ? permEndTime : null,
-            }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))
-          ));
-        }
+        // Settings > Approvals > Messages still decides recipients and
+        // cc/bcc/replyTo exactly as before. The configured template's body
+        // AND subject are no longer used to build the approver email — both
+        // the heading/colour and the subject line now come from the same
+        // themed design Regularization already uses (see resolveRequestTheme
+        // in utils/mailer.js), so Casual Leave / LOP / Permission match it
+        // exactly instead of a plain one-line message under a generic
+        // subject. The template itself stays saved in Settings untouched;
+        // it just stops substituting for the email's HTML/subject here.
+        await Promise.all(mail.to.map(address =>
+          sendLeaveApprovalEmail({
+            to: address,
+            employeeName: empName,
+            leaveType: leaveTypeDisplay,
+            // Drives the email's heading/accent colour — resolved live
+            // from leave_types.color (Settings → Leave Tracker →
+            // Configuration → Leave Policy), see resolveRequestTheme() in
+            // utils/mailer.js. leaveType itself (above) still carries the
+            // human-readable label shown in the body/detail row.
+            requestType: leaveType,
+            startDate,
+            endDate,
+            totalDays,
+            reason,
+            approvalLink,
+            cc: mail.cc, bcc: mail.bcc, replyTo: mail.replyTo,
+            hours: isPermission ? permHours : null,
+            startTime: isPermission ? permStartTime : null,
+            endTime: isPermission ? permEndTime : null,
+          }).catch(err => logger.warn({ err: err.message }, '[leaves] approver email failed'))
+        ));
       } catch (e) { logger.error({ err: e.message }, '[leaves] notify/feed soft-fail'); }
 
       // Fire-and-forget by design: the leave is already committed, and a
