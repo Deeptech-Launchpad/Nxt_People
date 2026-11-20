@@ -145,6 +145,11 @@ app.use('/uploads/covers', express.static(path.join(__dirname, 'uploads', 'cover
 // And the organization logo, for the same reason: it renders in an <img> on
 // the sign-in page, which nobody has a token on yet.
 app.use('/uploads/logos', express.static(path.join(__dirname, 'uploads', 'logos')));
+// Announcement images are the same case again: they render in an <img> on
+// the announcement card and detail view, neither of which can carry an
+// Authorization header, and an announcement image is no more sensitive than
+// the cover banner beside it.
+app.use('/uploads/announcements', express.static(path.join(__dirname, 'uploads', 'announcements')));
 // Profile photos kept in the employee folders. Only the exact
 // <ID>_Profile-Photo.<ext> name is served without a token; servePublicPhoto
 // answers 404 to everything else in those folders — it never falls through

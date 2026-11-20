@@ -390,6 +390,7 @@ router.post('/', requireRegularizationEnabled, uploadAttachment, [
         to: a.email,
         employeeName: empName,
         leaveType: 'Attendance Regularization',
+        requestType: 'regularization', // picks the blue theme + correct heading, see utils/mailer.js
         startDate: date,
         endDate: date,
         totalDays: 1,

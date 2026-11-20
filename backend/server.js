@@ -21,6 +21,7 @@ const { sweepReportEmails } = require('./utils/reportEmailSender');
 const { sweepShiftRotations } = require('./utils/shiftRotation');
 const { runYearEndRollover } = require('./utils/leaveYearEnd');
 const { sweepHolidayReminders } = require('./utils/holidayReminders');
+const { sweepMonthlyApprovalReminder } = require('./utils/monthlyApprovalReminder');
 // The email-alerts cron below has called automationConfig.* since it was
 // written without this line, so every run logged "automationConfig is not
 // defined" and sent nothing.
@@ -814,5 +815,34 @@ cron.schedule('0 8 * * *', async () => {
     }
   } catch (err) {
     logger.error({ err: err.message }, 'Scheduled report email sweep failed');
+  }
+}, cronOpts);
+
+// Monthly approval reminder — one digest per eligible approver (Admin,
+// Director, HR Admin, Manager, Team Incharge) covering every Casual Leave /
+// LOP / Permission / Attendance Regularization request still pending their
+// action, at whatever stage. Runs on the 27th; see
+// utils/monthlyApprovalReminder.js for the full design notes — in short,
+// each send is claimed in monthly_approval_reminders (UNIQUE on recipient +
+// month) before it goes out, so an overlapping fire or a second backend
+// instance running the same schedule cannot double-send for the same month.
+// Unlike the opt-in "Regularization reminder" scheduled report above (which
+// an admin must switch on, covers regularization only, and is a separate,
+// untouched feature), this one is unconditional and covers all four types.
+cron.schedule('0 9 27 * *', async () => {
+  const startedAt = Date.now();
+  try {
+    const summary = await sweepMonthlyApprovalReminder({ tz: CRON_TZ });
+    logger.info(summary, 'Monthly approval reminder sweep complete');
+    if (summary.sent > 0) {
+      await pool.query(
+        `INSERT INTO scheduler_logs (job_key, name, kind, status, message, duration_ms)
+         VALUES ('monthly_approval_reminder', 'Monthly approval reminder', 'Approval Scheduler', 'success', $1, $2)`,
+        [`${summary.sent} sent, ${summary.skipped} skipped, ${summary.failed} failed (of ${summary.eligibleApprovers} eligible)`,
+         Date.now() - startedAt]
+      ).catch(() => {});
+    }
+  } catch (err) {
+    logger.error({ err: err.message }, 'Monthly approval reminder sweep failed');
   }
 }, cronOpts);

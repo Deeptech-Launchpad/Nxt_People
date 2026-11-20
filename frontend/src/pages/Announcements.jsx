@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Megaphone, Plus, Trash2, Pin, PinOff, X, AlertTriangle, Info, Calendar,
   MoreHorizontal, Pencil, Link2, Bold, Italic, Underline, Strikethrough,
-  List, ListOrdered,
+  List, ListOrdered, ImagePlus, ImageOff,
 } from 'lucide-react';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -22,6 +22,12 @@ const TYPE_CONFIG = {
 };
 
 const EMPTY_FORM = { title: '', body: '', type: 'general', isPinned: false, pinnedUntil: '', expiresAt: '' };
+
+// Same allowlist and limit as the backend's multer config (routes/announcements.js) —
+// a stricter client-side rejection just confuses people who could legitimately
+// upload a slightly larger image, so these stay in sync with the server.
+const ANNOUNCEMENT_IMAGE_MAX_MB = 8;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 const dmy = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -161,6 +167,48 @@ export default function Announcements() {
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [reading, setReading] = useState(null);
+  // imageFile: a newly-picked File, not yet uploaded. existingImageUrl: what's
+  // already saved on the announcement being edited (null when creating).
+  // removeImage: user asked to clear an existing image without picking a new one.
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [existingImageUrl, setExistingImageUrl] = useState(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const imageInputRef = useRef(null);
+
+  // Revoke the object URL for a picked file when it's replaced or the modal closes.
+  useEffect(() => () => { if (imageFile) URL.revokeObjectURL(imagePreview); }, [imageFile, imagePreview]);
+
+  const resetImageState = () => {
+    setImageFile(null); setImagePreview(null); setExistingImageUrl(null); setRemoveImage(false);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  const pickImage = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow picking the same file again later
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      toast.error('Only JPG, PNG or WEBP images are allowed');
+      return;
+    }
+    if (file.size > ANNOUNCEMENT_IMAGE_MAX_MB * 1024 * 1024) {
+      toast.error(`Image must be ${ANNOUNCEMENT_IMAGE_MAX_MB}MB or smaller`);
+      return;
+    }
+    if (imageFile) URL.revokeObjectURL(imagePreview);
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setRemoveImage(false);
+  };
+
+  const clearImage = () => {
+    if (imageFile) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview(null);
+    if (existingImageUrl) setRemoveImage(true);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
 
   const load = useCallback(() => {
     setLoading(true);
@@ -188,7 +236,7 @@ export default function Announcements() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openId, loading, announcements]);
 
-  const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); setModal(true); };
+  const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); resetImageState(); setModal(true); };
 
   const openEdit = (a) => {
     setEditing(a);
@@ -200,6 +248,8 @@ export default function Announcements() {
       pinnedUntil: a.pinnedUntil ? String(a.pinnedUntil).slice(0, 10) : '',
       expiresAt: a.expiresAt ? String(a.expiresAt).slice(0, 10) : '',
     });
+    resetImageState();
+    setExistingImageUrl(a.imageUrl || null);
     setModal(true);
   };
 
@@ -208,20 +258,28 @@ export default function Announcements() {
     try {
       // Both dates are always sent, including as null — the API treats a key
       // that is present as "set it to exactly this", which is what makes
-      // clearing a date possible at all.
-      const payload = {
-        ...form,
-        pinnedUntil: form.isPinned && form.pinnedUntil ? form.pinnedUntil : null,
-        expiresAt: form.expiresAt || null,
-      };
+      // clearing a date possible at all. Always posted as multipart so an
+      // image (new, unchanged, or explicitly removed) travels the same way
+      // every other field does — matches the existing cover-image upload
+      // pattern (CoverImagePicker.jsx) rather than inventing a second one.
+      const payload = new FormData();
+      payload.append('title', form.title);
+      payload.append('body', form.body);
+      payload.append('type', form.type);
+      payload.append('isPinned', String(form.isPinned));
+      payload.append('pinnedUntil', form.isPinned && form.pinnedUntil ? form.pinnedUntil : '');
+      payload.append('expiresAt', form.expiresAt || '');
+      if (imageFile) payload.append('image', imageFile);
+      else if (removeImage) payload.append('removeImage', 'true');
+
       if (editing) {
-        await api.put(`/announcements/${editing._id}`, payload);
+        await api.put(`/announcements/${editing._id}`, payload, { headers: { 'Content-Type': 'multipart/form-data' } });
         toast.success('Announcement updated');
       } else {
-        await api.post('/announcements', payload);
+        await api.post('/announcements', payload, { headers: { 'Content-Type': 'multipart/form-data' } });
         toast.success('Announcement posted!');
       }
-      setModal(false); setEditing(null); setForm(EMPTY_FORM);
+      setModal(false); setEditing(null); setForm(EMPTY_FORM); resetImageState();
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setSaving(false); }
@@ -328,6 +386,12 @@ export default function Announcements() {
                     </div>
                   </div>
 
+                  {a.imageUrl && (
+                    <button type="button" onClick={() => setReading(a)} className="flex-shrink-0">
+                      <img src={a.imageUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-100 dark:border-[#374151]" />
+                    </button>
+                  )}
+
                   <RowMenu
                     a={a}
                     canManage={canManage && busyId !== a._id}
@@ -352,7 +416,7 @@ export default function Announcements() {
               <h3 className="font-display font-semibold text-slate-800 dark:text-slate-100 text-xl">
                 {editing ? 'Edit Announcement' : 'Post Announcement'}
               </h3>
-              <button onClick={() => { setModal(false); setEditing(null); }} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-[#374151] hover:bg-slate-200 text-slate-600 dark:text-slate-300"><X size={16} /></button>
+              <button onClick={() => { setModal(false); setEditing(null); resetImageState(); }} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-[#374151] hover:bg-slate-200 text-slate-600 dark:text-slate-300"><X size={16} /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
@@ -363,6 +427,34 @@ export default function Announcements() {
               <div>
                 <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1.5">Message *</label>
                 <RichTextArea value={form.body} onChange={body => setForm({ ...form, body })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                  Image <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={pickImage} className="hidden" />
+                {(imagePreview || (existingImageUrl && !removeImage)) ? (
+                  <div className="flex items-center gap-3 border border-slate-200 dark:border-[#374151] rounded-xl p-2">
+                    <img src={imagePreview || existingImageUrl} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      <button type="button" onClick={() => imageInputRef.current?.click()}
+                        className="text-[13px] font-medium text-brand-600 dark:text-brand-400 hover:underline">
+                        Replace
+                      </button>
+                      <span className="text-slate-300 dark:text-slate-600">·</span>
+                      <button type="button" onClick={clearImage}
+                        className="text-[13px] font-medium text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1">
+                        <ImageOff size={13} /> Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => imageInputRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 border border-dashed border-slate-300 dark:border-[#374151] rounded-xl py-3 text-[13.5px] text-slate-500 dark:text-slate-400 hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors">
+                    <ImagePlus size={16} /> Add an image
+                  </button>
+                )}
+                <p className="text-[12px] text-slate-400 mt-1">JPG, PNG or WEBP, up to {ANNOUNCEMENT_IMAGE_MAX_MB}MB.</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -411,7 +503,7 @@ export default function Announcements() {
                 </div>
               )}
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => { setModal(false); setEditing(null); }} className="flex-1 border border-slate-200 dark:border-[#374151] text-slate-600 dark:text-slate-300 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50 dark:hover:bg-[#374151]">Cancel</button>
+                <button type="button" onClick={() => { setModal(false); setEditing(null); resetImageState(); }} className="flex-1 border border-slate-200 dark:border-[#374151] text-slate-600 dark:text-slate-300 py-2.5 rounded-xl text-base font-medium hover:bg-slate-50 dark:hover:bg-[#374151]">Cancel</button>
                 <button type="submit" disabled={saving} className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-xl text-base font-medium transition-colors disabled:opacity-60">
                   {saving ? 'Saving...' : editing ? 'Save changes' : 'Post Announcement'}
                 </button>

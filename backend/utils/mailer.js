@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const pool = require('../db');
 const { formatHoursDuration } = require('./formatHours');
 
 // Minimal HTML escape — used for every template variable that gets
@@ -322,12 +323,81 @@ const sendMail = async ({ to, cc, bcc, replyTo, subject, text, html, attachments
   });
 };
 
+// Per-request-type heading + accent colour for the approval email below.
+// `requestType` is the raw leave_type ('casual' | 'permission' | 'unpaid')
+// or the literal string 'regularization' — callers outside these four
+// (on-duty, etc.) pass nothing and keep the original generic blue "Leave
+// Approval Required" look unchanged.
+//
+// The colour itself is never a second, hand-picked palette: it is read live
+// from leave_types.color — the same value Settings → Leave Tracker →
+// Configuration → Leave Policy shows as the swatch next to Casual Leave /
+// Permission / Leave Without Pay, and the single place an admin can change
+// it. An admin editing that swatch is reflected here on the very next email,
+// with nothing in this file to keep in sync by hand.
+//
+// Attendance Regularization is not a leave type and has no row there, so it
+// has no single identifiable existing colour to reuse — it keeps the
+// original generic blue this email already had before request-type theming
+// existed (DEFAULT_REQUEST_THEME below), pending an explicit decision on
+// which of the app's other, mutually-inconsistent regularization colours
+// (Team → Approvals' badge is purple; the Attendance landing tile is amber)
+// should become the one used here.
+const HEADINGS = {
+  casual: 'Casual Leave Required',
+  unpaid: 'LOP Leave Required',
+  permission: 'Permission Required',
+  regularization: 'Attendance Regularization Required',
+};
+const DEFAULT_REQUEST_THEME = {
+  heading: 'Leave Approval Required',
+  gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+  accent: '#3b82f6', accentBg: '#eff6ff', accentBorder: '#93c5fd',
+};
+
+// Tiny hex-mixing helpers — only ever used to derive the gradient's darker
+// stop and the card's light tint/border FROM the one stored swatch colour,
+// never to invent an unrelated shade.
+const clamp255 = (n) => Math.max(0, Math.min(255, Math.round(n)));
+const hexToRgb = (hex) => {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+};
+const rgbToHex = ({ r, g, b }) => '#' + [r, g, b].map(v => clamp255(v).toString(16).padStart(2, '0')).join('');
+const mixHex = (hex, towardHex, amount) => {
+  const a = hexToRgb(hex), b = hexToRgb(towardHex);
+  return rgbToHex({ r: a.r + (b.r - a.r) * amount, g: a.g + (b.g - a.g) * amount, b: a.b + (b.b - a.b) * amount });
+};
+const themeFromColor = (color, heading) => ({
+  heading,
+  accent: color,
+  gradient: `linear-gradient(135deg, ${color} 0%, ${mixHex(color, '#000000', 0.18)} 100%)`,
+  accentBg: mixHex(color, '#ffffff', 0.94),
+  accentBorder: mixHex(color, '#ffffff', 0.55),
+});
+
+async function resolveRequestTheme(requestType) {
+  const heading = HEADINGS[requestType];
+  if (!heading) return DEFAULT_REQUEST_THEME; // on-duty and anything else: unchanged generic look
+  if (requestType === 'regularization') return { ...DEFAULT_REQUEST_THEME, heading }; // see comment above
+  const r = await pool.query(`SELECT color FROM leave_types WHERE code = $1 LIMIT 1`, [requestType]).catch(() => ({ rows: [] }));
+  const color = r.rows[0]?.color;
+  return color ? themeFromColor(color, heading) : { ...DEFAULT_REQUEST_THEME, heading };
+}
+
 /**
  * Leave Approval Email — sent to approvers with a direct approval link.
  * Includes employee info, leave details, and a clickable approval button.
+ *
+ * `requestType` picks the heading/colour (see resolveRequestTheme above); it
+ * is independent of `leaveType`, which stays the human-readable label shown
+ * inside the body text and detail row exactly as before.
  */
-const sendLeaveApprovalEmail = async ({ to, cc, bcc, replyTo, employeeName, leaveType, startDate, endDate, totalDays, reason, approvalLink, customSubject, hours, startTime, endTime }) => {
+const sendLeaveApprovalEmail = async ({ to, cc, bcc, replyTo, employeeName, leaveType, requestType, startDate, endDate, totalDays, reason, approvalLink, customSubject, hours, startTime, endTime }) => {
   const transporter = createTransporter();
+  const theme = await resolveRequestTheme(requestType);
   const dateRange = `${new Date(startDate).toLocaleDateString('en-IN')} ${endDate !== startDate ? `– ${new Date(endDate).toLocaleDateString('en-IN')}` : ''}`;
   const safeEmployeeName = escapeHtml(employeeName || 'Employee');
   const safeLeaveType = escapeHtml(leaveType || 'Leave');
@@ -341,27 +411,27 @@ const sendLeaveApprovalEmail = async ({ to, cc, bcc, replyTo, employeeName, leav
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Leave Approval Required</title>
+  <title>${theme.heading}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; color: #1e293b; }
     .wrapper { max-width: 620px; margin: 32px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
-    .header { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); padding: 32px 40px; text-align: center; color: #ffffff; }
+    .header { background: ${theme.gradient}; padding: 32px 40px; text-align: center; color: #ffffff; }
     .header-title { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
     .header-subtitle { font-size: 14px; opacity: 0.9; }
     .body { padding: 36px 40px; }
     .greeting { font-size: 18px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
-    .details { background: #f8fafc; border-radius: 10px; padding: 20px; margin: 20px 0; border-left: 4px solid #3b82f6; }
+    .details { background: #f8fafc; border-radius: 10px; padding: 20px; margin: 20px 0; border-left: 4px solid ${theme.accent}; }
     .detail-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; margin-bottom: 12px; font-size: 14px; }
     .detail-row:last-child { margin-bottom: 0; }
     .detail-label { font-weight: 600; color: #475569; }
     .detail-value { color: #1e293b; }
-    .cta-box { background: #eff6ff; border: 2px solid #3b82f6; border-radius: 10px; padding: 24px; margin: 24px 0; text-align: center; }
-    .cta-box-title { font-size: 15px; font-weight: 600; color: #1e40af; margin-bottom: 16px; }
-    .cta-btn { display: inline-block; background: #3b82f6; color: #ffffff !important; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: 0.3px; }
-    .cta-btn:hover { background: #2563eb; }
+    .request-type-value { color: ${theme.accent}; font-weight: 700; }
+    .cta-box { background: ${theme.accentBg}; border: 2px solid ${theme.accent}; border-radius: 10px; padding: 24px; margin: 24px 0; text-align: center; }
+    .cta-box-title { font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
+    .cta-btn { display: inline-block; background: ${theme.accent}; color: #ffffff !important; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: 0.3px; }
     .alt-text { font-size: 12px; color: #64748b; margin-top: 12px; }
-    .alt-text a { color: #3b82f6; text-decoration: none; }
+    .alt-text a { color: ${theme.accent}; text-decoration: none; }
     .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
     .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; text-align: center; font-size: 12px; color: #94a3b8; }
   </style>
@@ -372,13 +442,13 @@ const sendLeaveApprovalEmail = async ({ to, cc, bcc, replyTo, employeeName, leav
       <div style="display:inline-block; background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:8px; margin-bottom:16px;">
         <span style="font-size:18px; font-weight:800; letter-spacing:0.5px;">NXT PEOPLE</span>
       </div>
-      <div class="header-title">Leave Approval Required</div>
+      <div class="header-title">${theme.heading}</div>
       <div class="header-subtitle">Please review and approve the following request</div>
     </div>
 
     <div class="body">
       <p class="greeting">Hi,</p>
-      <p style="font-size:14px; color:#475569; line-height:1.7; margin-bottom:16px;"><strong>${safeEmployeeName}</strong> has requested <strong>${safeLeaveType}</strong> leave for your review and approval.</p>
+      <p style="font-size:14px; color:#475569; line-height:1.7; margin-bottom:16px;"><strong>${safeEmployeeName}</strong> has requested <strong>${safeLeaveType}</strong> for your review and approval.</p>
 
       <div class="details">
         <div class="detail-row">
@@ -386,8 +456,8 @@ const sendLeaveApprovalEmail = async ({ to, cc, bcc, replyTo, employeeName, leav
           <span class="detail-value">${safeEmployeeName}</span>
         </div>
         <div class="detail-row">
-          <span class="detail-label">Leave Type</span>
-          <span class="detail-value" style="text-transform:capitalize;">${safeLeaveType}</span>
+          <span class="detail-label">Request Type</span>
+          <span class="detail-value request-type-value">${safeLeaveType}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">Duration</span>
@@ -431,9 +501,137 @@ const sendLeaveApprovalEmail = async ({ to, cc, bcc, replyTo, employeeName, leav
     ...(ccList.length ? { cc: ccList } : {}),
     ...(bccList.length ? { bcc: bccList } : {}),
     ...(replyToList.length ? { replyTo: replyToList[0] } : {}),
-    subject: customSubject || `[Action Required] ${safeEmployeeName} - ${safeLeaveType} Leave Approval`,
+    subject: customSubject || `[Action Required] ${safeEmployeeName} - ${theme.heading}`,
     html,
-    text: `Leave Approval Required\n\n${safeEmployeeName} has requested ${safeLeaveType} leave (${safeDateRange}, ${totalDays} day(s)).\n\nReason: ${safeReason}\n\nClick here to approve: ${safeLink}\n\nOr visit NXT People → Team → Approvals`,
+    text: `${theme.heading}\n\n${safeEmployeeName} has requested ${safeLeaveType} (${safeDateRange}, ${totalDays} day(s)).\n\nReason: ${safeReason}\n\nClick here to approve: ${safeLink}\n\nOr visit NXT People → Team → Approvals`,
+  });
+};
+
+/**
+ * Monthly Approval Reminder Email — one digest per eligible approver
+ * (Admin/Director/HR Admin see every org-wide pending item; Manager/Team
+ * Incharge see only the ones currently awaiting their own action), sent by
+ * utils/monthlyApprovalReminder.js on the 27th of each month.
+ *
+ * Same visual language as sendLeaveApprovalEmail above (wrapper/header/
+ * details/cta-box/footer) so it reads as the same product, not a second
+ * template system — just with a breakdown table in place of one request's
+ * detail rows, since this email covers many requests at once.
+ */
+const sendMonthlyApprovalReminderEmail = async ({ to, recipientName, monthLabel, totalPending, breakdown, items, approvalsLink }) => {
+  const transporter = createTransporter();
+  const theme = DEFAULT_REQUEST_THEME; // brand blue — this digest isn't about one request type
+  const safeRecipientName = escapeHtml(recipientName || 'there');
+  const safeMonthLabel = escapeHtml(monthLabel || '');
+  const safeLink = safeUrl(approvalsLink);
+
+  const breakdownRows = (breakdown || []).map(b => `
+        <div class="detail-row">
+          <span class="detail-label">${escapeHtml(b.label)}</span>
+          <span class="detail-value request-type-value">${b.count}</span>
+        </div>`).join('');
+
+  // Bounded so a very large backlog still produces a readable email — the
+  // Approvals page (linked below) is where the full list actually lives.
+  const ITEM_LIMIT = 15;
+  const shownItems = (items || []).slice(0, ITEM_LIMIT);
+  const extraCount = Math.max(0, (items || []).length - shownItems.length);
+  const itemRows = shownItems.map(it => `
+      <tr>
+        <td style="padding:8px 12px; border-bottom:1px solid #e2e8f0; font-size:13px; color:#1e293b;">${escapeHtml(it.employeeName || '—')}</td>
+        <td style="padding:8px 12px; border-bottom:1px solid #e2e8f0; font-size:13px; color:#1e293b;">${escapeHtml(it.requestType || '—')}</td>
+        <td style="padding:8px 12px; border-bottom:1px solid #e2e8f0; font-size:13px; color:#1e293b;">${it.date ? new Date(it.date).toLocaleDateString('en-IN') : '—'}</td>
+      </tr>`).join('');
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pending Approvals — ${safeMonthLabel}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; color: #1e293b; }
+    .wrapper { max-width: 640px; margin: 32px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .header { background: ${theme.gradient}; padding: 32px 40px; text-align: center; color: #ffffff; }
+    .header-title { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+    .header-subtitle { font-size: 14px; opacity: 0.9; }
+    .body { padding: 36px 40px; }
+    .greeting { font-size: 18px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
+    .details { background: #f8fafc; border-radius: 10px; padding: 20px; margin: 20px 0; border-left: 4px solid ${theme.accent}; }
+    .detail-row { display: grid; grid-template-columns: 1fr 80px; gap: 12px; margin-bottom: 10px; font-size: 14px; }
+    .detail-row:last-child { margin-bottom: 0; }
+    .detail-label { font-weight: 600; color: #475569; }
+    .detail-value { color: #1e293b; }
+    .request-type-value { color: ${theme.accent}; font-weight: 700; text-align: right; }
+    .items-table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    .items-table th { text-align: left; padding: 8px 12px; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 2px solid #e2e8f0; }
+    .cta-box { background: ${theme.accentBg}; border: 2px solid ${theme.accent}; border-radius: 10px; padding: 24px; margin: 24px 0; text-align: center; }
+    .cta-box-title { font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
+    .cta-btn { display: inline-block; background: ${theme.accent}; color: #ffffff !important; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: 0.3px; }
+    .alt-text { font-size: 12px; color: #64748b; margin-top: 12px; }
+    .alt-text a { color: ${theme.accent}; text-decoration: none; }
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; text-align: center; font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div style="display:inline-block; background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:8px; margin-bottom:16px;">
+        <span style="font-size:18px; font-weight:800; letter-spacing:0.5px;">NXT PEOPLE</span>
+      </div>
+      <div class="header-title">Action Required — Pending Employee Approvals</div>
+      <div class="header-subtitle">${safeMonthLabel}</div>
+    </div>
+
+    <div class="body">
+      <p class="greeting">Hi ${safeRecipientName},</p>
+      <p style="font-size:14px; color:#475569; line-height:1.7; margin-bottom:16px;">
+        You have <strong>${totalPending}</strong> request${totalPending === 1 ? '' : 's'} still waiting for your approval this month.
+        Please review and complete these before ${safeMonthLabel} ends.
+      </p>
+
+      <div class="details">${breakdownRows}</div>
+
+      ${shownItems.length ? `
+      <table class="items-table">
+        <thead><tr><th>Employee</th><th>Request Type</th><th>Date</th></tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+      ${extraCount > 0 ? `<p style="font-size:12px; color:#64748b;">+ ${extraCount} more — see the full list on the Approvals page.</p>` : ''}
+      ` : ''}
+
+      <div class="cta-box">
+        <div class="cta-box-title">Take Action</div>
+        <a href="${safeLink}" class="cta-btn">Review Pending Approvals</a>
+        <p class="alt-text">Can't click the button? Copy this link:<br/><a href="${safeLink}">${safeLink}</a></p>
+      </div>
+
+      <div class="divider"></div>
+      <p style="font-size:12px; color:#64748b;">This is an automated monthly reminder. Please do not reply to this email.</p>
+    </div>
+
+    <div class="footer">
+      <strong>NXT People</strong> · Your HR Management System
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+  const text = `Action Required — Pending Employee Approvals (${safeMonthLabel})\n\n` +
+    `Hi ${safeRecipientName}, you have ${totalPending} request(s) waiting for your approval this month.\n\n` +
+    (breakdown || []).map(b => `${b.label}: ${b.count}`).join('\n') +
+    `\n\nReview them: ${safeLink}`;
+
+  await transporter.sendMail({
+    from: `"${process.env.COMPANY_NAME || 'NXT People'}" <${process.env.EMAIL_USER}>`,
+    to: sanitizeRecipients([to]),
+    subject: `Action Required – Pending Employee Approvals | ${monthLabel}`,
+    html,
+    text,
   });
 };
 
@@ -737,4 +935,4 @@ const sendLeaveStatusEmail = async ({ to, employeeName, leaveType, startDate, to
   });
 };
 
-module.exports = { sendOnboardingEmail, sendLeaveApprovalEmail, sendCheckOutReminderEmail, sendCheckInReminderEmail, sendLeaveStatusEmail, sendMail, renderTemplateEmail };
+module.exports = { sendOnboardingEmail, sendLeaveApprovalEmail, sendMonthlyApprovalReminderEmail, sendCheckOutReminderEmail, sendCheckInReminderEmail, sendLeaveStatusEmail, sendMail, renderTemplateEmail };

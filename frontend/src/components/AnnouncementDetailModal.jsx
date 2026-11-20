@@ -55,6 +55,9 @@ export default function AnnouncementDetailModal({ announcement: a, onClose }) {
 
         <div className="p-6 overflow-y-auto">
           <h3 className="font-display font-bold text-xl text-slate-800 dark:text-slate-100 mb-3">{a.title}</h3>
+          {a.imageUrl && (
+            <img src={a.imageUrl} alt="" className="w-full max-h-80 object-cover rounded-xl mb-4 border border-slate-100 dark:border-[#374151]" />
+          )}
           <div
             className="text-[15px] leading-relaxed text-slate-700 dark:text-slate-300 space-y-1 [&_a]:text-brand-600"
             dangerouslySetInnerHTML={{ __html: renderRichText(a.body) }}
