@@ -1519,7 +1519,10 @@ export default function Dashboard() {
                                 {label && (
                                   <p className={`text-[13px] font-bold mt-1 ${labelColor}`}>{label}</p>
                                 )}
-                                {!isWeekend && !isFuture && (
+                                {/* A Casual Leave day with no attendance record would otherwise
+                                    fall through to the "00:00 Hrs" placeholder below, reading as
+                                    zero hours worked rather than a day off. */}
+                                {!isWeekend && !isFuture && !(leave?.leaveType === 'casual' && !(isToday && isCheckedIn) && !(isToday && isCheckedOut) && record?.workingHours === undefined) && (
                                   <p className="text-[13px] text-slate-800 font-medium mt-0.5">
                                     {isToday && isCheckedIn
                                       ? `${timerDisplay} Hrs`
