@@ -403,13 +403,19 @@ export default function Approvals({ embedded = false }) {
           ...(d.approvedCompOffs || []).map(x => ({ ...x, kind: 'comp_off' })),
         ];
         const byCreatedDesc = (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        // Approved Requests reads newest-decided-first — the final approval
+        // timestamp (the last decided level's actedAt, via the same helper
+        // the export already uses), not when the request was submitted.
+        const byApprovedDesc = (a, b) =>
+          new Date(exportApprovalInfo(b.approvalLevels).approvedDate || 0) -
+          new Date(exportApprovalInfo(a.approvalLevels).approvedDate || 0);
         // A leave's own request status (x.status) can still be 'pending' while
         // the viewer's own level (x.myLevelStatus, leave rows only — see
         // routes/approvals.js) is already decided, when a later level hasn't
         // acted yet. Falls back to x.status for every other kind, and for a
         // leave that's already fully settled, so this changes nothing there.
         const effectiveStatus = (x) => (x.status === 'approved' || x.status === 'rejected') ? x.status : x.myLevelStatus;
-        const approved = settledByType.filter(x => effectiveStatus(x) === 'approved').sort(byCreatedDesc);
+        const approved = settledByType.filter(x => effectiveStatus(x) === 'approved').sort(byApprovedDesc);
         const rejected = settledByType.filter(x => effectiveStatus(x) === 'rejected').sort(byCreatedDesc);
 
         setData({
@@ -533,6 +539,16 @@ export default function Approvals({ embedded = false }) {
       // fully settled even when another approver was still pending.
       const res = await api.put(`/${endpoint}/${id}/action`, { action: act, rejectionReason: reason, approveAll });
       toast.success(res.data?.message || (approveAll ? 'All levels approved' : `${act.charAt(0).toUpperCase() + act.slice(1)} successfully`));
+      // A lingering ?openId= from a notification-link visit otherwise makes
+      // the auto-open effect above reopen THIS request's popup on the very
+      // next poll, for a request the user just acted on and already closed.
+      if (searchParams.get('openId')) {
+        setSearchParams(prev => { const p = new URLSearchParams(prev); p.delete('openId'); return p; }, { replace: true });
+      }
+      // Every level now settled: land on Approved Requests so the user sees
+      // where it went, without opening its popup. Still pending another
+      // level: stay exactly where they were — nothing here is finished yet.
+      if (act === 'approved' && res.data?.status === 'approved') setTab('approvedLeaves');
       load();
       loadSummary();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }

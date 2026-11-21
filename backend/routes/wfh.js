@@ -178,7 +178,11 @@ router.put('/:id/action', authorize('admin', 'director', 'hr_admin', 'manager', 
       if (finalStatus === 'approved' || finalStatus === 'rejected') {
         fire('wfh', finalStatus, { recordId: wfh.id, actorId: req.user._id });
       }
-      res.json({ success: true, message: `WFH ${finalStatus}` });
+      // status mirrors leaves/regularizations/comp-off/on-duty's own action
+      // response — 'approved' only once every level has settled, 'pending'
+      // while levels remain. Lets the Approvals page tell a final approval
+      // from a partial one without guessing from the message text.
+      res.json({ success: true, status: finalStatus, message: `WFH ${finalStatus}` });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
