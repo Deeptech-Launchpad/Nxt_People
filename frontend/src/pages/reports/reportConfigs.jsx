@@ -37,7 +37,7 @@ export const encashmentConfig = {
 // Zoho draws both trend pages with the same periwinkle bars and distinguishes
 // them by line colour only — green for additions, red for attrition.
 export const additionTrendConfig = { title: 'Employee Addition Trend', subtitle: 'New hires per month', endpoint: '/reports/employee/addition-trend', barColor: '#8b8fd4', lineColor: '#a5c249', switcherCategory: 'Employee Information' };
-export const attritionTrendConfig = { title: 'Employee Attrition Trend', subtitle: 'Exits per month', endpoint: '/reports/employee/attrition-trend', barColor: '#8b8fd4', lineColor: '#e15759', switcherCategory: 'Employee Information', showEmploymentType: true };
+export const attritionTrendConfig = { title: 'Employee Attrition Trend', subtitle: 'Exits per month', endpoint: '/reports/employee/attrition-trend', barColor: '#8b8fd4', lineColor: '#e15759', switcherCategory: 'Employee Information', showEmploymentType: true, isExit: true };
 
 // Leave Data for Payroll is now a bespoke page (LeavePayrollExport.jsx) —
 // a per-employee Total/Loss of Pay/Paid days summary, matching Zoho's

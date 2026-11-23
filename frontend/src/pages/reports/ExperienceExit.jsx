@@ -5,6 +5,7 @@ import { appendDimensionFilters } from '../../utils/reportParams';
 import toast from 'react-hot-toast';
 import ReportShell from './ReportShell';
 import ChartExportMenu from './ChartExportMenu';
+import EmployeeListExportMenu from './EmployeeListExportMenu';
 import { PERCENT_FMT } from '../../utils/reportExport';
 import PeriodFilter from './PeriodFilter';
 import EmploymentTypeFilter from './EmploymentTypeFilter';
@@ -79,6 +80,22 @@ export default function ExperienceExit() {
       >
         Submit
       </button>
+      <EmployeeListExportMenu
+        fetchRows={() => {
+          const params = new URLSearchParams({ startDate: dateRange.start, endDate: dateRange.end, ...(employmentType ? { employmentType } : {}) });
+          return api.get(`/reports/employee/experience-exit-export?${params}`).then(r => r.data.data);
+        }}
+        columns={[
+          { key: 'employeeCode', header: 'Employee ID' },
+          { key: 'employeeName', header: 'Employee Name' },
+          { key: 'department', header: 'Department' },
+          { key: 'designation', header: 'Designation' },
+          { key: 'joiningDate', header: 'Date of Joining' },
+          { key: 'relievingDate', header: 'Date of Relieving' },
+          { key: 'experienceYears', header: 'Experience at Exit (Years)' },
+        ]}
+        fileStub="experience-wise-exit-employees"
+      />
       {filtersOpen && (
         <div className="w-full flex flex-wrap items-center gap-2 pt-1 order-first">
           <FilterRow value={draft} onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))} exclude={['employmentType', 'experience']} experience={draft.experience} onExperienceChange={v => setDraft(f => ({ ...f, experience: v }))} />

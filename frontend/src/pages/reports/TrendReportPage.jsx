@@ -9,6 +9,9 @@ import PeriodFilter from './PeriodFilter';
 import EmploymentTypeFilter from './EmploymentTypeFilter';
 import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
+import DateChip from './DateChip';
+import EmployeeListExportMenu from './EmployeeListExportMenu';
+import { EXPORT_PERIOD_OPTIONS, DEFAULT_EXPORT_RANGE } from './exportPeriods';
 
 import usePersistedOpen from './usePersistedOpen';
 // Zoho groups these under a MONTH(S) heading, with the year-scale presets
@@ -26,7 +29,7 @@ const PERIOD_OPTIONS = [
 // Employee attrition trend, whose endpoints return
 // [{month, year, count, growth}]. `showEmploymentType` is only passed for
 // Attrition Trend — Zoho's own Addition Trend has no such filter either.
-export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#8b8fd4', lineColor = '#a5c249', switcherCategory, showEmploymentType = false }) {
+export default function TrendReportPage({ title, subtitle, endpoint, barColor = '#8b8fd4', lineColor = '#a5c249', switcherCategory, showEmploymentType = false, isExit = false }) {
   const [periodKey, setPeriodKey] = useState('12');
   const [months, setMonths] = useState(12);
   const [employmentType, setEmploymentType] = useState('');
@@ -36,6 +39,10 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
   const [filtersOpen, setFiltersOpen] = usePersistedOpen(false);
   const [draft, setDraft] = useState({});
   const [applied, setApplied] = useState({});
+  // Export date range is independent of the chart's own "Last N Months"
+  // period above — the chart stays exactly as it was.
+  const [exportPeriodKey, setExportPeriodKey] = useState('thisYear');
+  const [exportRange, setExportRange] = useState(DEFAULT_EXPORT_RANGE);
 
   const load = (m = months, et = employmentType, dims = applied) => {
     setLoading(true);
@@ -69,6 +76,36 @@ export default function TrendReportPage({ title, subtitle, endpoint, barColor = 
       >
         Submit
       </button>
+      <PeriodFilter
+        label="Export Period"
+        options={EXPORT_PERIOD_OPTIONS}
+        selectedKey={exportPeriodKey}
+        onChange={(value, key) => { setExportPeriodKey(key); if (value) setExportRange(value); }}
+      />
+      <DateChip
+        label="From" value={exportRange.start} disabled={exportPeriodKey !== 'custom'}
+        onChange={v => setExportRange(r => ({ ...r, start: v }))}
+      />
+      <DateChip
+        label="To" value={exportRange.end} disabled={exportPeriodKey !== 'custom'}
+        onChange={v => setExportRange(r => ({ ...r, end: v }))}
+      />
+      <EmployeeListExportMenu
+        fetchRows={() => {
+          const params = new URLSearchParams({ startDate: exportRange.start, endDate: exportRange.end });
+          if (isExit && employmentType) params.set('employmentType', employmentType);
+          return api.get(`${endpoint}-export?${params}`).then(r => r.data.data);
+        }}
+        columns={[
+          { key: 'employeeCode', header: 'Employee ID' },
+          { key: 'employeeName', header: 'Employee Name' },
+          { key: 'department', header: 'Department' },
+          { key: 'designation', header: 'Designation' },
+          { key: 'joiningDate', header: 'Date of Joining' },
+          ...(isExit ? [{ key: 'relievingDate', header: 'Date of Relieving' }] : []),
+        ]}
+        fileStub={`${title.toLowerCase().replace(/\s+/g, '-')}-employees`}
+      />
       {filtersOpen && (
         <div className="w-full flex flex-wrap items-center gap-2 pt-1 order-first">
           <FilterRow value={draft} onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))} exclude={showEmploymentType ? ['employmentType'] : []} experience={draft.experience} onExperienceChange={v => setDraft(f => ({ ...f, experience: v }))} />

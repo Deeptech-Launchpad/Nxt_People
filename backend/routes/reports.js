@@ -616,6 +616,33 @@ router.get('/employee/headcount-trend', authorize('admin', 'director', 'hr_admin
   } catch (err) { serverError(res, err); }
 });
 
+// Employee-level rows behind the Headcount export. A headcount is a
+// point-in-time snapshot, not a date range, so this reuses the exact asOf
+// rule /employee/headcount-trend applies per year (year-end, or today for
+// the current year) — endDate becomes that asOf date, capped at today so a
+// future custom end date still reads as "headcount as of now".
+router.get('/employee/headcount-export', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const { endDate } = req.query;
+    const today = new Date().toLocaleDateString('en-CA');
+    const asOf = (!endDate || endDate > today) ? today : endDate;
+
+    const extra = extraEmployeeFilters(req.query, 'e', 2);
+    const scope = reportsScope(req.user, 'e', 2 + extra.params.length);
+    const r = await pool.query(
+      `SELECT e.employee_id AS "employeeCode",
+              TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS "employeeName",
+              e.department, e.designation, e.joining_date AS "joiningDate",
+              CASE WHEN e.status = 'active' THEN 'Active' ELSE 'Inactive' END AS "employmentStatus"
+         FROM employees e
+        WHERE e.joining_date <= $1::date AND (e.exit_date IS NULL OR e.exit_date > $1::date)${extra.clause}${scope.clause}
+        ORDER BY e.employee_id`,
+      [asOf, ...extra.params, ...scope.params]
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) { serverError(res, err); }
+});
+
 // Dense month-by-month series (zero-count months included, matching Zoho's
 // continuous axis) with month-over-month % growth. Fetches one extra
 // leading month purely as the growth baseline for the first displayed bar,
@@ -750,11 +777,61 @@ router.get('/employee/addition-trend', authorize('admin', 'director', 'hr_admin'
   } catch (err) { serverError(res, err); }
 });
 
+// Employees who joined within [startDate, endDate] — the employee-level
+// list behind the Addition Trend export.
+router.get('/employee/addition-trend-export', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    const params = [startDate, endDate];
+    const extra = extraEmployeeFilters(req.query, 'e', params.length + 1);
+    params.push(...extra.params);
+    const scope = reportsScope(req.user, 'e', params.length + 1);
+    const r = await pool.query(
+      `SELECT e.employee_id AS "employeeCode",
+              TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS "employeeName",
+              e.department, e.designation, e.joining_date AS "joiningDate"
+         FROM employees e
+        WHERE e.joining_date >= $1::date AND e.joining_date <= $2::date${extra.clause}${scope.clause}
+        ORDER BY e.joining_date`,
+      [...params, ...scope.params]
+    );
+    res.json({ success: true, data: r.rows });
+  } catch (err) { serverError(res, err); }
+});
+
 router.get('/employee/attrition-trend', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
   try {
     const months = Math.min(24, Math.max(1, parseInt(req.query.months, 10) || 12));
     const data = await monthlySeriesWithGrowth('exit_date', months, req.user, req.query.employmentType, req.query);
     res.json({ success: true, data });
+  } catch (err) { serverError(res, err); }
+});
+
+// Employees whose relieving (exit) date falls within [startDate, endDate] —
+// the employee-level list behind the Attrition Trend export. employmentType
+// is optional, matching the chart's own Employment Type filter.
+router.get('/employee/attrition-trend-export', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const { startDate, endDate, employmentType } = req.query;
+    if (!startDate || !endDate) return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    const params = [startDate, endDate];
+    let clause = '';
+    if (employmentType) { params.push(employmentType); clause += ` AND e.employment_type = $${params.length}`; }
+    const extra = extraEmployeeFilters(req.query, 'e', params.length + 1);
+    params.push(...extra.params);
+    clause += extra.clause;
+    const scope = reportsScope(req.user, 'e', params.length + 1);
+    const r = await pool.query(
+      `SELECT e.employee_id AS "employeeCode",
+              TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS "employeeName",
+              e.department, e.designation, e.joining_date AS "joiningDate", e.exit_date AS "relievingDate"
+         FROM employees e
+        WHERE e.exit_date >= $1::date AND e.exit_date <= $2::date${clause}${scope.clause}
+        ORDER BY e.exit_date`,
+      [...params, ...scope.params]
+    );
+    res.json({ success: true, data: r.rows });
   } catch (err) { serverError(res, err); }
 });
 
@@ -967,6 +1044,37 @@ router.get('/employee/experience-exit', authorize('admin', 'director', 'hr_admin
     const { startDate, endDate, employmentType } = req.query;
     const data = await experienceExitBuckets(req.user, { startDate, endDate, employmentType, query: req.query });
     res.json({ success: true, data });
+  } catch (err) { serverError(res, err); }
+});
+
+// Employees relieved within the currently selected date range — the
+// employee-level list behind the Experience Wise Exit export. Mirrors
+// experienceExitBuckets()'s own WHERE-building exactly, so the export always
+// lines up with whichever band the chart grouped each of these people into.
+router.get('/employee/experience-exit-export', authorize('admin', 'director', 'hr_admin', 'manager'), async (req, res) => {
+  try {
+    const { startDate, endDate, employmentType } = req.query;
+    const params = [];
+    let clause = '';
+    if (startDate) { params.push(startDate); clause += ` AND e.exit_date >= $${params.length}::date`; }
+    if (endDate) { params.push(endDate); clause += ` AND e.exit_date <= $${params.length}::date`; }
+    if (employmentType) { params.push(employmentType); clause += ` AND e.employment_type = $${params.length}`; }
+    const { employmentType: _omit, experience: _omitExp, ...dimQuery } = req.query;
+    const dims = extraEmployeeFilters(dimQuery, 'e', params.length + 1);
+    params.push(...dims.params);
+    clause += dims.clause;
+    const scope = reportsScope(req.user, 'e', params.length + 1);
+    const r = await pool.query(
+      `SELECT e.employee_id AS "employeeCode",
+              TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS "employeeName",
+              e.department, e.designation, e.joining_date AS "joiningDate", e.exit_date AS "relievingDate",
+              FLOOR(EXTRACT(YEAR FROM AGE(e.exit_date, e.joining_date)))::int AS "experienceYears"
+         FROM employees e
+        WHERE e.exit_date IS NOT NULL AND e.joining_date IS NOT NULL${clause}${scope.clause}
+        ORDER BY e.exit_date`,
+      [...params, ...scope.params]
+    );
+    res.json({ success: true, data: r.rows });
   } catch (err) { serverError(res, err); }
 });
 

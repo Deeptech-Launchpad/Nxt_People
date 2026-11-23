@@ -12,7 +12,7 @@ import { ChevronDown } from 'lucide-react';
 // MONTH(S)); ungrouped options render first, unheaded. A `custom` option lets
 // the caller expose From/To date fields — this component just reports the
 // selection, the caller decides what Custom means.
-export default function PeriodFilter({ options, selectedKey, onChange, onSubmit }) {
+export default function PeriodFilter({ options, selectedKey, onChange, onSubmit, label = 'Period' }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -50,7 +50,7 @@ export default function PeriodFilter({ options, selectedKey, onChange, onSubmit 
         {/* "Custom", not "—", when the range matches no preset: stepping the
             header's period navigator lands on ranges no preset names, and a
             dash reads as "unset" rather than "set to something specific". */}
-        <span className="max-w-[190px] truncate">Period : {current?.label || 'Custom'}</span>
+        <span className="max-w-[190px] truncate">{label} : {current?.label || 'Custom'}</span>
         <ChevronDown size={13} className="text-slate-400 flex-shrink-0" />
       </button>
       {open && (

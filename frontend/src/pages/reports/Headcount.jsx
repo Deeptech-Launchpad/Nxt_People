@@ -8,10 +8,22 @@ import ChartExportMenu from './ChartExportMenu';
 import PeriodFilter from './PeriodFilter';
 import FilterRow from './FilterRow';
 import FilterToggleButton from './FilterToggleButton';
+import DateChip from './DateChip';
+import EmployeeListExportMenu from './EmployeeListExportMenu';
+import { EXPORT_PERIOD_OPTIONS, DEFAULT_EXPORT_RANGE } from './exportPeriods';
 
 import usePersistedOpen from './usePersistedOpen';
 const PERIOD_OPTIONS = [
   ...[5, 10, 15].map(y => ({ key: String(y), label: `Last ${y} Years`, value: y, group: 'Year' })),
+];
+
+const EXPORT_COLUMNS = [
+  { key: 'employeeCode', header: 'Employee ID' },
+  { key: 'employeeName', header: 'Employee Name' },
+  { key: 'department', header: 'Department' },
+  { key: 'designation', header: 'Designation' },
+  { key: 'joiningDate', header: 'Date of Joining' },
+  { key: 'employmentStatus', header: 'Employment Status' },
 ];
 
 export default function Headcount() {
@@ -23,6 +35,10 @@ export default function Headcount() {
   // Chips edit `draft`; Submit promotes it to `applied`, which is what runs.
   const [draft, setDraft] = useState({});
   const [applied, setApplied] = useState({});
+  // Export date range is independent of the chart's own "Last N Years"
+  // period above — the chart stays exactly as it was.
+  const [exportPeriodKey, setExportPeriodKey] = useState('thisYear');
+  const [exportRange, setExportRange] = useState(DEFAULT_EXPORT_RANGE);
 
   const load = (y = years, dims = applied) => {
     setLoading(true);
@@ -53,6 +69,25 @@ export default function Headcount() {
       >
         Submit
       </button>
+      <PeriodFilter
+        label="Export Period"
+        options={EXPORT_PERIOD_OPTIONS}
+        selectedKey={exportPeriodKey}
+        onChange={(value, key) => { setExportPeriodKey(key); if (value) setExportRange(value); }}
+      />
+      <DateChip
+        label="From" value={exportRange.start} disabled={exportPeriodKey !== 'custom'}
+        onChange={v => setExportRange(r => ({ ...r, start: v }))}
+      />
+      <DateChip
+        label="To" value={exportRange.end} disabled={exportPeriodKey !== 'custom'}
+        onChange={v => setExportRange(r => ({ ...r, end: v }))}
+      />
+      <EmployeeListExportMenu
+        fetchRows={() => api.get(`/reports/employee/headcount-export?${new URLSearchParams({ startDate: exportRange.start, endDate: exportRange.end })}`).then(r => r.data.data)}
+        columns={EXPORT_COLUMNS}
+        fileStub="headcount-employees"
+      />
       {filtersOpen && (
         <div className="w-full flex flex-wrap items-center gap-2 pt-1 order-first">
           <FilterRow value={draft} onChange={(k, v) => setDraft(f => ({ ...f, [k]: v }))} experience={draft.experience} onExperienceChange={v => setDraft(f => ({ ...f, experience: v }))} />
