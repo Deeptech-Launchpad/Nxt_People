@@ -39,6 +39,11 @@ export const AttendanceProvider = ({ children }) => {
   const [forgotCheckout, setForgotCheckout] = useState(false);
   const timerRef = useRef(null);
   const currentDateRef = useRef(todayStr());
+  // Guards refresh() against overlap — the 30s poll, a focus/visibility
+  // resync and a manual action can all land within the same moment, and two
+  // in-flight /attendance/today calls racing to setRecord() is worse than
+  // just skipping the later one; the next tick asks again anyway.
+  const refreshInFlightRef = useRef(false);
 
   /* ── Employee-only late check-in: Apply Permission ──────────────────────
    * Self-contained here — not exposed through the context value — so the
@@ -115,6 +120,8 @@ export const AttendanceProvider = ({ children }) => {
       setLoading(false);
       return Promise.resolve();
     }
+    if (refreshInFlightRef.current) return Promise.resolve();
+    refreshInFlightRef.current = true;
 
     setLoadError(null);
     return api.get('/attendance/today')
@@ -160,7 +167,7 @@ export const AttendanceProvider = ({ children }) => {
         // the user simply hasn't checked in.
         setLoadError(err?.response?.data?.message || err?.message || 'Failed to load attendance');
       })
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); refreshInFlightRef.current = false; });
   }, [startTimer, stopTimer]);
 
   /* ── Fetch today's record on mount and when user changes ────────── */
@@ -169,14 +176,20 @@ export const AttendanceProvider = ({ children }) => {
     return () => stopTimer();
   }, [user?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── Re-sync on date rollover AND on regaining focus ───────────────
+  /* ── Re-sync on date rollover, on regaining focus, AND every 30s while
+     visible ───────────────────────────────────────────────────────────
      /attendance/today only ever returns the row for the day it's asked
      about, so a tab left open overnight keeps live-ticking yesterday's
      check-in — a check-in at 10:15 still reads "24:16:28" the next
-     morning. A 60s interval alone can't fix that: a slept or frozen tab
-     fires no timers at all, so the stale timer stays on screen until the
-     tab wakes. Re-syncing on visibilitychange/focus catches exactly that
-     case, which previously only a manual reload could clear. */
+     morning. Re-syncing on visibilitychange/focus/pageshow catches that,
+     which previously only a manual reload could clear.
+
+     The 30s poll below closes a second, same-day gap: this tab's `record`
+     otherwise never changes once loaded, short of one of those events — so
+     checking in or out from a second device (or having HR/admin act on this
+     record) left an already-open tab showing stale status indefinitely.
+     Skipped while hidden (nothing to show anyone, and the visibility/focus
+     handlers above already resync the moment the tab is shown again). */
   useEffect(() => {
     const resync = () => {
       const today = todayStr();
@@ -200,8 +213,9 @@ export const AttendanceProvider = ({ children }) => {
     const onPageShow = (e) => { if (e.persisted) resync(); };
 
     const id = setInterval(() => {
-      if (todayStr() !== currentDateRef.current) resync();
-    }, 60000);
+      if (document.visibilityState !== 'visible') return;
+      resync();
+    }, 30000);
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     window.addEventListener('pageshow', onPageShow);
