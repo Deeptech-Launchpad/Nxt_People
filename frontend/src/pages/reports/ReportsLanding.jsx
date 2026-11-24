@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  DollarSign, Clock,
+  Clock,
   Building2, CalendarDays, CalendarCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -19,18 +19,6 @@ const CATEGORY_ICONS = { 'Employee Information': Building2, 'Leave Tracker': Cal
 // card grid. Each link keeps its original role restriction; a category
 // with zero visible links for the current role simply doesn't render.
 const QUICK_LINKS_CATALOG = [
-  {
-    category: 'Payroll', icon: DollarSign, hidden: !PAYROLL_ADMIN_ENABLED,
-    links: [
-      { label: 'Payroll Report',    to: '/payroll',                 roles: ['admin','director','hr_admin','manager'] },
-      { label: 'Salary Setup',      to: '/payroll/setup',           roles: ['admin','director','hr_admin'] },
-      { label: 'Payroll Run',       to: '/payroll/run',             roles: ['admin','director','hr_admin'] },
-      { label: 'Team Payroll',      to: '/payroll/team',            roles: ['admin','director','hr_admin','manager'] },
-      { label: 'Payslips',          to: '/payroll/my' },
-      { label: 'Tax Declarations',  to: '/payroll/tax-declaration' },
-      { label: 'Compliance',        to: '/payroll/compliance',      roles: ['admin','director','hr_admin'] },
-    ],
-  },
   {
     category: 'Shifts', icon: Clock,
     links: [

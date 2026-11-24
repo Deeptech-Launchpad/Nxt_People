@@ -8,6 +8,7 @@ import FilterToggleButton from './FilterToggleButton';
 import StandardFilterRows from './StandardFilterRows';
 import HoursComparatorFilter from './HoursComparatorFilter';
 import PeriodFilter from './PeriodFilter';
+import DateChip from './DateChip';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import useFitToViewport from '../../hooks/useFitToViewport';
@@ -29,6 +30,7 @@ const PERIOD_OPTIONS = [
   { key: 'lastWeek', label: 'Last Week', value: range(new Date(startOfWeek(now).getTime() - 7 * 86400000), new Date(startOfWeek(now).getTime() - 86400000)) },
   { key: 'thisMonth', label: 'This Month', value: range(new Date(y, m, 1), new Date(y, m + 1, 0)) },
   { key: 'lastMonth', label: 'Last Month', value: range(new Date(y, m - 1, 1), new Date(y, m, 0)) },
+  { key: 'custom', label: 'Custom', value: null },
 ];
 
 // Two of these take a value: the "by" modes take minutes relative to the
@@ -198,6 +200,14 @@ export default function EarlyLateCheckInOut() {
   useEffect(load, [dateRange, firstCheckIn, lastCheckOut, hours, ...f.deps]);
 
   const multiDay = dateRange.start !== dateRange.end;
+  const isCustom = periodKey === 'custom';
+
+  // Choosing Custom keeps whatever range is already on screen and just
+  // unlocks the From/To chips below — it shouldn't blank the table out.
+  const pickPeriod = (v, k) => {
+    setPeriodKey(k);
+    if (v) setDateRange(v);
+  };
 
   const reset = () => {
     setPeriodKey('today'); setDateRange(PERIOD_OPTIONS[0].value);
@@ -243,7 +253,15 @@ export default function EarlyLateCheckInOut() {
   // report means anything.
   const filters = filtersOpen ? (
     <>
-      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
+      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={pickPeriod} />
+      <DateChip
+        label="From" value={dateRange.start} disabled={!isCustom}
+        onChange={v => setDateRange(r => ({ ...r, start: v }))}
+      />
+      <DateChip
+        label="To" value={dateRange.end} disabled={!isCustom}
+        onChange={v => setDateRange(r => ({ ...r, end: v }))}
+      />
       <PunchFilter label="First Check-In" value={firstCheckIn} onChange={setFirstCheckIn} />
       <PunchFilter label="Last Check-Out" value={lastCheckOut} onChange={setLastCheckOut} />
       <HoursComparatorFilter value={hours} onChange={setHours} />

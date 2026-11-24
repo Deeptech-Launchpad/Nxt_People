@@ -25,7 +25,6 @@ export const REPORT_CATALOG = [
       { label: 'Leave type wise summary',     to: '/reports/leave/type-summary' },
       { label: 'Leave encashment details',    to: '/reports/leave/encashment' },
       { label: 'Loss of pay details',         to: '/reports/leave/lop' },
-      { label: 'Leave data for payroll',      to: '/reports/leave/payroll-export' },
     ],
   },
   {

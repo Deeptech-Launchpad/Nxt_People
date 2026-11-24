@@ -161,22 +161,18 @@ export default function LeaveTypeSummary() {
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600">
               <tr>
                 <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5">Employee</SortableTh>
-                <SortableTh sort={sort} k="openingBalance" className="text-right px-4 py-2.5">Opening Balance</SortableTh>
                 <SortableTh sort={sort} k="granted" className="text-right px-4 py-2.5">Granted</SortableTh>
                 <SortableTh sort={sort} k="booked" className="text-right px-4 py-2.5">Booked</SortableTh>
                 <SortableTh sort={sort} k="closingBalance" className="text-right px-4 py-2.5">Closing Balance</SortableTh>
-                <SortableTh sort={sort} k="lapsed" className="text-right px-4 py-2.5">Lapsed</SortableTh>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.openingBalance}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.granted ?? '—'}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.booked}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">{row.closingBalance ?? '—'}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.lapsed}</td>
                 </tr>
               ))}
             </tbody>

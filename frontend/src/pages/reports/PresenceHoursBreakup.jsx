@@ -6,6 +6,7 @@ import ReportShell from './ReportShell';
 import FilterToggleButton from './FilterToggleButton';
 import EmployeeFilter from './EmployeeFilter';
 import PeriodFilter from './PeriodFilter';
+import DateChip from './DateChip';
 import HoursComparatorFilter from './HoursComparatorFilter';
 import LeaveExportModal from './LeaveExportModal';
 
@@ -26,6 +27,7 @@ const PERIOD_OPTIONS = [
   { key: 'lastWeek', label: 'Last Week', value: range(new Date(startOfWeek(now).getTime() - 7 * 86400000), new Date(startOfWeek(now).getTime() - 86400000)) },
   { key: 'thisMonth', label: 'This Month', value: range(new Date(y, m, 1), new Date(y, m + 1, 0)) },
   { key: 'lastMonth', label: 'Last Month', value: range(new Date(y, m - 1, 1), new Date(y, m, 0)) },
+  { key: 'custom', label: 'Custom', value: null },
 ];
 
 // The two tabs show different things, not the same figures in another unit.
@@ -220,7 +222,15 @@ export default function PresenceHoursBreakup() {
     const span = Math.round((new Date(dateRange.end) - new Date(dateRange.start)) / 86400000) + 1;
     const next = { start: addDays(dateRange.start, n * span), end: addDays(dateRange.end, n * span) };
     setDateRange(next);
-    setPeriodKey(PERIOD_OPTIONS.find(o => o.value.start === next.start && o.value.end === next.end)?.key || 'custom');
+    setPeriodKey(PERIOD_OPTIONS.find(o => o.value?.start === next.start && o.value?.end === next.end)?.key || 'custom');
+  };
+  const isCustom = periodKey === 'custom';
+
+  // Choosing Custom keeps whatever range is already on screen and just
+  // unlocks the From/To chips below — it shouldn't blank the table out.
+  const pickPeriod = (v, k) => {
+    setPeriodKey(k);
+    if (v) setDateRange(v);
   };
 
   const periodNav = (
@@ -241,7 +251,15 @@ export default function PresenceHoursBreakup() {
 
   const filters = filtersOpen ? (
     <>
-      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
+      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={pickPeriod} />
+      <DateChip
+        label="From" value={dateRange.start} disabled={!isCustom}
+        onChange={v => setDateRange(r => ({ ...r, start: v }))}
+      />
+      <DateChip
+        label="To" value={dateRange.end} disabled={!isCustom}
+        onChange={v => setDateRange(r => ({ ...r, end: v }))}
+      />
       <HoursComparatorFilter value={hours} onChange={setHours} />
       <div className="flex items-center gap-2 ml-auto">
         <button onClick={() => setHours(h => ({ ...h }))} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-[14px] font-medium transition-colors">

@@ -283,7 +283,6 @@ export default function LossOfPay() {
             <thead className="bg-slate-50 text-[13px] font-medium text-slate-600 sticky top-0 z-20">
               <tr>
                 <SortableTh sort={sort} k="employee" className="text-left px-4 py-2.5">Employee</SortableTh>
-                <SortableTh sort={sort} k="previousPeriodBalance" className="text-right px-4 py-2.5">Previous Pay Period Balance</SortableTh>
                 {/* Was one column labelled "Absent + Unpaid" that actually only ever
                     showed the unpaid figure — absentDays existed in the data (and
                     in the export) but never reached this screen. Unpaid leave and
@@ -294,9 +293,6 @@ export default function LossOfPay() {
                 <SortableTh sort={sort} k="booked" className="text-right px-4 py-2.5">Taken</SortableTh>
                 <SortableTh sort={sort} k="absentDays" className="text-right px-4 py-2.5">Unmarked absence</SortableTh>
                 <SortableTh sort={sort} k="total" className="text-right px-4 py-2.5 leading-tight"><div>Total</div><div className="font-normal text-slate-400">Previous + Taken</div></SortableTh>
-                <SortableTh sort={sort} k="waivedOff" className="text-right px-4 py-2.5">Waived Off</SortableTh>
-                <SortableTh sort={sort} k="carryOver" className="text-right px-4 py-2.5">Carry Over</SortableTh>
-                <SortableTh sort={sort} k="reason" className="text-left px-4 py-2.5">Reason</SortableTh>
                 <SortableTh sort={sort} k="lopDays" className="text-right px-4 py-2.5">LOP</SortableTh>
               </tr>
             </thead>
@@ -304,13 +300,9 @@ export default function LossOfPay() {
               {sort.sorted.map(row => (
                 <tr key={row._id}>
                   <td className="px-4 py-2.5"><EmployeeCell row={row} /></td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtBalance(row.previousPeriodBalance)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.booked}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.absentDays}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{row.total}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.waivedOff}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{row.carryOver}</td>
-                  <td className="px-4 py-2.5 max-w-xs truncate text-slate-500" title={row.reason}>{row.reason || '—'}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-amber-700">{row.lopDays}</td>
                 </tr>
               ))}

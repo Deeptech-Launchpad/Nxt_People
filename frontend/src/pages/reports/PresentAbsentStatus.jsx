@@ -7,6 +7,7 @@ import ReportShell from './ReportShell';
 import FilterToggleButton from './FilterToggleButton';
 import StandardFilterRows from './StandardFilterRows';
 import PeriodFilter from './PeriodFilter';
+import DateChip from './DateChip';
 import LeaveExportModal from './LeaveExportModal';
 import useReportFilters from '../../hooks/useReportFilters';
 import { codeStyle, weekendColumns, WEEKEND_HATCH } from './attendanceCodes';
@@ -32,6 +33,7 @@ const PERIOD_OPTIONS = [
   { key: 'yesterday', label: 'Yesterday', value: range(new Date(y, m, now.getDate() - 1), new Date(y, m, now.getDate() - 1)) },
   { key: 'lastWeek', label: 'Last Week', value: range(new Date(startOfWeek(now).getTime() - 7 * 86400000), new Date(startOfWeek(now).getTime() - 86400000)) },
   { key: 'lastMonth', label: 'Last Month', value: range(new Date(y, m - 1, 1), new Date(y, m, 0)) },
+  { key: 'custom', label: 'Custom', value: null },
 ];
 
 const fmtDate = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -152,7 +154,15 @@ export default function PresentAbsentStatus() {
   const step = n => {
     const next = shiftRange(dateRange, n);
     setDateRange(next);
-    setPeriodKey(PERIOD_OPTIONS.find(o => o.value.start === next.start && o.value.end === next.end)?.key || 'custom');
+    setPeriodKey(PERIOD_OPTIONS.find(o => o.value?.start === next.start && o.value?.end === next.end)?.key || 'custom');
+  };
+  const isCustom = periodKey === 'custom';
+
+  // Choosing Custom keeps whatever range is already on screen and just
+  // unlocks the From/To chips below — it shouldn't blank the grid out.
+  const pickPeriod = (v, k) => {
+    setPeriodKey(k);
+    if (v) setDateRange(v);
   };
 
   // The period this grid is *of*, named in the header and reachable whether or
@@ -180,7 +190,15 @@ export default function PresentAbsentStatus() {
 
   const filters = filtersOpen ? (
     <>
-      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={(v, k) => { setPeriodKey(k); setDateRange(v); }} />
+      <PeriodFilter options={PERIOD_OPTIONS} selectedKey={periodKey} onSubmit={pickPeriod} />
+      <DateChip
+        label="From" value={dateRange.start} disabled={!isCustom}
+        onChange={v => setDateRange(r => ({ ...r, start: v }))}
+      />
+      <DateChip
+        label="To" value={dateRange.end} disabled={!isCustom}
+        onChange={v => setDateRange(r => ({ ...r, end: v }))}
+      />
       <button
         onClick={() => setStatusOpen(true)}
         className="px-3 py-1.5 rounded text-[13px] border border-slate-300 bg-white text-slate-600 hover:border-slate-400 transition-colors whitespace-nowrap"
@@ -244,7 +262,13 @@ export default function PresentAbsentStatus() {
                   {emp.days.map((realCode, i) => {
                     const code = emp.displayDays?.[i] ?? realCode;
                     const hours = emp.hours?.[i];
-                    const shown = unit === 'hour' ? hours : code;
+                    // Hour Basis only has a figure to show on a day that was
+                    // actually punched — a Holiday, Leave, LOP, Casual Leave or
+                    // full-day Permission has no hours value at all, so it falls
+                    // back to the same status code Day Basis already shows
+                    // instead of a blank dash that erased which of those it was.
+                    const showCode = unit === 'day' || !hours;
+                    const shown = showCode ? code : hours;
                     // '-' is a day the person was not on rolls — there is no
                     // day there to explain, so it stays inert.
                     const openable = realCode && realCode !== '-';
@@ -255,9 +279,9 @@ export default function PresentAbsentStatus() {
                         title={openable ? 'Click for the full day' : undefined}
                         className={`px-1 py-2 text-center border-r border-slate-200 ${openable ? 'cursor-pointer hover:bg-blue-50/70 transition-colors' : ''}`}>
                         {shown && shown !== '-'
-                          ? unit === 'hour'
-                            ? <span className="text-[11px] tabular-nums text-slate-700 whitespace-nowrap">{shown}</span>
-                            : <span className={`inline-block min-w-8 px-1 rounded text-[10px] font-semibold py-0.5 ${codeStyle(code)}`}>{code}</span>
+                          ? showCode
+                            ? <span className={`inline-block min-w-8 px-1 rounded text-[10px] font-semibold py-0.5 ${codeStyle(code)}`}>{code}</span>
+                            : <span className="text-[11px] tabular-nums text-slate-700 whitespace-nowrap">{shown}</span>
                           : <span className="text-slate-300">-</span>}
                       </td>
                     );
