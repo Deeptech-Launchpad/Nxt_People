@@ -126,7 +126,7 @@ async function rankLocations({ latitude, longitude }) {
  * mode is 'office' | 'wfh' | 'unknown' | null. Null means classification is
  * switched off entirely, and the caller must not write a mode at all — an
  * off switch that still stamped every row would not be off. */
-async function classifyPunch({ latitude, longitude, accuracy, ip, employee }) {
+async function classifyPunch({ latitude, longitude, accuracy, ip, employee, date }) {
   const cfg = await config();
   if (!cfg.classifyEnabled) {
     return { mode: null, reason: 'classification is switched off' };
@@ -138,6 +138,25 @@ async function classifyPunch({ latitude, longitude, accuracy, ip, employee }) {
    * their arrangement is not decided by where they stood this morning. */
   if (employee?.isRemote) {
     return { mode: 'wfh', reason: 'employee is marked remote', locationId: null, source: 'arrangement' };
+  }
+
+  /* An APPROVED WFH request for this exact date is the same kind of answer
+   * as isRemote above — an explicit, managerial decision, not an inference
+   * from an absent or ambiguous signal — so it gets the same precedence,
+   * ahead of GPS/network. This is deliberately NOT "no GPS and no IP match
+   * therefore WFH": that would be guessing from missing evidence, exactly
+   * what this file's own rule above refuses to do. An approved request is
+   * evidence; a blank reading is not. */
+  if (employee?.id) {
+    try {
+      const wfh = await pool.query(
+        `SELECT 1 FROM wfh_requests WHERE employee_id = $1 AND date = $2::date AND status = 'approved' LIMIT 1`,
+        [employee.id, date || new Date().toISOString().slice(0, 10)]
+      );
+      if (wfh.rows.length) {
+        return { mode: 'wfh', reason: 'approved WFH request for this date', locationId: null, source: 'arrangement' };
+      }
+    } catch { /* never let this lookup cost somebody their classification */ }
   }
 
   const gps = await gpsVerdict({ latitude, longitude, accuracy, cfg });
@@ -232,12 +251,37 @@ async function networkVerdict(ip) {
 async function classifyMany(points) {
   const cfg = await config();
   if (!cfg.classifyEnabled) return points.map(() => ({ mode: null }));
+
+  /* One batched lookup for every (employee, date) pair with an approved WFH
+   * request, instead of one query per point — same signal as classifyPunch's
+   * single-point path, see the comment there for why this isn't a guess. */
+  const pairs = points
+    .map((p, i) => ({ i, employeeId: p?.employeeId, date: p?.date }))
+    .filter(p => p.employeeId && p.date);
+  const wfhSet = new Set();
+  if (pairs.length) {
+    try {
+      const r = await pool.query(
+        `SELECT wr.employee_id, wr.date::text AS date
+           FROM wfh_requests wr
+           JOIN (SELECT UNNEST($1::uuid[]) AS employee_id, UNNEST($2::date[]) AS date) pairs
+             ON pairs.employee_id = wr.employee_id AND pairs.date = wr.date
+          WHERE wr.status = 'approved'`,
+        [pairs.map(p => p.employeeId), pairs.map(p => p.date)]
+      );
+      for (const row of r.rows) wfhSet.add(`${row.employee_id}|${row.date}`);
+    } catch { /* never let this lookup cost somebody their classification */ }
+  }
+
   const fences = await activeFences();
   if (!fences.length) return points.map(() => ({ mode: cfg.unknownCountsAs, unknown: true }));
 
   const present = (v) => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v));
   return points.map(p => {
     if (p?.isRemote) return { mode: 'wfh', reason: 'employee is marked remote' };
+    if (p?.employeeId && p?.date && wfhSet.has(`${p.employeeId}|${p.date}`)) {
+      return { mode: 'wfh', reason: 'approved WFH request for this date', source: 'arrangement' };
+    }
     if (!present(p?.latitude) || !present(p?.longitude)) {
       return { mode: cfg.unknownCountsAs, unknown: true, reason: 'no location was captured' };
     }

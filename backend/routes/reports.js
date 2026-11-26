@@ -2741,8 +2741,26 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
 
       /* Only somebody who actually punched can be placed. A person on leave is
        * not "working from home", and counting them there would double-count
-       * them against the leave slice beside it. */
-      if (att?.checkIn && !managed) {
+       * them against the leave slice beside it. Also gated on kind === 'present'
+       * now, to match exactly who counts.present counts: this tally used to
+       * fire for anyone who had checked in at all, including someone who later
+       * checked out too early and was settled 'absent' for the day — so this
+       * donut's total and the Present/Absent pie's total disagreed by however
+       * many people landed in that gap, same shape as the presenceKey bug this
+       * function already fixed once (see the comment above).
+       *
+       * One deliberate exception: a permission-only day resolves to kind
+       * 'paidLeave' (resolveDayLeave falls back to the permission row itself
+       * when it's the only leave-table entry that day — see its own comment),
+       * which would otherwise drop someone who took a 15-minute permission
+       * and worked the rest of the day out of this donut entirely. A short
+       * permission doesn't change where they worked from, so they still
+       * belong here even though they don't belong in counts.present — this
+       * reintroduces a small, now-understood gap between the two totals
+       * rather than erasing these people from the "where did people work"
+       * picture. */
+      const isPermissionOnly = kind === 'paidLeave' && dayLeave?.leaveType === 'permission';
+      if (att?.checkIn && !managed && (kind === 'present' || isPermissionOnly)) {
         const m = att.workMode;
         workMode[m === 'office' ? 'office'
           : m === 'wfh' ? 'wfh'
@@ -2767,8 +2785,15 @@ router.get('/attendance/daily-status', authorize('admin', 'director', 'hr_admin'
           : (ATT_STATUS_LABEL[kind] || null),
         presenceKey, shiftName: emp.shiftName || null,
         /* On the row too, so the list and the export can say where each
-         * person worked rather than only how many did. */
-        workMode: att?.checkIn ? (att.workMode || 'unknown') : null,
+         * person worked rather than only how many did. Passed through
+         * as-is now — the DB can store a real 'unknown' (classification
+         * ran and genuinely couldn't place the punch) distinct from a bare
+         * NULL (classification never ran at all), and the table's own
+         * render logic already expects exactly that distinction. Forcing
+         * null to the string 'unknown' here, as this used to do, is what
+         * made every "never classified" row display identically to a
+         * "tried and failed" one. */
+        workMode: att?.checkIn ? (att.workMode || null) : null,
         // Named on the row so the export can say why this person has no punch,
         // rather than leaving a blank that reads as a missing check-in.
         attendanceMarkedByAdmin: managed,

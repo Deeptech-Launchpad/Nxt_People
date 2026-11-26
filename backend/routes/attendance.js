@@ -310,8 +310,8 @@ router.post('/checkin', async (req, res) => {
 
     try {
       placement = await classifyPunch({
-        latitude, longitude, accuracy, ip: req.ip,
-        employee: { isRemote: shiftRes.rows[0]?.isRemote === true },
+        latitude, longitude, accuracy, ip: req.ip, date: today,
+        employee: { id: req.user._id, isRemote: shiftRes.rows[0]?.isRemote === true },
       });
     } catch (err) {
       /* Classification must never cost somebody their punch. */
@@ -440,10 +440,26 @@ router.post('/checkin', async (req, res) => {
              check_in_longitude = EXCLUDED.check_in_longitude,
              shift_id           = EXCLUDED.shift_id,
              /* A second stretch is placed by where it started, so the day's
-              * mode follows the punch that reopened it. */
-             work_mode                 = COALESCE(EXCLUDED.work_mode, attendance.work_mode),
-             work_location_resolved_id = COALESCE(EXCLUDED.work_location_resolved_id, attendance.work_location_resolved_id),
-             work_mode_source          = COALESCE(EXCLUDED.work_mode_source, attendance.work_mode_source),
+              * mode follows the punch that reopened it. Written as a CASE,
+              * not a plain COALESCE: EXCLUDED.work_mode can now legitimately
+              * BE the string 'unknown' (see below), and 'unknown' is a worse
+              * answer than an already-confident 'office'/'wfh' sitting on the
+              * row — COALESCE would let it overwrite that; this won't. */
+             work_mode = CASE
+               WHEN EXCLUDED.work_mode IS NULL THEN attendance.work_mode
+               WHEN attendance.work_mode IN ('office','wfh') AND EXCLUDED.work_mode = 'unknown' THEN attendance.work_mode
+               ELSE EXCLUDED.work_mode
+             END,
+             work_location_resolved_id = CASE
+               WHEN EXCLUDED.work_mode IS NULL THEN attendance.work_location_resolved_id
+               WHEN attendance.work_mode IN ('office','wfh') AND EXCLUDED.work_mode = 'unknown' THEN attendance.work_location_resolved_id
+               ELSE EXCLUDED.work_location_resolved_id
+             END,
+             work_mode_source = CASE
+               WHEN EXCLUDED.work_mode IS NULL THEN attendance.work_mode_source
+               WHEN attendance.work_mode IN ('office','wfh') AND EXCLUDED.work_mode = 'unknown' THEN attendance.work_mode_source
+               ELSE EXCLUDED.work_mode_source
+             END,
              check_in_ip               = COALESCE(EXCLUDED.check_in_ip, attendance.check_in_ip),
              location_distance_meters  = EXCLUDED.location_distance_meters,
              location_accuracy_meters  = EXCLUDED.location_accuracy_meters,
@@ -460,12 +476,13 @@ router.post('/checkin', async (req, res) => {
                  working_hours as "workingHours", status, late_minutes as "lateMinutes"`,
       [req.user._id, today, now, status, lateMinutes, locLabel,
        latitude || null, longitude || null, shift?.id || null,
-       /* An unplaced punch writes NO mode rather than the word "unknown".
-        * COALESCE treats 'unknown' as an answer, so a later, better signal
-        * would have been unable to replace it — and on this path the better
-        * signal is the norm: the punch is recorded before location is even
-        * asked for. Absence is what lets the truth arrive late. */
-       placement.unknown ? null : (placement.mode || null),
+       /* Writes the real verdict, including the literal string 'unknown' —
+        * the UPSERT's CASE above (not a plain COALESCE) is what keeps a
+        * later, less-certain 'unknown' from overwriting an already-confident
+        * 'office'/'wfh' already on the row; a bare NULL still means "classifyPunch
+        * never ran at all" (classification switched off, or it threw), which
+        * stays genuinely distinct from "ran and couldn't place it". */
+       placement.mode || null,
        placement.locationId || null,
        placement.distance ?? null, placement.accuracy ?? null,
        placement.source || null, req.ip || null,
@@ -821,7 +838,9 @@ router.post('/checkout', async (req, res) => {
 router.patch('/location', async (req, res) => {
   try {
     const { type, latitude, longitude, accuracy } = req.body;
-    if (!latitude || !longitude || !['checkin', 'checkout'].includes(type)) {
+    // A legitimate fix of exactly 0 is falsy in JS — != null is required so
+    // it isn't rejected as "missing" alongside the real missing cases.
+    if (latitude == null || longitude == null || !['checkin', 'checkout'].includes(type)) {
       return res.status(400).json({ success: false });
     }
     const today = todayStr();
@@ -843,8 +862,8 @@ router.patch('/location', async (req, res) => {
       try {
         const who = await pool.query(`SELECT is_remote AS "isRemote" FROM employees WHERE id=$1`, [req.user._id]);
         placement = await classifyPunch({
-          latitude, longitude, accuracy, ip: req.ip,
-          employee: { isRemote: who.rows[0]?.isRemote === true },
+          latitude, longitude, accuracy, ip: req.ip, date: today,
+          employee: { id: req.user._id, isRemote: who.rows[0]?.isRemote === true },
         });
       } catch (err) {
         logger.warn({ err: err.message }, '[attendance] work mode not resolved on location patch');
@@ -855,19 +874,34 @@ router.patch('/location', async (req, res) => {
       await pool.query(
         `UPDATE attendance
             SET check_in_location=$1, check_in_latitude=$2, check_in_longitude=$3,
-                work_mode = COALESCE($6, work_mode),
-                work_mode_source = COALESCE($10, work_mode_source),
-                work_location_resolved_id = COALESCE($7, work_location_resolved_id),
+                /* Same rule as the UPSERT in POST /checkin: 'unknown' is a
+                 * worse answer than an already-confident 'office'/'wfh', so a
+                 * vague GPS fix arriving after the office network already
+                 * placed the punch must not be allowed to erase that. */
+                work_mode = CASE
+                  WHEN $6::varchar IS NULL THEN work_mode
+                  WHEN work_mode IN ('office','wfh') AND $6 = 'unknown' THEN work_mode
+                  ELSE $6
+                END,
+                work_mode_source = CASE
+                  WHEN $6::varchar IS NULL THEN work_mode_source
+                  WHEN work_mode IN ('office','wfh') AND $6 = 'unknown' THEN work_mode_source
+                  ELSE $10
+                END,
+                work_location_resolved_id = CASE
+                  WHEN $6::varchar IS NULL THEN work_location_resolved_id
+                  WHEN work_mode IN ('office','wfh') AND $6 = 'unknown' THEN work_location_resolved_id
+                  ELSE $7
+                END,
                 location_distance_meters = COALESCE($8, location_distance_meters),
                 location_accuracy_meters = COALESCE($9, location_accuracy_meters),
                 updated_at=NOW()
           WHERE employee_id=$4 AND date=$5::date`,
         [locLabel, latitude, longitude, req.user._id, today,
-         /* Same rule as the punch: an inconclusive answer must not land on
-          * top of a conclusive one. The check-in may already have been placed
-          * by the office network, and a vague GPS fix arriving two seconds
-          * later is not a reason to forget that. */
-         placement.unknown ? null : (placement.mode || null),
+         // Writes the real verdict, including the literal 'unknown' — the
+         // CASE above (not a plain COALESCE) is what protects an existing
+         // confident answer from being overwritten by it.
+         placement.mode || null,
          placement.locationId || null,
          placement.distance ?? null, placement.accuracy ?? null,
          placement.source || null]
@@ -1616,7 +1650,7 @@ router.get('/location', async (req, res) => {
     const total = totalRes.rows[0].n;
 
     const dataRes = await pool.query(
-      `SELECT l.id as "_id", l.type, l.latitude, l.longitude, l.accuracy,
+      `SELECT l.id as "_id", l.type, l.latitude, l.longitude, l.accuracy, l.employee_id as "employeeId",
               l.location_label as "locationLabel", l.permission_status as "permissionStatus",
               l.captured_at as "capturedAt",
               json_build_object('_id', e.id, 'firstName', e.first_name, 'lastName', e.last_name,
@@ -1642,6 +1676,7 @@ router.get('/location', async (req, res) => {
      * attendance record could disagree about the same moment. */
     const modes = await classifyMany(dataRes.rows.map(r => ({
       latitude: r.latitude, longitude: r.longitude, accuracy: r.accuracy,
+      employeeId: r.employeeId, date: r.capturedAt ? new Date(r.capturedAt).toISOString().slice(0, 10) : null,
     }))).catch(() => dataRes.rows.map(() => ({ mode: null })));
     const rows = dataRes.rows.map((r, i) => ({
       ...r,

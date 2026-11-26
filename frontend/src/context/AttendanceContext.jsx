@@ -240,6 +240,23 @@ export const AttendanceProvider = ({ children }) => {
      browser's own answer to exactly this: the request is hand off to the
      browser to finish sending even after the page is gone. axios (built on
      XHR here) has no equivalent, so this bypasses it for just this call. */
+  /* ── Pending-location-patch persistence ──────────────────────────────
+     fetch(..., {keepalive:true}) survives a page navigating away, but not
+     the tab/device being killed outright before the GPS fix even resolves
+     — there's no request to keep alive yet in that case. This is a cheap,
+     separate safety net: the moment we're ABOUT to send a patch, remember
+     it here first; clear it the instant the request succeeds. If the app
+     is reopened later today with a leftover entry still sitting here, that
+     means the browser never got confirmation the last attempt landed —
+     try it exactly once more, then drop it regardless (never retry forever;
+     a stale entry for a day that's since been checked out or regularized
+     has nothing useful left to confirm). */
+  const PENDING_PATCH_KEY = 'nxt_pending_location_patch';
+  const savePendingPatch = (body) => {
+    try { localStorage.setItem(PENDING_PATCH_KEY, JSON.stringify({ ...body, date: todayStr(), ts: Date.now() })); } catch {}
+  };
+  const clearPendingPatch = () => { try { localStorage.removeItem(PENDING_PATCH_KEY); } catch {} };
+
   const keepAliveRequest = (method, path, body) => {
     const token = localStorage.getItem('nxt_token');
     return fetch(`/api${path}`, {
@@ -289,12 +306,46 @@ export const AttendanceProvider = ({ children }) => {
     (async () => {
       const canWarm = getGeoPref() === 'always' || await isGeoGranted();
       if (cancelled || !canWarm) return;
-      const tick = () => { capturePosition().catch(() => {}); };
+      const tick = () => {
+        capturePosition().then(coords => {
+          /* The warm cache exists so the NEXT button press has a fix ready.
+           * But if today's punch is still unclassified — the original GPS
+           * attempt timed out, failed, or the consent prompt was answered
+           * late — there may never BE a next press before the day closes.
+           * A background fix landing here is itself worth submitting, not
+           * just caching: same patch this is for already protects a
+           * confident earlier verdict from being downgraded server-side, so
+           * there's no harm in trying again every 90s until it sticks. */
+          if (!coords || !record?.checkIn || record?.checkOut || record?.workMode || cancelled) return;
+          const patchBody = { type: 'checkin', latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy };
+          savePendingPatch(patchBody);
+          keepAliveRequest('PATCH', '/attendance/location', patchBody)
+            .then(() => { clearPendingPatch(); refresh(); })
+            .catch(() => {});
+        }).catch(() => {});
+      };
       tick();
       id = setInterval(tick, 90000);
     })();
     return () => { cancelled = true; if (id) clearInterval(id); };
-  }, [record?.checkIn, record?.checkOut]);
+  }, [record?.checkIn, record?.checkOut, record?.workMode]);
+
+  /* ── Retry a patch the app never heard back on ───────────────────────
+     Runs once per mount. If the tab/device was closed between savePendingPatch
+     and the request actually completing, the entry is still here — try it
+     once more, for the same employee, same day only (a leftover from
+     yesterday has nothing left to confirm), then drop it either way. */
+  useEffect(() => {
+    let stored;
+    try { stored = JSON.parse(localStorage.getItem(PENDING_PATCH_KEY) || 'null'); } catch { stored = null; }
+    if (!stored || stored.date !== todayStr()) { clearPendingPatch(); return; }
+    const { date, ts, ...patchBody } = stored;
+    keepAliveRequest('PATCH', '/attendance/location', patchBody)
+      .then(() => refresh())
+      .catch(() => {})
+      .finally(() => clearPendingPatch());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ── Location consent + GPS, entirely off the attendance critical path ──
      Consent is a modal the user may never answer, and awaiting it before
@@ -357,9 +408,11 @@ export const AttendanceProvider = ({ children }) => {
       /* accuracy travels with the fix: the server refuses to place a punch
        * whose uncertainty is wider than the fence it is measured against,
        * and it cannot judge that without being told. */
-      keepAliveRequest('PATCH', '/attendance/location', {
-        type, latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,
-      }).then(() => refresh()).catch(() => {});
+      const patchBody = { type, latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy };
+      savePendingPatch(patchBody);
+      keepAliveRequest('PATCH', '/attendance/location', patchBody)
+        .then(() => { clearPendingPatch(); refresh(); })
+        .catch(() => {});
       logLocation(type, coords, permissionStatus);
     }).catch(() => {
       if (!settled) { settled = true; window.removeEventListener('pagehide', onPageHide); }
